@@ -1,0 +1,389 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-pink-500 to-rose-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-rose-400 to-red-400 mb-4 tracking-tight">
+            Date Functions
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Functions for working with dates, times, and timestamps in SDBQL.
+          </p>
+        </div>
+      </div>
+
+      <!-- Date Functions -->
+      <section id="date-functions" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-pink-500/10 to-rose-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+              </svg>
+              Date & Time Functions
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              SDBQL provides comprehensive date and time functions for parsing, formatting, calculating, and manipulating temporal data.
+            </p>
+
+            <!-- Basic Date Functions -->
+            <div>
+              <h3 class="text-lg font-bold text-pink-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-pink-500 rounded-full mr-3"></span>
+                Current Time & Conversion
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_NOW()</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns current Unix timestamp (ms).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_NOW() --1733234387000</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_ISO8601(timestamp)</code>
+                  <p class="text-sm text-gray-400 mb-3">Converts timestamp to ISO 8601 string.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_ISO8601(1733234387000)
+--"2025-12-03T13:59:47.000Z"</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_TIMESTAMP(date)</code>
+                  <p class="text-sm text-gray-400 mb-3">Converts ISO 8601 string to timestamp (ms).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_TIMESTAMP("2025-12-03T13:59:47.000Z")
+--1764770387000</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Date Component Extraction -->
+            <div>
+              <h3 class="text-lg font-bold text-pink-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-pink-500 rounded-full mr-3"></span>
+                Component Extraction
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_YEAR/MONTH/DAY(date)</code>
+                  <p class="text-sm text-gray-400 mb-3">Extracts year, month, or day.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_MONTH(DATE_NOW())</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_HOUR/MINUTE/SECOND(date)</code>
+                  <p class="text-sm text-gray-400 mb-3">Extracts time components.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_HOUR("2024-01-01T15:00:00Z") --15</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_DAYOFWEEK(date)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns day of week (0=Sunday to 6=Saturday).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_DAYOFWEEK("2024-01-07") --0</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_QUARTER(date)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns quarter of the year (1-4).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_QUARTER("2024-12-01") --4</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_ISOWEEK(date)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns ISO 8601 week number (1-53).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_ISOWEEK("2025-06-15T14:30:45Z")
+--24</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_DAYOFYEAR(date, tz?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns day of year (1-366). Optional timezone.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_DAYOFYEAR("2025-06-15T14:30:45Z")
+--166</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_DAYS_IN_MONTH(date, tz?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns days in the month (28-31). Optional timezone.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_DAYS_IN_MONTH("2024-02-15T00:00:00Z")
+--29 (leap year)</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- DATE_TRUNC -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_TRUNC</span>
+                  Truncate Date
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Truncates date to specified unit. Returns ISO 8601 string.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_TRUNC(<span class="text-pink-400">date</span>, <span class="text-cyan-400">unit</span>, <span class="text-emerald-400">timezone?</span>)</code>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Parameters</h4>
+                    <ul class="text-xs text-gray-400 space-y-1">
+                      <li><code class="text-pink-300">date</code> - timestamp (ms) or ISO 8601 string</li>
+                      <li><code class="text-pink-300">unit</code> - y/year, m/month, d/day, h/hour, i/minute, s/second, f/millisecond</li>
+                      <li><code class="text-pink-300">timezone</code> - optional IANA timezone (e.g. "America/New_York")</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Examples</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">DATE_TRUNC("2025-06-15T14:30:45Z", "day")
+--"2025-06-15T00:00:00.000Z"
+
+DATE_TRUNC("2025-06-15T20:30:00Z", "day", "America/New_York")
+--"2025-06-15T04:00:00.000Z"</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- DATE_FORMAT -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_FORMAT</span>
+                  Format Date
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Formats date according to format string (strftime-style).</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_FORMAT(<span class="text-pink-400">date</span>, <span class="text-cyan-400">format</span>, <span class="text-emerald-400">timezone?</span>)</code>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Format Specifiers</h4>
+                    <div class="grid grid-cols-2 gap-1 text-xs text-gray-400">
+                      <span><code class="text-pink-300">%Y</code> - year (2025)</span>
+                      <span><code class="text-pink-300">%m</code> - month (01-12)</span>
+                      <span><code class="text-pink-300">%d</code> - day (01-31)</span>
+                      <span><code class="text-pink-300">%H</code> - hour 24h (00-23)</span>
+                      <span><code class="text-pink-300">%M</code> - minute (00-59)</span>
+                      <span><code class="text-pink-300">%S</code> - second (00-59)</span>
+                      <span><code class="text-pink-300">%I</code> - hour 12h (01-12)</span>
+                      <span><code class="text-pink-300">%p</code> - AM/PM</span>
+                      <span><code class="text-pink-300">%A</code> - weekday (Sunday)</span>
+                      <span><code class="text-pink-300">%B</code> - month (June)</span>
+                      <span><code class="text-pink-300">%j</code> - day of year</span>
+                      <span><code class="text-pink-300">%V</code> - ISO week</span>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Examples</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">DATE_FORMAT("2025-06-15T14:30:45Z", "%Y-%m-%d")
+--"2025-06-15"
+
+DATE_FORMAT("2025-06-15T14:30:45Z", "%I:%M %p")
+--"02:30 PM"
+
+DATE_FORMAT("2025-06-15T14:30:00Z", "%H:%M", "America/New_York")
+--"10:30"</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- DATE_ADD -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_ADD</span>
+                  Add Time
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Add or subtract a specified amount of time to/from a date. Returns ISO 8601 string.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_ADD(<span class="text-pink-400">date</span>, <span class="text-cyan-400">amount</span>, <span class="text-emerald-400">unit</span>, <span class="text-yellow-400">timezone?</span>)</code>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Parameters</h4>
+                    <ul class="text-xs text-gray-400 space-y-1">
+                      <li><code class="text-pink-300">date</code> - timestamp (ms) or ISO 8601 string</li>
+                      <li><code class="text-pink-300">amount</code> - number to add (positive) or subtract (negative)</li>
+                      <li><code class="text-pink-300">unit</code> - y/year, m/month, w/week, d/day, h/hour, i/minute, s/second, f/millisecond</li>
+                      <li><code class="text-pink-300">timezone</code> - optional IANA timezone</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Examples</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">DATE_ADD("2025-06-15T14:30:45Z", 3, "months")
+--"2025-09-15T14:30:45.000Z"
+
+DATE_ADD("2025-06-15T14:30:45Z", -7, "days")
+--"2025-06-08T14:30:45.000Z"
+
+DATE_ADD(1733234387000, 2, "hours")
+--"2024-12-03T15:59:47.000Z"</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- DATE_SUBTRACT -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_SUBTRACT</span>
+                  Subtract Time
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Subtract a specified amount of time from a date. Convenience wrapper for DATE_ADD with negated amount.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_SUBTRACT(<span class="text-pink-400">date</span>, <span class="text-cyan-400">amount</span>, <span class="text-emerald-400">unit</span>, <span class="text-yellow-400">timezone?</span>)</code>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Parameters</h4>
+                    <ul class="text-xs text-gray-400 space-y-1">
+                      <li><code class="text-pink-300">date</code> - timestamp (ms) or ISO 8601 string</li>
+                      <li><code class="text-pink-300">amount</code> - number to subtract (always positive)</li>
+                      <li><code class="text-pink-300">unit</code> - y/year, m/month, w/week, d/day, h/hour, i/minute, s/second, f/millisecond</li>
+                      <li><code class="text-pink-300">timezone</code> - optional IANA timezone</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Examples</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">DATE_SUBTRACT("2025-06-15T14:30:45Z", 7, "days")
+--"2025-06-08T14:30:45.000Z"
+
+DATE_SUBTRACT("2025-06-15T14:30:45Z", 3, "months")
+--"2025-03-15T14:30:45.000Z"
+
+DATE_SUBTRACT(1733234387000, 1, "day")
+--"2024-12-02T13:59:47.000Z"</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- DATE_DIFF -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_DIFF</span>
+                  Date Difference
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Calculate the difference between two dates in a given time unit. Returns negative if date2 is before date1.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_DIFF(<span class="text-pink-400">date1</span>, <span class="text-cyan-400">date2</span>, <span class="text-emerald-400">unit</span>, <span class="text-yellow-400">asFloat?</span>, <span class="text-purple-400">tz1?</span>, <span class="text-purple-400">tz2?</span>)</code>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Parameters</h4>
+                    <ul class="text-xs text-gray-400 space-y-1">
+                      <li><code class="text-pink-300">date1</code> - timestamp (ms) or ISO 8601 string</li>
+                      <li><code class="text-pink-300">date2</code> - timestamp (ms) or ISO 8601 string</li>
+                      <li><code class="text-pink-300">unit</code> - y/year, m/month, w/week, d/day, h/hour, i/minute, s/second, f/millisecond</li>
+                      <li><code class="text-pink-300">asFloat</code> - optional, preserve decimal places (default: false)</li>
+                      <li><code class="text-pink-300">timezone1</code> - optional IANA timezone for date1</li>
+                      <li><code class="text-pink-300">timezone2</code> - optional IANA timezone for date2</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Examples</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">DATE_DIFF("2025-06-01T00:00:00Z", "2025-06-11T00:00:00Z", "days")
+--10
+
+DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-15T12:00:00Z", "days", true)
+--0.5
+
+DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-10T00:00:00Z", "days")
+---5 (negative: date2 before date1)</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- TIME_BUCKET -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-cyan-300 flex items-center">
+                  <span class="bg-cyan-500/20 text-cyan-400 text-xs font-mono px-2 py-1 rounded mr-3">TIME_BUCKET</span>
+                  Time Series Bucketing
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Buckets timestamp into fixed intervals. Useful for time series aggregation.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">TIME_BUCKET(<span class="text-pink-400">time</span>, <span class="text-cyan-400">interval</span>)</code>
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Example</h4>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Group events into 5-minute buckets
+FOR event IN events
+  COLLECT bucket = TIME_BUCKET(event.timestamp, "5m")
+  WITH COUNT INTO count
+  RETURN { bucket, count }</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Practical Examples -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Examples</h4>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Get events from the last 7 days
+FOR event IN events
+  FILTER event.created_at >= DATE_SUBTRACT(DATE_NOW(), 7, "days")
+  RETURN event
+
+-- Group orders by month
+FOR order IN orders
+  COLLECT month = DATE_TRUNC(order.date, "month")
+  AGGREGATE total = SUM(order.amount)
+  RETURN { month, total }
+
+-- Calculate user age
+FOR user IN users
+  LET age = DATE_DIFF(user.birthdate, DATE_NOW(), "years")
+  RETURN { name: user.name, age }
+
+-- Format date for display
+FOR doc IN documents
+  RETURN {
+    title: doc.title,
+    created: DATE_FORMAT(doc.created_at, "%B %d, %Y at %I:%M %p")
+  }</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/sdbql-functions-string" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            String Functions
+          </span>
+        </a>
+        <a href="/docs/sdbql-functions-array" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Array Functions
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

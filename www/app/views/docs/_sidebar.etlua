@@ -12,7 +12,20 @@ local sections = {
   {
     title = "Query Languages",
     items = {
-      { slug = "sdbql", label = "SDBQL Reference", icon = "fa-terminal", color = "primary" },
+      { slug = "sdbql", label = "SDBQL Reference", icon = "fa-terminal", color = "primary", subitems = {
+        { slug = "sdbql-syntax", label = "Syntax & Basics" },
+        { slug = "sdbql-operators", label = "Operators" },
+        { slug = "sdbql-mutations", label = "Data Mutations" },
+        { slug = "sdbql-graphs", label = "Graph Queries" },
+        { slug = "sdbql-aggregations", label = "Aggregations" },
+        { slug = "sdbql-functions-string", label = "String Functions" },
+        { slug = "sdbql-functions-date", label = "Date Functions" },
+        { slug = "sdbql-functions-array", label = "Array Functions" },
+        { slug = "sdbql-functions-numeric", label = "Numeric Functions" },
+        { slug = "sdbql-functions-geo", label = "Geo Functions" },
+        { slug = "sdbql-functions-search", label = "Search Functions" },
+        { slug = "sdbql-functions-misc", label = "Other Functions" },
+      }},
       { slug = "sql", label = "SQL Compatibility", icon = "fa-database", color = "info" },
     }
   },
@@ -91,14 +104,40 @@ end
     <h3 class="px-4 text-[10px] font-extrabold text-text-dim uppercase tracking-[0.15em] mb-3 opacity-60 ml-1"><%= section.title %></h3>
     <div class="space-y-0.5">
       <% for _, item in ipairs(section.items) do %>
-      <% local is_active = current_page == item.slug %>
+      <%
+        local is_active = current_page == item.slug
+        local has_active_subitem = false
+        if item.subitems then
+          for _, sub in ipairs(item.subitems) do
+            if current_page == sub.slug then
+              has_active_subitem = true
+              break
+            end
+          end
+        end
+        local is_expanded = is_active or has_active_subitem
+      %>
       <a href="/docs/<%= item.slug %>"
-         class="flex items-center gap-3 px-4 py-2 text-[13px] rounded-r-xl border-l-[3px] transition-all duration-200 group <%= get_color_class(item.color, is_active) %> <%= is_active and 'font-medium shadow-[0_0_20px_rgba(0,0,0,0.2)]' or '' %>">
-        <span class="flex items-center justify-center w-6 h-6 rounded-md <%= is_active and 'bg-current/10' or 'bg-white/5 group-hover:bg-white/10' %> transition-colors">
-          <i class="fas <%= item.icon %> text-xs opacity-90 <%= is_active and 'text-current' or '' %>"></i>
+         class="flex items-center gap-3 px-4 py-2 text-[13px] rounded-r-xl border-l-[3px] transition-all duration-200 group <%= get_color_class(item.color, is_active or has_active_subitem) %> <%= is_active and 'font-medium shadow-[0_0_20px_rgba(0,0,0,0.2)]' or '' %>">
+        <span class="flex items-center justify-center w-6 h-6 rounded-md <%= (is_active or has_active_subitem) and 'bg-current/10' or 'bg-white/5 group-hover:bg-white/10' %> transition-colors">
+          <i class="fas <%= item.icon %> text-xs opacity-90 <%= (is_active or has_active_subitem) and 'text-current' or '' %>"></i>
         </span>
         <span class="tracking-wide"><%= item.label %></span>
+        <% if item.subitems then %>
+        <i class="fas fa-chevron-down text-[10px] ml-auto opacity-50 transition-transform <%= is_expanded and 'rotate-180' or '' %>"></i>
+        <% end %>
       </a>
+      <% if item.subitems and is_expanded then %>
+      <div class="ml-8 pl-4 border-l border-white/10 space-y-0.5 mt-1 mb-2">
+        <% for _, sub in ipairs(item.subitems) do %>
+        <% local sub_active = current_page == sub.slug %>
+        <a href="/docs/<%= sub.slug %>"
+           class="block px-3 py-1.5 text-[12px] rounded-lg transition-all duration-200 <%= sub_active and 'bg-white/10 text-white font-medium' or 'text-text-muted hover:text-white hover:bg-white/5' %>">
+          <%= sub.label %>
+        </a>
+        <% end %>
+      </div>
+      <% end %>
       <% end %>
     </div>
   </div>

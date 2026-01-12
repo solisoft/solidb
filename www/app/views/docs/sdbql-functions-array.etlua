@@ -1,0 +1,291 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-orange-500 to-amber-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 mb-4 tracking-tight">
+            Array Functions
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Functions for creating, accessing, transforming, and combining arrays in SDBQL.
+          </p>
+        </div>
+      </div>
+
+      <!-- Array Functions -->
+      <section id="array-functions" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-orange-500/10 to-amber-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+              </svg>
+              Array Operations
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+
+            <!-- Array Spread Operator -->
+            <div class="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-xl border border-orange-500/20 overflow-hidden">
+              <div class="p-5 border-b border-orange-500/20 bg-orange-500/5">
+                <h3 class="text-lg font-bold text-orange-300 flex items-center">
+                  <span class="bg-orange-500/20 text-orange-400 text-xs font-mono px-2 py-1 rounded mr-3">[*]</span>
+                  Array Spread Operator
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-gray-300 leading-relaxed">
+                  The array spread operator <code class="text-orange-400">[*]</code> extracts a specific field from all elements in an array, returning a new array with just those values. This is similar to a map operation.
+                </p>
+
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">-- Extract user_key from all attendees
+FOR event IN events
+  RETURN event.attendees[*].user_key
+-- Result: [["u1", "u2"], ["u3"]]
+
+-- Nested field extraction
+FOR doc IN data
+  RETURN doc.items[*].user.name
+-- Result: [["Alice", "Bob"]]</code></pre>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                    <h5 class="text-orange-300 font-bold mb-2 text-sm">Basic Usage</h5>
+                    <pre><code class="language-sql text-xs">-- Given: {items: [{name: "A"}, {name: "B"}]}
+doc.items[*].name  -- ["A", "B"]</code></pre>
+                  </div>
+                  <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                    <h5 class="text-orange-300 font-bold mb-2 text-sm">Chained Spread</h5>
+                    <pre><code class="language-sql text-xs">-- Given: {items: [{tags: ["a","b"]}, {tags: ["c"]}]}
+doc.items[*].tags[*]  -- ["a", "b", "c"]</code></pre>
+                  </div>
+                  <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                    <h5 class="text-orange-300 font-bold mb-2 text-sm">Missing Fields</h5>
+                    <pre><code class="language-sql text-xs">-- Given: {items: [{name: "A"}, {other: "B"}]}
+doc.items[*].name  -- ["A", null]</code></pre>
+                  </div>
+                  <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                    <h5 class="text-orange-300 font-bold mb-2 text-sm">Bare Spread</h5>
+                    <pre><code class="language-sql text-xs">-- Given: {values: [1, 2, 3]}
+doc.values[*]  -- [1, 2, 3]</code></pre>
+                  </div>
+                </div>
+
+                <div class="bg-gray-800/40 rounded-lg p-4 border border-white/5 mt-4">
+                  <p class="text-sm text-gray-400">
+                    <span class="text-orange-400 font-bold">Note:</span>
+                    If the base value is not an array, an empty array is returned.
+                    When a field is missing from an array element, <code class="text-gray-300">null</code> is included in the result.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Access Functions -->
+            <div>
+              <h3 class="text-lg font-bold text-orange-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-orange-500 rounded-full mr-3"></span>
+                Access Functions
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">FIRST(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns the first element.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FIRST([5, 1, 9]) --5</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">LAST(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns the last element.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LAST([5, 1, 9]) --9</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">NTH(arr, n)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns element at index n (0-based).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN NTH([5, 1, 9], 1) --1</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">SLICE(arr, start, len?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Extracts a portion of the array.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SLICE([1, 2, 3, 4, 5], 1, 3) --[2, 3, 4]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">COLLECTION_COUNT(coll)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns the number of documents in a collection.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COLLECTION_COUNT("users") --100</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Transformation Functions -->
+            <div>
+              <h3 class="text-lg font-bold text-orange-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-orange-500 rounded-full mr-3"></span>
+                Transformation Functions
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">UNIQUE(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Removes duplicate values.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UNIQUE([1, 2, 2, 3]) --[1, 2, 3]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">SORTED(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Sorts the array in ascending order.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SORTED([3, 1, 2]) --[1, 2, 3]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">SORTED_UNIQUE(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Sorts and removes duplicates.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SORTED_UNIQUE([3, 1, 2, 2]) --[1, 2, 3]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">REVERSE(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Reverses the array order.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REVERSE([1, 2, 3]) --[3, 2, 1]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">FLATTEN(arr, depth?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Flattens nested arrays. Depth defaults to 1.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FLATTEN([[1, 2], [3]], 1) --[1, 2, 3]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">RANGE(start, end, step?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Generates an array of numbers.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN RANGE(1, 5) --[1, 2, 3, 4, 5]
+RETURN RANGE(1, 5, 2) --[1, 3, 5]</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Combination Functions -->
+            <div>
+              <h3 class="text-lg font-bold text-orange-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-orange-500 rounded-full mr-3"></span>
+                Combination Functions
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">PUSH(arr, elem)</code>
+                  <p class="text-sm text-gray-400 mb-3">Appends an element to the array.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PUSH([1, 2], 3) --[1, 2, 3]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">APPEND(arr1, arr2)</code>
+                  <p class="text-sm text-gray-400 mb-3">Concatenates two arrays.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN APPEND([1], [2, 3]) --[1, 2, 3]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">UNION(arr1, arr2)</code>
+                  <p class="text-sm text-gray-400 mb-3">Union of arrays (produces unique values).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UNION([1, 2], [2, 3]) --[1, 2, 3]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">INTERSECTION(arr1, arr2...)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns common elements between arrays.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN INTERSECTION([1, 2], [2, 3]) --[2]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">MINUS(arr1, arr2)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns elements in arr1 not in arr2.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MINUS([1, 2, 3], [2]) --[1, 3]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">ZIP(arr1, arr2)</code>
+                  <p class="text-sm text-gray-400 mb-3">Zips two arrays into an array of pairs.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ZIP([1, 2], ["a", "b"]) --[[1, "a"], [2, "b"]]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">REMOVE_VALUE(arr, val, limit?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Removes all occurrences of value from array. Optional limit.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REMOVE_VALUE([1, 2, 1, 3], 1) --[2, 3]</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Search Functions -->
+            <div>
+              <h3 class="text-lg font-bold text-orange-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-orange-500 rounded-full mr-3"></span>
+                Search Functions
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">POSITION(arr, elem, start?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns 0-based index if element exists, -1 otherwise. Optional start index.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN POSITION([10, 20], 20) --1
+RETURN POSITION([10, 20], 30) ---1</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">CONTAINS_ARRAY(arr, elem)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns true if array contains element, false otherwise.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONTAINS_ARRAY([1, 2], 3) --false
+RETURN CONTAINS_ARRAY([1, 2], 1) --true</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Array Examples -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Examples</h4>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Combine and deduplicate tags
+LET tags1 = ["rust", "database"]
+LET tags2 = ["database", "nosql"]
+RETURN UNION(tags1, tags2)  -- ["rust", "database", "nosql"]
+
+-- Get top 3 values from sorted array
+LET values = [5, 2, 8, 1, 9, 3]
+RETURN SLICE(SORTED(values), 3, 3)  -- [5, 8, 9] (last 3)
+
+-- Flatten nested arrays
+LET nested = [[1, 2], [3, [4, 5]]]
+RETURN FLATTEN(nested, 2)  -- [1, 2, 3, 4, 5]
+
+-- Find users with specific skills
+FOR user IN users
+  FILTER LENGTH(INTERSECTION(user.skills, ["rust", "go"])) > 0
+  RETURN user.name
+
+-- Extract all unique tags from documents
+LET allTags = (FOR doc IN documents RETURN doc.tags)
+RETURN SORTED_UNIQUE(FLATTEN(allTags))</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/sdbql-functions-date" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Date Functions
+          </span>
+        </a>
+        <a href="/docs/sdbql-functions-numeric" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Numeric Functions
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

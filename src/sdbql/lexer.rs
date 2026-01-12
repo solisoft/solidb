@@ -506,6 +506,17 @@ impl Lexer {
                 if self.current_char == Some('>') {
                     self.advance();
                     Token::Arrow
+                } else if self.current_char == Some('-') {
+                    // Comment: skip until end of line
+                    self.advance();
+                    while let Some(ch) = self.current_char {
+                        if ch == '\n' {
+                            self.advance();
+                            break;
+                        }
+                        self.advance();
+                    }
+                    return self.next_token();
                 } else {
                     Token::Minus
                 }
@@ -835,5 +846,72 @@ mod tests {
     fn test_error_unexpected_char() {
         let result = Lexer::new("$").tokenize();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_comment_single_line() {
+        // Comment at end of line
+        let tokens = tokenize("FOR doc -- this is a comment\nIN users");
+        assert_eq!(tokens[0], Token::For);
+        assert_eq!(tokens[1], Token::Identifier("doc".to_string()));
+        assert_eq!(tokens[2], Token::In);
+        assert_eq!(tokens[3], Token::Identifier("users".to_string()));
+    }
+
+    #[test]
+    fn test_comment_at_start() {
+        // Comment at start of query
+        let tokens = tokenize("-- comment\nFOR doc IN users");
+        assert_eq!(tokens[0], Token::For);
+        assert_eq!(tokens[1], Token::Identifier("doc".to_string()));
+    }
+
+    #[test]
+    fn test_comment_at_end() {
+        // Comment at end of query (no newline after)
+        let tokens = tokenize("RETURN 1 -- final comment");
+        assert_eq!(tokens[0], Token::Return);
+        assert_eq!(tokens[1], Token::Integer(1));
+        assert_eq!(tokens[2], Token::Eof);
+    }
+
+    #[test]
+    fn test_comment_full_line() {
+        // Full line comment
+        let tokens = tokenize("FOR doc IN users\n-- skip this line\nRETURN doc");
+        assert_eq!(tokens[0], Token::For);
+        assert_eq!(tokens[1], Token::Identifier("doc".to_string()));
+        assert_eq!(tokens[2], Token::In);
+        assert_eq!(tokens[3], Token::Identifier("users".to_string()));
+        assert_eq!(tokens[4], Token::Return);
+        assert_eq!(tokens[5], Token::Identifier("doc".to_string()));
+    }
+
+    #[test]
+    fn test_comment_multiple() {
+        // Multiple comments
+        let tokens = tokenize("-- first\nFOR -- second\ndoc -- third\nIN users");
+        assert_eq!(tokens[0], Token::For);
+        assert_eq!(tokens[1], Token::Identifier("doc".to_string()));
+        assert_eq!(tokens[2], Token::In);
+        assert_eq!(tokens[3], Token::Identifier("users".to_string()));
+    }
+
+    #[test]
+    fn test_minus_not_comment() {
+        // Single minus should still work
+        let tokens = tokenize("5 - 3");
+        assert_eq!(tokens[0], Token::Integer(5));
+        assert_eq!(tokens[1], Token::Minus);
+        assert_eq!(tokens[2], Token::Integer(3));
+    }
+
+    #[test]
+    fn test_arrow_not_comment() {
+        // Arrow should still work
+        let tokens = tokenize("x -> y");
+        assert_eq!(tokens[0], Token::Identifier("x".to_string()));
+        assert_eq!(tokens[1], Token::Arrow);
+        assert_eq!(tokens[2], Token::Identifier("y".to_string()));
     }
 }

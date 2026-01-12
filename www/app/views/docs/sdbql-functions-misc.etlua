@@ -1,0 +1,351 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-gray-500 to-slate-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-gray-300 via-slate-300 to-zinc-300 mb-4 tracking-tight">
+            Other Functions
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Type checking, type casting, conditional logic, object manipulation, and utility functions.
+          </p>
+        </div>
+      </div>
+
+      <!-- Type Checking Functions -->
+      <section id="type-checking" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-teal-500/10 to-cyan-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              Type Checking Functions
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              Functions to check the type of values at runtime.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_ARRAY(val)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns true if value is an array.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_ARRAY([1,2]) --true</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_BOOLEAN(val)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns true if value is a boolean.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_BOOLEAN(true) --true</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_NUMBER(val)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns true if value is a number.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_NUMBER(42) --true</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_INTEGER(val)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns true if value is an integer (no decimals).</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_INTEGER(3.14) --false</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_STRING(val)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns true if value is a string.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_STRING("hi") --true</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_OBJECT(val)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns true if value is an object.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_OBJECT({a:1}) --true</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_NULL(val)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns true if value is null.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_NULL(null) --true</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_DATETIME(val)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns true if value is an ISO 8601 date string.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_DATETIME("2024-01-15T10:30:00Z") --true</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">TYPENAME(val)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns the type name as a string.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TYPENAME([1,2]) --"array"
+RETURN TYPENAME("hi") --"string"</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Type Casting Functions -->
+      <section id="type-casting" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-purple-500/10 to-violet-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+              </svg>
+              Type Casting Functions
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              Functions to convert values between different types.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TO_BOOL(value)</code>
+                <p class="text-sm text-gray-400 mb-3">Casts value to boolean.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TO_BOOL(null) --false
+RETURN TO_BOOL(1) --true
+RETURN TO_BOOL(0) --false</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TO_NUMBER(value)</code>
+                <p class="text-sm text-gray-400 mb-3">Casts value to number.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TO_NUMBER("123") --123
+RETURN TO_NUMBER(true) --1
+RETURN TO_NUMBER("foo") --0</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TO_STRING(value)</code>
+                <p class="text-sm text-gray-400 mb-3">Casts value to string.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TO_STRING(123) --"123"
+RETURN TO_STRING(true) --"true"
+RETURN TO_STRING(null) --""</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TO_ARRAY(value)</code>
+                <p class="text-sm text-gray-400 mb-3">Casts value to array.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TO_ARRAY(null) --[]
+RETURN TO_ARRAY("foo") --["foo"]
+RETURN TO_ARRAY({a:1}) --[1]</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Logical & Conditional Functions -->
+      <section id="logical" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-blue-500/10 to-indigo-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              Logical & Conditional
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              Functions for conditional logic and null handling.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">IF(cond, true, false)</code>
+                <p class="text-sm text-gray-400 mb-3">Condition evaluation. Returns true_val if cond is true, else false_val.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IF(1 > 0, "yes", "no") --"yes"
+RETURN IF(null, 1, 0) --0</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">cond ? true : false</code>
+                <p class="text-sm text-gray-400 mb-3">Ternary operator. Syntactic sugar for IF function.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN doc.age >= 18 ? "Adult" : "Minor"
+RETURN a ? b ? "both" : "a" : "none"</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">COALESCE(val1, val2, ...)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns the first non-null value. Alias: NOT_NULL.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COALESCE(null, 0, 5) --0</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Object Functions -->
+      <section id="object" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-gray-500/10 to-slate-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+              </svg>
+              Object Functions
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              Functions for manipulating objects and documents.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">MERGE(obj1, obj2)</code>
+                <p class="text-sm text-gray-400 mb-3">Shallow merge of objects.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MERGE({a:1}, {b:2})</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">LENGTH(val)</code>
+                <p class="text-sm text-gray-400 mb-3">Count elements in array/object.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LENGTH([1,2,3]) --3</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">HAS(doc, attr)</code>
+                <p class="text-sm text-gray-400 mb-3">Checks if document contains attribute.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FILTER HAS(doc, "email")</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">KEEP(doc, attr...)</code>
+                <p class="text-sm text-gray-400 mb-3">Keep only specified attributes.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN KEEP(doc, "name", "email")</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">ATTRIBUTES(doc, removeInternal?, sort?)</code>
+                <p class="text-sm text-gray-400 mb-3">Top-level attribute keys of the document.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ATTRIBUTES(doc, true)</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">VALUES(doc, removeInternal?)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns top-level attribute values.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VALUES(doc, true)</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">UNSET(doc, attr...)</code>
+                <p class="text-sm text-gray-400 mb-3">Removes specified attributes.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UNSET(doc, "password")</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Collection Functions -->
+      <section id="collection" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-cyan-500/10 to-teal-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+              </svg>
+              Collection Functions
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded border border-cyan-500/30 w-fit mb-3">COLLECTION_COUNT(name)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns the number of documents in a collection. Efficient metadata lookup without iterating documents.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COLLECTION_COUNT("users") --42</code></pre>
+              </div>
+            </div>
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-2">Usage Example</h4>
+              <p class="text-sm text-gray-400 mb-3">Get document counts for multiple collections:</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">RETURN {
+  users: COLLECTION_COUNT("users"),
+  orders: COLLECTION_COUNT("orders"),
+  products: COLLECTION_COUNT("products")
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Miscellaneous Functions -->
+      <section id="misc" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-indigo-500/10 to-purple-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+              </svg>
+              Utility Functions
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              Miscellaneous utility functions for UUIDs, hashing, encoding, and debugging.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">UUIDV4()</code>
+                <p class="text-sm text-gray-400 mb-3">Generates a random v4 UUID.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UUIDV4() --"c4d3..."</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">UUIDV7()</code>
+                <p class="text-sm text-gray-400 mb-3">Generates a time-ordered v7 UUID.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UUIDV7() --"018..."</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">MD5(string)</code>
+                <p class="text-sm text-gray-400 mb-3">Calculates MD5 hash.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MD5("hello")</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">SHA256(string)</code>
+                <p class="text-sm text-gray-400 mb-3">Calculates SHA256 hash.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SHA256("hello")</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-amber-500/20 px-2 py-1 rounded border border-amber-500/30 w-fit mb-3">BASE64_ENCODE(string)</code>
+                <p class="text-sm text-gray-400 mb-3">Encodes string to Base64.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN BASE64_ENCODE("hello")</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-amber-500/20 px-2 py-1 rounded border border-amber-500/30 w-fit mb-3">BASE64_DECODE(string)</code>
+                <p class="text-sm text-gray-400 mb-3">Decodes Base64 string.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN BASE64_DECODE("aGVsbG8=")</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">SLEEP(ms)</code>
+                <p class="text-sm text-gray-400 mb-3">Pauses execution (testing).</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SLEEP(1000)</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">ASSERT(cond, msg)</code>
+                <p class="text-sm text-gray-400 mb-3">Throws error if condition false.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ASSERT(x > 0, "Fail")</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/sdbql-functions-search" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Search Functions
+          </span>
+        </a>
+        <a href="/docs/sdbql" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Back to Overview
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

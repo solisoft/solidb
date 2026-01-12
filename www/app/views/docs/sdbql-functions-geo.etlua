@@ -1,0 +1,200 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-green-400 via-emerald-400 to-teal-400 mb-4 tracking-tight">
+            Geo Functions
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Geospatial functions for distance calculations and location-based queries.
+          </p>
+        </div>
+      </div>
+
+      <!-- Geospatial Functions -->
+      <section id="geo-functions" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-green-500/10 to-emerald-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              Geospatial Functions
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              SDBQL provides geospatial functions for calculating distances between coordinates using the Haversine formula, which accounts for Earth's curvature.
+            </p>
+
+            <!-- Distance Functions -->
+            <div>
+              <h3 class="text-lg font-bold text-green-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-green-500 rounded-full mr-3"></span>
+                Distance Calculations
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">DISTANCE(lat1, lon1, lat2, lon2)</code>
+                  <p class="text-sm text-gray-400 mb-3">Calculates distance in meters between two coordinate pairs using the Haversine formula.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Distance from Paris to London
+RETURN DISTANCE(48.8566, 2.3522, 51.5074, -0.1278)
+-- ~343,563 meters (343 km)</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">GEO_DISTANCE(p1, p2)</code>
+                  <p class="text-sm text-gray-400 mb-3">Distance in meters between GeoPoint objects (with lat/lon properties).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Using GeoPoint objects
+LET paris = {lat: 48.8566, lon: 2.3522}
+LET london = {lat: 51.5074, lon: -0.1278}
+RETURN GEO_DISTANCE(paris, london)</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Info Box -->
+            <div class="bg-green-900/10 border border-green-500/30 rounded-lg p-4 flex items-start">
+              <svg class="w-5 h-5 text-green-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <div>
+                <h4 class="text-green-300 font-bold mb-1 text-sm">Haversine Formula</h4>
+                <p class="text-sm text-green-200/70">
+                  The Haversine formula calculates the great-circle distance between two points on a sphere using their latitude and longitude coordinates. This provides accurate distance calculations for most use cases on Earth.
+                </p>
+              </div>
+            </div>
+
+            <!-- Practical Examples -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Examples</h4>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Find places within 10km of a location
+FOR place IN places
+  LET dist = DISTANCE(place.lat, place.lon, 48.8566, 2.3522)
+  FILTER dist <= 10000
+  SORT dist ASC
+  RETURN { name: place.name, distance: ROUND(dist) }
+
+-- Find the nearest restaurant to user
+FOR restaurant IN restaurants
+  LET dist = DISTANCE(restaurant.lat, restaurant.lon, @userLat, @userLon)
+  SORT dist ASC
+  LIMIT 1
+  RETURN { name: restaurant.name, distance: ROUND(dist) }
+
+-- Find all stores within 5km, sorted by distance
+FOR store IN stores
+  LET dist = DISTANCE(store.location.lat, store.location.lon, @lat, @lon)
+  FILTER dist <= 5000
+  SORT dist ASC
+  RETURN {
+    name: store.name,
+    address: store.address,
+    distance_km: ROUND(dist / 1000, 2)
+  }
+
+-- Group locations by distance ranges
+FOR loc IN locations
+  LET dist = DISTANCE(loc.lat, loc.lon, @centerLat, @centerLon)
+  COLLECT range = CASE
+    WHEN dist < 1000 THEN "< 1km"
+    WHEN dist < 5000 THEN "1-5km"
+    WHEN dist < 10000 THEN "5-10km"
+    ELSE "> 10km"
+  END
+  WITH COUNT INTO count
+  RETURN { range, count }
+
+-- Calculate delivery zone
+FOR order IN orders
+  LET customerLoc = (FOR c IN customers FILTER c._key == order.customer_key RETURN c)[0]
+  LET warehouseLoc = (FOR w IN warehouses FILTER w._key == order.warehouse_key RETURN w)[0]
+  LET dist = DISTANCE(
+    customerLoc.lat, customerLoc.lon,
+    warehouseLoc.lat, warehouseLoc.lon
+  )
+  RETURN {
+    order_id: order._key,
+    distance_km: ROUND(dist / 1000, 1),
+    delivery_zone: dist < 10000 ? "local" : dist < 50000 ? "regional" : "national"
+  }
+
+-- Find locations within a bounding box (approximate)
+LET centerLat = 48.8566
+LET centerLon = 2.3522
+LET radiusKm = 10
+LET latDelta = radiusKm / 111  -- approx km per degree lat
+LET lonDelta = radiusKm / (111 * COS(centerLat * PI() / 180))
+
+FOR place IN places
+  FILTER place.lat >= centerLat - latDelta
+  FILTER place.lat <= centerLat + latDelta
+  FILTER place.lon >= centerLon - lonDelta
+  FILTER place.lon <= centerLon + lonDelta
+  LET exactDist = DISTANCE(place.lat, place.lon, centerLat, centerLon)
+  FILTER exactDist <= radiusKm * 1000
+  SORT exactDist
+  RETURN { name: place.name, distance_m: ROUND(exactDist) }</code></pre>
+            </div>
+
+            <!-- Tips -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Tips for Geo Queries</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-400">
+                <div>
+                  <h5 class="text-green-300 font-semibold mb-2">Performance</h5>
+                  <ul class="list-disc list-inside space-y-1">
+                    <li>Create geo indexes on lat/lon fields</li>
+                    <li>Use bounding box pre-filtering for large datasets</li>
+                    <li>Store coordinates in a consistent format</li>
+                  </ul>
+                </div>
+                <div>
+                  <h5 class="text-green-300 font-semibold mb-2">Best Practices</h5>
+                  <ul class="list-disc list-inside space-y-1">
+                    <li>Use decimal degrees (not DMS)</li>
+                    <li>Validate coordinates are within valid ranges</li>
+                    <li>Consider timezone for location-based features</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/sdbql-functions-numeric" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Numeric Functions
+          </span>
+        </a>
+        <a href="/docs/sdbql-functions-search" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Search Functions
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

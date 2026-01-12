@@ -1,0 +1,706 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 mb-4 tracking-tight">
+            Syntax & Basics
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Learn the fundamental SDBQL syntax including query structure, pipeline operator, null coalescing, optional chaining, CASE expressions, template strings, and window functions.
+          </p>
+        </div>
+      </div>
+
+      <!-- Basic Syntax -->
+      <section id="syntax" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+              </svg>
+              Basic Syntax
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              SDBQL queries follow a declarative structure that reads like a sentence.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <pre><code class="language-sql text-sm">LET variable = expression
+FOR variable IN collection
+  FILTER expression
+  SORT field [ASC|DESC]
+  LIMIT [offset,] count
+  RETURN expression</code></pre>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-indigo-500/30 transition-colors">
+                <h3 class="text-indigo-300 font-bold mb-2 flex items-center">
+                  <span class="bg-indigo-500/20 p-1.5 rounded mr-2 text-xs">LET</span>
+                  Variable Assignment
+                </h3>
+                <p class="text-sm text-gray-400">Binds values or subquery results to variables.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-indigo-500/30 transition-colors">
+                <h3 class="text-indigo-300 font-bold mb-2 flex items-center">
+                  <span class="bg-indigo-500/20 p-1.5 rounded mr-2 text-xs">FOR</span>
+                  Iteration
+                </h3>
+                <p class="text-sm text-gray-400">Iterates over collections or arrays.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-indigo-500/30 transition-colors">
+                <h3 class="text-indigo-300 font-bold mb-2 flex items-center">
+                  <span class="bg-indigo-500/20 p-1.5 rounded mr-2 text-xs">FILTER</span>
+                  Filtering
+                </h3>
+                <p class="text-sm text-gray-400">Restricts results based on conditions.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-indigo-500/30 transition-colors">
+                <h3 class="text-indigo-300 font-bold mb-2 flex items-center">
+                  <span class="bg-indigo-500/20 p-1.5 rounded mr-2 text-xs">RETURN</span>
+                  Projection
+                </h3>
+                <p class="text-sm text-gray-400">Constructs the result documents.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Range Expressions -->
+      <section id="range" class="scroll-mt-24">
+        <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+          <div class="p-5 border-b border-white/5 bg-white/5">
+            <h3 class="text-lg font-bold text-orange-300 flex items-center">
+              <span class="bg-orange-500/20 text-orange-400 text-xs font-mono px-2 py-1 rounded mr-3">..</span>
+              Range Expressions
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              Create numeric arrays using the range operator <code class="text-orange-300">start..end</code> (inclusive on both ends).
+            </p>
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <code class="text-sm text-gray-300"><span class="text-orange-400">1..5</span> -> [1, 2, 3, 4, 5]</code>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Basic Range</h4>
+                <pre><code class="language-sql text-sm">-- Returns [1, 2, 3, 4, 5]
+RETURN 1..5
+
+-- Negative numbers
+RETURN -2..2  -- [-2, -1, 0, 1, 2]</code></pre>
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">In FOR Loop</h4>
+                <pre><code class="language-sql text-sm">FOR i IN 1..10
+  RETURN i * 2
+
+-- With expressions
+LET n = 5
+FOR i IN 1..n
+  RETURN i</code></pre>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Batch Insert with Range</h4>
+              <pre><code class="language-sql text-sm">FOR i IN 1..100
+  INSERT { index: i, name: CONCAT("Item", i) } INTO items
+  RETURN i</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Pipeline Operator -->
+      <section id="pipeline" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-xl border border-purple-500/20 overflow-hidden">
+          <div class="p-5 border-b border-purple-500/20 bg-purple-500/5">
+            <h3 class="text-lg font-bold text-purple-300 flex items-center">
+              <span class="bg-purple-500/20 text-purple-400 text-xs font-mono px-2 py-1 rounded mr-3">|></span>
+              Pipeline Operator
+              <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              Chain function calls for readable data transformations. The <code class="text-purple-300">|></code> operator passes the left value as the <strong>first argument</strong> to the right-side function.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-sql text-sm">-- String transformations
+RETURN "  hello world  " |> TRIM() |> UPPER() |> SPLIT(" ")
+-- Result: ["HELLO", "WORLD"]
+
+-- Array operations
+RETURN [3, 1, 4, 1, 5] |> UNIQUE() |> SORTED() |> REVERSE() |> FIRST()
+-- Result: 5
+
+-- With extra arguments
+RETURN 3.14159 |> ROUND(2) |> TO_STRING()
+-- Result: "3.14"</code></pre>
+            </div>
+
+            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-4">Lambda Expressions</h4>
+            <p class="text-sm text-gray-400 mb-3">
+              Use <code class="text-purple-300">x -> expression</code> syntax for inline transformations with higher-order functions like FILTER, MAP, ANY, and ALL.
+            </p>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-purple-300 font-bold mb-2 text-sm">FILTER with Lambda</h5>
+                <pre><code class="language-sql text-xs">[1, 2, 3, 4, 5] |> FILTER(x -> x > 2)
+-- Result: [3, 4, 5]
+
+-- Complex condition
+items |> FILTER(i -> i.price > 50 AND i.stock > 0)</code></pre>
+              </div>
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-purple-300 font-bold mb-2 text-sm">MAP with Lambda</h5>
+                <pre><code class="language-sql text-xs">[1, 2, 3] |> MAP(x -> x * 2)
+-- Result: [2, 4, 6]
+
+-- Extract fields
+users |> MAP(u -> u.name)</code></pre>
+              </div>
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-purple-300 font-bold mb-2 text-sm">ANY / ALL</h5>
+                <pre><code class="language-sql text-xs">[1, 2, 3] |> ANY(x -> x > 2)  -- true
+[1, 2, 3] |> ALL(x -> x > 0)  -- true</code></pre>
+              </div>
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-purple-300 font-bold mb-2 text-sm">REDUCE</h5>
+                <pre><code class="language-sql text-xs">-- Sum: (accumulator, item) -> expr, initial
+[1, 2, 3, 4, 5] |> REDUCE((acc, x) -> acc + x, 0)
+-- Result: 15
+
+-- Concatenate strings
+["a", "b", "c"] |> REDUCE((acc, x) -> CONCAT(acc, x), "")
+-- Result: "abc"</code></pre>
+              </div>
+            </div>
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-purple-300 font-bold mb-2 text-sm">Chaining Pipeline Operations</h5>
+              <pre><code class="language-sql text-xs">-- Filter, transform, and aggregate in one chain
+orders
+  |> FILTER(o -> o.status == "pending")
+  |> MAP(o -> o.total)
+  |> REDUCE((sum, t) -> sum + t, 0)
+-- Returns total of pending orders</code></pre>
+            </div>
+
+            <div class="bg-gray-800/40 rounded-lg p-4 border border-white/5 mt-4">
+              <p class="text-sm text-gray-400">
+                <span class="text-purple-400 font-bold">Supported Functions:</span>
+                FIRST, LAST, LENGTH, REVERSE, SORTED, UNIQUE, FLATTEN, UPPER, LOWER, TRIM, SPLIT, ROUND, ABS, FLOOR, CEIL, TO_STRING, TO_NUMBER, FILTER, MAP, ANY, ALL, FIND, REDUCE
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Null Coalescing Operator -->
+      <section id="null-coalescing" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-cyan-500/10 to-teal-500/10 rounded-xl border border-cyan-500/20 overflow-hidden">
+          <div class="p-5 border-b border-cyan-500/20 bg-cyan-500/5">
+            <h3 class="text-lg font-bold text-cyan-300 flex items-center">
+              <span class="bg-cyan-500/20 text-cyan-400 text-xs font-mono px-2 py-1 rounded mr-3">??</span>
+              Null Coalescing Operator
+              <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              The <code class="text-cyan-300">??</code> operator returns the left operand if it's not null, otherwise evaluates and returns the right operand. Provides a concise way to handle null values.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-sql text-sm">-- Basic usage
+RETURN null ?? "default"       -- Result: "default"
+RETURN "value" ?? "default"    -- Result: "value"
+
+-- Chaining multiple fallbacks
+RETURN null ?? null ?? "last"  -- Result: "last"
+
+-- With object fields
+FOR doc IN users
+  RETURN doc.nickname ?? doc.name ?? "Anonymous"</code></pre>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-cyan-300 font-bold mb-2 text-sm">Difference from COALESCE()</h5>
+                <p class="text-xs text-gray-400 mb-2">
+                  <code class="text-cyan-300">??</code> is syntax sugar for the COALESCE function but with short-circuit evaluation.
+                </p>
+                <pre><code class="language-sql text-xs">-- These are equivalent:
+doc.field ?? "default"
+COALESCE(doc.field, "default")</code></pre>
+              </div>
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-cyan-300 font-bold mb-2 text-sm">Non-null Falsy Values</h5>
+                <p class="text-xs text-gray-400 mb-2">
+                  Only <code class="text-cyan-300">null</code> triggers fallback. Other falsy values pass through.
+                </p>
+                <pre><code class="language-sql text-xs">0 ?? 42         -- Result: 0
+"" ?? "default" -- Result: ""
+false ?? true   -- Result: false</code></pre>
+              </div>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-cyan-300 font-bold mb-2 text-sm">Combine with Pipeline</h5>
+              <pre><code class="language-sql text-xs">-- Get first item or default to 0
+RETURN ([] |> FIRST()) ?? 0    -- Result: 0
+
+-- Process with fallback
+items |> FILTER(x -> x.active) |> FIRST() ?? { name: "None" }</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Optional Chaining -->
+      <section id="optional-chaining" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-rose-500/10 to-pink-500/10 rounded-xl border border-rose-500/20 overflow-hidden">
+          <div class="p-5 border-b border-rose-500/20 bg-rose-500/5">
+            <h3 class="text-lg font-bold text-rose-300 flex items-center">
+              <span class="bg-rose-500/20 text-rose-400 text-xs font-mono px-2 py-1 rounded mr-3">?.</span>
+              Optional Chaining
+              <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              The <code class="text-rose-300">?.</code> operator safely accesses nested properties. If the base is <code class="text-rose-300">null</code> or not an object, it returns <code class="text-rose-300">null</code> instead of throwing an error.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-sql text-sm">-- Safe nested access
+FOR doc IN users
+  RETURN {
+    name: doc.name,
+    city: doc.address?.city,           -- null if no address
+    lat: doc.address?.location?.lat    -- null if address or location missing
+  }
+
+-- Chained optional access
+doc.profile?.settings?.theme?.color    -- null at any missing level</code></pre>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-rose-300 font-bold mb-2 text-sm">Without Optional Chaining</h5>
+                <pre><code class="language-sql text-xs">-- Verbose null checks
+doc.address != null
+  ? (doc.address.location != null
+      ? doc.address.location.lat
+      : null)
+  : null</code></pre>
+              </div>
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-rose-300 font-bold mb-2 text-sm">With Optional Chaining</h5>
+                <pre><code class="language-sql text-xs">-- Clean and concise
+doc.address?.location?.lat</code></pre>
+              </div>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-rose-300 font-bold mb-2 text-sm">Combine with ?? for Defaults</h5>
+              <pre><code class="language-sql text-xs">-- Optional chaining + null coalescing
+FOR doc IN users
+  RETURN {
+    name: doc.name,
+    city: doc.address?.city ?? "Unknown",
+    theme: doc.profile?.settings?.theme ?? "light"
+  }</code></pre>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-rose-300 font-bold mb-2 text-sm">Use in FILTER</h5>
+              <pre><code class="language-sql text-xs">-- Filter safely with optional chaining
+FOR doc IN users
+  FILTER doc.address?.city == "New York"
+  RETURN doc
+
+-- Find users with missing data
+FOR doc IN users
+  FILTER doc.address?.city == null
+  RETURN doc.name</code></pre>
+            </div>
+
+            <p class="text-xs text-gray-500 mt-4">
+              <span class="text-rose-400 font-bold">Note:</span>
+              <code class="text-rose-300">?.</code> returns <code class="text-rose-300">null</code> for non-object types (arrays, strings, numbers). For array element access, use regular bracket notation with null checks.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- CASE/WHEN Expressions -->
+      <section id="case-when" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-indigo-500/10 to-violet-500/10 rounded-xl border border-indigo-500/20 overflow-hidden">
+          <div class="p-5 border-b border-indigo-500/20 bg-indigo-500/5">
+            <h3 class="text-lg font-bold text-indigo-300 flex items-center">
+              <span class="bg-indigo-500/20 text-indigo-400 text-xs font-mono px-2 py-1 rounded mr-3">CASE</span>
+              CASE/WHEN Expressions
+              <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              SQL-style conditional expressions with two forms: <code class="text-indigo-300">Simple CASE</code> for value matching and <code class="text-indigo-300">Searched CASE</code> for condition evaluation.
+            </p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                <h5 class="text-indigo-300 font-bold mb-2 text-sm">Simple CASE</h5>
+                <pre><code class="language-sql text-xs">-- Match expression against values
+CASE doc.category
+    WHEN "electronics" THEN "Tech"
+    WHEN "books" THEN "Reading"
+    WHEN "clothing" THEN "Fashion"
+    ELSE "Other"
+END</code></pre>
+              </div>
+              <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                <h5 class="text-indigo-300 font-bold mb-2 text-sm">Searched CASE</h5>
+                <pre><code class="language-sql text-xs">-- Evaluate conditions
+CASE
+    WHEN doc.price >= 500 THEN "premium"
+    WHEN doc.price >= 100 THEN "mid-range"
+    WHEN doc.price >= 50 THEN "budget"
+    ELSE "bargain"
+END</code></pre>
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-indigo-300 font-bold mb-2 text-sm">Practical Example</h5>
+              <pre><code class="language-sql text-sm">FOR doc IN products
+  RETURN {
+    name: doc.name,
+    price_tier: CASE
+      WHEN doc.price >= 500 THEN "premium"
+      WHEN doc.price >= 100 THEN "mid-range"
+      ELSE "budget"
+    END,
+    availability: CASE
+      WHEN doc.stock == 0 THEN "Out of Stock"
+      WHEN doc.stock < 50 THEN "Low Stock"
+      ELSE "In Stock"
+    END
+  }</code></pre>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-indigo-300 font-bold mb-2 text-sm">Use in LET for Reuse</h5>
+                <pre><code class="language-sql text-xs">FOR doc IN products
+  LET tier = CASE
+    WHEN doc.price >= 100 THEN "high"
+    ELSE "low"
+  END
+  FILTER tier == "high"
+  RETURN doc</code></pre>
+              </div>
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-indigo-300 font-bold mb-2 text-sm">Custom Sort Order</h5>
+                <pre><code class="language-sql text-xs">FOR doc IN tasks
+  LET priority = CASE doc.status
+    WHEN "urgent" THEN 1
+    WHEN "high" THEN 2
+    WHEN "normal" THEN 3
+    ELSE 4
+  END
+  SORT priority
+  RETURN doc</code></pre>
+              </div>
+            </div>
+
+            <p class="text-xs text-gray-500 mt-4">
+              <span class="text-indigo-400 font-bold">Note:</span>
+              CASE returns <code class="text-indigo-300">null</code> if no WHEN matches and no ELSE is provided. WHEN clauses are evaluated in order - first match wins.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- String Interpolation -->
+      <section id="string-interpolation" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-teal-500/10 to-cyan-500/10 rounded-xl border border-teal-500/20 overflow-hidden">
+          <div class="p-5 border-b border-teal-500/20 bg-teal-500/5">
+            <h3 class="text-lg font-bold text-teal-300 flex items-center">
+              <span class="bg-teal-500/20 text-teal-400 text-xs font-mono px-2 py-1 rounded mr-3">$""</span>
+              String Interpolation
+              <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              Template strings with <code class="text-teal-300">${expression}</code> syntax for cleaner string building. Use <code class="text-teal-300">$"..."</code> or <code class="text-teal-300">$'...'</code> prefix.
+            </p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                <h5 class="text-red-400 font-bold mb-2 text-sm">Before (Verbose)</h5>
+                <pre><code class="language-sql text-xs">RETURN CONCAT("Hello, ", doc.name, "! You have ", TO_STRING(doc.points), " points.")</code></pre>
+              </div>
+              <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                <h5 class="text-green-400 font-bold mb-2 text-sm">After (Clean)</h5>
+                <pre><code class="language-sql text-xs">RETURN $"Hello, ${doc.name}! You have ${doc.points} points."</code></pre>
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-teal-300 font-bold mb-2 text-sm">Expressions Inside ${...}</h5>
+              <pre><code class="language-sql text-sm">FOR doc IN products
+  RETURN {
+    -- Simple field access
+    greeting: $"Welcome, ${doc.name}!",
+
+    -- Arithmetic expressions
+    total: $"Total: $$${doc.price * doc.qty}",
+
+    -- Function calls
+    formatted: $"Name: ${UPPER(doc.name)}",
+
+    -- Ternary expressions
+    status: $"Status: ${doc.active ? 'Active' : 'Inactive'}",
+
+    -- Optional chaining
+    city: $"City: ${doc.address?.city ?? 'Unknown'}"
+  }</code></pre>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-teal-300 font-bold mb-2 text-sm">Type Coercion</h5>
+                <pre><code class="language-sql text-xs">-- Numbers, booleans, null auto-convert
+$"Count: ${42}"         -- "Count: 42"
+$"Active: ${true}"      -- "Active: true"
+$"Value: ${null}"       -- "Value: null"
+
+-- Arrays and objects serialize to JSON
+$"Tags: ${['a','b']}"   -- 'Tags: ["a","b"]'</code></pre>
+              </div>
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-teal-300 font-bold mb-2 text-sm">Escape Sequences</h5>
+                <pre><code class="language-sql text-xs">-- Literal dollar sign
+$"Price: $$50"          -- "Price: $50"
+
+-- Literal ${
+$"Code: \${x}"          -- "Code: ${x}"
+
+-- Standard escapes
+$"Line1\nLine2"         -- newline
+$"Col1\tCol2"           -- tab</code></pre>
+              </div>
+            </div>
+
+            <p class="text-xs text-gray-500 mt-4">
+              <span class="text-teal-400 font-bold">Note:</span>
+              String interpolation is secure - expressions are parsed at compile time as AST nodes, not evaluated as strings at runtime. User data cannot inject code.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Window Functions -->
+      <section id="window-functions" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-xl border border-amber-500/20 overflow-hidden">
+          <div class="p-5 border-b border-amber-500/20 bg-amber-500/5">
+            <h3 class="text-lg font-bold text-amber-300 flex items-center">
+              <span class="bg-amber-500/20 text-amber-400 text-xs font-mono px-2 py-1 rounded mr-3">OVER</span>
+              Window Functions
+              <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              Window functions perform calculations across rows related to the current row without collapsing them. Use <code class="text-amber-300">OVER</code> clause with optional <code class="text-amber-300">PARTITION BY</code> and <code class="text-amber-300">ORDER BY</code> to define the window.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-sql text-sm">-- Row numbering
+FOR doc IN sales
+  RETURN {
+    date: doc.date,
+    row_num: ROW_NUMBER() OVER (ORDER BY doc.date)
+  }
+
+-- Partitioned row numbers (restart per region)
+FOR doc IN sales
+  RETURN {
+    region: doc.region,
+    row_in_region: ROW_NUMBER() OVER (PARTITION BY doc.region ORDER BY doc.date)
+  }
+
+-- Running total
+FOR doc IN sales
+  RETURN {
+    date: doc.date,
+    amount: doc.amount,
+    running_total: SUM(doc.amount) OVER (ORDER BY doc.date)
+  }</code></pre>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-amber-300 font-bold mb-2 text-sm">Ranking Functions</h5>
+                <pre><code class="language-sql text-xs">-- ROW_NUMBER: Sequential numbers
+ROW_NUMBER() OVER (ORDER BY score DESC)
+-- Result: 1, 2, 3, 4, 5...
+
+-- RANK: Same rank for ties, gaps after
+RANK() OVER (ORDER BY score DESC)
+-- Scores: 100, 100, 90 -> Ranks: 1, 1, 3
+
+-- DENSE_RANK: Same rank for ties, no gaps
+DENSE_RANK() OVER (ORDER BY score DESC)
+-- Scores: 100, 100, 90 -> Ranks: 1, 1, 2</code></pre>
+              </div>
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-amber-300 font-bold mb-2 text-sm">Navigation Functions</h5>
+                <pre><code class="language-sql text-xs">-- LAG: Access previous row value
+LAG(doc.amount) OVER (ORDER BY doc.date)
+
+-- LEAD: Access next row value
+LEAD(doc.amount) OVER (ORDER BY doc.date)
+
+-- FIRST_VALUE: First value in partition
+FIRST_VALUE(doc.amount) OVER (
+  PARTITION BY doc.region ORDER BY doc.date
+)
+
+-- LAST_VALUE: Last value in partition
+LAST_VALUE(doc.amount) OVER (
+  PARTITION BY doc.region ORDER BY doc.date
+)</code></pre>
+              </div>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-amber-300 font-bold mb-2 text-sm">Running Aggregates</h5>
+              <p class="text-xs text-gray-400 mb-2">Use aggregate functions with OVER for cumulative calculations.</p>
+              <pre><code class="language-sql text-xs">FOR doc IN transactions
+  FILTER doc.account_id == "acc123"
+  SORT doc.date
+  RETURN {
+    date: doc.date,
+    amount: doc.amount,
+    running_sum: SUM(doc.amount) OVER (ORDER BY doc.date),
+    running_avg: AVG(doc.amount) OVER (ORDER BY doc.date),
+    running_count: COUNT(doc._key) OVER (ORDER BY doc.date),
+    running_min: MIN(doc.amount) OVER (ORDER BY doc.date),
+    running_max: MAX(doc.amount) OVER (ORDER BY doc.date)
+  }</code></pre>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-amber-300 font-bold mb-2 text-sm">Practical Example: Compare to Previous</h5>
+              <pre><code class="language-sql text-xs">-- Calculate day-over-day change
+FOR doc IN daily_sales
+  SORT doc.date
+  LET prev = LAG(doc.revenue) OVER (ORDER BY doc.date)
+  RETURN {
+    date: doc.date,
+    revenue: doc.revenue,
+    prev_revenue: prev,
+    change: prev != null ? doc.revenue - prev : null,
+    pct_change: prev != null ? ROUND((doc.revenue - prev) / prev * 100, 2) : null
+  }</code></pre>
+            </div>
+
+            <p class="text-xs text-gray-500 mt-4">
+              <span class="text-amber-400 font-bold">Supported Functions:</span>
+              ROW_NUMBER, RANK, DENSE_RANK, LAG, LEAD, FIRST_VALUE, LAST_VALUE, SUM, AVG, COUNT, MIN, MAX
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- LET & Subqueries -->
+      <section id="let-subqueries" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+              </svg>
+              LET & Subqueries
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <div class="space-y-6">
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <h3 class="text-lg font-semibold text-white mb-3">Correlated Subqueries</h3>
+                <p class="text-gray-400 mb-4 text-sm">
+                  Use <code>LET</code> inside a <code>FOR</code> loop to perform powerful joins and aggregations.
+                </p>
+                <pre><code class="language-sql text-sm">FOR u IN users
+  -- Subquery accessing outer variable 'u'
+  LET userOrders = (
+    FOR o IN orders
+    FILTER o.user == u.name
+    RETURN o
+  )
+  RETURN { name: u.name, orders: userOrders }</code></pre>
+              </div>
+
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <h3 class="text-lg font-semibold text-white mb-3">Aggregation with Subqueries</h3>
+                <pre><code class="language-sql text-sm">FOR u IN users
+  LET totalSpent = SUM((
+    FOR o IN orders
+    FILTER o.user == u.name
+    RETURN o.amount
+  ))
+  FILTER totalSpent > 100
+  RETURN { name: u.name, spent: totalSpent }</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/sdbql" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            SDBQL Overview
+          </span>
+        </a>
+        <a href="/docs/sdbql-operators" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Operators
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

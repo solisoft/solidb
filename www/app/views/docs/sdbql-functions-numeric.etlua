@@ -1,0 +1,272 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-blue-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-blue-400 to-cyan-400 mb-4 tracking-tight">
+            Numeric Functions
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Mathematical and numeric functions for calculations, rounding, and trigonometry in SDBQL.
+          </p>
+        </div>
+      </div>
+
+      <!-- Numeric Functions -->
+      <section id="numeric-functions" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-indigo-500/10 to-blue-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path>
+              </svg>
+              Numeric Operations
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+
+            <!-- Basic Math Functions -->
+            <div>
+              <h3 class="text-lg font-bold text-indigo-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-indigo-500 rounded-full mr-3"></span>
+                Basic Math
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">ABS(number)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns the absolute value.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ABS(-5) --5</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">CEIL(number)</code>
+                  <p class="text-sm text-gray-400 mb-3">Rounds up to nearest integer.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CEIL(4.2) --5</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">FLOOR(number)</code>
+                  <p class="text-sm text-gray-400 mb-3">Rounds down to nearest integer.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FLOOR(4.8) --4</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">ROUND(num, prec?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Rounds to specified precision.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ROUND(3.14159, 2) --3.14</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">RANDOM()</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns a random float between 0 and 1.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN RANDOM() --0.54321...</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Power & Roots -->
+            <div>
+              <h3 class="text-lg font-bold text-indigo-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-indigo-500 rounded-full mr-3"></span>
+                Powers & Roots
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">SQRT(number)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns the square root.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SQRT(16) --4</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">POW(base, exp)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns base raised to exponent.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN POW(2, 3) --8</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">EXP(x)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns e raised to the power of x.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN EXP(1) --2.718...</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Logarithms -->
+            <div>
+              <h3 class="text-lg font-bold text-indigo-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-indigo-500 rounded-full mr-3"></span>
+                Logarithms
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">LOG(x) / LOG10(x) / LOG2(x)</code>
+                  <p class="text-sm text-gray-400 mb-3">Natural, base-10, and base-2 logarithms.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LOG10(100) --2</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Trigonometry -->
+            <div>
+              <h3 class="text-lg font-bold text-indigo-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-indigo-500 rounded-full mr-3"></span>
+                Trigonometry
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">PI()</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns the value of PI.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PI() --3.14159...</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">SIN(x) / COS(x) / TAN(x)</code>
+                  <p class="text-sm text-gray-400 mb-3">Trigonometric functions (radians).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SIN(PI()/2) --1</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">ASIN(x) / ACOS(x) / ATAN(x)</code>
+                  <p class="text-sm text-gray-400 mb-3">Inverse trigonometric functions.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ATAN(1) * 4 -- 3.14159...</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Aggregation Functions -->
+            <div>
+              <h3 class="text-lg font-bold text-blue-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-blue-500 rounded-full mr-3"></span>
+                Aggregation Functions
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">SUM(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Sum of all values in the array.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SUM([1, 2, 3, 4]) --10</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">AVG(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Average of all values.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN AVG([1, 2, 3, 4]) --2.5</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">MIN(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Smallest value in the array.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MIN([5, 1, 9]) --1</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">MAX(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Largest value in the array.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MAX([5, 1, 9]) --9</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">COUNT(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Number of elements in the array.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COUNT([1, 2, 3]) --3</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">COUNT_DISTINCT(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Number of unique elements.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COUNT_DISTINCT([1, 2, 2, 3]) --3</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">MEDIAN(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Median value of the array.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MEDIAN([1, 5, 10]) --5</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">PERCENTILE(arr, p)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns the p-th percentile (0-100).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PERCENTILE([1..100], 95) --95</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Statistical Functions -->
+            <div>
+              <h3 class="text-lg font-bold text-blue-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-blue-500 rounded-full mr-3"></span>
+                Statistical Functions
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">VARIANCE(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Population variance.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VARIANCE([1, 2, 3, 4, 5]) --2</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">VARIANCE_SAMPLE(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Sample variance.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VARIANCE_SAMPLE([1, 2, 3, 4, 5]) --2.5</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Sample standard deviation.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV([1, 2, 3, 4, 5]) --1.581...</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV_POPULATION(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Population standard deviation.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV_POPULATION([1, 2, 3, 4, 5]) --1.414...</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Aggregation Example -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Examples</h4>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Calculate user order statistics
+FOR u IN users
+  LET amounts = (FOR o IN orders FILTER o.user == u._key RETURN o.amount)
+  RETURN {
+    user: u.name,
+    total: SUM(amounts),
+    avg: ROUND(AVG(amounts), 2),
+    count: COUNT(amounts),
+    median: MEDIAN(amounts),
+    stddev: ROUND(STDDEV(amounts), 2)
+  }
+
+-- Calculate distance between two points
+LET x1 = 3, y1 = 4, x2 = 0, y2 = 0
+RETURN SQRT(POW(x2 - x1, 2) + POW(y2 - y1, 2))  -- 5
+
+-- Generate random sample
+FOR i IN RANGE(1, 10)
+  RETURN FLOOR(RANDOM() * 100)  -- Random integers 0-99
+
+-- Calculate compound interest
+LET principal = 1000, rate = 0.05, years = 10
+RETURN ROUND(principal * POW(1 + rate, years), 2)  -- 1628.89</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/sdbql-functions-array" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Array Functions
+          </span>
+        </a>
+        <a href="/docs/sdbql-functions-geo" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Geo Functions
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>
