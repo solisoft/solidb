@@ -10,7 +10,7 @@
 //! configured threshold (default: 10,000).
 
 use crate::error::{DbError, DbResult};
-use crate::storage::index::{VectorIndexConfig, VectorMetric};
+use crate::storage::index::{VectorIndexConfig, VectorMetric, VectorQuantization};
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -28,6 +28,195 @@ pub struct VectorSearchResult {
 
 /// Default threshold for auto-switching to HNSW
 const DEFAULT_HNSW_THRESHOLD: usize = 10_000;
+
+// =============================================================================
+// Scalar Quantization
+// =============================================================================
+
+/// Parameters for scalar quantization (per-dimension min/max for reconstruction)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScalarQuantParams {
+    /// Minimum value per dimension
+    pub min_vals: Vec<f32>,
+    /// Maximum value per dimension
+    pub max_vals: Vec<f32>,
+}
+
+/// Quantized vector storage using scalar quantization (u8 per dimension)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuantizedVectors {
+    /// Quantized vectors: doc_key -> u8 array
+    vectors: HashMap<String, Vec<u8>>,
+    /// Quantization parameters for reconstruction
+    params: ScalarQuantParams,
+}
+
+impl QuantizedVectors {
+    /// Create new quantized storage from full-precision vectors
+    pub fn from_full_vectors(vectors: &HashMap<String, Vec<f32>>, dimension: usize) -> Self {
+        if vectors.is_empty() {
+            return Self {
+                vectors: HashMap::new(),
+                params: ScalarQuantParams {
+                    min_vals: vec![0.0; dimension],
+                    max_vals: vec![1.0; dimension],
+                },
+            };
+        }
+
+        // Compute min/max per dimension across all vectors
+        let mut min_vals = vec![f32::MAX; dimension];
+        let mut max_vals = vec![f32::MIN; dimension];
+
+        for vec in vectors.values() {
+            for (i, &v) in vec.iter().enumerate() {
+                min_vals[i] = min_vals[i].min(v);
+                max_vals[i] = max_vals[i].max(v);
+            }
+        }
+
+        // Quantize all vectors
+        let quantized: HashMap<String, Vec<u8>> = vectors
+            .iter()
+            .map(|(k, v)| (k.clone(), Self::quantize_vector(v, &min_vals, &max_vals)))
+            .collect();
+
+        Self {
+            vectors: quantized,
+            params: ScalarQuantParams { min_vals, max_vals },
+        }
+    }
+
+    /// Quantize a single f32 vector to u8
+    fn quantize_vector(vec: &[f32], min_vals: &[f32], max_vals: &[f32]) -> Vec<u8> {
+        vec.iter()
+            .enumerate()
+            .map(|(i, &v)| {
+                let range = max_vals[i] - min_vals[i];
+                if range < 1e-10 {
+                    127u8 // Middle value if no range
+                } else {
+                    ((v - min_vals[i]) / range * 255.0).clamp(0.0, 255.0) as u8
+                }
+            })
+            .collect()
+    }
+
+    /// Dequantize a single u8 vector back to f32
+    #[allow(dead_code)]
+    pub fn dequantize_vector(&self, quantized: &[u8]) -> Vec<f32> {
+        quantized
+            .iter()
+            .enumerate()
+            .map(|(i, &q)| {
+                let range = self.params.max_vals[i] - self.params.min_vals[i];
+                self.params.min_vals[i] + (q as f32 / 255.0) * range
+            })
+            .collect()
+    }
+
+    /// Insert a new vector (quantize on insert)
+    pub fn insert(&mut self, doc_key: &str, vec: &[f32]) {
+        let quantized = Self::quantize_vector(vec, &self.params.min_vals, &self.params.max_vals);
+        self.vectors.insert(doc_key.to_string(), quantized);
+    }
+
+    /// Remove a vector
+    pub fn remove(&mut self, doc_key: &str) {
+        self.vectors.remove(doc_key);
+    }
+
+    /// Get number of quantized vectors
+    pub fn len(&self) -> usize {
+        self.vectors.len()
+    }
+
+    /// Check if empty
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.vectors.is_empty()
+    }
+
+    /// Get parameters for distance calculation
+    pub fn params(&self) -> &ScalarQuantParams {
+        &self.params
+    }
+
+    /// Get all quantized vectors
+    pub fn vectors(&self) -> &HashMap<String, Vec<u8>> {
+        &self.vectors
+    }
+
+    /// Clear all quantized vectors
+    pub fn clear(&mut self) {
+        self.vectors.clear();
+    }
+}
+
+// =============================================================================
+// Asymmetric Distance Functions (query f32, DB u8)
+// =============================================================================
+
+/// Calculate cosine similarity between full-precision query and quantized vector
+pub fn cosine_similarity_asymmetric(
+    query: &[f32],
+    quantized: &[u8],
+    params: &ScalarQuantParams,
+) -> f32 {
+    let query_norm_sq: f32 = query.iter().map(|x| x * x).sum();
+    if query_norm_sq < 1e-10 {
+        return 0.0;
+    }
+
+    let mut dot = 0.0f32;
+    let mut quantized_norm_sq = 0.0f32;
+
+    for i in 0..query.len() {
+        let range = params.max_vals[i] - params.min_vals[i];
+        let dequant = params.min_vals[i] + (quantized[i] as f32 / 255.0) * range;
+        dot += query[i] * dequant;
+        quantized_norm_sq += dequant * dequant;
+    }
+
+    let query_norm = query_norm_sq.sqrt();
+    let quantized_norm = quantized_norm_sq.sqrt().max(1e-10);
+    dot / (query_norm * quantized_norm)
+}
+
+/// Calculate Euclidean distance between full-precision query and quantized vector
+pub fn euclidean_distance_asymmetric(
+    query: &[f32],
+    quantized: &[u8],
+    params: &ScalarQuantParams,
+) -> f32 {
+    let mut sum_sq = 0.0f32;
+
+    for i in 0..query.len() {
+        let range = params.max_vals[i] - params.min_vals[i];
+        let dequant = params.min_vals[i] + (quantized[i] as f32 / 255.0) * range;
+        let diff = query[i] - dequant;
+        sum_sq += diff * diff;
+    }
+
+    sum_sq.sqrt()
+}
+
+/// Calculate dot product between full-precision query and quantized vector
+pub fn dot_product_asymmetric(
+    query: &[f32],
+    quantized: &[u8],
+    params: &ScalarQuantParams,
+) -> f32 {
+    let mut dot = 0.0f32;
+
+    for i in 0..query.len() {
+        let range = params.max_vals[i] - params.min_vals[i];
+        let dequant = params.min_vals[i] + (quantized[i] as f32 / 255.0) * range;
+        dot += query[i] * dequant;
+    }
+
+    dot
+}
 
 // =============================================================================
 // HNSW Data Structures
@@ -448,11 +637,18 @@ impl HnswGraph {
 /// - HNSW: Approximate nearest neighbor, fast for 10K+ vectors
 ///
 /// Automatically switches to HNSW when vector count exceeds threshold.
+///
+/// Supports optional scalar quantization for 4x memory reduction:
+/// - Full precision vectors: f32 (4 bytes/dim)
+/// - Quantized vectors: u8 (1 byte/dim)
+/// - Asymmetric search: query stays f32, DB vectors are quantized
 pub struct VectorIndex {
     /// Index configuration
     config: VectorIndexConfig,
-    /// Stored vectors: doc_key -> vector
+    /// Stored vectors: doc_key -> vector (full precision)
     vectors: RwLock<HashMap<String, Vec<f32>>>,
+    /// Quantized vectors for memory-efficient storage (optional)
+    quantized_vectors: RwLock<Option<QuantizedVectors>>,
     /// HNSW graph for approximate search (built when threshold exceeded)
     hnsw_graph: RwLock<Option<HnswGraph>>,
 }
@@ -469,6 +665,7 @@ impl VectorIndex {
         Ok(Self {
             config,
             vectors: RwLock::new(HashMap::new()),
+            quantized_vectors: RwLock::new(None),
             hnsw_graph: RwLock::new(None),
         })
     }
@@ -524,6 +721,13 @@ impl VectorIndex {
         let mut vectors = self.vectors.write().unwrap();
         vectors.clear();
 
+        // Also clear quantized vectors
+        let mut quantized = self.quantized_vectors.write().unwrap();
+        if let Some(q) = quantized.as_mut() {
+            q.clear();
+        }
+        *quantized = None;
+
         // Also clear HNSW graph
         let mut hnsw = self.hnsw_graph.write().unwrap();
         if let Some(graph) = hnsw.as_mut() {
@@ -547,6 +751,14 @@ impl VectorIndex {
         {
             let mut vectors = self.vectors.write().unwrap();
             vectors.insert(doc_key.to_string(), vector.to_vec());
+        }
+
+        // Also insert into quantized vectors if they exist
+        {
+            let mut quantized = self.quantized_vectors.write().unwrap();
+            if let Some(q) = quantized.as_mut() {
+                q.insert(doc_key, vector);
+            }
         }
 
         // Update HNSW graph if it exists or threshold is reached
@@ -576,8 +788,16 @@ impl VectorIndex {
             vectors.remove(doc_key).is_some()
         };
 
-        // Also remove from HNSW graph if it exists
         if removed {
+            // Also remove from quantized vectors if they exist
+            {
+                let mut quantized = self.quantized_vectors.write().unwrap();
+                if let Some(q) = quantized.as_mut() {
+                    q.remove(doc_key);
+                }
+            }
+
+            // Also remove from HNSW graph if it exists
             let mut hnsw = self.hnsw_graph.write().unwrap();
             if let Some(graph) = hnsw.as_mut() {
                 graph.remove(doc_key);
@@ -654,6 +874,15 @@ impl VectorIndex {
 
     /// Perform brute-force linear search
     fn brute_force_search(&self, query: &[f32], limit: usize) -> DbResult<Vec<VectorSearchResult>> {
+        // Check if we have quantized vectors - use asymmetric search if so
+        {
+            let quantized = self.quantized_vectors.read().unwrap();
+            if let Some(q) = quantized.as_ref() {
+                return self.brute_force_search_quantized(query, limit, q);
+            }
+        }
+
+        // Fall back to full-precision search
         let vectors = self.vectors.read().unwrap();
 
         // Calculate scores for all vectors
@@ -664,6 +893,49 @@ impl VectorIndex {
                     VectorMetric::Cosine => cosine_similarity(query, vec),
                     VectorMetric::Euclidean => euclidean_distance(query, vec),
                     VectorMetric::DotProduct => dot_product(query, vec),
+                };
+                VectorSearchResult {
+                    doc_key: doc_key.clone(),
+                    score,
+                }
+            })
+            .collect();
+
+        // Sort by score
+        match self.config.metric {
+            VectorMetric::Cosine | VectorMetric::DotProduct => {
+                // Higher is better for similarity/dot product
+                results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+            }
+            VectorMetric::Euclidean => {
+                // Lower is better for distance
+                results.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(Ordering::Equal));
+            }
+        }
+
+        // Limit results
+        results.truncate(limit);
+        Ok(results)
+    }
+
+    /// Perform brute-force search using quantized vectors (asymmetric search)
+    fn brute_force_search_quantized(
+        &self,
+        query: &[f32],
+        limit: usize,
+        quantized: &QuantizedVectors,
+    ) -> DbResult<Vec<VectorSearchResult>> {
+        let params = quantized.params();
+
+        // Calculate scores for all quantized vectors using asymmetric distance
+        let mut results: Vec<VectorSearchResult> = quantized
+            .vectors()
+            .iter()
+            .map(|(doc_key, quantized_vec)| {
+                let score = match self.config.metric {
+                    VectorMetric::Cosine => cosine_similarity_asymmetric(query, quantized_vec, params),
+                    VectorMetric::Euclidean => euclidean_distance_asymmetric(query, quantized_vec, params),
+                    VectorMetric::DotProduct => dot_product_asymmetric(query, quantized_vec, params),
                 };
                 VectorSearchResult {
                     doc_key: doc_key.clone(),
@@ -717,11 +989,13 @@ impl VectorIndex {
     /// Serialize the index to bytes for persistence
     pub fn serialize(&self) -> DbResult<Vec<u8>> {
         let vectors = self.vectors.read().unwrap();
+        let quantized = self.quantized_vectors.read().unwrap();
         let hnsw = self.hnsw_graph.read().unwrap();
 
-        let data = VectorIndexDataV2 {
+        let data = VectorIndexDataV3 {
             config: self.config.clone(),
             vectors: vectors.clone(),
+            quantized_vectors: quantized.clone(),
             hnsw_graph: hnsw.clone(),
         };
         bincode::serialize(&data).map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))
@@ -729,11 +1003,22 @@ impl VectorIndex {
 
     /// Deserialize a vector index from bytes
     pub fn deserialize(bytes: &[u8]) -> DbResult<Self> {
-        // Try V2 format first (with HNSW graph)
+        // Try V3 format first (with quantization)
+        if let Ok(data) = bincode::deserialize::<VectorIndexDataV3>(bytes) {
+            return Ok(Self {
+                config: data.config,
+                vectors: RwLock::new(data.vectors),
+                quantized_vectors: RwLock::new(data.quantized_vectors),
+                hnsw_graph: RwLock::new(data.hnsw_graph),
+            });
+        }
+
+        // Try V2 format (with HNSW graph)
         if let Ok(data) = bincode::deserialize::<VectorIndexDataV2>(bytes) {
             return Ok(Self {
                 config: data.config,
                 vectors: RwLock::new(data.vectors),
+                quantized_vectors: RwLock::new(None),
                 hnsw_graph: RwLock::new(data.hnsw_graph),
             });
         }
@@ -745,6 +1030,7 @@ impl VectorIndex {
         Ok(Self {
             config: data.config,
             vectors: RwLock::new(data.vectors),
+            quantized_vectors: RwLock::new(None),
             hnsw_graph: RwLock::new(None),
         })
     }
@@ -753,6 +1039,85 @@ impl VectorIndex {
     pub fn is_hnsw_active(&self) -> bool {
         self.hnsw_graph.read().unwrap().is_some()
     }
+
+    /// Check if scalar quantization is active
+    pub fn is_quantized(&self) -> bool {
+        self.quantized_vectors.read().unwrap().is_some()
+    }
+
+    /// Get the current quantization type
+    pub fn quantization_type(&self) -> VectorQuantization {
+        if self.quantized_vectors.read().unwrap().is_some() {
+            VectorQuantization::Scalar
+        } else {
+            VectorQuantization::None
+        }
+    }
+
+    /// Quantize all vectors using scalar quantization
+    ///
+    /// Computes per-dimension min/max values from all existing vectors,
+    /// then quantizes each vector to u8 values. Future searches will use
+    /// asymmetric distance computation (query f32, DB u8).
+    ///
+    /// Returns the number of vectors quantized.
+    pub fn quantize(&self) -> DbResult<usize> {
+        let vectors = self.vectors.read().unwrap();
+        let count = vectors.len();
+
+        if count == 0 {
+            return Ok(0);
+        }
+
+        // Build quantized storage from full-precision vectors
+        let quantized = QuantizedVectors::from_full_vectors(&vectors, self.config.dimension);
+        drop(vectors);
+
+        // Store the quantized vectors
+        let mut quantized_lock = self.quantized_vectors.write().unwrap();
+        *quantized_lock = Some(quantized);
+
+        Ok(count)
+    }
+
+    /// Remove quantization (revert to full-precision search)
+    pub fn dequantize(&self) {
+        let mut quantized = self.quantized_vectors.write().unwrap();
+        *quantized = None;
+    }
+
+    /// Get quantization statistics
+    pub fn quantization_stats(&self) -> Option<QuantizationStats> {
+        let quantized = self.quantized_vectors.read().unwrap();
+        quantized.as_ref().map(|q| {
+            let vector_count = q.len();
+            let memory_bytes = vector_count * self.config.dimension; // u8 per dim
+            let full_memory_bytes = vector_count * self.config.dimension * std::mem::size_of::<f32>();
+            QuantizationStats {
+                vector_count,
+                memory_bytes,
+                full_memory_bytes,
+                compression_ratio: if memory_bytes > 0 {
+                    full_memory_bytes as f32 / memory_bytes as f32
+                } else {
+                    1.0
+                },
+            }
+        })
+    }
+}
+
+/// Statistics about quantized vector storage
+#[derive(Debug, Clone, Serialize)]
+pub struct QuantizationStats {
+    /// Number of quantized vectors
+    pub vector_count: usize,
+    /// Memory usage in bytes (quantized)
+    pub memory_bytes: usize,
+    /// Memory usage in bytes if full precision
+    pub full_memory_bytes: usize,
+    /// Compression ratio (full / quantized)
+    pub compression_ratio: f32,
 }
 
 /// Serializable vector index data (V1 format - backward compat)
@@ -767,6 +1132,17 @@ struct VectorIndexData {
 struct VectorIndexDataV2 {
     config: VectorIndexConfig,
     vectors: HashMap<String, Vec<f32>>,
+    #[serde(default)]
+    hnsw_graph: Option<HnswGraph>,
+}
+
+/// Serializable vector index data (V3 format - with quantization)
+#[derive(Serialize, Deserialize)]
+struct VectorIndexDataV3 {
+    config: VectorIndexConfig,
+    vectors: HashMap<String, Vec<f32>>,
+    #[serde(default)]
+    quantized_vectors: Option<QuantizedVectors>,
     #[serde(default)]
     hnsw_graph: Option<HnswGraph>,
 }

@@ -271,6 +271,14 @@ pub fn create_router(
             "/_api/database/{db}/vector/{collection}/{index}/search",
             post(vector_search),
         )
+        .route(
+            "/_api/database/{db}/vector/{collection}/{index}/quantize",
+            post(quantize_vector_index),
+        )
+        .route(
+            "/_api/database/{db}/vector/{collection}/{index}/dequantize",
+            post(dequantize_vector_index),
+        )
         // Hybrid search route (vector + fulltext)
         .route(
             "/_api/database/{db}/hybrid/{collection}/search",
