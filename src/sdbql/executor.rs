@@ -7861,6 +7861,195 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Number(number_from_f64(diff)))
             }
 
+            // HYBRID_SEARCH(collection, vector_index, fulltext_field, query_vector, text_query, options?)
+            // Combines vector similarity with fulltext search for better RAG results
+            // options: { vector_weight: 0.5, text_weight: 0.5, limit: 10, fusion: "weighted" | "rrf" }
+            "HYBRID_SEARCH" => {
+                if evaluated_args.len() < 5 || evaluated_args.len() > 6 {
+                    return Err(DbError::ExecutionError(
+                        "HYBRID_SEARCH requires 5-6 arguments: collection, vector_index, fulltext_field, query_vector, text_query, [options]"
+                            .to_string(),
+                    ));
+                }
+
+                // Extract arguments
+                let collection_name = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("HYBRID_SEARCH: collection must be a string".to_string())
+                })?;
+                let vector_index = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("HYBRID_SEARCH: vector_index must be a string".to_string())
+                })?;
+                let fulltext_field = evaluated_args[2].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("HYBRID_SEARCH: fulltext_field must be a string".to_string())
+                })?;
+                let query_vector = Self::extract_vector_arg(&evaluated_args[3], "HYBRID_SEARCH: query_vector")?;
+                let text_query = evaluated_args[4].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("HYBRID_SEARCH: text_query must be a string".to_string())
+                })?;
+
+                // Parse options (defaults)
+                let mut vector_weight: f32 = 0.5;
+                let mut text_weight: f32 = 0.5;
+                let mut limit: usize = 10;
+                let mut fusion_method = "weighted";
+
+                if evaluated_args.len() == 6 {
+                    if let Some(opts) = evaluated_args[5].as_object() {
+                        if let Some(vw) = opts.get("vector_weight").and_then(|v| v.as_f64()) {
+                            vector_weight = vw as f32;
+                        }
+                        if let Some(tw) = opts.get("text_weight").and_then(|v| v.as_f64()) {
+                            text_weight = tw as f32;
+                        }
+                        if let Some(l) = opts.get("limit").and_then(|v| v.as_u64()) {
+                            limit = l as usize;
+                        }
+                        if let Some(f) = opts.get("fusion").and_then(|v| v.as_str()) {
+                            fusion_method = f;
+                        }
+                    }
+                }
+
+                let collection = self.get_collection(collection_name)?;
+
+                // Step 1: Vector search (get more candidates than limit for better fusion)
+                let vector_results = collection.vector_search(
+                    vector_index,
+                    &query_vector,
+                    limit * 3,
+                    None,
+                )?;
+
+                // Step 2: Fulltext search
+                let fulltext_results = collection.fulltext_search(fulltext_field, text_query, 2)
+                    .unwrap_or_default();
+
+                // Step 3: Normalize vector scores to 0-1 range
+                let mut vector_scores: HashMap<String, f32> = HashMap::new();
+                if !vector_results.is_empty() {
+                    let max_vec = vector_results.iter().map(|r| r.score).fold(f32::NEG_INFINITY, f32::max);
+                    let min_vec = vector_results.iter().map(|r| r.score).fold(f32::INFINITY, f32::min);
+                    let range = max_vec - min_vec;
+                    for result in &vector_results {
+                        let normalized = if range > 0.0 {
+                            (result.score - min_vec) / range
+                        } else {
+                            1.0
+                        };
+                        vector_scores.insert(result.doc_key.clone(), normalized);
+                    }
+                }
+
+                // Step 4: Normalize text scores to 0-1 range
+                let mut text_scores: HashMap<String, f32> = HashMap::new();
+                if !fulltext_results.is_empty() {
+                    let max_text = fulltext_results.iter().map(|r| r.score).fold(f64::NEG_INFINITY, f64::max);
+                    let min_text = fulltext_results.iter().map(|r| r.score).fold(f64::INFINITY, f64::min);
+                    let range = max_text - min_text;
+                    for result in &fulltext_results {
+                        let normalized = if range > 0.0 {
+                            ((result.score - min_text) / range) as f32
+                        } else {
+                            1.0
+                        };
+                        text_scores.insert(result.doc_key.clone(), normalized);
+                    }
+                }
+
+                // Step 5: Combine scores based on fusion method
+                let mut combined_results: Vec<(String, f32, Option<f32>, Option<f32>, Vec<String>)> = Vec::new();
+
+                if fusion_method == "rrf" {
+                    // Reciprocal Rank Fusion
+                    let k: f32 = 60.0;
+                    let mut rrf_scores: HashMap<String, f32> = HashMap::new();
+                    let mut doc_sources: HashMap<String, Vec<String>> = HashMap::new();
+                    let mut doc_vector_scores: HashMap<String, f32> = HashMap::new();
+                    let mut doc_text_scores: HashMap<String, f32> = HashMap::new();
+
+                    // Process vector results
+                    for (rank, result) in vector_results.iter().enumerate() {
+                        let rrf_score = 1.0 / (k + rank as f32 + 1.0);
+                        *rrf_scores.entry(result.doc_key.clone()).or_insert(0.0) += rrf_score;
+                        doc_sources.entry(result.doc_key.clone()).or_default().push("vector".to_string());
+                        doc_vector_scores.insert(result.doc_key.clone(), result.score);
+                    }
+
+                    // Process fulltext results
+                    for (rank, result) in fulltext_results.iter().enumerate() {
+                        let rrf_score = 1.0 / (k + rank as f32 + 1.0);
+                        *rrf_scores.entry(result.doc_key.clone()).or_insert(0.0) += rrf_score;
+                        doc_sources.entry(result.doc_key.clone()).or_default().push("fulltext".to_string());
+                        doc_text_scores.insert(result.doc_key.clone(), result.score as f32);
+                    }
+
+                    for (doc_key, score) in rrf_scores {
+                        let sources = doc_sources.remove(&doc_key).unwrap_or_default();
+                        let vec_score = doc_vector_scores.get(&doc_key).copied();
+                        let txt_score = doc_text_scores.get(&doc_key).copied();
+                        combined_results.push((doc_key, score, vec_score, txt_score, sources));
+                    }
+                } else {
+                    // Weighted sum fusion (default)
+                    let mut all_doc_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    all_doc_keys.extend(vector_scores.keys().cloned());
+                    all_doc_keys.extend(text_scores.keys().cloned());
+
+                    for doc_key in all_doc_keys {
+                        let vec_score = vector_scores.get(&doc_key).copied();
+                        let txt_score = text_scores.get(&doc_key).copied();
+
+                        let mut sources = Vec::new();
+                        let mut combined_score = 0.0;
+
+                        if let Some(vs) = vec_score {
+                            combined_score += vs * vector_weight;
+                            sources.push("vector".to_string());
+                        }
+                        if let Some(ts) = txt_score {
+                            combined_score += ts * text_weight;
+                            sources.push("fulltext".to_string());
+                        }
+
+                        // Get original (non-normalized) scores for output
+                        let orig_vec_score = vector_results.iter()
+                            .find(|r| r.doc_key == doc_key)
+                            .map(|r| r.score);
+                        let orig_txt_score = fulltext_results.iter()
+                            .find(|r| r.doc_key == doc_key)
+                            .map(|r| r.score as f32);
+
+                        combined_results.push((doc_key, combined_score, orig_vec_score, orig_txt_score, sources));
+                    }
+                }
+
+                // Step 6: Sort by combined score and limit
+                combined_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                combined_results.truncate(limit);
+
+                // Step 7: Build result objects with documents
+                let results: Vec<Value> = combined_results
+                    .iter()
+                    .filter_map(|(doc_key, score, vec_score, txt_score, sources)| {
+                        collection.get(doc_key).ok().map(|doc| {
+                            let mut obj = serde_json::Map::new();
+                            obj.insert("doc".to_string(), doc.to_value());
+                            obj.insert("score".to_string(), json!(score));
+                            if let Some(vs) = vec_score {
+                                obj.insert("vector_score".to_string(), json!(vs));
+                            }
+                            if let Some(ts) = txt_score {
+                                obj.insert("text_score".to_string(), json!(ts));
+                            }
+                            obj.insert("sources".to_string(), json!(sources));
+                            Value::Object(obj)
+                        })
+                    })
+                    .collect();
+
+                Ok(Value::Array(results))
+            }
+
             _ => Err(DbError::ExecutionError(format!(
                 "Unknown function: {}",
                 name

@@ -271,6 +271,11 @@ pub fn create_router(
             "/_api/database/{db}/vector/{collection}/{index}/search",
             post(vector_search),
         )
+        // Hybrid search route (vector + fulltext)
+        .route(
+            "/_api/database/{db}/hybrid/{collection}/search",
+            post(hybrid_search),
+        )
         // TTL index routes
         .route(
             "/_api/database/{db}/ttl/{collection}",

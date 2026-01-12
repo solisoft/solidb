@@ -50,6 +50,7 @@ local sections = {
       { slug = "transactions", label = "ACID Transactions", icon = "fa-shield-alt", color = "warning" },
       { slug = "indexes", label = "Indexes", icon = "fa-list-ol", color = "success" },
       { slug = "vector-search", label = "Vector Search", icon = "fa-brain", color = "accent" },
+      { slug = "hybrid-search", label = "Hybrid Search", icon = "fa-layer-group", color = "warning" },
       { slug = "graphs", label = "Graphs & Edges", icon = "fa-project-diagram", color = "accent" },
       { slug = "scripting", label = "Lua Scripting", icon = "fa-scroll", color = "info" },
       { slug = "queues", label = "Queues & Jobs", icon = "fa-tasks", color = "primary" },

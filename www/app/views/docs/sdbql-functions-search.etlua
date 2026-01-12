@@ -148,6 +148,72 @@ FOR m IN matches
               </div>
             </div>
 
+            <!-- HYBRID_SEARCH -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-yellow-300 flex items-center">
+                  <span class="bg-amber-500/20 text-amber-400 text-xs font-mono px-2 py-1 rounded mr-3">HYBRID_SEARCH</span>
+                  Vector + Fulltext Hybrid Search
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Combines vector similarity search with fulltext search for improved RAG results. Returns documents ranked by combined score.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">HYBRID_SEARCH(<span class="text-amber-400">collection</span>, <span class="text-purple-400">vector_index</span>, <span class="text-blue-400">fulltext_field</span>, <span class="text-emerald-400">query_vector</span>, <span class="text-pink-400">text_query</span>, <span class="text-gray-500">[options]</span>)</code>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Parameters</h4>
+                    <ul class="text-xs text-gray-400 space-y-1">
+                      <li><code class="text-amber-300">collection</code> - Collection name to search</li>
+                      <li><code class="text-purple-300">vector_index</code> - Name of the vector index</li>
+                      <li><code class="text-blue-300">fulltext_field</code> - Field with fulltext index</li>
+                      <li><code class="text-emerald-300">query_vector</code> - Query embedding vector</li>
+                      <li><code class="text-pink-300">text_query</code> - Text query string</li>
+                      <li><code class="text-gray-300">options</code> - Optional: {vector_weight, text_weight, limit, fusion}</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Example</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">LET results = HYBRID_SEARCH(
+    "articles", "embedding_idx", "content",
+    @query_vec, "machine learning"
+)
+FOR r IN results
+  RETURN { title: r.doc.title, score: r.score }</code></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">With Custom Weights</h4>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">LET results = HYBRID_SEARCH(
+    "articles", "embedding_idx", "content",
+    @query_vec, "kubernetes deployment",
+    { vector_weight: 0.7, text_weight: 0.3, limit: 20, fusion: "rrf" }
+)
+FOR r IN results
+  RETURN r.doc</code></pre>
+                </div>
+
+                <div class="bg-amber-900/10 border border-amber-500/30 rounded-lg p-4 flex items-start">
+                  <svg class="w-5 h-5 text-amber-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  <div>
+                    <h4 class="text-amber-300 font-bold mb-1 text-sm">Hybrid Search Benefits</h4>
+                    <p class="text-sm text-amber-200/70">
+                      Documents matching both vector and text queries rank highest. Provides 15-30% better relevance than pure vector or pure text search alone. Supports weighted sum (default) and RRF fusion methods.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="text-xs text-gray-500 mt-2">
+                  <a href="/docs/hybrid-search" class="text-amber-400 hover:text-amber-300">See full Hybrid Search documentation →</a>
+                </div>
+              </div>
+            </div>
+
             <!-- Practical Examples -->
             <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
               <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Search Examples</h4>
