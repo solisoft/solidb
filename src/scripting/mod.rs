@@ -12,237 +12,13 @@ use tokio::sync::broadcast;
 
 use crate::error::DbError;
 use crate::sdbql::{parse, QueryExecutor};
-use crate::storage::StorageEngine;
-use futures::{SinkExt, StreamExt};
-
-// Import modules
-mod ai_bindings;
-mod auth;
-mod dev_tools;
-mod error_handling;
-mod file_handling;
-mod http_helpers;
-mod string_utils;
-mod validation;
-pub use auth::ScriptUser;
-use dev_tools::*;
-use error_handling::*;
-use file_handling::*;
-use http_helpers::*;
-use string_utils::*;
-use validation::*;
-
-// Crypto imports
-use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use base64::Engine;
-use hmac::Mac;
-use rand::RngCore;
-use sha2::Digest;
-// Custom JWT implementation for scripting
-#[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
-struct Header {
-    alg: String,
-    typ: String,
-}
-
-impl Header {
-    fn default() -> Self {
-        Self {
-            alg: "HS256".to_string(),
-            typ: "JWT".to_string(),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Validation;
-
-impl Validation {
-    fn default() -> Self {
-        Self
-    }
-}
-
-#[derive(Debug)]
-struct EncodingKey(Vec<u8>);
-
-impl EncodingKey {
-    fn from_secret(secret: &[u8]) -> Self {
-        Self(secret.to_vec())
-    }
-}
-
-#[derive(Debug)]
-struct DecodingKey(Vec<u8>);
-
-impl DecodingKey {
-    fn from_secret(secret: &[u8]) -> Self {
-        Self(secret.to_vec())
-    }
-}
-
-fn encode<T: serde::Serialize>(
-    _header: &Header,
-    claims: &T,
-    key: &EncodingKey,
-) -> Result<String, String> {
-    // JWT Header: {"alg":"HS256","typ":"JWT"}
-    let header = r#"{"alg":"HS256","typ":"JWT"}"#;
-
-    // Base64url encode header
-    let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(header);
-
-    // Serialize and encode claims
-    let claims_json =
-        serde_json::to_string(claims).map_err(|e| format!("JWT encode failed: {}", e))?;
-    let claims_b64 =
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims_json.as_bytes());
-
-    // Create signing input
-    let signing_input = format!("{}.{}", header_b64, claims_b64);
-
-    // Sign with HMAC-SHA256
-    let signature = sign_hmac_sha256(&signing_input, &key.0)?;
-
-    // Combine into JWT format: header.claims.signature
-    Ok(format!("{}.{}.{}", header_b64, claims_b64, signature))
-}
-
-fn decode<T: serde::de::DeserializeOwned>(
-    token: &str,
-    key: &DecodingKey,
-    _validation: &Validation,
-) -> Result<TokenData<T>, String> {
-    // Split JWT into parts
-    let parts: Vec<&str> = token.split('.').collect();
-    if parts.len() != 3 {
-        return Err("Invalid JWT format".to_string());
-    }
-
-    let (header_b64, claims_b64, signature_b64) = (parts[0], parts[1], parts[2]);
-
-    // Verify header (should be {"alg":"HS256","typ":"JWT"})
-    let header_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(header_b64)
-        .map_err(|_| "Invalid JWT header".to_string())?;
-    let header_str =
-        String::from_utf8(header_bytes).map_err(|_| "Invalid JWT header encoding".to_string())?;
-
-    if !header_str.contains(r#""alg":"HS256""#) || !header_str.contains(r#""typ":"JWT""#) {
-        return Err("Unsupported JWT algorithm or type".to_string());
-    }
-
-    // Verify signature
-    let signing_input = format!("{}.{}", header_b64, claims_b64);
-    let expected_signature = sign_hmac_sha256(&signing_input, &key.0)?;
-
-    if expected_signature != signature_b64 {
-        return Err("Invalid JWT signature".to_string());
-    }
-
-    // Decode claims
-    let claims_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(claims_b64)
-        .map_err(|_| "Invalid JWT claims".to_string())?;
-
-    let claims: T = serde_json::from_slice(&claims_bytes)
-        .map_err(|_| "Invalid JWT claims format".to_string())?;
-
-    Ok(TokenData {
-        header: Header::default(),
-        claims,
-    })
-}
-
-#[derive(Debug)]
-struct TokenData<T> {
-    #[allow(dead_code)]
-    header: Header,
-    claims: T,
-}
-
-fn sign_hmac_sha256(data: &str, secret: &[u8]) -> Result<String, String> {
-    use hmac::{Hmac, Mac};
-    use sha2::Sha256;
-
-    let mut mac =
-        Hmac::<Sha256>::new_from_slice(secret).map_err(|e| format!("HMAC init failed: {}", e))?;
-    mac.update(data.as_bytes());
-
-    let result = mac.finalize();
-    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(result.into_bytes()))
-}
-
-/// Context passed to Lua scripts containing request information
-#[derive(Debug, Clone)]
-pub struct ScriptContext {
-    /// HTTP method (GET, POST, PUT, DELETE)
-    pub method: String,
-    /// Request path (after /api/custom/)
-    pub path: String,
-    /// Query parameters
-    pub query_params: HashMap<String, String>,
-    /// URL parameters (e.g., :id)
-    pub params: HashMap<String, String>,
-    /// Request headers
-    pub headers: HashMap<String, String>,
-    /// Request body (parsed as JSON if applicable)
-    pub body: Option<JsonValue>,
-    /// Whether this is a WebSocket connection
-    pub is_websocket: bool,
-    /// Current authenticated user (if any)
-    pub user: ScriptUser,
-}
-
-/// Script metadata stored in _system/_scripts
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Script {
-    #[serde(rename = "_key")]
-    pub key: String,
-    /// Human-readable name
-    pub name: String,
-    /// HTTP methods this script handles (e.g., ["GET", "POST"])
-    pub methods: Vec<String>,
-    /// URL path pattern (e.g., "users/:id" or "hello")
-    pub path: String,
-    /// Database this script belongs to
-    #[serde(default = "default_database")]
-    pub database: String,
-    /// Collection this script is scoped to (optional)
-    pub collection: Option<String>,
-    /// The Lua source code
-    pub code: String,
-    /// Optional description
-    pub description: Option<String>,
-    /// Creation timestamp
-    pub created_at: String,
-    /// Last modified timestamp
-    pub updated_at: String,
-}
-
-fn default_database() -> String {
-    "_system".to_string()
-}
-
-/// Runtime statistics for the script engine
-#[derive(Debug, Default)]
-pub struct ScriptStats {
-    /// Number of HTTP scripts currently executing
-    pub active_scripts: AtomicUsize,
-    /// Number of active WebSocket connections
-    pub active_ws: AtomicUsize,
-    /// Total number of HTTP scripts executed since start
-    pub total_scripts_executed: AtomicUsize,
-    /// Total number of WebSocket connections handled since start
-    pub total_ws_connections: AtomicUsize,
-}
+use crate::stream::StreamManager;
 
 /// Lua scripting engine
 pub struct ScriptEngine {
     storage: Arc<StorageEngine>,
     queue_notifier: Option<broadcast::Sender<()>>,
+    stream_manager: Option<Arc<StreamManager>>,
     stats: Arc<ScriptStats>,
 }
 
@@ -252,12 +28,18 @@ impl ScriptEngine {
         Self {
             storage,
             queue_notifier: None,
+            stream_manager: None,
             stats,
         }
     }
 
     pub fn with_queue_notifier(mut self, notifier: broadcast::Sender<()>) -> Self {
         self.queue_notifier = Some(notifier);
+        self
+    }
+    
+    pub fn with_stream_manager(mut self, manager: Arc<StreamManager>) -> Self {
+        self.stream_manager = Some(manager);
         self
     }
 
@@ -1527,6 +1309,42 @@ impl ScriptEngine {
                     }
                 }
             }
+        }
+
+        // Create 'streams' module
+        if let Some(stream_manager) = self.stream_manager.clone() {
+            let streams_table = lua.create_table().map_err(|e| DbError::InternalError(format!("Failed to create streams table: {}", e)))?;
+
+            // solidb.streams.list() -> array of {name: string, query: string, created_at: number}
+            let manager_list = stream_manager.clone();
+            let list_fn = lua.create_function(move |lua, (): ()| {
+                let streams = manager_list.list_active_streams();
+                let mut result = Vec::new();
+                for stream in streams {
+                    let mut s = serde_json::Map::new();
+                    s.insert("name".to_string(), serde_json::Value::String(stream.name));
+                    // We might not want to expose full complex query object, maybe just source collection?
+                    // Or string representation if we had it.
+                    // For now, let's just expose created_at
+                    s.insert("created_at".to_string(), serde_json::Value::Number(serde_json::Number::from(stream.created_at)));
+                    result.push(serde_json::Value::Object(s));
+                }
+                
+                // Use the json helper to convert to Lua table
+                json_to_lua(lua, &serde_json::Value::Array(result))
+            }).map_err(|e| DbError::InternalError(format!("Failed to create streams.list: {}", e)))?;
+            
+            streams_table.set("list", list_fn).map_err(|e| DbError::InternalError(format!("Failed to set streams.list: {}", e)))?;
+
+            // solidb.streams.stop(name) -> void
+            let manager_stop = stream_manager.clone();
+            let stop_fn = lua.create_function(move |_, name: String| {
+                manager_stop.stop_stream(&name).map_err(|e| mlua::Error::RuntimeError(e.to_string()))
+            }).map_err(|e| DbError::InternalError(format!("Failed to create streams.stop: {}", e)))?;
+            
+            streams_table.set("stop", stop_fn).map_err(|e| DbError::InternalError(format!("Failed to set streams.stop: {}", e)))?;
+            
+            solidb.set("streams", streams_table).map_err(|e| DbError::InternalError(format!("Failed to set solidb.streams: {}", e)))?;
         }
 
         solidb

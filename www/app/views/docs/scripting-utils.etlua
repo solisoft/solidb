@@ -1,0 +1,171 @@
+<div class="max-w-4xl mx-auto">
+  <div class="mb-8">
+    <a href="/docs/scripting" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Lua Scripting Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"></div>
+      <div class="relative">
+        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">Utilities</h1>
+        <p class="text-lg text-gray-300 max-w-3xl leading-relaxed">
+          Helper functions for strings, tables, cryptography, and time.
+        </p>
+      </div>
+    </div>
+
+    <!-- String Utils -->
+    <section id="string">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-yellow-500 mr-2"></span>
+            String Functions
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Extensions to the standard Lua <code>string</code> library.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">string.split(str, sep)</span> <span class="text-gray-500">-&gt; array</span>
+              <div class="text-xs text-gray-500 mt-1">Split string by separator.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">string.trim(str)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Remove whitespace from both ends.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">string.starts_with(str, prefix)</span> <span class="text-gray-500">-&gt; bool</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">string.ends_with(str, suffix)</span> <span class="text-gray-500">-&gt; bool</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-purple-400">string.random(len)</span> <span class="text-gray-500">-&gt; string</span>
+                <div class="text-xs text-gray-500 mt-1">Generate random alphanumeric string.</div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Table Utils -->
+    <section id="table">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-orange-500 mr-2"></span>
+            Table Functions
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Extensions to the standard Lua <code>table</code> library.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">table.keys(tbl)</span> <span class="text-gray-500">-&gt; array</span>
+              <div class="text-xs text-gray-500 mt-1">Get all keys of a table.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">table.values(tbl)</span> <span class="text-gray-500">-&gt; array</span>
+              <div class="text-xs text-gray-500 mt-1">Get all values of a table.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">table.merge(t1, t2)</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">Merge two tables (shallow copy). t2 overwrites t1.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">table.map(tbl, fn)</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">Apply function to each element.</div>
+            </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">table.filter(tbl, fn)</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">Return new table with elements passing the predicate.</div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Crypto Functions -->
+    <section id="crypto">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span>
+            Crypto Functions
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Cryptographic utilities via <code>crypto</code> global.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.md5(data)</span> <span class="text-gray-500">-&gt; string</span>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.sha256(data)</span> <span class="text-gray-500">-&gt; string</span>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.base64_encode(data)</span> <span class="text-gray-500">-&gt; string</span>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.base64_decode(data)</span> <span class="text-gray-500">-&gt; string</span>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.uuid()</span> <span class="text-gray-500">-&gt; string (v4)</span>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.jwt_encode(claims, secret)</span> <span class="text-gray-500">-&gt; string</span>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.jwt_decode(token, secret)</span> <span class="text-gray-500">-&gt; table</span>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.hash_password(pwd)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Argon2 hashing (Async).</div>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.verify_password(hash, pwd)</span> <span class="text-gray-500">-&gt; bool</span>
+              </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Time Functions -->
+    <section id="time">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-cyan-500 mr-2"></span>
+            Time Functions
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Time utilities via <code>time</code> global.</p>
+            <ul class="space-y-3 font-mono text-sm text-gray-300">
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.now()</span> <span class="text-gray-500">-&gt; float (seconds)</span>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.iso()</span> <span class="text-gray-500">-&gt; string (ISO 8601)</span>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.sleep(ms)</span> <span class="text-gray-500">-&gt; nil</span>
+                  <div class="text-xs text-gray-500 mt-1">Suspend execution for N ms (Non-blocking).</div>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.format(ts, format)</span> <span class="text-gray-500">-&gt; string</span>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.parse(iso)</span> <span class="text-gray-500">-&gt; float (seconds)</span>
+              </li>
+            </ul>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

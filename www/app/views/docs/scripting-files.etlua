@@ -1,0 +1,179 @@
+<div class="max-w-4xl mx-auto">
+  <div class="mb-8">
+    <a href="/docs/scripting" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Lua Scripting Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"></div>
+      <div class="relative">
+        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">Files &amp; Media</h1>
+        <p class="text-lg text-gray-300 max-w-3xl leading-relaxed">
+          Upload files, store blobs, and process images directly in Lua.
+        </p>
+      </div>
+    </div>
+
+     <section id="file-media">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            File Handling
+          </h2>
+        </div>
+
+        <div class="p-8">
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            Files are stored using SoliDB's <strong class="text-pink-400">blob storage</strong> in the <code class="text-pink-400">_files</code> collection, providing durability, replication, and easy backup.
+          </p>
+
+          <!-- File Functions -->
+          <div class="mb-8">
+            <h3 class="text-lg font-bold text-white mb-2 font-mono mt-0">File Operations</h3>
+            <p class="text-gray-400 text-sm mb-4">Upload, read, and manage files. Files are identified by their unique key (UUID).</p>
+            <ul class="space-y-3 font-mono text-sm text-gray-300">
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-pink-400">solidb.upload(data, options?)</span> <span class="text-gray-500">-&gt; table</span>
+                <div class="text-xs text-gray-500 mt-1">
+                  Upload file from base64 data. Options: <code>{ filename, directory }</code><br>
+                  Returns: <code>{ key, path, filename, size, mime_type, chunks, width?, height? }</code>
+                </div>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-pink-400">solidb.file_info(key)</span> <span class="text-gray-500">-&gt; table</span>
+                <div class="text-xs text-gray-500 mt-1">
+                  Get file metadata by key: <code>{ _key, _id, path, size, filename, mime_type, created_at, chunks, width?, height? }</code>
+                </div>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-pink-400">solidb.file_read(key)</span> <span class="text-gray-500">-&gt; string (base64)</span>
+                <div class="text-xs text-gray-500 mt-1">
+                  Read file contents as base64-encoded string by file key.
+                </div>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-pink-400">solidb.file_delete(key)</span> <span class="text-gray-500">-&gt; boolean</span>
+                <div class="text-xs text-gray-500 mt-1">
+                  Delete a file and its blob chunks. Returns <code>true</code> if deleted, <code>false</code> if not found.
+                </div>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-pink-400">solidb.file_list(options?)</span> <span class="text-gray-500">-&gt; array</span>
+                <div class="text-xs text-gray-500 mt-1">
+                  List files. Options: <code>{ directory, limit, offset }</code><br>
+                  Returns array of <code>{ _key, _id, path, filename, size, mime_type, chunks, directory? }</code>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Image Processing -->
+          <div class="mb-8">
+            <h3 class="text-lg font-bold text-white mb-2 font-mono mt-0">Image Processing</h3>
+            <p class="text-gray-400 text-sm mb-4">Transform images with resize, crop, rotate, and more.</p>
+            <ul class="space-y-3 font-mono text-sm text-gray-300">
+              <li class="bg-black/20 p-3 rounded border border-white/5">
+                <span class="text-pink-400">solidb.image_process(data, operations)</span> <span class="text-gray-500">-&gt; table</span>
+                <div class="text-xs text-gray-500 mt-2">
+                  Process an image with the specified operations. Input can be base64 string or file key (UUID).<br><br>
+                  <strong class="text-gray-400">Operations:</strong>
+                  <ul class="mt-1 ml-4 space-y-1">
+                    <li><code>resize: { width, height }</code> - Resize image (aspect ratio preserved if only one dimension)</li>
+                    <li><code>thumbnail: { width, height }</code> - Create thumbnail fitting within bounds</li>
+                    <li><code>crop: { x, y, width, height }</code> - Crop region</li>
+                    <li><code>rotate: 90 | 180 | 270</code> - Rotate clockwise</li>
+                    <li><code>flip: "horizontal" | "vertical"</code> - Flip image</li>
+                    <li><code>grayscale: true</code> - Convert to grayscale</li>
+                    <li><code>blur: float</code> - Apply Gaussian blur (sigma value)</li>
+                    <li><code>brightness: -100 to 100</code> - Adjust brightness</li>
+                    <li><code>contrast: -100 to 100</code> - Adjust contrast</li>
+                    <li><code>format: "jpeg" | "png" | "webp"</code> - Output format</li>
+                    <li><code>quality: 1-100</code> - JPEG quality (default: 85)</li>
+                  </ul>
+                </div>
+                <div class="text-xs text-gray-500 mt-2">
+                  Returns: <code>{ data (base64), size, width, height, format, mime_type }</code>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Examples -->
+    <section id="examples">
+       <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+           <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">Examples</h2>
+        </div>
+        
+        <div class="p-8 space-y-8">
+          <!-- File Upload Example -->
+          <div>
+            <h3 class="text-lg font-bold text-white mb-3 mt-0">Example: File Upload Endpoint</h3>
+            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+              <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Upload file from request body (stored in _files blob collection)</span>
+<span class="text-blue-400">local</span> file_data = request.body.file <span class="text-gray-500">-- base64 encoded</span>
+<span class="text-blue-400">local</span> filename = request.body.filename
+
+<span class="text-blue-400">local</span> result = <span class="text-pink-400">solidb.upload</span>(file_data, {
+  filename = filename,
+  directory = <span class="text-green-400">"user_uploads"</span>
+})
+
+<span class="text-gray-500">-- Store file reference in your collection (key is stored in _files)</span>
+db:insert(<span class="text-green-400">"user_files"</span>, {
+  file_key = result.key, <span class="text-gray-500">-- UUID key for blob storage</span>
+  path = result.path,
+  size = result.size,
+  mime_type = result.mime_type,
+  uploaded_at = <span class="text-purple-400">solidb.now</span>()
+})
+
+<span class="text-blue-400">return</span> result</pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Image Example -->
+          <div>
+            <h3 class="text-lg font-bold text-white mb-3 mt-0">Example: Image Thumbnail Generation</h3>
+            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+              <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Create thumbnail from uploaded image</span>
+<span class="text-blue-400">local</span> image_data = request.body.image
+
+<span class="text-blue-400">local</span> thumb = <span class="text-pink-400">solidb.image_process</span>(image_data, {
+  thumbnail = { width = <span class="text-purple-400">200</span>, height = <span class="text-purple-400">200</span> },
+  format = <span class="text-green-400">"webp"</span>,
+  quality = <span class="text-purple-400">80</span>
+})
+
+<span class="text-gray-500">-- Save thumbnail</span>
+<span class="text-blue-400">local</span> saved = <span class="text-pink-400">solidb.upload</span>(thumb.data, {
+  filename = <span class="text-green-400">"thumb_"</span> .. request.body.name .. <span class="text-green-400">".webp"</span>,
+  directory = <span class="text-green-400">"thumbnails"</span>
+})
+
+<span class="text-blue-400">return</span> {
+  thumbnail = saved.path,
+  width = thumb.width,
+  height = thumb.height,
+  size = thumb.size
+}</pre>
+              </div>
+            </div>
+          </div>
+          
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

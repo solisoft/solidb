@@ -52,7 +52,17 @@ local sections = {
       { slug = "vector-search", label = "Vector Search", icon = "fa-brain", color = "accent" },
       { slug = "hybrid-search", label = "Hybrid Search", icon = "fa-layer-group", color = "warning" },
       { slug = "graphs", label = "Graphs & Edges", icon = "fa-project-diagram", color = "accent" },
-      { slug = "scripting", label = "Lua Scripting", icon = "fa-scroll", color = "info" },
+      { slug = "scripting", label = "Lua Scripting", icon = "fa-scroll", color = "info", subitems = {
+        { slug = "scripting-management", label = "Management API" },
+        { slug = "scripting-core", label = "Core API" },
+        { slug = "scripting-database", label = "Database Access" },
+        { slug = "scripting-ws", label = "WebSockets" },
+        { slug = "scripting-validation", label = "Validation" },
+        { slug = "scripting-files", label = "Files & Media" },
+        { slug = "scripting-utils", label = "Utilities" },
+        { slug = "scripting-streams", label = "Streams" },
+        { slug = "scripting-development", label = "Development" },
+      }},
       { slug = "queues", label = "Queues & Jobs", icon = "fa-tasks", color = "primary" },
       { slug = "streams", label = "Stream Processing", icon = "fa-stream", color = "accent" },
 

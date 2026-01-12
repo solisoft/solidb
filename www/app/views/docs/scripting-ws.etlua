@@ -1,0 +1,103 @@
+<div class="max-w-4xl mx-auto">
+  <div class="mb-8">
+    <a href="/docs/scripting" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Lua Scripting Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"></div>
+      <div class="relative">
+        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">WebSockets</h1>
+        <p class="text-lg text-gray-300 max-w-3xl leading-relaxed">
+          Build real-time applications with WebSocket support.
+        </p>
+      </div>
+    </div>
+
+    <!-- Sending Messages -->
+    <section id="sending">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
+            Sending Messages
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Send messages to connected clients via <code>solidb.ws</code>.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+             <li class="bg-black/20 p-2 rounded border border-white/5">
+               <span class="text-purple-400">solidb.ws.broadcast(channel, data)</span> <span class="text-gray-500">-&gt; nil</span>
+               <div class="text-xs text-gray-500 mt-1">Send to all clients subscribed to a channel.</div>
+             </li>
+             <li class="bg-black/20 p-2 rounded border border-white/5">
+               <span class="text-purple-400">solidb.ws.send(client_id, data)</span> <span class="text-gray-500">-&gt; nil</span>
+               <div class="text-xs text-gray-500 mt-1">Send to a specific client ID.</div>
+             </li>
+          </ul>
+
+           <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mt-6">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Example: Chat application endpoint</span>
+<span class="text-blue-400">local</span> message = request.body.message
+<span class="text-blue-400">local</span> user = solidb.auth.user().username
+
+<span class="text-gray-500">-- Store in database</span>
+db:insert(<span class="text-green-400">"messages"</span>, { user = user, text = message })
+
+<span class="text-gray-500">-- Broadcast to all in 'chat_room_1'</span>
+solidb.ws.broadcast(<span class="text-green-400">"chat_room_1"</span>, {
+  type = <span class="text-green-400">"new_message"</span>,
+  user = user,
+  text = message,
+  ts = solidb.now()
+})
+
+<span class="text-blue-400">return</span> { success = <span class="text-blue-400">true</span> }</pre>
+                </div>
+           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Client-Side -->
+    <section id="client">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+            Client Integration
+          </h2>
+        </div>
+        <div class="p-8">
+           <p class="text-gray-300 mb-4">
+             Connect from the browser or any WebSocket client.
+           </p>
+           <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-javascript"><span class="text-gray-500">// Connect to SoliDB WebSocket</span>
+<span class="text-purple-400">const</span> ws = <span class="text-purple-400">new</span> WebSocket(<span class="text-green-400">"ws://localhost:6745/_ws"</span>);
+
+ws.<span class="text-blue-400">onopen</span> = () => {
+  <span class="text-gray-500">// Subscribe to channel</span>
+  ws.send(JSON.stringify({
+    type: <span class="text-green-400">"subscribe"</span>,
+    channel: <span class="text-green-400">"chat_room_1"</span>
+  }));
+};
+
+ws.<span class="text-blue-400">onmessage</span> = (event) => {
+  <span class="text-purple-400">const</span> msg = JSON.parse(event.data);
+  <span class="text-blue-400">console</span>.log(<span class="text-green-400">"Received:"</span>, msg);
+};</pre>
+                </div>
+           </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

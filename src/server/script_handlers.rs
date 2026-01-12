@@ -402,7 +402,11 @@ pub async fn execute_script_handler(
     };
 
     // Execute script
-    let engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone());
+    let mut engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone());
+    
+    if let Some(sm) = &state.stream_manager {
+        engine = engine.with_stream_manager(sm.clone());
+    }
 
     // Handle WebSocket upgrade
     if context.is_websocket {
@@ -594,7 +598,11 @@ pub async fn repl_eval_handler(
     session.add_to_history(req.code.clone());
 
     // Create script engine
-    let engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone());
+    let mut engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone());
+    
+    if let Some(sm) = &state.stream_manager {
+        engine = engine.with_stream_manager(sm.clone());
+    }
 
     // Execute with session variables and history for function replay
     let mut output_capture: Vec<String> = Vec::new();
