@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: solidb
+  namespace: solidb
+  labels:
+    app.kubernetes.io/name: solidb
+spec:
+  minAvailable: 2  # Maintain quorum during disruptions
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: solidb
+      app.kubernetes.io/component: cluster

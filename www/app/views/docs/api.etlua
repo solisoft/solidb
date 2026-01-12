@@ -206,51 +206,83 @@
               Quick Reference
             </h2>
           </div>
-          <div class="p-8">
+          <div class="p-8 space-y-8">
+            <!-- Common Endpoints Table -->
+            <div>
+              <h3 class="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4">Common Endpoints</h3>
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="border-b border-white/10">
+                      <th class="text-left py-2 pr-4 text-gray-400 font-medium w-20">Method</th>
+                      <th class="text-left py-2 pr-4 text-gray-400 font-medium">Endpoint</th>
+                      <th class="text-left py-2 text-gray-400 font-medium">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="font-mono text-xs">
+                    <tr class="border-b border-white/5">
+                      <td class="py-3 pr-4"><span class="px-2 py-1 bg-green-500/20 text-green-400 font-bold rounded">POST</span></td>
+                      <td class="py-3 pr-4 text-gray-300">/_api/database/<span class="text-emerald-400">:db</span>/query</td>
+                      <td class="py-3 text-gray-500 font-sans">Execute SDBQL query</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="py-3 pr-4"><span class="px-2 py-1 bg-green-500/20 text-green-400 font-bold rounded">POST</span></td>
+                      <td class="py-3 pr-4 text-gray-300">/_api/document/<span class="text-emerald-400">:db</span>/<span class="text-blue-400">:coll</span></td>
+                      <td class="py-3 text-gray-500 font-sans">Insert document</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="py-3 pr-4"><span class="px-2 py-1 bg-blue-500/20 text-blue-400 font-bold rounded">GET</span></td>
+                      <td class="py-3 pr-4 text-gray-300">/_api/document/<span class="text-emerald-400">:db</span>/<span class="text-blue-400">:coll</span>/<span class="text-purple-400">:key</span></td>
+                      <td class="py-3 text-gray-500 font-sans">Get document by key</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="py-3 pr-4"><span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 font-bold rounded">PUT</span></td>
+                      <td class="py-3 pr-4 text-gray-300">/_api/document/<span class="text-emerald-400">:db</span>/<span class="text-blue-400">:coll</span>/<span class="text-purple-400">:key</span></td>
+                      <td class="py-3 text-gray-500 font-sans">Update document</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="py-3 pr-4"><span class="px-2 py-1 bg-red-500/20 text-red-400 font-bold rounded">DELETE</span></td>
+                      <td class="py-3 pr-4 text-gray-300">/_api/document/<span class="text-emerald-400">:db</span>/<span class="text-blue-400">:coll</span>/<span class="text-purple-400">:key</span></td>
+                      <td class="py-3 text-gray-500 font-sans">Delete document</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="py-3 pr-4"><span class="px-2 py-1 bg-green-500/20 text-green-400 font-bold rounded">POST</span></td>
+                      <td class="py-3 pr-4 text-gray-300">/auth/login</td>
+                      <td class="py-3 text-gray-500 font-sans">Get JWT token</td>
+                    </tr>
+                    <tr>
+                      <td class="py-3 pr-4"><span class="px-2 py-1 bg-blue-500/20 text-blue-400 font-bold rounded">GET</span></td>
+                      <td class="py-3 pr-4 text-gray-300">/metrics</td>
+                      <td class="py-3 text-gray-500 font-sans">Prometheus metrics</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Authentication -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 class="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4">Common Operations</h3>
-                <div class="space-y-2 text-sm">
-                  <div class="flex items-center gap-3">
-                    <span class="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
-                    <code class="text-gray-400">/_api/database/:db/query</code>
-                    <span class="text-gray-500">Execute SDBQL</span>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
-                    <code class="text-gray-400">/_api/database/:db/collection/:coll/document</code>
-                    <span class="text-gray-500">Insert doc</span>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
-                    <code class="text-gray-400">/_api/database/:db/collection/:coll/document/:key</code>
-                    <span class="text-gray-500">Get doc</span>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
-                    <code class="text-gray-400">/_api/database/:db/collection/:coll/document/:key</code>
-                    <span class="text-gray-500">Update doc</span>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="px-2 py-0.5 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
-                    <code class="text-gray-400">/_api/database/:db/collection/:coll/document/:key</code>
-                    <span class="text-gray-500">Delete doc</span>
-                  </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-sm font-bold text-gray-300 uppercase tracking-wider mb-3">JWT Authentication</h3>
+                <p class="text-sm text-gray-400 mb-3">Login to get a token, then include it in requests:</p>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  Authorization: Bearer &lt;token&gt;
                 </div>
               </div>
-              <div>
-                <h3 class="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4">Authentication</h3>
-                <div class="space-y-3 text-sm text-gray-400">
-                  <p>All endpoints except <code class="text-emerald-400">/auth/login</code>, <code class="text-emerald-400">/_api/health</code>, and <code class="text-emerald-400">/metrics</code> require authentication.</p>
-                  <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs">
-                    Authorization: Bearer &lt;jwt_token&gt;
-                  </div>
-                  <p>Or use API key header:</p>
-                  <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs">
-                    X-API-Key: &lt;api_key&gt;
-                  </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-sm font-bold text-gray-300 uppercase tracking-wider mb-3">API Key Authentication</h3>
+                <p class="text-sm text-gray-400 mb-3">Alternatively, use an API key:</p>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  X-API-Key: &lt;api_key&gt;
                 </div>
               </div>
+            </div>
+
+            <!-- Public Endpoints Note -->
+            <div class="bg-emerald-900/10 border border-emerald-500/20 rounded-lg p-4">
+              <p class="text-sm text-emerald-300">
+                <strong>Public endpoints:</strong> <code class="text-emerald-400">/auth/login</code>, <code class="text-emerald-400">/_api/health</code>, and <code class="text-emerald-400">/metrics</code> do not require authentication.
+              </p>
             </div>
           </div>
         </div>
