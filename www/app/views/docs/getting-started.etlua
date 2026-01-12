@@ -325,6 +325,48 @@ volumes:
                 <code class="text-green-400">/_api/health</code>. Container orchestrators can use this to monitor instance health.
               </p>
             </div>
+
+            <!-- Docker Cluster -->
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3 class="text-cyan-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Docker Cluster Setup
+              </h3>
+              <p class="text-gray-300 text-sm mb-4">
+                For high availability, use the cluster compose file to run multiple nodes.
+              </p>
+              <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 space-y-2">
+                <div class="flex">
+                  <span class="text-gray-500 mr-2">#</span>
+                  <span class="text-gray-500">Generate shared keyfile for cluster auth</span>
+                </div>
+                <div class="flex">
+                  <span class="text-cyan-400 mr-2">$</span>
+                  <span>openssl rand -hex 32 > solidb.key</span>
+                </div>
+                <div class="flex mt-2">
+                  <span class="text-gray-500 mr-2">#</span>
+                  <span class="text-gray-500">Start 3-node cluster</span>
+                </div>
+                <div class="flex">
+                  <span class="text-cyan-400 mr-2">$</span>
+                  <span>docker-compose -f docker-compose-cluster.yml up -d</span>
+                </div>
+              </div>
+              <div class="mt-4 grid grid-cols-3 gap-3 text-center text-xs">
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <div class="text-cyan-400 font-bold">Node 1</div>
+                  <div class="text-gray-500">localhost:6745</div>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <div class="text-cyan-400 font-bold">Node 2</div>
+                  <div class="text-gray-500">localhost:6746</div>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <div class="text-cyan-400 font-bold">Node 3</div>
+                  <div class="text-gray-500">localhost:6747</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

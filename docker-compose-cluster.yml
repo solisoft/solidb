@@ -1,0 +1,113 @@
+version: '3.8'
+
+# SoliDB 3-Node Cluster Configuration
+# Usage:
+#   1. Generate keyfile: openssl rand -hex 32 > solidb.key
+#   2. Start cluster: docker-compose -f docker-compose-cluster.yml up -d
+#   3. Scale: docker-compose -f docker-compose-cluster.yml up -d --scale solidb-node=5
+
+services:
+  solidb-node1:
+    build: .
+    image: solidb/solidb:latest
+    container_name: solidb-node1
+    hostname: solidb-node1
+    ports:
+      - "6745:6745"
+    volumes:
+      - solidb-data-1:/data
+      - ./solidb.key:/etc/solidb/solidb.key:ro
+    environment:
+      - SOLIDB_PORT=6745
+      - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:-admin}
+      - RUST_LOG=solidb=info
+    command: >
+      sh -c "solidb
+        --port 6745
+        --data-dir /data
+        --keyfile /etc/solidb/solidb.key
+        --cluster-peers solidb-node2:6745,solidb-node3:6745"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6745/_api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - solidb-cluster
+    restart: unless-stopped
+
+  solidb-node2:
+    build: .
+    image: solidb/solidb:latest
+    container_name: solidb-node2
+    hostname: solidb-node2
+    ports:
+      - "6746:6745"
+    volumes:
+      - solidb-data-2:/data
+      - ./solidb.key:/etc/solidb/solidb.key:ro
+    environment:
+      - SOLIDB_PORT=6745
+      - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:-admin}
+      - RUST_LOG=solidb=info
+    command: >
+      sh -c "solidb
+        --port 6745
+        --data-dir /data
+        --keyfile /etc/solidb/solidb.key
+        --cluster-peers solidb-node1:6745,solidb-node3:6745"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6745/_api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - solidb-cluster
+    depends_on:
+      solidb-node1:
+        condition: service_healthy
+    restart: unless-stopped
+
+  solidb-node3:
+    build: .
+    image: solidb/solidb:latest
+    container_name: solidb-node3
+    hostname: solidb-node3
+    ports:
+      - "6747:6745"
+    volumes:
+      - solidb-data-3:/data
+      - ./solidb.key:/etc/solidb/solidb.key:ro
+    environment:
+      - SOLIDB_PORT=6745
+      - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:-admin}
+      - RUST_LOG=solidb=info
+    command: >
+      sh -c "solidb
+        --port 6745
+        --data-dir /data
+        --keyfile /etc/solidb/solidb.key
+        --cluster-peers solidb-node1:6745,solidb-node2:6745"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6745/_api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - solidb-cluster
+    depends_on:
+      solidb-node1:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  solidb-cluster:
+    driver: bridge
+
+volumes:
+  solidb-data-1:
+  solidb-data-2:
+  solidb-data-3:
