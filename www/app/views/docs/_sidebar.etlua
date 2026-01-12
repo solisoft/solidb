@@ -39,6 +39,7 @@ local sections = {
         { slug = "sdbql-functions-geo", label = "Geo Functions" },
         { slug = "sdbql-functions-vector", label = "Vector Functions" },
         { slug = "sdbql-functions-search", label = "Search Functions" },
+        { slug = "sdbql-functions-crypto", label = "Crypto Functions" },
         { slug = "sdbql-functions-misc", label = "Other Functions" },
       }},
       { slug = "sql", label = "SQL Compatibility", icon = "fa-database", color = "info" },

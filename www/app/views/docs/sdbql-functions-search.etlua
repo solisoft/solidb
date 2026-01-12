@@ -214,6 +214,149 @@ FOR r IN results
               </div>
             </div>
 
+            <!-- HIGHLIGHT -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-yellow-300 flex items-center">
+                  <span class="bg-yellow-500/20 text-yellow-400 text-xs font-mono px-2 py-1 rounded mr-3">HIGHLIGHT</span>
+                  Search Result Highlighting
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Wraps matched search terms in HTML bold tags for highlighting in search results.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">HIGHLIGHT(<span class="text-yellow-400">text</span>, <span class="text-cyan-400">terms</span>)</code>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Parameters</h4>
+                    <ul class="text-xs text-gray-400 space-y-1">
+                      <li><code class="text-yellow-300">text</code> - The text to search and highlight within</li>
+                      <li><code class="text-yellow-300">terms</code> - Search term string or array of terms to highlight</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Returns</h4>
+                    <p class="text-xs text-gray-400">Text with matched terms wrapped in <code class="text-yellow-300">&lt;b&gt;</code> tags (case-insensitive matching)</p>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Single Term</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">RETURN HIGHLIGHT("Hello World", "world")
+-- "Hello &lt;b&gt;World&lt;/b&gt;"</code></pre>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Multiple Terms</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">RETURN HIGHLIGHT("Rust database engine", ["rust", "engine"])
+-- "&lt;b&gt;Rust&lt;/b&gt; database &lt;b&gt;engine&lt;/b&gt;"</code></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Usage in Search Results</h4>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">FOR doc IN articles
+  LET score = BM25(doc.content, @query)
+  FILTER score > 0.1
+  SORT score DESC
+  LIMIT 10
+  RETURN {
+    title: HIGHLIGHT(doc.title, @query),
+    preview: HIGHLIGHT(SUBSTRING(doc.content, 0, 200), @query),
+    score
+  }</code></pre>
+                </div>
+
+                <div class="bg-yellow-900/10 border border-yellow-500/30 rounded-lg p-4 flex items-start">
+                  <svg class="w-5 h-5 text-yellow-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  <div>
+                    <h4 class="text-yellow-300 font-bold mb-1 text-sm">HTML Output</h4>
+                    <p class="text-sm text-yellow-200/70">
+                      HIGHLIGHT returns HTML with <code>&lt;b&gt;</code> tags. Ensure your frontend renders the output as HTML (not escaped text) to display the highlighting properly.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SAMPLE -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-yellow-300 flex items-center">
+                  <span class="bg-green-500/20 text-green-400 text-xs font-mono px-2 py-1 rounded mr-3">SAMPLE</span>
+                  Random Document Sampling
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Returns a random sample of documents from a collection. Useful for testing, data exploration, and machine learning workflows.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">SAMPLE(<span class="text-green-400">collection</span>, <span class="text-cyan-400">count</span>)</code>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Parameters</h4>
+                    <ul class="text-xs text-gray-400 space-y-1">
+                      <li><code class="text-green-300">collection</code> - Name of the collection to sample from</li>
+                      <li><code class="text-green-300">count</code> - Number of random documents to return</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Returns</h4>
+                    <p class="text-xs text-gray-400">Array of randomly selected documents (may return fewer if collection has less documents than requested)</p>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Basic Usage</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">LET random_users = SAMPLE("users", 5)
+FOR user IN random_users
+  RETURN user.name</code></pre>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">ML Training Set</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">LET training_data = SAMPLE("articles", 1000)
+FOR doc IN training_data
+  RETURN { text: doc.content, label: doc.category }</code></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Data Exploration</h4>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Get random products to inspect data quality
+LET samples = SAMPLE("products", 10)
+FOR p IN samples
+  RETURN {
+    _key: p._key,
+    name: p.name,
+    hasPrice: IS_NUMBER(p.price),
+    hasCategory: IS_STRING(p.category)
+  }</code></pre>
+                </div>
+
+                <div class="bg-green-900/10 border border-green-500/30 rounded-lg p-4 flex items-start">
+                  <svg class="w-5 h-5 text-green-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  <div>
+                    <h4 class="text-green-300 font-bold mb-1 text-sm">Use Cases</h4>
+                    <ul class="text-sm text-green-200/70 list-disc list-inside">
+                      <li>Testing with representative data</li>
+                      <li>Machine learning training/validation splits</li>
+                      <li>Data quality inspection</li>
+                      <li>Building demo datasets</li>
+                      <li>A/B testing candidate selection</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Practical Examples -->
             <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
               <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Search Examples</h4>

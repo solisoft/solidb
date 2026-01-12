@@ -129,6 +129,10 @@
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-white/5">
+                  <!-- Core Data Models -->
+                  <tr class="bg-white/5">
+                    <td colspan="7" class="py-2 px-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Core Data Models</td>
+                  </tr>
                   <tr class="hover:bg-white/5 transition-colors">
                     <td class="py-3 px-4 text-gray-300">Document Store</td>
                     <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
@@ -139,6 +143,15 @@
                     <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
                   </tr>
                   <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Graph Capabilities</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
                     <td class="py-3 px-4 text-gray-300">Columnar Analytics</td>
                     <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
@@ -146,6 +159,29 @@
                     <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Time Series</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Blob Storage</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                  </tr>
+
+                  <!-- Real-time & Eventing -->
+                  <tr class="bg-white/5">
+                    <td colspan="7" class="py-2 px-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Real-time & Eventing</td>
                   </tr>
                   <tr class="hover:bg-white/5 transition-colors">
                     <td class="py-3 px-4 text-gray-300">Real-time Changefeeds</td>
@@ -166,33 +202,6 @@
                     <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
                   </tr>
                   <tr class="hover:bg-white/5 transition-colors">
-                    <td class="py-3 px-4 text-gray-300">ACID Transactions</td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                  </tr>
-                  <tr class="hover:bg-white/5 transition-colors">
-                    <td class="py-3 px-4 text-gray-300">Graph Capabilities</td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                  </tr>
-                  <tr class="hover:bg-white/5 transition-colors">
-                    <td class="py-3 px-4 text-gray-300">Server-side Scripting</td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                  </tr>
-                  <tr class="hover:bg-white/5 transition-colors">
                     <td class="py-3 px-4 text-gray-300">Background Queues</td>
                     <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
@@ -202,40 +211,18 @@
                     <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
                   </tr>
                   <tr class="hover:bg-white/5 transition-colors">
-                    <td class="py-3 px-4 text-gray-300">Blob Storage</td>
+                    <td class="py-3 px-4 text-gray-300">Stream Processing</td>
                     <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                  </tr>
-                  <tr class="hover:bg-white/5 transition-colors">
-                    <td class="py-3 px-4 text-gray-300">Master-Master Replication</td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                  </tr>
-                  <tr class="hover:bg-white/5 transition-colors">
-                    <td class="py-3 px-4 text-gray-300">Single Binary</td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
                   </tr>
-                  <tr class="hover:bg-white/5 transition-colors">
-                    <td class="py-3 px-4 text-gray-300">Written in Rust</td>
-                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
-                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+
+                  <!-- Search & Analytics -->
+                  <tr class="bg-white/5">
+                    <td colspan="7" class="py-2 px-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Search & Analytics</td>
                   </tr>
                   <tr class="hover:bg-white/5 transition-colors">
                     <td class="py-3 px-4 text-gray-300">Vector Search (HNSW)</td>
@@ -273,6 +260,47 @@
                     <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
                   </tr>
+
+                  <!-- Operational & Architecture -->
+                  <tr class="bg-white/5">
+                    <td colspan="7" class="py-2 px-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Operational & Architecture</td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">ACID Transactions</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Server-side Scripting</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Auto-Sharding</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Master-Master Replication</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
                   <tr class="hover:bg-white/5 transition-colors">
                     <td class="py-3 px-4 text-gray-300">TTL / Expiration</td>
                     <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
@@ -281,6 +309,24 @@
                     <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Single Binary</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Written in Rust</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
                   </tr>
                 </tbody>
               </table>

@@ -1,0 +1,327 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-red-500 to-orange-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-orange-400 to-yellow-400 mb-4 tracking-tight">
+            Crypto & Security Functions
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Cryptographic hashing, password security, and encoding functions for secure data handling.
+          </p>
+        </div>
+      </div>
+
+      <!-- Password Hashing -->
+      <section id="password-hashing" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-red-500/10 to-orange-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+              </svg>
+              Password Hashing (Argon2)
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              Argon2id is the recommended algorithm for password hashing. It's resistant to GPU cracking attacks and side-channel attacks.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-red-500/20 px-2 py-1 rounded border border-red-500/30 w-fit mb-3">ARGON2_HASH(password)</code>
+                <p class="text-sm text-gray-400 mb-3">Securely hash a password using Argon2id with automatic salt generation.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ARGON2_HASH("mypassword123")
+-- "$argon2id$v=19$m=19456,t=2,p=1$..."</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-red-500/20 px-2 py-1 rounded border border-red-500/30 w-fit mb-3">ARGON2_VERIFY(hash, password)</code>
+                <p class="text-sm text-gray-400 mb-3">Verify a password against a stored Argon2 hash. Returns true/false.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ARGON2_VERIFY(@storedHash, "mypassword123")
+-- true</code></pre>
+              </div>
+            </div>
+
+            <!-- User Registration Example -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">User Registration & Login Example</h4>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Registration: Hash password before storing
+INSERT {
+  email: @email,
+  password_hash: ARGON2_HASH(@password),
+  created_at: DATE_NOW()
+} INTO users
+
+-- Login: Verify password
+FOR user IN users
+  FILTER user.email == @email
+  RETURN {
+    valid: ARGON2_VERIFY(user.password_hash, @password),
+    user_id: user._key
+  }</code></pre>
+            </div>
+
+            <!-- Security Notice -->
+            <div class="bg-red-900/10 border border-red-500/30 rounded-lg p-4 flex items-start">
+              <svg class="w-5 h-5 text-red-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+              </svg>
+              <div>
+                <h4 class="text-red-300 font-bold mb-1 text-sm">Security Best Practices</h4>
+                <ul class="text-sm text-red-200/70 list-disc list-inside space-y-1">
+                  <li>Never store plain-text passwords - always use ARGON2_HASH</li>
+                  <li>Never log or expose password hashes in API responses</li>
+                  <li>Use HTTPS for all authentication endpoints</li>
+                  <li>Implement rate limiting on login attempts</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Cryptographic Hashing -->
+      <section id="hashing" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-orange-500/10 to-yellow-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+              </svg>
+              Cryptographic Hash Functions
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              One-way hash functions for checksums, data integrity verification, and non-sensitive hashing needs.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">MD5(string)</code>
+                <p class="text-sm text-gray-400 mb-3">Computes MD5 hash (128-bit). Fast but not cryptographically secure - use for checksums only.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MD5("hello world")
+-- "5eb63bbbe01eeed093cb22bb8f5acdc3"</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">SHA256(string)</code>
+                <p class="text-sm text-gray-400 mb-3">Computes SHA-256 hash (256-bit). Cryptographically secure for data integrity.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SHA256("hello world")
+-- "b94d27b9934d3e08a52e52d7da7dabfa..."</code></pre>
+              </div>
+            </div>
+
+            <!-- Hash Comparison Table -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Hash Function Comparison</h4>
+              <div class="overflow-x-auto">
+                <table class="w-full text-xs text-gray-400">
+                  <thead>
+                    <tr class="border-b border-white/10">
+                      <th class="text-left p-2 text-gray-300">Function</th>
+                      <th class="text-left p-2 text-gray-300">Output</th>
+                      <th class="text-left p-2 text-gray-300">Speed</th>
+                      <th class="text-left p-2 text-gray-300">Use Case</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="border-b border-white/5">
+                      <td class="p-2 text-orange-300">MD5</td>
+                      <td class="p-2">32 hex chars</td>
+                      <td class="p-2">Very Fast</td>
+                      <td class="p-2">Checksums, cache keys, non-security</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="p-2 text-orange-300">SHA256</td>
+                      <td class="p-2">64 hex chars</td>
+                      <td class="p-2">Fast</td>
+                      <td class="p-2">Data integrity, signatures, tokens</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="p-2 text-red-300">ARGON2</td>
+                      <td class="p-2">PHC string</td>
+                      <td class="p-2">Slow (intentional)</td>
+                      <td class="p-2">Passwords only</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Warning -->
+            <div class="bg-orange-900/10 border border-orange-500/30 rounded-lg p-4 flex items-start">
+              <svg class="w-5 h-5 text-orange-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <div>
+                <h4 class="text-orange-300 font-bold mb-1 text-sm">Do NOT use MD5/SHA256 for passwords!</h4>
+                <p class="text-sm text-orange-200/70">
+                  MD5 and SHA256 are too fast for password hashing - they can be brute-forced easily. Always use ARGON2_HASH for passwords.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Encoding Functions -->
+      <section id="encoding" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-yellow-500/10 to-amber-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+              </svg>
+              Encoding Functions
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              Encoding functions for converting data between different representations. Note: encoding is NOT encryption - encoded data can be easily decoded.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-yellow-500/20 px-2 py-1 rounded border border-yellow-500/30 w-fit mb-3">BASE64_ENCODE(string)</code>
+                <p class="text-sm text-gray-400 mb-3">Encode string to Base64 format. Useful for binary data in JSON or URLs.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN BASE64_ENCODE("Hello World")
+-- "SGVsbG8gV29ybGQ="</code></pre>
+              </div>
+              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <code class="block text-sm font-bold text-white bg-yellow-500/20 px-2 py-1 rounded border border-yellow-500/30 w-fit mb-3">BASE64_DECODE(string)</code>
+                <p class="text-sm text-gray-400 mb-3">Decode Base64 string back to original. Returns error if invalid Base64.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN BASE64_DECODE("SGVsbG8gV29ybGQ=")
+-- "Hello World"</code></pre>
+              </div>
+            </div>
+
+            <!-- Practical Examples -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Examples</h4>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Generate API key with checksum
+LET key = NANOID(32)
+LET checksum = LEFT(SHA256(key), 8)
+RETURN CONCAT(key, ".", checksum)
+
+-- Create cache key from query parameters
+LET params = JSON_STRINGIFY({user: @userId, page: @page})
+RETURN CONCAT("cache:", MD5(params))
+
+-- Encode sensitive data for URL transport
+LET data = JSON_STRINGIFY({token: @token, expires: DATE_NOW() + 3600})
+RETURN BASE64_ENCODE(data)
+
+-- Verify data integrity
+FOR doc IN documents
+  LET expectedHash = SHA256(doc.content)
+  FILTER doc.content_hash != expectedHash
+  RETURN { _key: doc._key, status: "corrupted" }
+
+-- Password change workflow
+FOR user IN users
+  FILTER user._key == @userId
+  FILTER ARGON2_VERIFY(user.password_hash, @currentPassword)
+  UPDATE user WITH {
+    password_hash: ARGON2_HASH(@newPassword),
+    password_changed_at: DATE_NOW()
+  } IN users
+  RETURN { success: true }</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Reference -->
+      <section id="quick-reference" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-gray-500/10 to-slate-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+              </svg>
+              Quick Reference
+            </h2>
+          </div>
+          <div class="p-8">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm text-gray-400">
+                <thead>
+                  <tr class="border-b border-white/10">
+                    <th class="text-left p-3 text-gray-300">Function</th>
+                    <th class="text-left p-3 text-gray-300">Purpose</th>
+                    <th class="text-left p-3 text-gray-300">Example</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="border-b border-white/5">
+                    <td class="p-3"><code class="text-red-300">ARGON2_HASH(pwd)</code></td>
+                    <td class="p-3">Hash password securely</td>
+                    <td class="p-3"><code class="text-gray-500">ARGON2_HASH("secret")</code></td>
+                  </tr>
+                  <tr class="border-b border-white/5">
+                    <td class="p-3"><code class="text-red-300">ARGON2_VERIFY(hash, pwd)</code></td>
+                    <td class="p-3">Verify password</td>
+                    <td class="p-3"><code class="text-gray-500">ARGON2_VERIFY(@hash, "secret")</code></td>
+                  </tr>
+                  <tr class="border-b border-white/5">
+                    <td class="p-3"><code class="text-orange-300">MD5(str)</code></td>
+                    <td class="p-3">Fast checksum</td>
+                    <td class="p-3"><code class="text-gray-500">MD5("data")</code></td>
+                  </tr>
+                  <tr class="border-b border-white/5">
+                    <td class="p-3"><code class="text-orange-300">SHA256(str)</code></td>
+                    <td class="p-3">Secure hash</td>
+                    <td class="p-3"><code class="text-gray-500">SHA256("data")</code></td>
+                  </tr>
+                  <tr class="border-b border-white/5">
+                    <td class="p-3"><code class="text-yellow-300">BASE64_ENCODE(str)</code></td>
+                    <td class="p-3">Encode to Base64</td>
+                    <td class="p-3"><code class="text-gray-500">BASE64_ENCODE("hello")</code></td>
+                  </tr>
+                  <tr class="border-b border-white/5">
+                    <td class="p-3"><code class="text-yellow-300">BASE64_DECODE(str)</code></td>
+                    <td class="p-3">Decode from Base64</td>
+                    <td class="p-3"><code class="text-gray-500">BASE64_DECODE("aGVsbG8=")</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/sdbql-functions-misc" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Other Functions
+          </span>
+        </a>
+        <a href="/docs/sdbql" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            SDBQL Reference
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

@@ -55,6 +55,8 @@ hostname = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
 uuid7 = "1.0"
+ulid = "1.1"
+nanoid = "0.4"
 regex = "1.10"
 seahash = "4.1"  # Uniform hash distribution for sharding
 

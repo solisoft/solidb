@@ -68,6 +68,26 @@
                   <p class="text-sm text-gray-400 mb-3">Returns a random float between 0 and 1.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN RANDOM() --0.54321...</code></pre>
                 </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">RANDOM_INT(min, max)</code>
+                  <p class="text-sm text-gray-400 mb-3">Random integer in range (inclusive).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN RANDOM_INT(1, 100) --42</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">MOD(a, b)</code>
+                  <p class="text-sm text-gray-400 mb-3">Modulo operation.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MOD(7, 3) --1</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">CLAMP(val, min, max)</code>
+                  <p class="text-sm text-gray-400 mb-3">Clamp value to range.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CLAMP(15, 0, 10) --10</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">SIGN(num)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns sign of number (-1, 0, 1).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SIGN(-5) -- -1</code></pre>
+                </div>
               </div>
             </div>
 

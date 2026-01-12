@@ -126,6 +126,26 @@ doc.values[*]  -- [1, 2, 3]</code></pre>
                   <p class="text-sm text-gray-400 mb-3">Returns the number of documents in a collection.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COLLECTION_COUNT("users") --100</code></pre>
                 </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">INDEX_OF(arr, value)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns index of value, or -1 if not found.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN INDEX_OF([1,2,3], 2) --1</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">TAKE(arr, n)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns first n elements.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TAKE([1,2,3,4], 2) --[1,2]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">DROP(arr, n)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns array without first n elements. Alias: SKIP.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DROP([1,2,3,4], 2) --[3,4]</code></pre>
+                </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">CHUNK(arr, size)</code>
+                  <p class="text-sm text-gray-400 mb-3">Splits array into chunks of specified size.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CHUNK([1,2,3,4,5], 2) --[[1,2],[3,4],[5]]</code></pre>
+                </div>
               </div>
             </div>
 

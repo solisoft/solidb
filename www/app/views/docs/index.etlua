@@ -1144,4 +1144,83 @@
       </div>
     </a>
   </div>
+
+  <!-- Features at a Glance Section -->
+  <div class="mt-24">
+    <div class="text-center mb-12">
+      <h2 class="text-3xl font-bold text-white mb-4">Features at a Glance</h2>
+      <p class="text-gray-400 max-w-2xl mx-auto">
+        SoliDB unifies multiple data paradigms into a single, high-performance distributed database.
+      </p>
+    </div>
+
+    <div class="bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead>
+            <tr class="bg-white/5 border-b border-white/10">
+              <th class="py-4 px-6 text-indigo-400 font-bold uppercase tracking-wider">Category</th>
+              <th class="py-4 px-6 text-white font-bold">Key Capabilities</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5">
+            <tr class="hover:bg-white/5 transition-colors">
+              <td class="py-4 px-6 font-medium text-white">Core Data</td>
+              <td class="py-4 px-6 text-gray-300">
+                <div class="flex flex-wrap gap-2">
+                  <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Document Store (JSON)</span>
+                  <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Graph & Edges</span>
+                  <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Key-Value</span>
+                  <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Blob Storage</span>
+                  <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Time Series</span>
+                </div>
+              </td>
+            </tr>
+            <tr class="hover:bg-white/5 transition-colors">
+              <td class="py-4 px-6 font-medium text-white">Real-time</td>
+              <td class="py-4 px-6 text-gray-300">
+                <div class="flex flex-wrap gap-2">
+                  <span class="px-2 py-1 bg-emerald-900/30 text-emerald-300 rounded border border-emerald-500/20">Live Queries</span>
+                  <span class="px-2 py-1 bg-emerald-900/30 text-emerald-300 rounded border border-emerald-500/20">Changefeeds</span>
+                  <span class="px-2 py-1 bg-emerald-900/30 text-emerald-300 rounded border border-emerald-500/20">Pub/Sub</span>
+                  <span class="px-2 py-1 bg-emerald-900/30 text-emerald-300 rounded border border-emerald-500/20">Stream Processing</span>
+                </div>
+              </td>
+            </tr>
+            <tr class="hover:bg-white/5 transition-colors">
+              <td class="py-4 px-6 font-medium text-white">Search & Analytics</td>
+              <td class="py-4 px-6 text-gray-300">
+                <div class="flex flex-wrap gap-2">
+                  <span class="px-2 py-1 bg-purple-900/30 text-purple-300 rounded border border-purple-500/20">Vector Search (HNSW)</span>
+                  <span class="px-2 py-1 bg-purple-900/30 text-purple-300 rounded border border-purple-500/20">Full-text Search</span>
+                  <span class="px-2 py-1 bg-purple-900/30 text-purple-300 rounded border border-purple-500/20">Columnar Analytics</span>
+                  <span class="px-2 py-1 bg-purple-900/30 text-purple-300 rounded border border-purple-500/20">Geo-Spatial</span>
+                </div>
+              </td>
+            </tr>
+            <tr class="hover:bg-white/5 transition-colors">
+              <td class="py-4 px-6 font-medium text-white">Operations</td>
+              <td class="py-4 px-6 text-gray-300">
+                <div class="flex flex-wrap gap-2">
+                  <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">ACID Transactions</span>
+                  <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Master-Master Replication</span>
+                  <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Auto-Sharding</span>
+                  <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Distributed Job Queues</span>
+                  <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Lua Scripting</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="bg-white/5 p-4 text-center border-t border-white/10">
+        <a href="/docs/comparison" class="text-indigo-400 hover:text-indigo-300 font-bold text-sm flex items-center justify-center group">
+          View Detailed Feature Comparison Matrix
+          <svg class="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+          </svg>
+        </a>
+      </div>
+    </div>
+  </div>
 </div>

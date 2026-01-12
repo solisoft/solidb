@@ -27,6 +27,66 @@
       <section id="string-functions" class="scroll-mt-24">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">STARTS_WITH(str, prefix)</code>
+            <p class="text-sm text-gray-400 mb-3">Check if string starts with prefix.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STARTS_WITH("hello", "he") --true</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">ENDS_WITH(str, suffix)</code>
+            <p class="text-sm text-gray-400 mb-3">Check if string ends with suffix.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ENDS_WITH("file.txt", ".txt") --true</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">PAD_LEFT(str, len, char?)</code>
+            <p class="text-sm text-gray-400 mb-3">Pad string from left. Alias: LPAD.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PAD_LEFT("42", 5, "0") --"00042"</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">PAD_RIGHT(str, len, char?)</code>
+            <p class="text-sm text-gray-400 mb-3">Pad string from right. Alias: RPAD.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PAD_RIGHT("hi", 5) --"hi   "</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">REPEAT(str, count)</code>
+            <p class="text-sm text-gray-400 mb-3">Repeat string n times.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REPEAT("ab", 3) --"ababab"</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CAPITALIZE(str)</code>
+            <p class="text-sm text-gray-400 mb-3">Capitalize first letter of string.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CAPITALIZE("hello") --"Hello"</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TITLE_CASE(str)</code>
+            <p class="text-sm text-gray-400 mb-3">Title case all words. Alias: INITCAP.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TITLE_CASE("hello world") --"Hello World"</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">ENCODE_URI(str)</code>
+            <p class="text-sm text-gray-400 mb-3">URL encode string. Alias: URL_ENCODE.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ENCODE_URI("hello world") --"hello%20world"</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">DECODE_URI(str)</code>
+            <p class="text-sm text-gray-400 mb-3">URL decode string. Alias: URL_DECODE.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DECODE_URI("hello%20world") --"hello world"</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">WORD_COUNT(str)</code>
+            <p class="text-sm text-gray-400 mb-3">Count words in string.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN WORD_COUNT("hello world") --2</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TRUNCATE_TEXT(str, len, suffix?)</code>
+            <p class="text-sm text-gray-400 mb-3">Truncate with ellipsis. Alias: ELLIPSIS.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TRUNCATE_TEXT("Hello World", 8) --"Hello..."</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">MASK(str, start?, end?, char?)</code>
+            <p class="text-sm text-gray-400 mb-3">Mask string for PII protection.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MASK("4111111111111111", 0, -4) --"************1111"</code></pre>
+          </div>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CONCAT(str1, ...)</code>
             <p class="text-sm text-gray-400 mb-3">Concatenates strings.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONCAT("A", "B") --"AB"</code></pre>
@@ -196,6 +256,156 @@ RETURN METAPHONE("Wright") == METAPHONE("Right") --true</code></pre>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">NYSIIS(str)</code>
                 <p class="text-sm text-gray-400 mb-3">New York State algorithm. Accurate for various ethnic origins.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN NYSIIS("MacDonald") == NYSIIS("McDonald") --true</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Text Transformation -->
+      <section id="text-transformation" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-emerald-500/10 to-teal-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path>
+              </svg>
+              Text Transformation
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              Functions for transforming and sanitizing text input for URLs, forms, and security.
+            </p>
+
+            <!-- SLUGIFY -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-emerald-300 flex items-center">
+                  <span class="bg-emerald-500/20 text-emerald-400 text-xs font-mono px-2 py-1 rounded mr-3">SLUGIFY</span>
+                  URL-Friendly Slug Generation
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Converts text to a URL-friendly slug: lowercase, spaces become hyphens, special characters removed.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">SLUGIFY(<span class="text-emerald-400">text</span>)</code>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Basic Usage</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">RETURN SLUGIFY("Hello World!")
+-- "hello-world"
+
+RETURN SLUGIFY("My Blog Post Title")
+-- "my-blog-post-title"</code></pre>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Special Characters</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">RETURN SLUGIFY("Café & Restaurant")
+-- "cafe-restaurant"
+
+RETURN SLUGIFY("Product #42: 50% Off!")
+-- "product-42-50-off"</code></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Use in Insert</h4>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">INSERT {
+  title: @title,
+  slug: SLUGIFY(@title),
+  content: @content
+} INTO articles</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- SANITIZE -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-emerald-300 flex items-center">
+                  <span class="bg-emerald-500/20 text-emerald-400 text-xs font-mono px-2 py-1 rounded mr-3">SANITIZE</span>
+                  Input Sanitization
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Cleans and sanitizes input strings using one or more operations. Supports chaining multiple sanitization options.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">SANITIZE(<span class="text-emerald-400">text</span>, <span class="text-cyan-400">options?</span>)</code>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Available Options</h4>
+                    <ul class="text-xs text-gray-400 space-y-1">
+                      <li><code class="text-emerald-300">"trim"</code> - Remove leading/trailing whitespace (default)</li>
+                      <li><code class="text-emerald-300">"lowercase"</code> / <code class="text-emerald-300">"lower"</code> - Convert to lowercase</li>
+                      <li><code class="text-emerald-300">"uppercase"</code> / <code class="text-emerald-300">"upper"</code> - Convert to uppercase</li>
+                      <li><code class="text-emerald-300">"alphanumeric"</code> / <code class="text-emerald-300">"alnum"</code> - Keep only letters and numbers</li>
+                      <li><code class="text-emerald-300">"alpha"</code> - Keep only letters</li>
+                      <li><code class="text-emerald-300">"numeric"</code> / <code class="text-emerald-300">"digits"</code> - Keep only numbers (and . -)</li>
+                      <li><code class="text-emerald-300">"email"</code> - Sanitize email (lowercase, valid chars only)</li>
+                      <li><code class="text-emerald-300">"url"</code> - Keep only URL-safe characters</li>
+                      <li><code class="text-emerald-300">"html"</code> - Escape HTML entities</li>
+                      <li><code class="text-emerald-300">"strip_html"</code> - Remove HTML tags</li>
+                      <li><code class="text-emerald-300">"normalize"</code> - Collapse multiple spaces to single space</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Single Option</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">RETURN SANITIZE("  Hello  ")
+-- "Hello" (default: trim)
+
+RETURN SANITIZE("Hello World", "uppercase")
+-- "HELLO WORLD"
+
+RETURN SANITIZE("abc123!@#", "alphanumeric")
+-- "abc123"</code></pre>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Multiple Options (Array)</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">RETURN SANITIZE("  User@Email.COM  ", ["trim", "lowercase"])
+-- "user@email.com"
+
+RETURN SANITIZE("  John  Doe  ", ["trim", "normalize"])
+-- "John Doe"</code></pre>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Security Sanitization</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">RETURN SANITIZE("&lt;script&gt;alert('xss')&lt;/script&gt;", "strip_html")
+-- "alert('xss')"
+
+RETURN SANITIZE("&lt;b&gt;Bold&lt;/b&gt; text", "html")
+-- "&amp;lt;b&amp;gt;Bold&amp;lt;/b&amp;gt; text"</code></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Form Input Sanitization</h4>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">INSERT {
+  email: SANITIZE(@email, "email"),
+  name: SANITIZE(@name, ["trim", "normalize"]),
+  phone: SANITIZE(@phone, "numeric"),
+  bio: SANITIZE(@bio, ["trim", "strip_html"])
+} INTO users</code></pre>
+                </div>
+
+                <div class="bg-emerald-900/10 border border-emerald-500/30 rounded-lg p-4 flex items-start">
+                  <svg class="w-5 h-5 text-emerald-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                  </svg>
+                  <div>
+                    <h4 class="text-emerald-300 font-bold mb-1 text-sm">Security Best Practice</h4>
+                    <p class="text-sm text-emerald-200/70">
+                      Always sanitize user input before storing. Use <code>"html"</code> to escape output displayed in HTML, or <code>"strip_html"</code> to remove tags entirely. Combine with validation for defense in depth.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

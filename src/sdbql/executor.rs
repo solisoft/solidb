@@ -5532,6 +5532,66 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
 
+            // ARGON2_HASH(password) - Hash password using Argon2id
+            "ARGON2_HASH" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "ARGON2_HASH requires 1 argument (password)".to_string(),
+                    ));
+                }
+                let password = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("ARGON2_HASH: argument must be a string".to_string())
+                })?;
+
+                use argon2::{
+                    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
+                    Argon2,
+                };
+
+                let salt = SaltString::generate(&mut OsRng);
+                let argon2 = Argon2::default();
+
+                match argon2.hash_password(password.as_bytes(), &salt) {
+                    Ok(hash) => Ok(Value::String(hash.to_string())),
+                    Err(e) => Err(DbError::ExecutionError(format!(
+                        "ARGON2_HASH: failed to hash password: {}",
+                        e
+                    ))),
+                }
+            }
+
+            // ARGON2_VERIFY(hash, password) - Verify password against Argon2 hash
+            "ARGON2_VERIFY" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "ARGON2_VERIFY requires 2 arguments (hash, password)".to_string(),
+                    ));
+                }
+                let hash = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("ARGON2_VERIFY: hash must be a string".to_string())
+                })?;
+                let password = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("ARGON2_VERIFY: password must be a string".to_string())
+                })?;
+
+                use argon2::{
+                    password_hash::{PasswordHash, PasswordVerifier},
+                    Argon2,
+                };
+
+                match PasswordHash::new(hash) {
+                    Ok(parsed_hash) => {
+                        let result = Argon2::default()
+                            .verify_password(password.as_bytes(), &parsed_hash)
+                            .is_ok();
+                        Ok(Value::Bool(result))
+                    }
+                    Err(_) => Err(DbError::ExecutionError(
+                        "ARGON2_VERIFY: invalid hash format".to_string(),
+                    )),
+                }
+            }
+
             // SLEEP(ms)
             "SLEEP" => {
                 if evaluated_args.len() != 1 {
@@ -5933,6 +5993,933 @@ impl<'a> QueryExecutor<'a> {
                 use rand::Rng;
                 let random_val: f64 = rand::thread_rng().gen();
                 Ok(Value::Number(number_from_f64(random_val)))
+            }
+
+            // UUID() - Generate a UUIDv4
+            "UUID" | "UUID_V4" => {
+                if !evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError(
+                        "UUID takes no arguments".to_string(),
+                    ));
+                }
+                let id = uuid::Uuid::new_v4().to_string();
+                Ok(Value::String(id))
+            }
+
+            // UUID_V7() - Generate a UUIDv7 (time-sorted)
+            "UUID_V7" => {
+                if !evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError(
+                        "UUID_V7 takes no arguments".to_string(),
+                    ));
+                }
+                let id = uuid::Uuid::now_v7().to_string();
+                Ok(Value::String(id))
+            }
+
+            // ULID() - Generate a ULID (Universally Unique Lexicographically Sortable Identifier)
+            "ULID" => {
+                if !evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError(
+                        "ULID takes no arguments".to_string(),
+                    ));
+                }
+                let id = ulid::Ulid::new().to_string();
+                Ok(Value::String(id))
+            }
+
+            // NANOID(size?) - Generate a Nano ID (compact, URL-safe unique identifier)
+            // Default size is 21 characters
+            "NANOID" => {
+                let size = if evaluated_args.is_empty() {
+                    21 // Default nanoid size
+                } else if evaluated_args.len() == 1 {
+                    evaluated_args[0].as_u64().ok_or_else(|| {
+                        DbError::ExecutionError("NANOID: size must be a positive integer".to_string())
+                    })? as usize
+                } else {
+                    return Err(DbError::ExecutionError(
+                        "NANOID takes 0 or 1 argument (size)".to_string(),
+                    ));
+                };
+                if size == 0 || size > 256 {
+                    return Err(DbError::ExecutionError(
+                        "NANOID: size must be between 1 and 256".to_string(),
+                    ));
+                }
+                let id = nanoid::nanoid!(size);
+                Ok(Value::String(id))
+            }
+
+            // SLUGIFY(text) - Convert text to URL-friendly slug
+            "SLUGIFY" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "SLUGIFY requires exactly 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let slug_text = slug::slugify(s);
+                        Ok(Value::String(slug_text))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "SLUGIFY requires a string argument".to_string(),
+                    )),
+                }
+            }
+
+            // SANITIZE(text, options?) - Sanitize/clean input string
+            // Options: "trim", "lowercase", "uppercase", "alphanumeric", "email", "url", "numeric"
+            "SANITIZE" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
+                    return Err(DbError::ExecutionError(
+                        "SANITIZE requires 1 or 2 arguments (text, options?)".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let mut result = s.clone();
+
+                        // Get options - can be a string or array of strings
+                        let options: Vec<String> = if evaluated_args.len() == 2 {
+                            match &evaluated_args[1] {
+                                Value::String(opt) => vec![opt.to_lowercase()],
+                                Value::Array(arr) => arr
+                                    .iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
+                                    .collect(),
+                                _ => vec!["trim".to_string()], // Default
+                            }
+                        } else {
+                            vec!["trim".to_string()] // Default: just trim
+                        };
+
+                        for opt in &options {
+                            match opt.as_str() {
+                                "trim" => {
+                                    result = result.trim().to_string();
+                                }
+                                "lowercase" | "lower" => {
+                                    result = result.to_lowercase();
+                                }
+                                "uppercase" | "upper" => {
+                                    result = result.to_uppercase();
+                                }
+                                "alphanumeric" | "alnum" => {
+                                    result = result.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
+                                }
+                                "alpha" => {
+                                    result = result.chars().filter(|c| c.is_alphabetic() || c.is_whitespace()).collect();
+                                }
+                                "numeric" | "digits" => {
+                                    result = result.chars().filter(|c| c.is_numeric() || *c == '.' || *c == '-').collect();
+                                }
+                                "email" => {
+                                    // Basic email sanitization: lowercase, trim, remove invalid chars
+                                    result = result.trim().to_lowercase();
+                                    result = result.chars().filter(|c| c.is_alphanumeric() || *c == '@' || *c == '.' || *c == '_' || *c == '-' || *c == '+').collect();
+                                }
+                                "url" => {
+                                    // URL-safe characters only
+                                    result = result.trim().to_string();
+                                    result = result.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.' || *c == '~' || *c == ':' || *c == '/' || *c == '?' || *c == '#' || *c == '[' || *c == ']' || *c == '@' || *c == '!' || *c == '$' || *c == '&' || *c == '\'' || *c == '(' || *c == ')' || *c == '*' || *c == '+' || *c == ',' || *c == ';' || *c == '=' || *c == '%').collect();
+                                }
+                                "html" => {
+                                    // Escape HTML entities
+                                    result = result
+                                        .replace('&', "&amp;")
+                                        .replace('<', "&lt;")
+                                        .replace('>', "&gt;")
+                                        .replace('"', "&quot;")
+                                        .replace('\'', "&#x27;");
+                                }
+                                "strip_html" => {
+                                    // Remove HTML tags using regex
+                                    let re = regex::Regex::new(r"<[^>]*>").unwrap();
+                                    result = re.replace_all(&result, "").to_string();
+                                }
+                                "normalize_whitespace" | "normalize" => {
+                                    // Replace multiple whitespace with single space
+                                    let parts: Vec<&str> = result.split_whitespace().collect();
+                                    result = parts.join(" ");
+                                }
+                                _ => {} // Ignore unknown options
+                            }
+                        }
+                        Ok(Value::String(result))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "SANITIZE requires a string as first argument".to_string(),
+                    )),
+                }
+            }
+
+            // ============================================================
+            // STRING FUNCTIONS
+            // ============================================================
+
+            // STARTS_WITH(str, prefix) - Check if string starts with prefix
+            "STARTS_WITH" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "STARTS_WITH requires 2 arguments (string, prefix)".to_string(),
+                    ));
+                }
+                match (&evaluated_args[0], &evaluated_args[1]) {
+                    (Value::String(s), Value::String(prefix)) => {
+                        Ok(Value::Bool(s.starts_with(prefix.as_str())))
+                    }
+                    (Value::Null, _) | (_, Value::Null) => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "STARTS_WITH requires string arguments".to_string(),
+                    )),
+                }
+            }
+
+            // ENDS_WITH(str, suffix) - Check if string ends with suffix
+            "ENDS_WITH" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "ENDS_WITH requires 2 arguments (string, suffix)".to_string(),
+                    ));
+                }
+                match (&evaluated_args[0], &evaluated_args[1]) {
+                    (Value::String(s), Value::String(suffix)) => {
+                        Ok(Value::Bool(s.ends_with(suffix.as_str())))
+                    }
+                    (Value::Null, _) | (_, Value::Null) => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "ENDS_WITH requires string arguments".to_string(),
+                    )),
+                }
+            }
+
+            // PAD_LEFT(str, len, char?) - Pad string from left to length
+            "PAD_LEFT" | "LPAD" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "PAD_LEFT requires 2-3 arguments (string, length, char?)".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let len = evaluated_args[1].as_u64().ok_or_else(|| {
+                            DbError::ExecutionError("PAD_LEFT: length must be a number".to_string())
+                        })? as usize;
+                        let pad_char = if evaluated_args.len() == 3 {
+                            evaluated_args[2].as_str().and_then(|s| s.chars().next()).unwrap_or(' ')
+                        } else {
+                            ' '
+                        };
+                        if s.len() >= len {
+                            Ok(Value::String(s.clone()))
+                        } else {
+                            let padding: String = std::iter::repeat(pad_char).take(len - s.len()).collect();
+                            Ok(Value::String(format!("{}{}", padding, s)))
+                        }
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "PAD_LEFT requires a string as first argument".to_string(),
+                    )),
+                }
+            }
+
+            // PAD_RIGHT(str, len, char?) - Pad string from right to length
+            "PAD_RIGHT" | "RPAD" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "PAD_RIGHT requires 2-3 arguments (string, length, char?)".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let len = evaluated_args[1].as_u64().ok_or_else(|| {
+                            DbError::ExecutionError("PAD_RIGHT: length must be a number".to_string())
+                        })? as usize;
+                        let pad_char = if evaluated_args.len() == 3 {
+                            evaluated_args[2].as_str().and_then(|s| s.chars().next()).unwrap_or(' ')
+                        } else {
+                            ' '
+                        };
+                        if s.len() >= len {
+                            Ok(Value::String(s.clone()))
+                        } else {
+                            let padding: String = std::iter::repeat(pad_char).take(len - s.len()).collect();
+                            Ok(Value::String(format!("{}{}", s, padding)))
+                        }
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "PAD_RIGHT requires a string as first argument".to_string(),
+                    )),
+                }
+            }
+
+            // REPEAT(str, count) - Repeat string n times
+            "REPEAT" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "REPEAT requires 2 arguments (string, count)".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let count = evaluated_args[1].as_u64().ok_or_else(|| {
+                            DbError::ExecutionError("REPEAT: count must be a positive integer".to_string())
+                        })? as usize;
+                        if count > 10000 {
+                            return Err(DbError::ExecutionError(
+                                "REPEAT: count cannot exceed 10000".to_string(),
+                            ));
+                        }
+                        Ok(Value::String(s.repeat(count)))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "REPEAT requires a string as first argument".to_string(),
+                    )),
+                }
+            }
+
+            // CAPITALIZE(str) - Capitalize first letter
+            "CAPITALIZE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "CAPITALIZE requires 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let mut chars = s.chars();
+                        let result = match chars.next() {
+                            None => String::new(),
+                            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                        };
+                        Ok(Value::String(result))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "CAPITALIZE requires a string argument".to_string(),
+                    )),
+                }
+            }
+
+            // TITLE_CASE(str) - Title case all words
+            "TITLE_CASE" | "INITCAP" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "TITLE_CASE requires 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let result = s.split_whitespace()
+                            .map(|word| {
+                                let mut chars = word.chars();
+                                match chars.next() {
+                                    None => String::new(),
+                                    Some(first) => {
+                                        first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                                    }
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        Ok(Value::String(result))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "TITLE_CASE requires a string argument".to_string(),
+                    )),
+                }
+            }
+
+            // ============================================================
+            // URL ENCODING FUNCTIONS
+            // ============================================================
+
+            // ENCODE_URI(str) - URL encode string
+            "ENCODE_URI" | "URL_ENCODE" | "ENCODE_URI_COMPONENT" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "ENCODE_URI requires 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let encoded: String = s.chars().map(|c| {
+                            match c {
+                                'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
+                                _ => format!("%{:02X}", c as u32),
+                            }
+                        }).collect();
+                        Ok(Value::String(encoded))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "ENCODE_URI requires a string argument".to_string(),
+                    )),
+                }
+            }
+
+            // DECODE_URI(str) - URL decode string
+            "DECODE_URI" | "URL_DECODE" | "DECODE_URI_COMPONENT" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "DECODE_URI requires 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let mut result = String::new();
+                        let mut chars = s.chars().peekable();
+                        while let Some(c) = chars.next() {
+                            if c == '%' {
+                                let hex: String = chars.by_ref().take(2).collect();
+                                if hex.len() == 2 {
+                                    if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                                        result.push(byte as char);
+                                    } else {
+                                        result.push('%');
+                                        result.push_str(&hex);
+                                    }
+                                } else {
+                                    result.push('%');
+                                    result.push_str(&hex);
+                                }
+                            } else if c == '+' {
+                                result.push(' ');
+                            } else {
+                                result.push(c);
+                            }
+                        }
+                        Ok(Value::String(result))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "DECODE_URI requires a string argument".to_string(),
+                    )),
+                }
+            }
+
+            // ============================================================
+            // VALIDATION FUNCTIONS
+            // ============================================================
+
+            // IS_EMAIL(str) - Validate email format
+            "IS_EMAIL" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "IS_EMAIL requires 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        // Basic email regex pattern
+                        let re = regex::Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
+                        Ok(Value::Bool(re.is_match(s)))
+                    }
+                    Value::Null => Ok(Value::Bool(false)),
+                    _ => Ok(Value::Bool(false)),
+                }
+            }
+
+            // IS_URL(str) - Validate URL format
+            "IS_URL" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "IS_URL requires 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let re = regex::Regex::new(r"^https?://[^\s/$.?#].[^\s]*$").unwrap();
+                        Ok(Value::Bool(re.is_match(s)))
+                    }
+                    Value::Null => Ok(Value::Bool(false)),
+                    _ => Ok(Value::Bool(false)),
+                }
+            }
+
+            // IS_UUID(str) - Validate UUID format
+            "IS_UUID" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "IS_UUID requires 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let re = regex::Regex::new(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$").unwrap();
+                        Ok(Value::Bool(re.is_match(s)))
+                    }
+                    Value::Null => Ok(Value::Bool(false)),
+                    _ => Ok(Value::Bool(false)),
+                }
+            }
+
+            // IS_EMPTY(val) - Check if null, "", [], {}
+            "IS_EMPTY" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "IS_EMPTY requires 1 argument".to_string(),
+                    ));
+                }
+                let is_empty = match &evaluated_args[0] {
+                    Value::Null => true,
+                    Value::String(s) => s.is_empty(),
+                    Value::Array(arr) => arr.is_empty(),
+                    Value::Object(obj) => obj.is_empty(),
+                    _ => false,
+                };
+                Ok(Value::Bool(is_empty))
+            }
+
+            // IS_BLANK(str) - Check if string is blank (whitespace only)
+            "IS_BLANK" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "IS_BLANK requires 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => Ok(Value::Bool(s.trim().is_empty())),
+                    Value::Null => Ok(Value::Bool(true)),
+                    _ => Ok(Value::Bool(false)),
+                }
+            }
+
+            // ============================================================
+            // ARRAY FUNCTIONS
+            // ============================================================
+
+            // INDEX_OF(arr, value) - Find index of value in array
+            "INDEX_OF" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "INDEX_OF requires 2 arguments (array, value)".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::Array(arr) => {
+                        let search = &evaluated_args[1];
+                        for (i, item) in arr.iter().enumerate() {
+                            if item == search {
+                                return Ok(Value::Number(serde_json::Number::from(i)));
+                            }
+                        }
+                        Ok(Value::Number(serde_json::Number::from(-1i64)))
+                    }
+                    Value::String(s) => {
+                        // Also support finding substring in string
+                        if let Value::String(search) = &evaluated_args[1] {
+                            match s.find(search.as_str()) {
+                                Some(idx) => Ok(Value::Number(serde_json::Number::from(idx))),
+                                None => Ok(Value::Number(serde_json::Number::from(-1i64))),
+                            }
+                        } else {
+                            Ok(Value::Number(serde_json::Number::from(-1i64)))
+                        }
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "INDEX_OF requires an array or string as first argument".to_string(),
+                    )),
+                }
+            }
+
+            // CHUNK(arr, size) - Split array into chunks
+            "CHUNK" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "CHUNK requires 2 arguments (array, size)".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::Array(arr) => {
+                        let size = evaluated_args[1].as_u64().ok_or_else(|| {
+                            DbError::ExecutionError("CHUNK: size must be a positive integer".to_string())
+                        })? as usize;
+                        if size == 0 {
+                            return Err(DbError::ExecutionError(
+                                "CHUNK: size must be greater than 0".to_string(),
+                            ));
+                        }
+                        let chunks: Vec<Value> = arr
+                            .chunks(size)
+                            .map(|chunk| Value::Array(chunk.to_vec()))
+                            .collect();
+                        Ok(Value::Array(chunks))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "CHUNK requires an array as first argument".to_string(),
+                    )),
+                }
+            }
+
+            // TAKE(arr, n) - Take first n elements
+            "TAKE" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "TAKE requires 2 arguments (array, count)".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::Array(arr) => {
+                        let n = evaluated_args[1].as_u64().ok_or_else(|| {
+                            DbError::ExecutionError("TAKE: count must be a positive integer".to_string())
+                        })? as usize;
+                        let result: Vec<Value> = arr.iter().take(n).cloned().collect();
+                        Ok(Value::Array(result))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "TAKE requires an array as first argument".to_string(),
+                    )),
+                }
+            }
+
+            // DROP(arr, n) - Drop first n elements
+            "DROP" | "SKIP" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "DROP requires 2 arguments (array, count)".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::Array(arr) => {
+                        let n = evaluated_args[1].as_u64().ok_or_else(|| {
+                            DbError::ExecutionError("DROP: count must be a positive integer".to_string())
+                        })? as usize;
+                        let result: Vec<Value> = arr.iter().skip(n).cloned().collect();
+                        Ok(Value::Array(result))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "DROP requires an array as first argument".to_string(),
+                    )),
+                }
+            }
+
+            // ============================================================
+            // TEXT PROCESSING FUNCTIONS
+            // ============================================================
+
+            // MASK(str, start?, end?, char?) - Mask string for PII protection
+            "MASK" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 4 {
+                    return Err(DbError::ExecutionError(
+                        "MASK requires 1-4 arguments (string, start?, end?, char?)".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let len = s.len() as i64;
+                        let start = if evaluated_args.len() > 1 {
+                            evaluated_args[1].as_i64().unwrap_or(0)
+                        } else {
+                            0
+                        };
+                        let end = if evaluated_args.len() > 2 {
+                            evaluated_args[2].as_i64().unwrap_or(len)
+                        } else {
+                            len
+                        };
+                        let mask_char = if evaluated_args.len() > 3 {
+                            evaluated_args[3].as_str().and_then(|s| s.chars().next()).unwrap_or('*')
+                        } else {
+                            '*'
+                        };
+
+                        // Handle negative indices
+                        let start_idx = if start < 0 { (len + start).max(0) as usize } else { start.min(len) as usize };
+                        let end_idx = if end < 0 { (len + end).max(0) as usize } else { end.min(len) as usize };
+
+                        let chars: Vec<char> = s.chars().collect();
+                        let result: String = chars.iter().enumerate().map(|(i, c)| {
+                            if i >= start_idx && i < end_idx {
+                                mask_char
+                            } else {
+                                *c
+                            }
+                        }).collect();
+                        Ok(Value::String(result))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "MASK requires a string as first argument".to_string(),
+                    )),
+                }
+            }
+
+            // TRUNCATE_TEXT(str, len, suffix?) - Truncate with ellipsis
+            "TRUNCATE_TEXT" | "ELLIPSIS" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "TRUNCATE_TEXT requires 2-3 arguments (string, length, suffix?)".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let max_len = evaluated_args[1].as_u64().ok_or_else(|| {
+                            DbError::ExecutionError("TRUNCATE_TEXT: length must be a positive integer".to_string())
+                        })? as usize;
+                        let suffix = if evaluated_args.len() > 2 {
+                            evaluated_args[2].as_str().unwrap_or("...").to_string()
+                        } else {
+                            "...".to_string()
+                        };
+
+                        if s.len() <= max_len {
+                            Ok(Value::String(s.clone()))
+                        } else {
+                            let truncate_at = max_len.saturating_sub(suffix.len());
+                            let truncated: String = s.chars().take(truncate_at).collect();
+                            Ok(Value::String(format!("{}{}", truncated, suffix)))
+                        }
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "TRUNCATE_TEXT requires a string as first argument".to_string(),
+                    )),
+                }
+            }
+
+            // WORD_COUNT(str) - Count words in string
+            "WORD_COUNT" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "WORD_COUNT requires 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let count = s.split_whitespace().count();
+                        Ok(Value::Number(serde_json::Number::from(count)))
+                    }
+                    Value::Null => Ok(Value::Number(serde_json::Number::from(0))),
+                    _ => Err(DbError::ExecutionError(
+                        "WORD_COUNT requires a string argument".to_string(),
+                    )),
+                }
+            }
+
+            // ============================================================
+            // MATH FUNCTIONS
+            // ============================================================
+
+            // CLAMP(val, min, max) - Clamp value to range
+            "CLAMP" => {
+                if evaluated_args.len() != 3 {
+                    return Err(DbError::ExecutionError(
+                        "CLAMP requires 3 arguments (value, min, max)".to_string(),
+                    ));
+                }
+                let val = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("CLAMP: value must be a number".to_string())
+                })?;
+                let min_val = evaluated_args[1].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("CLAMP: min must be a number".to_string())
+                })?;
+                let max_val = evaluated_args[2].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("CLAMP: max must be a number".to_string())
+                })?;
+                let clamped = val.max(min_val).min(max_val);
+                Ok(Value::Number(number_from_f64(clamped)))
+            }
+
+            // SIGN(num) - Sign of number (-1, 0, 1)
+            "SIGN" | "SIGNUM" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "SIGN requires 1 argument".to_string(),
+                    ));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("SIGN: argument must be a number".to_string())
+                })?;
+                let sign = if num > 0.0 { 1 } else if num < 0.0 { -1 } else { 0 };
+                Ok(Value::Number(serde_json::Number::from(sign)))
+            }
+
+            // MOD(a, b) - Modulo operation
+            "MOD" | "MODULO" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "MOD requires 2 arguments".to_string(),
+                    ));
+                }
+                let a = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("MOD: first argument must be a number".to_string())
+                })?;
+                let b = evaluated_args[1].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("MOD: second argument must be a number".to_string())
+                })?;
+                if b == 0.0 {
+                    return Err(DbError::ExecutionError(
+                        "MOD: division by zero".to_string(),
+                    ));
+                }
+                Ok(Value::Number(number_from_f64(a % b)))
+            }
+
+            // RANDOM_INT(min, max) - Random integer in range
+            "RANDOM_INT" | "RAND_INT" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "RANDOM_INT requires 2 arguments (min, max)".to_string(),
+                    ));
+                }
+                let min_val = evaluated_args[0].as_i64().ok_or_else(|| {
+                    DbError::ExecutionError("RANDOM_INT: min must be an integer".to_string())
+                })?;
+                let max_val = evaluated_args[1].as_i64().ok_or_else(|| {
+                    DbError::ExecutionError("RANDOM_INT: max must be an integer".to_string())
+                })?;
+                if min_val > max_val {
+                    return Err(DbError::ExecutionError(
+                        "RANDOM_INT: min must be less than or equal to max".to_string(),
+                    ));
+                }
+                use rand::Rng;
+                let result = rand::thread_rng().gen_range(min_val..=max_val);
+                Ok(Value::Number(serde_json::Number::from(result)))
+            }
+
+            // ============================================================
+            // OBJECT FUNCTIONS
+            // ============================================================
+
+            // GET(obj, path, default?) - Get nested value by path
+            "GET" | "GET_VALUE" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "GET requires 2-3 arguments (object, path, default?)".to_string(),
+                    ));
+                }
+                let default_val = if evaluated_args.len() == 3 {
+                    evaluated_args[2].clone()
+                } else {
+                    Value::Null
+                };
+
+                match (&evaluated_args[0], &evaluated_args[1]) {
+                    (Value::Object(obj), Value::String(path)) => {
+                        let parts: Vec<&str> = path.split('.').collect();
+                        let mut current: &Value = &Value::Object(obj.clone());
+
+                        for part in parts {
+                            match current {
+                                Value::Object(o) => {
+                                    current = o.get(part).unwrap_or(&Value::Null);
+                                }
+                                Value::Array(arr) => {
+                                    if let Ok(idx) = part.parse::<usize>() {
+                                        current = arr.get(idx).unwrap_or(&Value::Null);
+                                    } else {
+                                        return Ok(default_val);
+                                    }
+                                }
+                                _ => return Ok(default_val),
+                            }
+                        }
+
+                        if current == &Value::Null {
+                            Ok(default_val)
+                        } else {
+                            Ok(current.clone())
+                        }
+                    }
+                    (Value::Null, _) => Ok(default_val),
+                    _ => Ok(default_val),
+                }
+            }
+
+            // DEEP_MERGE(obj1, obj2) - Deep merge objects
+            "DEEP_MERGE" | "MERGE_RECURSIVE" => {
+                if evaluated_args.len() < 2 {
+                    return Err(DbError::ExecutionError(
+                        "DEEP_MERGE requires at least 2 arguments".to_string(),
+                    ));
+                }
+
+                fn deep_merge(base: &Value, overlay: &Value) -> Value {
+                    match (base, overlay) {
+                        (Value::Object(base_obj), Value::Object(overlay_obj)) => {
+                            let mut result = base_obj.clone();
+                            for (key, overlay_val) in overlay_obj {
+                                let merged = if let Some(base_val) = base_obj.get(key) {
+                                    deep_merge(base_val, overlay_val)
+                                } else {
+                                    overlay_val.clone()
+                                };
+                                result.insert(key.clone(), merged);
+                            }
+                            Value::Object(result)
+                        }
+                        _ => overlay.clone(),
+                    }
+                }
+
+                let mut result = evaluated_args[0].clone();
+                for arg in &evaluated_args[1..] {
+                    result = deep_merge(&result, arg);
+                }
+                Ok(result)
+            }
+
+            // ENTRIES(obj) - Object to [key, value] pairs
+            "ENTRIES" | "OBJECT_ENTRIES" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "ENTRIES requires 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::Object(obj) => {
+                        let entries: Vec<Value> = obj.iter()
+                            .map(|(k, v)| Value::Array(vec![Value::String(k.clone()), v.clone()]))
+                            .collect();
+                        Ok(Value::Array(entries))
+                    }
+                    Value::Null => Ok(Value::Array(vec![])),
+                    _ => Err(DbError::ExecutionError(
+                        "ENTRIES requires an object argument".to_string(),
+                    )),
+                }
+            }
+
+            // FROM_ENTRIES(arr) - Array to object
+            "FROM_ENTRIES" | "OBJECT_FROM_ENTRIES" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "FROM_ENTRIES requires 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::Array(arr) => {
+                        let mut obj = serde_json::Map::new();
+                        for item in arr {
+                            if let Value::Array(pair) = item {
+                                if pair.len() >= 2 {
+                                    if let Value::String(key) = &pair[0] {
+                                        obj.insert(key.clone(), pair[1].clone());
+                                    }
+                                }
+                            }
+                        }
+                        Ok(Value::Object(obj))
+                    }
+                    Value::Null => Ok(Value::Object(serde_json::Map::new())),
+                    _ => Err(DbError::ExecutionError(
+                        "FROM_ENTRIES requires an array argument".to_string(),
+                    )),
+                }
             }
 
             // LOG(x) - natural logarithm (ln)
@@ -6558,6 +7545,118 @@ impl<'a> QueryExecutor<'a> {
                         "No fulltext index found on field '{}' in collection '{}'",
                         field, collection_name
                     ))),
+                }
+            }
+
+            // SAMPLE(collection, count) - Return random documents from a collection
+            "SAMPLE" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "SAMPLE requires 2 arguments: collection, count".to_string(),
+                    ));
+                }
+                let collection_name = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("SAMPLE: collection must be a string".to_string())
+                })?;
+                let count = evaluated_args[1].as_u64().ok_or_else(|| {
+                    DbError::ExecutionError("SAMPLE: count must be a number".to_string())
+                })? as usize;
+
+                let collection = self.get_collection(collection_name)?;
+                let all_docs = collection.all();
+
+                if all_docs.is_empty() || count == 0 {
+                    return Ok(Value::Array(vec![]));
+                }
+
+                use rand::seq::SliceRandom;
+                let mut rng = rand::thread_rng();
+                let mut docs: Vec<Value> = all_docs.iter().map(|d| d.to_value()).collect();
+                docs.shuffle(&mut rng);
+                let sampled: Vec<Value> = docs.into_iter().take(count).collect();
+
+                Ok(Value::Array(sampled))
+            }
+
+            // DOCUMENT(id) or DOCUMENT(collection, key) or DOCUMENT(collection, [keys])
+            // Direct document lookup by _id or collection/key
+            "DOCUMENT" => {
+                match evaluated_args.len() {
+                    // DOCUMENT("collection/key") or DOCUMENT(["col/k1", "col/k2"])
+                    1 => {
+                        match &evaluated_args[0] {
+                            // Single document by _id
+                            Value::String(id) => {
+                                if let Some((collection_name, key)) = id.split_once('/') {
+                                    let collection = self.get_collection(collection_name)?;
+                                    match collection.get(key) {
+                                        Ok(doc) => Ok(doc.to_value()),
+                                        Err(_) => Ok(Value::Null),
+                                    }
+                                } else {
+                                    Err(DbError::ExecutionError(
+                                        "DOCUMENT: id must be in format 'collection/key'".to_string(),
+                                    ))
+                                }
+                            }
+                            // Multiple documents by _id array
+                            Value::Array(ids) => {
+                                let mut results = Vec::new();
+                                for id_val in ids {
+                                    if let Some(id) = id_val.as_str() {
+                                        if let Some((collection_name, key)) = id.split_once('/') {
+                                            if let Ok(collection) = self.get_collection(collection_name) {
+                                                if let Ok(doc) = collection.get(key) {
+                                                    results.push(doc.to_value());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Ok(Value::Array(results))
+                            }
+                            Value::Null => Ok(Value::Null),
+                            _ => Err(DbError::ExecutionError(
+                                "DOCUMENT: first argument must be a string or array".to_string(),
+                            )),
+                        }
+                    }
+                    // DOCUMENT("collection", "key") or DOCUMENT("collection", ["k1", "k2"])
+                    2 => {
+                        let collection_name = evaluated_args[0].as_str().ok_or_else(|| {
+                            DbError::ExecutionError(
+                                "DOCUMENT: collection must be a string".to_string(),
+                            )
+                        })?;
+                        let collection = self.get_collection(collection_name)?;
+
+                        match &evaluated_args[1] {
+                            // Single key
+                            Value::String(key) => match collection.get(key) {
+                                Ok(doc) => Ok(doc.to_value()),
+                                Err(_) => Ok(Value::Null),
+                            },
+                            // Array of keys
+                            Value::Array(keys) => {
+                                let mut results = Vec::new();
+                                for key_val in keys {
+                                    if let Some(key) = key_val.as_str() {
+                                        if let Ok(doc) = collection.get(key) {
+                                            results.push(doc.to_value());
+                                        }
+                                    }
+                                }
+                                Ok(Value::Array(results))
+                            }
+                            Value::Null => Ok(Value::Null),
+                            _ => Err(DbError::ExecutionError(
+                                "DOCUMENT: key must be a string or array".to_string(),
+                            )),
+                        }
+                    }
+                    _ => Err(DbError::ExecutionError(
+                        "DOCUMENT requires 1 or 2 arguments: (id) or (collection, key)".to_string(),
+                    )),
                 }
             }
 
