@@ -92,6 +92,8 @@ pub struct AppState {
     pub system_monitor: Arc<std::sync::Mutex<sysinfo::System>>,
     pub queue_worker: Option<Arc<crate::queue::QueueWorker>>,
     pub script_stats: Arc<ScriptStats>,
+    // Stream Processing Manager
+    pub stream_manager: Option<Arc<crate::stream::StreamManager>>,
     // RBAC permission cache
     pub permission_cache: crate::server::permission_cache::PermissionCache,
     // REPL session store
@@ -4407,6 +4409,34 @@ pub async fn execute_query(
 
     // Non-transactional execution (existing logic)
     let query = parse(&req.query)?;
+    
+    // Handle CREATE STREAM clause
+    if let Some(ref _create_stream) = query.create_stream_clause {
+        if let Some(manager) = &state.stream_manager {
+            match manager.create_stream(&db_name, query) {
+                Ok(_name) => {
+                        return Ok(ApiResponse::new(
+                            ExecuteQueryResponse {
+                                result: Vec::new(),
+                                count: 0,
+                                has_more: false,
+                                id: None,
+                                cached: false,
+                                execution_time_ms: 0.0,
+                                documents_inserted: 0,
+                                documents_updated: 0,
+                                documents_removed: 0,
+                            },
+                            &headers,
+                        ));
+                }
+                Err(e) => return Err(e),
+            }
+        } else {
+                return Err(DbError::OperationNotSupported("Stream processing not enabled".to_string()));
+        }
+    }
+
     let batch_size = req.batch_size;
 
     // Only use spawn_blocking for potentially long-running queries

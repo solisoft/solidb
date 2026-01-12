@@ -43,7 +43,7 @@ impl TestContext {
             .initialize()
             .expect("Failed to initialize storage engine");
         let script_stats = Arc::new(ScriptStats::default());
-        let app = create_router(engine, None, None, None, None, script_stats, 0);
+        let app = create_router(engine, None, None, None, None, script_stats, None, 0);
 
         // Get auth token
         let response = app

@@ -35,6 +35,7 @@ fn create_test_app() -> (axum::Router, TempDir) {
         None, // ShardCoordinator
         None, // QueueWorker
         script_stats,
+        None, // StreamManager
         0, // port
     );
 

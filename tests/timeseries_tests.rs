@@ -22,7 +22,7 @@ fn create_test_app() -> (axum::Router, TempDir) {
 
     let script_stats = Arc::new(ScriptStats::default());
 
-    let router = create_router(engine, None, None, None, None, script_stats, 0);
+    let router = create_router(engine, None, None, None, None, script_stats, None, 0);
 
     (router, tmp_dir)
 }

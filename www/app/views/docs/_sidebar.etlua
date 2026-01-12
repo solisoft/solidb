@@ -50,6 +50,7 @@ local sections = {
       { slug = "graphs", label = "Graphs & Edges", icon = "fa-project-diagram", color = "accent" },
       { slug = "scripting", label = "Lua Scripting", icon = "fa-scroll", color = "info" },
       { slug = "queues", label = "Queues & Jobs", icon = "fa-tasks", color = "primary" },
+      { slug = "streams", label = "Stream Processing", icon = "fa-stream", color = "accent" },
 
     }
   },

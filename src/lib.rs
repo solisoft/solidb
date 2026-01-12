@@ -17,6 +17,9 @@ pub mod sync;
 // AI-augmented database module
 pub mod ai;
 
+// Stream Processing module
+pub mod stream;
+
 // Schema validation module
 pub use storage::schema::{
     CollectionSchema as JsonSchema, SchemaCompilationError, SchemaValidationError,

@@ -18,6 +18,7 @@ local PAGE_TITLES = {
   ["graphs"] = "Graphs & Edges",
   ["blobs"] = "Blob Storage",
   ["queues"] = "Queues & Jobs",
+  ["streams"] = "Stream Processing",
   ["scripting"] = "Lua Scripting",
   ["live-queries"] = "Live Queries",
   ["changefeeds"] = "Changefeeds",

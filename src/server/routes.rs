@@ -37,6 +37,7 @@ pub fn create_router(
     shard_coordinator: Option<Arc<crate::sharding::ShardCoordinator>>,
     queue_worker: Option<Arc<crate::queue::QueueWorker>>,
     script_stats: Arc<ScriptStats>,
+    stream_manager: Option<Arc<crate::stream::StreamManager>>,
     _api_port: u16,
 ) -> Router {
     // Initialize Auth (create default admin if needed)
@@ -115,8 +116,10 @@ pub fn create_router(
         queue_worker,
         startup_time: std::time::Instant::now(),
         request_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+
         system_monitor: Arc::new(std::sync::Mutex::new(sysinfo::System::new())),
         script_stats,
+        stream_manager,
         permission_cache,
         repl_sessions: crate::server::repl_session::ReplSessionStore::new(),
     };

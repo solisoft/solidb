@@ -1,0 +1,118 @@
+<div class="max-w-4xl mx-auto px-6 py-12">
+  <div class="mb-12">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
+        <i class="fas fa-stream text-2xl"></i>
+      </div>
+      <h1 class="text-4xl font-black tracking-tight text-white mb-0">Stream Processing</h1>
+    </div>
+    <p class="text-xl text-text-muted leading-relaxed">
+      Process data in motion with SoliDB's native stream processing capabilities. Define streams, apply windowing functions, and analyze real-time data using SDBQL.
+    </p>
+  </div>
+
+  <!-- Introduction -->
+  <div class="prose prose-invert max-w-none mb-16">
+    <div class="glass-panel p-8 rounded-2xl border-l-4 border-indigo-500">
+      <h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+        <i class="fas fa-lightbulb text-indigo-400"></i>
+        What are Streams?
+      </h3>
+      <p class="text-text-muted mb-0">
+        Streams in SoliDB allow you to define continuous queries that process data as it arrives. Unlike standard queries that run against a snapshot of stored data, streams operate on the flow of data, enabling real-time analytics, aggregation, and monitoring.
+      </p>
+    </div>
+  </div>
+
+  <!-- Creating Streams -->
+  <section class="mb-16">
+    <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+      <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 text-sm">1</span>
+      Creating Streams
+    </h2>
+    <p class="text-text-muted mb-6">
+      Use the <code class="text-accent-light">CREATE STREAM</code> statement to define a new stream. A stream is defined by a name and a query that specifies the data source and transformation.
+    </p>
+
+    <div class="code-block bg-[#1e1e1e] rounded-xl overflow-hidden border border-white/10 mb-8 shadow-2xl">
+      <div class="px-4 py-2 bg-white/5 border-b border-white/5 flex justify-between items-center">
+        <span class="text-xs font-medium text-text-muted">SDBQL</span>
+      </div>
+      <div class="p-6 overflow-x-auto">
+        <pre class="text-sm font-mono leading-relaxed"><span class="text-keyword">CREATE STREAM</span> <span class="text-variable">high_value_orders</span> <span class="text-keyword">AS</span>
+<span class="text-keyword">FOR</span> <span class="text-variable">order</span> <span class="text-keyword">IN</span> <span class="text-variable">orders</span>
+<span class="text-keyword">FILTER</span> <span class="text-variable">order</span>.<span class="text-property">amount</span> > <span class="text-number">100</span>
+<span class="text-keyword">WINDOW TUMBLING</span> (<span class="text-keyword">SIZE</span> <span class="text-string">"1m"</span>)
+<span class="text-keyword">RETURN</span> <span class="text-variable">order</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Windowing Functions -->
+  <section class="mb-16">
+    <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+      <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 text-sm">2</span>
+      Windowing
+    </h2>
+    <p class="text-text-muted mb-6">
+      Streams often require grouping data into time-based buckets called windows. SoliDB supports <code class="text-accent-light">TUMBLING</code> and <code class="text-accent-light">SLIDING</code> windows.
+    </p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Tumbling Window -->
+      <div class="glass-panel p-6 rounded-xl">
+        <h3 class="text-lg font-bold text-white mb-2">Tumbling Window</h3>
+        <p class="text-sm text-text-muted mb-4">
+          Fixed-size, non-overlapping time intervals.
+        </p>
+        <div class="code-block bg-black/30 rounded-lg p-4 border border-white/5">
+          <pre class="text-xs font-mono"><span class="text-keyword">WINDOW TUMBLING</span> (<span class="text-keyword">SIZE</span> <span class="text-string">"5m"</span>)</pre>
+        </div>
+      </div>
+
+      <!-- Sliding Window -->
+      <div class="glass-panel p-6 rounded-xl">
+        <h3 class="text-lg font-bold text-white mb-2">Sliding Window</h3>
+        <p class="text-sm text-text-muted mb-4">
+          Overlapping time intervals that slide by a specified duration.
+        </p>
+        <div class="code-block bg-black/30 rounded-lg p-4 border border-white/5">
+          <pre class="text-xs font-mono"><span class="text-keyword">WINDOW SLIDING</span> (<span class="text-keyword">SIZE</span> <span class="text-string">"1h"</span>)</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Managing Streams -->
+  <section class="mb-16">
+    <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+      <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 text-sm">3</span>
+      Managing Streams
+    </h2>
+    
+    <div class="overflow-hidden rounded-xl border border-white/10 shadow-2xl">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-white/5 border-b border-white/10">
+            <th class="p-4 text-xs font-bold text-white uppercase tracking-wider">Action</th>
+            <th class="p-4 text-xs font-bold text-white uppercase tracking-wider">Example</th>
+            <th class="p-4 text-xs font-bold text-white uppercase tracking-wider">Description</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-white/5 bg-black/20">
+          <tr class="hover:bg-white/5 transition-colors">
+            <td class="p-4 font-mono text-sm text-accent-light">List Streams</td>
+            <td class="p-4 font-mono text-xs text-text-muted">StreamManager.list_streams()</td>
+            <td class="p-4 text-sm text-text-muted">Retrieve all active streams.</td>
+          </tr>
+          <tr class="hover:bg-white/5 transition-colors">
+            <td class="p-4 font-mono text-sm text-accent-light">Stop Stream</td>
+            <td class="p-4 font-mono text-xs text-text-muted">StreamManager.stop_stream("name")</td>
+            <td class="p-4 text-sm text-text-muted">Stop a running stream task.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>

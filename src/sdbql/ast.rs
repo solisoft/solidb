@@ -13,6 +13,10 @@ pub struct Query {
     pub limit_clause: Option<LimitClause>,
     /// RETURN clause is optional - queries with only mutations (INSERT/UPDATE/REMOVE) don't need it
     pub return_clause: Option<ReturnClause>,
+    /// Optional CREATE STREAM clause (wraps the query definition)
+    pub create_stream_clause: Option<CreateStreamClause>,
+    /// Optional WINDOW clause for stream processing
+    pub window_clause: Option<WindowClause>,
     /// Ordered body clauses (FOR, LET, FILTER) preserving declaration order
     /// This enables correlated subqueries where LET can reference outer FOR variables
     pub body_clauses: Vec<BodyClause>,
@@ -31,6 +35,7 @@ pub enum BodyClause {
     GraphTraversal(GraphTraversalClause),
     ShortestPath(ShortestPathClause),
     Collect(CollectClause),
+    Window(WindowClause),
 }
 
 /// Edge direction for graph traversals
@@ -78,6 +83,29 @@ pub struct ShortestPathClause {
     pub direction: EdgeDirection,
     /// Edge collection to traverse
     pub edge_collection: String,
+}
+
+/// CREATE STREAM name AS ...
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateStreamClause {
+    pub name: String,
+    pub if_not_exists: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum WindowType {
+    /// TUMBLING (SIZE "1m") - Fixed non-overlapping windows
+    Tumbling,
+    /// SLIDING (SIZE "1m") - Sliding windows (hopping)
+    Sliding,
+}
+
+/// WINDOW TUMBLING (SIZE "1m")
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowClause {
+    pub window_type: WindowType,
+    /// Duration string (e.g., "1m", "30s", "1h")
+    pub duration: String,
 }
 
 /// LET variable = expression (can be a subquery)
@@ -512,6 +540,8 @@ mod tests {
             sort_clause: None,
             limit_clause: None,
             return_clause: None,
+            create_stream_clause: None,
+            window_clause: None,
             body_clauses: vec![],
         };
 

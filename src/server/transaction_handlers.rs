@@ -249,6 +249,7 @@ pub async fn execute_transactional_sdbql(
             BodyClause::Insert(_) => has_insert = true,
             BodyClause::Update(_) => has_update = true,
             BodyClause::Remove(_) => has_remove = true,
+            BodyClause::Window(_) => {} // Window does not mutate
             _ => {}
         }
     }
@@ -478,6 +479,11 @@ pub async fn execute_transactional_sdbql(
             BodyClause::Collect(_) => {
                 return Err(DbError::ExecutionError(
                     "COLLECT aggregation not yet supported in transactions".to_string(),
+                ));
+            }
+            BodyClause::Window(_) => {
+                return Err(DbError::ExecutionError(
+                    "Window operations are not supported in transactions".to_string(),
                 ));
             }
         }

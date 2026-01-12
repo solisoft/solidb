@@ -1723,6 +1723,12 @@ impl<'a> QueryExecutor<'a> {
                     rows = new_rows;
                 }
 
+                BodyClause::Window(_) => {
+                    return Err(DbError::ExecutionError(
+                        "Window operations are only supported in STREAM definitions".to_string(),
+                    ));
+                }
+
                 BodyClause::Collect(collect) => {
                     use std::collections::HashMap;
 

@@ -57,6 +57,13 @@ impl Parser {
 
     /// Parse a query, optionally checking for trailing tokens (false for subqueries)
     fn parse_query(&mut self, check_trailing: bool) -> DbResult<Query> {
+        // Parse optional CREATE STREAM clause
+        let create_stream_clause = if matches!(self.current_token(), Token::Create) {
+            Some(self.parse_create_stream_clause()?)
+        } else {
+            None
+        };
+
         // Parse initial LET clauses (before any FOR - these are evaluated once)
         let mut let_clauses = Vec::new();
         while matches!(self.current_token(), Token::Let) {
@@ -107,6 +114,11 @@ impl Parser {
             } else if matches!(self.current_token(), Token::Collect) {
                 let collect_clause = self.parse_collect_clause()?;
                 body_clauses.push(BodyClause::Collect(collect_clause));
+            } else if matches!(self.current_token(), Token::Window) {
+                // WINDOW clause inside body (stream processing)
+                let window_clause = self.parse_window_clause()?;
+                // Note: We might want to store this in body_clauses to preserve order relative to filters
+                body_clauses.push(BodyClause::Window(window_clause));
             } else {
                 break;
             }
@@ -171,13 +183,21 @@ impl Parser {
             }
         }
 
+        // Extract window clause for top-level access if present
+        let window_clause = body_clauses.iter().find_map(|c| match c {
+            BodyClause::Window(w) => Some(w.clone()),
+            _ => None,
+        });
+
         Ok(Query {
+            create_stream_clause,
             let_clauses,
             for_clauses,
             filter_clauses,
             sort_clause,
             limit_clause,
             return_clause,
+            window_clause,
             body_clauses,
         })
     }
@@ -335,6 +355,61 @@ impl Parser {
         Ok(LetClause {
             variable,
             expression,
+        })
+    }
+
+    fn parse_create_stream_clause(&mut self) -> DbResult<CreateStreamClause> {
+        self.expect(Token::Create)?;
+        self.expect(Token::Stream)?;
+
+        let name = if let Token::Identifier(n) = self.current_token() {
+            let name = n.clone();
+            self.advance();
+            name
+        } else {
+            return Err(DbError::ParseError("Expected stream name".to_string()));
+        };
+
+        self.expect(Token::As)?;
+
+        Ok(CreateStreamClause {
+            name,
+            if_not_exists: false,
+        })
+    }
+
+    fn parse_window_clause(&mut self) -> DbResult<WindowClause> {
+        self.expect(Token::Window)?;
+
+        let window_type = match self.current_token() {
+            Token::Tumbling => {
+                self.advance();
+                WindowType::Tumbling
+            }
+            Token::Sliding => {
+                self.advance();
+                WindowType::Sliding
+            }
+            _ => return Err(DbError::ParseError("Expected TUMBLING or SLIDING".to_string())),
+        };
+
+        // Expect (SIZE "duration")
+        self.expect(Token::LeftParen)?;
+        self.expect(Token::Size)?;
+
+        let duration = if let Token::String(s) = self.current_token() {
+            let d = s.clone();
+            self.advance();
+            d
+        } else {
+            return Err(DbError::ParseError("Expected duration string".to_string()));
+        };
+
+        self.expect(Token::RightParen)?;
+
+        Ok(WindowClause {
+            window_type,
+            duration,
         })
     }
 
@@ -1959,3 +2034,23 @@ mod tests {
         assert_eq!(query.for_clauses.len(), 2);
     }
 }
+
+    #[test]
+    fn test_parse_create_stream() {
+        let input = r#"
+            CREATE STREAM high_value_txns AS
+            FOR txn IN transactions
+            WINDOW TUMBLING (SIZE "1m")
+            FILTER txn.amount > 1000
+            RETURN txn
+        "#;
+        let mut parser = Parser::new(input).unwrap();
+        let query = parser.parse().unwrap();
+        
+        assert!(query.create_stream_clause.is_some());
+        assert_eq!(query.create_stream_clause.unwrap().name, "high_value_txns");
+        assert!(query.window_clause.is_some());
+        assert_eq!(query.window_clause.unwrap().duration, "1m");
+        assert_eq!(query.for_clauses.len(), 1);
+        assert_eq!(query.for_clauses[0].collection, "transactions");
+    }

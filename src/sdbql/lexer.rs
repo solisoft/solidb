@@ -52,6 +52,15 @@ pub enum Token {
     Over,      // OVER
     Partition, // PARTITION (BY is handled separately)
 
+    // Stream Processing keywords
+    Create,   // CREATE
+    Stream,   // STREAM
+    As,       // AS
+    Window,   // WINDOW
+    Tumbling, // TUMBLING
+    Sliding,  // SLIDING
+    Size,     // SIZE
+
     // CASE expression keywords
     Case, // CASE
     When, // WHEN
@@ -388,6 +397,16 @@ impl Lexer {
             "COLLECT" => Token::Collect,
             "AGGREGATE" => Token::Aggregate,
             "COUNT" => Token::Count,
+
+            // Stream Processing
+            "CREATE" => Token::Create,
+            "STREAM" => Token::Stream,
+            "AS" => Token::As,
+            "WINDOW" => Token::Window,
+            "TUMBLING" => Token::Tumbling,
+            "SLIDING" => Token::Sliding,
+            "SIZE" => Token::Size,
+
             _ => Token::Identifier(ident),
         }
     }
