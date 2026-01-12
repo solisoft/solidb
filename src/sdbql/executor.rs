@@ -3966,6 +3966,112 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Number(number_from_f64(dist)))
             }
 
+            // VECTOR_SIMILARITY(vector1, vector2, metric?) - compute similarity between two vectors
+            // metric: "cosine" (default), "euclidean", "dot"
+            "VECTOR_SIMILARITY" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "VECTOR_SIMILARITY requires 2-3 arguments: vector1, vector2, [metric]".to_string(),
+                    ));
+                }
+
+                let vec1 = Self::extract_vector_arg(&evaluated_args[0], "VECTOR_SIMILARITY: vector1")?;
+                let vec2 = Self::extract_vector_arg(&evaluated_args[1], "VECTOR_SIMILARITY: vector2")?;
+
+                if vec1.len() != vec2.len() {
+                    return Err(DbError::ExecutionError(format!(
+                        "VECTOR_SIMILARITY: vectors must have same dimension ({} vs {})",
+                        vec1.len(), vec2.len()
+                    )));
+                }
+
+                let metric = if evaluated_args.len() > 2 {
+                    evaluated_args[2].as_str().unwrap_or("cosine")
+                } else {
+                    "cosine"
+                };
+
+                let score = match metric.to_lowercase().as_str() {
+                    "cosine" => crate::storage::vector::cosine_similarity(&vec1, &vec2),
+                    "euclidean" => crate::storage::vector::euclidean_distance(&vec1, &vec2),
+                    "dot" | "dotproduct" => crate::storage::vector::dot_product(&vec1, &vec2),
+                    _ => {
+                        return Err(DbError::ExecutionError(format!(
+                            "VECTOR_SIMILARITY: unknown metric '{}', use 'cosine', 'euclidean', or 'dot'",
+                            metric
+                        )));
+                    }
+                };
+
+                Ok(Value::Number(number_from_f64(score as f64)))
+            }
+
+            // VECTOR_DISTANCE(vector1, vector2, metric?) - compute distance between two vectors
+            // metric: "euclidean" (default), "cosine" (returns 1-similarity)
+            "VECTOR_DISTANCE" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "VECTOR_DISTANCE requires 2-3 arguments: vector1, vector2, [metric]".to_string(),
+                    ));
+                }
+
+                let vec1 = Self::extract_vector_arg(&evaluated_args[0], "VECTOR_DISTANCE: vector1")?;
+                let vec2 = Self::extract_vector_arg(&evaluated_args[1], "VECTOR_DISTANCE: vector2")?;
+
+                if vec1.len() != vec2.len() {
+                    return Err(DbError::ExecutionError(format!(
+                        "VECTOR_DISTANCE: vectors must have same dimension ({} vs {})",
+                        vec1.len(), vec2.len()
+                    )));
+                }
+
+                let metric = if evaluated_args.len() > 2 {
+                    evaluated_args[2].as_str().unwrap_or("euclidean")
+                } else {
+                    "euclidean"
+                };
+
+                let distance = match metric.to_lowercase().as_str() {
+                    "euclidean" => crate::storage::vector::euclidean_distance(&vec1, &vec2),
+                    "cosine" => 1.0 - crate::storage::vector::cosine_similarity(&vec1, &vec2),
+                    _ => {
+                        return Err(DbError::ExecutionError(format!(
+                            "VECTOR_DISTANCE: unknown metric '{}', use 'euclidean' or 'cosine'",
+                            metric
+                        )));
+                    }
+                };
+
+                Ok(Value::Number(number_from_f64(distance as f64)))
+            }
+
+            // VECTOR_NORMALIZE(vector) - normalize a vector to unit length
+            "VECTOR_NORMALIZE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "VECTOR_NORMALIZE requires 1 argument: vector".to_string(),
+                    ));
+                }
+
+                let vec = Self::extract_vector_arg(&evaluated_args[0], "VECTOR_NORMALIZE: vector")?;
+
+                // Calculate magnitude
+                let magnitude: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+
+                if magnitude < 1e-10 {
+                    // Return zero vector if magnitude is too small
+                    let result: Vec<Value> = vec.iter().map(|_| Value::Number(number_from_f64(0.0))).collect();
+                    return Ok(Value::Array(result));
+                }
+
+                let normalized: Vec<Value> = vec
+                    .iter()
+                    .map(|x| Value::Number(number_from_f64((x / magnitude) as f64)))
+                    .collect();
+
+                Ok(Value::Array(normalized))
+            }
+
             // HAS(doc, attribute) - check if document has attribute
             "HAS" => {
                 if evaluated_args.len() != 2 {
@@ -7870,6 +7976,28 @@ impl<'a> QueryExecutor<'a> {
                 None
             }
             _ => None,
+        }
+    }
+
+    /// Extract a vector (array of f32) from a JSON value
+    fn extract_vector_arg(value: &Value, context: &str) -> DbResult<Vec<f32>> {
+        match value {
+            Value::Array(arr) => {
+                arr.iter()
+                    .map(|v| {
+                        v.as_f64()
+                            .map(|f| f as f32)
+                            .ok_or_else(|| DbError::ExecutionError(format!(
+                                "{} must be an array of numbers",
+                                context
+                            )))
+                    })
+                    .collect()
+            }
+            _ => Err(DbError::ExecutionError(format!(
+                "{} must be an array",
+                context
+            ))),
         }
     }
 

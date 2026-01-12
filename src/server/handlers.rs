@@ -4902,6 +4902,155 @@ pub async fn geo_within(
     }))
 }
 
+// ==================== Vector Index Handlers ====================
+
+#[derive(Debug, Deserialize)]
+pub struct CreateVectorIndexRequest {
+    pub name: String,
+    pub field: String,
+    pub dimension: usize,
+    #[serde(default)]
+    pub metric: Option<String>,
+    #[serde(default)]
+    pub m: Option<usize>,
+    #[serde(default)]
+    pub ef_construction: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateVectorIndexResponse {
+    pub name: String,
+    pub field: String,
+    pub dimension: usize,
+    pub metric: String,
+    #[serde(rename = "type")]
+    pub index_type: String,
+    pub status: String,
+    pub indexed_vectors: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListVectorIndexesResponse {
+    pub indexes: Vec<crate::storage::VectorIndexStats>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VectorSearchRequest {
+    pub vector: Vec<f32>,
+    pub limit: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VectorSearchResult {
+    pub doc_key: String,
+    pub score: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VectorSearchResponse {
+    pub results: Vec<VectorSearchResult>,
+    pub count: usize,
+}
+
+pub async fn create_vector_index(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+    Json(req): Json<CreateVectorIndexRequest>,
+) -> Result<Json<CreateVectorIndexResponse>, DbError> {
+    use crate::storage::index::{VectorIndexConfig, VectorMetric};
+
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    // Parse metric
+    let metric = match req.metric.as_deref() {
+        Some("euclidean") => VectorMetric::Euclidean,
+        Some("dot") | Some("dotproduct") => VectorMetric::DotProduct,
+        _ => VectorMetric::Cosine, // default
+    };
+
+    let mut config = VectorIndexConfig::new(req.name.clone(), req.field.clone(), req.dimension)
+        .with_metric(metric);
+
+    if let Some(m) = req.m {
+        config = config.with_m(m);
+    }
+    if let Some(ef) = req.ef_construction {
+        config = config.with_ef_construction(ef);
+    }
+
+    let stats = collection.create_vector_index(config)?;
+
+    let metric_str = match stats.metric {
+        VectorMetric::Cosine => "cosine",
+        VectorMetric::Euclidean => "euclidean",
+        VectorMetric::DotProduct => "dot",
+    };
+
+    Ok(Json(CreateVectorIndexResponse {
+        name: stats.name,
+        field: stats.field,
+        dimension: stats.dimension,
+        metric: metric_str.to_string(),
+        index_type: "vector".to_string(),
+        status: "created".to_string(),
+        indexed_vectors: stats.indexed_vectors,
+    }))
+}
+
+pub async fn list_vector_indexes(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<Json<ListVectorIndexesResponse>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+    let indexes = collection.list_vector_indexes();
+    Ok(Json(ListVectorIndexesResponse { indexes }))
+}
+
+pub async fn delete_vector_index(
+    State(state): State<AppState>,
+    Path((db_name, coll_name, index_name)): Path<(String, String, String)>,
+) -> Result<StatusCode, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+    collection.drop_vector_index(&index_name)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn vector_search(
+    State(state): State<AppState>,
+    Path((db_name, coll_name, index_name)): Path<(String, String, String)>,
+    Json(req): Json<VectorSearchRequest>,
+) -> Result<Json<VectorSearchResponse>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    let results = collection.vector_search(&index_name, &req.vector, req.limit)?;
+
+    // Fetch documents for each result
+    let search_results: Vec<VectorSearchResult> = results
+        .into_iter()
+        .map(|r| {
+            let document = collection.get(&r.doc_key).ok().map(|doc| doc.to_value());
+            VectorSearchResult {
+                doc_key: r.doc_key,
+                score: r.score,
+                document,
+            }
+        })
+        .collect();
+
+    let count = search_results.len();
+
+    Ok(Json(VectorSearchResponse {
+        results: search_results,
+        count,
+    }))
+}
+
 // ==================== TTL Index Handlers ====================
 
 #[derive(Debug, Deserialize)]

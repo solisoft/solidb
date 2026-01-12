@@ -7,6 +7,7 @@ pub mod engine;
 pub mod geo;
 pub mod index;
 pub mod schema;
+pub mod vector;
 
 pub use collection::{Collection, CollectionStats, DiskUsage};
 pub use columnar::{
@@ -19,8 +20,10 @@ pub use engine::StorageEngine;
 pub use geo::{distance_meters, GeoIndex, GeoIndexStats, GeoPoint};
 pub use index::{
     bm25_score, calculate_idf, generate_ngrams, levenshtein_distance, ngram_similarity, tokenize,
-    FulltextMatch, Index, IndexStats, IndexType, TtlIndex, TtlIndexStats, NGRAM_SIZE,
+    FulltextMatch, Index, IndexStats, IndexType, TtlIndex, TtlIndexStats, VectorIndexConfig,
+    VectorIndexStats, VectorMetric, NGRAM_SIZE,
 };
+pub use vector::{VectorIndex, VectorSearchResult};
 pub use schema::{
     CollectionSchema, SchemaCompilationError, SchemaValidationError, SchemaValidationMode,
     SchemaValidator, ValidationResult, ValidationViolation,

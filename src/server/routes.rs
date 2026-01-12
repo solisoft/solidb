@@ -254,6 +254,23 @@ pub fn create_router(
             "/_api/database/{db}/geo/{collection}/{field}/within",
             post(geo_within),
         )
+        // Vector index routes
+        .route(
+            "/_api/database/{db}/vector/{collection}",
+            post(create_vector_index),
+        )
+        .route(
+            "/_api/database/{db}/vector/{collection}",
+            get(list_vector_indexes),
+        )
+        .route(
+            "/_api/database/{db}/vector/{collection}/{name}",
+            delete(delete_vector_index),
+        )
+        .route(
+            "/_api/database/{db}/vector/{collection}/{index}/search",
+            post(vector_search),
+        )
         // TTL index routes
         .route(
             "/_api/database/{db}/ttl/{collection}",
