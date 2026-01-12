@@ -13,13 +13,14 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
+use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt; // for oneshot
 
-fn create_test_app() -> (axum::Router, TempDir) {
+fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
@@ -35,10 +36,22 @@ fn create_test_app() -> (axum::Router, TempDir) {
         None, // QueueWorker
         script_stats,
         None, // StreamManager
-        0, // port (unused in router creation)
+        0,    // port (unused in router creation)
     );
 
-    (router, tmp_dir)
+    // Create a JWT token for authentication
+    let token = AuthService::create_jwt_with_roles(
+        "test_admin",
+        Some(vec!["admin".to_string()]),
+        None,
+    )
+    .expect("Failed to create test token");
+
+    (router, tmp_dir, token)
+}
+
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
 // Helper to parse JSON response
@@ -55,7 +68,7 @@ async fn response_json(response: axum::response::Response) -> Value {
 
 #[tokio::test]
 async fn test_create_database_api() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -63,6 +76,7 @@ async fn test_create_database_api() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "testdb" }).to_string()))
                 .unwrap(),
         )
@@ -78,7 +92,7 @@ async fn test_create_database_api() {
 
 #[tokio::test]
 async fn test_list_databases_api() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Create db first
     let _ = app
@@ -88,6 +102,7 @@ async fn test_list_databases_api() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "db1" }).to_string()))
                 .unwrap(),
         )
@@ -99,6 +114,7 @@ async fn test_list_databases_api() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/databases")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -124,7 +140,7 @@ async fn test_list_databases_api() {
 
 #[tokio::test]
 async fn test_create_collection_api() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Create DB
     let _ = app
@@ -134,6 +150,7 @@ async fn test_create_collection_api() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "mydb" }).to_string()))
                 .unwrap(),
         )
@@ -147,6 +164,7 @@ async fn test_create_collection_api() {
                 .method("POST")
                 .uri("/_api/database/mydb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "users" }).to_string()))
                 .unwrap(),
         )
@@ -162,7 +180,7 @@ async fn test_create_collection_api() {
 
 #[tokio::test]
 async fn test_create_document_api() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Setup DB and Collection
     let _ = app
@@ -172,6 +190,7 @@ async fn test_create_document_api() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "db" }).to_string()))
                 .unwrap(),
         )
@@ -185,6 +204,7 @@ async fn test_create_document_api() {
                 .method("POST")
                 .uri("/_api/database/db/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "col" }).to_string()))
                 .unwrap(),
         )
@@ -198,6 +218,7 @@ async fn test_create_document_api() {
                 .method("POST")
                 .uri("/_api/database/db/document/col")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "Alice" }).to_string()))
                 .unwrap(),
         )
@@ -211,7 +232,7 @@ async fn test_create_document_api() {
 
 #[tokio::test]
 async fn test_get_document_api() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Setup
     let _ = app
@@ -221,6 +242,7 @@ async fn test_get_document_api() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "db" }).to_string()))
                 .unwrap(),
         )
@@ -234,6 +256,7 @@ async fn test_get_document_api() {
                 .method("POST")
                 .uri("/_api/database/db/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "col" }).to_string()))
                 .unwrap(),
         )
@@ -248,6 +271,7 @@ async fn test_get_document_api() {
                 .method("POST")
                 .uri("/_api/database/db/document/col")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "_key": "doc1", "val": 123 }).to_string(),
                 ))
@@ -263,6 +287,7 @@ async fn test_get_document_api() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/db/document/col/doc1")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -280,7 +305,7 @@ async fn test_get_document_api() {
 
 #[tokio::test]
 async fn test_query_api() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Setup
     let _ = app
@@ -290,6 +315,7 @@ async fn test_query_api() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "db" }).to_string()))
                 .unwrap(),
         )
@@ -303,6 +329,7 @@ async fn test_query_api() {
                 .method("POST")
                 .uri("/_api/database/db/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "query": "RETURN 1 + 1"
@@ -323,7 +350,7 @@ async fn test_query_api() {
 
 #[tokio::test]
 async fn test_query_with_binds_api() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Setup
     let _ = app
@@ -333,6 +360,7 @@ async fn test_query_with_binds_api() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "db" }).to_string()))
                 .unwrap(),
         )
@@ -345,6 +373,7 @@ async fn test_query_with_binds_api() {
                 .method("POST")
                 .uri("/_api/database/db/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "query": "RETURN @val",
@@ -369,13 +398,14 @@ async fn test_query_with_binds_api() {
 
 #[tokio::test]
 async fn test_not_found_api() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/nonexistent/document/col/doc")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -389,7 +419,7 @@ async fn test_not_found_api() {
 
 #[tokio::test]
 async fn test_bad_request_api() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Create DB first
     let _ = app
@@ -399,6 +429,7 @@ async fn test_bad_request_api() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "db" }).to_string()))
                 .unwrap(),
         )
@@ -412,6 +443,7 @@ async fn test_bad_request_api() {
                 .method("POST")
                 .uri("/_api/database/db/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "query": "INVALID SYNTAX"

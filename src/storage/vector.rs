@@ -608,16 +608,6 @@ impl HnswGraph {
         results
     }
 
-    /// Get the number of nodes in the graph
-    fn len(&self) -> usize {
-        self.nodes.len()
-    }
-
-    /// Check if the graph is empty
-    fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
-    }
-
     /// Clear all nodes from the graph
     fn clear(&mut self) {
         self.nodes.clear();
@@ -674,12 +664,6 @@ impl VectorIndex {
     fn hnsw_threshold(&self) -> usize {
         // Use config threshold if available, otherwise default
         DEFAULT_HNSW_THRESHOLD
-    }
-
-    /// Check if HNSW should be used based on current vector count
-    fn should_use_hnsw(&self) -> bool {
-        let vectors = self.vectors.read().unwrap();
-        vectors.len() >= self.hnsw_threshold()
     }
 
     /// Build the HNSW graph from existing vectors

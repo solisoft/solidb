@@ -11,13 +11,14 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
+use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-fn create_test_app() -> (axum::Router, TempDir) {
+fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
@@ -26,7 +27,18 @@ fn create_test_app() -> (axum::Router, TempDir) {
 
     let router = create_router(engine, None, None, None, None, script_stats, None, 0);
 
-    (router, tmp_dir)
+    let token = AuthService::create_jwt_with_roles(
+        "test_admin",
+        Some(vec!["admin".to_string()]),
+        None,
+    )
+    .expect("Failed to create test token");
+
+    (router, tmp_dir, token)
+}
+
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -38,7 +50,7 @@ async fn response_json(response: axum::response::Response) -> Value {
 
 #[tokio::test]
 async fn test_sdbql_transaction_commit() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // 1. Setup DB and Collection
     app.clone()
@@ -47,6 +59,7 @@ async fn test_sdbql_transaction_commit() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "tx_db" }).to_string()))
                 .unwrap(),
         )
@@ -59,6 +72,7 @@ async fn test_sdbql_transaction_commit() {
                 .method("POST")
                 .uri("/_api/database/tx_db/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "users" }).to_string()))
                 .unwrap(),
         )
@@ -73,6 +87,7 @@ async fn test_sdbql_transaction_commit() {
                 .method("POST")
                 .uri("/_api/database/tx_db/transaction/begin")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "isolation": "read_committed" }).to_string(),
                 ))
@@ -93,6 +108,7 @@ async fn test_sdbql_transaction_commit() {
                 .method("POST")
                 .uri(&format!("/_api/database/tx_db/transaction/{}/query", tx_id))
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "query": "INSERT { name: 'Alice' } INTO users"
@@ -114,6 +130,7 @@ async fn test_sdbql_transaction_commit() {
                 .method("POST")
                 .uri("/_api/database/tx_db/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "query": "FOR u IN users RETURN u"
@@ -139,6 +156,7 @@ async fn test_sdbql_transaction_commit() {
                     "/_api/database/tx_db/transaction/{}/commit",
                     tx_id
                 ))
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -154,6 +172,7 @@ async fn test_sdbql_transaction_commit() {
                 .method("POST")
                 .uri("/_api/database/tx_db/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "query": "FOR u IN users RETURN u"
@@ -173,7 +192,7 @@ async fn test_sdbql_transaction_commit() {
 
 #[tokio::test]
 async fn test_sdbql_transaction_rollback() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Setup
     app.clone()
@@ -182,6 +201,7 @@ async fn test_sdbql_transaction_rollback() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "tx_db_rb" }).to_string()))
                 .unwrap(),
         )
@@ -194,6 +214,7 @@ async fn test_sdbql_transaction_rollback() {
                 .method("POST")
                 .uri("/_api/database/tx_db_rb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "items" }).to_string()))
                 .unwrap(),
         )
@@ -208,6 +229,7 @@ async fn test_sdbql_transaction_rollback() {
                 .method("POST")
                 .uri("/_api/database/tx_db_rb/transaction/begin")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from("{}"))
                 .unwrap(),
         )
@@ -228,6 +250,7 @@ async fn test_sdbql_transaction_rollback() {
                     tx_id
                 ))
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "query": "INSERT { item: 'temp' } INTO items"
@@ -250,6 +273,7 @@ async fn test_sdbql_transaction_rollback() {
                     "/_api/database/tx_db_rb/transaction/{}/rollback",
                     tx_id
                 ))
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -265,6 +289,7 @@ async fn test_sdbql_transaction_rollback() {
                 .method("POST")
                 .uri("/_api/database/tx_db_rb/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "query": "FOR i IN items RETURN i"

@@ -8,13 +8,14 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
+use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-fn create_test_app() -> (axum::Router, TempDir) {
+fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
@@ -24,7 +25,18 @@ fn create_test_app() -> (axum::Router, TempDir) {
     // No cluster manager or coordinator for basic API tests
     let router = create_router(engine, None, None, None, None, script_stats, None, 0);
 
-    (router, tmp_dir)
+    let token = AuthService::create_jwt_with_roles(
+        "test_admin",
+        Some(vec!["admin".to_string()]),
+        None,
+    )
+    .expect("Failed to create test token");
+
+    (router, tmp_dir, token)
+}
+
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -36,7 +48,7 @@ async fn response_json(response: axum::response::Response) -> Value {
 
 #[tokio::test]
 async fn test_get_sharding_not_sharded() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // 1. Create DB and Collection
     app.clone()
@@ -45,6 +57,7 @@ async fn test_get_sharding_not_sharded() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "shard_db" }).to_string()))
                 .unwrap(),
         )
@@ -57,6 +70,7 @@ async fn test_get_sharding_not_sharded() {
                 .method("POST")
                 .uri("/_api/database/shard_db/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "normal_col" }).to_string()))
                 .unwrap(),
         )
@@ -70,6 +84,7 @@ async fn test_get_sharding_not_sharded() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/shard_db/collection/normal_col/sharding")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -85,7 +100,7 @@ async fn test_get_sharding_not_sharded() {
 
 #[tokio::test]
 async fn test_enable_sharding() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Setup
     app.clone()
@@ -94,6 +109,7 @@ async fn test_enable_sharding() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "shard_db_2" }).to_string()))
                 .unwrap(),
         )
@@ -106,6 +122,7 @@ async fn test_enable_sharding() {
                 .method("POST")
                 .uri("/_api/database/shard_db_2/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "sharded_col" }).to_string()))
                 .unwrap(),
         )
@@ -121,6 +138,7 @@ async fn test_enable_sharding() {
                 .method("PUT")
                 .uri("/_api/database/shard_db_2/collection/sharded_col/properties")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "num_shards": 1,
@@ -145,6 +163,7 @@ async fn test_enable_sharding() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/shard_db_2/collection/sharded_col/sharding")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )

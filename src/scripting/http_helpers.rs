@@ -70,50 +70,48 @@ pub fn create_set_cookie_function(lua: &Lua) -> LuaResult<Function> {
         move |_lua, (name, value, options): (String, String, Option<LuaValue>)| {
             let mut cookie = HttpCookie::new(name, value);
 
-            if let Some(opts) = options {
-                if let LuaValue::Table(t) = opts {
-                    // Parse expires timestamp or ISO string
-                    if let Ok(expires) = t.get::<String>("expires") {
-                        if let Ok(timestamp) = expires.parse::<i64>() {
-                            if let Ok(datetime) = OffsetDateTime::from_unix_timestamp(timestamp) {
-                                cookie.set_expires(datetime);
-                            }
-                        } else if let Ok(datetime) = OffsetDateTime::parse(
-                            &expires,
-                            &format_description::well_known::Rfc3339,
-                        ) {
+            if let Some(LuaValue::Table(t)) = options {
+                // Parse expires timestamp or ISO string
+                if let Ok(expires) = t.get::<String>("expires") {
+                    if let Ok(timestamp) = expires.parse::<i64>() {
+                        if let Ok(datetime) = OffsetDateTime::from_unix_timestamp(timestamp) {
                             cookie.set_expires(datetime);
                         }
+                    } else if let Ok(datetime) = OffsetDateTime::parse(
+                        &expires,
+                        &format_description::well_known::Rfc3339,
+                    ) {
+                        cookie.set_expires(datetime);
                     }
+                }
 
-                    // Path
-                    if let Ok(path) = t.get::<String>("path") {
-                        cookie.set_path(path);
-                    }
+                // Path
+                if let Ok(path) = t.get::<String>("path") {
+                    cookie.set_path(path);
+                }
 
-                    // Domain
-                    if let Ok(domain) = t.get::<String>("domain") {
-                        cookie.set_domain(domain);
-                    }
+                // Domain
+                if let Ok(domain) = t.get::<String>("domain") {
+                    cookie.set_domain(domain);
+                }
 
-                    // Secure flag
-                    if let Ok(secure) = t.get::<bool>("secure") {
-                        cookie.set_secure(secure);
-                    }
+                // Secure flag
+                if let Ok(secure) = t.get::<bool>("secure") {
+                    cookie.set_secure(secure);
+                }
 
-                    // HttpOnly flag
-                    if let Ok(http_only) = t.get::<bool>("httpOnly") {
-                        cookie.set_http_only(http_only);
-                    }
+                // HttpOnly flag
+                if let Ok(http_only) = t.get::<bool>("httpOnly") {
+                    cookie.set_http_only(http_only);
+                }
 
-                    // SameSite
-                    if let Ok(same_site) = t.get::<String>("sameSite") {
-                        match same_site.as_str() {
-                            "Strict" => cookie.set_same_site(SameSite::Strict),
-                            "Lax" => cookie.set_same_site(SameSite::Lax),
-                            "None" => cookie.set_same_site(SameSite::None),
-                            _ => {}
-                        }
+                // SameSite
+                if let Ok(same_site) = t.get::<String>("sameSite") {
+                    match same_site.as_str() {
+                        "Strict" => cookie.set_same_site(SameSite::Strict),
+                        "Lax" => cookie.set_same_site(SameSite::Lax),
+                        "None" => cookie.set_same_site(SameSite::None),
+                        _ => {}
                     }
                 }
             }
@@ -164,7 +162,7 @@ pub fn create_response_html_function(_lua: &Lua) -> LuaResult<Function> {
     lua_ref.create_function(move |lua, content: String| {
         // Return a special marker that response system will understand
         Ok(LuaValue::String(
-            lua.create_string(&format!("HTML_RESPONSE:{}", content))
+            lua.create_string(format!("HTML_RESPONSE:{}", content))
                 .unwrap(),
         ))
     })

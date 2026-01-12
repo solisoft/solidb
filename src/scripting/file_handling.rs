@@ -422,7 +422,7 @@ pub fn create_file_list_function(
             Ok(c) => c,
             Err(_) => {
                 // Collection doesn't exist, return empty array
-                return Ok(lua.create_table()?);
+                return lua.create_table();
             }
         };
 

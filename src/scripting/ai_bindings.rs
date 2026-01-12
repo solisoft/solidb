@@ -64,10 +64,8 @@ pub fn create_ai_table(lua: &Lua, storage: Arc<StorageEngine>, db_name: &str) ->
         let context = if let Some(ctx) = context_table {
             let mut related: Vec<String> = Vec::new();
             if let Ok(rel) = ctx.get::<Table>("related_collections") {
-                for pair in rel.pairs::<i64, String>() {
-                    if let Ok((_, v)) = pair {
-                        related.push(v);
-                    }
+                for (_, v) in rel.pairs::<i64, String>().flatten() {
+                    related.push(v);
                 }
             }
 
@@ -170,7 +168,7 @@ pub fn create_ai_table(lua: &Lua, storage: Arc<StorageEngine>, db_name: &str) ->
                 let json_str = serde_json::to_string(&doc.to_value())
                     .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
                 let lua_val: LuaValue = lua
-                    .load(&format!("return {}", json_to_lua(&json_str)))
+                    .load(format!("return {}", json_to_lua(&json_str)))
                     .eval()
                     .unwrap_or(LuaValue::Nil);
                 Ok(lua_val)
@@ -228,7 +226,7 @@ pub fn create_ai_table(lua: &Lua, storage: Arc<StorageEngine>, db_name: &str) ->
             let json_str = serde_json::to_string(&contribution)
                 .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
             let lua_val: LuaValue = lua
-                .load(&format!("return {}", json_to_lua(&json_str)))
+                .load(format!("return {}", json_to_lua(&json_str)))
                 .eval()
                 .unwrap_or(LuaValue::Nil);
 
@@ -277,7 +275,7 @@ pub fn create_ai_table(lua: &Lua, storage: Arc<StorageEngine>, db_name: &str) ->
             let json_str = serde_json::to_string(&task)
                 .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
             let lua_val: LuaValue = lua
-                .load(&format!("return {}", json_to_lua(&json_str)))
+                .load(format!("return {}", json_to_lua(&json_str)))
                 .eval()
                 .unwrap_or(LuaValue::Nil);
 
@@ -365,7 +363,7 @@ pub fn create_ai_table(lua: &Lua, storage: Arc<StorageEngine>, db_name: &str) ->
             let task_json = serde_json::to_string(&task)
                 .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
             let task_lua: LuaValue = lua
-                .load(&format!("return {}", json_to_lua(&task_json)))
+                .load(format!("return {}", json_to_lua(&task_json)))
                 .eval()
                 .unwrap_or(LuaValue::Nil);
             result.set("task", task_lua)?;
@@ -436,7 +434,7 @@ pub fn create_ai_table(lua: &Lua, storage: Arc<StorageEngine>, db_name: &str) ->
             let json_str = serde_json::to_string(&task)
                 .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
             let lua_val: LuaValue = lua
-                .load(&format!("return {}", json_to_lua(&json_str)))
+                .load(format!("return {}", json_to_lua(&json_str)))
                 .eval()
                 .unwrap_or(LuaValue::Nil);
 
@@ -470,10 +468,8 @@ pub fn create_ai_table(lua: &Lua, storage: Arc<StorageEngine>, db_name: &str) ->
             let caps: Vec<String> = capabilities
                 .map(|t| {
                     let mut v = Vec::new();
-                    for pair in t.pairs::<i64, String>() {
-                        if let Ok((_, cap)) = pair {
-                            v.push(cap);
-                        }
+                    for (_, cap) in t.pairs::<i64, String>().flatten() {
+                        v.push(cap);
                     }
                     v
                 })
@@ -503,7 +499,7 @@ pub fn create_ai_table(lua: &Lua, storage: Arc<StorageEngine>, db_name: &str) ->
             let json_str = serde_json::to_string(&agent)
                 .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
             let lua_val: LuaValue = lua
-                .load(&format!("return {}", json_to_lua(&json_str)))
+                .load(format!("return {}", json_to_lua(&json_str)))
                 .eval()
                 .unwrap_or(LuaValue::Nil);
 
@@ -553,10 +549,8 @@ fn create_marketplace_table(
             AgentDiscoveryQuery {
                 required_capabilities: opts.get::<Table>("required_capabilities").ok().map(|t| {
                     let mut caps = Vec::new();
-                    for pair in t.pairs::<i64, String>() {
-                        if let Ok((_, v)) = pair {
-                            caps.push(v);
-                        }
+                    for (_, v) in t.pairs::<i64, String>().flatten() {
+                        caps.push(v);
                     }
                     caps
                 }),
@@ -587,7 +581,7 @@ fn create_marketplace_table(
             let json_str = serde_json::to_string(agent)
                 .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
             let lua_val: LuaValue = lua
-                .load(&format!("return {}", json_to_lua(&json_str)))
+                .load(format!("return {}", json_to_lua(&json_str)))
                 .eval()
                 .unwrap_or(LuaValue::Nil);
             result.set(idx + 1, lua_val)?;
@@ -610,7 +604,7 @@ fn create_marketplace_table(
                 let json_str = serde_json::to_string(&reputation)
                     .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
                 let lua_val: LuaValue = lua
-                    .load(&format!("return {}", json_to_lua(&json_str)))
+                    .load(format!("return {}", json_to_lua(&json_str)))
                     .eval()
                     .unwrap_or(LuaValue::Nil);
                 Ok(lua_val)
@@ -647,7 +641,7 @@ fn create_marketplace_table(
                 let json_str = serde_json::to_string(&agent)
                     .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
                 let lua_val: LuaValue = lua
-                    .load(&format!("return {}", json_to_lua(&json_str)))
+                    .load(format!("return {}", json_to_lua(&json_str)))
                     .eval()
                     .unwrap_or(LuaValue::Nil);
                 Ok(lua_val)
@@ -673,7 +667,7 @@ fn create_marketplace_table(
             let json_str = serde_json::to_string(ranking)
                 .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
             let lua_val: LuaValue = lua
-                .load(&format!("return {}", json_to_lua(&json_str)))
+                .load(format!("return {}", json_to_lua(&json_str)))
                 .eval()
                 .unwrap_or(LuaValue::Nil);
             result.set(idx + 1, lua_val)?;
@@ -738,7 +732,7 @@ fn create_learning_table(
             let json_str = serde_json::to_string(event)
                 .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
             let lua_val: LuaValue = lua
-                .load(&format!("return {}", json_to_lua(&json_str)))
+                .load(format!("return {}", json_to_lua(&json_str)))
                 .eval()
                 .unwrap_or(LuaValue::Nil);
             result.set(idx + 1, lua_val)?;
@@ -796,7 +790,7 @@ fn create_learning_table(
             let json_str = serde_json::to_string(pattern)
                 .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
             let lua_val: LuaValue = lua
-                .load(&format!("return {}", json_to_lua(&json_str)))
+                .load(format!("return {}", json_to_lua(&json_str)))
                 .eval()
                 .unwrap_or(LuaValue::Nil);
             result.set(idx + 1, lua_val)?;
@@ -858,7 +852,7 @@ fn create_learning_table(
             let json_str = serde_json::to_string(rec)
                 .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
             let lua_val: LuaValue = lua
-                .load(&format!("return {}", json_to_lua(&json_str)))
+                .load(format!("return {}", json_to_lua(&json_str)))
                 .eval()
                 .unwrap_or(LuaValue::Nil);
             result.set(idx + 1, lua_val)?;
@@ -879,7 +873,7 @@ fn create_learning_table(
         let json_str = serde_json::to_string(&result)
             .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
         let lua_val: LuaValue = lua
-            .load(&format!("return {}", json_to_lua(&json_str)))
+            .load(format!("return {}", json_to_lua(&json_str)))
             .eval()
             .unwrap_or(LuaValue::Nil);
 
@@ -915,7 +909,7 @@ fn create_recovery_table(
         let json_str = serde_json::to_string(&status)
             .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
         let lua_val: LuaValue = lua
-            .load(&format!("return {}", json_to_lua(&json_str)))
+            .load(format!("return {}", json_to_lua(&json_str)))
             .eval()
             .unwrap_or(LuaValue::Nil);
 
@@ -978,7 +972,7 @@ fn create_recovery_table(
             let json_str = serde_json::to_string(event)
                 .map_err(|e| mlua::Error::RuntimeError(format!("JSON error: {}", e)))?;
             let lua_val: LuaValue = lua
-                .load(&format!("return {}", json_to_lua(&json_str)))
+                .load(format!("return {}", json_to_lua(&json_str)))
                 .eval()
                 .unwrap_or(LuaValue::Nil);
             result.set(idx + 1, lua_val)?;

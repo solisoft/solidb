@@ -560,20 +560,6 @@ fn translate_order_by_with_aliases(
     }
 }
 
-#[allow(dead_code)]
-fn translate_order_by(item: &OrderByItem, _doc_var: &str) -> String {
-    let direction = if item.descending { "DESC" } else { "ASC" };
-    // Qualified columns (table.column) are kept as-is
-    // Simple identifiers might be aliases, use as-is
-    if item.column.contains('.') {
-        format!("{} {}", item.column, direction)
-    } else {
-        // Could be a column or an alias - prefix with doc_var for safety
-        // If it's an alias, SDBQL should still work
-        format!("{} {}", item.column, direction)
-    }
-}
-
 fn translate_expr(expr: &SqlExpr, doc_var: &str) -> String {
     match expr {
         SqlExpr::Column(name) => {

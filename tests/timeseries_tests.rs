@@ -8,6 +8,7 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
+use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
@@ -15,7 +16,7 @@ use tempfile::TempDir;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-fn create_test_app() -> (axum::Router, TempDir) {
+fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
@@ -24,7 +25,18 @@ fn create_test_app() -> (axum::Router, TempDir) {
 
     let router = create_router(engine, None, None, None, None, script_stats, None, 0);
 
-    (router, tmp_dir)
+    let token = AuthService::create_jwt_with_roles(
+        "test_admin",
+        Some(vec!["admin".to_string()]),
+        None,
+    )
+    .expect("Failed to create test token");
+
+    (router, tmp_dir, token)
+}
+
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -46,7 +58,7 @@ fn make_uuid_v7(ts_ms: u64) -> String {
 
 #[tokio::test]
 async fn test_timeseries_prune() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // 1. Create Timeseries Collection
     app.clone()
@@ -55,6 +67,7 @@ async fn test_timeseries_prune() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "ts_db" }).to_string()))
                 .unwrap(),
         )
@@ -67,6 +80,7 @@ async fn test_timeseries_prune() {
                 .method("POST")
                 .uri("/_api/database/ts_db/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "metrics",
@@ -96,6 +110,7 @@ async fn test_timeseries_prune() {
                     .method("POST")
                     .uri("/_api/database/ts_db/document/metrics")
                     .header("Content-Type", "application/json")
+                    .header("Authorization", auth_header(&token))
                     .body(Body::from(
                         json!({
                             "_key": k,
@@ -120,6 +135,7 @@ async fn test_timeseries_prune() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/ts_db/collection/metrics/count")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -140,6 +156,7 @@ async fn test_timeseries_prune() {
                 .method("POST")
                 .uri("/_api/database/ts_db/collection/metrics/prune")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "older_than": older_than
@@ -163,6 +180,7 @@ async fn test_timeseries_prune() {
             Request::builder()
                 .method("GET")
                 .uri(format!("/_api/database/ts_db/document/metrics/{}", k3))
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -177,6 +195,7 @@ async fn test_timeseries_prune() {
             Request::builder()
                 .method("GET")
                 .uri(format!("/_api/database/ts_db/document/metrics/{}", k1))
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -191,6 +210,7 @@ async fn test_timeseries_prune() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/ts_db/collection/metrics/count")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -202,7 +222,7 @@ async fn test_timeseries_prune() {
 
 #[tokio::test]
 async fn test_sdbql_time_bucket() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Create DB
     app.clone()
@@ -211,6 +231,7 @@ async fn test_sdbql_time_bucket() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "query_db" }).to_string()))
                 .unwrap(),
         )
@@ -226,6 +247,7 @@ async fn test_sdbql_time_bucket() {
                 .method("POST")
                 .uri("/_api/database/query_db/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "query": query }).to_string()))
                 .unwrap(),
         )
@@ -253,6 +275,7 @@ async fn test_sdbql_time_bucket() {
                 .method("POST")
                 .uri("/_api/database/query_db/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "query": query }).to_string()))
                 .unwrap(),
         )

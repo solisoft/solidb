@@ -12,13 +12,14 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
+use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-fn create_test_app() -> (axum::Router, TempDir) {
+fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
@@ -27,7 +28,19 @@ fn create_test_app() -> (axum::Router, TempDir) {
 
     let router = create_router(engine, None, None, None, None, script_stats, None, 0);
 
-    (router, tmp_dir)
+    // Create a JWT token for authentication
+    let token = AuthService::create_jwt_with_roles(
+        "test_admin",
+        Some(vec!["admin".to_string()]),
+        None,
+    )
+    .expect("Failed to create test token");
+
+    (router, tmp_dir, token)
+}
+
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -53,7 +66,7 @@ fn create_multipart_body(boundary: &str, parts: Vec<(&str, Vec<u8>)>) -> Vec<u8>
 
 #[tokio::test]
 async fn test_upload_and_retrieve_blob() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
     let boundary = "------------------------Boundary123";
 
     // 1. Create DB and Blob Collection
@@ -63,6 +76,7 @@ async fn test_upload_and_retrieve_blob() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "blob_db" }).to_string()))
                 .unwrap(),
         )
@@ -75,6 +89,7 @@ async fn test_upload_and_retrieve_blob() {
                 .method("POST")
                 .uri("/_api/database/blob_db/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "name": "images", "type": "blob" }).to_string(),
                 ))
@@ -140,7 +155,7 @@ async fn test_upload_and_retrieve_blob() {
 
 #[tokio::test]
 async fn test_blob_replication_endpoint() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
     let boundary = "------------------------BoundaryReplication";
 
     // Setup
@@ -150,6 +165,7 @@ async fn test_blob_replication_endpoint() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "rep_db" }).to_string()))
                 .unwrap(),
         )
@@ -162,6 +178,7 @@ async fn test_blob_replication_endpoint() {
                 .method("POST")
                 .uri("/_api/database/rep_db/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "name": "files", "type": "blob" }).to_string(),
                 ))

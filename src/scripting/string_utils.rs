@@ -76,21 +76,19 @@ pub fn create_template_function(lua: &Lua) -> LuaResult<Function> {
 
         if let LuaValue::Table(t) = vars {
             // Iterate over the table and replace placeholders
-            for pair in t.pairs::<String, LuaValue>() {
-                if let Ok((key, value)) = pair {
-                    let placeholder = format!("{{{{{}}}}}", key); // {{key}}
-                    let replacement = match value {
-                        LuaValue::String(s) => {
-                            s.to_str().map(|s| s.to_string()).unwrap_or_default()
-                        }
-                        LuaValue::Integer(i) => i.to_string(),
-                        LuaValue::Number(n) => n.to_string(),
-                        LuaValue::Boolean(b) => b.to_string(),
-                        LuaValue::Nil => String::new(),
-                        _ => format!("{:?}", value),
-                    };
-                    result = result.replace(&placeholder, &replacement);
-                }
+            for (key, value) in t.pairs::<String, LuaValue>().flatten() {
+                let placeholder = format!("{{{{{}}}}}", key); // {{key}}
+                let replacement = match value {
+                    LuaValue::String(s) => {
+                        s.to_str().map(|s| s.to_string()).unwrap_or_default()
+                    }
+                    LuaValue::Integer(i) => i.to_string(),
+                    LuaValue::Number(n) => n.to_string(),
+                    LuaValue::Boolean(b) => b.to_string(),
+                    LuaValue::Nil => String::new(),
+                    _ => format!("{:?}", value),
+                };
+                result = result.replace(&placeholder, &replacement);
             }
         }
 
@@ -130,9 +128,7 @@ pub fn create_pad_left_function(lua: &Lua) -> LuaResult<Function> {
                 return Ok(text);
             }
 
-            let padding: String = std::iter::repeat(pad_char)
-                .take(length - text_len)
-                .collect();
+            let padding: String = std::iter::repeat_n(pad_char, length - text_len).collect();
             Ok(format!("{}{}", padding, text))
         },
     )
@@ -150,9 +146,7 @@ pub fn create_pad_right_function(lua: &Lua) -> LuaResult<Function> {
                 return Ok(text);
             }
 
-            let padding: String = std::iter::repeat(pad_char)
-                .take(length - text_len)
-                .collect();
+            let padding: String = std::iter::repeat_n(pad_char, length - text_len).collect();
             Ok(format!("{}{}", text, padding))
         },
     )
@@ -196,14 +190,14 @@ pub fn create_deep_merge_function(lua: &Lua) -> LuaResult<Function> {
 }
 
 /// Recursively merge t2 into t1
-fn deep_merge_tables(lua: &Lua, t1: &Table, t2: &Table) -> LuaResult<()> {
+fn deep_merge_tables(_lua: &Lua, t1: &Table, t2: &Table) -> LuaResult<()> {
     for pair in t2.pairs::<LuaValue, LuaValue>() {
         let (key, value2) = pair?;
 
         match (t1.get::<LuaValue>(key.clone())?, value2.clone()) {
             // Both are tables - merge recursively
             (LuaValue::Table(existing), LuaValue::Table(new_table)) => {
-                deep_merge_tables(lua, &existing, &new_table)?;
+                deep_merge_tables(_lua, &existing, &new_table)?;
             }
             // Otherwise, overwrite with new value
             _ => {

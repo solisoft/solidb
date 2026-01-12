@@ -61,12 +61,12 @@ impl HealthMonitor {
                     // TODO: Log warning
                     self.state.mark_status(&member.node.id, NodeStatus::Dead);
                 }
-            } else if elapsed > self.config.suspicion_threshold {
-                if member.status == NodeStatus::Active {
-                    // TODO: Log warning
-                    self.state
-                        .mark_status(&member.node.id, NodeStatus::Suspected);
-                }
+            } else if elapsed > self.config.suspicion_threshold
+                && member.status == NodeStatus::Active
+            {
+                // TODO: Log warning
+                self.state
+                    .mark_status(&member.node.id, NodeStatus::Suspected);
             }
         }
     }

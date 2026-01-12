@@ -1163,12 +1163,29 @@ impl ColumnarCollection {
         }
 
         // Copy values we need before building index
-        let row_count = meta.row_count;
         let compression = meta.compression.clone();
 
-        // Build index from existing data
-        for row_id in 0..row_count {
-            let col_key = format!("{}{}:{}", COL_DATA_PREFIX, column, row_id);
+        // Build index from existing data by iterating over actual row UUIDs
+        // Get all row UUIDs from the col_row: prefix
+        let row_prefix = COL_ROW_PREFIX.as_bytes();
+        let iter = db_guard.prefix_iterator_cf(cf, row_prefix);
+
+        let mut row_uuids = Vec::new();
+        for item in iter {
+            if let Ok((key, _)) = item {
+                if !key.starts_with(row_prefix) {
+                    break;
+                }
+                let key_str = String::from_utf8_lossy(&key);
+                if let Some(uuid) = key_str.strip_prefix(COL_ROW_PREFIX) {
+                    row_uuids.push(uuid.to_string());
+                }
+            }
+        }
+
+        // Build index using UUIDs, but storing row position for bitmap
+        for (row_id, row_uuid) in row_uuids.iter().enumerate() {
+            let col_key = format!("{}{}:{}", COL_DATA_PREFIX, column, row_uuid);
             if let Ok(Some(bytes)) = db_guard.get_cf(cf, col_key.as_bytes()) {
                 if let Ok(decompressed) = self.decompress_data(&bytes, &compression) {
                     if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
@@ -1179,19 +1196,31 @@ impl ColumnarCollection {
                                     &db_guard,
                                     cf,
                                     &idx_key,
-                                    row_id,
+                                    row_id as u64,
                                     &compression,
                                 )?;
                             }
                             ColumnarIndexType::MinMax => {
-                                self.update_minmax_index(&db_guard, cf, column, &value, row_id)?;
+                                self.update_minmax_index(
+                                    &db_guard,
+                                    cf,
+                                    column,
+                                    &value,
+                                    row_id as u64,
+                                )?;
                             }
                             ColumnarIndexType::Bloom => {
-                                self.update_bloom_index(&db_guard, cf, column, &value, row_id)?;
+                                self.update_bloom_index(
+                                    &db_guard,
+                                    cf,
+                                    column,
+                                    &value,
+                                    row_id as u64,
+                                )?;
                             }
                             _ => {
                                 let idx_key = self.encode_index_key(column, &value);
-                                self.append_row_to_index(&db_guard, cf, &idx_key, row_id)?;
+                                self.append_row_to_index(&db_guard, cf, &idx_key, row_id as u64)?;
                             }
                         }
                     }

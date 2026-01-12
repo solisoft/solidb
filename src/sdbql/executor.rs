@@ -2305,7 +2305,7 @@ impl<'a> QueryExecutor<'a> {
                             "full_scan".to_string()
                         },
                         index_used: index_name,
-                        index_type: index_type,
+                        index_type,
                         documents_count: if used_index { 0 } else { 0 }, // Simplified
                     });
                 }
@@ -2371,23 +2371,25 @@ impl<'a> QueryExecutor<'a> {
 
         // Apply LIMIT
         let mut documents_returned = rows.len();
+        let mut limit_offset_val: usize = 0;
+        let mut limit_count_val: usize = 0;
         if let Some(limit) = &query.limit_clause {
             let limit_start = Instant::now();
-            let offset = self
+            limit_offset_val = self
                 .evaluate_expr_with_context(&limit.offset, &initial_bindings)
                 .ok()
                 .and_then(|v| v.as_u64())
                 .map(|n| n as usize)
                 .unwrap_or(0);
-            let count = self
+            limit_count_val = self
                 .evaluate_expr_with_context(&limit.count, &initial_bindings)
                 .ok()
                 .and_then(|v| v.as_u64())
                 .map(|n| n as usize)
                 .unwrap_or(0);
 
-            let start = offset.min(rows.len());
-            let end = (start + count).min(rows.len());
+            let start = limit_offset_val.min(rows.len());
+            let end = (start + limit_count_val).min(rows.len());
             rows = rows[start..end].to_vec();
             documents_returned = rows.len();
             limit_us = limit_start.elapsed().as_micros() as u64;
@@ -2423,8 +2425,8 @@ impl<'a> QueryExecutor<'a> {
                 time_us: sort_us,
             }),
             limit: query.limit_clause.as_ref().map(|_l| LimitInfo {
-                offset: 0,
-                count: 0,
+                offset: limit_offset_val,
+                count: limit_count_val,
             }),
             timing: ExecutionTiming {
                 total_us,
@@ -2440,9 +2442,6 @@ impl<'a> QueryExecutor<'a> {
             warnings,
         })
     }
-
-    /// Build all row combinations from multiple FOR clauses
-    /// This creates the Cartesian product for JOINs
 
     /// Build all row combinations from multiple FOR clauses with initial context (LET bindings)
     /// This creates the Cartesian product for JOINs
@@ -8111,25 +8110,6 @@ impl<'a> QueryExecutor<'a> {
     }
 
     // ==================== Index Optimization (for single FOR queries) ====================
-
-    /// Try to use index for single-FOR queries
-    #[allow(dead_code)]
-    fn get_indexed_documents(
-        &self,
-        collection: &Collection,
-        filter_clauses: &[FilterClause],
-        var_name: &str,
-    ) -> Option<Vec<Value>> {
-        for filter in filter_clauses {
-            if let Some(condition) = self.extract_indexable_condition(&filter.expression, var_name)
-            {
-                if let Some(docs) = self.use_index_for_condition(collection, &condition) {
-                    return Some(docs.iter().map(|d| d.to_value()).collect());
-                }
-            }
-        }
-        None
-    }
 
     /// Extract a simple indexable condition from a filter expression
     fn extract_indexable_condition(

@@ -6,19 +6,32 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
+use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-fn create_test_app() -> (axum::Router, TempDir) {
+fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
     let script_stats = Arc::new(ScriptStats::default());
     let router = create_router(engine, None, None, None, None, script_stats, None, 0);
-    (router, tmp_dir)
+
+    let token = AuthService::create_jwt_with_roles(
+        "test_admin",
+        Some(vec!["admin".to_string()]),
+        None,
+    )
+    .expect("Failed to create test token");
+
+    (router, tmp_dir, token)
+}
+
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -28,7 +41,7 @@ async fn response_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&body).unwrap_or(json!(null))
 }
 
-async fn setup_test_db(app: &axum::Router) {
+async fn setup_test_db(app: &axum::Router, token: &str) {
     let _ = app
         .clone()
         .oneshot(
@@ -36,6 +49,7 @@ async fn setup_test_db(app: &axum::Router) {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(token))
                 .body(Body::from(json!({"name": "testdb"}).to_string()))
                 .unwrap(),
         )
@@ -49,14 +63,15 @@ async fn setup_test_db(app: &axum::Router) {
 
 #[tokio::test]
 async fn test_list_queues_empty() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/testdb/queues")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -71,8 +86,8 @@ async fn test_list_queues_empty() {
 
 #[tokio::test]
 async fn test_list_queues_with_jobs() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     // Enqueue jobs to create queues
     let _ = app
@@ -82,6 +97,7 @@ async fn test_list_queues_with_jobs() {
                 .method("POST")
                 .uri("/_api/database/testdb/queues/orders/enqueue")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"script": "process_order"}).to_string()))
                 .unwrap(),
         )
@@ -95,6 +111,7 @@ async fn test_list_queues_with_jobs() {
                 .method("POST")
                 .uri("/_api/database/testdb/queues/emails/enqueue")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"script": "send_email"}).to_string()))
                 .unwrap(),
         )
@@ -106,6 +123,7 @@ async fn test_list_queues_with_jobs() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/testdb/queues")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -123,8 +141,8 @@ async fn test_list_queues_with_jobs() {
 
 #[tokio::test]
 async fn test_enqueue_job_basic() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     let response = app
         .oneshot(
@@ -132,6 +150,7 @@ async fn test_enqueue_job_basic() {
                 .method("POST")
                 .uri("/_api/database/testdb/queues/default/enqueue")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({"script": "my_script", "params": {"key": "value"}}).to_string(),
                 ))
@@ -147,8 +166,8 @@ async fn test_enqueue_job_basic() {
 
 #[tokio::test]
 async fn test_enqueue_job_with_priority() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     let response = app
         .oneshot(
@@ -156,6 +175,7 @@ async fn test_enqueue_job_with_priority() {
                 .method("POST")
                 .uri("/_api/database/testdb/queues/priority_queue/enqueue")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({"script": "urgent_task", "priority": 100, "max_retries": 5}).to_string(),
                 ))
@@ -169,7 +189,7 @@ async fn test_enqueue_job_with_priority() {
 
 #[tokio::test]
 async fn test_enqueue_job_nonexistent_db() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -177,6 +197,7 @@ async fn test_enqueue_job_nonexistent_db() {
                 .method("POST")
                 .uri("/_api/database/nonexistent/queues/default/enqueue")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"script": "my_script"}).to_string()))
                 .unwrap(),
         )
@@ -192,8 +213,8 @@ async fn test_enqueue_job_nonexistent_db() {
 
 #[tokio::test]
 async fn test_list_jobs_with_pagination() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     for i in 0..5 {
         let _ = app
@@ -203,6 +224,7 @@ async fn test_list_jobs_with_pagination() {
                     .method("POST")
                     .uri("/_api/database/testdb/queues/batch/enqueue")
                     .header("Content-Type", "application/json")
+                    .header("Authorization", auth_header(&token))
                     .body(Body::from(
                         json!({"script": format!("script_{}", i)}).to_string(),
                     ))
@@ -218,6 +240,7 @@ async fn test_list_jobs_with_pagination() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/testdb/queues/batch/jobs?limit=2")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -236,8 +259,8 @@ async fn test_list_jobs_with_pagination() {
 
 #[tokio::test]
 async fn test_cancel_pending_job() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     let enqueue_response = app
         .clone()
@@ -246,6 +269,7 @@ async fn test_cancel_pending_job() {
                 .method("POST")
                 .uri("/_api/database/testdb/queues/cancelable/enqueue")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({"script": "cancelable_script"}).to_string(),
                 ))
@@ -263,6 +287,7 @@ async fn test_cancel_pending_job() {
             Request::builder()
                 .method("DELETE")
                 .uri(&format!("/_api/database/testdb/queues/jobs/{}", job_id))
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -276,8 +301,8 @@ async fn test_cancel_pending_job() {
 
 #[tokio::test]
 async fn test_cancel_nonexistent_job() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     // Create jobs collection first
     let _ = app
@@ -287,6 +312,7 @@ async fn test_cancel_nonexistent_job() {
                 .method("POST")
                 .uri("/_api/database/testdb/queues/dummy/enqueue")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"script": "dummy"}).to_string()))
                 .unwrap(),
         )
@@ -298,6 +324,7 @@ async fn test_cancel_nonexistent_job() {
             Request::builder()
                 .method("DELETE")
                 .uri("/_api/database/testdb/queues/jobs/nonexistent-id")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -313,14 +340,15 @@ async fn test_cancel_nonexistent_job() {
 
 #[tokio::test]
 async fn test_list_cron_jobs_empty() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/testdb/cron")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -334,8 +362,8 @@ async fn test_list_cron_jobs_empty() {
 
 #[tokio::test]
 async fn test_create_cron_job() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     let response = app
         .clone()
@@ -344,6 +372,7 @@ async fn test_create_cron_job() {
                 .method("POST")
                 .uri("/_api/database/testdb/cron")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "Daily Report",
@@ -367,8 +396,8 @@ async fn test_create_cron_job() {
 
 #[tokio::test]
 async fn test_create_cron_job_invalid_expression() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     let response = app
         .oneshot(
@@ -376,6 +405,7 @@ async fn test_create_cron_job_invalid_expression() {
                 .method("POST")
                 .uri("/_api/database/testdb/cron")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "Bad Job",
@@ -394,8 +424,8 @@ async fn test_create_cron_job_invalid_expression() {
 
 #[tokio::test]
 async fn test_update_cron_job() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     let create_response = app
         .clone()
@@ -404,6 +434,7 @@ async fn test_update_cron_job() {
                 .method("POST")
                 .uri("/_api/database/testdb/cron")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "Original",
@@ -426,6 +457,7 @@ async fn test_update_cron_job() {
                 .method("PUT")
                 .uri(&format!("/_api/database/testdb/cron/{}", job_id))
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({"name": "Updated", "priority": 50}).to_string(),
                 ))
@@ -441,8 +473,8 @@ async fn test_update_cron_job() {
 
 #[tokio::test]
 async fn test_delete_cron_job() {
-    let (app, _tmp) = create_test_app();
-    setup_test_db(&app).await;
+    let (app, _tmp, token) = create_test_app();
+    setup_test_db(&app, &token).await;
 
     let create_response = app
         .clone()
@@ -451,6 +483,7 @@ async fn test_delete_cron_job() {
                 .method("POST")
                 .uri("/_api/database/testdb/cron")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "To Delete",
@@ -472,6 +505,7 @@ async fn test_delete_cron_job() {
             Request::builder()
                 .method("DELETE")
                 .uri(&format!("/_api/database/testdb/cron/{}", job_id))
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -483,13 +517,14 @@ async fn test_delete_cron_job() {
 
 #[tokio::test]
 async fn test_queue_operations_nonexistent_database() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/nonexistent/queues")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )

@@ -299,144 +299,141 @@ impl ClusterManager {
         use crate::sync::{Operation, SyncMessage};
         use std::collections::HashMap;
 
-        match msg {
-            SyncMessage::SyncBatch { entries, .. } => {
-                let total_entries = entries.len();
-                if total_entries == 0 {
-                    return;
+        if let SyncMessage::SyncBatch { entries, .. } = msg {
+            let total_entries = entries.len();
+            if total_entries == 0 {
+                return;
+            }
+
+            tracing::debug!("Received {} sync entries", total_entries);
+
+            // Filter entries (loop detection)
+            let mut valid_entries = Vec::with_capacity(total_entries);
+            for entry in entries {
+                // Loop Detection: If we originated this entry, ignore it.
+                if entry.origin_node == self.local_node.id {
+                    continue;
                 }
 
-                tracing::debug!("Received {} sync entries", total_entries);
-
-                // Filter entries (loop detection)
-                let mut valid_entries = Vec::with_capacity(total_entries);
-                for entry in entries {
-                    // Loop Detection: If we originated this entry, ignore it.
-                    if entry.origin_node == self.local_node.id {
-                        continue;
-                    }
-
-                    // Cycle Detection via sequence
-                    if !self.state.check_and_update_origin_sequence(
-                        entry.origin_node.clone(),
-                        entry.origin_sequence,
-                    ) {
-                        continue;
-                    }
-                    valid_entries.push(entry);
+                // Cycle Detection via sequence
+                if !self.state.check_and_update_origin_sequence(
+                    entry.origin_node.clone(),
+                    entry.origin_sequence,
+                ) {
+                    continue;
                 }
+                valid_entries.push(entry);
+            }
 
-                if valid_entries.is_empty() {
-                    return;
-                }
+            if valid_entries.is_empty() {
+                return;
+            }
 
-                // Group entries by (database, collection) for batched application
-                let mut insert_update_groups: HashMap<
-                    (String, String),
-                    Vec<(String, serde_json::Value)>,
-                > = HashMap::new();
-                let mut other_entries = Vec::new();
+            // Group entries by (database, collection) for batched application
+            let mut insert_update_groups: HashMap<
+                (String, String),
+                Vec<(String, serde_json::Value)>,
+            > = HashMap::new();
+            let mut other_entries = Vec::new();
 
-                for entry in &valid_entries {
-                    match entry.operation {
-                        Operation::Insert | Operation::Update => {
-                            if let Some(data) = &entry.document_data {
-                                if let Ok(doc_value) =
-                                    serde_json::from_slice::<serde_json::Value>(data)
-                                {
-                                    let key = (entry.database.clone(), entry.collection.clone());
-                                    insert_update_groups
-                                        .entry(key)
-                                        .or_default()
-                                        .push((entry.document_key.clone(), doc_value));
-                                }
+            for entry in &valid_entries {
+                match entry.operation {
+                    Operation::Insert | Operation::Update => {
+                        if let Some(data) = &entry.document_data {
+                            if let Ok(doc_value) =
+                                serde_json::from_slice::<serde_json::Value>(data)
+                            {
+                                let key = (entry.database.clone(), entry.collection.clone());
+                                insert_update_groups
+                                    .entry(key)
+                                    .or_default()
+                                    .push((entry.document_key.clone(), doc_value));
                             }
                         }
-                        _ => {
-                            other_entries.push(entry.clone());
-                        }
+                    }
+                    _ => {
+                        other_entries.push(entry.clone());
                     }
                 }
+            }
 
-                // Apply batched inserts/updates
-                if let Some(storage) = &self.storage {
-                    let storage = storage.clone();
-                    let insert_update_groups = insert_update_groups;
+            // Apply batched inserts/updates
+            if let Some(storage) = &self.storage {
+                let storage = storage.clone();
+                let insert_update_groups = insert_update_groups;
 
-                    // Compute node topology
-                    let mut all_nodes: Vec<String> = self
-                        .state
-                        .get_all_members()
-                        .iter()
-                        .map(|m| m.node.address.clone())
-                        .collect();
-                    all_nodes.sort();
-                    let my_addr = self.local_node.address.clone();
-                    let my_index = all_nodes.iter().position(|n| n == &my_addr);
-                    let num_nodes = all_nodes.len();
+                // Compute node topology
+                let mut all_nodes: Vec<String> = self
+                    .state
+                    .get_all_members()
+                    .iter()
+                    .map(|m| m.node.address.clone())
+                    .collect();
+                all_nodes.sort();
+                let my_addr = self.local_node.address.clone();
+                let my_index = all_nodes.iter().position(|n| n == &my_addr);
+                let num_nodes = all_nodes.len();
 
-                    // Spawn blocking task for RocksDB writes
-                    let result = tokio::task::spawn_blocking(move || {
-                        for ((db_name, coll_name), docs) in insert_update_groups {
-                            if let Ok(db) = storage.get_database(&db_name) {
-                                if let Ok(collection) = db.get_collection(&coll_name) {
-                                    // SHARD-AWARE FILTERING
-                                    let docs_to_apply = if let Some(shard_config) = collection.get_shard_config() {
-                                        if shard_config.num_shards > 0 && num_nodes > 0 {
-                                            if let Some(my_idx) = my_index {
-                                                let filtered: Vec<(String, serde_json::Value)> = docs
-                                                    .into_iter()
-                                                    .filter(|(doc_key, _)| {
-                                                        let shard_id = crate::sharding::router::ShardRouter::route(
-                                                            doc_key,
-                                                            shard_config.num_shards,
-                                                        );
-                                                        crate::sharding::router::ShardRouter::is_shard_replica(
-                                                            shard_id,
-                                                            my_idx,
-                                                            shard_config.replication_factor,
-                                                            num_nodes,
-                                                        )
-                                                    })
-                                                    .collect();
-                                                filtered
-                                            } else {
-                                                docs
-                                            }
+                // Spawn blocking task for RocksDB writes
+                let result = tokio::task::spawn_blocking(move || {
+                    for ((db_name, coll_name), docs) in insert_update_groups {
+                        if let Ok(db) = storage.get_database(&db_name) {
+                            if let Ok(collection) = db.get_collection(&coll_name) {
+                                // SHARD-AWARE FILTERING
+                                let docs_to_apply = if let Some(shard_config) = collection.get_shard_config() {
+                                    if shard_config.num_shards > 0 && num_nodes > 0 {
+                                        if let Some(my_idx) = my_index {
+                                            let filtered: Vec<(String, serde_json::Value)> = docs
+                                                .into_iter()
+                                                .filter(|(doc_key, _)| {
+                                                    let shard_id = crate::sharding::router::ShardRouter::route(
+                                                        doc_key,
+                                                        shard_config.num_shards,
+                                                    );
+                                                    crate::sharding::router::ShardRouter::is_shard_replica(
+                                                        shard_id,
+                                                        my_idx,
+                                                        shard_config.replication_factor,
+                                                        num_nodes,
+                                                    )
+                                                })
+                                                .collect();
+                                            filtered
                                         } else {
                                             docs
                                         }
                                     } else {
                                         docs
-                                    };
-                                    
-                                    if docs_to_apply.is_empty() {
-                                        continue;
                                     }
-                                    
-                                    let doc_count = docs_to_apply.len();
-                                    let _ = collection.upsert_batch(docs_to_apply);
-                                    tracing::debug!("Batch upserted {} docs to {}/{}", doc_count, db_name, coll_name);
+                                } else {
+                                    docs
+                                };
+
+                                if docs_to_apply.is_empty() {
+                                    continue;
                                 }
+
+                                let doc_count = docs_to_apply.len();
+                                let _ = collection.upsert_batch(docs_to_apply);
+                                tracing::debug!("Batch upserted {} docs to {}/{}", doc_count, db_name, coll_name);
                             }
                         }
-                    }).await;
-
-                    if let Err(e) = result {
-                        error!("Blocking task panicked: {}", e);
                     }
+                }).await;
 
-                    // Apply non-insert/update operations
-                    for entry in other_entries {
-                        if let Err(e) = self.apply_sync_entry(&entry) {
-                            error!("Failed to apply sync entry: {}", e);
-                        }
-                    }
+                if let Err(e) = result {
+                    error!("Blocking task panicked: {}", e);
                 }
 
-                info!("Applied {} sync entries", valid_entries.len());
+                // Apply non-insert/update operations
+                for entry in other_entries {
+                    if let Err(e) = self.apply_sync_entry(&entry) {
+                        error!("Failed to apply sync entry: {}", e);
+                    }
+                }
             }
-            _ => {}
+
+            info!("Applied {} sync entries", valid_entries.len());
         }
     }
 

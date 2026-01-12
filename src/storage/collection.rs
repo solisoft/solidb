@@ -1355,7 +1355,7 @@ impl Collection {
         for (key, old_data) in deleted_docs {
             let _ = self.change_sender.send(ChangeEvent {
                 type_: ChangeType::Delete,
-                key: key,
+                key,
                 data: None,
                 old_data: Some(old_data),
             });

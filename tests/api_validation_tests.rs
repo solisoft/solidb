@@ -12,13 +12,14 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
+use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-fn create_test_app() -> (axum::Router, TempDir) {
+fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
@@ -27,7 +28,19 @@ fn create_test_app() -> (axum::Router, TempDir) {
 
     let router = create_router(engine, None, None, None, None, script_stats, None, 0);
 
-    (router, tmp_dir)
+    // Create a JWT token for authentication
+    let token = AuthService::create_jwt_with_roles(
+        "test_admin",
+        Some(vec!["admin".to_string()]),
+        None,
+    )
+    .expect("Failed to create test token");
+
+    (router, tmp_dir, token)
+}
+
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -44,7 +57,7 @@ async fn response_json(response: axum::response::Response) -> Value {
 
 #[tokio::test]
 async fn test_create_database_missing_name() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -52,6 +65,7 @@ async fn test_create_database_missing_name() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from("{}"))
                 .unwrap(),
         )
@@ -64,7 +78,7 @@ async fn test_create_database_missing_name() {
 
 #[tokio::test]
 async fn test_create_database_empty_name() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -72,6 +86,7 @@ async fn test_create_database_empty_name() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": ""}).to_string()))
                 .unwrap(),
         )
@@ -83,7 +98,7 @@ async fn test_create_database_empty_name() {
 
 #[tokio::test]
 async fn test_create_database_invalid_json() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -91,6 +106,7 @@ async fn test_create_database_invalid_json() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from("{invalid json}"))
                 .unwrap(),
         )
@@ -103,13 +119,14 @@ async fn test_create_database_invalid_json() {
 
 #[tokio::test]
 async fn test_get_nonexistent_database() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/nonexistent_db")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -126,7 +143,7 @@ async fn test_get_nonexistent_database() {
 
 #[tokio::test]
 async fn test_create_collection_missing_name() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // First create a database
     app.clone()
@@ -135,6 +152,7 @@ async fn test_create_collection_missing_name() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "testdb"}).to_string()))
                 .unwrap(),
         )
@@ -148,6 +166,7 @@ async fn test_create_collection_missing_name() {
                 .method("POST")
                 .uri("/_api/database/testdb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from("{}"))
                 .unwrap(),
         )
@@ -160,7 +179,7 @@ async fn test_create_collection_missing_name() {
 
 #[tokio::test]
 async fn test_create_collection_invalid_type() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     app.clone()
         .oneshot(
@@ -168,6 +187,7 @@ async fn test_create_collection_invalid_type() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "testdb"}).to_string()))
                 .unwrap(),
         )
@@ -181,6 +201,7 @@ async fn test_create_collection_invalid_type() {
                 .method("POST")
                 .uri("/_api/database/testdb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({"name": "test", "type": "invalid_type"}).to_string(),
                 ))
@@ -197,13 +218,14 @@ async fn test_create_collection_invalid_type() {
 
 #[tokio::test]
 async fn test_get_collection_from_nonexistent_db() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/nonexistent/collection/test")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -220,7 +242,7 @@ async fn test_get_collection_from_nonexistent_db() {
 
 #[tokio::test]
 async fn test_insert_document_invalid_json() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     app.clone()
         .oneshot(
@@ -228,6 +250,7 @@ async fn test_insert_document_invalid_json() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "testdb"}).to_string()))
                 .unwrap(),
         )
@@ -240,6 +263,7 @@ async fn test_insert_document_invalid_json() {
                 .method("POST")
                 .uri("/_api/database/testdb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "docs"}).to_string()))
                 .unwrap(),
         )
@@ -253,6 +277,7 @@ async fn test_insert_document_invalid_json() {
                 .method("POST")
                 .uri("/_api/database/testdb/document/docs")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from("{not valid json"))
                 .unwrap(),
         )
@@ -264,7 +289,7 @@ async fn test_insert_document_invalid_json() {
 
 #[tokio::test]
 async fn test_get_document_not_found() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     app.clone()
         .oneshot(
@@ -272,6 +297,7 @@ async fn test_get_document_not_found() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "testdb"}).to_string()))
                 .unwrap(),
         )
@@ -284,6 +310,7 @@ async fn test_get_document_not_found() {
                 .method("POST")
                 .uri("/_api/database/testdb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "docs"}).to_string()))
                 .unwrap(),
         )
@@ -295,6 +322,7 @@ async fn test_get_document_not_found() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/testdb/document/docs/nonexistent_key")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -306,7 +334,7 @@ async fn test_get_document_not_found() {
 
 #[tokio::test]
 async fn test_delete_document_not_found() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     app.clone()
         .oneshot(
@@ -314,6 +342,7 @@ async fn test_delete_document_not_found() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "testdb"}).to_string()))
                 .unwrap(),
         )
@@ -326,6 +355,7 @@ async fn test_delete_document_not_found() {
                 .method("POST")
                 .uri("/_api/database/testdb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "docs"}).to_string()))
                 .unwrap(),
         )
@@ -337,6 +367,7 @@ async fn test_delete_document_not_found() {
             Request::builder()
                 .method("DELETE")
                 .uri("/_api/database/testdb/document/docs/nonexistent")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -352,7 +383,7 @@ async fn test_delete_document_not_found() {
 
 #[tokio::test]
 async fn test_query_missing_query_field() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     app.clone()
         .oneshot(
@@ -360,6 +391,7 @@ async fn test_query_missing_query_field() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "testdb"}).to_string()))
                 .unwrap(),
         )
@@ -372,6 +404,7 @@ async fn test_query_missing_query_field() {
                 .method("POST")
                 .uri("/_api/database/testdb/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from("{}"))
                 .unwrap(),
         )
@@ -384,7 +417,7 @@ async fn test_query_missing_query_field() {
 
 #[tokio::test]
 async fn test_query_empty_query_string() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     app.clone()
         .oneshot(
@@ -392,6 +425,7 @@ async fn test_query_empty_query_string() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "testdb"}).to_string()))
                 .unwrap(),
         )
@@ -404,6 +438,7 @@ async fn test_query_empty_query_string() {
                 .method("POST")
                 .uri("/_api/database/testdb/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"query": ""}).to_string()))
                 .unwrap(),
         )
@@ -415,7 +450,7 @@ async fn test_query_empty_query_string() {
 
 #[tokio::test]
 async fn test_query_invalid_syntax() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     app.clone()
         .oneshot(
@@ -423,6 +458,7 @@ async fn test_query_invalid_syntax() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "testdb"}).to_string()))
                 .unwrap(),
         )
@@ -435,6 +471,7 @@ async fn test_query_invalid_syntax() {
                 .method("POST")
                 .uri("/_api/database/testdb/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({"query": "FOR invalid syntax"}).to_string(),
                 ))
@@ -448,7 +485,7 @@ async fn test_query_invalid_syntax() {
 
 #[tokio::test]
 async fn test_query_nonexistent_collection() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     app.clone()
         .oneshot(
@@ -456,6 +493,7 @@ async fn test_query_nonexistent_collection() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "testdb"}).to_string()))
                 .unwrap(),
         )
@@ -468,6 +506,7 @@ async fn test_query_nonexistent_collection() {
                 .method("POST")
                 .uri("/_api/database/testdb/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({"query": "FOR doc IN nonexistent RETURN doc"}).to_string(),
                 ))
@@ -486,7 +525,7 @@ async fn test_query_nonexistent_collection() {
 
 #[tokio::test]
 async fn test_create_index_missing_fields() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     app.clone()
         .oneshot(
@@ -494,6 +533,7 @@ async fn test_create_index_missing_fields() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "testdb"}).to_string()))
                 .unwrap(),
         )
@@ -506,6 +546,7 @@ async fn test_create_index_missing_fields() {
                 .method("POST")
                 .uri("/_api/database/testdb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"name": "docs"}).to_string()))
                 .unwrap(),
         )
@@ -519,6 +560,7 @@ async fn test_create_index_missing_fields() {
                 .method("POST")
                 .uri("/_api/database/testdb/collection/docs/index")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({"type": "hash"}).to_string()))
                 .unwrap(),
         )
@@ -535,7 +577,7 @@ async fn test_create_index_missing_fields() {
 
 #[tokio::test]
 async fn test_empty_body() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -543,6 +585,7 @@ async fn test_empty_body() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -554,7 +597,7 @@ async fn test_empty_body() {
 
 #[tokio::test]
 async fn test_wrong_content_type() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -562,6 +605,7 @@ async fn test_wrong_content_type() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "text/plain")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from("name=test"))
                 .unwrap(),
         )
@@ -574,7 +618,7 @@ async fn test_wrong_content_type() {
 
 #[tokio::test]
 async fn test_special_characters_in_path() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // URL-encoded special characters
     let response = app
@@ -582,13 +626,13 @@ async fn test_special_characters_in_path() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/test%20db")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    // Should return not found (DB doesn't exist)
     // Should return client error (DB doesn't exist)
     assert!(response.status().is_client_error());
 }

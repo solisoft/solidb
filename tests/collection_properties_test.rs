@@ -8,13 +8,14 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
+use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-fn create_test_app() -> (axum::Router, TempDir) {
+fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
@@ -24,7 +25,19 @@ fn create_test_app() -> (axum::Router, TempDir) {
     // No coordinator -> 1 healthy node assumed
     let router = create_router(engine, None, None, None, None, script_stats, None, 0);
 
-    (router, tmp_dir)
+    // Create a JWT token for authentication
+    let token = AuthService::create_jwt_with_roles(
+        "test_admin",
+        Some(vec!["admin".to_string()]),
+        None,
+    )
+    .expect("Failed to create test token");
+
+    (router, tmp_dir, token)
+}
+
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -36,7 +49,7 @@ async fn response_json(response: axum::response::Response) -> Value {
 
 #[tokio::test]
 async fn test_update_replication_factor_capped() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // 1. Create DB and Collection
     app.clone()
@@ -45,6 +58,7 @@ async fn test_update_replication_factor_capped() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "prop_db" }).to_string()))
                 .unwrap(),
         )
@@ -57,6 +71,7 @@ async fn test_update_replication_factor_capped() {
                 .method("POST")
                 .uri("/_api/database/prop_db/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "test_col" }).to_string()))
                 .unwrap(),
         )
@@ -71,6 +86,7 @@ async fn test_update_replication_factor_capped() {
                 .method("PUT")
                 .uri("/_api/database/prop_db/collection/test_col/properties")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "replication_factor": 5,
@@ -99,7 +115,7 @@ async fn test_update_replication_factor_capped() {
 
 #[tokio::test]
 async fn test_update_collection_type() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // 1. Setup
     app.clone()
@@ -108,6 +124,7 @@ async fn test_update_collection_type() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "type_db" }).to_string()))
                 .unwrap(),
         )
@@ -120,6 +137,7 @@ async fn test_update_collection_type() {
                 .method("POST")
                 .uri("/_api/database/type_db/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "edge_col" }).to_string()))
                 .unwrap(),
         )
@@ -135,6 +153,7 @@ async fn test_update_collection_type() {
                 .method("PUT")
                 .uri("/_api/database/type_db/collection/edge_col/properties")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "type": "edge"
@@ -155,6 +174,7 @@ async fn test_update_collection_type() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/type_db/collection/edge_col/sharding")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )

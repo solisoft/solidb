@@ -63,17 +63,15 @@ pub fn create_inspect_function(lua: &Lua) -> LuaResult<Function> {
                 let mut is_array = true;
                 let mut max_index = 0i64;
 
-                for pair in t.clone().pairs::<LuaValue, LuaValue>() {
-                    if let Ok((k, _)) = pair {
-                        count += 1;
-                        match k {
-                            LuaValue::Integer(i) => {
-                                if i > max_index {
-                                    max_index = i;
-                                }
+                for (k, _) in t.clone().pairs::<LuaValue, LuaValue>().flatten() {
+                    count += 1;
+                    match k {
+                        LuaValue::Integer(i) => {
+                            if i > max_index {
+                                max_index = i;
                             }
-                            _ => is_array = false,
                         }
+                        _ => is_array = false,
                     }
                 }
 
@@ -83,11 +81,9 @@ pub fn create_inspect_function(lua: &Lua) -> LuaResult<Function> {
                 // List keys
                 let keys = lua.create_table()?;
                 let mut idx = 1;
-                for pair in t.clone().pairs::<LuaValue, LuaValue>() {
-                    if let Ok((k, _)) = pair {
-                        keys.set(idx, format_value(&k, 0))?;
-                        idx += 1;
-                    }
+                for (k, _) in t.clone().pairs::<LuaValue, LuaValue>().flatten() {
+                    keys.set(idx, format_value(&k, 0))?;
+                    idx += 1;
                 }
                 result.set("keys", keys)?;
             }
@@ -177,10 +173,8 @@ pub fn create_mock_function(lua: &Lua) -> LuaResult<Function> {
 
         // Copy initial data if provided
         if let Some(init) = initial_data {
-            for pair in init.pairs::<LuaValue, LuaValue>() {
-                if let Ok((k, v)) = pair {
-                    data.set(k, v)?;
-                }
+            for (k, v) in init.pairs::<LuaValue, LuaValue>().flatten() {
+                data.set(k, v)?;
             }
         }
 
@@ -205,11 +199,9 @@ pub fn create_mock_function(lua: &Lua) -> LuaResult<Function> {
             // Clone doc and set _key
             let new_doc = lua.create_table()?;
             new_doc.set("_key", actual_key.clone())?;
-            for pair in doc.pairs::<String, LuaValue>() {
-                if let Ok((k, v)) = pair {
-                    if k != "_key" {
-                        new_doc.set(k, v)?;
-                    }
+            for (k, v) in doc.pairs::<String, LuaValue>().flatten() {
+                if k != "_key" {
+                    new_doc.set(k, v)?;
                 }
             }
 
@@ -224,10 +216,8 @@ pub fn create_mock_function(lua: &Lua) -> LuaResult<Function> {
             lua.create_function(move |_lua, (_self, key, updates): (Table, String, Table)| {
                 let existing: Option<Table> = data_update.get(key.clone()).ok();
                 if let Some(doc) = existing {
-                    for pair in updates.pairs::<String, LuaValue>() {
-                        if let Ok((k, v)) = pair {
-                            doc.set(k, v)?;
-                        }
+                    for (k, v) in updates.pairs::<String, LuaValue>().flatten() {
+                        doc.set(k, v)?;
                     }
                     Ok(doc)
                 } else {
@@ -255,11 +245,9 @@ pub fn create_mock_function(lua: &Lua) -> LuaResult<Function> {
         let all_fn = lua.create_function(move |lua, _self: Table| {
             let result = lua.create_table()?;
             let mut idx = 1;
-            for pair in data_all.clone().pairs::<String, Table>() {
-                if let Ok((_, v)) = pair {
-                    result.set(idx, v)?;
-                    idx += 1;
-                }
+            for (_, v) in data_all.clone().pairs::<String, Table>().flatten() {
+                result.set(idx, v)?;
+                idx += 1;
             }
             Ok(result)
         })?;
@@ -301,7 +289,7 @@ pub fn create_dev_assert_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|_lua, (condition, message): (bool, Option<String>)| {
         if !condition {
             let msg = message.unwrap_or_else(|| "Assertion failed".to_string());
-            return Err(mlua::Error::RuntimeError(msg));
+            return Err(mlua::Error::RuntimeError(format!("ASSERT:{}", msg)));
         }
         Ok(true)
     })
@@ -353,26 +341,22 @@ fn format_value(value: &LuaValue, indent: usize) -> String {
             let mut expected_idx = 1i64;
 
             // First pass: check if array
-            for pair in t.clone().pairs::<LuaValue, LuaValue>() {
-                if let Ok((k, _)) = pair {
-                    match k {
-                        LuaValue::Integer(i) if i == expected_idx => {
-                            expected_idx += 1;
-                        }
-                        _ => {
-                            is_array = false;
-                            break;
-                        }
+            for (k, _) in t.clone().pairs::<LuaValue, LuaValue>().flatten() {
+                match k {
+                    LuaValue::Integer(i) if i == expected_idx => {
+                        expected_idx += 1;
+                    }
+                    _ => {
+                        is_array = false;
+                        break;
                     }
                 }
             }
 
             // Second pass: format
             if is_array {
-                for pair in t.clone().pairs::<i64, LuaValue>() {
-                    if let Ok((_, v)) = pair {
-                        parts.push(format_value(&v, indent + 1));
-                    }
+                for (_, v) in t.clone().pairs::<i64, LuaValue>().flatten() {
+                    parts.push(format_value(&v, indent + 1));
                 }
                 if parts.is_empty() {
                     "[]".to_string()
@@ -388,18 +372,16 @@ fn format_value(value: &LuaValue, indent: usize) -> String {
                     )
                 }
             } else {
-                for pair in t.clone().pairs::<LuaValue, LuaValue>() {
-                    if let Ok((k, v)) = pair {
-                        let key_str = match &k {
-                            LuaValue::String(s) => s
-                                .to_str()
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|_| "?".to_string()),
-                            LuaValue::Integer(i) => format!("[{}]", i),
-                            _ => format!("[{}]", format_value(&k, 0)),
-                        };
-                        parts.push(format!("{}: {}", key_str, format_value(&v, indent + 1)));
-                    }
+                for (k, v) in t.clone().pairs::<LuaValue, LuaValue>().flatten() {
+                    let key_str = match &k {
+                        LuaValue::String(s) => s
+                            .to_str()
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|_| "?".to_string()),
+                        LuaValue::Integer(i) => format!("[{}]", i),
+                        _ => format!("[{}]", format_value(&k, 0)),
+                    };
+                    parts.push(format!("{}: {}", key_str, format_value(&v, indent + 1)));
                 }
                 if parts.is_empty() {
                     "{}".to_string()
@@ -442,16 +424,14 @@ fn values_equal(a: &LuaValue, b: &LuaValue) -> bool {
             let mut a_count = 0;
             let mut b_count = 0;
 
-            for pair in a.clone().pairs::<LuaValue, LuaValue>() {
-                if let Ok((k, v)) = pair {
-                    a_count += 1;
-                    if let Ok(bv) = b.get::<LuaValue>(k) {
-                        if !values_equal(&v, &bv) {
-                            return false;
-                        }
-                    } else {
+            for (k, v) in a.clone().pairs::<LuaValue, LuaValue>().flatten() {
+                a_count += 1;
+                if let Ok(bv) = b.get::<LuaValue>(k) {
+                    if !values_equal(&v, &bv) {
                         return false;
                     }
+                } else {
+                    return false;
                 }
             }
 

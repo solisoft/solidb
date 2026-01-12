@@ -31,6 +31,12 @@ fn test_explain_columnar_query() {
     let database = storage.get_database("testdb").unwrap();
     let db_arc = database.db_arc(); // valid way to get it
 
+    // Create a regular collection first (required for executor to find the collection)
+    // The collection name must match the name used in the query ("metrics")
+    database
+        .create_collection("metrics".to_string(), None)
+        .unwrap();
+
     // Manually create the column family for the columnar collection
     {
         let mut db_write = db_arc.write().unwrap();

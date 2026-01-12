@@ -90,7 +90,7 @@ pub fn create_typeof_function(lua: &Lua) -> LuaResult<Function> {
             LuaValue::Function(_) => "function",
             LuaValue::Nil => "nil",
             LuaValue::LightUserData(_) => "userdata",
-            LuaValue::Integer(_) => "integer", // Distinguish from float
+            LuaValue::Integer(_) => "number", // Lua's type() returns "number" for both
             _ => "unknown",
         };
         Ok(type_str.to_string())
@@ -99,13 +99,22 @@ pub fn create_typeof_function(lua: &Lua) -> LuaResult<Function> {
 
 /// Helper function to sanitize JSON values based on operations
 fn sanitize_value(value: &JsonValue, operations: &JsonValue) -> JsonValue {
+    sanitize_value_with_field(value, operations, None)
+}
+
+/// Helper function to sanitize JSON values based on operations, with optional field context
+fn sanitize_value_with_field(
+    value: &JsonValue,
+    operations: &JsonValue,
+    field_name: Option<&str>,
+) -> JsonValue {
     match value {
         JsonValue::Object(obj) => {
             let mut result = serde_json::Map::new();
             for (key, val) in obj {
-                let sanitized_val = sanitize_value(val, operations);
+                let sanitized_val = sanitize_value_with_field(val, operations, Some(key));
                 let sanitized_key = if should_sanitize_key(key, operations) {
-                    sanitize_string(key, operations)
+                    sanitize_string(key, operations, None)
                 } else {
                     key.clone()
                 };
@@ -116,11 +125,11 @@ fn sanitize_value(value: &JsonValue, operations: &JsonValue) -> JsonValue {
         JsonValue::Array(arr) => {
             let result: Vec<JsonValue> = arr
                 .iter()
-                .map(|item| sanitize_value(item, operations))
+                .map(|item| sanitize_value_with_field(item, operations, field_name))
                 .collect();
             JsonValue::Array(result)
         }
-        JsonValue::String(s) => JsonValue::String(sanitize_string(s, operations)),
+        JsonValue::String(s) => JsonValue::String(sanitize_string(s, operations, field_name)),
         other => other.clone(),
     }
 }
@@ -128,25 +137,19 @@ fn sanitize_value(value: &JsonValue, operations: &JsonValue) -> JsonValue {
 /// Check if a key should be sanitized
 fn should_sanitize_key(key: &str, operations: &JsonValue) -> bool {
     if let JsonValue::Object(ops) = operations {
-        if let Some(trim_keys) = ops.get("trim_keys") {
-            if let JsonValue::Bool(true) = trim_keys {
-                return true;
-            }
+        if let Some(JsonValue::Bool(true)) = ops.get("trim_keys") {
+            return true;
         }
 
-        if let Some(lowercase_keys) = ops.get("lowercase_keys") {
-            if let JsonValue::Bool(true) = lowercase_keys {
-                return true;
-            }
+        if let Some(JsonValue::Bool(true)) = ops.get("lowercase_keys") {
+            return true;
         }
 
-        if let Some(sanitize_keys) = ops.get("sanitize_keys") {
-            if let JsonValue::Array(keys) = sanitize_keys {
-                for key_to_sanitize in keys {
-                    if let JsonValue::String(k) = key_to_sanitize {
-                        if k == key {
-                            return true;
-                        }
+        if let Some(JsonValue::Array(keys)) = ops.get("sanitize_keys") {
+            for key_to_sanitize in keys {
+                if let JsonValue::String(k) = key_to_sanitize {
+                    if k == key {
+                        return true;
                     }
                 }
             }
@@ -155,32 +158,61 @@ fn should_sanitize_key(key: &str, operations: &JsonValue) -> bool {
     false
 }
 
-/// Sanitize a string based on operations
-fn sanitize_string(s: &str, operations: &JsonValue) -> String {
+/// Sanitize a string based on operations, with optional field context
+fn sanitize_string(s: &str, operations: &JsonValue, field_name: Option<&str>) -> String {
     let mut result = s.to_string();
 
     if let JsonValue::Object(ops) = operations {
-        // Trim whitespace
-        if ops.get("trim").is_some() || ops.get("trim_keys").is_some() {
-            result = result.trim().to_string();
+        // Trim whitespace - check for field-specific trim
+        let should_trim = match ops.get("trim") {
+            Some(JsonValue::Bool(true)) => true,
+            Some(JsonValue::Array(fields)) => {
+                if let Some(field) = field_name {
+                    fields.iter().any(|f| f.as_str() == Some(field))
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        } || ops.get("trim_keys").is_some();
+
+        if should_trim {
+            // Trim leading/trailing whitespace and normalize internal whitespace
+            result = result.split_whitespace().collect::<Vec<_>>().join(" ");
         }
 
-        // Convert to lowercase
-        if let Some(lowercase) = ops.get("lowercase") {
-            if let JsonValue::Bool(true) = lowercase {
-                result = result.to_lowercase();
+        // Convert to lowercase - check for field-specific lowercase
+        let should_lowercase = match ops.get("lowercase") {
+            Some(JsonValue::Bool(true)) => true,
+            Some(JsonValue::Array(fields)) => {
+                if let Some(field) = field_name {
+                    fields.iter().any(|f| f.as_str() == Some(field))
+                } else {
+                    false
+                }
             }
-        } else if let Some(lowercase_keys) = ops.get("lowercase_keys") {
-            if let JsonValue::Bool(true) = lowercase_keys {
-                result = result.to_lowercase();
-            }
+            _ => false,
+        } || matches!(ops.get("lowercase_keys"), Some(JsonValue::Bool(true)));
+
+        if should_lowercase {
+            result = result.to_lowercase();
         }
 
-        // Convert to uppercase
-        if let Some(uppercase) = ops.get("uppercase") {
-            if let JsonValue::Bool(true) = uppercase {
-                result = result.to_uppercase();
+        // Convert to uppercase - check for field-specific uppercase
+        let should_uppercase = match ops.get("uppercase") {
+            Some(JsonValue::Bool(true)) => true,
+            Some(JsonValue::Array(fields)) => {
+                if let Some(field) = field_name {
+                    fields.iter().any(|f| f.as_str() == Some(field))
+                } else {
+                    false
+                }
             }
+            _ => false,
+        };
+
+        if should_uppercase {
+            result = result.to_uppercase();
         }
 
         // Normalize whitespace
@@ -194,9 +226,6 @@ fn sanitize_string(s: &str, operations: &JsonValue) -> String {
             let re = regex::Regex::new(r"<[^>]*>").unwrap();
             result = re.replace_all(&result, "").to_string();
         }
-
-        // Email lowercase (special case) - currently handled by global lowercase above
-        // Future: field-specific lowercase rules could be added here
     }
 
     result
@@ -242,28 +271,28 @@ mod tests {
     #[test]
     fn test_sanitize_string_trim() {
         let operations = json!({"trim": true});
-        let result = sanitize_string("  hello world  ", &operations);
+        let result = sanitize_string("  hello world  ", &operations, None);
         assert_eq!(result, "hello world");
     }
 
     #[test]
     fn test_sanitize_string_lowercase() {
         let operations = json!({"lowercase": true});
-        let result = sanitize_string("HELLO WORLD", &operations);
+        let result = sanitize_string("HELLO WORLD", &operations, None);
         assert_eq!(result, "hello world");
     }
 
     #[test]
     fn test_sanitize_string_normalize_whitespace() {
         let operations = json!({"normalize_whitespace": true});
-        let result = sanitize_string("  hello    world   test  ", &operations);
+        let result = sanitize_string("  hello    world   test  ", &operations, None);
         assert_eq!(result, "hello world test");
     }
 
     #[test]
     fn test_sanitize_string_strip_html() {
         let operations = json!({"strip_html": true});
-        let result = sanitize_string("<p>Hello <b>World</b></p>", &operations);
+        let result = sanitize_string("<p>Hello <b>World</b></p>", &operations, None);
         assert_eq!(result, "Hello World");
     }
 

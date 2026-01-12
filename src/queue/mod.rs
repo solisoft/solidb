@@ -178,7 +178,7 @@ impl QueueWorker {
                 }
             };
 
-            let job_val = match result.get(0) {
+            let job_val = match result.first() {
                 Some(val) => val,
                 None => continue,
             };
@@ -440,7 +440,7 @@ impl QueueWorker {
         let executor = crate::sdbql::QueryExecutor::with_database(storage, db_name.to_string());
         let result = executor.execute(&query_ast)?;
 
-        let script_val = result.get(0).ok_or_else(|| {
+        let script_val = result.first().ok_or_else(|| {
             crate::error::DbError::DocumentNotFound(format!(
                 "Script not found: {}",
                 job.script_path

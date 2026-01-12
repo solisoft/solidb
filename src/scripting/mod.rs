@@ -12,7 +12,234 @@ use tokio::sync::broadcast;
 
 use crate::error::DbError;
 use crate::sdbql::{parse, QueryExecutor};
+use crate::storage::StorageEngine;
 use crate::stream::StreamManager;
+use futures::{SinkExt, StreamExt};
+
+// Import modules
+mod ai_bindings;
+mod auth;
+mod dev_tools;
+mod error_handling;
+mod file_handling;
+mod http_helpers;
+mod string_utils;
+mod validation;
+pub use auth::ScriptUser;
+use dev_tools::*;
+use error_handling::*;
+use file_handling::*;
+use http_helpers::*;
+use string_utils::*;
+use validation::*;
+
+// Crypto imports
+use argon2::password_hash::SaltString;
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use base64::Engine;
+use hmac::Mac;
+use rand::RngCore;
+use sha2::Digest;
+
+// Custom JWT implementation for scripting
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+struct Header {
+    alg: String,
+    typ: String,
+}
+
+impl Header {
+    fn default() -> Self {
+        Self {
+            alg: "HS256".to_string(),
+            typ: "JWT".to_string(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Validation;
+
+impl Validation {
+    fn default() -> Self {
+        Self
+    }
+}
+
+#[derive(Debug)]
+struct EncodingKey(Vec<u8>);
+
+impl EncodingKey {
+    fn from_secret(secret: &[u8]) -> Self {
+        Self(secret.to_vec())
+    }
+}
+
+#[derive(Debug)]
+struct DecodingKey(Vec<u8>);
+
+impl DecodingKey {
+    fn from_secret(secret: &[u8]) -> Self {
+        Self(secret.to_vec())
+    }
+}
+
+fn encode<T: serde::Serialize>(
+    _header: &Header,
+    claims: &T,
+    key: &EncodingKey,
+) -> Result<String, String> {
+    // JWT Header: {"alg":"HS256","typ":"JWT"}
+    let header = r#"{"alg":"HS256","typ":"JWT"}"#;
+
+    // Base64url encode header
+    let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(header);
+
+    // Serialize and encode claims
+    let claims_json =
+        serde_json::to_string(claims).map_err(|e| format!("JWT encode failed: {}", e))?;
+    let claims_b64 =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims_json.as_bytes());
+
+    // Create signing input
+    let signing_input = format!("{}.{}", header_b64, claims_b64);
+
+    // Sign with HMAC-SHA256
+    let signature = sign_hmac_sha256(&signing_input, &key.0)?;
+
+    // Combine into JWT format: header.claims.signature
+    Ok(format!("{}.{}.{}", header_b64, claims_b64, signature))
+}
+
+fn decode<T: serde::de::DeserializeOwned>(
+    token: &str,
+    key: &DecodingKey,
+    _validation: &Validation,
+) -> Result<TokenData<T>, String> {
+    // Split JWT into parts
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 3 {
+        return Err("Invalid JWT format".to_string());
+    }
+
+    let (header_b64, claims_b64, signature_b64) = (parts[0], parts[1], parts[2]);
+
+    // Verify header (should be {"alg":"HS256","typ":"JWT"})
+    let header_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(header_b64)
+        .map_err(|_| "Invalid JWT header".to_string())?;
+    let header_str =
+        String::from_utf8(header_bytes).map_err(|_| "Invalid JWT header encoding".to_string())?;
+
+    if !header_str.contains(r#""alg":"HS256""#) || !header_str.contains(r#""typ":"JWT""#) {
+        return Err("Unsupported JWT algorithm or type".to_string());
+    }
+
+    // Verify signature
+    let signing_input = format!("{}.{}", header_b64, claims_b64);
+    let expected_signature = sign_hmac_sha256(&signing_input, &key.0)?;
+
+    if expected_signature != signature_b64 {
+        return Err("Invalid JWT signature".to_string());
+    }
+
+    // Decode claims
+    let claims_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(claims_b64)
+        .map_err(|_| "Invalid JWT claims".to_string())?;
+
+    let claims: T = serde_json::from_slice(&claims_bytes)
+        .map_err(|_| "Invalid JWT claims format".to_string())?;
+
+    Ok(TokenData {
+        header: Header::default(),
+        claims,
+    })
+}
+
+#[derive(Debug)]
+struct TokenData<T> {
+    #[allow(dead_code)]
+    header: Header,
+    claims: T,
+}
+
+fn sign_hmac_sha256(data: &str, secret: &[u8]) -> Result<String, String> {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(secret).map_err(|e| format!("HMAC init failed: {}", e))?;
+    mac.update(data.as_bytes());
+
+    let result = mac.finalize();
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(result.into_bytes()))
+}
+
+/// Context passed to Lua scripts containing request information
+#[derive(Debug, Clone)]
+pub struct ScriptContext {
+    /// HTTP method (GET, POST, PUT, DELETE)
+    pub method: String,
+    /// Request path (after /api/custom/)
+    pub path: String,
+    /// Query parameters
+    pub query_params: HashMap<String, String>,
+    /// URL parameters (e.g., :id)
+    pub params: HashMap<String, String>,
+    /// Request headers
+    pub headers: HashMap<String, String>,
+    /// Request body (parsed as JSON if applicable)
+    pub body: Option<JsonValue>,
+    /// Whether this is a WebSocket connection
+    pub is_websocket: bool,
+    /// Current authenticated user (if any)
+    pub user: ScriptUser,
+}
+
+/// Script metadata stored in _system/_scripts
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Script {
+    #[serde(rename = "_key")]
+    pub key: String,
+    /// Human-readable name
+    pub name: String,
+    /// HTTP methods this script handles (e.g., ["GET", "POST"])
+    pub methods: Vec<String>,
+    /// URL path pattern (e.g., "users/:id" or "hello")
+    pub path: String,
+    /// Database this script belongs to
+    #[serde(default = "default_database")]
+    pub database: String,
+    /// Collection this script is scoped to (optional)
+    pub collection: Option<String>,
+    /// The Lua source code
+    pub code: String,
+    /// Optional description
+    pub description: Option<String>,
+    /// Creation timestamp
+    pub created_at: String,
+    /// Last modified timestamp
+    pub updated_at: String,
+}
+
+fn default_database() -> String {
+    "_system".to_string()
+}
+
+/// Runtime statistics for the script engine
+#[derive(Debug, Default)]
+pub struct ScriptStats {
+    /// Number of HTTP scripts currently executing
+    pub active_scripts: AtomicUsize,
+    /// Number of active WebSocket connections
+    pub active_ws: AtomicUsize,
+    /// Total number of HTTP scripts executed since start
+    pub total_scripts_executed: AtomicUsize,
+    /// Total number of WebSocket connections handled since start
+    pub total_ws_connections: AtomicUsize,
+}
 
 /// Lua scripting engine
 pub struct ScriptEngine {
@@ -933,35 +1160,29 @@ impl ScriptEngine {
                     let client = reqwest::Client::new();
                     let mut req_builder = client.get(&url); // Default to GET
 
-                    if let Some(opts) = options {
-                        if let LuaValue::Table(t) = opts {
-                            // Method
-                            if let Ok(method) = t.get::<String>("method") {
-                                match method.to_uppercase().as_str() {
-                                    "POST" => req_builder = client.post(&url),
-                                    "PUT" => req_builder = client.put(&url),
-                                    "DELETE" => req_builder = client.delete(&url),
-                                    "PATCH" => req_builder = client.patch(&url),
-                                    "HEAD" => req_builder = client.head(&url),
-                                    _ => {} // Default GET
-                                }
+                    if let Some(LuaValue::Table(t)) = options {
+                        // Method
+                        if let Ok(method) = t.get::<String>("method") {
+                            match method.to_uppercase().as_str() {
+                                "POST" => req_builder = client.post(&url),
+                                "PUT" => req_builder = client.put(&url),
+                                "DELETE" => req_builder = client.delete(&url),
+                                "PATCH" => req_builder = client.patch(&url),
+                                "HEAD" => req_builder = client.head(&url),
+                                _ => {} // Default GET
                             }
+                        }
 
-                            // Headers
-                            if let Ok(headers) = t.get::<LuaValue>("headers") {
-                                if let LuaValue::Table(h) = headers {
-                                    for pair in h.pairs::<String, String>() {
-                                        if let Ok((k, v)) = pair {
-                                            req_builder = req_builder.header(k, v);
-                                        }
-                                    }
-                                }
+                        // Headers
+                        if let Ok(LuaValue::Table(h)) = t.get::<LuaValue>("headers") {
+                            for (k, v) in h.pairs::<String, String>().flatten() {
+                                req_builder = req_builder.header(k, v);
                             }
+                        }
 
-                            // Body
-                            if let Ok(body) = t.get::<String>("body") {
-                                req_builder = req_builder.body(body);
-                            }
+                        // Body
+                        if let Ok(body) = t.get::<String>("body") {
+                            req_builder = req_builder.body(body);
                         }
                     }
 
@@ -974,7 +1195,7 @@ impl ScriptEngine {
                             let response_table = lua.create_table()?;
                             response_table.set("status", status)?;
                             response_table.set("body", text)?;
-                            response_table.set("ok", status >= 200 && status < 300)?;
+                            response_table.set("ok", (200..300).contains(&status))?;
 
                             let resp_headers = lua.create_table()?;
                             for (k, v) in headers_map.iter() {
@@ -1318,7 +1539,7 @@ impl ScriptEngine {
             // solidb.streams.list() -> array of {name: string, query: string, created_at: number}
             let manager_list = stream_manager.clone();
             let list_fn = lua.create_function(move |lua, (): ()| {
-                let streams = manager_list.list_active_streams();
+                let streams = manager_list.list_streams();
                 let mut result = Vec::new();
                 for stream in streams {
                     let mut s = serde_json::Map::new();
@@ -1373,7 +1594,7 @@ impl ScriptEngine {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
-                    .map_err(|e| mlua::Error::external(e))?;
+                    .map_err(mlua::Error::external)?;
                 Ok(now.as_secs() as i64)
             })
             .map_err(|e| DbError::InternalError(format!("Failed to create time.now: {}", e)))?;
@@ -1387,7 +1608,7 @@ impl ScriptEngine {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
-                    .map_err(|e| mlua::Error::external(e))?;
+                    .map_err(mlua::Error::external)?;
                 Ok(now.as_millis() as i64)
             })
             .map_err(|e| DbError::InternalError(format!("Failed to create time.millis: {}", e)))?;
@@ -1724,10 +1945,10 @@ impl ScriptEngine {
                 let get_fn = lua.create_function(move |lua, (_, key): (LuaValue, String)| {
                     let db = storage_get
                         .get_database(&db_get)
-                        .map_err(|e| mlua::Error::external(e))?;
+                        .map_err(mlua::Error::external)?;
                     let collection = db
                         .get_collection(&coll_get)
-                        .map_err(|e| mlua::Error::external(e))?;
+                        .map_err(mlua::Error::external)?;
 
                     match collection.get(&key) {
                         Ok(doc) => {
@@ -1750,14 +1971,14 @@ impl ScriptEngine {
 
                         let db = storage_insert
                             .get_database(&db_insert)
-                            .map_err(|e| mlua::Error::external(e))?;
+                            .map_err(mlua::Error::external)?;
                         let collection = db
                             .get_collection(&coll_insert)
-                            .map_err(|e| mlua::Error::external(e))?;
+                            .map_err(mlua::Error::external)?;
 
                         let inserted = collection
                             .insert(json_doc)
-                            .map_err(|e| mlua::Error::external(e))?;
+                            .map_err(mlua::Error::external)?;
 
                         json_to_lua(lua, &inserted.to_value())
                     })?;
@@ -1773,14 +1994,14 @@ impl ScriptEngine {
 
                         let db = storage_update
                             .get_database(&db_update)
-                            .map_err(|e| mlua::Error::external(e))?;
+                            .map_err(mlua::Error::external)?;
                         let collection = db
                             .get_collection(&coll_update)
-                            .map_err(|e| mlua::Error::external(e))?;
+                            .map_err(mlua::Error::external)?;
 
                         let updated = collection
                             .update(&key, json_doc)
-                            .map_err(|e| mlua::Error::external(e))?;
+                            .map_err(mlua::Error::external)?;
 
                         json_to_lua(lua, &updated.to_value())
                     },
@@ -1794,34 +2015,230 @@ impl ScriptEngine {
                 let delete_fn = lua.create_function(move |_, (_, key): (LuaValue, String)| {
                     let db = storage_delete
                         .get_database(&db_delete)
-                        .map_err(|e| mlua::Error::external(e))?;
+                        .map_err(mlua::Error::external)?;
                     let collection = db
                         .get_collection(&coll_delete)
-                        .map_err(|e| mlua::Error::external(e))?;
+                        .map_err(mlua::Error::external)?;
 
                     collection
                         .delete(&key)
-                        .map_err(|e| mlua::Error::external(e))?;
+                        .map_err(mlua::Error::external)?;
 
                     Ok(true)
                 })?;
                 coll_handle.set("delete", delete_fn)?;
 
-                // col:count()
+                // col:count(filter?) - count all or matching documents
                 let storage_count = storage.clone();
                 let db_count = db_name.clone();
                 let coll_count = coll_name.clone();
-                let count_fn = lua.create_function(move |_, _: LuaValue| {
-                    let db = storage_count
-                        .get_database(&db_count)
-                        .map_err(|e| mlua::Error::external(e))?;
-                    let collection = db
-                        .get_collection(&coll_count)
-                        .map_err(|e| mlua::Error::external(e))?;
+                let count_fn =
+                    lua.create_function(move |lua, (_, filter): (LuaValue, Option<LuaValue>)| {
+                        let db = storage_count
+                            .get_database(&db_count)
+                            .map_err(mlua::Error::external)?;
+                        let collection = db
+                            .get_collection(&coll_count)
+                            .map_err(mlua::Error::external)?;
 
-                    Ok(collection.count() as i64)
-                })?;
+                        match filter {
+                            Some(f) if !matches!(f, LuaValue::Nil) => {
+                                let filter_json = lua_to_json_value(lua, f)?;
+                                // Count matching documents
+                                let all_docs = collection.scan(None);
+                                let count = all_docs
+                                    .into_iter()
+                                    .filter(|doc| matches_filter(&doc.to_value(), &filter_json))
+                                    .count();
+                                Ok(count as i64)
+                            }
+                            _ => Ok(collection.count() as i64),
+                        }
+                    })?;
                 coll_handle.set("count", count_fn)?;
+
+                // col:find(filter) - find documents matching filter
+                let storage_find = storage.clone();
+                let db_find = db_name.clone();
+                let coll_find = coll_name.clone();
+                let find_fn =
+                    lua.create_function(move |lua, (_, filter): (LuaValue, LuaValue)| {
+                        let filter_json = lua_to_json_value(lua, filter)?;
+
+                        let db = storage_find
+                            .get_database(&db_find)
+                            .map_err(mlua::Error::external)?;
+                        let collection = db
+                            .get_collection(&coll_find)
+                            .map_err(mlua::Error::external)?;
+
+                        // Scan all documents and filter
+                        let all_docs = collection.scan(None);
+                        let mut results = Vec::new();
+
+                        for doc in all_docs {
+                            let doc_value = doc.to_value();
+                            if matches_filter(&doc_value, &filter_json) {
+                                results.push(doc_value);
+                            }
+                        }
+
+                        // Convert to Lua table
+                        let result_table = lua.create_table()?;
+                        for (i, doc) in results.iter().enumerate() {
+                            result_table.set(i + 1, json_to_lua(lua, doc)?)?;
+                        }
+
+                        Ok(LuaValue::Table(result_table))
+                    })?;
+                coll_handle.set("find", find_fn)?;
+
+                // col:find_one(filter) - find first document matching filter
+                let storage_find_one = storage.clone();
+                let db_find_one = db_name.clone();
+                let coll_find_one = coll_name.clone();
+                let find_one_fn =
+                    lua.create_function(move |lua, (_, filter): (LuaValue, LuaValue)| {
+                        let filter_json = lua_to_json_value(lua, filter)?;
+
+                        let db = storage_find_one
+                            .get_database(&db_find_one)
+                            .map_err(mlua::Error::external)?;
+                        let collection = db
+                            .get_collection(&coll_find_one)
+                            .map_err(mlua::Error::external)?;
+
+                        // Scan documents and return first match
+                        let all_docs = collection.scan(None);
+
+                        for doc in all_docs {
+                            let doc_value = doc.to_value();
+                            if matches_filter(&doc_value, &filter_json) {
+                                return json_to_lua(lua, &doc_value);
+                            }
+                        }
+
+                        Ok(LuaValue::Nil)
+                    })?;
+                coll_handle.set("find_one", find_one_fn)?;
+
+                // col:bulk_insert(docs) - insert multiple documents
+                let storage_bulk = storage.clone();
+                let db_bulk = db_name.clone();
+                let coll_bulk = coll_name.clone();
+                let bulk_insert_fn =
+                    lua.create_function(move |lua, (_, docs): (LuaValue, LuaValue)| {
+                        let docs_json = lua_to_json_value(lua, docs)?;
+
+                        let db = storage_bulk
+                            .get_database(&db_bulk)
+                            .map_err(mlua::Error::external)?;
+                        let collection = db
+                            .get_collection(&coll_bulk)
+                            .map_err(mlua::Error::external)?;
+
+                        let docs_array = match docs_json {
+                            JsonValue::Array(arr) => arr,
+                            _ => {
+                                return Err(mlua::Error::external(DbError::BadRequest(
+                                    "bulk_insert expects an array of documents".to_string(),
+                                )))
+                            }
+                        };
+
+                        let mut inserted = Vec::new();
+                        for doc in docs_array {
+                            let result = collection
+                                .insert(doc)
+                                .map_err(mlua::Error::external)?;
+                            inserted.push(result.to_value());
+                        }
+
+                        // Return array of inserted documents
+                        let result_table = lua.create_table()?;
+                        for (i, doc) in inserted.iter().enumerate() {
+                            result_table.set(i + 1, json_to_lua(lua, doc)?)?;
+                        }
+
+                        Ok(LuaValue::Table(result_table))
+                    })?;
+                coll_handle.set("bulk_insert", bulk_insert_fn)?;
+
+                // col:upsert(key_or_filter, doc) - insert or update
+                // If key_or_filter is a string, it's treated as a _key lookup
+                // If key_or_filter is a table, it's treated as a filter
+                let storage_upsert = storage.clone();
+                let db_upsert = db_name.clone();
+                let coll_upsert = coll_name.clone();
+                let upsert_fn = lua.create_function(
+                    move |lua, (_, key_or_filter, doc): (LuaValue, LuaValue, LuaValue)| {
+                        let mut doc_json = lua_to_json_value(lua, doc)?;
+
+                        let db = storage_upsert
+                            .get_database(&db_upsert)
+                            .map_err(mlua::Error::external)?;
+                        let collection = db
+                            .get_collection(&coll_upsert)
+                            .map_err(mlua::Error::external)?;
+
+                        // Check if key_or_filter is a string (key) or table (filter)
+                        let existing_key: Option<String> = match &key_or_filter {
+                            LuaValue::String(s) => {
+                                let key = s.to_str()?.to_string();
+                                // Check if document with this key exists
+                                match collection.get(&key) {
+                                    Ok(_) => Some(key),
+                                    Err(_) => {
+                                        // Set _key in doc for insert
+                                        if let JsonValue::Object(ref mut obj) = doc_json {
+                                            obj.insert(
+                                                "_key".to_string(),
+                                                JsonValue::String(key.clone()),
+                                            );
+                                        }
+                                        None
+                                    }
+                                }
+                            }
+                            LuaValue::Table(_) => {
+                                let filter_json = lua_to_json_value(lua, key_or_filter)?;
+                                // Find existing document by filter
+                                let all_docs = collection.scan(None);
+                                let mut found_key = None;
+                                for existing_doc in all_docs {
+                                    let doc_value = existing_doc.to_value();
+                                    if matches_filter(&doc_value, &filter_json) {
+                                        if let Some(key) =
+                                            doc_value.get("_key").and_then(|k| k.as_str())
+                                        {
+                                            found_key = Some(key.to_string());
+                                            break;
+                                        }
+                                    }
+                                }
+                                found_key
+                            }
+                            _ => None,
+                        };
+
+                        let result = if let Some(key) = existing_key {
+                            // Update existing
+                            collection
+                                .update(&key, doc_json)
+                                .map_err(mlua::Error::external)?
+                                .to_value()
+                        } else {
+                            // Insert new
+                            collection
+                                .insert(doc_json)
+                                .map_err(mlua::Error::external)?
+                                .to_value()
+                        };
+
+                        json_to_lua(lua, &result)
+                    },
+                )?;
+                coll_handle.set("upsert", upsert_fn)?;
 
                 Ok(LuaValue::Table(coll_handle))
             })
@@ -1869,7 +2286,7 @@ impl ScriptEngine {
 
                     let results = executor
                         .execute(&query_ast)
-                        .map_err(|e| mlua::Error::external(e))?;
+                        .map_err(mlua::Error::external)?;
 
                     // Convert results to Lua table
                     let result_table = lua.create_table()?;
@@ -1900,16 +2317,16 @@ impl ScriptEngine {
                     // Initialize transaction manager if needed
                     storage
                         .initialize_transactions()
-                        .map_err(|e| mlua::Error::external(e))?;
+                        .map_err(mlua::Error::external)?;
 
                     // Get transaction manager and begin transaction
                     let tx_manager = storage
                         .transaction_manager()
-                        .map_err(|e| mlua::Error::external(e))?;
+                        .map_err(mlua::Error::external)?;
 
                     let tx_id = tx_manager
                         .begin(crate::transaction::IsolationLevel::ReadCommitted)
-                        .map_err(|e| mlua::Error::external(e))?;
+                        .map_err(mlua::Error::external)?;
 
                     // Create the transaction context table
                     let tx_handle = lua.create_table()?;
@@ -1948,17 +2365,17 @@ impl ScriptEngine {
                                     let full_coll_name = format!("{}:{}", db_insert, coll_insert);
                                     let collection = storage_insert
                                         .get_collection(&full_coll_name)
-                                        .map_err(|e| mlua::Error::external(e))?;
+                                        .map_err(mlua::Error::external)?;
 
                                     let tx_arc = tx_mgr_insert
                                         .get(tx_id_insert)
-                                        .map_err(|e| mlua::Error::external(e))?;
+                                        .map_err(mlua::Error::external)?;
                                     let mut tx = tx_arc.write().unwrap();
                                     let wal = tx_mgr_insert.wal();
 
                                     let inserted = collection
                                         .insert_tx(&mut tx, wal, json_doc)
-                                        .map_err(|e| mlua::Error::external(e))?;
+                                        .map_err(mlua::Error::external)?;
 
                                     json_to_lua(lua, &inserted.to_value())
                                 })?;
@@ -1977,17 +2394,17 @@ impl ScriptEngine {
                                     let full_coll_name = format!("{}:{}", db_update, coll_update);
                                     let collection = storage_update
                                         .get_collection(&full_coll_name)
-                                        .map_err(|e| mlua::Error::external(e))?;
+                                        .map_err(mlua::Error::external)?;
 
                                     let tx_arc = tx_mgr_update
                                         .get(tx_id_update)
-                                        .map_err(|e| mlua::Error::external(e))?;
+                                        .map_err(mlua::Error::external)?;
                                     let mut tx = tx_arc.write().unwrap();
                                     let wal = tx_mgr_update.wal();
 
                                     let updated = collection
                                         .update_tx(&mut tx, wal, &key, json_doc)
-                                        .map_err(|e| mlua::Error::external(e))?;
+                                        .map_err(mlua::Error::external)?;
 
                                     json_to_lua(lua, &updated.to_value())
                                 },
@@ -2005,17 +2422,17 @@ impl ScriptEngine {
                                     let full_coll_name = format!("{}:{}", db_delete, coll_delete);
                                     let collection = storage_delete
                                         .get_collection(&full_coll_name)
-                                        .map_err(|e| mlua::Error::external(e))?;
+                                        .map_err(mlua::Error::external)?;
 
                                     let tx_arc = tx_mgr_delete
                                         .get(tx_id_delete)
-                                        .map_err(|e| mlua::Error::external(e))?;
+                                        .map_err(mlua::Error::external)?;
                                     let mut tx = tx_arc.write().unwrap();
                                     let wal = tx_mgr_delete.wal();
 
                                     collection
                                         .delete_tx(&mut tx, wal, &key)
-                                        .map_err(|e| mlua::Error::external(e))?;
+                                        .map_err(mlua::Error::external)?;
 
                                     Ok(true)
                                 })?;
@@ -2030,7 +2447,7 @@ impl ScriptEngine {
                                     let full_coll_name = format!("{}:{}", db_get, coll_get);
                                     let collection = storage_get
                                         .get_collection(&full_coll_name)
-                                        .map_err(|e| mlua::Error::external(e))?;
+                                        .map_err(mlua::Error::external)?;
 
                                     match collection.get(&key) {
                                         Ok(doc) => json_to_lua(lua, &doc.to_value()),
@@ -2056,7 +2473,7 @@ impl ScriptEngine {
                             // Commit the transaction on success
                             storage
                                 .commit_transaction(tx_id)
-                                .map_err(|e| mlua::Error::external(e))?;
+                                .map_err(mlua::Error::external)?;
                             Ok(value)
                         }
                         Err(e) => {
@@ -2138,22 +2555,22 @@ impl ScriptEngine {
 
                 let db = storage_enqueue
                     .get_database(&current_db_name)
-                    .map_err(|e| mlua::Error::external(e))?;
+                    .map_err(mlua::Error::external)?;
 
                 // Ensure _jobs collection exists
                 if db.get_collection("_jobs").is_err() {
                     db.create_collection("_jobs".to_string(), None)
-                        .map_err(|e| mlua::Error::external(e))?;
+                        .map_err(mlua::Error::external)?;
                 }
 
                 let jobs_coll = db
                     .get_collection("_jobs")
-                    .map_err(|e| mlua::Error::external(e))?;
+                    .map_err(mlua::Error::external)?;
 
                 let doc_val = serde_json::to_value(&job).unwrap();
                 jobs_coll
                     .insert(doc_val)
-                    .map_err(|e| mlua::Error::external(e))?;
+                    .map_err(mlua::Error::external)?;
 
                 // Notify worker
                 if let Some(ref notifier) = notifier_enqueue {
@@ -2780,6 +3197,28 @@ fn json_to_lua(lua: &Lua, json: &JsonValue) -> LuaResult<LuaValue> {
             }
             Ok(LuaValue::Table(table))
         }
+    }
+}
+
+/// Check if a document matches a filter
+/// Supports simple equality matching on fields
+fn matches_filter(doc: &JsonValue, filter: &JsonValue) -> bool {
+    match filter {
+        JsonValue::Object(filter_obj) => {
+            for (key, filter_value) in filter_obj {
+                match doc.get(key) {
+                    Some(doc_value) => {
+                        // Simple equality check
+                        if doc_value != filter_value {
+                            return false;
+                        }
+                    }
+                    None => return false,
+                }
+            }
+            true
+        }
+        _ => false,
     }
 }
 

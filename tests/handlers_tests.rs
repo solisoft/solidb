@@ -15,13 +15,14 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
+use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt; // for oneshot
 
-fn create_test_app() -> (axum::Router, TempDir) {
+fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
@@ -36,10 +37,22 @@ fn create_test_app() -> (axum::Router, TempDir) {
         None, // QueueWorker
         script_stats,
         None, // StreamManager
-        0, // port
+        0,    // port
     );
 
-    (router, tmp_dir)
+    // Create a JWT token for authentication
+    let token = AuthService::create_jwt_with_roles(
+        "test_admin",
+        Some(vec!["admin".to_string()]),
+        None,
+    )
+    .expect("Failed to create test token");
+
+    (router, tmp_dir, token)
+}
+
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -49,7 +62,12 @@ async fn response_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&body).unwrap_or(json!({"error": "Invalid JSON"}))
 }
 
-async fn setup_db_and_collection(app: &axum::Router, db_name: &str, coll_name: &str) {
+async fn setup_db_and_collection(
+    app: &axum::Router,
+    token: &str,
+    db_name: &str,
+    coll_name: &str,
+) {
     // Create DB
     let _ = app
         .clone()
@@ -58,6 +76,7 @@ async fn setup_db_and_collection(app: &axum::Router, db_name: &str, coll_name: &
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(token))
                 .body(Body::from(json!({ "name": db_name }).to_string()))
                 .unwrap(),
         )
@@ -72,6 +91,7 @@ async fn setup_db_and_collection(app: &axum::Router, db_name: &str, coll_name: &
                 .method("POST")
                 .uri(&format!("/_api/database/{}/collection", db_name))
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(token))
                 .body(Body::from(json!({ "name": coll_name }).to_string()))
                 .unwrap(),
         )
@@ -85,7 +105,7 @@ async fn setup_db_and_collection(app: &axum::Router, db_name: &str, coll_name: &
 
 #[tokio::test]
 async fn test_create_database() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -93,6 +113,7 @@ async fn test_create_database() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "newdb" }).to_string()))
                 .unwrap(),
         )
@@ -106,7 +127,7 @@ async fn test_create_database() {
 
 #[tokio::test]
 async fn test_create_duplicate_database() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Create first
     let _ = app
@@ -116,6 +137,7 @@ async fn test_create_duplicate_database() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "dupdb" }).to_string()))
                 .unwrap(),
         )
@@ -129,6 +151,7 @@ async fn test_create_duplicate_database() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "dupdb" }).to_string()))
                 .unwrap(),
         )
@@ -141,7 +164,7 @@ async fn test_create_duplicate_database() {
 
 #[tokio::test]
 async fn test_list_databases() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Create some DBs
     for name in ["db1", "db2", "db3"] {
@@ -152,6 +175,7 @@ async fn test_list_databases() {
                     .method("POST")
                     .uri("/_api/database")
                     .header("Content-Type", "application/json")
+                    .header("Authorization", auth_header(&token))
                     .body(Body::from(json!({ "name": name }).to_string()))
                     .unwrap(),
             )
@@ -164,6 +188,7 @@ async fn test_list_databases() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/databases")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -178,7 +203,7 @@ async fn test_list_databases() {
 
 #[tokio::test]
 async fn test_delete_database() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Create DB
     let _ = app
@@ -188,6 +213,7 @@ async fn test_delete_database() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "todelete" }).to_string()))
                 .unwrap(),
         )
@@ -201,6 +227,7 @@ async fn test_delete_database() {
             Request::builder()
                 .method("DELETE")
                 .uri("/_api/database/todelete")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -215,6 +242,7 @@ async fn test_delete_database() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/databases")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -232,13 +260,14 @@ async fn test_delete_database() {
 
 #[tokio::test]
 async fn test_delete_nonexistent_database() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("DELETE")
                 .uri("/_api/database/nonexistent")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -254,7 +283,7 @@ async fn test_delete_nonexistent_database() {
 
 #[tokio::test]
 async fn test_create_collection() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     // Create DB first
     let _ = app
@@ -264,6 +293,7 @@ async fn test_create_collection() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "testdb" }).to_string()))
                 .unwrap(),
         )
@@ -276,6 +306,7 @@ async fn test_create_collection() {
                 .method("POST")
                 .uri("/_api/database/testdb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "users" }).to_string()))
                 .unwrap(),
         )
@@ -289,7 +320,7 @@ async fn test_create_collection() {
 
 #[tokio::test]
 async fn test_create_edge_collection() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let _ = app
         .clone()
@@ -298,6 +329,7 @@ async fn test_create_edge_collection() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "graphdb" }).to_string()))
                 .unwrap(),
         )
@@ -310,6 +342,7 @@ async fn test_create_edge_collection() {
                 .method("POST")
                 .uri("/_api/database/graphdb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "name": "edges", "type": "edge" }).to_string(),
                 ))
@@ -324,9 +357,9 @@ async fn test_create_edge_collection() {
 
 #[tokio::test]
 async fn test_list_collections() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "mydb", "col1").await;
+    setup_db_and_collection(&app, &token, "mydb", "col1").await;
 
     // Add another collection
     let _ = app
@@ -336,6 +369,7 @@ async fn test_list_collections() {
                 .method("POST")
                 .uri("/_api/database/mydb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "col2" }).to_string()))
                 .unwrap(),
         )
@@ -348,6 +382,7 @@ async fn test_list_collections() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/mydb/collection")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -362,15 +397,16 @@ async fn test_list_collections() {
 
 #[tokio::test]
 async fn test_delete_collection() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "deldb", "todel").await;
+    setup_db_and_collection(&app, &token, "deldb", "todel").await;
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("DELETE")
                 .uri("/_api/database/deldb/collection/todel")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -382,7 +418,7 @@ async fn test_delete_collection() {
 
 #[tokio::test]
 async fn test_collection_in_nonexistent_db() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -390,6 +426,7 @@ async fn test_collection_in_nonexistent_db() {
                 .method("POST")
                 .uri("/_api/database/nodb/collection")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "col" }).to_string()))
                 .unwrap(),
         )
@@ -401,9 +438,9 @@ async fn test_collection_in_nonexistent_db() {
 
 #[tokio::test]
 async fn test_truncate_collection() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "truncdb", "data").await;
+    setup_db_and_collection(&app, &token, "truncdb", "data").await;
 
     // Insert some documents
     for i in 0..5 {
@@ -414,6 +451,7 @@ async fn test_truncate_collection() {
                     .method("POST")
                     .uri("/_api/database/truncdb/document/data")
                     .header("Content-Type", "application/json")
+                    .header("Authorization", auth_header(&token))
                     .body(Body::from(json!({ "num": i }).to_string()))
                     .unwrap(),
             )
@@ -428,6 +466,7 @@ async fn test_truncate_collection() {
             Request::builder()
                 .method("PUT")
                 .uri("/_api/database/truncdb/collection/data/truncate")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -443,6 +482,7 @@ async fn test_truncate_collection() {
                 .method("POST")
                 .uri("/_api/database/truncdb/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "query": "FOR d IN data RETURN d" }).to_string(),
                 ))
@@ -460,9 +500,9 @@ async fn test_truncate_collection() {
 
 #[tokio::test]
 async fn test_insert_document() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "docdb", "items").await;
+    setup_db_and_collection(&app, &token, "docdb", "items").await;
 
     let response = app
         .oneshot(
@@ -470,6 +510,7 @@ async fn test_insert_document() {
                 .method("POST")
                 .uri("/_api/database/docdb/document/items")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "name": "Widget", "price": 19.99 }).to_string(),
                 ))
@@ -485,9 +526,9 @@ async fn test_insert_document() {
 
 #[tokio::test]
 async fn test_insert_document_with_key() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "docdb", "items").await;
+    setup_db_and_collection(&app, &token, "docdb", "items").await;
 
     let response = app
         .oneshot(
@@ -495,6 +536,7 @@ async fn test_insert_document_with_key() {
                 .method("POST")
                 .uri("/_api/database/docdb/document/items")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "_key": "myitem", "name": "Custom" }).to_string(),
                 ))
@@ -510,9 +552,9 @@ async fn test_insert_document_with_key() {
 
 #[tokio::test]
 async fn test_get_document() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "getdb", "items").await;
+    setup_db_and_collection(&app, &token, "getdb", "items").await;
 
     // Insert
     let _ = app
@@ -522,6 +564,7 @@ async fn test_get_document() {
                 .method("POST")
                 .uri("/_api/database/getdb/document/items")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "_key": "doc1", "value": 42 }).to_string(),
                 ))
@@ -536,6 +579,7 @@ async fn test_get_document() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/getdb/document/items/doc1")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -549,15 +593,16 @@ async fn test_get_document() {
 
 #[tokio::test]
 async fn test_get_nonexistent_document() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "getdb", "items").await;
+    setup_db_and_collection(&app, &token, "getdb", "items").await;
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/getdb/document/items/nonexistent")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -569,9 +614,9 @@ async fn test_get_nonexistent_document() {
 
 #[tokio::test]
 async fn test_update_document() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "updb", "items").await;
+    setup_db_and_collection(&app, &token, "updb", "items").await;
 
     // Insert
     let _ = app
@@ -581,6 +626,7 @@ async fn test_update_document() {
                 .method("POST")
                 .uri("/_api/database/updb/document/items")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "_key": "doc1", "value": 1 }).to_string(),
                 ))
@@ -597,6 +643,7 @@ async fn test_update_document() {
                 .method("PUT")
                 .uri("/_api/database/updb/document/items/doc1")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "value": 100, "extra": "field" }).to_string(),
                 ))
@@ -613,6 +660,7 @@ async fn test_update_document() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/updb/document/items/doc1")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -624,9 +672,9 @@ async fn test_update_document() {
 
 #[tokio::test]
 async fn test_delete_document() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "deldb", "items").await;
+    setup_db_and_collection(&app, &token, "deldb", "items").await;
 
     // Insert
     let _ = app
@@ -636,6 +684,7 @@ async fn test_delete_document() {
                 .method("POST")
                 .uri("/_api/database/deldb/document/items")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "_key": "todelete", "val": 1 }).to_string(),
                 ))
@@ -651,6 +700,7 @@ async fn test_delete_document() {
             Request::builder()
                 .method("DELETE")
                 .uri("/_api/database/deldb/document/items/todelete")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -665,6 +715,7 @@ async fn test_delete_document() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/deldb/document/items/todelete")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -679,7 +730,7 @@ async fn test_delete_document() {
 
 #[tokio::test]
 async fn test_simple_return_query() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let _ = app
         .clone()
@@ -688,6 +739,7 @@ async fn test_simple_return_query() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "qdb" }).to_string()))
                 .unwrap(),
         )
@@ -700,6 +752,7 @@ async fn test_simple_return_query() {
                 .method("POST")
                 .uri("/_api/database/qdb/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "query": "RETURN 1 + 2 + 3" }).to_string(),
                 ))
@@ -715,9 +768,9 @@ async fn test_simple_return_query() {
 
 #[tokio::test]
 async fn test_query_with_collection() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "qdb", "users").await;
+    setup_db_and_collection(&app, &token, "qdb", "users").await;
 
     // Insert data
     for name in ["Alice", "Bob", "Charlie"] {
@@ -728,6 +781,7 @@ async fn test_query_with_collection() {
                     .method("POST")
                     .uri("/_api/database/qdb/document/users")
                     .header("Content-Type", "application/json")
+                    .header("Authorization", auth_header(&token))
                     .body(Body::from(json!({ "name": name }).to_string()))
                     .unwrap(),
             )
@@ -741,6 +795,7 @@ async fn test_query_with_collection() {
                 .method("POST")
                 .uri("/_api/database/qdb/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "query": "FOR u IN users RETURN u.name" }).to_string(),
                 ))
@@ -757,9 +812,9 @@ async fn test_query_with_collection() {
 
 #[tokio::test]
 async fn test_query_with_bind_vars() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "qdb", "users").await;
+    setup_db_and_collection(&app, &token, "qdb", "users").await;
 
     let _ = app
         .clone()
@@ -768,6 +823,7 @@ async fn test_query_with_bind_vars() {
                 .method("POST")
                 .uri("/_api/database/qdb/document/users")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "name": "TestUser", "age": 30 }).to_string(),
                 ))
@@ -782,6 +838,7 @@ async fn test_query_with_bind_vars() {
                 .method("POST")
                 .uri("/_api/database/qdb/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "query": "FOR u IN users FILTER u.name == @name RETURN u.age",
@@ -801,7 +858,7 @@ async fn test_query_with_bind_vars() {
 
 #[tokio::test]
 async fn test_query_parse_error() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let _ = app
         .clone()
@@ -810,6 +867,7 @@ async fn test_query_parse_error() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({ "name": "qdb" }).to_string()))
                 .unwrap(),
         )
@@ -822,6 +880,7 @@ async fn test_query_parse_error() {
                 .method("POST")
                 .uri("/_api/database/qdb/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "query": "NOT VALID SDBQL" }).to_string(),
                 ))
@@ -835,9 +894,9 @@ async fn test_query_parse_error() {
 
 #[tokio::test]
 async fn test_explain_query() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "edb", "users").await;
+    setup_db_and_collection(&app, &token, "edb", "users").await;
 
     let response = app
         .oneshot(
@@ -845,6 +904,7 @@ async fn test_explain_query() {
                 .method("POST")
                 .uri("/_api/database/edb/explain")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({ "query": "FOR u IN users RETURN u" }).to_string(),
                 ))
@@ -865,9 +925,9 @@ async fn test_explain_query() {
 
 #[tokio::test]
 async fn test_create_index() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "idb", "users").await;
+    setup_db_and_collection(&app, &token, "idb", "users").await;
 
     // Correct endpoint: /_api/database/{db}/index/{collection}
     let response = app
@@ -876,6 +936,7 @@ async fn test_create_index() {
                 .method("POST")
                 .uri("/_api/database/idb/index/users")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "email_idx",
@@ -896,9 +957,9 @@ async fn test_create_index() {
 
 #[tokio::test]
 async fn test_list_indexes() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "idb", "users").await;
+    setup_db_and_collection(&app, &token, "idb", "users").await;
 
     // Create index first using correct endpoint
     let _ = app
@@ -908,6 +969,7 @@ async fn test_list_indexes() {
                 .method("POST")
                 .uri("/_api/database/idb/index/users")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "test_idx",
@@ -926,6 +988,7 @@ async fn test_list_indexes() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/idb/index/users")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -944,7 +1007,7 @@ async fn test_list_indexes() {
 
 #[tokio::test]
 async fn test_invalid_json_body() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -952,6 +1015,7 @@ async fn test_invalid_json_body() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from("not valid json"))
                 .unwrap(),
         )
@@ -967,7 +1031,7 @@ async fn test_invalid_json_body() {
 
 #[tokio::test]
 async fn test_missing_required_field() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -975,6 +1039,7 @@ async fn test_missing_required_field() {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(json!({}).to_string())) // Missing "name" field
                 .unwrap(),
         )
@@ -990,13 +1055,14 @@ async fn test_missing_required_field() {
 
 #[tokio::test]
 async fn test_health_check() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/_api/health")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1010,9 +1076,9 @@ async fn test_health_check() {
 
 #[tokio::test]
 async fn test_unicode_in_documents() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "unidb", "data").await;
+    setup_db_and_collection(&app, &token, "unidb", "data").await;
 
     let response = app
         .clone()
@@ -1021,6 +1087,7 @@ async fn test_unicode_in_documents() {
                 .method("POST")
                 .uri("/_api/database/unidb/document/data")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "_key": "unicode",
@@ -1043,6 +1110,7 @@ async fn test_unicode_in_documents() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/unidb/document/data/unicode")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1056,9 +1124,9 @@ async fn test_unicode_in_documents() {
 
 #[tokio::test]
 async fn test_large_document() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "largedb", "data").await;
+    setup_db_and_collection(&app, &token, "largedb", "data").await;
 
     // Create a document with a large array
     let large_array: Vec<i32> = (0..1000).collect();
@@ -1070,6 +1138,7 @@ async fn test_large_document() {
                 .method("POST")
                 .uri("/_api/database/largedb/document/data")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "_key": "large",
@@ -1090,6 +1159,7 @@ async fn test_large_document() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/largedb/document/data/large")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1102,9 +1172,9 @@ async fn test_large_document() {
 
 #[tokio::test]
 async fn test_batch_query_response_metadata() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db_and_collection(&app, "metadb", "items").await;
+    setup_db_and_collection(&app, &token, "metadb", "items").await;
 
     // Insert several documents
     for i in 0..10 {
@@ -1115,6 +1185,7 @@ async fn test_batch_query_response_metadata() {
                     .method("POST")
                     .uri("/_api/database/metadb/document/items")
                     .header("Content-Type", "application/json")
+                    .header("Authorization", auth_header(&token))
                     .body(Body::from(json!({ "num": i }).to_string()))
                     .unwrap(),
             )
@@ -1128,6 +1199,7 @@ async fn test_batch_query_response_metadata() {
                 .method("POST")
                 .uri("/_api/database/metadb/cursor")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "query": "FOR i IN items RETURN i",

@@ -11,13 +11,14 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
+use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-fn create_test_app() -> (axum::Router, TempDir) {
+fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
@@ -26,7 +27,18 @@ fn create_test_app() -> (axum::Router, TempDir) {
 
     let router = create_router(engine, None, None, None, None, script_stats, None, 0);
 
-    (router, tmp_dir)
+    let token = AuthService::create_jwt_with_roles(
+        "test_admin",
+        Some(vec!["admin".to_string()]),
+        None,
+    )
+    .expect("Failed to create test token");
+
+    (router, tmp_dir, token)
+}
+
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -38,7 +50,7 @@ async fn response_json(response: axum::response::Response) -> Value {
     )
 }
 
-async fn setup_db(app: &axum::Router, db_name: &str) {
+async fn setup_db(app: &axum::Router, db_name: &str, token: &str) {
     let _ = app
         .clone()
         .oneshot(
@@ -46,6 +58,7 @@ async fn setup_db(app: &axum::Router, db_name: &str) {
                 .method("POST")
                 .uri("/_api/database")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(token))
                 .body(Body::from(json!({ "name": db_name }).to_string()))
                 .unwrap(),
         )
@@ -59,9 +72,9 @@ async fn setup_db(app: &axum::Router, db_name: &str) {
 
 #[tokio::test]
 async fn test_create_script() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     let response = app
         .oneshot(
@@ -69,6 +82,7 @@ async fn test_create_script() {
                 .method("POST")
                 .uri("/_api/database/scriptdb/scripts")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "hello",
@@ -91,9 +105,9 @@ async fn test_create_script() {
 
 #[tokio::test]
 async fn test_create_script_with_description() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     let response = app
         .oneshot(
@@ -101,6 +115,7 @@ async fn test_create_script_with_description() {
                 .method("POST")
                 .uri("/_api/database/scriptdb/scripts")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "greet",
@@ -123,9 +138,9 @@ async fn test_create_script_with_description() {
 
 #[tokio::test]
 async fn test_list_scripts() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     // Create some scripts
     for (name, path) in [("script1", "/path1"), ("script2", "/path2")] {
@@ -136,6 +151,7 @@ async fn test_list_scripts() {
                     .method("POST")
                     .uri("/_api/database/scriptdb/scripts")
                     .header("Content-Type", "application/json")
+                    .header("Authorization", auth_header(&token))
                     .body(Body::from(
                         json!({
                             "name": name,
@@ -156,6 +172,7 @@ async fn test_list_scripts() {
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/scriptdb/scripts")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -170,9 +187,9 @@ async fn test_list_scripts() {
 
 #[tokio::test]
 async fn test_get_script() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     // Create script
     let response = app
@@ -182,6 +199,7 @@ async fn test_get_script() {
                 .method("POST")
                 .uri("/_api/database/scriptdb/scripts")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "myapi",
@@ -204,6 +222,7 @@ async fn test_get_script() {
             Request::builder()
                 .method("GET")
                 .uri(&format!("/_api/database/scriptdb/scripts/{}", script_id))
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -218,15 +237,16 @@ async fn test_get_script() {
 
 #[tokio::test]
 async fn test_get_nonexistent_script() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/scriptdb/scripts/nonexistent123")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -238,9 +258,9 @@ async fn test_get_nonexistent_script() {
 
 #[tokio::test]
 async fn test_update_script() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     // Create script
     let response = app
@@ -250,6 +270,7 @@ async fn test_update_script() {
                 .method("POST")
                 .uri("/_api/database/scriptdb/scripts")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "updateme",
@@ -273,6 +294,7 @@ async fn test_update_script() {
                 .method("PUT")
                 .uri(&format!("/_api/database/scriptdb/scripts/{}", script_id))
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "updateme",
@@ -296,9 +318,9 @@ async fn test_update_script() {
 
 #[tokio::test]
 async fn test_delete_script() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     // Create script
     let response = app
@@ -308,6 +330,7 @@ async fn test_delete_script() {
                 .method("POST")
                 .uri("/_api/database/scriptdb/scripts")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "todelete",
@@ -331,6 +354,7 @@ async fn test_delete_script() {
             Request::builder()
                 .method("DELETE")
                 .uri(&format!("/_api/database/scriptdb/scripts/{}", script_id))
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -347,6 +371,7 @@ async fn test_delete_script() {
             Request::builder()
                 .method("GET")
                 .uri(&format!("/_api/database/scriptdb/scripts/{}", script_id))
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -358,15 +383,16 @@ async fn test_delete_script() {
 
 #[tokio::test]
 async fn test_delete_nonexistent_script() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("DELETE")
                 .uri("/_api/database/scriptdb/scripts/nonexistent123")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -382,13 +408,14 @@ async fn test_delete_nonexistent_script() {
 
 #[tokio::test]
 async fn test_get_script_stats() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/_api/scripts/stats")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -408,9 +435,9 @@ async fn test_get_script_stats() {
 
 #[tokio::test]
 async fn test_create_script_missing_required_fields() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     // Missing 'code' field
     let response = app
@@ -419,6 +446,7 @@ async fn test_create_script_missing_required_fields() {
                 .method("POST")
                 .uri("/_api/database/scriptdb/scripts")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "incomplete",
@@ -442,9 +470,9 @@ async fn test_create_script_missing_required_fields() {
 
 #[tokio::test]
 async fn test_create_script_various_methods() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     for method in ["GET", "POST", "PUT", "DELETE"] {
         let response = app
@@ -454,6 +482,7 @@ async fn test_create_script_various_methods() {
                     .method("POST")
                     .uri("/_api/database/scriptdb/scripts")
                     .header("Content-Type", "application/json")
+                    .header("Authorization", auth_header(&token))
                     .body(Body::from(
                         json!({
                             "name": format!("script_{}", method.to_lowercase()),
@@ -479,9 +508,9 @@ async fn test_create_script_various_methods() {
 
 #[tokio::test]
 async fn test_create_script_with_multiple_methods() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     let response = app
         .oneshot(
@@ -489,6 +518,7 @@ async fn test_create_script_with_multiple_methods() {
                 .method("POST")
                 .uri("/_api/database/scriptdb/scripts")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "multi_method",
@@ -510,9 +540,9 @@ async fn test_create_script_with_multiple_methods() {
 
 #[tokio::test]
 async fn test_create_script_with_path_params() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     let response = app
         .oneshot(
@@ -520,6 +550,7 @@ async fn test_create_script_with_path_params() {
                 .method("POST")
                 .uri("/_api/database/scriptdb/scripts")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "user_by_id",
@@ -545,7 +576,7 @@ async fn test_create_script_with_path_params() {
 
 #[tokio::test]
 async fn test_create_script_in_nonexistent_db() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -553,6 +584,7 @@ async fn test_create_script_in_nonexistent_db() {
                 .method("POST")
                 .uri("/_api/database/nodb/scripts")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "test",
@@ -572,13 +604,14 @@ async fn test_create_script_in_nonexistent_db() {
 
 #[tokio::test]
 async fn test_list_scripts_in_nonexistent_db() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/_api/database/nodb/scripts")
+                .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -594,9 +627,9 @@ async fn test_list_scripts_in_nonexistent_db() {
 
 #[tokio::test]
 async fn test_create_duplicate_script_path() {
-    let (app, _tmp) = create_test_app();
+    let (app, _tmp, token) = create_test_app();
 
-    setup_db(&app, "scriptdb").await;
+    setup_db(&app, "scriptdb", &token).await;
 
     // Create first script
     let _ = app
@@ -606,6 +639,7 @@ async fn test_create_duplicate_script_path() {
                 .method("POST")
                 .uri("/_api/database/scriptdb/scripts")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "first",
@@ -627,6 +661,7 @@ async fn test_create_duplicate_script_path() {
                 .method("POST")
                 .uri("/_api/database/scriptdb/scripts")
                 .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
                 .body(Body::from(
                     json!({
                         "name": "second",

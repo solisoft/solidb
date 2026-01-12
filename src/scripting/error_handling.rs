@@ -59,13 +59,6 @@ pub fn create_try_function(lua: &Lua) -> LuaResult<Function> {
     )
 }
 
-/// Create solidb.panic(message) -> function for testing error handling
-#[allow(dead_code)]
-pub fn create_panic_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(move |_, message: String| {
-        Err::<LuaValue, mlua::Error>(mlua::Error::RuntimeError(format!("PANIC:{}", message)))
-    })
-}
 
 /// Create solidb.validate_condition(condition, error_message, error_code) function
 pub fn create_validate_condition_function(lua: &Lua) -> LuaResult<Function> {
@@ -151,7 +144,7 @@ pub fn create_rate_limit_function(lua: &Lua) -> LuaResult<Function> {
             let mut requests = self.requests.lock().unwrap();
             let user_requests = requests
                 .entry(identifier.to_string())
-                .or_insert_with(Vec::new);
+                .or_default();
 
             // Remove old requests outside the window
             user_requests.retain(|&timestamp| timestamp > now - window_seconds);
