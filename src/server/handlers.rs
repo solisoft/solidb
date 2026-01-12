@@ -4938,6 +4938,9 @@ pub struct ListVectorIndexesResponse {
 pub struct VectorSearchRequest {
     pub vector: Vec<f32>,
     pub limit: usize,
+    /// Optional ef_search parameter for HNSW (higher = better recall, slower)
+    #[serde(default)]
+    pub ef_search: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -5028,7 +5031,7 @@ pub async fn vector_search(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
-    let results = collection.vector_search(&index_name, &req.vector, req.limit)?;
+    let results = collection.vector_search(&index_name, &req.vector, req.limit, req.ef_search)?;
 
     // Fetch documents for each result
     let search_results: Vec<VectorSearchResult> = results

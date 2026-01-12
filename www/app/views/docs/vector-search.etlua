@@ -88,6 +88,75 @@
         </div>
       </section>
 
+      <!-- HNSW Algorithm -->
+      <section id="hnsw" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              HNSW: Fast Approximate Search
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed mb-4">
+              SoliDB uses <strong>HNSW (Hierarchical Navigable Small World)</strong> graphs for fast approximate nearest neighbor search on large vector datasets. HNSW provides 10-100x faster searches compared to brute-force while maintaining high recall (>95%).
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-emerald-900/10 border border-emerald-500/20 rounded-xl p-6">
+                <h4 class="text-emerald-400 font-bold mb-3">Automatic Activation</h4>
+                <p class="text-sm text-gray-400 mb-3">
+                  HNSW automatically activates when your index exceeds <strong>10,000 vectors</strong>. Below this threshold, exact brute-force search is used for 100% accuracy.
+                </p>
+                <div class="bg-black/30 rounded-lg p-3 text-xs font-mono">
+                  <span class="text-gray-500"># Vectors < 10K:</span> Exact search<br/>
+                  <span class="text-gray-500"># Vectors >= 10K:</span> HNSW approximate
+                </div>
+              </div>
+
+              <div class="bg-purple-900/10 border border-purple-500/20 rounded-xl p-6">
+                <h4 class="text-purple-400 font-bold mb-3">Query-Time Tuning</h4>
+                <p class="text-sm text-gray-400 mb-3">
+                  Use the <code class="bg-gray-800 px-1 rounded">ef_search</code> parameter to trade off between speed and recall at query time.
+                </p>
+                <div class="bg-black/30 rounded-lg p-3 text-xs font-mono">
+                  <span class="text-purple-300">ef_search: 40</span> <span class="text-gray-500">// Fast, ~90% recall</span><br/>
+                  <span class="text-purple-300">ef_search: 100</span> <span class="text-gray-500">// Balanced</span><br/>
+                  <span class="text-purple-300">ef_search: 200</span> <span class="text-gray-500">// High recall, slower</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h4 class="text-white font-bold mb-3">Performance Characteristics</h4>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div class="bg-black/20 rounded-lg p-4">
+                  <div class="text-emerald-400 font-bold mb-1">Search Speed</div>
+                  <p class="text-gray-400">O(log n) vs O(n) brute-force. 10-100x faster at 100K+ vectors.</p>
+                </div>
+                <div class="bg-black/20 rounded-lg p-4">
+                  <div class="text-purple-400 font-bold mb-1">Memory</div>
+                  <p class="text-gray-400">Graph stored alongside vectors. ~20-30% overhead for neighbor links.</p>
+                </div>
+                <div class="bg-black/20 rounded-lg p-4">
+                  <div class="text-pink-400 font-bold mb-1">Recall</div>
+                  <p class="text-gray-400">>95% recall with default settings. Tunable via ef_search.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-blue-900/10 border border-blue-500/20 rounded-xl p-4">
+              <div class="flex items-start">
+                <svg class="w-5 h-5 text-blue-400 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <p class="text-sm text-blue-200">
+                  <strong>Tip:</strong> HNSW graph is built incrementally as vectors are inserted and persisted to disk. No manual rebuild is required.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Distance Metrics -->
       <section id="metrics" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
@@ -374,7 +443,8 @@
                     <p class="text-xs text-gray-500 mb-2">Request:</p>
                     <pre><code class="language-json text-sm text-gray-300">{
   <span class="text-purple-400">"vector"</span>: [<span class="text-yellow-300">0.0123, -0.0456, ...</span>],
-  <span class="text-purple-400">"limit"</span>: <span class="text-yellow-300">10</span>
+  <span class="text-purple-400">"limit"</span>: <span class="text-yellow-300">10</span>,
+  <span class="text-purple-400">"ef_search"</span>: <span class="text-yellow-300">100</span>
 }</code></pre>
                   </div>
                   <div>

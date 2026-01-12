@@ -272,6 +272,12 @@
                         <td class="p-3">Maximum number of results to return. Default: 10.</td>
                         <td class="p-3">No</td>
                       </tr>
+                      <tr>
+                        <td class="p-3 text-pink-400 font-mono">ef_search</td>
+                        <td class="p-3 font-mono">integer</td>
+                        <td class="p-3">HNSW search quality parameter. Higher values improve recall but increase latency. Only used when HNSW is active (>10K vectors). Default: max(limit*2, 40).</td>
+                        <td class="p-3">No</td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -283,7 +289,8 @@
                   <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
 {
   "vector": [0.0123, -0.0456, 0.0789, ...],
-  "limit": 10
+  "limit": 10,
+  "ef_search": 100
 }
                   </div>
                 </div>

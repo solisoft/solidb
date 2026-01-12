@@ -1,16 +1,20 @@
 //! Vector index module for similarity search.
 //!
 //! This module provides vector similarity search capabilities for documents
-//! containing embedding vectors. Currently uses brute-force search which is
-//! accurate and fast for moderate dataset sizes (< 100K vectors).
+//! containing embedding vectors. Supports two modes:
 //!
-//! TODO: Add HNSW approximate nearest neighbor search for larger datasets.
+//! - **Brute-force**: Accurate linear search, fast for small datasets (< 10K vectors)
+//! - **HNSW**: Approximate nearest neighbor search for large datasets (10K+ vectors)
+//!
+//! The index automatically switches to HNSW when the vector count exceeds the
+//! configured threshold (default: 10,000).
 
 use crate::error::{DbError, DbResult};
 use crate::storage::index::{VectorIndexConfig, VectorMetric};
+use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::sync::RwLock;
 
 /// Result of a vector similarity search
@@ -22,12 +26,435 @@ pub struct VectorSearchResult {
     pub score: f32,
 }
 
+/// Default threshold for auto-switching to HNSW
+const DEFAULT_HNSW_THRESHOLD: usize = 10_000;
+
+// =============================================================================
+// HNSW Data Structures
+// =============================================================================
+
+/// HNSW node representing a vector in the graph
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HnswNode {
+    /// Connections at each level: level -> vec of neighbor doc_keys
+    neighbors: Vec<Vec<String>>,
+    /// Level this node was assigned during insertion
+    level: usize,
+}
+
+/// HNSW graph structure for approximate nearest neighbor search
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HnswGraph {
+    /// All nodes in the graph: doc_key -> HnswNode
+    nodes: HashMap<String, HnswNode>,
+    /// Current entry point (highest level node)
+    entry_point: Option<String>,
+    /// Current maximum level in the graph
+    max_level: usize,
+    /// M parameter: max connections per node per level (except level 0)
+    m: usize,
+    /// M0 parameter: max connections at level 0 (typically 2*M)
+    m0: usize,
+    /// ef_construction: search quality during build
+    ef_construction: usize,
+    /// Level multiplier: 1/ln(M), used for random level assignment
+    level_mult: f64,
+}
+
+/// Neighbor entry for priority queue operations during HNSW search
+#[derive(Clone)]
+struct Neighbor {
+    doc_key: String,
+    distance: f32,
+}
+
+impl PartialEq for Neighbor {
+    fn eq(&self, other: &Self) -> bool {
+        self.distance == other.distance
+    }
+}
+
+impl Eq for Neighbor {}
+
+impl PartialOrd for Neighbor {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Neighbor {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reverse ordering: smaller distance = higher priority (max-heap becomes min-heap)
+        other
+            .distance
+            .partial_cmp(&self.distance)
+            .unwrap_or(Ordering::Equal)
+    }
+}
+
+/// Wrapper for max-heap behavior (largest distance first)
+#[derive(Clone)]
+struct MaxNeighbor(Neighbor);
+
+impl PartialEq for MaxNeighbor {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.distance == other.0.distance
+    }
+}
+
+impl Eq for MaxNeighbor {}
+
+impl PartialOrd for MaxNeighbor {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MaxNeighbor {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Normal ordering: larger distance = higher priority
+        self.0
+            .distance
+            .partial_cmp(&other.0.distance)
+            .unwrap_or(Ordering::Equal)
+    }
+}
+
+// =============================================================================
+// HnswGraph Implementation
+// =============================================================================
+
+impl HnswGraph {
+    /// Create a new HNSW graph with the given configuration
+    fn new(m: usize, ef_construction: usize) -> Self {
+        let m = m.max(2); // Minimum M of 2
+        Self {
+            nodes: HashMap::new(),
+            entry_point: None,
+            max_level: 0,
+            m,
+            m0: m * 2, // Level 0 has double the connections
+            ef_construction,
+            level_mult: 1.0 / (m as f64).ln(),
+        }
+    }
+
+    /// Generate a random level for a new node using exponential distribution
+    fn random_level(&self) -> usize {
+        let mut rng = rand::thread_rng();
+        let r: f64 = rng.gen();
+        let level = (-r.ln() * self.level_mult).floor() as usize;
+        level.min(16) // Cap at reasonable max level
+    }
+
+    /// Calculate distance between query and a document's vector
+    fn calculate_distance(
+        query: &[f32],
+        doc_key: &str,
+        vectors: &HashMap<String, Vec<f32>>,
+        metric: VectorMetric,
+    ) -> f32 {
+        match vectors.get(doc_key) {
+            Some(vec) => match metric {
+                // For HNSW we need distance (lower is better), so convert similarity
+                VectorMetric::Cosine => 1.0 - cosine_similarity(query, vec),
+                VectorMetric::Euclidean => euclidean_distance(query, vec),
+                VectorMetric::DotProduct => -dot_product(query, vec), // Negate for "lower is better"
+            },
+            None => f32::MAX,
+        }
+    }
+
+    /// Search within a single layer, returning up to ef nearest neighbors
+    fn search_layer(
+        &self,
+        query: &[f32],
+        entry_points: &[String],
+        ef: usize,
+        level: usize,
+        vectors: &HashMap<String, Vec<f32>>,
+        metric: VectorMetric,
+    ) -> Vec<Neighbor> {
+        let mut visited: HashSet<String> = HashSet::new();
+        // Min-heap: best candidates (smallest distance first)
+        let mut candidates: BinaryHeap<Neighbor> = BinaryHeap::new();
+        // Max-heap: worst of the current best (largest distance first)
+        let mut result: BinaryHeap<MaxNeighbor> = BinaryHeap::new();
+
+        // Initialize with entry points
+        for ep in entry_points {
+            if visited.insert(ep.clone()) {
+                let dist = Self::calculate_distance(query, ep, vectors, metric);
+                let neighbor = Neighbor {
+                    doc_key: ep.clone(),
+                    distance: dist,
+                };
+                candidates.push(neighbor.clone());
+                result.push(MaxNeighbor(neighbor));
+            }
+        }
+
+        while let Some(current) = candidates.pop() {
+            // Get the furthest element in result
+            let furthest_dist = result.peek().map(|n| n.0.distance).unwrap_or(f32::MAX);
+
+            // If current is further than the furthest result, we're done
+            if current.distance > furthest_dist {
+                break;
+            }
+
+            // Get neighbors at this level
+            if let Some(node) = self.nodes.get(&current.doc_key) {
+                if level < node.neighbors.len() {
+                    for neighbor_key in &node.neighbors[level] {
+                        if visited.insert(neighbor_key.clone()) {
+                            let dist = Self::calculate_distance(query, neighbor_key, vectors, metric);
+                            let furthest_dist = result.peek().map(|n| n.0.distance).unwrap_or(f32::MAX);
+
+                            if dist < furthest_dist || result.len() < ef {
+                                let neighbor = Neighbor {
+                                    doc_key: neighbor_key.clone(),
+                                    distance: dist,
+                                };
+                                candidates.push(neighbor.clone());
+                                result.push(MaxNeighbor(neighbor));
+
+                                // Keep only ef best
+                                while result.len() > ef {
+                                    result.pop();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Convert result to vec, sorted by distance (best first)
+        let mut results: Vec<Neighbor> = result.into_iter().map(|mn| mn.0).collect();
+        results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+        results
+    }
+
+    /// Select M best neighbors using the simple heuristic
+    fn select_neighbors(&self, candidates: &[Neighbor], m: usize) -> Vec<String> {
+        // Simple heuristic: just take the M closest
+        candidates
+            .iter()
+            .take(m)
+            .map(|n| n.doc_key.clone())
+            .collect()
+    }
+
+    /// Insert a new vector into the graph
+    fn insert(
+        &mut self,
+        doc_key: &str,
+        _vector: &[f32],
+        vectors: &HashMap<String, Vec<f32>>,
+        metric: VectorMetric,
+    ) {
+        // If this key already exists, remove it first (update case)
+        if self.nodes.contains_key(doc_key) {
+            self.remove(doc_key);
+        }
+
+        // Get the vector for distance calculations
+        let query = match vectors.get(doc_key) {
+            Some(v) => v,
+            None => return, // Vector not found, skip
+        };
+
+        // Assign random level to this node
+        let node_level = self.random_level();
+
+        // Create the new node with empty neighbor lists
+        let mut new_node = HnswNode {
+            neighbors: vec![Vec::new(); node_level + 1],
+            level: node_level,
+        };
+
+        // If graph is empty, this becomes the entry point
+        if self.entry_point.is_none() {
+            self.entry_point = Some(doc_key.to_string());
+            self.max_level = node_level;
+            self.nodes.insert(doc_key.to_string(), new_node);
+            return;
+        }
+
+        let entry_point = self.entry_point.clone().unwrap();
+        let mut current_ep = vec![entry_point];
+
+        // Phase 1: Descend from top to node_level+1, using greedy search (ef=1)
+        for level in (node_level + 1..=self.max_level).rev() {
+            let nearest = self.search_layer(query, &current_ep, 1, level, vectors, metric);
+            if !nearest.is_empty() {
+                current_ep = vec![nearest[0].doc_key.clone()];
+            }
+        }
+
+        // Phase 2: From node_level down to 0, find and connect neighbors
+        for level in (0..=node_level.min(self.max_level)).rev() {
+            let m_level = if level == 0 { self.m0 } else { self.m };
+
+            // Search for nearest neighbors at this level
+            let candidates = self.search_layer(query, &current_ep, self.ef_construction, level, vectors, metric);
+
+            // Select best neighbors
+            let selected = self.select_neighbors(&candidates, m_level);
+
+            // Add connections from new node to selected neighbors
+            if level < new_node.neighbors.len() {
+                new_node.neighbors[level] = selected.clone();
+            }
+
+            // Add reverse connections from neighbors to new node
+            for neighbor_key in &selected {
+                if let Some(neighbor_node) = self.nodes.get_mut(neighbor_key) {
+                    if level < neighbor_node.neighbors.len() {
+                        neighbor_node.neighbors[level].push(doc_key.to_string());
+
+                        // Prune if exceeds limit
+                        if neighbor_node.neighbors[level].len() > m_level {
+                            // Keep only the best M neighbors
+                            let mut neighbor_candidates: Vec<Neighbor> = neighbor_node.neighbors[level]
+                                .iter()
+                                .filter_map(|k| {
+                                    vectors.get(neighbor_key).map(|nv| Neighbor {
+                                        doc_key: k.clone(),
+                                        distance: Self::calculate_distance(nv, k, vectors, metric),
+                                    })
+                                })
+                                .collect();
+                            neighbor_candidates.sort_by(|a, b| {
+                                a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal)
+                            });
+                            // Select best M neighbors (inline to avoid borrow conflict)
+                            neighbor_node.neighbors[level] = neighbor_candidates
+                                .iter()
+                                .take(m_level)
+                                .map(|n| n.doc_key.clone())
+                                .collect();
+                        }
+                    }
+                }
+            }
+
+            // Update entry points for next level
+            if !candidates.is_empty() {
+                current_ep = candidates.iter().map(|n| n.doc_key.clone()).collect();
+            }
+        }
+
+        // Insert the new node
+        self.nodes.insert(doc_key.to_string(), new_node);
+
+        // Update entry point if new node has higher level
+        if node_level > self.max_level {
+            self.entry_point = Some(doc_key.to_string());
+            self.max_level = node_level;
+        }
+    }
+
+    /// Remove a node from the graph (lazy removal - just delete the node)
+    fn remove(&mut self, doc_key: &str) {
+        // Remove the node
+        if let Some(removed_node) = self.nodes.remove(doc_key) {
+            // Remove references from neighbors
+            for level in 0..removed_node.neighbors.len() {
+                for neighbor_key in &removed_node.neighbors[level] {
+                    if let Some(neighbor_node) = self.nodes.get_mut(neighbor_key) {
+                        if level < neighbor_node.neighbors.len() {
+                            neighbor_node.neighbors[level].retain(|k| k != doc_key);
+                        }
+                    }
+                }
+            }
+
+            // Update entry point if removed
+            if self.entry_point.as_ref() == Some(&doc_key.to_string()) {
+                // Find a new entry point (any node at max_level, or reduce max_level)
+                self.entry_point = self.nodes.keys().next().cloned();
+                if let Some(ep) = &self.entry_point {
+                    if let Some(node) = self.nodes.get(ep) {
+                        self.max_level = node.level;
+                    }
+                } else {
+                    self.max_level = 0;
+                }
+            }
+        }
+    }
+
+    /// Search for k nearest neighbors
+    fn search(
+        &self,
+        query: &[f32],
+        k: usize,
+        ef: usize,
+        vectors: &HashMap<String, Vec<f32>>,
+        metric: VectorMetric,
+    ) -> Vec<Neighbor> {
+        if self.entry_point.is_none() {
+            return vec![];
+        }
+
+        let entry_point = self.entry_point.clone().unwrap();
+        let mut current_ep = vec![entry_point];
+
+        // Descend from top level to level 1 using greedy search
+        for level in (1..=self.max_level).rev() {
+            let nearest = self.search_layer(query, &current_ep, 1, level, vectors, metric);
+            if !nearest.is_empty() {
+                current_ep = vec![nearest[0].doc_key.clone()];
+            }
+        }
+
+        // Search at level 0 with ef
+        let ef_search = ef.max(k);
+        let mut results = self.search_layer(query, &current_ep, ef_search, 0, vectors, metric);
+
+        // Return top k
+        results.truncate(k);
+        results
+    }
+
+    /// Get the number of nodes in the graph
+    fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Check if the graph is empty
+    fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    /// Clear all nodes from the graph
+    fn clear(&mut self) {
+        self.nodes.clear();
+        self.entry_point = None;
+        self.max_level = 0;
+    }
+}
+
+// =============================================================================
+// VectorIndex
+// =============================================================================
+
 /// Vector index for similarity search
+///
+/// Supports two modes:
+/// - Brute-force: Linear scan, accurate, fast for < 10K vectors
+/// - HNSW: Approximate nearest neighbor, fast for 10K+ vectors
+///
+/// Automatically switches to HNSW when vector count exceeds threshold.
 pub struct VectorIndex {
     /// Index configuration
     config: VectorIndexConfig,
     /// Stored vectors: doc_key -> vector
     vectors: RwLock<HashMap<String, Vec<f32>>>,
+    /// HNSW graph for approximate search (built when threshold exceeded)
+    hnsw_graph: RwLock<Option<HnswGraph>>,
 }
 
 impl VectorIndex {
@@ -42,7 +469,39 @@ impl VectorIndex {
         Ok(Self {
             config,
             vectors: RwLock::new(HashMap::new()),
+            hnsw_graph: RwLock::new(None),
         })
+    }
+
+    /// Get the HNSW threshold for this index
+    fn hnsw_threshold(&self) -> usize {
+        // Use config threshold if available, otherwise default
+        DEFAULT_HNSW_THRESHOLD
+    }
+
+    /// Check if HNSW should be used based on current vector count
+    fn should_use_hnsw(&self) -> bool {
+        let vectors = self.vectors.read().unwrap();
+        vectors.len() >= self.hnsw_threshold()
+    }
+
+    /// Build the HNSW graph from existing vectors
+    fn build_hnsw_graph(&self) {
+        let vectors = self.vectors.read().unwrap();
+        if vectors.len() < self.hnsw_threshold() {
+            return;
+        }
+
+        let mut graph = HnswGraph::new(self.config.m, self.config.ef_construction);
+
+        // Insert all vectors into the graph
+        for (doc_key, vector) in vectors.iter() {
+            graph.insert(doc_key, vector, &vectors, self.config.metric);
+        }
+
+        // Store the graph
+        let mut hnsw = self.hnsw_graph.write().unwrap();
+        *hnsw = Some(graph);
     }
 
     /// Get the index configuration
@@ -64,6 +523,13 @@ impl VectorIndex {
     pub fn clear(&self) {
         let mut vectors = self.vectors.write().unwrap();
         vectors.clear();
+
+        // Also clear HNSW graph
+        let mut hnsw = self.hnsw_graph.write().unwrap();
+        if let Some(graph) = hnsw.as_mut() {
+            graph.clear();
+        }
+        *hnsw = None;
     }
 
     /// Insert a vector for a document
@@ -77,15 +543,48 @@ impl VectorIndex {
             )));
         }
 
-        let mut vectors = self.vectors.write().unwrap();
-        vectors.insert(doc_key.to_string(), vector.to_vec());
+        // Insert into vectors HashMap
+        {
+            let mut vectors = self.vectors.write().unwrap();
+            vectors.insert(doc_key.to_string(), vector.to_vec());
+        }
+
+        // Update HNSW graph if it exists or threshold is reached
+        let vectors = self.vectors.read().unwrap();
+        let count = vectors.len();
+        drop(vectors);
+
+        let mut hnsw = self.hnsw_graph.write().unwrap();
+        if let Some(graph) = hnsw.as_mut() {
+            // Graph exists, insert into it
+            let vectors = self.vectors.read().unwrap();
+            graph.insert(doc_key, vector, &vectors, self.config.metric);
+        } else if count >= self.hnsw_threshold() {
+            // Threshold reached, build the graph
+            drop(hnsw);
+            self.build_hnsw_graph();
+        }
+
         Ok(())
     }
 
     /// Remove a vector by document key
     pub fn remove(&self, doc_key: &str) -> DbResult<bool> {
-        let mut vectors = self.vectors.write().unwrap();
-        Ok(vectors.remove(doc_key).is_some())
+        // Remove from vectors HashMap
+        let removed = {
+            let mut vectors = self.vectors.write().unwrap();
+            vectors.remove(doc_key).is_some()
+        };
+
+        // Also remove from HNSW graph if it exists
+        if removed {
+            let mut hnsw = self.hnsw_graph.write().unwrap();
+            if let Some(graph) = hnsw.as_mut() {
+                graph.remove(doc_key);
+            }
+        }
+
+        Ok(removed)
     }
 
     /// Check if a document has a vector in the index
@@ -98,16 +597,19 @@ impl VectorIndex {
         self.vectors.read().unwrap().get(doc_key).cloned()
     }
 
-    /// Search for similar vectors using brute-force
+    /// Search for similar vectors
+    ///
+    /// Uses HNSW approximate search when the graph is built (vector count >= threshold),
+    /// otherwise falls back to brute-force linear search.
     ///
     /// # Arguments
     /// * `query` - Query vector
     /// * `limit` - Maximum number of results to return
-    /// * `_ef` - Unused (reserved for HNSW search quality parameter)
+    /// * `ef` - HNSW search quality parameter (higher = better recall, slower)
     ///
     /// # Returns
     /// Vector of search results sorted by similarity (best first)
-    pub fn search(&self, query: &[f32], limit: usize, _ef: usize) -> DbResult<Vec<VectorSearchResult>> {
+    pub fn search(&self, query: &[f32], limit: usize, ef: usize) -> DbResult<Vec<VectorSearchResult>> {
         // Validate dimension
         if query.len() != self.config.dimension {
             return Err(DbError::BadRequest(format!(
@@ -117,6 +619,41 @@ impl VectorIndex {
             )));
         }
 
+        // Try HNSW search first if graph exists
+        {
+            let hnsw = self.hnsw_graph.read().unwrap();
+            if let Some(graph) = hnsw.as_ref() {
+                let vectors = self.vectors.read().unwrap();
+                let ef_search = ef.max(limit * 2).max(40);
+                let hnsw_results = graph.search(query, limit, ef_search, &vectors, self.config.metric);
+
+                // Convert HNSW results (distance) back to score format
+                let results: Vec<VectorSearchResult> = hnsw_results
+                    .into_iter()
+                    .map(|n| {
+                        // Convert distance back to original score
+                        let score = match self.config.metric {
+                            VectorMetric::Cosine => 1.0 - n.distance, // distance was 1-similarity
+                            VectorMetric::Euclidean => n.distance,    // keep as distance
+                            VectorMetric::DotProduct => -n.distance,  // distance was -dot_product
+                        };
+                        VectorSearchResult {
+                            doc_key: n.doc_key,
+                            score,
+                        }
+                    })
+                    .collect();
+
+                return Ok(results);
+            }
+        }
+
+        // Fall back to brute-force search
+        self.brute_force_search(query, limit)
+    }
+
+    /// Perform brute-force linear search
+    fn brute_force_search(&self, query: &[f32], limit: usize) -> DbResult<Vec<VectorSearchResult>> {
         let vectors = self.vectors.read().unwrap();
 
         // Calculate scores for all vectors
@@ -180,30 +717,58 @@ impl VectorIndex {
     /// Serialize the index to bytes for persistence
     pub fn serialize(&self) -> DbResult<Vec<u8>> {
         let vectors = self.vectors.read().unwrap();
-        let data = VectorIndexData {
+        let hnsw = self.hnsw_graph.read().unwrap();
+
+        let data = VectorIndexDataV2 {
             config: self.config.clone(),
             vectors: vectors.clone(),
+            hnsw_graph: hnsw.clone(),
         };
         bincode::serialize(&data).map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))
     }
 
     /// Deserialize a vector index from bytes
     pub fn deserialize(bytes: &[u8]) -> DbResult<Self> {
+        // Try V2 format first (with HNSW graph)
+        if let Ok(data) = bincode::deserialize::<VectorIndexDataV2>(bytes) {
+            return Ok(Self {
+                config: data.config,
+                vectors: RwLock::new(data.vectors),
+                hnsw_graph: RwLock::new(data.hnsw_graph),
+            });
+        }
+
+        // Fall back to V1 format (without HNSW graph)
         let data: VectorIndexData =
             bincode::deserialize(bytes).map_err(|e| DbError::InternalError(format!("Deserialization error: {}", e)))?;
 
         Ok(Self {
             config: data.config,
             vectors: RwLock::new(data.vectors),
+            hnsw_graph: RwLock::new(None),
         })
+    }
+
+    /// Check if HNSW graph is currently active
+    pub fn is_hnsw_active(&self) -> bool {
+        self.hnsw_graph.read().unwrap().is_some()
     }
 }
 
-/// Serializable vector index data
+/// Serializable vector index data (V1 format - backward compat)
 #[derive(Serialize, Deserialize)]
 struct VectorIndexData {
     config: VectorIndexConfig,
     vectors: HashMap<String, Vec<f32>>,
+}
+
+/// Serializable vector index data (V2 format - with HNSW)
+#[derive(Serialize, Deserialize)]
+struct VectorIndexDataV2 {
+    config: VectorIndexConfig,
+    vectors: HashMap<String, Vec<f32>>,
+    #[serde(default)]
+    hnsw_graph: Option<HnswGraph>,
 }
 
 /// Calculate cosine similarity between two vectors

@@ -3408,6 +3408,7 @@ impl Collection {
         index_name: &str,
         query: &[f32],
         limit: usize,
+        ef_search: Option<usize>,
     ) -> DbResult<Vec<VectorSearchResult>> {
         // Ensure index is loaded
         self.load_vector_index(index_name)?;
@@ -3417,8 +3418,8 @@ impl Collection {
             DbError::BadRequest(format!("Vector index '{}' not found", index_name))
         })?;
 
-        // Search with default ef parameter
-        let ef = 40; // Default search quality
+        // Search with ef parameter (default: max(limit*2, 40) for good recall)
+        let ef = ef_search.unwrap_or_else(|| (limit * 2).max(40));
         index.search(query, limit, ef)
     }
 

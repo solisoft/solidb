@@ -157,7 +157,7 @@ fn test_vector_search_basic() {
     collection.create_vector_index(config).unwrap();
 
     // Search for similar vectors to [1, 0, 0]
-    let results = collection.vector_search("embedding_idx", &[1.0, 0.0, 0.0], 2).unwrap();
+    let results = collection.vector_search("embedding_idx", &[1.0, 0.0, 0.0], 2, None).unwrap();
 
     assert_eq!(results.len(), 2);
     // p1 should be most similar (exact match)
@@ -194,7 +194,7 @@ fn test_vector_search_euclidean() {
     collection.create_vector_index(config).unwrap();
 
     // Search from origin - p1 should be closest (distance 0)
-    let results = collection.vector_search("embedding_idx", &[0.0, 0.0, 0.0], 3).unwrap();
+    let results = collection.vector_search("embedding_idx", &[0.0, 0.0, 0.0], 3, None).unwrap();
 
     assert_eq!(results[0].doc_key, "p1");
     assert!(results[0].score < 0.001); // distance ~0
@@ -360,4 +360,122 @@ fn test_vector_index_persistence() {
         let config = collection.get_vector_index("embedding_idx");
         assert!(config.is_some(), "Vector index should persist across restarts");
     }
+}
+
+// ============================================================================
+// HNSW Search Tests
+// ============================================================================
+
+#[test]
+fn test_vector_search_with_ef_search_parameter() {
+    let (engine, _tmp) = create_test_engine();
+
+    engine.create_collection("items".to_string(), None).unwrap();
+    let collection = engine.get_collection("items").unwrap();
+
+    // Insert test vectors
+    for i in 0..100 {
+        let x = (i as f32) / 100.0;
+        collection.insert(json!({
+            "_key": format!("item_{}", i),
+            "embedding": [x, 1.0 - x, 0.0]
+        })).unwrap();
+    }
+
+    let config = VectorIndexConfig::new("embedding_idx".to_string(), "embedding".to_string(), 3);
+    collection.create_vector_index(config).unwrap();
+
+    // Search with different ef_search values
+    let query = vec![0.5, 0.5, 0.0];
+
+    // Low ef_search
+    let results_low_ef = collection.vector_search("embedding_idx", &query, 5, Some(10)).unwrap();
+    assert_eq!(results_low_ef.len(), 5, "Should return 5 results");
+
+    // High ef_search
+    let results_high_ef = collection.vector_search("embedding_idx", &query, 5, Some(100)).unwrap();
+    assert_eq!(results_high_ef.len(), 5, "Should return 5 results");
+
+    // Default ef_search (None)
+    let results_default = collection.vector_search("embedding_idx", &query, 5, None).unwrap();
+    assert_eq!(results_default.len(), 5, "Should return 5 results");
+
+    // All results should find similar items (around item_50)
+    let first_key_low = &results_low_ef[0].doc_key;
+    let first_key_high = &results_high_ef[0].doc_key;
+    assert!(first_key_low.contains("item_"), "Should find item");
+    assert!(first_key_high.contains("item_"), "Should find item");
+}
+
+#[test]
+fn test_vector_index_serialization_v2() {
+    // Test that vector index V2 format (with HNSW support) serializes correctly
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let path = tmp_dir.path().to_str().unwrap().to_string();
+
+    // Create and populate index
+    {
+        let engine = StorageEngine::new(&path).expect("Failed to create storage engine");
+        engine.create_collection("docs".to_string(), None).unwrap();
+        let collection = engine.get_collection("docs").unwrap();
+
+        // Insert some vectors with different directions (for cosine similarity)
+        for i in 0..50 {
+            let angle = (i as f32) * std::f32::consts::PI / 100.0; // 0 to ~pi/2
+            collection.insert(json!({
+                "_key": format!("doc_{}", i),
+                "embedding": [angle.cos(), angle.sin(), 0.0]
+            })).unwrap();
+        }
+
+        let config = VectorIndexConfig::new("idx".to_string(), "embedding".to_string(), 3);
+        collection.create_vector_index(config).unwrap();
+
+        // Perform a search to verify it works
+        let results = collection.vector_search("idx", &[1.0, 0.0, 0.0], 3, None).unwrap();
+        assert!(!results.is_empty(), "Search should return results before restart");
+    }
+
+    // Reopen and verify search still works
+    {
+        let engine = StorageEngine::new(&path).expect("Failed to reopen storage engine");
+        let collection = engine.get_collection("docs").unwrap();
+
+        // Search should work after restart
+        let results = collection.vector_search("idx", &[1.0, 0.0, 0.0], 3, None).unwrap();
+        assert!(!results.is_empty(), "Search should work after restart");
+
+        // Verify best result is doc_0 (angle 0 = [1, 0, 0])
+        assert_eq!(results[0].doc_key, "doc_0", "Should find closest document");
+    }
+}
+
+#[test]
+fn test_vector_index_delete_and_search() {
+    let (engine, _tmp) = create_test_engine();
+
+    engine.create_collection("items".to_string(), None).unwrap();
+    let collection = engine.get_collection("items").unwrap();
+
+    // Insert test vectors
+    collection.insert(json!({"_key": "a", "vec": [1.0, 0.0, 0.0]})).unwrap();
+    collection.insert(json!({"_key": "b", "vec": [0.9, 0.1, 0.0]})).unwrap();
+    collection.insert(json!({"_key": "c", "vec": [0.0, 1.0, 0.0]})).unwrap();
+
+    let config = VectorIndexConfig::new("idx".to_string(), "vec".to_string(), 3);
+    collection.create_vector_index(config).unwrap();
+
+    // Verify initial search
+    let results = collection.vector_search("idx", &[1.0, 0.0, 0.0], 3, None).unwrap();
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0].doc_key, "a", "Closest should be 'a'");
+
+    // Delete the closest document
+    collection.delete("a").unwrap();
+
+    // Search again - 'a' should not appear
+    let results_after = collection.vector_search("idx", &[1.0, 0.0, 0.0], 3, None).unwrap();
+    assert_eq!(results_after.len(), 2, "Should have 2 results after delete");
+    assert!(!results_after.iter().any(|r| r.doc_key == "a"), "Deleted doc should not appear");
+    assert_eq!(results_after[0].doc_key, "b", "Second closest 'b' should now be first");
 }

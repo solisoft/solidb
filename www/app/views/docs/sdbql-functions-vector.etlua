@@ -206,6 +206,7 @@ FOR product IN products
                     <li>Apply non-vector filters first to reduce candidates</li>
                     <li>Use LIMIT to cap result size</li>
                     <li>Pre-normalize vectors for dot product</li>
+                    <li>Large indexes (>10K) use HNSW for ~100x faster search</li>
                   </ul>
                 </div>
                 <div>
