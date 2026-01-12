@@ -167,6 +167,131 @@
         </div>
       </section>
 
+      <!-- SQL Compatibility -->
+      <section id="sql" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path></svg>
+               SQL Compatibility
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">Execute SQL queries that get translated to SDBQL automatically.</p>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- Execute SQL -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/sql</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Execute a SQL query by translating it to SDBQL and running it.</p>
+
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                      <tr>
+                        <th class="p-3">Field</th>
+                        <th class="p-3">Type</th>
+                        <th class="p-3">Description</th>
+                        <th class="p-3">Required</th>
+                      </tr>
+                    </thead>
+                    <tbody class="text-gray-400 divide-y divide-white/5">
+                      <tr>
+                        <td class="p-3 text-blue-400 font-mono">query</td>
+                        <td class="p-3 font-mono">string</td>
+                        <td class="p-3">The SQL query string.</td>
+                        <td class="p-3 text-white">Yes</td>
+                      </tr>
+                      <tr>
+                        <td class="p-3 text-blue-400 font-mono">bind_vars</td>
+                        <td class="p-3 font-mono">object</td>
+                        <td class="p-3">Key-value pairs for bind parameters.</td>
+                        <td class="p-3">No</td>
+                      </tr>
+                      <tr>
+                        <td class="p-3 text-blue-400 font-mono">dry_run</td>
+                        <td class="p-3 font-mono">boolean</td>
+                        <td class="p-3">If true, return translated SDBQL without executing.</td>
+                        <td class="p-3">No</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Example Request</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  {"query": "SELECT * FROM users WHERE age > 18 ORDER BY name LIMIT 10"}
+                </div>
+              </div>
+
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                    <span class="text-emerald-400 font-bold">200 OK</span>
+                    <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                  </div>
+{
+  "result": [{"_key": "123", "name": "Alice", "age": 25}, ...],
+  "sdbql": "FOR doc IN users FILTER doc.age > 18 SORT doc.name LIMIT 10 RETURN doc"
+}
+                </div>
+              </div>
+            </div>
+
+            <!-- Translate SQL -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/sql/translate</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Translate SQL to SDBQL without executing. Useful for learning SDBQL or debugging.</p>
+
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Example Request</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  {"query": "SELECT name, email FROM users WHERE active = true"}
+                </div>
+              </div>
+
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                    <span class="text-emerald-400 font-bold">200 OK</span>
+                    <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                  </div>
+{
+  "sql": "SELECT name, email FROM users WHERE active = true",
+  "sdbql": "FOR doc IN users FILTER doc.active == true RETURN {name: doc.name, email: doc.email}"
+}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Supported SQL -->
+          <div class="p-6 border-t border-white/5 bg-blue-900/10">
+            <h4 class="text-xs font-bold text-blue-400 uppercase tracking-widest mb-3">Supported SQL Features</h4>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div class="bg-gray-950/50 p-2 rounded border border-white/5 text-gray-300">SELECT / SELECT DISTINCT</div>
+              <div class="bg-gray-950/50 p-2 rounded border border-white/5 text-gray-300">WHERE clauses</div>
+              <div class="bg-gray-950/50 p-2 rounded border border-white/5 text-gray-300">ORDER BY</div>
+              <div class="bg-gray-950/50 p-2 rounded border border-white/5 text-gray-300">LIMIT / OFFSET</div>
+              <div class="bg-gray-950/50 p-2 rounded border border-white/5 text-gray-300">GROUP BY</div>
+              <div class="bg-gray-950/50 p-2 rounded border border-white/5 text-gray-300">HAVING</div>
+              <div class="bg-gray-950/50 p-2 rounded border border-white/5 text-gray-300">JOIN (INNER/LEFT)</div>
+              <div class="bg-gray-950/50 p-2 rounded border border-white/5 text-gray-300">Aggregate functions</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Navigation -->
       <div class="flex justify-between items-center pt-8 border-t border-white/10">
         <a href="/docs/api-documents" class="text-gray-400 hover:text-white transition-colors">
