@@ -256,6 +256,175 @@
         </div>
       </section>
 
+      <!-- Columnar Index -->
+      <section id="columnar" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+              Columnar Index
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              A <strong>Columnar Index</strong> stores data column-by-column rather than row-by-row. This layout is highly optimized for <strong>analytical queries (OLAP)</strong>, aggregations, and scanning large datasets where only a subset of attributes is needed.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                    <h4 class="text-white font-bold mb-3">Best For</h4>
+                    <ul class="space-y-2 text-sm text-gray-400">
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Analytics & Reporting</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Aggregations (SUM, AVG, COUNT)</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Queries on specific fields across many docs</li>
+                    </ul>
+                </div>
+                
+                <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                     <h4 class="text-white font-bold mb-3">Characteristics</h4>
+                     <ul class="space-y-2 text-sm text-gray-400">
+                        <li class="flex items-start">
+                            <svg class="w-4 h-4 text-green-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 
+                            <span><strong>High Compression:</strong> Similar data is stored contiguously, allowing for excellent compression ratios.</span>
+                        </li>
+                        <li class="flex items-start">
+                            <svg class="w-4 h-4 text-green-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 
+                            <span><strong>Fast Scans:</strong> Reads only the necessary columns, minimizing I/O.</span>
+                        </li>
+                     </ul>
+                </div>
+            </div>
+            
+            <div class="mt-6 bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                 <h4 class="text-white font-bold mb-3">Index Subtypes</h4>
+                 <p class="text-sm text-gray-400 mb-4">
+                    Columnar indexes support specialized subtypes to further optimize specific access patterns:
+                 </p>
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-black/20 p-3 rounded border border-white/5">
+                        <span class="text-cyan-400 font-bold text-xs uppercase tracking-wide">MinMax</span>
+                        <p class="text-xs text-gray-400 mt-1">Stores min/max values per chunk. Excellent for range queries on time-series or sorted data.</p>
+                    </div>
+                    <div class="bg-black/20 p-3 rounded border border-white/5">
+                        <span class="text-cyan-400 font-bold text-xs uppercase tracking-wide">Bitmap</span>
+                        <p class="text-xs text-gray-400 mt-1">Efficient for low-cardinality columns (e.g. status, category) and boolean fields.</p>
+                    </div>
+                    <div class="bg-black/20 p-3 rounded border border-white/5">
+                        <span class="text-cyan-400 font-bold text-xs uppercase tracking-wide">Bloom</span>
+                        <p class="text-xs text-gray-400 mt-1">Probabilistic existence check to skip chunks that definitely don't contain the value.</p>
+                    </div>
+                    <div class="bg-black/20 p-3 rounded border border-white/5">
+                        <span class="text-cyan-400 font-bold text-xs uppercase tracking-wide">Sorted</span>
+                        <p class="text-xs text-gray-400 mt-1">Keeps data physically sorted. Ideal for primary keys or frequently ranged columns.</p>
+                    </div>
+                 </div>
+            </div>
+            
+            <div class="mt-6 bg-cyan-900/10 border border-cyan-500/20 rounded-xl p-4">
+                 <h4 class="text-cyan-400 font-bold mb-2">Usage</h4>
+                 <pre><code class="language-json text-sm text-gray-300">{
+   "type": "columnar",
+   "fields": ["revenue", "category", "region"],
+   "subtypes": {
+     "revenue": "minmax",
+     "category": "bitmap",
+     "region": "sorted"
+   }
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      </section>
+
+      <!-- Vector Index -->
+      <section id="vector" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              Vector Index
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              A <strong>Vector Index</strong> enables semantic search by indexing high-dimensional vectors (embeddings). It uses <strong>HNSW</strong> (Hierarchical Navigable Small World) graphs for fast Approximate Nearest Neighbor (ANN) search.
+            </p>
+
+            <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5 mb-6">
+                <h4 class="text-white font-bold mb-3">Key Features</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="flex items-start">
+                        <svg class="w-4 h-4 text-green-400 mr-2 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        <span class="text-sm text-gray-400"><strong>Metrics:</strong> Cosine Similarity, Euclidean Distance, Dot Product.</span>
+                    </div>
+                    <div class="flex items-start">
+                        <svg class="w-4 h-4 text-green-400 mr-2 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        <span class="text-sm text-gray-400"><strong>Quantization:</strong> Scalar quantization (u8) for 4x memory savings.</span>
+                    </div>
+                    <div class="flex items-start">
+                        <svg class="w-4 h-4 text-green-400 mr-2 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        <span class="text-sm text-gray-400"><strong>Performance:</strong> HNSW graph structure for log(N) search complexity.</span>
+                    </div>
+                    <div class="flex items-start">
+                        <svg class="w-4 h-4 text-green-400 mr-2 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        <span class="text-sm text-gray-400"><strong>Dimensions:</strong> specific to your embedding model (e.g. 1536 for OpenAI).</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-rose-900/10 border border-rose-500/20 rounded-xl p-4">
+                 <h4 class="text-rose-400 font-bold mb-2">Usage</h4>
+                 <pre><code class="language-json text-sm text-gray-300">{
+   "type": "vector",
+   "field": "embedding",
+   "dimension": 1536,
+   "metric": "cosine",
+   "quantization": "scalar"
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Fulltext Index -->
+      <section id="fulltext" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+              Fulltext Index
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              A <strong>Fulltext Index</strong> allows for fuzzy search and relevance scoring on text fields. It uses <strong>BM25</strong> scoring and n-gram tokenization to find relevant documents even with typos or partial matches.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                    <h4 class="text-white font-bold mb-3">Capabilities</h4>
+                    <ul class="space-y-2 text-sm text-gray-400">
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Fuzzy matching (Levenshtein distance)</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Relevance scoring (BM25)</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Prefix/Suffix matching</li>
+                    </ul>
+                </div>
+
+                <div class="bg-yellow-900/10 border border-yellow-500/20 rounded-xl p-6">
+                     <h4 class="text-yellow-400 font-bold mb-3">Configuration</h4>
+                     <pre><code class="language-json text-sm text-gray-300">{
+   "type": "fulltext",
+   "fields": ["title", "description"],
+   "ngram_size": 3
+}</code></pre>
+                </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Compound Index -->
       <section id="compound" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
@@ -486,6 +655,22 @@
 }</code></pre>
                     </div>
                   </div>
+                </div>
+            </div>
+
+            <!-- Create Columnar Index -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+                <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                    <span class="text-cyan-400 font-bold text-sm">Create Columnar Index</span>
+                    <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">POST /_api/database/:db/index/:collection</span>
+                </div>
+                <div class="p-4">
+                  <p class="text-xs text-gray-500 mb-2">Optimize for analytics by indexing specific columns.</p>
+                  <pre><code class="language-json text-sm text-gray-300">{
+  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"idx_analytics"</span>,
+  <span class="text-purple-400">"type"</span>: <span class="text-green-400">"columnar"</span>,
+  <span class="text-purple-400">"fields"</span>: [<span class="text-green-400">"price"</span>, <span class="text-green-400">"category"</span>]
+}</code></pre>
                 </div>
             </div>
 

@@ -35,6 +35,9 @@
           <p class="text-gray-300 mb-6 leading-relaxed">
             Unlike traditional row-oriented collections where data is stored document-by-document, columnar collections store data <strong>column-by-column</strong>. This architecture is vastly superior for analytical queries where you typically access only a few columns but scan millions of rows.
           </p>
+          <div class="mb-8 rounded-xl overflow-hidden border border-white/10 shadow-2xl">
+            <img src="/images/docs/columnar-vs-row.png" alt="Columnar vs Row-Oriented Storage" class="w-full h-auto">
+          </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
              <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
@@ -57,27 +60,57 @@
 
           <!-- Columnar vs Time Series Explanation -->
           <div class="mt-8 bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-indigo-300 mb-3 flex items-center">
-              <i class="fas fa-info-circle mr-2"></i> Columnar vs. Time Series
+            <h3 class="text-lg font-bold text-indigo-300 mb-4 flex items-center">
+              <i class="fas fa-balance-scale mr-2"></i> Columnar vs. Standard Time Series
             </h3>
-            <div class="space-y-4 text-sm text-gray-300 leading-relaxed">
-              <p>
-                You might wonder: <em class="text-white">"Is SoliDB a Time Series Database?"</em>
-              </p>
-              <p>
-                The answer is: <strong>SoliDB uses Columnar Storage to fulfill Time Series requirements.</strong>
-              </p>
-              <ul class="list-disc pl-5 space-y-2">
-                <li>
-                  <strong>Columnar Storage</strong> is the <em>architectural implementation</em>: it stores data by column, allowing for massive compression and fast vertical scans.
-                </li>
-                <li>
-                  <strong>Time Series</strong> is the <em>use case</em>: storing timestamped data (like metrics or logs).
-                </li>
-              </ul>
-              <p>
-                By using the <code>TIME_BUCKET</code> function and <code>TIMESTAMP</code> columns within a Columnar collection, you get the performance of a dedicated Time Series Database (TSDB) with the flexibility of a full database system.
-              </p>
+            <p class="text-sm text-gray-300 mb-4">
+              SoliDB offers two distinct approaches for handling time-based data. Choosing the right one depends on your ingestion and query patterns.
+            </p>
+            
+            <div class="overflow-hidden rounded-lg border border-white/10">
+              <table class="min-w-full text-left text-sm">
+                <thead class="bg-white/5 text-gray-400">
+                  <tr>
+                    <th class="p-3 font-semibold">Feature</th>
+                    <th class="p-3 font-semibold text-indigo-300">Standard Time Series</th>
+                    <th class="p-3 font-semibold text-emerald-300">Columnar Storage</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5 text-gray-300">
+                  <tr>
+                    <td class="p-3 font-medium text-gray-400">Storage Layout</td>
+                    <td class="p-3">Row-oriented (Log Structured)</td>
+                    <td class="p-3">Column-oriented (Chunked)</td>
+                  </tr>
+                  <tr>
+                    <td class="p-3 font-medium text-gray-400">Best For</td>
+                    <td class="p-3">High-throughput ingestion, real-time monitoring, simple retrieval</td>
+                    <td class="p-3">Complex analytics, reporting, aggregations over large history</td>
+                  </tr>
+                  <tr>
+                    <td class="p-3 font-medium text-gray-400">Ingestion</td>
+                    <td class="p-3">Fast individual inserts &amp; appends</td>
+                    <td class="p-3">Favors batched bulk inserts</td>
+                  </tr>
+                  <tr>
+                    <td class="p-3 font-medium text-gray-400">Retention</td>
+                    <td class="p-3">TTL &amp; Pruning supported</td>
+                    <td class="p-3">Manual management</td>
+                  </tr>
+                  <tr>
+                    <td class="p-3 font-medium text-gray-400">Primary Ops</td>
+                    <td class="p-3"><code>INSERT</code>, <code>GET range</code></td>
+                    <td class="p-3"><code>GROUP BY</code>, <code>SUM</code>, <code>AVG</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <div class="mt-4 p-3 bg-blue-900/20 rounded border border-blue-500/20 text-xs text-blue-200 flex items-start">
+               <i class="fas fa-lightbulb mt-0.5 mr-2"></i>
+               <span>
+                 <strong>Recommendation:</strong> Use <strong>Time Series collections</strong> for raw data ingestion and real-time dashboards. Offload historical data to <strong>Columnar collections</strong> for long-term storage and heavy analytical reporting.
+               </span>
             </div>
           </div>
         </div>
