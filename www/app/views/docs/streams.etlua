@@ -51,16 +51,28 @@ RETURN order</code></pre>
       <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 text-sm">2</span>
       Windowing
     </h2>
-    <p class="text-text-muted mb-6">
+    <p class="text-text-muted mb-6 mr-10">
       Streams often require grouping data into time-based buckets called windows. SoliDB supports <code class="text-accent-light">TUMBLING</code> and <code class="text-accent-light">SLIDING</code> windows.
+      Choosing the right window type depends on whether you need distinct, non-overlapping analysis (Tumbling) or continuous, overlapping analysis (Sliding).
     </p>
+
+    <!-- Comparison Diagram -->
+    <div class="mb-8 rounded-xl overflow-hidden border border-white/10 shadow-2xl">
+      <img src="/images/docs/windowing-comparison.png" alt="Tumbling vs Sliding Windows Comparison" class="w-full h-auto" />
+    </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <!-- Tumbling Window -->
       <div class="glass-panel p-6 rounded-xl">
-        <h3 class="text-lg font-bold text-white mb-2">Tumbling Window</h3>
+        <h3 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+          <i class="fas fa-cubes text-indigo-400"></i> Tumbling Window
+        </h3>
         <p class="text-sm text-text-muted mb-4">
-          Fixed-size, non-overlapping time intervals.
+          <strong>Fixed-size, non-overlapping time intervals.</strong>
+          <br>
+          Tumbling windows segment the data stream into distinct contiguous blocks. Each data point belongs to exactly one window.
+          <br><br>
+          <em>Use case:</em> "Count orders per minute", "Hourly summaries".
         </p>
         <div class="code-block bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
           <div class="p-4">
@@ -71,9 +83,15 @@ RETURN order</code></pre>
 
       <!-- Sliding Window -->
       <div class="glass-panel p-6 rounded-xl">
-        <h3 class="text-lg font-bold text-white mb-2">Sliding Window</h3>
+        <h3 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+          <i class="fas fa-layer-group text-pink-400"></i> Sliding Window
+        </h3>
         <p class="text-sm text-text-muted mb-4">
-          Overlapping time intervals that slide by a specified duration.
+          <strong>Overlapping time intervals that slide by a specified duration.</strong>
+          <br>
+          Sliding windows "slide" over the data stream. A window moves forward by a specific "slide" interval. A single data point can belong to multiple overlapping windows.
+          <br><br>
+          <em>Use case:</em> "Moving average of last hour, updated every minute".
         </p>
         <div class="code-block bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
           <div class="p-4">
