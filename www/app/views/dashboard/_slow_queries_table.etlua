@@ -46,10 +46,17 @@ local count = #slow_queries
         local time_display = timestamp
         if timestamp ~= "" then
           -- Parse ISO timestamp for display
-          local year, month, day, hour, min = timestamp:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+)")
-          if year then
-            time_display = string.format("%s/%s %s:%s", month, day, hour, min)
-          end
+        local year, month, day, hour, min = timestamp:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+)")
+        if year then
+          time_display = string.format("%s/%s %s:%s", month, day, hour, min)
+        end
+        
+        -- Determine time class
+        local time_class = "text-text"
+        if sq.execution_time_ms and sq.execution_time_ms >= 1000 then
+          time_class = "text-error font-semibold"
+        elseif sq.execution_time_ms and sq.execution_time_ms >= 500 then
+          time_class = "text-warning"
         end
 
         -- Escape query for JavaScript
@@ -61,14 +68,6 @@ local count = #slow_queries
           <code class="text-xs font-mono text-text bg-bg-dark/50 px-2 py-1 rounded"><%= query_preview %></code>
         </td>
         <td class="px-4 py-3 text-right">
-          <%
-            local time_class = "text-text"
-            if sq.execution_time_ms and sq.execution_time_ms >= 1000 then
-              time_class = "text-error font-semibold"
-            elseif sq.execution_time_ms and sq.execution_time_ms >= 500 then
-              time_class = "text-warning"
-            end
-          %>
           <span class="<%= time_class %>">
             <%= exec_time %>
           </span>
