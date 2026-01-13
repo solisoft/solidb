@@ -7390,7 +7390,14 @@ impl<'a> QueryExecutor<'a> {
                             // Single document by _id
                             Value::String(id) => {
                                 if let Some((collection_name, key)) = id.split_once('/') {
-                                    let collection = self.get_collection(collection_name)?;
+                                    let collection = if collection_name.contains(':') {
+                                        // Absolute path (e.g. "db:col") - bypass context
+                                        self.storage.get_collection(collection_name)
+                                    } else {
+                                        // Relative path - use context
+                                        self.get_collection(collection_name)
+                                    }?;
+
                                     match collection.get(key) {
                                         Ok(doc) => Ok(doc.to_value()),
                                         Err(_) => Ok(Value::Null),
@@ -7407,7 +7414,13 @@ impl<'a> QueryExecutor<'a> {
                                 for id_val in ids {
                                     if let Some(id) = id_val.as_str() {
                                         if let Some((collection_name, key)) = id.split_once('/') {
-                                            if let Ok(collection) = self.get_collection(collection_name) {
+                                            let collection_result = if collection_name.contains(':') {
+                                                self.storage.get_collection(collection_name)
+                                            } else {
+                                                self.get_collection(collection_name)
+                                            };
+
+                                            if let Ok(collection) = collection_result {
                                                 if let Ok(doc) = collection.get(key) {
                                                     results.push(doc.to_value());
                                                 }
@@ -7430,7 +7443,11 @@ impl<'a> QueryExecutor<'a> {
                                 "DOCUMENT: collection must be a string".to_string(),
                             )
                         })?;
-                        let collection = self.get_collection(collection_name)?;
+                        let collection = if collection_name.contains(':') {
+                            self.storage.get_collection(collection_name)?
+                        } else {
+                            self.get_collection(collection_name)?
+                        };
 
                         match &evaluated_args[1] {
                             // Single key
