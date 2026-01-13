@@ -1321,11 +1321,23 @@ impl Parser {
                 Ok(Some(BinaryOperator::FuzzyEqual))
             }
             Token::Not => {
-                // Check for NOT LIKE
+                // Check for NOT LIKE, NOT REGEX, or NOT IN
                 if matches!(self.peek_token(1), Token::Like) {
                     self.advance(); // consume NOT
                     self.advance(); // consume LIKE
                     Ok(Some(BinaryOperator::NotLike))
+                } else if matches!(self.peek_token(1), Token::RegEx) {
+                    self.advance(); // consume NOT
+                    self.advance(); // consume REGEX
+                    Ok(Some(BinaryOperator::NotRegEx))
+                } else if matches!(self.peek_token(1), Token::In) {
+                    if self.allow_in_operator {
+                        self.advance(); // consume NOT
+                        self.advance(); // consume IN
+                        Ok(Some(BinaryOperator::NotIn))
+                    } else {
+                        Ok(None)
+                    }
                 } else {
                     Ok(None)
                 }
@@ -2032,6 +2044,20 @@ mod tests {
     fn test_parse_nested_for() {
         let query = parse("FOR a IN users FOR b IN orders RETURN { user: a, order: b }").unwrap();
         assert_eq!(query.for_clauses.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_not_in() {
+        let query = parse("FOR x IN collection FILTER x.id NOT IN [1, 2, 3] RETURN x").unwrap();
+        if let BodyClause::Filter(filter) = &query.body_clauses[1] {
+            if let Expression::BinaryOp { op, .. } = &filter.expression {
+                assert_eq!(*op, BinaryOperator::NotIn);
+            } else {
+                panic!("Expected BinaryOp::NotIn");
+            }
+        } else {
+            panic!("Expected FilterClause");
+        }
     }
 }
 

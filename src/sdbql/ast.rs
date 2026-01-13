@@ -345,6 +345,7 @@ pub enum BinaryOperator {
     GreaterThan,
     GreaterThanOrEqual,
     In,
+    NotIn,
 
     // Logical
     And,

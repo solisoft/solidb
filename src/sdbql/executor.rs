@@ -9585,6 +9585,27 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
             _ => Ok(Value::Bool(false)),
         },
 
+        BinaryOperator::NotIn => match right {
+            Value::Array(arr) => {
+                let mut found = false;
+                for val in arr {
+                    if values_equal(left, val) {
+                        found = true;
+                        break;
+                    }
+                }
+                Ok(Value::Bool(!found))
+            }
+            Value::Object(obj) => {
+                if let Some(s) = left.as_str() {
+                    Ok(Value::Bool(!obj.contains_key(s)))
+                } else {
+                    Ok(Value::Bool(true))
+                }
+            }
+            _ => Ok(Value::Bool(true)),
+        },
+
         BinaryOperator::Like | BinaryOperator::NotLike => {
             let s = left.as_str().unwrap_or("");
             let pattern = right.as_str().unwrap_or("");

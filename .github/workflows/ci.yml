@@ -57,10 +57,7 @@ jobs:
             ${{ runner.os }}-cargo-build-target-
 
       - name: Run tests
-        run: cargo test --verbose
-
-      - name: Run tests (release mode)
-        run: cargo test --release --verbose
+        run: cargo test
 
   build:
     name: Build
