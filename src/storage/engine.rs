@@ -590,3 +590,23 @@ impl StorageEngine {
         Ok(())
     }
 }
+
+impl Drop for StorageEngine {
+    fn drop(&mut self) {
+        // Clear collections and databases before RocksDB is dropped
+        // This ensures proper cleanup order and avoids pthread mutex issues
+        if let Ok(mut collections) = self.collections.write() {
+            collections.clear();
+        }
+        if let Ok(mut databases) = self.databases.write() {
+            databases.clear();
+        }
+        if let Ok(mut tm) = self.transaction_manager.write() {
+            *tm = None;
+        }
+        // Flush RocksDB before drop
+        if let Ok(db) = self.db.read() {
+            let _ = db.flush();
+        }
+    }
+}

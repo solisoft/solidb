@@ -3081,94 +3081,211 @@ impl<'a> QueryExecutor<'a> {
         match name {
             // Array functions
             "FIRST" => {
-                if let Some(Value::Array(arr)) = args.first() {
-                    Ok(arr.first().cloned().unwrap_or(Value::Null))
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "FIRST requires 1 argument".to_string(),
+                    ));
                 }
+                let arr = args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("FIRST: argument must be an array".to_string())
+                })?;
+                Ok(arr.first().cloned().unwrap_or(Value::Null))
             }
             "LAST" => {
-                if let Some(Value::Array(arr)) = args.first() {
-                    Ok(arr.last().cloned().unwrap_or(Value::Null))
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "LAST requires 1 argument".to_string(),
+                    ));
                 }
+                let arr = args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("LAST: argument must be an array".to_string())
+                })?;
+                Ok(arr.last().cloned().unwrap_or(Value::Null))
             }
-            "LENGTH" => match args.first() {
-                Some(Value::Array(arr)) => Ok(Value::Number(arr.len().into())),
-                Some(Value::String(s)) => Ok(Value::Number(s.len().into())),
-                _ => Ok(Value::Number(0.into())),
-            },
-            "REVERSE" => {
-                if let Some(Value::Array(arr)) = args.first() {
-                    let mut reversed = arr.clone();
-                    reversed.reverse();
-                    Ok(Value::Array(reversed))
-                } else {
-                    Ok(Value::Null)
+            "LENGTH" => {
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "LENGTH requires 1 argument".to_string(),
+                    ));
                 }
+                let len = match &args[0] {
+                    Value::Array(arr) => arr.len(),
+                    Value::String(s) => s.len(),
+                    Value::Object(obj) => obj.len(),
+                    Value::Null => 0,
+                    _ => return Err(DbError::ExecutionError(
+                        "LENGTH: argument must be array, string, or object".to_string(),
+                    )),
+                };
+                Ok(Value::Number(serde_json::Number::from(len)))
+            }
+            "REVERSE" => {
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "REVERSE requires 1 argument".to_string(),
+                    ));
+                }
+                let arr = args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("REVERSE: argument must be an array".to_string())
+                })?;
+                let mut reversed = arr.clone();
+                reversed.reverse();
+                Ok(Value::Array(reversed))
             }
             "SORTED" => {
-                if let Some(Value::Array(arr)) = args.first() {
-                    let mut sorted = arr.clone();
-                    sorted.sort_by(|a, b| compare_values(a, b));
-                    Ok(Value::Array(sorted))
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "SORTED requires 1 argument".to_string(),
+                    ));
                 }
+                let arr = args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("SORTED: argument must be an array".to_string())
+                })?;
+                let mut sorted = arr.clone();
+                sorted.sort_by(|a, b| compare_values(a, b));
+                Ok(Value::Array(sorted))
             }
             "UNIQUE" => {
-                if let Some(Value::Array(arr)) = args.first() {
-                    let mut unique = Vec::new();
-                    for v in arr {
-                        if !unique.iter().any(|u| values_equal(u, v)) {
-                            unique.push(v.clone());
-                        }
-                    }
-                    Ok(Value::Array(unique))
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "UNIQUE requires 1 argument".to_string(),
+                    ));
                 }
+                let arr = args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("UNIQUE: argument must be an array".to_string())
+                })?;
+                let mut seen = std::collections::HashSet::new();
+                let unique: Vec<Value> = arr
+                    .iter()
+                    .filter(|v| seen.insert(v.to_string()))
+                    .cloned()
+                    .collect();
+                Ok(Value::Array(unique))
             }
             "FLATTEN" => {
-                if let Some(Value::Array(arr)) = args.first() {
-                    let depth = args.get(1).and_then(|v| v.as_i64()).unwrap_or(1).max(0) as usize;
-                    Ok(Value::Array(flatten_arr(arr, depth)))
-                } else {
-                    Ok(Value::Null)
+                if args.is_empty() || args.len() > 2 {
+                    return Err(DbError::ExecutionError(
+                        "FLATTEN requires 1-2 arguments: array, [depth]".to_string(),
+                    ));
                 }
+                let arr = args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("FLATTEN: first argument must be an array".to_string())
+                })?;
+                let depth = if args.len() > 1 {
+                    args[1].as_u64().unwrap_or(1) as usize
+                } else {
+                    1
+                };
+                Ok(Value::Array(flatten_arr(arr, depth)))
             }
             // String functions
             "UPPER" => {
-                if let Some(Value::String(s)) = args.first() {
-                    Ok(Value::String(s.to_uppercase()))
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "UPPER requires 1 argument".to_string(),
+                    ));
                 }
+                let s = args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("UPPER: argument must be a string".to_string())
+                })?;
+                Ok(Value::String(s.to_uppercase()))
             }
             "LOWER" => {
-                if let Some(Value::String(s)) = args.first() {
-                    Ok(Value::String(s.to_lowercase()))
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "LOWER requires 1 argument".to_string(),
+                    ));
                 }
+                let s = args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("LOWER: argument must be a string".to_string())
+                })?;
+                Ok(Value::String(s.to_lowercase()))
             }
             "TRIM" => {
-                if let Some(Value::String(s)) = args.first() {
-                    Ok(Value::String(s.trim().to_string()))
-                } else {
-                    Ok(Value::Null)
+                if args.is_empty() || args.len() > 2 {
+                    return Err(DbError::ExecutionError(
+                        "TRIM requires 1-2 arguments: value, [type/chars]".to_string(),
+                    ));
                 }
+                let value = args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("TRIM: first argument must be a string".to_string())
+                })?;
+
+                let (trim_mode, chars) = if args.len() == 2 {
+                    if args[1].is_number() {
+                        // Type: 0=both, 1=left, 2=right
+                        let t = args[1].as_i64().unwrap_or(0);
+                        (Some(t), None)
+                    } else if args[1].is_string() {
+                        (None, args[1].as_str())
+                    } else {
+                        (Some(0), None)
+                    }
+                } else {
+                    (Some(0), None)
+                };
+
+                let result = match (trim_mode, chars) {
+                    (Some(0), None) => value.trim(),
+                    (Some(1), None) => value.trim_start(),
+                    (Some(2), None) => value.trim_end(),
+                    (None, Some(c)) => value.trim_matches(|ch| c.contains(ch)),
+                    _ => value.trim(),
+                };
+                Ok(Value::String(result.to_string()))
             }
             "SPLIT" => {
-                if let Some(Value::String(s)) = args.first() {
-                    let sep = args.get(1).and_then(|v| v.as_str()).unwrap_or(" ");
-                    let parts: Vec<Value> =
-                        s.split(sep).map(|p| Value::String(p.to_string())).collect();
-                    Ok(Value::Array(parts))
-                } else {
-                    Ok(Value::Null)
+                if args.len() < 2 || args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "SPLIT requires 2-3 arguments: value, separator, [limit]".to_string(),
+                    ));
                 }
+
+                let value = args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("SPLIT: first argument must be a string".to_string())
+                })?;
+
+                let separator = args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("SPLIT: second argument must be a string".to_string())
+                })?;
+
+                let limit = if args.len() > 2 {
+                    args[2].as_i64().or_else(|| args[2].as_f64().map(|f| f as i64))
+                } else {
+                    None
+                };
+
+                let parts: Vec<Value> = match limit {
+                    Some(n) if n > 0 => {
+                        value
+                            .splitn(n as usize, separator)
+                            .map(|s| Value::String(s.to_string()))
+                            .collect()
+                    }
+                    Some(n) if n < 0 => {
+                        let mut p: Vec<Value> = value
+                            .rsplitn(n.abs() as usize, separator)
+                            .map(|s| Value::String(s.to_string()))
+                            .collect();
+                        p.reverse();
+                        p
+                    }
+                    _ => {
+                        if separator.is_empty() {
+                            value
+                                .chars()
+                                .map(|c| Value::String(c.to_string()))
+                                .collect()
+                        } else {
+                            value
+                                .split(separator)
+                                .map(|s| Value::String(s.to_string()))
+                                .collect()
+                        }
+                    }
+                };
+
+                Ok(Value::Array(parts))
             }
             "HIGHLIGHT" => {
                 if let Some(Value::String(text)) = args.first() {
@@ -3233,47 +3350,55 @@ impl<'a> QueryExecutor<'a> {
             }
             // Numeric functions
             "ROUND" => {
-                if let Some(v) = args.first() {
-                    let num = val_to_f64(v);
-                    let precision = args.get(1).map(|v| val_to_f64(v) as i32).unwrap_or(0);
-                    let factor = 10f64.powi(precision);
-                    let rounded = (num * factor).round() / factor;
-                    Ok(serde_json::Number::from_f64(rounded)
-                        .map(Value::Number)
-                        .unwrap_or(Value::Null))
-                } else {
-                    Ok(Value::Null)
+                if args.is_empty() || args.len() > 2 {
+                    return Err(DbError::ExecutionError(
+                        "ROUND requires 1-2 arguments".to_string(),
+                    ));
                 }
+                let num = args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("ROUND: first argument must be a number".to_string())
+                })?;
+                let precision = if args.len() > 1 {
+                    args[1].as_i64().unwrap_or(0) as i32
+                } else {
+                    0
+                };
+                let factor = 10_f64.powi(precision);
+                let rounded = (num * factor).round() / factor;
+                Ok(Value::Number(number_from_f64(rounded)))
             }
             "ABS" => {
-                if let Some(v) = args.first() {
-                    let num = val_to_f64(v).abs();
-                    Ok(serde_json::Number::from_f64(num)
-                        .map(Value::Number)
-                        .unwrap_or(Value::Null))
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "ABS requires 1 argument".to_string(),
+                    ));
                 }
+                let num = args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("ABS: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(number_from_f64(num.abs())))
             }
             "FLOOR" => {
-                if let Some(v) = args.first() {
-                    let num = val_to_f64(v).floor();
-                    Ok(serde_json::Number::from_f64(num)
-                        .map(Value::Number)
-                        .unwrap_or(Value::Null))
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "FLOOR requires 1 argument".to_string(),
+                    ));
                 }
+                let num = args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("FLOOR: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(number_from_f64(num.floor())))
             }
             "CEIL" => {
-                if let Some(v) = args.first() {
-                    let num = val_to_f64(v).ceil();
-                    Ok(serde_json::Number::from_f64(num)
-                        .map(Value::Number)
-                        .unwrap_or(Value::Null))
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "CEIL requires 1 argument".to_string(),
+                    ));
                 }
+                let num = args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("CEIL: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(number_from_f64(num.ceil())))
             }
             // Geo functions
             "GEO_WITHIN" => {
@@ -3336,61 +3461,85 @@ impl<'a> QueryExecutor<'a> {
             }
             // Type conversion
             "TO_STRING" => {
-                if let Some(v) = args.first() {
-                    let s = match v {
-                        Value::String(s) => s.clone(),
-                        Value::Number(n) => n.to_string(),
-                        Value::Bool(b) => b.to_string(),
-                        Value::Null => "null".to_string(),
-                        Value::Array(a) => serde_json::to_string(a).unwrap_or_default(),
-                        Value::Object(o) => serde_json::to_string(o).unwrap_or_default(),
-                    };
-                    Ok(Value::String(s))
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "TO_STRING requires 1 argument: value".to_string(),
+                    ));
+                }
+                let val = &args[0];
+                match val {
+                    Value::Null => Ok(Value::String("".to_string())),
+                    Value::String(s) => Ok(Value::String(s.clone())),
+                    _ => {
+                        match serde_json::to_string(val) {
+                            Ok(s) => Ok(Value::String(s)),
+                            Err(_) => Ok(Value::String("".to_string())),
+                        }
+                    }
                 }
             }
             "TO_NUMBER" => {
-                if let Some(v) = args.first() {
-                    let num = val_to_f64(v);
-                    Ok(serde_json::Number::from_f64(num)
-                        .map(Value::Number)
-                        .unwrap_or(Value::Null))
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "TO_NUMBER requires 1 argument: value".to_string(),
+                    ));
                 }
+
+                let mut current = &args[0];
+                // Unwrap arrays with single element
+                while let Value::Array(arr) = current {
+                    if arr.len() == 1 {
+                        current = &arr[0];
+                    } else {
+                        return Ok(Value::Number(number_from_f64(0.0)));
+                    }
+                }
+
+                let num_val = match current {
+                    Value::Null => 0.0,
+                    Value::Bool(true) => 1.0,
+                    Value::Bool(false) => 0.0,
+                    Value::Number(n) => n.as_f64().unwrap_or(0.0),
+                    Value::String(s) => s.parse::<f64>().unwrap_or(0.0),
+                    Value::Array(_) => 0.0,
+                    Value::Object(_) => 0.0,
+                };
+
+                Ok(Value::Number(number_from_f64(num_val)))
             }
             // Date functions
             "HUMAN_TIME" => {
-                if let Some(val) = args.first() {
-                    if let Ok(dt) = parse_datetime(val) {
-                         let now = Utc::now();
-                         let diff = now.signed_duration_since(dt);
-                         let seconds = diff.num_seconds();
-                         
-                         let s = if seconds < 0 {
-                             "in the future".to_string()
-                         } else if seconds < 60 {
-                             "just now".to_string()
-                         } else if seconds < 3600 {
-                             format!("{} minutes ago", seconds / 60)
-                         } else if seconds < 86400 {
-                             format!("{} hours ago", seconds / 3600)
-                         } else if seconds < 2592000 { 
-                             format!("{} days ago", seconds / 86400)
-                         } else {
-                              dt.to_rfc3339()
-                         };
-                         Ok(Value::String(s))
-                    } else {
-                        Ok(Value::Null)
-                    }
-                } else {
-                    Ok(Value::Null)
+                if args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "HUMAN_TIME requires 1 argument: datetime".to_string(),
+                    ));
                 }
+                let dt = parse_datetime(&args[0]).map_err(|_| {
+                    DbError::ExecutionError(
+                        "HUMAN_TIME: argument must be a valid datetime".to_string(),
+                    )
+                })?;
+                let now = Utc::now();
+                let diff = now.signed_duration_since(dt);
+                let seconds = diff.num_seconds();
+
+                let s = if seconds < 0 {
+                    "in the future".to_string()
+                } else if seconds < 60 {
+                    "just now".to_string()
+                } else if seconds < 3600 {
+                    format!("{} minutes ago", seconds / 60)
+                } else if seconds < 86400 {
+                    format!("{} hours ago", seconds / 3600)
+                } else if seconds < 2592000 {
+                    format!("{} days ago", seconds / 86400)
+                } else {
+                    dt.to_rfc3339()
+                };
+                Ok(Value::String(s))
             }
             _ => Err(DbError::ExecutionError(format!(
-                "Function {} is not supported in pipeline context or doesn't exist",
+                "Unknown function: {}",
                 name
             ))),
         }
@@ -4640,47 +4789,7 @@ impl<'a> QueryExecutor<'a> {
                 ))
             }
 
-            // UNIQUE(array) - return unique values
-            "UNIQUE" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "UNIQUE requires 1 argument".to_string(),
-                    ));
-                }
-                let arr = evaluated_args[0].as_array().ok_or_else(|| {
-                    DbError::ExecutionError("UNIQUE: argument must be an array".to_string())
-                })?;
-                let mut seen = std::collections::HashSet::new();
-                let unique: Vec<Value> = arr
-                    .iter()
-                    .filter(|v| seen.insert(v.to_string()))
-                    .cloned()
-                    .collect();
-                Ok(Value::Array(unique))
-            }
-
-            // SORTED(array) - sort array (ascending)
-            "SORTED" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "SORTED requires 1 argument".to_string(),
-                    ));
-                }
-                let arr = evaluated_args[0].as_array().ok_or_else(|| {
-                    DbError::ExecutionError("SORTED: argument must be an array".to_string())
-                })?;
-                let mut sorted = arr.clone();
-                sorted.sort_by(|a, b| match (a, b) {
-                    (Value::Number(n1), Value::Number(n2)) => n1
-                        .as_f64()
-                        .unwrap_or(0.0)
-                        .partial_cmp(&n2.as_f64().unwrap_or(0.0))
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::String(s1), Value::String(s2)) => s1.cmp(s2),
-                    _ => a.to_string().cmp(&b.to_string()),
-                });
-                Ok(Value::Array(sorted))
-            }
+            // UNIQUE and SORTED are implemented in evaluate_function_with_values
 
             // SORTED_UNIQUE(array) - sort and return unique values
             "SORTED_UNIQUE" => {
@@ -4710,46 +4819,7 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(unique))
             }
 
-            // REVERSE(array) - reverse array
-            "REVERSE" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "REVERSE requires 1 argument".to_string(),
-                    ));
-                }
-                let arr = evaluated_args[0].as_array().ok_or_else(|| {
-                    DbError::ExecutionError("REVERSE: argument must be an array".to_string())
-                })?;
-                let mut reversed = arr.clone();
-                reversed.reverse();
-                Ok(Value::Array(reversed))
-            }
-
-            // FIRST(array) - first element
-            "FIRST" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "FIRST requires 1 argument".to_string(),
-                    ));
-                }
-                let arr = evaluated_args[0].as_array().ok_or_else(|| {
-                    DbError::ExecutionError("FIRST: argument must be an array".to_string())
-                })?;
-                Ok(arr.first().cloned().unwrap_or(Value::Null))
-            }
-
-            // LAST(array) - last element
-            "LAST" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "LAST requires 1 argument".to_string(),
-                    ));
-                }
-                let arr = evaluated_args[0].as_array().ok_or_else(|| {
-                    DbError::ExecutionError("LAST: argument must be an array".to_string())
-                })?;
-                Ok(arr.last().cloned().unwrap_or(Value::Null))
-            }
+            // REVERSE, FIRST, LAST are implemented in evaluate_function_with_values
 
             // NTH(array, index) - nth element (0-based)
             "NTH" => {
@@ -4800,38 +4870,7 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(arr[start..end].to_vec()))
             }
 
-            // FLATTEN(array, depth?) - flatten nested arrays
-            "FLATTEN" => {
-                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
-                    return Err(DbError::ExecutionError(
-                        "FLATTEN requires 1-2 arguments: array, [depth]".to_string(),
-                    ));
-                }
-                let arr = evaluated_args[0].as_array().ok_or_else(|| {
-                    DbError::ExecutionError("FLATTEN: first argument must be an array".to_string())
-                })?;
-                let depth = if evaluated_args.len() > 1 {
-                    evaluated_args[1].as_u64().unwrap_or(1) as usize
-                } else {
-                    1
-                };
-                fn flatten_recursive(arr: &[Value], depth: usize) -> Vec<Value> {
-                    let mut result = Vec::new();
-                    for item in arr {
-                        if let Value::Array(inner) = item {
-                            if depth > 0 {
-                                result.extend(flatten_recursive(inner, depth - 1));
-                            } else {
-                                result.push(item.clone());
-                            }
-                        } else {
-                            result.push(item.clone());
-                        }
-                    }
-                    result
-                }
-                Ok(Value::Array(flatten_recursive(arr, depth)))
-            }
+            // FLATTEN is implemented in evaluate_function_with_values
 
             // PUSH(array, element, unique?) - add element to array
             "PUSH" => {
@@ -5266,103 +5305,7 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
 
-            // SPLIT(value, separator, limit?)
-            "SPLIT" => {
-                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
-                    return Err(DbError::ExecutionError(
-                        "SPLIT requires 2-3 arguments: value, separator, [limit]".to_string(),
-                    ));
-                }
-
-                let value = evaluated_args[0].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("SPLIT: first argument must be a string".to_string())
-                })?;
-
-                let separator = evaluated_args[1].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("SPLIT: second argument must be a string".to_string())
-                })?;
-
-                let limit = if evaluated_args.len() > 2 {
-                    evaluated_args[2]
-                        .as_i64()
-                        .or_else(|| evaluated_args[2].as_f64().map(|f| f as i64))
-                } else {
-                    None
-                };
-
-                let parts: Vec<Value> = match limit {
-                    Some(n) if n > 0 => {
-                        // Split into at most n parts from left
-                        value
-                            .splitn(n as usize, separator)
-                            .map(|s| Value::String(s.to_string()))
-                            .collect()
-                    }
-                    Some(n) if n < 0 => {
-                        // Split into at most abs(n) parts from right
-                        // rsplitn returns parts in reverse order, so we need to reverse them back
-                        let mut p: Vec<Value> = value
-                            .rsplitn(n.abs() as usize, separator)
-                            .map(|s| Value::String(s.to_string()))
-                            .collect();
-                        p.reverse();
-                        p
-                    }
-                    _ => {
-                        // Split all (limit 0 or None)
-                        if separator.is_empty() {
-                            value
-                                .chars()
-                                .map(|c| Value::String(c.to_string()))
-                                .collect()
-                        } else {
-                            value
-                                .split(separator)
-                                .map(|s| Value::String(s.to_string()))
-                                .collect()
-                        }
-                    }
-                };
-
-                Ok(Value::Array(parts))
-            }
-
-            // TRIM(value, type_or_chars?)
-            "TRIM" => {
-                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
-                    return Err(DbError::ExecutionError(
-                        "TRIM requires 1-2 arguments: value, [type/chars]".to_string(),
-                    ));
-                }
-                let value = evaluated_args[0].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("TRIM: first argument must be a string".to_string())
-                })?;
-
-                let (trim_mode, chars) = if evaluated_args.len() == 2 {
-                    if evaluated_args[1].is_number() {
-                        // Type: 0=both, 1=left, 2=right
-                        let t = evaluated_args[1].as_i64().unwrap_or(0);
-                        (Some(t), None)
-                    } else if evaluated_args[1].is_string() {
-                        // Chars
-                        (None, evaluated_args[1].as_str())
-                    } else {
-                        // Invalid type
-                        (Some(0), None) // Fallback or strict error? Arango ignores invalid? Let's assume strict or default.
-                    }
-                } else {
-                    (Some(0), None)
-                };
-
-                let result = match (trim_mode, chars) {
-                    (Some(0), None) => value.trim(),
-                    (Some(1), None) => value.trim_start(),
-                    (Some(2), None) => value.trim_end(),
-                    (None, Some(c)) => value.trim_matches(|ch| c.contains(ch)),
-                    _ => value.trim(), // Default
-                };
-                Ok(Value::String(result.to_string()))
-            }
+            // SPLIT and TRIM are implemented in evaluate_function_with_values
 
             // LTRIM(value, chars?)
             "LTRIM" => {
@@ -5649,69 +5592,7 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Bool(bool_val))
             }
 
-            // TO_NUMBER(value)
-            "TO_NUMBER" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "TO_NUMBER requires 1 argument: value".to_string(),
-                    ));
-                }
-
-                let mut current = &evaluated_args[0];
-                // Unwrap arrays with single element
-                while let Value::Array(arr) = current {
-                    if arr.len() == 1 {
-                        current = &arr[0];
-                    } else {
-                        // Empty or >1 elements -> 0
-                        return Ok(Value::Number(serde_json::Number::from(0)));
-                    }
-                }
-
-                let num_val = match current {
-                    Value::Null => 0.0,
-                    Value::Bool(true) => 1.0,
-                    Value::Bool(false) => 0.0,
-                    Value::Number(n) => n.as_f64().unwrap_or(0.0),
-                    Value::String(s) => s.parse::<f64>().unwrap_or(0.0),
-                    Value::Array(_) => 0.0,
-                    Value::Object(_) => 0.0,
-                };
-
-                // Return as integer if it's a whole number
-                if num_val.fract() == 0.0 {
-                    // Check range? i64 range.
-                    if num_val >= (i64::MIN as f64) && num_val <= (i64::MAX as f64) {
-                        return Ok(Value::Number(serde_json::Number::from(num_val as i64)));
-                    }
-                }
-
-                if let Some(n) = serde_json::Number::from_f64(num_val) {
-                    Ok(Value::Number(n))
-                } else {
-                    Ok(Value::Number(serde_json::Number::from(0)))
-                }
-            }
-
-            // TO_STRING(value)
-            "TO_STRING" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "TO_STRING requires 1 argument: value".to_string(),
-                    ));
-                }
-                let val = &evaluated_args[0];
-                match val {
-                    Value::Null => Ok(Value::String("".to_string())),
-                    Value::String(s) => Ok(Value::String(s.clone())),
-                    _ => {
-                        match serde_json::to_string(val) {
-                            Ok(s) => Ok(Value::String(s)),
-                            Err(_) => Ok(Value::String("".to_string())), // Should fail safe?
-                        }
-                    }
-                }
-            }
+            // TO_NUMBER and TO_STRING are implemented in evaluate_function_with_values
 
             // TO_ARRAY(value)
             "TO_ARRAY" => {
@@ -5889,38 +5770,7 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Bool(contains))
             }
 
-            // ROUND(number, precision?) - round a number
-            "ROUND" => {
-                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
-                    return Err(DbError::ExecutionError(
-                        "ROUND requires 1-2 arguments".to_string(),
-                    ));
-                }
-                let num = evaluated_args[0].as_f64().ok_or_else(|| {
-                    DbError::ExecutionError("ROUND: first argument must be a number".to_string())
-                })?;
-                let precision = if evaluated_args.len() > 1 {
-                    evaluated_args[1].as_i64().unwrap_or(0) as i32
-                } else {
-                    0
-                };
-                let factor = 10_f64.powi(precision);
-                let rounded = (num * factor).round() / factor;
-                Ok(Value::Number(number_from_f64(rounded)))
-            }
-
-            // ABS(number) - absolute value
-            "ABS" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "ABS requires 1 argument".to_string(),
-                    ));
-                }
-                let num = evaluated_args[0].as_f64().ok_or_else(|| {
-                    DbError::ExecutionError("ABS: argument must be a number".to_string())
-                })?;
-                Ok(Value::Number(number_from_f64(num.abs())))
-            }
+            // ROUND and ABS are implemented in evaluate_function_with_values
 
             // SQRT(n) - square root
             "SQRT" => {
@@ -5957,31 +5807,7 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Number(number_from_f64(base.powf(exp))))
             }
 
-            // FLOOR(number) - floor
-            "FLOOR" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "FLOOR requires 1 argument".to_string(),
-                    ));
-                }
-                let num = evaluated_args[0].as_f64().ok_or_else(|| {
-                    DbError::ExecutionError("FLOOR: argument must be a number".to_string())
-                })?;
-                Ok(Value::Number(number_from_f64(num.floor())))
-            }
-
-            // CEIL(number) - ceiling
-            "CEIL" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "CEIL requires 1 argument".to_string(),
-                    ));
-                }
-                let num = evaluated_args[0].as_f64().ok_or_else(|| {
-                    DbError::ExecutionError("CEIL: argument must be a number".to_string())
-                })?;
-                Ok(Value::Number(number_from_f64(num.ceil())))
-            }
+            // FLOOR and CEIL are implemented in evaluate_function_with_values
 
             // RANDOM() - random float between 0 and 1
             "RANDOM" => {
@@ -7394,31 +7220,7 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(result))
             }
 
-            // UPPER(string) - uppercase
-            "UPPER" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "UPPER requires 1 argument".to_string(),
-                    ));
-                }
-                let s = evaluated_args[0].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("UPPER: argument must be a string".to_string())
-                })?;
-                Ok(Value::String(s.to_uppercase()))
-            }
-
-            // LOWER(string) - lowercase
-            "LOWER" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "LOWER requires 1 argument".to_string(),
-                    ));
-                }
-                let s = evaluated_args[0].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("LOWER: argument must be a string".to_string())
-                })?;
-                Ok(Value::String(s.to_lowercase()))
-            }
+            // UPPER and LOWER are implemented in evaluate_function_with_values
 
             // CONCAT(str1, str2, ...) - concatenate strings
             "CONCAT" => {
@@ -9350,10 +9152,8 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(results))
             }
 
-            _ => Err(DbError::ExecutionError(format!(
-                "Unknown function: {}",
-                name
-            ))),
+            // Fallback: delegate to evaluate_function_with_values for simple value-based functions
+            _ => self.evaluate_function_with_values(&name.to_uppercase(), &evaluated_args),
         }
     }
 
