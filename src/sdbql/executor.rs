@@ -1792,6 +1792,164 @@ impl<'a> QueryExecutor<'a> {
 
                     rows = new_rows;
                 }
+
+                BodyClause::Join(join_clause) => {
+                    // Execute JOIN using appropriate strategy based on join type
+                    let collection = self.get_collection(&join_clause.collection)?;
+                    
+                    match join_clause.join_type {
+                        JoinType::Inner | JoinType::Left => {
+                            // Standard LEFT/INNER JOIN: iterate left side, find matches on right
+                            let mut new_rows = Vec::new();
+                            
+                            for ctx in &rows {
+                                // Get all documents from joined collection
+                                let all_docs: Vec<Value> = collection
+                                    .scan(None)
+                                    .into_iter()
+                                    .map(|doc| doc.to_value())
+                                    .collect();
+
+                                // Find matching documents by evaluating join condition
+                                let mut matches = Vec::new();
+                                for doc in all_docs {
+                                    let mut temp_ctx = ctx.clone();
+                                    temp_ctx.insert(join_clause.variable.clone(), doc.clone());
+
+                                    if let Ok(result) =
+                                        self.evaluate_expr_with_context(&join_clause.condition, &temp_ctx)
+                                    {
+                                        if result.as_bool().unwrap_or(false) {
+                                            matches.push(doc);
+                                        }
+                                    }
+                                }
+
+                                // Handle INNER vs LEFT
+                                match join_clause.join_type {
+                                    JoinType::Inner => {
+                                        if !matches.is_empty() {
+                                            let mut new_ctx = ctx.clone();
+                                            new_ctx.insert(
+                                                join_clause.variable.clone(),
+                                                Value::Array(matches),
+                                            );
+                                            new_rows.push(new_ctx);
+                                        }
+                                    }
+                                    JoinType::Left => {
+                                        let mut new_ctx = ctx.clone();
+                                        new_ctx.insert(
+                                            join_clause.variable.clone(),
+                                            Value::Array(matches),
+                                        );
+                                        new_rows.push(new_ctx);
+                                    }
+                                    _ => unreachable!(),
+                                }
+                            }
+                            rows = new_rows;
+                        }
+                        
+                        JoinType::Right => {
+                            // RIGHT JOIN: iterate right side, find matching left rows
+                            // Keep all right rows, group left matches into array
+                            let mut new_rows = Vec::new();
+                            let all_right_docs: Vec<Value> = collection
+                                .scan(None)
+                                .into_iter()
+                                .map(|doc| doc.to_value())
+                                .collect();
+
+                            for right_doc in all_right_docs {
+                                // Find matching left rows for this right doc
+                                let mut left_matches = Vec::new();
+                                for left_ctx in &rows {
+                                    // Check if left row matches this right doc
+                                    let mut temp_ctx = left_ctx.clone();
+                                    temp_ctx.insert(join_clause.variable.clone(), right_doc.clone());
+
+                                    if let Ok(result) =
+                                        self.evaluate_expr_with_context(&join_clause.condition, &temp_ctx)
+                                    {
+                                        if result.as_bool().unwrap_or(false) {
+                                            // Convert left context to Value for grouping
+                                            left_matches.push(serde_json::to_value(left_ctx).unwrap_or(Value::Object(serde_json::Map::new())));
+                                        }
+                                    }
+                                }
+
+                                // Create result: right doc + array of matching left rows
+                                //  This mirrors LEFT JOIN behavior but from right perspective
+                                let mut new_ctx = std::collections::HashMap::new();
+                                new_ctx.insert(join_clause.variable.clone(), right_doc);
+                                
+                                // For RIGHT JOIN, we need a way to access left-side data
+                                // Since we don't have a specific variable for it, we'll flatten the first match
+                                // and put the rest in an array if there are multiple matches
+                                if !left_matches.is_empty() {
+                                    // Merge fields from first left match
+                                    if let Value::Object(map) = &left_matches[0] {
+                                        for (key, value) in map.iter() {
+                                            new_ctx.insert(key.clone(), value.clone());
+                                        }
+                                    }
+                                }
+                                new_rows.push(new_ctx);
+                            }
+                            rows = new_rows;
+                        }
+                        
+                        JoinType::FullOuter => {
+                            // FULL OUTER JOIN: combination of LEFT and RIGHT
+                            let mut new_rows = Vec::new();
+                            let mut matched_right_indices = std::collections::HashSet::new();
+                            
+                            let all_right_docs: Vec<Value> = collection
+                                .scan(None)
+                                .into_iter()
+                                .map(|doc| doc.to_value())
+                                .collect();
+
+                            // Phase 1: LEFT JOIN part - iterate left, find right matches
+                            for ctx in &rows {
+                                let mut matches = Vec::new();
+                                for (idx, doc) in all_right_docs.iter().enumerate() {
+                                    let mut temp_ctx = ctx.clone();
+                                    temp_ctx.insert(join_clause.variable.clone(), doc.clone());
+
+                                    if let Ok(result) =
+                                        self.evaluate_expr_with_context(&join_clause.condition, &temp_ctx)
+                                    {
+                                        if result.as_bool().unwrap_or(false) {
+                                            matches.push(doc.clone());
+                                            matched_right_indices.insert(idx);
+                                        }
+                                    }
+                                }
+
+                                // Always include left row (LEFT JOIN semantics)
+                                let mut new_ctx = ctx.clone();
+                                new_ctx.insert(
+                                    join_clause.variable.clone(),
+                                    Value::Array(matches),
+                                );
+                                new_rows.push(new_ctx);
+                            }
+
+                            // Phase 2: Add unmatched right rows (RIGHT JOIN part)
+                            for (idx, right_doc) in all_right_docs.iter().enumerate() {
+                                if !matched_right_indices.contains(&idx) {
+                                    let mut new_ctx = std::collections::HashMap::new();
+                                    new_ctx.insert(join_clause.variable.clone(), right_doc.clone());
+                                    new_rows.push(new_ctx);
+                                }
+                            }
+
+                            rows = new_rows;
+                        }
+                    }
+                }
             }
             i += 1;
         }

@@ -114,6 +114,16 @@ impl Parser {
             } else if matches!(self.current_token(), Token::Collect) {
                 let collect_clause = self.parse_collect_clause()?;
                 body_clauses.push(BodyClause::Collect(collect_clause));
+            } else if matches!(self.current_token(), Token::Join) || 
+                      (matches!(self.current_token(), Token::Left) && 
+                       matches!(self.peek_token(1), Token::Join)) ||
+                      (matches!(self.current_token(), Token::Right) && 
+                       matches!(self.peek_token(1), Token::Join)) ||
+                      (matches!(self.current_token(), Token::Full) && 
+                       (matches!(self.peek_token(1), Token::Join) || 
+                        matches!(self.peek_token(1), Token::Outer))) {
+                let join_clause = self.parse_join_clause()?;
+                body_clauses.push(BodyClause::Join(join_clause));
             } else if matches!(self.current_token(), Token::Window) {
                 // WINDOW clause inside body (stream processing)
                 let window_clause = self.parse_window_clause()?;
@@ -189,10 +199,20 @@ impl Parser {
             _ => None,
         });
 
+        // Extract join clauses for top-level access
+        let join_clauses: Vec<JoinClause> = body_clauses
+            .iter()
+            .filter_map(|c| match c {
+                BodyClause::Join(j) => Some(j.clone()),
+                _ => None,
+            })
+            .collect();
+
         Ok(Query {
             create_stream_clause,
             let_clauses,
             for_clauses,
+            join_clauses,
             filter_clauses,
             sort_clause,
             limit_clause,
@@ -417,6 +437,55 @@ impl Parser {
         self.expect(Token::Filter)?;
         let expression = self.parse_expression()?;
         Ok(FilterClause { expression })
+    }
+
+    /// Parse JOIN clause: [LEFT|RIGHT|FULL [OUTER]] JOIN collection ON condition
+    /// Variable is automatically derived from collection name
+    fn parse_join_clause(&mut self) -> DbResult<JoinClause> {
+        // Check for optional join type keyword
+        let join_type = if matches!(self.current_token(), Token::Left) {
+            self.advance(); // consume LEFT
+            JoinType::Left
+        } else if matches!(self.current_token(), Token::Right) {
+            self.advance(); // consume RIGHT
+            JoinType::Right
+        } else if matches!(self.current_token(), Token::Full) {
+            self.advance(); // consume FULL
+            // Check for optional OUTER keyword
+            if matches!(self.current_token(), Token::Outer) {
+                self.advance(); // consume OUTER
+            }
+            JoinType::FullOuter
+        } else {
+            JoinType::Inner
+        };
+
+        // Expect JOIN keyword
+        self.expect(Token::Join)?;
+
+        // Parse collection name (variable will be same as collection)
+        let collection = if let Token::Identifier(name) = self.current_token() {
+            let coll = name.clone();
+            self.advance();
+            coll
+        } else {
+            return Err(DbError::ParseError(
+                "Expected collection name after JOIN".to_string(),
+            ));
+        };
+
+        // Expect ON keyword
+        self.expect(Token::On)?;
+
+        // Parse join condition expression
+        let condition = self.parse_expression()?;
+
+        Ok(JoinClause {
+            join_type,
+            variable: collection.clone(), // Variable same as collection name
+            collection,
+            condition,
+        })
     }
 
     fn parse_insert_clause(&mut self) -> DbResult<InsertClause> {

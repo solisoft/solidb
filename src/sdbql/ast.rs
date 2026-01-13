@@ -7,6 +7,8 @@ pub struct Query {
     pub let_clauses: Vec<LetClause>,
     /// Multiple FOR clauses for JOINs (nested loops)
     pub for_clauses: Vec<ForClause>,
+    /// JOIN clauses for cross-collection queries
+    pub join_clauses: Vec<JoinClause>,
     /// Multiple FILTER clauses (can reference any FOR variable)
     pub filter_clauses: Vec<FilterClause>,
     pub sort_clause: Option<SortClause>,
@@ -32,6 +34,7 @@ pub enum BodyClause {
     Update(UpdateClause),
     Upsert(UpsertClause),
     Remove(RemoveClause),
+    Join(JoinClause),
     GraphTraversal(GraphTraversalClause),
     ShortestPath(ShortestPathClause),
     Collect(CollectClause),
@@ -167,6 +170,28 @@ pub struct RemoveClause {
     pub selector: Expression,
     /// The collection to remove from
     pub collection: String,
+}
+
+/// JOIN type (INNER vs LEFT/RIGHT/FULL)
+#[derive(Debug, Clone, PartialEq)]
+pub enum JoinType {
+    Inner,
+    Left,
+    Right,
+    FullOuter,
+}
+
+/// JOIN variable IN collection ON condition
+#[derive(Debug, Clone, PartialEq)]
+pub struct JoinClause {
+    /// Type of join (INNER, LEFT, etc.)
+    pub join_type: JoinType,
+    /// Variable to bind joined documents to
+    pub variable: String,
+    /// Collection to join with
+    pub collection: String,
+    /// Join condition (e.g., user._key == orders.user_key)
+    pub condition: Expression,
 }
 
 /// COLLECT var = expr [INTO group] [WITH COUNT INTO count] [AGGREGATE ...]

@@ -59,6 +59,7 @@ cargo clippy -- -D warnings    # Lint checks
 
 ArangoDB-inspired syntax supporting:
 - FOR/FILTER/SORT/LIMIT/RETURN clauses
+- JOIN/LEFT JOIN operations
 - UPSERT/INSERT/UPDATE/REMOVE operations
 - 60+ built-in functions
 - Graph traversal and aggregations

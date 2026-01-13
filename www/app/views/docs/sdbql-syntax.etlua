@@ -637,6 +637,86 @@ FOR doc IN daily_sales
         </div>
       </section>
 
+      <!-- JOIN Operations -->
+      <section id="join-operations" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-blue-500/10 to-indigo-500/10 rounded-xl border border-blue-500/20 overflow-hidden">
+          <div class="p-5 border-b border-blue-500/20 bg-blue-500/5">
+            <h3 class="text-lg font-bold text-blue-300 flex items-center">
+              <span class="bg-blue-500/20 text-blue-400 text-xs font-mono px-2 py-1 rounded mr-3">JOIN</span>
+              JOIN Operations
+              <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              Combine data from multiple collections efficiently using <code class="text-blue-300">JOIN</code>, <code class="text-blue-300">LEFT/RIGHT JOIN</code>, and <code class="text-blue-300">FULL OUTER JOIN</code>. SDBQL uses document-oriented join semantics where matching documents are grouped into arrays.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-sql text-sm">-- Basic INNER JOIN
+FOR user IN users
+  JOIN orders ON user._key == orders.user_key
+  RETURN {
+    user: user.name,
+    orders: orders  -- matched orders array
+  }
+
+-- LEFT JOIN (include users without orders)
+FOR user IN users
+  LEFT JOIN orders ON user._key == orders.user_key
+  RETURN {
+    user: user.name,
+    orders: orders  -- empty array if no matches
+  }
+
+-- RIGHT JOIN (all orders with matching users)
+FOR user IN users
+  RIGHT JOIN orders ON user._key == orders.user_key
+  RETURN {
+    order: orders._key,
+    user: user  -- array containing the matched user(s)
+  }
+
+-- FULL OUTER JOIN (union of all rows)
+FOR user IN users
+  FULL OUTER JOIN orders ON user._key == orders.user_key
+  RETURN {
+    user_name: user?.name,
+    order_id: orders?._key
+  }</code></pre>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-blue-300 font-bold mb-2 text-sm">Key Features</h5>
+                <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside">
+                  <li>Support for INNER, LEFT, RIGHT, and FULL joins</li>
+                  <li>Join condition using ON clause</li>
+                  <li>Multiple sequential joins supported</li>
+                  <li>Document-oriented results (nested arrays)</li>
+                </ul>
+              </div>
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-blue-300 font-bold mb-2 text-sm">Complex Example</h5>
+                <pre><code class="language-sql text-xs">FOR u IN users
+  JOIN orders ON u._key == orders.user_key
+  LEFT JOIN reviews ON u._key == reviews.user
+  RETURN {
+    name: u.name,
+    spent: SUM(orders[*].total),
+    review_count: LENGTH(reviews)
+  }</code></pre>
+              </div>
+            </div>
+            
+             <p class="text-xs text-gray-500 mt-4">
+              <span class="text-blue-400 font-bold">Note:</span>
+              The variable name for the joined collection is automatically derived from the collection name.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <!-- LET & Subqueries -->
       <section id="let-subqueries" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">

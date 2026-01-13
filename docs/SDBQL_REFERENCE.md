@@ -35,10 +35,75 @@ SDBQL queries are composed of high-level clauses that can be chained together.
 | `LIMIT` | Limits the number of results | `LIMIT 10` |
 | `COLLECT` | Groups results (Aggregation) | `COLLECT city = user.city WITH COUNT INTO n` |
 | `WINDOW` | Performs window functions | `WINDOW w AS (PARTITION BY city ORDER BY age)` |
+| `JOIN` / `LEFT` / `RIGHT` / `FULL` | Joins collections | `JOIN orders ON user._key == orders.user_key` |
 | `INSERT` | Inserts new documents | `INSERT {name: "Alice"} INTO users` |
 | `UPDATE` | Updates existing documents | `UPDATE user WITH {active: true} IN users` |
 | `DELETE` | Removes documents | `DELETE user IN users` |
 | `UPSERT` | Updates or Inserts | `UPSERT {id: 1} INSERT {id: 1, val: 0} UPDATE {val: OLD.val + 1} IN counts` |
+
+### JOIN Operations
+
+JOIN operations allow you to combine data from multiple collections based on a condition. SDBQL supports `INNER JOIN` (default), `LEFT JOIN`, `RIGHT JOIN`, and `FULL OUTER JOIN`.
+
+**Syntax:**
+```sql
+FOR variable IN collection
+  [LEFT|RIGHT|FULL [OUTER]] JOIN other_collection ON join_condition
+  RETURN expression
+```
+
+**Key Features:**
+- **Cardinality Handling**: Matching documents are grouped into arrays, following document-oriented semantics
+- **INNER JOIN**: Only returns rows where matches exist in both collections
+- **LEFT JOIN**: Returns all rows from the left collection, with empty matches array for non-matching right docs
+- **RIGHT JOIN**: Returns all rows from the right collection, with matches array containing matching left docs
+- **FULL OUTER JOIN**: Returns all rows from both collections, combining matches where they exist
+- **Multiple JOINs**: Supports chaining multiple JOIN clauses in sequence
+- **Complex Conditions**: JOIN conditions can include compound expressions with `AND`/`OR`
+
+**Examples:**
+
+```sql
+-- INNER JOIN: Get users with their orders (excludes users with no orders)
+FOR user IN users
+  JOIN orders ON user._key == orders.user_key
+  RETURN {
+    user_name: user.name,
+    orders: orders  -- Array of all matching orders
+  }
+
+-- LEFT JOIN: Get all users with their profiles (includes users without profiles)
+FOR user IN users
+  LEFT JOIN profiles ON user._key == profiles.user_key
+  RETURN {
+    user: user,
+    profile: LENGTH(profiles) > 0 ? profiles[0] : null
+  }
+
+-- Multiple JOINs: Combine data from three collections
+FOR user IN users
+  JOIN orders ON user._key == orders.user_key
+  LEFT JOIN reviews ON user._key == reviews.user_key
+  RETURN {
+    user_name: user.name,
+    total_spent: SUM(orders[*].total),
+    review_count: LENGTH(reviews)
+  }
+
+-- Complex JOIN condition with filtering
+FOR product IN products
+  JOIN orders ON product._key == orders.product_key AND orders.status == "completed"
+  FILTER LENGTH(orders) > 10
+  RETURN {
+    product: product.name,
+    popular_orders: orders
+  }
+```
+
+**Cardinality Behavior:**
+When a document has multiple matches in the joined collection, all matches are grouped into an array:
+- `{user: {...}, orders: [{order1}, {order2}, {order3}]}` - User with 3 orders
+- `{user: {...}, orders: []}` - User with no orders (LEFT JOIN only)
 
 ### Pipeline Operator `|>`
 Passes the result of the left expression as the first argument to the right function.

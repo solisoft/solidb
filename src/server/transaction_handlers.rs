@@ -249,6 +249,7 @@ pub async fn execute_transactional_sdbql(
             BodyClause::Insert(_) => has_insert = true,
             BodyClause::Update(_) => has_update = true,
             BodyClause::Remove(_) => has_remove = true,
+            BodyClause::Join(_) => {} // JOIN is read-only
             BodyClause::Window(_) => {} // Window does not mutate
             _ => {}
         }
@@ -468,6 +469,12 @@ pub async fn execute_transactional_sdbql(
                     }
                     mutation_count += 1;
                 }
+            }
+            // JOIN clause - not yet supported in transactions (read-only for now)
+            BodyClause::Join(_) => {
+                return Err(DbError::ExecutionError(
+                    "JOIN operations not yet supported in transactions".to_string(),
+                ));
             }
             // Graph traversal clauses - not yet supported in transactions
             BodyClause::GraphTraversal(_) | BodyClause::ShortestPath(_) => {

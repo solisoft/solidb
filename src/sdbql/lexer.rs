@@ -69,6 +69,14 @@ pub enum Token {
     Else, // ELSE
     End,  // END
 
+    // JOIN keywords
+    Join,  // JOIN
+    Left,  // LEFT
+    Right, // RIGHT
+    Full,  // FULL
+    Outer, // OUTER
+    On,    // ON
+
     // Identifiers and literals
     Identifier(String),
     BindVar(String), // @variable for bind parameters
@@ -408,6 +416,14 @@ impl Lexer {
             "TUMBLING" => Token::Tumbling,
             "SLIDING" => Token::Sliding,
             "SIZE" => Token::Size,
+
+            // JOIN keywords
+            "JOIN" => Token::Join,
+            "LEFT" => Token::Left,
+            "RIGHT" => Token::Right,
+            "FULL" => Token::Full,
+            "OUTER" => Token::Outer,
+            "ON" => Token::On,
 
             _ => Token::Identifier(ident),
         }
