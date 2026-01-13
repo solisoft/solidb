@@ -1,0 +1,177 @@
+<div class="max-w-6xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text">Slow Queries</h1>
+      <p class="text-text-muted text-sm">
+        Queries exceeding 100ms threshold on <span class="font-medium text-primary-light"><%= db %></span>
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <select id="limit-select" onchange="loadSlowQueries()"
+              class="bg-bg-dark border border-border/50 rounded-lg text-text text-sm px-3 py-2 focus:outline-none focus:border-primary/50">
+        <option value="25">Last 25</option>
+        <option value="50" selected>Last 50</option>
+        <option value="100">Last 100</option>
+        <option value="200">Last 200</option>
+      </select>
+      <button type="button" onclick="loadSlowQueries()"
+              class="inline-flex items-center gap-2 px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text-muted hover:text-text text-sm transition-colors">
+        <i class="fas fa-sync-alt"></i>
+        <span>Refresh</span>
+      </button>
+      <button type="button" onclick="clearSlowQueries()"
+              class="inline-flex items-center gap-2 px-3 py-2 bg-error/20 border border-error/50 rounded-lg text-error hover:bg-error/30 text-sm transition-colors">
+        <i class="fas fa-trash-alt"></i>
+        <span>Clear All</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Info Card -->
+  <div class="bg-info/10 border border-info/30 rounded-xl p-4 mb-6">
+    <div class="flex items-start gap-3">
+      <i class="fas fa-info-circle text-info mt-0.5"></i>
+      <div class="text-sm">
+        <p class="text-text mb-1">
+          <strong>Slow Query Logging</strong> automatically records queries that take longer than
+          <code class="bg-bg-dark px-1.5 py-0.5 rounded text-warning">100ms</code> to execute.
+        </p>
+        <p class="text-text-muted">
+          This helps identify performance bottlenecks. Consider adding indexes or optimizing queries that appear frequently.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slow Queries Table -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+    <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+      <span class="text-sm font-medium text-text">
+        <i class="fas fa-hourglass-half mr-2 text-error/70"></i>Recorded Slow Queries
+      </span>
+      <span id="slow-queries-count" class="text-xs text-text-dim"></span>
+    </div>
+    <div id="slow-queries-table"
+         hx-get="/database/<%= db %>/slow-queries/table?limit=50"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="flex items-center justify-center py-12">
+        <i class="fas fa-spinner fa-spin text-2xl text-text-dim"></i>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Query Detail Modal -->
+<div id="query-modal" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeQueryModal()"></div>
+  <div class="absolute inset-4 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-3xl md:max-h-[80vh] bg-bg-card border border-border/50 rounded-xl shadow-2xl flex flex-col">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-border/30">
+      <h3 class="text-lg font-semibold text-text">
+        <i class="fas fa-code mr-2 text-primary-light"></i>Query Details
+      </h3>
+      <button type="button" onclick="closeQueryModal()" class="text-text-muted hover:text-text transition-colors p-1">
+        <i class="fas fa-times text-lg"></i>
+      </button>
+    </div>
+    <div class="flex-1 overflow-auto p-4">
+      <div class="mb-4">
+        <label class="block text-xs font-medium text-text-muted uppercase tracking-wider mb-2">Query</label>
+        <pre id="modal-query" class="bg-bg-dark rounded-lg p-4 text-sm font-mono text-text overflow-x-auto whitespace-pre-wrap"></pre>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-bg-dark/50 rounded-lg p-3">
+          <div class="text-xs text-text-muted mb-1">Execution Time</div>
+          <div id="modal-time" class="text-lg font-semibold text-error"></div>
+        </div>
+        <div class="bg-bg-dark/50 rounded-lg p-3">
+          <div class="text-xs text-text-muted mb-1">Results</div>
+          <div id="modal-results" class="text-lg font-semibold text-success"></div>
+        </div>
+        <div class="bg-bg-dark/50 rounded-lg p-3">
+          <div class="text-xs text-text-muted mb-1">Timestamp</div>
+          <div id="modal-timestamp" class="text-sm font-medium text-text"></div>
+        </div>
+        <div class="bg-bg-dark/50 rounded-lg p-3">
+          <div class="text-xs text-text-muted mb-1">Mutations</div>
+          <div id="modal-mutations" class="text-sm font-medium text-text"></div>
+        </div>
+      </div>
+    </div>
+    <div class="px-4 py-3 border-t border-border/30 flex justify-end gap-2">
+      <button type="button" onclick="copyQueryToClipboard()"
+              class="px-4 py-2 bg-bg-dark border border-border/50 rounded-lg text-text-muted hover:text-text text-sm transition-colors">
+        <i class="fas fa-copy mr-2"></i>Copy Query
+      </button>
+      <button type="button" onclick="runInQueryEditor()"
+              class="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm transition-colors">
+        <i class="fas fa-play mr-2"></i>Run in Editor
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+var currentDb = '<%= db %>';
+var currentQuery = '';
+
+function loadSlowQueries() {
+  var limit = document.getElementById('limit-select').value;
+  htmx.ajax('GET', '/database/' + currentDb + '/slow-queries/table?limit=' + limit, {
+    target: '#slow-queries-table',
+    swap: 'innerHTML'
+  });
+}
+
+function clearSlowQueries() {
+  if (!confirm('Are you sure you want to clear all slow query logs?')) return;
+
+  htmx.ajax('DELETE', '/database/' + currentDb + '/slow-queries', {
+    target: '#slow-queries-table',
+    swap: 'innerHTML'
+  });
+}
+
+function showQueryModal(query, time, results, timestamp, inserted, updated, removed) {
+  currentQuery = query;
+  document.getElementById('modal-query').textContent = query;
+  document.getElementById('modal-time').textContent = time;
+  document.getElementById('modal-results').textContent = results + ' docs';
+  document.getElementById('modal-timestamp').textContent = new Date(timestamp).toLocaleString();
+
+  var mutations = [];
+  if (inserted > 0) mutations.push(inserted + ' inserted');
+  if (updated > 0) mutations.push(updated + ' updated');
+  if (removed > 0) mutations.push(removed + ' removed');
+  document.getElementById('modal-mutations').textContent = mutations.length > 0 ? mutations.join(', ') : 'None';
+
+  document.getElementById('query-modal').classList.remove('hidden');
+}
+
+function closeQueryModal() {
+  document.getElementById('query-modal').classList.add('hidden');
+}
+
+function copyQueryToClipboard() {
+  navigator.clipboard.writeText(currentQuery).then(function() {
+    // Show toast
+    if (window.showToast) {
+      showToast({ message: 'Query copied to clipboard', type: 'success' });
+    }
+  });
+}
+
+function runInQueryEditor() {
+  // Store query in session storage and redirect to query editor
+  sessionStorage.setItem('pendingQuery', currentQuery);
+  window.location.href = '/database/' + currentDb + '/query';
+}
+
+// Close modal on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    closeQueryModal();
+  }
+});
+</script>

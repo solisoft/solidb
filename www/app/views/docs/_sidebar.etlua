@@ -43,6 +43,7 @@ local sections = {
         { slug = "sdbql-functions-misc", label = "Other Functions" },
       }},
       { slug = "sql", label = "SQL Compatibility", icon = "fa-database", color = "info" },
+      { slug = "nl-queries", label = "Natural Language", icon = "fa-magic", color = "accent" },
     }
   },
   {

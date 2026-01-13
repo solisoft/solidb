@@ -122,10 +122,79 @@ function MonitoringController:operations()
   })
 end
 
--- Monitoring Slow Queries partial
+-- Slow Queries page
+function MonitoringController:slow_queries_page()
+  self.layout = "dashboard"
+  self:render("dashboard/slow_queries", {
+    title = "Slow Queries - " .. self:get_db(),
+    db = self:get_db(),
+    current_page = "slow_queries"
+  })
+end
+
+-- Monitoring Slow Queries partial (for HTMX)
 function MonitoringController:slow_queries()
-  -- TODO: Implement slow query tracking when available in API
-  self:render_partial("dashboard/_empty_state", { message = "No slow queries recorded" })
+  local db = self:get_db()
+  local limit = tonumber(self.params.limit) or 50
+
+  -- Query the _slow_queries collection
+  local query = string.format([[
+    FOR sq IN _slow_queries
+      SORT sq.timestamp DESC
+      LIMIT %d
+      RETURN sq
+  ]], limit)
+
+  local status, _, body = self:fetch_api("/_api/database/" .. db .. "/cursor", {
+    method = "POST",
+    body = EncodeJson({ query = query })
+  })
+
+  local slow_queries = {}
+  if status == 200 then
+    local ok, data = pcall(DecodeJson, body)
+    if ok and data and data.result then
+      slow_queries = data.result
+    end
+  end
+
+  self:render_partial("dashboard/_slow_queries_table", {
+    slow_queries = slow_queries,
+    db = db,
+    format_time = function(ms)
+      if not ms then return "-" end
+      if ms < 1 then
+        return string.format("%.0fµs", ms * 1000)
+      elseif ms < 1000 then
+        return string.format("%.2fms", ms)
+      else
+        return string.format("%.2fs", ms / 1000)
+      end
+    end
+  })
+end
+
+-- Clear slow queries
+function MonitoringController:clear_slow_queries()
+  local db = self:get_db()
+
+  -- Truncate the _slow_queries collection
+  local status, _, body = self:fetch_api("/_api/database/" .. db .. "/collection/_slow_queries/truncate", {
+    method = "PUT"
+  })
+
+  if status == 200 then
+    SetHeader("HX-Trigger", '{"showToast": {"message": "Slow queries cleared", "type": "success"}}')
+  else
+    SetHeader("HX-Trigger", '{"showToast": {"message": "Failed to clear slow queries", "type": "error"}}')
+  end
+
+  -- Return empty table
+  self:render_partial("dashboard/_slow_queries_table", {
+    slow_queries = {},
+    db = db,
+    format_time = function(ms) return "-" end
+  })
 end
 
 -- Stats: Collections Count

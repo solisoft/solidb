@@ -26,6 +26,7 @@ async fn request_counter_middleware(
 }
 
 use super::handlers::*;
+use super::nl_handlers;
 use crate::scripting::ScriptStats;
 use crate::server::cursor_store::CursorStore;
 use crate::storage::StorageEngine;
@@ -225,6 +226,8 @@ pub fn create_router(
         .route("/_api/cursor/{id}", put(get_next_batch))
         .route("/_api/cursor/{id}", delete(delete_cursor))
         .route("/_api/database/{db}/explain", post(explain_query))
+        // Natural language query route
+        .route("/_api/database/{db}/nl", post(nl_handlers::nl_query))
         // Index routes
         .route("/_api/database/{db}/index/{collection}", post(create_index))
         .route("/_api/database/{db}/index/{collection}", get(list_indexes))

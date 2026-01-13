@@ -165,6 +165,50 @@ function QueryController:translate()
   end
 end
 
+-- Natural Language to SDBQL (JSON proxy)
+function QueryController:nl()
+  local query = self.params.query or ""
+  local db_name = self:get_db()
+  local execute = self.params.execute
+  local provider = self.params.provider
+
+  if query == "" then
+    self:json({ error = "Query cannot be empty" })
+    return
+  end
+
+  local request_body = { query = query }
+  if execute ~= nil then
+    request_body.execute = execute
+  end
+  if provider and provider ~= "" then
+    request_body.provider = provider
+  end
+
+  local status, headers, body = self:fetch_api("/_api/database/" .. db_name .. "/nl", {
+    method = "POST",
+    body = EncodeJson(request_body)
+  })
+
+  if status and status >= 200 and status < 300 then
+    local ok, data = pcall(DecodeJson, body)
+    if ok then
+      self:json(data)
+    else
+      self:json({ error = "Failed to parse backend response" })
+    end
+  else
+    local ok, err_data = pcall(DecodeJson, body or "")
+    local error_msg = "NL query failed"
+    if ok and err_data and err_data.error then
+      error_msg = err_data.error
+    elseif type(body) == "string" and body ~= "" then
+      error_msg = body
+    end
+    self:json({ error = error_msg, status = status })
+  end
+end
+
 -- Lua REPL page
 function QueryController:repl()
   self.layout = "dashboard"

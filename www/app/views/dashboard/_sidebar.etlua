@@ -101,6 +101,12 @@ end
     <span class="text-sm">Environment</span>
   </a>
 
+  <a href="/database/<%= db %>/slow-queries"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('slow_queries') %>">
+    <i class="fas fa-hourglass-half w-5 text-center text-error"></i>
+    <span class="text-sm">Slow Queries</span>
+  </a>
+
   <!-- Distributed section -->
   <% if db == "_system" then %>
   <div class="px-3 pt-4 pb-1">

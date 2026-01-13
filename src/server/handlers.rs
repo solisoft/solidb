@@ -30,6 +30,10 @@ use crate::sync::{LogEntry, Operation};
 /// Default query execution timeout (30 seconds)
 const QUERY_TIMEOUT_SECS: u64 = 30;
 
+/// Default slow query threshold in milliseconds (100ms)
+/// Queries taking longer than this will be logged to _slow_queries collection
+const SLOW_QUERY_THRESHOLD_MS: f64 = 100.0;
+
 /// Sanitize a filename for use in Content-Disposition header to prevent header injection
 /// Removes/replaces: quotes, backslashes, newlines, carriage returns, and non-ASCII characters
 fn sanitize_filename(filename: &str) -> String {
@@ -56,6 +60,76 @@ fn is_long_running_query(query: &Query) -> bool {
         BodyClause::For(_) => true,
         _ => false,
     })
+}
+
+/// Log slow query to _slow_queries collection (async, non-blocking)
+fn log_slow_query(
+    storage: Arc<StorageEngine>,
+    db_name: String,
+    query_text: String,
+    execution_time_ms: f64,
+    results_count: usize,
+    documents_inserted: usize,
+    documents_updated: usize,
+    documents_removed: usize,
+) {
+    // Only log if query exceeds threshold
+    if execution_time_ms < SLOW_QUERY_THRESHOLD_MS {
+        return;
+    }
+
+    // Spawn background task to avoid blocking the response
+    tokio::spawn(async move {
+        let slow_query_coll = format!("{}:_slow_queries", db_name);
+
+        // Get or create the _slow_queries collection
+        let collection = match storage.get_collection(&slow_query_coll) {
+            Ok(coll) => coll,
+            Err(_) => {
+                // Collection doesn't exist, try to create it
+                if let Ok(db) = storage.get_database(&db_name) {
+                    if db.create_collection("_slow_queries".to_string(), None).is_err() {
+                        // Might fail if another request created it concurrently, try again
+                        match storage.get_collection(&slow_query_coll) {
+                            Ok(coll) => coll,
+                            Err(e) => {
+                                tracing::warn!("Failed to get _slow_queries collection: {}", e);
+                                return;
+                            }
+                        }
+                    } else {
+                        // Successfully created, now get the collection
+                        match storage.get_collection(&slow_query_coll) {
+                            Ok(coll) => coll,
+                            Err(e) => {
+                                tracing::warn!("Failed to get _slow_queries collection after creation: {}", e);
+                                return;
+                            }
+                        }
+                    }
+                } else {
+                    tracing::warn!("Failed to get database {} for slow query logging", db_name);
+                    return;
+                }
+            }
+        };
+
+        // Create slow query document
+        let slow_query_doc = json!({
+            "query": query_text,
+            "execution_time_ms": execution_time_ms,
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "results_count": results_count,
+            "documents_inserted": documents_inserted,
+            "documents_updated": documents_updated,
+            "documents_removed": documents_removed,
+        });
+
+        // Insert the document
+        if let Err(e) = collection.insert(slow_query_doc) {
+            tracing::warn!("Failed to log slow query: {}", e);
+        }
+    });
 }
 
 /// Protected system collections that cannot be deleted or modified via standard API
@@ -4439,6 +4513,10 @@ pub async fn execute_query(
 
     let batch_size = req.batch_size;
 
+    // Clone db_name and query text for slow query logging (before they're moved)
+    let db_name_for_logging = db_name.clone();
+    let query_text_for_logging = req.query.clone();
+
     // Only use spawn_blocking for potentially long-running queries
     // (mutations or range iterations). Simple reads run directly.
     let (query_result, execution_time_ms) = if is_long_running_query(&query) {
@@ -4514,6 +4592,18 @@ pub async fn execute_query(
 
     let total_count = query_result.results.len();
     let mutations = &query_result.mutations;
+
+    // Log slow query if it exceeds threshold (async, non-blocking)
+    log_slow_query(
+        state.storage.clone(),
+        db_name_for_logging,
+        query_text_for_logging,
+        execution_time_ms,
+        total_count,
+        mutations.documents_inserted,
+        mutations.documents_updated,
+        mutations.documents_removed,
+    );
 
     if total_count > batch_size {
         let cursor_id = state.cursor_store.store(query_result.results, batch_size);

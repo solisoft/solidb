@@ -109,6 +109,94 @@ solidb_cpu_usage_percent 15.50</pre>
          </div>
        </section>
 
+       <!-- Slow Query Logging -->
+       <section id="slow-queries" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Slow Query Logging
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">Automatic logging of queries exceeding the performance threshold.</p>
+          </div>
+          <div class="p-6 space-y-6">
+            <div>
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Overview</h4>
+              <p class="text-sm text-gray-300">
+                SoliDB automatically logs queries that exceed <code class="text-orange-400">100ms</code> execution time to a special
+                <code class="text-orange-400">_slow_queries</code> collection in each database. This helps identify performance
+                bottlenecks and queries that need optimization.
+              </p>
+            </div>
+
+            <div>
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Configuration</h4>
+              <p class="text-sm text-gray-400 mb-3">The slow query threshold is configured via a constant in the server:</p>
+              <div class="bg-gray-950/50 p-4 rounded border border-white/5 font-mono text-xs text-gray-300">
+                <pre>// src/server/handlers.rs
+const SLOW_QUERY_THRESHOLD_MS: f64 = 100.0;  // Default: 100ms</pre>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Slow Query Document Structure</h4>
+              <p class="text-sm text-gray-400 mb-3">Each slow query is logged with the following fields:</p>
+              <div class="bg-gray-950/50 p-4 rounded border border-white/5 font-mono text-xs text-gray-300 overflow-x-auto">
+                <pre>{
+  "_key": "auto-generated-uuid",
+  "query": "FOR doc IN users FILTER doc.age > 25 RETURN doc",
+  "execution_time_ms": 245.67,
+  "timestamp": "2025-01-13T10:30:00.000Z",
+  "results_count": 1000,
+  "documents_inserted": 0,
+  "documents_updated": 0,
+  "documents_removed": 0
+}</pre>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Querying Slow Queries</h4>
+              <p class="text-sm text-gray-400 mb-3">You can query the slow queries collection like any other collection:</p>
+              <div class="bg-gray-950/50 p-4 rounded border border-white/5 font-mono text-xs text-gray-300 overflow-x-auto">
+                <pre>// Get recent slow queries
+FOR sq IN _slow_queries
+  SORT sq.timestamp DESC
+  LIMIT 100
+  RETURN sq
+
+// Find queries slower than 500ms
+FOR sq IN _slow_queries
+  FILTER sq.execution_time_ms > 500
+  SORT sq.execution_time_ms DESC
+  RETURN sq
+
+// Find slow queries with mutations
+FOR sq IN _slow_queries
+  FILTER sq.documents_inserted > 0 OR sq.documents_updated > 0
+  RETURN sq</pre>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Dashboard Integration</h4>
+              <p class="text-sm text-gray-300">
+                The SoliDB Dashboard includes a dedicated <strong>Slow Queries</strong> page that displays logged slow queries
+                with filtering, sorting, and the ability to copy queries to the query editor for optimization.
+              </p>
+            </div>
+
+            <div class="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4">
+              <p class="text-sm text-orange-300">
+                <strong>Note:</strong> The <code class="text-orange-400">_slow_queries</code> collection is created automatically
+                when the first slow query is detected. You can truncate this collection to clear the log. Consider adding a TTL index
+                to automatically expire old slow query records.
+              </p>
+            </div>
+          </div>
+         </div>
+       </section>
+
        <!-- Datadog Integration -->
        <section id="datadog" class="scroll-mt-24">
          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">

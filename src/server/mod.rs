@@ -1,6 +1,8 @@
 pub mod ai_handlers;
 pub mod auth;
 pub mod authorization;
+pub mod llm_client;
+pub mod nl_handlers;
 pub mod columnar_handlers;
 pub mod cursor_store;
 pub mod env_handlers;

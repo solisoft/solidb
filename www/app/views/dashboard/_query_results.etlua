@@ -79,7 +79,7 @@
       </span>
       <% if stats.execution_time_ms then %>
         <span class="text-xs text-text-muted">
-          <i class="fas fa-clock mr-1"></i><%= string.format("%.2f", stats.execution_time_ms) %>ms
+          <i class="fas fa-clock mr-1"></i><%= stats.execution_time_ms < 1 and string.format("%.0fµs", stats.execution_time_ms * 1000) or (stats.execution_time_ms < 1000 and string.format("%.2fms", stats.execution_time_ms) or string.format("%.2fs", stats.execution_time_ms / 1000)) %>
         </span>
       <% end %>
       <% if stats.documents_inserted and stats.documents_inserted > 0 then %>

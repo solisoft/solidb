@@ -16,6 +16,19 @@
                 class="px-3 py-2 text-sm font-medium bg-bg-dark text-text-muted hover:text-text transition-colors">
           SQL
         </button>
+        <button type="button" id="btn-nl" onclick="setQueryType('nl')"
+                class="px-3 py-2 text-sm font-medium bg-bg-dark text-text-muted hover:text-text transition-colors">
+          <i class="fas fa-magic mr-1"></i>NL
+        </button>
+      </div>
+      <!-- NL Provider selector (hidden by default) -->
+      <div id="nl-provider-selector" class="hidden">
+        <select id="nl-provider" class="bg-bg-dark border border-border/50 rounded-lg text-text text-sm px-2 py-1.5 focus:outline-none focus:border-primary/50">
+          <option value="">Default</option>
+          <option value="ollama">Ollama</option>
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+        </select>
       </div>
       <button type="button" onclick="toggleHistory()"
               class="inline-flex items-center gap-2 px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text-muted hover:text-text text-sm transition-colors">
@@ -149,7 +162,8 @@ var translateTimeout = null;
 // Default queries for each type
 var defaultQueries = {
   sdbql: 'FOR doc IN users\n  RETURN doc',
-  sql: 'SELECT * FROM users'
+  sql: 'SELECT * FROM users',
+  nl: 'Find all documents in users collection'
 };
 
 // History management functions
@@ -259,6 +273,8 @@ function renderResultsHistory() {
     modeBadge.textContent = currentQueryType.toUpperCase();
     if (currentQueryType === 'sql') {
       modeBadge.className = 'ml-1 text-xs px-1.5 py-0.5 rounded bg-accent/20 text-accent-light';
+    } else if (currentQueryType === 'nl') {
+      modeBadge.className = 'ml-1 text-xs px-1.5 py-0.5 rounded bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-300';
     } else {
       modeBadge.className = 'ml-1 text-xs px-1.5 py-0.5 rounded bg-primary/20 text-primary-light';
     }
@@ -281,13 +297,13 @@ function renderResultsHistory() {
     var preview = item.query.substring(0, 60).replace(/\n/g, ' ');
     if (item.query.length > 60) preview += '...';
     var resultCount = item.stats && item.stats.count !== undefined ? item.stats.count : '?';
-    var execTime = item.stats && item.stats.execution_time_ms ? item.stats.execution_time_ms.toFixed(1) + 'ms' : '';
+    var execTime = item.stats && item.stats.execution_time_ms ? formatExecutionTime(item.stats.execution_time_ms) : '';
     var inserted = item.stats && item.stats.documents_inserted ? item.stats.documents_inserted : 0;
     var updated = item.stats && item.stats.documents_updated ? item.stats.documents_updated : 0;
     var removed = item.stats && item.stats.documents_removed ? item.stats.documents_removed : 0;
 
     var itemType = item.type || 'sdbql';
-    var typeBadgeClass = itemType === 'sql' ? 'bg-accent/20 text-accent-light' : 'bg-primary/20 text-primary-light';
+    var typeBadgeClass = itemType === 'sql' ? 'bg-accent/20 text-accent-light' : (itemType === 'nl' ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-300' : 'bg-primary/20 text-primary-light');
 
     html += '<div class="result-item px-4 py-2 hover:bg-white/5 cursor-pointer flex items-center justify-between gap-2' + (filteredIndex === 0 ? ' bg-primary/10 border-l-2 border-l-primary' : '') + '" onclick="viewResultFromHistory(' + originalIndex + ')">';
     html += '  <div class="flex items-center gap-2 min-w-0 flex-1">';
@@ -326,6 +342,8 @@ function renderHistory() {
     modeBadge.textContent = currentQueryType.toUpperCase();
     if (currentQueryType === 'sql') {
       modeBadge.className = 'ml-2 text-xs px-2 py-0.5 rounded bg-accent/20 text-accent-light';
+    } else if (currentQueryType === 'nl') {
+      modeBadge.className = 'ml-2 text-xs px-2 py-0.5 rounded bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-300';
     } else {
       modeBadge.className = 'ml-2 text-xs px-2 py-0.5 rounded bg-primary/20 text-primary-light';
     }
@@ -368,7 +386,7 @@ function renderHistory() {
     if (item.query.length > 100) preview += '...';
 
     var itemType = item.type || 'sdbql';
-    var typeBadgeClass = itemType === 'sql' ? 'bg-accent/20 text-accent-light' : 'bg-primary/20 text-primary-light';
+    var typeBadgeClass = itemType === 'sql' ? 'bg-accent/20 text-accent-light' : (itemType === 'nl' ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-300' : 'bg-primary/20 text-primary-light');
 
     html += '<div class="px-4 py-3 border-b border-border/20 hover:bg-white/5 cursor-pointer group" onclick="loadFromHistory(' + index + ')">';
     html += '  <div class="flex items-start justify-between gap-2">';
@@ -419,9 +437,25 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Syntax highlighting for SDBQL and SQL queries
+function formatExecutionTime(ms) {
+  if (ms < 1) {
+    // Show microseconds for sub-millisecond times
+    return (ms * 1000).toFixed(0) + 'µs';
+  } else if (ms < 1000) {
+    return ms.toFixed(2) + 'ms';
+  } else {
+    return (ms / 1000).toFixed(2) + 's';
+  }
+}
+
+// Syntax highlighting for SDBQL, SQL and NL queries
 function highlightSyntax(text, type) {
   var escaped = escapeHtml(text);
+
+  // NL queries don't need syntax highlighting
+  if (type === 'nl') {
+    return '<span class="text-pink-300">' + escaped + '</span>';
+  }
 
   // SDBQL keywords
   var sdbqlKeywords = ['FOR', 'IN', 'FILTER', 'SORT', 'ASC', 'DESC', 'LIMIT', 'RETURN',
@@ -675,12 +709,22 @@ function setQueryType(type) {
   // Update button styles
   var btnSdbql = document.getElementById('btn-sdbql');
   var btnSql = document.getElementById('btn-sql');
+  var btnNl = document.getElementById('btn-nl');
   var editorGrid = document.getElementById('editor-grid');
   var previewContainer = document.getElementById('monaco-preview-container');
+  var previewLabel = previewContainer.querySelector('.text-primary-light');
+  var nlProviderSelector = document.getElementById('nl-provider-selector');
+
+  // Reset all buttons
+  btnSdbql.className = 'px-3 py-2 text-sm font-medium bg-bg-dark text-text-muted hover:text-text transition-colors';
+  btnSql.className = 'px-3 py-2 text-sm font-medium bg-bg-dark text-text-muted hover:text-text transition-colors';
+  btnNl.className = 'px-3 py-2 text-sm font-medium bg-bg-dark text-text-muted hover:text-text transition-colors';
+
+  // Hide NL provider selector by default
+  nlProviderSelector.classList.add('hidden');
 
   if (type === 'sdbql') {
     btnSdbql.className = 'px-3 py-2 text-sm font-medium bg-primary text-white transition-colors';
-    btnSql.className = 'px-3 py-2 text-sm font-medium bg-bg-dark text-text-muted hover:text-text transition-colors';
     if (editor) {
       monaco.editor.setModelLanguage(editor.getModel(), 'sdbql');
     }
@@ -688,20 +732,33 @@ function setQueryType(type) {
     editorGrid.classList.remove('grid-cols-2');
     editorGrid.classList.add('grid-cols-1');
     previewContainer.classList.add('hidden');
-    
-  } else {
+
+  } else if (type === 'sql') {
     btnSql.className = 'px-3 py-2 text-sm font-medium bg-primary text-white transition-colors';
-    btnSdbql.className = 'px-3 py-2 text-sm font-medium bg-bg-dark text-text-muted hover:text-text transition-colors';
     if (editor) {
       monaco.editor.setModelLanguage(editor.getModel(), 'sql');
     }
-    // Show preview
+    // Show preview for SQL -> SDBQL translation
     editorGrid.classList.remove('grid-cols-1');
     editorGrid.classList.add('grid-cols-2');
     previewContainer.classList.remove('hidden');
-    
+    if (previewLabel) previewLabel.textContent = 'SDBQL Preview';
+
     // Trigger translation immediately
     debounceTranslate();
+  } else if (type === 'nl') {
+    btnNl.className = 'px-3 py-2 text-sm font-medium bg-gradient-to-r from-purple-500 to-pink-500 text-white transition-colors';
+    if (editor) {
+      monaco.editor.setModelLanguage(editor.getModel(), 'plaintext');
+    }
+    // Show preview for NL -> SDBQL translation
+    editorGrid.classList.remove('grid-cols-1');
+    editorGrid.classList.add('grid-cols-2');
+    previewContainer.classList.remove('hidden');
+    if (previewLabel) previewLabel.textContent = 'Generated SDBQL';
+    if (previewEditor) previewEditor.setValue('// SDBQL will be generated here...');
+    // Show NL provider selector
+    nlProviderSelector.classList.remove('hidden');
   }
 
   // When switching types, load the most recent query of the new type from history, or use default
@@ -746,10 +803,16 @@ function executeQuery() {
   var executedQuery = query;
   var executedType = currentQueryType;
 
-  // Execute via HTMX
+  // Handle NL queries differently - call the AI endpoint
+  if (currentQueryType === 'nl') {
+    executeNLQuery(query, startTime, executedQuery, executedType);
+    return;
+  }
+
+  // Execute via HTMX for SDBQL/SQL
   var limit = document.getElementById('query-limit').value;
   var finalQuery = query;
-  
+
   // Append LIMIT if selected and not already present (checking end of string loosely)
   // Append LIMIT if selected
   // SQL: Check end of string
@@ -763,10 +826,10 @@ function executeQuery() {
        // SDBQL: Insert LIMIT before the final RETURN
        // Check if there's already a LIMIT before the final RETURN
        var hasLimit = /\bLIMIT\s+\d+\s*(\bRETURN\b)(?![\s\S]*\bRETURN\b)/i.test(finalQuery);
-       
+
        if (!hasLimit) {
            var newQuery = finalQuery.replace(/(\bRETURN\b)(?![\s\S]*\bRETURN\b)/i, ' LIMIT ' + limit + ' $1');
-           
+
            if (newQuery !== finalQuery) {
                finalQuery = newQuery;
            }
@@ -780,20 +843,135 @@ function executeQuery() {
     swap: 'innerHTML',
     values: { query: finalQuery, type: currentQueryType }
   }).then(function() {
-    var elapsed = ((performance.now() - startTime) / 1000).toFixed(3);
-    document.getElementById('result-time').textContent = elapsed + 's';
-    document.getElementById('result-time').classList.remove('hidden');
-
     // Capture results and add to results history
     setTimeout(function() {
       var resultsData = window.queryResultsData;
       var statsData = window.queryResultsStats;
       var resultsHtml = document.getElementById('query-results').innerHTML;
+
+      // Display server-side execution time
+      if (statsData && statsData.execution_time_ms !== undefined) {
+        document.getElementById('result-time').textContent = formatExecutionTime(statsData.execution_time_ms);
+        document.getElementById('result-time').classList.remove('hidden');
+      } else {
+        document.getElementById('result-time').classList.add('hidden');
+      }
+
       if (resultsData !== undefined) {
         addToResultsHistory(executedQuery, executedType, resultsData, statsData, resultsHtml);
       }
     }, 50);
   }).finally(function() {
+    btn.disabled = false;
+    icon.className = 'fas fa-play';
+    text.textContent = 'Execute';
+  });
+}
+
+// Execute Natural Language query via AI endpoint
+function executeNLQuery(query, startTime, executedQuery, executedType) {
+  var btn = document.getElementById('execute-btn');
+  var icon = document.getElementById('execute-icon');
+  var text = document.getElementById('execute-text');
+  var resultsContainer = document.getElementById('query-results');
+
+  text.textContent = 'Thinking...';
+
+  // Get selected provider
+  var providerSelect = document.getElementById('nl-provider');
+  var provider = providerSelect ? providerSelect.value : '';
+
+  // Build request body
+  var requestBody = {
+    query: query,
+    execute: true
+  };
+  if (provider) {
+    requestBody.provider = provider;
+  }
+
+  // Call the NL API endpoint via dashboard proxy
+  fetch('/database/' + currentDb + '/query/nl', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    body: JSON.stringify(requestBody)
+  })
+  .then(function(response) {
+    return response.json().then(function(data) {
+      return { ok: response.ok, data: data };
+    });
+  })
+  .then(function(result) {
+    var elapsed = ((performance.now() - startTime) / 1000).toFixed(3);
+    document.getElementById('result-time').textContent = elapsed + 's';
+    document.getElementById('result-time').classList.remove('hidden');
+
+    if (!result.ok) {
+      // Error from API
+      var errorMsg = result.data.error || 'Unknown error';
+      if (previewEditor && result.data.last_attempt) {
+        previewEditor.setValue('// Failed attempt:\n' + result.data.last_attempt);
+      }
+      document.getElementById('result-time').classList.add('hidden');
+      resultsContainer.innerHTML = '<div class="p-4 text-error"><i class="fas fa-exclamation-triangle mr-2"></i>' + escapeHtml(errorMsg) + '</div>';
+      return;
+    }
+
+    // Success - show generated SDBQL in preview
+    if (previewEditor && result.data.sdbql) {
+      previewEditor.setValue(result.data.sdbql);
+    }
+
+    // Display server-side execution time if available
+    if (result.data.executionTimeMs !== undefined) {
+      document.getElementById('result-time').textContent = formatExecutionTime(result.data.executionTimeMs);
+      document.getElementById('result-time').classList.remove('hidden');
+    } else {
+      document.getElementById('result-time').classList.add('hidden');
+    }
+
+    // Show attempt count
+    var attemptInfo = result.data.attempts > 1 ? ' <span class="text-warning text-xs">(' + result.data.attempts + ' attempts)</span>' : '';
+
+    // Render results
+    if (result.data.result && Array.isArray(result.data.result)) {
+      var results = result.data.result;
+      var count = results.length;
+      document.getElementById('result-count').textContent = count + ' document' + (count !== 1 ? 's' : '');
+      document.getElementById('result-count').classList.remove('hidden');
+
+      // Build results table/JSON view
+      var html = '<div class="p-2">';
+      html += '<div class="mb-2 text-xs text-text-muted flex items-center gap-2">';
+      html += '<span class="text-success"><i class="fas fa-magic mr-1"></i>AI Generated</span>';
+      html += attemptInfo;
+      html += '</div>';
+
+      if (count === 0) {
+        html += '<div class="text-center text-text-dim py-4">No results</div>';
+      } else {
+        html += '<div class="overflow-x-auto"><pre class="text-xs font-mono bg-bg-dark/50 p-3 rounded-lg overflow-auto max-h-[350px]">' + escapeHtml(JSON.stringify(results, null, 2)) + '</pre></div>';
+      }
+      html += '</div>';
+      resultsContainer.innerHTML = html;
+
+      // Add to results history
+      var statsData = { count: count, execution_time_ms: result.data.executionTimeMs };
+      addToResultsHistory(executedQuery, executedType, results, statsData, resultsContainer.innerHTML);
+      window.queryResultsData = results;
+      window.queryResultsStats = statsData;
+    } else {
+      resultsContainer.innerHTML = '<div class="p-4 text-text-dim">Query executed but no results returned</div>';
+    }
+  })
+  .catch(function(err) {
+    document.getElementById('result-time').classList.add('hidden');
+    resultsContainer.innerHTML = '<div class="p-4 text-error"><i class="fas fa-exclamation-triangle mr-2"></i>Error: ' + escapeHtml(err.message) + '</div>';
+  })
+  .finally(function() {
     btn.disabled = false;
     icon.className = 'fas fa-play';
     text.textContent = 'Execute';

@@ -1,0 +1,1212 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a
+      href="/docs"
+      class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group"
+    >
+      <svg
+        class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M15 19l-7-7 7-7"
+        ></path>
+      </svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <!-- Main Content -->
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div
+          class="absolute -inset-1 bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 rounded-lg blur opacity-25"
+        ></div>
+        <div class="relative">
+          <h1
+            class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-rose-400 mb-4 tracking-tight"
+          >
+            Natural Language Queries
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Write database queries in plain English using AI. SoliDB automatically translates
+            your natural language into SDBQL and executes it.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview -->
+      <section id="overview" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-purple-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                ></path>
+              </svg>
+              Overview
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB's Natural Language (NL) query feature lets you interact with your database using plain English.
+              An AI model translates your requests into valid SDBQL queries, making database operations accessible
+              to everyone regardless of their query language expertise.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <span class="bg-purple-500/20 text-purple-400 p-2 rounded-lg mr-3">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                    </svg>
+                  </span>
+                  <h3 class="text-white font-bold">Plain English</h3>
+                </div>
+                <p class="text-sm text-gray-400">
+                  Write queries like "find all users over 25" or "count orders by status"
+                </p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <span class="bg-pink-500/20 text-pink-400 p-2 rounded-lg mr-3">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                    </svg>
+                  </span>
+                  <h3 class="text-white font-bold">Schema-Aware</h3>
+                </div>
+                <p class="text-sm text-gray-400">
+                  AI understands your database schema for accurate translations
+                </p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <span class="bg-rose-500/20 text-rose-400 p-2 rounded-lg mr-3">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                  </span>
+                  <h3 class="text-white font-bold">Self-Correcting</h3>
+                </div>
+                <p class="text-sm text-gray-400">
+                  Automatically retries with error feedback for improved accuracy
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Supported Providers -->
+      <section id="providers" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-indigo-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-indigo-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                ></path>
+              </svg>
+              LLM Providers
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB supports multiple AI providers for natural language processing. Configure your preferred
+              provider in the <code class="text-pink-300">_system/_env</code> collection.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <!-- OpenAI -->
+              <div class="bg-gradient-to-br from-green-900/30 to-emerald-900/30 rounded-xl p-6 border border-green-500/20">
+                <div class="flex items-center mb-4">
+                  <div class="bg-green-500/20 p-3 rounded-xl mr-4">
+                    <svg class="w-8 h-8 text-green-400" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.8956zm16.5963 3.8558L13.1038 8.364l2.0201-1.1638a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.4043-.6813zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 class="text-white font-bold text-lg">OpenAI</h3>
+                    <p class="text-xs text-gray-400">GPT-4o, GPT-4, etc.</p>
+                  </div>
+                </div>
+                <div class="space-y-2 text-sm">
+                  <div class="flex justify-between">
+                    <span class="text-gray-400">API Key:</span>
+                    <code class="text-green-300">OPENAI_API_KEY</code>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-400">Model:</span>
+                    <code class="text-green-300">OPENAI_MODEL</code>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-400">Default:</span>
+                    <code class="text-gray-500">gpt-4o</code>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Anthropic -->
+              <div class="bg-gradient-to-br from-orange-900/30 to-amber-900/30 rounded-xl p-6 border border-orange-500/20">
+                <div class="flex items-center mb-4">
+                  <div class="bg-orange-500/20 p-3 rounded-xl mr-4">
+                    <svg class="w-8 h-8 text-orange-400" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17.304 3.541l-5.326 16.918h-3.32L14.02 3.541h3.284zM6.696 3.541l5.326 16.918H8.702L3.376 3.541h3.32z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 class="text-white font-bold text-lg">Anthropic</h3>
+                    <p class="text-xs text-gray-400">Claude Sonnet, Opus, etc.</p>
+                  </div>
+                </div>
+                <div class="space-y-2 text-sm">
+                  <div class="flex justify-between">
+                    <span class="text-gray-400">API Key:</span>
+                    <code class="text-orange-300">ANTHROPIC_API_KEY</code>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-400">Model:</span>
+                    <code class="text-orange-300">ANTHROPIC_MODEL</code>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-400">Default:</span>
+                    <code class="text-gray-500">claude-sonnet-4-20250514</code>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Ollama -->
+              <div class="bg-gradient-to-br from-blue-900/30 to-cyan-900/30 rounded-xl p-6 border border-blue-500/20">
+                <div class="flex items-center mb-4">
+                  <div class="bg-blue-500/20 p-3 rounded-xl mr-4">
+                    <svg class="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 class="text-white font-bold text-lg">Ollama</h3>
+                    <p class="text-xs text-gray-400">Local LLMs (Llama, etc.)</p>
+                  </div>
+                </div>
+                <div class="space-y-2 text-sm">
+                  <div class="flex justify-between">
+                    <span class="text-gray-400">URL:</span>
+                    <code class="text-blue-300">OLLAMA_URL</code>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-400">Model:</span>
+                    <code class="text-blue-300">OLLAMA_MODEL</code>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-400">Default:</span>
+                    <code class="text-gray-500">llama3</code>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-6 bg-gray-800/50 rounded-xl p-6 border border-white/10">
+              <h3 class="text-white font-bold mb-3">Default Provider</h3>
+              <p class="text-gray-300 text-sm mb-3">
+                Set <code class="text-pink-300">NL_DEFAULT_PROVIDER</code> to specify which provider to use by default:
+              </p>
+              <code class="text-gray-400 text-sm">openai | anthropic | ollama</code>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Configuration -->
+      <section id="configuration" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-emerald-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-emerald-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                ></path>
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                ></path>
+              </svg>
+              Configuration
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              Store your LLM credentials in the <code class="text-pink-300">_system</code> database's
+              <code class="text-pink-300">_env</code> collection. Each credential is stored as a document
+              with the key as <code class="text-pink-300">_key</code> and the value in a <code class="text-pink-300">value</code> field.
+            </p>
+
+            <h3 class="text-lg font-semibold text-white mt-6">Setting Up Credentials</h3>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+              <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Via API</p>
+              <pre><code class="language-bash text-sm"># Set Anthropic API key
+curl -X POST http://localhost:7777/_api/database/_system/collection/_env \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"_key": "ANTHROPIC_API_KEY", "value": "sk-ant-..."}'
+
+# Set default provider
+curl -X POST http://localhost:7777/_api/database/_system/collection/_env \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"_key": "NL_DEFAULT_PROVIDER", "value": "anthropic"}'</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4 mt-4">
+              <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Via Dashboard</p>
+              <ol class="text-gray-300 space-y-2 list-decimal list-inside text-sm">
+                <li>Navigate to <span class="text-cyan-400">Dashboard</span> > <span class="text-cyan-400">_system</span> database</li>
+                <li>Go to <span class="text-cyan-400">Environment Variables</span> section</li>
+                <li>Add your API keys and configuration</li>
+              </ol>
+            </div>
+
+            <div class="mt-6 bg-yellow-900/20 rounded-xl p-5 border border-yellow-500/30">
+              <h4 class="text-yellow-400 font-bold mb-2 flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                Security Note
+              </h4>
+              <p class="text-sm text-gray-400">
+                API keys stored in <code class="text-yellow-300">_env</code> are accessible to database administrators.
+                Ensure proper access controls are in place for your SoliDB instance.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Examples -->
+      <section id="examples" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-pink-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-pink-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+                ></path>
+              </svg>
+              Example Queries
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <!-- Simple queries -->
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-4">Basic Queries</h3>
+              <div class="space-y-4">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <p class="text-xs text-pink-400 mb-2 uppercase tracking-wider">Natural Language</p>
+                    <div class="bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-xl border border-pink-500/20 p-4">
+                      <p class="text-pink-200 italic">"Find all users"</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Generated SDBQL</p>
+                    <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                      <pre><code class="language-sdbql text-sm">FOR u IN users
+  RETURN u</code></pre>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <p class="text-xs text-pink-400 mb-2 uppercase tracking-wider">Natural Language</p>
+                    <div class="bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-xl border border-pink-500/20 p-4">
+                      <p class="text-pink-200 italic">"Get users older than 25 sorted by age descending"</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Generated SDBQL</p>
+                    <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                      <pre><code class="language-sdbql text-sm">FOR u IN users
+  FILTER u.age > 25
+  SORT u.age DESC
+  RETURN u</code></pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Aggregation queries -->
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-4">Aggregations</h3>
+              <div class="space-y-4">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <p class="text-xs text-pink-400 mb-2 uppercase tracking-wider">Natural Language</p>
+                    <div class="bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-xl border border-pink-500/20 p-4">
+                      <p class="text-pink-200 italic">"Count all orders"</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Generated SDBQL</p>
+                    <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                      <pre><code class="language-sdbql text-sm">RETURN {
+  count: LENGTH(FOR o IN orders RETURN 1)
+}</code></pre>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <p class="text-xs text-pink-400 mb-2 uppercase tracking-wider">Natural Language</p>
+                    <div class="bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-xl border border-pink-500/20 p-4">
+                      <p class="text-pink-200 italic">"Group orders by status and count each"</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Generated SDBQL</p>
+                    <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                      <pre><code class="language-sdbql text-sm">FOR o IN orders
+  COLLECT status = o.status
+  AGGREGATE count = COUNT(1)
+  RETURN { status, count }</code></pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Complex queries -->
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-4">Complex Queries</h3>
+              <div class="space-y-4">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <p class="text-xs text-pink-400 mb-2 uppercase tracking-wider">Natural Language</p>
+                    <div class="bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-xl border border-pink-500/20 p-4">
+                      <p class="text-pink-200 italic">"Find top 5 customers by total order amount"</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Generated SDBQL</p>
+                    <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                      <pre><code class="language-sdbql text-sm">FOR o IN orders
+  COLLECT customer = o.customer_id
+  AGGREGATE total = SUM(o.amount)
+  SORT total DESC
+  LIMIT 5
+  RETURN { customer, total }</code></pre>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <p class="text-xs text-pink-400 mb-2 uppercase tracking-wider">Natural Language</p>
+                    <div class="bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-xl border border-pink-500/20 p-4">
+                      <p class="text-pink-200 italic">"Find users in Paris who haven't placed any orders"</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Generated SDBQL</p>
+                    <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                      <pre><code class="language-sdbql text-sm">LET order_users = (
+  FOR o IN orders
+  RETURN DISTINCT o.user_id
+)
+FOR u IN users
+  FILTER u.city == "Paris"
+  FILTER u._key NOT IN order_users
+  RETURN u</code></pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- API -->
+      <section id="api" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-cyan-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-cyan-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                ></path>
+              </svg>
+              API Endpoint
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-4">Execute Natural Language Query</h3>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4 mb-4">
+                <code class="text-cyan-400">POST /_api/database/{db}/nl</code>
+              </div>
+
+              <h4 class="text-white font-medium mb-2">Request Body</h4>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                <pre><code class="language-json text-sm">{
+  "query": "find all users over 25 sorted by age",
+  "execute": true,
+  "provider": "anthropic"
+}</code></pre>
+              </div>
+
+              <div class="mt-4 overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="text-left border-b border-white/10">
+                      <th class="pb-3 text-gray-400 font-semibold">Parameter</th>
+                      <th class="pb-3 text-gray-400 font-semibold">Type</th>
+                      <th class="pb-3 text-gray-400 font-semibold">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-white/5">
+                    <tr>
+                      <td class="py-3 text-white"><code>query</code></td>
+                      <td class="py-3 text-cyan-400">string</td>
+                      <td class="py-3 text-gray-400">Natural language query</td>
+                    </tr>
+                    <tr>
+                      <td class="py-3 text-white"><code>execute</code></td>
+                      <td class="py-3 text-cyan-400">boolean</td>
+                      <td class="py-3 text-gray-400">Execute the query (default: true)</td>
+                    </tr>
+                    <tr>
+                      <td class="py-3 text-white"><code>provider</code></td>
+                      <td class="py-3 text-cyan-400">string?</td>
+                      <td class="py-3 text-gray-400">LLM provider: openai, anthropic, ollama</td>
+                    </tr>
+                    <tr>
+                      <td class="py-3 text-white"><code>model</code></td>
+                      <td class="py-3 text-cyan-400">string?</td>
+                      <td class="py-3 text-gray-400">Model override (uses env default if not set)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-white font-medium mb-2">Response (Success)</h4>
+              <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                <pre><code class="language-json text-sm">{
+  "sdbql": "FOR u IN users\n  FILTER u.age > 25\n  SORT u.age DESC\n  RETURN u",
+  "result": [
+    { "_key": "alice", "name": "Alice", "age": 30 },
+    { "_key": "bob", "name": "Bob", "age": 28 }
+  ],
+  "attempts": 1
+}</code></pre>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-white font-medium mb-2">Response (Error)</h4>
+              <div class="bg-gray-950/50 rounded-xl border border-red-500/20 p-4">
+                <pre><code class="language-json text-sm">{
+  "error": "Failed to generate valid SDBQL after 3 attempts",
+  "last_attempt": "FOR u IN users...",
+  "parse_error": "Unexpected token at line 2"
+}</code></pre>
+              </div>
+            </div>
+
+            <!-- cURL Example -->
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-4">Example: cURL</h3>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                <pre><code class="language-bash text-sm">curl -X POST http://localhost:7777/_api/database/mydb/nl \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "find users in Paris with more than 5 orders",
+    "execute": true
+  }'</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dashboard Mode -->
+      <section id="dashboard" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-fuchsia-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-fuchsia-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                ></path>
+              </svg>
+              Dashboard NL Mode
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              The Query page in the SoliDB dashboard supports Natural Language mode alongside SDBQL and SQL.
+              Use the NL toggle to write queries in plain English.
+            </p>
+
+            <div class="bg-gray-800/50 rounded-xl p-6 border border-white/10">
+              <h3 class="text-white font-bold mb-4">How to Use NL Mode</h3>
+              <ol class="text-gray-300 space-y-3 list-decimal list-inside">
+                <li>Navigate to <span class="text-cyan-400">Dashboard</span> > <span class="text-cyan-400">Query</span></li>
+                <li>Click the <span class="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-2 py-0.5 rounded text-sm">NL</span> button in the mode toggle</li>
+                <li>Type your query in plain English</li>
+                <li>Click <span class="text-green-400">Execute</span> to translate and run the query</li>
+                <li>View the generated SDBQL in the preview pane</li>
+              </ol>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              <div class="bg-purple-900/20 rounded-xl p-5 border border-purple-500/30">
+                <h4 class="text-purple-400 font-bold mb-2 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                  </svg>
+                  AI-Powered
+                </h4>
+                <p class="text-sm text-gray-400">
+                  Your natural language is translated to SDBQL using the configured LLM provider.
+                </p>
+              </div>
+              <div class="bg-pink-900/20 rounded-xl p-5 border border-pink-500/30">
+                <h4 class="text-pink-400 font-bold mb-2 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                  </svg>
+                  Preview Generated Query
+                </h4>
+                <p class="text-sm text-gray-400">
+                  See the generated SDBQL before it executes, so you can learn the syntax.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Best Practices -->
+      <section id="best-practices" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-amber-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-amber-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                ></path>
+              </svg>
+              Best Practices
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-green-900/20 rounded-xl p-5 border border-green-500/30">
+                <h4 class="text-green-400 font-bold mb-3">Do</h4>
+                <ul class="text-sm text-gray-300 space-y-2">
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">+</span>
+                    Be specific about collection names
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">+</span>
+                    Use field names that exist in your schema
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">+</span>
+                    Specify sort direction (ascending/descending)
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">+</span>
+                    Include limit for large datasets
+                  </li>
+                </ul>
+              </div>
+              <div class="bg-red-900/20 rounded-xl p-5 border border-red-500/30">
+                <h4 class="text-red-400 font-bold mb-3">Don't</h4>
+                <ul class="text-sm text-gray-300 space-y-2">
+                  <li class="flex items-start">
+                    <span class="text-red-400 mr-2">-</span>
+                    Use ambiguous terms without context
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-red-400 mr-2">-</span>
+                    Assume field names if unsure
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-red-400 mr-2">-</span>
+                    Write overly complex queries in one request
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-red-400 mr-2">-</span>
+                    Rely on NL for production-critical queries
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="bg-gray-800/50 rounded-xl p-6 border border-white/10 mt-6">
+              <h3 class="text-white font-bold mb-3">Tips for Better Results</h3>
+              <ul class="text-gray-300 space-y-2 text-sm">
+                <li><span class="text-amber-400">1.</span> Use collection and field names from your actual schema</li>
+                <li><span class="text-amber-400">2.</span> Break complex queries into simpler parts</li>
+                <li><span class="text-amber-400">3.</span> Review the generated SDBQL to learn the syntax</li>
+                <li><span class="text-amber-400">4.</span> Use execute=false to preview without running</li>
+                <li><span class="text-amber-400">5.</span> For critical queries, convert to SDBQL and test thoroughly</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Schema Discovery -->
+      <section id="schema-discovery" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-violet-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-violet-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
+                ></path>
+              </svg>
+              Schema Discovery
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB automatically analyzes your database schema to provide context to the AI model.
+              This ensures accurate query generation that matches your actual data structure.
+            </p>
+
+            <h3 class="text-lg font-semibold text-white">What the AI Learns</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <span class="bg-violet-500/20 text-violet-400 p-2 rounded-lg mr-3">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                    </svg>
+                  </span>
+                  <h4 class="text-white font-bold">Collection Names</h4>
+                </div>
+                <p class="text-sm text-gray-400">
+                  All non-system collections in your database are discovered
+                </p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <span class="bg-violet-500/20 text-violet-400 p-2 rounded-lg mr-3">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                  </span>
+                  <h4 class="text-white font-bold">Field Names & Types</h4>
+                </div>
+                <p class="text-sm text-gray-400">
+                  Samples documents to infer field names and data types
+                </p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <span class="bg-violet-500/20 text-violet-400 p-2 rounded-lg mr-3">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                    </svg>
+                  </span>
+                  <h4 class="text-white font-bold">Document Counts</h4>
+                </div>
+                <p class="text-sm text-gray-400">
+                  Knows how many documents are in each collection
+                </p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <span class="bg-violet-500/20 text-violet-400 p-2 rounded-lg mr-3">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                    </svg>
+                  </span>
+                  <h4 class="text-white font-bold">Available Indexes</h4>
+                </div>
+                <p class="text-sm text-gray-400">
+                  Index definitions for optimized query suggestions
+                </p>
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4 mt-6">
+              <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Example Schema Context Sent to AI</p>
+              <pre><code class="language-markdown text-sm">### Collection: `users` (1,542 documents)
+Fields:
+  - `_key`: string
+  - `age`: number
+  - `city`: string
+  - `email`: string
+  - `name`: string
+Indexes:
+  - email_idx(email)
+  - city_age_idx(city, age)
+
+### Collection: `orders` (8,391 documents)
+Fields:
+  - `_key`: string
+  - `amount`: number
+  - `status`: string
+  - `user_id`: string</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Self-Correcting Mechanism -->
+      <section id="self-correcting" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-teal-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-teal-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                ></path>
+              </svg>
+              Self-Correcting Mechanism
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              When the AI generates invalid SDBQL, SoliDB automatically feeds the error back and
+              requests a correction. This retry loop significantly improves success rates.
+            </p>
+
+            <div class="relative">
+              <!-- Flow diagram -->
+              <div class="flex flex-col space-y-4">
+                <div class="flex items-center">
+                  <div class="bg-teal-500/20 text-teal-400 px-4 py-2 rounded-lg font-mono text-sm">
+                    1. Natural Language
+                  </div>
+                  <svg class="w-6 h-6 text-gray-500 mx-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                  </svg>
+                  <div class="bg-gray-800/50 px-4 py-2 rounded-lg text-gray-300 text-sm">
+                    "Find users in Paris"
+                  </div>
+                </div>
+
+                <div class="flex items-center">
+                  <div class="bg-purple-500/20 text-purple-400 px-4 py-2 rounded-lg font-mono text-sm">
+                    2. LLM Generates
+                  </div>
+                  <svg class="w-6 h-6 text-gray-500 mx-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                  </svg>
+                  <div class="bg-gray-950/50 px-4 py-2 rounded-lg text-gray-300 text-sm font-mono">
+                    FOR u IN users FILTER u.city = "Paris" RETURN u
+                  </div>
+                </div>
+
+                <div class="flex items-center">
+                  <div class="bg-red-500/20 text-red-400 px-4 py-2 rounded-lg font-mono text-sm">
+                    3. Parser Error
+                  </div>
+                  <svg class="w-6 h-6 text-gray-500 mx-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                  </svg>
+                  <div class="bg-red-900/30 px-4 py-2 rounded-lg text-red-300 text-sm">
+                    "Expected '==' but found '='"
+                  </div>
+                </div>
+
+                <div class="flex items-center">
+                  <div class="bg-amber-500/20 text-amber-400 px-4 py-2 rounded-lg font-mono text-sm">
+                    4. Retry with Error
+                  </div>
+                  <svg class="w-6 h-6 text-gray-500 mx-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                  </svg>
+                  <div class="bg-gray-800/50 px-4 py-2 rounded-lg text-gray-300 text-sm">
+                    Error sent back to LLM for correction
+                  </div>
+                </div>
+
+                <div class="flex items-center">
+                  <div class="bg-green-500/20 text-green-400 px-4 py-2 rounded-lg font-mono text-sm">
+                    5. Valid Query
+                  </div>
+                  <svg class="w-6 h-6 text-gray-500 mx-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                  </svg>
+                  <div class="bg-gray-950/50 px-4 py-2 rounded-lg text-green-300 text-sm font-mono">
+                    FOR u IN users FILTER u.city == "Paris" RETURN u
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+              <div class="bg-gray-800/50 rounded-xl p-4 border border-white/10 text-center">
+                <p class="text-3xl font-bold text-teal-400">3</p>
+                <p class="text-sm text-gray-400">Max Retry Attempts</p>
+              </div>
+              <div class="bg-gray-800/50 rounded-xl p-4 border border-white/10 text-center">
+                <p class="text-3xl font-bold text-purple-400">~95%</p>
+                <p class="text-sm text-gray-400">Success Rate with Retries</p>
+              </div>
+              <div class="bg-gray-800/50 rounded-xl p-4 border border-white/10 text-center">
+                <p class="text-3xl font-bold text-pink-400">attempts</p>
+                <p class="text-sm text-gray-400">Returned in Response</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Troubleshooting -->
+      <section id="troubleshooting" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-red-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-red-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                ></path>
+              </svg>
+              Troubleshooting
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <div class="space-y-4">
+              <!-- Error 1 -->
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h4 class="text-red-400 font-bold mb-2 font-mono text-sm">
+                  "OPENAI_API_KEY not found in _system/_env collection"
+                </h4>
+                <p class="text-gray-300 text-sm mb-3">
+                  The API key for your chosen provider hasn't been configured.
+                </p>
+                <div class="bg-gray-950/50 rounded-lg p-3">
+                  <p class="text-xs text-green-400 mb-1">Solution:</p>
+                  <code class="text-xs text-gray-400">Add the API key to _system/_env collection via API or Dashboard</code>
+                </div>
+              </div>
+
+              <!-- Error 2 -->
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h4 class="text-red-400 font-bold mb-2 font-mono text-sm">
+                  "No collections found in database"
+                </h4>
+                <p class="text-gray-300 text-sm mb-3">
+                  The database has no user collections for the AI to query.
+                </p>
+                <div class="bg-gray-950/50 rounded-lg p-3">
+                  <p class="text-xs text-green-400 mb-1">Solution:</p>
+                  <code class="text-xs text-gray-400">Create at least one collection with data before using NL queries</code>
+                </div>
+              </div>
+
+              <!-- Error 3 -->
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h4 class="text-red-400 font-bold mb-2 font-mono text-sm">
+                  "Failed to generate valid SDBQL after 3 attempts"
+                </h4>
+                <p class="text-gray-300 text-sm mb-3">
+                  The AI couldn't produce a valid query after multiple tries.
+                </p>
+                <div class="bg-gray-950/50 rounded-lg p-3">
+                  <p class="text-xs text-green-400 mb-1">Solutions:</p>
+                  <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside">
+                    <li>Simplify your query - break it into smaller parts</li>
+                    <li>Use exact collection and field names from your schema</li>
+                    <li>Try a different LLM model (e.g., GPT-4o instead of GPT-3.5)</li>
+                    <li>Check the <code class="text-pink-300">last_attempt</code> in the error response</li>
+                  </ul>
+                </div>
+              </div>
+
+              <!-- Error 4 -->
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h4 class="text-red-400 font-bold mb-2 font-mono text-sm">
+                  "Unknown LLM provider: xyz"
+                </h4>
+                <p class="text-gray-300 text-sm mb-3">
+                  An unsupported provider was specified.
+                </p>
+                <div class="bg-gray-950/50 rounded-lg p-3">
+                  <p class="text-xs text-green-400 mb-1">Solution:</p>
+                  <code class="text-xs text-gray-400">Use one of: openai, anthropic, ollama</code>
+                </div>
+              </div>
+
+              <!-- Error 5 -->
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h4 class="text-red-400 font-bold mb-2 font-mono text-sm">
+                  "Ollama API request failed: connection refused"
+                </h4>
+                <p class="text-gray-300 text-sm mb-3">
+                  The Ollama server is not running or unreachable.
+                </p>
+                <div class="bg-gray-950/50 rounded-lg p-3">
+                  <p class="text-xs text-green-400 mb-1">Solutions:</p>
+                  <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside">
+                    <li>Start Ollama: <code class="text-pink-300">ollama serve</code></li>
+                    <li>Check OLLAMA_URL in _env (default: http://localhost:11434)</li>
+                    <li>Ensure the model is pulled: <code class="text-pink-300">ollama pull llama3</code></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Client SDK Examples -->
+      <section id="sdk-examples" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-sky-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-sky-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                ></path>
+              </svg>
+              Client SDK Examples
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <!-- JavaScript -->
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-3 flex items-center">
+                <span class="bg-yellow-500/20 text-yellow-400 p-1.5 rounded mr-3">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M0 0h24v24H0V0zm22.034 18.276c-.175-1.095-.888-2.015-3.003-2.873-.736-.345-1.554-.585-1.797-1.14-.091-.33-.105-.51-.046-.705.15-.646.915-.84 1.515-.66.39.12.75.42.976.9 1.034-.676 1.034-.676 1.755-1.125-.27-.42-.404-.601-.586-.78-.63-.705-1.469-1.065-2.834-1.034l-.705.089c-.676.165-1.32.525-1.71 1.005-1.14 1.291-.811 3.541.569 4.471 1.365 1.02 3.361 1.244 3.616 2.205.24 1.17-.87 1.545-1.966 1.41-.811-.18-1.26-.586-1.755-1.336l-1.83 1.051c.21.48.45.689.81 1.109 1.74 1.756 6.09 1.666 6.871-1.004.029-.09.24-.705.074-1.65l.046.067zm-8.983-7.245h-2.248c0 1.938-.009 3.864-.009 5.805 0 1.232.063 2.363-.138 2.711-.33.689-1.18.601-1.566.48-.396-.196-.597-.466-.83-.855-.063-.105-.11-.196-.127-.196l-1.825 1.125c.305.63.75 1.172 1.324 1.517.855.51 2.004.675 3.207.405.783-.226 1.458-.691 1.811-1.411.51-.93.402-2.07.397-3.346.012-2.054 0-4.109 0-6.179l.004-.056z"/>
+                  </svg>
+                </span>
+                JavaScript / Node.js
+              </h3>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                <pre><code class="language-javascript text-sm">const response = await fetch('http://localhost:7777/_api/database/mydb/nl', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    query: 'Find users in Paris older than 25',
+    execute: true
+  })
+});
+
+const { sdbql, result, attempts } = await response.json();
+console.log(`Generated SDBQL (${attempts} attempts):`, sdbql);
+console.log('Results:', result);</code></pre>
+              </div>
+            </div>
+
+            <!-- Python -->
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-3 flex items-center">
+                <span class="bg-blue-500/20 text-blue-400 p-1.5 rounded mr-3">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M14.25.18l.9.2.73.26.59.3.45.32.34.34.25.34.16.33.1.3.04.26.02.2-.01.13V8.5l-.05.63-.13.55-.21.46-.26.38-.3.31-.33.25-.35.19-.35.14-.33.1-.3.07-.26.04-.21.02H8.77l-.69.05-.59.14-.5.22-.41.27-.33.32-.27.35-.2.36-.15.37-.1.35-.07.32-.04.27-.02.21v3.06H3.17l-.21-.03-.28-.07-.32-.12-.35-.18-.36-.26-.36-.36-.35-.46-.32-.59-.28-.73-.21-.88-.14-1.05-.05-1.23.06-1.22.16-1.04.24-.87.32-.71.36-.57.4-.44.42-.33.42-.24.4-.16.36-.1.32-.05.24-.01h.16l.06.01h8.16v-.83H6.18l-.01-2.75-.02-.37.05-.34.11-.31.17-.28.25-.26.31-.23.38-.2.44-.18.51-.15.58-.12.64-.1.71-.06.77-.04.84-.02 1.27.05zm-6.3 1.98l-.23.33-.08.41.08.41.23.34.33.22.41.09.41-.09.33-.22.23-.34.08-.41-.08-.41-.23-.33-.33-.22-.41-.09-.41.09zm13.09 3.95l.28.06.32.12.35.18.36.27.36.35.35.47.32.59.28.73.21.88.14 1.04.05 1.23-.06 1.23-.16 1.04-.24.86-.32.71-.36.57-.4.45-.42.33-.42.24-.4.16-.36.09-.32.05-.24.02-.16-.01h-8.22v.82h5.84l.01 2.76.02.36-.05.34-.11.31-.17.29-.25.25-.31.24-.38.2-.44.17-.51.15-.58.13-.64.09-.71.07-.77.04-.84.01-1.27-.04-1.07-.14-.9-.2-.73-.25-.59-.3-.45-.33-.34-.34-.25-.34-.16-.33-.1-.3-.04-.25-.02-.2.01-.13v-5.34l.05-.64.13-.54.21-.46.26-.38.3-.32.33-.24.35-.2.35-.14.33-.1.3-.06.26-.04.21-.02.13-.01h5.84l.69-.05.59-.14.5-.21.41-.28.33-.32.27-.35.2-.36.15-.36.1-.35.07-.32.04-.28.02-.21V6.07h2.09l.14.01zm-6.47 14.25l-.23.33-.08.41.08.41.23.33.33.23.41.08.41-.08.33-.23.23-.33.08-.41-.08-.41-.23-.33-.33-.23-.41-.08-.41.08z"/>
+                  </svg>
+                </span>
+                Python
+              </h3>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                <pre><code class="language-python text-sm">import requests
+
+response = requests.post(
+    'http://localhost:7777/_api/database/mydb/nl',
+    headers={
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'query': 'Count orders grouped by status',
+        'execute': True,
+        'provider': 'anthropic'
+    }
+)
+
+data = response.json()
+print(f"Generated SDBQL ({data['attempts']} attempts):")
+print(data['sdbql'])
+print("Results:", data['result'])</code></pre>
+              </div>
+            </div>
+
+            <!-- Go -->
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-3 flex items-center">
+                <span class="bg-cyan-500/20 text-cyan-400 p-1.5 rounded mr-3">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M1.811 10.231c-.047 0-.058-.023-.035-.059l.246-.315c.023-.035.081-.058.128-.058h4.172c.046 0 .058.035.035.07l-.199.303c-.023.036-.082.07-.117.07zM.047 11.306c-.047 0-.059-.023-.035-.058l.245-.316c.023-.035.082-.058.129-.058h5.328c.047 0 .07.035.058.07l-.093.28c-.012.047-.058.07-.105.07zm2.828 1.075c-.047 0-.059-.035-.035-.07l.163-.292c.023-.035.07-.07.117-.07h2.337c.047 0 .07.035.07.082l-.023.28c0 .047-.047.082-.082.082zm12.129-2.36c-.736.187-1.239.327-1.963.514-.176.046-.187.058-.34-.117-.174-.199-.303-.327-.548-.444-.737-.362-1.45-.257-2.115.175-.795.514-1.204 1.274-1.192 2.22.011.935.654 1.706 1.577 1.835.795.105 1.46-.175 1.987-.77.105-.13.198-.27.315-.434H10.47c-.245 0-.304-.152-.222-.35.152-.362.432-.97.596-1.274a.315.315 0 01.292-.187h4.253c-.023.316-.023.631-.07.947a4.983 4.983 0 01-.958 2.29c-.841 1.11-1.94 1.8-3.33 1.986-1.145.152-2.209-.07-3.143-.77-.865-.655-1.356-1.52-1.484-2.595-.152-1.274.222-2.419.993-3.424.83-1.086 1.928-1.776 3.272-2.02 1.098-.2 2.15-.07 3.096.571.62.41 1.063.97 1.356 1.648.07.105.023.164-.117.2z"/>
+                  </svg>
+                </span>
+                Go
+              </h3>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                <pre><code class="language-go text-sm">type NLRequest struct {
+    Query   string `json:"query"`
+    Execute bool   `json:"execute"`
+}
+
+type NLResponse struct {
+    SDBQL    string        `json:"sdbql"`
+    Result   []interface{} `json:"result,omitempty"`
+    Attempts int           `json:"attempts"`
+}
+
+body, _ := json.Marshal(NLRequest{
+    Query:   "Find top 10 users by order count",
+    Execute: true,
+})
+
+req, _ := http.NewRequest("POST",
+    "http://localhost:7777/_api/database/mydb/nl",
+    bytes.NewBuffer(body))
+req.Header.Set("Authorization", "Bearer "+token)
+req.Header.Set("Content-Type", "application/json")
+
+resp, _ := http.DefaultClient.Do(req)
+var result NLResponse
+json.NewDecoder(resp.Body).Decode(&result)
+
+fmt.Printf("SDBQL: %s\n", result.SDBQL)</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

@@ -85,6 +85,7 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   router.post("/query/execute", "dashboard/query#execute")
   router.post("/query/explain", "dashboard/query#explain")
   router.post("/query/translate", "dashboard/query#translate")
+  router.post("/query/nl", "dashboard/query#nl")
 
   -- REPL routes
   router.get("/repl", "dashboard/query#repl")
@@ -147,6 +148,11 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   router.get("/monitoring/storage-stats", "dashboard/monitoring#storage_stats")
   router.get("/monitoring/operations", "dashboard/monitoring#operations")
   router.get("/monitoring/slow-queries", "dashboard/monitoring#slow_queries")
+
+  -- Slow Queries page
+  router.get("/slow-queries", "dashboard/monitoring#slow_queries_page")
+  router.get("/slow-queries/table", "dashboard/monitoring#slow_queries")
+  router.delete("/slow-queries", "dashboard/monitoring#clear_slow_queries")
 
   -- Sharding routes (HTMX)
   router.get("/sharding/distribution", "dashboard/admin#sharding_distribution")
