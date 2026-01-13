@@ -60,6 +60,12 @@ end
     <span class="text-sm">Collections</span>
   </a>
 
+  <a href="/database/<%= db %>/views"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('views') %>">
+    <i class="fas fa-layer-group w-5 text-center text-accent-light"></i>
+    <span class="text-sm">Materialized Views</span>
+  </a>
+
   <a href="/database/<%= db %>/query"
      class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('query') %>">
     <i class="fas fa-terminal w-5 text-center text-info"></i>

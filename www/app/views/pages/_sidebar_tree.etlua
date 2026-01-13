@@ -1,0 +1,51 @@
+<% for _, page in ipairs(pages) do %>
+<div class="pl-2">
+  <div class="group flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-white/5 <%= current_page_key == page._key and 'bg-white/10 text-white' or 'text-text-dim hover:text-text' %> transition-colors relative page-item">
+    
+    <!-- Expand/Collapse Button -->
+    <button class="w-4 h-4 flex items-center justify-center rounded hover:bg-white/10 text-text-muted/50 hover:text-text-muted transition-colors"
+            onclick="toggleChildren('<%= page._key %>')"
+            hx-get="/pages/sidebar/children/<%= page._key %>?current_page_key=<%= current_page_key or '' %>"
+            hx-trigger="click once"
+            hx-target="#children-<%= page._key %>"
+            hx-swap="innerHTML">
+      <i class="fas fa-chevron-right text-[10px] transform transition-transform" id="icon-<%= page._key %>"></i>
+    </button>
+    
+    <!-- Page Link -->
+    <a href="/pages/<%= page._key %>" class="flex-1 min-w-0 flex items-center gap-2 truncate">
+      <span class="text-base"><%= page.icon or "📄" %></span>
+      <span class="truncate text-sm select-none"><%= page.title %></span>
+    </a>
+    
+    <!-- Actions (hover) -->
+    <div class="page-actions flex items-center">
+      <button hx-delete="/pages/<%= page._key %>" hx-confirm="Are you sure?" 
+              class="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-text-dim hover:text-red-400">
+        <i class="fas fa-trash text-[10px]"></i>
+      </button>
+      <button hx-get="/pages/modal/create?parent_id=<%= page._key %>" hx-target="#modal-container"
+              class="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-text-dim hover:text-white">
+        <i class="fas fa-plus text-[10px]"></i>
+      </button>
+    </div>
+  </div>
+  
+  <!-- Children Container -->
+  <div id="children-<%= page._key %>" class="hidden border-l border-white/5 ml-4"></div>
+  
+  <script>
+    function toggleChildren(key) {
+      const container = document.getElementById('children-' + key);
+      const icon = document.getElementById('icon-' + key);
+      if (container.classList.contains('hidden')) {
+        container.classList.remove('hidden');
+        icon.classList.add('rotate-90');
+      } else {
+        container.classList.add('hidden');
+        icon.classList.remove('rotate-90');
+      }
+    }
+  </script>
+</div>
+<% end %>

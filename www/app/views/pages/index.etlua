@@ -1,0 +1,32 @@
+<div class="flex-1 flex flex-col items-center justify-center p-8 text-center bg-bg/50">
+  <div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-6 animate-float">
+    <i class="fas fa-book-open text-5xl text-white/50"></i>
+  </div>
+  
+  <h1 class="text-3xl font-bold text-white mb-2">Welcome to Pages</h1>
+  <p class="text-text-dim max-w-md mb-8">
+    Create, organize, and share documents with your team. Start by creating a new page or selecting one from the sidebar.
+  </p>
+  
+  <button hx-get="/pages/modal/create" hx-target="#modal-container"
+          class="px-6 py-3 rounded-xl bg-primary hover:bg-primary-hover text-white font-medium transition-all shadow-lg shadow-primary/20 flex items-center gap-2 group">
+    <i class="fas fa-plus group-hover:rotate-90 transition-transform"></i>
+    <span>Create New Page</span>
+  </button>
+  
+  <div class="mt-12 grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl">
+    <!-- Recent Pages Placeholder -->
+    <% if next(pages) then %>
+      <div class="col-span-full text-left text-xs font-bold text-text-dim uppercase tracking-widest mb-2">Root Pages</div>
+      <% for _, page in ipairs(pages) do %>
+        <a href="/pages/<%= page._key %>" class="glass-card p-4 rounded-xl hover:bg-white/5 transition-colors group flex items-start gap-4">
+          <span class="text-2xl group-hover:scale-110 transition-transform"><%= page.icon or "📄" %></span>
+          <div class="min-w-0">
+            <div class="font-semibold text-white truncate"><%= page.title %></div>
+            <div class="text-xs text-text-dim">Updated <%= require("helpers.date_helper").time_ago(page.updated_at) %></div>
+          </div>
+        </a>
+      <% end %>
+    <% end %>
+  </div>
+</div>

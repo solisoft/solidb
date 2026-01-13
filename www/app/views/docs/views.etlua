@@ -1,0 +1,200 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 mb-4 tracking-tight">
+            Materialized Views
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Boost query performance by caching complex aggregations and joins in persisted, indexable collections.
+          </p>
+        </div>
+      </div>
+
+      <!-- Introduction -->
+      <section id="introduction" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
+              </svg>
+              Overview
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              Materialized Views in SoliDB allow you to pre-compute and store the results of complex SDBQL queries. Unlike standard views (which run the query every time they are accessed), materialized views persist the data to disk in a system-managed collection.
+            </p>
+            <p class="text-gray-300 leading-relaxed">
+              This is ideal for expensive operations like multi-collection joins, heavy aggregations, or complex filtering that doesn't need to be strictly real-time.
+            </p>
+
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-emerald-500/30 transition-colors">
+                 <h3 class="text-emerald-300 font-bold mb-2">High Performance</h3>
+                 <p class="text-sm text-gray-400">Read pre-computed results instantly without re-executing complex logic.</p>
+               </div>
+               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-emerald-500/30 transition-colors">
+                 <h3 class="text-emerald-300 font-bold mb-2">Persisted Storage</h3>
+                 <p class="text-sm text-gray-400">Data survives restarts and can be indexed just like any other collection.</p>
+               </div>
+               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-emerald-500/30 transition-colors">
+                 <h3 class="text-emerald-300 font-bold mb-2">Snapshot Isolation</h3>
+                 <p class="text-sm text-gray-400">Provides a consistent snapshot of data at the time of the last refresh.</p>
+               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Creating Views -->
+      <section id="create" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-indigo-500/10 to-blue-500/10 rounded-xl border border-indigo-500/20 overflow-hidden">
+          <div class="p-5 border-b border-indigo-500/20 bg-indigo-500/5">
+            <h3 class="text-lg font-bold text-indigo-300 flex items-center">
+              Creating Views
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+             <p class="text-sm text-gray-400">
+               Use the <code class="text-indigo-300">CREATE MATERIALIZED VIEW</code> statement. Passing the <code class="text-indigo-300">AS</code> clause defines the query used to populate the view.
+             </p>
+             <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+               <pre><code class="language-sql text-sm">CREATE MATERIALIZED VIEW high_value_customers AS
+FOR u IN users
+  JOIN orders ON u._key == orders.user_key
+  LET total = SUM(orders[*].total)
+  FILTER total > 1000
+  RETURN {
+    customer_id: u._key,
+    name: u.name,
+    lifetime_value: total
+  }</code></pre>
+             </div>
+             <p class="text-sm text-gray-400">
+               This command creates a new system collection (e.g., <code class="text-indigo-300">_system:high_value_customers</code>) and populates it immediately with the query results.
+             </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Refreshing Views -->
+      <section id="refresh" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-xl border border-amber-500/20 overflow-hidden">
+           <div class="p-5 border-b border-amber-500/20 bg-amber-500/5">
+            <h3 class="text-lg font-bold text-amber-300 flex items-center">
+              Refreshing Data
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              Materialized views do not update automatically when the underlying data changes. You must trigger a refresh manually to update the content.
+            </p>
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+               <pre><code class="language-sql text-sm">REFRESH MATERIALIZED VIEW high_value_customers</code></pre>
+             </div>
+             <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+               <p class="text-xs text-gray-400">
+                 <strong class="text-amber-400">Note:</strong> Refreshing a view truncates the existing collection and repopulates it from scratch using the stored query definition. This operation is atomic in terms of visibility (the collection is replaced), but may take time depending on data size.
+               </p>
+             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Querying & Management -->
+      <section id="management" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+           <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              Querying & Management
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <h3 class="text-lg font-semibold text-white">Querying</h3>
+            <p class="text-gray-400 text-sm">
+              Once created, a materialized view acts just like a regular read-only collection. You can query it, filter it, and even join it with other collections.
+            </p>
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-sql text-sm">FOR c IN high_value_customers
+  FILTER c.lifetime_value > 5000
+  RETURN c.name</code></pre>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mt-6">Managing via Dashboard</h3>
+            <p class="text-gray-400 text-sm">
+              You can manage your views through the SoliDB Dashboard:
+            </p>
+            <ul class="list-disc list-inside text-gray-400 text-sm space-y-2 ml-4">
+              <li>Navigate to <strong>Data > Materialized Views</strong> in the sidebar.</li>
+              <li>View all existing views and their definitions.</li>
+              <li>Trigger a <strong>Refresh</strong> with a single click.</li>
+              <li><strong>Delete</strong> views when they are no longer needed.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Real-World Example -->
+      <section id="example" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-rose-500/10 to-pink-500/10 rounded-xl border border-rose-500/20 overflow-hidden">
+          <div class="p-5 border-b border-rose-500/20 bg-rose-500/5">
+            <h3 class="text-lg font-bold text-rose-300 flex items-center">
+              Real-World Example: Daily Revenue Dashboard
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+             <p class="text-sm text-gray-400">
+               <strong>Scenario:</strong> You have an e-commerce platform with an <code class="text-rose-300">orders</code> collection containing millions of records. You want to display key metrics like "Daily Revenue by Category" on your admin dashboard.
+             </p>
+             <p class="text-sm text-gray-400">
+               <strong>Problem:</strong> Running an aggregation query on the live <code class="text-rose-300">orders</code> collection every time the dashboard loads is too slow (taking seconds) and puts unnecessary load on the system.
+             </p>
+             <p class="text-sm text-gray-400">
+               <strong>Solution:</strong> Create a Materialized View that pre-aggregates this data.
+             </p>
+
+             <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+               <pre><code class="language-sql text-sm">-- 1. Create the view
+CREATE MATERIALIZED VIEW daily_revenue_stats AS
+FOR o IN orders
+  -- Truncate timestamp to day
+  LET day = DATE_FORMAT(o.created_at, "%Y-%m-%d")
+  -- Group by day and category
+  COLLECT date = day, cat = o.category WITH SUM(o.total_amount) INTO revenue
+  RETURN {
+    date: date,
+    category: cat,
+    total_revenue: revenue,
+    generated_at: DATE_NOW()
+  }</code></pre>
+             </div>
+
+             <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4 mt-2">
+               <pre><code class="language-sql text-sm">-- 2. Query the view (Instant!)
+FOR stat IN daily_revenue_stats
+  FILTER stat.date >= "2023-01-01"
+  SORT stat.date DESC
+  RETURN stat</code></pre>
+             </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

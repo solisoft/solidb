@@ -1,7 +1,15 @@
 <%
   local is_edit = is_edit or false
   local script = script or {}
-  local script_id = script.key or script.id or ""
+  -- Script from backend uses 'key', but from some contexts might use 'id'
+  -- Rust struct serializes 'key' as '_key', so we must check that too
+  local script_id = script._key or script.key or script.id or ""
+  
+  -- If we are in edit mode but have no ID, something is wrong
+  if is_edit and script_id == "" then
+    -- Fallback for debugging - will show in logs if rendering fails or produces bad URL
+    script_id = "MISSING_ID" 
+  end
   local script_name = script.name or ""
   local script_path = script.path or ""
   local script_code = script.code or "-- Your Lua code here\n\nreturn { message = \"Hello, World!\" }"
@@ -24,7 +32,7 @@
          onclick="document.getElementById('modal-container').innerHTML = ''"></div>
 
     <!-- Modal Content -->
-    <div class="relative bg-bg-card border border-border/50 rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all w-[95vw] max-w-6xl max-h-[90vh] flex flex-col">
+    <div class="relative bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
       <!-- Header -->
       <div class="px-6 py-4 border-b border-border/30 flex items-center justify-between">
         <h3 class="text-lg font-semibold text-text">
@@ -45,8 +53,29 @@
       <form hx-post="<% if is_edit then %>/database/<%= db %>/scripts/<%= script_id %><% else %>/database/<%= db %>/scripts<% end %>"
             hx-target="#scripts-table"
             hx-swap="innerHTML"
+            hx-on:htmx:after-request="
+              if(event.detail.successful) {
+                <% if is_edit then %>
+                  if(window.showToast) window.showToast('Script updated successfully', 'success');
+                <% else %>
+                  if(window.showToast) window.showToast('Script created successfully', 'success');
+                  closeModal();
+                <% end %>
+              }
+            "
             <% if is_edit then %>hx-put="/database/<%= db %>/scripts/<%= script_id %>"<% end %>
             class="p-6 space-y-5 overflow-y-auto flex-1">
+            
+        <% if is_edit and script_id == "MISSING_ID" then %>
+          <div class="bg-red-500/10 border border-red-500/50 p-4 rounded text-red-400 mb-4">
+            Error: Could not load script ID. Please close and try again.
+          </div>
+          <script>
+            if (window.showToast) {
+              window.showToast({message: "Error: Could not load script ID. Please close and try again.", type: "error"});
+            }
+          </script>
+        <% end %>
 
         <% if is_edit then %>
           <input type="hidden" name="_method" value="PUT">

@@ -54,6 +54,7 @@ local sections = {
       { slug = "vector-search", label = "Vector Search", icon = "fa-brain", color = "accent" },
       { slug = "hybrid-search", label = "Hybrid Search", icon = "fa-layer-group", color = "warning" },
       { slug = "graphs", label = "Graphs & Edges", icon = "fa-project-diagram", color = "accent" },
+      { slug = "views", label = "Materialized Views", icon = "fa-layer-group", color = "primary" },
       { slug = "scripting", label = "Lua Scripting", icon = "fa-scroll", color = "info", subitems = {
         { slug = "scripting-management", label = "Management API" },
         { slug = "scripting-core", label = "Core API" },

@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// AST node for a complete SDBQL query
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Query {
     /// LET clauses for variable bindings (executed first, before any FOR)
     pub let_clauses: Vec<LetClause>,
@@ -17,15 +18,20 @@ pub struct Query {
     pub return_clause: Option<ReturnClause>,
     /// Optional CREATE STREAM clause (wraps the query definition)
     pub create_stream_clause: Option<CreateStreamClause>,
+    /// Optional CREATE MATERIALIZED VIEW clause
+    pub create_materialized_view_clause: Option<CreateMaterializedViewClause>,
+    /// Optional REFRESH MATERIALIZED VIEW clause
+    pub refresh_materialized_view_clause: Option<RefreshMaterializedViewClause>,
     /// Optional WINDOW clause for stream processing
     pub window_clause: Option<WindowClause>,
+
     /// Ordered body clauses (FOR, LET, FILTER) preserving declaration order
     /// This enables correlated subqueries where LET can reference outer FOR variables
     pub body_clauses: Vec<BodyClause>,
 }
 
 /// A clause that can appear in the query body (preserves order for correlated subqueries)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BodyClause {
     For(ForClause),
     Let(LetClause),
@@ -42,7 +48,7 @@ pub enum BodyClause {
 }
 
 /// Edge direction for graph traversals
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EdgeDirection {
     /// Follow edges where start_vertex == _from
     Outbound,
@@ -53,7 +59,7 @@ pub enum EdgeDirection {
 }
 
 /// FOR vertex[, edge] IN [depth..depth] OUTBOUND|INBOUND|ANY start_vertex edge_collection
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GraphTraversalClause {
     /// Variable for the visited vertices
     pub vertex_var: String,
@@ -72,7 +78,7 @@ pub struct GraphTraversalClause {
 }
 
 /// FOR vertex[, edge] IN SHORTEST_PATH start_vertex TO end_vertex OUTBOUND|INBOUND|ANY edge_collection
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ShortestPathClause {
     /// Variable for the vertices in the path
     pub vertex_var: String,
@@ -89,13 +95,28 @@ pub struct ShortestPathClause {
 }
 
 /// CREATE STREAM name AS ...
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CreateStreamClause {
     pub name: String,
     pub if_not_exists: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// CREATE MATERIALIZED VIEW name AS ...
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateMaterializedViewClause {
+    pub name: String,
+    pub if_not_exists: bool,
+    /// The query definition
+    pub query: Box<Query>,
+}
+
+/// REFRESH MATERIALIZED VIEW name
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RefreshMaterializedViewClause {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum WindowType {
     /// TUMBLING (SIZE "1m") - Fixed non-overlapping windows
     Tumbling,
@@ -104,7 +125,7 @@ pub enum WindowType {
 }
 
 /// WINDOW TUMBLING (SIZE "1m")
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WindowClause {
     pub window_type: WindowType,
     /// Duration string (e.g., "1m", "30s", "1h")
@@ -112,14 +133,14 @@ pub struct WindowClause {
 }
 
 /// LET variable = expression (can be a subquery)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LetClause {
     pub variable: String,
     pub expression: Expression,
 }
 
 /// FOR variable IN collection/expression
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ForClause {
     pub variable: String,
     pub collection: String,
@@ -130,20 +151,20 @@ pub struct ForClause {
 }
 
 /// FILTER expression
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FilterClause {
     pub expression: Expression,
 }
 
 /// INSERT document INTO collection
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InsertClause {
     pub document: Expression,
     pub collection: String,
 }
 
 /// UPDATE document WITH changes IN collection
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpdateClause {
     /// The document or key to update (usually a variable like `doc` or `doc._key`)
     pub selector: Expression,
@@ -154,7 +175,7 @@ pub struct UpdateClause {
 }
 
 /// UPSERT search INSERT insert UPDATE update IN collection
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpsertClause {
     pub search: Expression,
     pub insert: Expression,
@@ -164,7 +185,7 @@ pub struct UpsertClause {
 }
 
 /// REMOVE document IN collection
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RemoveClause {
     /// The document or key to remove (usually a variable like `doc` or `doc._key`)
     pub selector: Expression,
@@ -173,7 +194,7 @@ pub struct RemoveClause {
 }
 
 /// JOIN type (INNER vs LEFT/RIGHT/FULL)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum JoinType {
     Inner,
     Left,
@@ -182,7 +203,7 @@ pub enum JoinType {
 }
 
 /// JOIN variable IN collection ON condition
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JoinClause {
     /// Type of join (INNER, LEFT, etc.)
     pub join_type: JoinType,
@@ -195,7 +216,7 @@ pub struct JoinClause {
 }
 
 /// COLLECT var = expr [INTO group] [WITH COUNT INTO count] [AGGREGATE ...]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CollectClause {
     /// Group variables: (variable_name, expression) pairs
     pub group_vars: Vec<(String, Expression)>,
@@ -208,7 +229,7 @@ pub struct CollectClause {
 }
 
 /// Aggregate expression: var = FUNC(expr)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AggregateExpr {
     /// Variable to store the result
     pub variable: String,
@@ -220,26 +241,26 @@ pub struct AggregateExpr {
 
 /// SORT expression [ASC|DESC]
 /// Supports both field-based sorting (SORT doc.age) and function-based sorting (SORT BM25(doc.content, "query"))
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SortClause {
     pub fields: Vec<(Expression, bool)>, // (expression, ascending)
 }
 
 /// LIMIT [offset,] count
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LimitClause {
     pub offset: Expression,
     pub count: Expression,
 }
 
 /// RETURN expression
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReturnClause {
     pub expression: Expression,
 }
 
 /// Part of a template string (used in AST after parsing)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TemplateStringPart {
     /// Static text between interpolations
     Literal(String),
@@ -248,7 +269,7 @@ pub enum TemplateStringPart {
 }
 
 /// Expression types
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Expression {
     /// Variable reference (e.g., doc)
     Variable(String),
@@ -351,7 +372,7 @@ pub enum Expression {
 
 /// Window specification (the OVER clause)
 /// Example: OVER (PARTITION BY doc.region ORDER BY doc.date ASC)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WindowSpec {
     /// PARTITION BY expressions (optional) - groups rows into partitions
     pub partition_by: Vec<Expression>,
@@ -360,7 +381,7 @@ pub struct WindowSpec {
     pub order_by: Vec<(Expression, bool)>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BinaryOperator {
     // Comparison
     Equal,
@@ -402,7 +423,7 @@ pub enum BinaryOperator {
     NullCoalesce,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum UnaryOperator {
     Not,
     Negate,
@@ -568,6 +589,8 @@ mod tests {
             limit_clause: None,
             return_clause: None,
             create_stream_clause: None,
+            create_materialized_view_clause: None,
+            refresh_materialized_view_clause: None,
             window_clause: None,
             body_clauses: vec![],
         };

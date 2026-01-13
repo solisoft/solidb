@@ -5,7 +5,7 @@
 %>
 <div class="fixed inset-0 z-[150] flex items-center justify-center p-4">
   <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal()"></div>
-  <div class="relative bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg">
+  <div class="relative bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border/30">
       <h3 class="text-lg font-semibold text-text">
@@ -20,6 +20,7 @@
     <form hx-post="/database/<%= db %>/queues/jobs"
           hx-target="#jobs-content"
           hx-swap="innerHTML"
+          hx-on:htmx:after-request="if(event.detail.successful) { if(window.showToast) window.showToast('Job created successfully', 'success'); closeModal(); }"
           class="p-6 space-y-4">
 
       <!-- Queue -->

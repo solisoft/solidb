@@ -99,7 +99,7 @@ pub async fn list_jobs_handler(
                     .trim_matches('"')
                     .to_string();
 
-                if &job_status_str != status_str {
+                if job_status_str.to_lowercase() != *status_str {
                     continue;
                 }
             }

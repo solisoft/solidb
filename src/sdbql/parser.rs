@@ -57,9 +57,22 @@ impl Parser {
 
     /// Parse a query, optionally checking for trailing tokens (false for subqueries)
     fn parse_query(&mut self, check_trailing: bool) -> DbResult<Query> {
-        // Parse optional CREATE STREAM clause
-        let create_stream_clause = if matches!(self.current_token(), Token::Create) {
-            Some(self.parse_create_stream_clause()?)
+        // Parse optional CREATE STREAM or CREATE MATERIALIZED VIEW
+        let (create_stream_clause, create_mv_clause) = if matches!(self.current_token(), Token::Create) {
+            if matches!(self.peek_token(1), Token::Stream) {
+                (Some(self.parse_create_stream_clause()?), None)
+            } else if matches!(self.peek_token(1), Token::Materialized) {
+                (None, Some(self.parse_create_materialized_view_clause()?))
+            } else {
+                return Err(DbError::ParseError("Expected STREAM or MATERIALIZED VIEW after CREATE".to_string()));
+            }
+        } else {
+            (None, None)
+        };
+
+        // Parse optional REFRESH MATERIALIZED VIEW
+        let refresh_mv_clause = if matches!(self.current_token(), Token::Refresh) {
+            Some(self.parse_refresh_materialized_view_clause()?)
         } else {
             None
         };
@@ -170,7 +183,12 @@ impl Parser {
                 )
             });
 
-            if return_clause.is_none() && !has_mutation {
+            if return_clause.is_none() 
+                && !has_mutation 
+                && create_stream_clause.is_none() 
+                && create_mv_clause.is_none() 
+                && refresh_mv_clause.is_none() 
+            {
                 // Check if there are unexpected tokens
                 if !matches!(self.current_token(), Token::Eof) {
                     return Err(DbError::ParseError(format!(
@@ -210,6 +228,8 @@ impl Parser {
 
         Ok(Query {
             create_stream_clause,
+            create_materialized_view_clause: create_mv_clause,
+            refresh_materialized_view_clause: refresh_mv_clause,
             let_clauses,
             for_clauses,
             join_clauses,
@@ -396,6 +416,48 @@ impl Parser {
             name,
             if_not_exists: false,
         })
+    }
+
+    fn parse_create_materialized_view_clause(&mut self) -> DbResult<CreateMaterializedViewClause> {
+        self.expect(Token::Create)?;
+        self.expect(Token::Materialized)?;
+        self.expect(Token::View)?;
+
+        let name = if let Token::Identifier(n) = self.current_token() {
+            let name = n.clone();
+            self.advance();
+            name
+        } else {
+            return Err(DbError::ParseError("Expected view name".to_string()));
+        };
+
+        self.expect(Token::As)?;
+
+        // Parse the inner query - false means don't check for trailing tokens (as we might be inside a larger structure, though unlikely for MV)
+        // But importantly, we want to parse the Full Query structure.
+        let query = self.parse_query(false)?;
+
+        Ok(CreateMaterializedViewClause {
+            name,
+            if_not_exists: false,
+            query: Box::new(query),
+        })
+    }
+
+    fn parse_refresh_materialized_view_clause(&mut self) -> DbResult<RefreshMaterializedViewClause> {
+        self.expect(Token::Refresh)?;
+        self.expect(Token::Materialized)?;
+        self.expect(Token::View)?;
+
+        let name = if let Token::Identifier(n) = self.current_token() {
+            let name = n.clone();
+            self.advance();
+            name
+        } else {
+            return Err(DbError::ParseError("Expected view name".to_string()));
+        };
+
+        Ok(RefreshMaterializedViewClause { name })
     }
 
     fn parse_window_clause(&mut self) -> DbResult<WindowClause> {

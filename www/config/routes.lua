@@ -45,6 +45,11 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   -- Dashboard index
   router.get("", "dashboard#index")
 
+  -- Views routes
+  router.get("/views", "dashboard/views#index")
+  router.post("/views/:name/refresh", "dashboard/views#refresh")
+  router.delete("/views/:name/delete", "dashboard/views#destroy")
+
   -- Collections routes
   router.get("/collections", "dashboard/collections#index")
   router.get("/collections/table", "dashboard/collections#table")
@@ -351,6 +356,20 @@ router.scope("/repositories", { middleware = { "session_auth" } }, function()
   router.post("/:repo_id/merge_requests/:id/close", "merge_requests#close")
   router.post("/:repo_id/merge_requests/:id/reopen", "merge_requests#reopen")
   router.post("/:repo_id/merge_requests/:id/merge", "merge_requests#merge")
+end)
+
+-- Pages routes - requires session auth
+router.scope("/pages", { middleware = { "session_auth" } }, function()
+  router.get("", "pages#index")
+  router.get("/sidebar", "pages#sidebar")
+  router.get("/sidebar/children/:parent_id", "pages#sidebar_children")
+  router.get("/modal/create", "pages#new_form")
+  router.post("/upload_cover", "pages#upload_cover")
+  router.post("", "pages#create")
+  router.get("/:key", "pages#show")
+  router.get("/:key/edit", "pages#edit")
+  router.put("/:key", "pages#update")
+  router.delete("/:key", "pages#destroy")
 end)
 
 -- Git Smart HTTP (uses HTTP Basic Auth with user credentials)

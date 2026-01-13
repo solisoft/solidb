@@ -385,6 +385,7 @@ function QueryController:scripts_modal_edit()
   if status == 200 then
     local ok, script = pcall(DecodeJson, body)
     if ok and script then
+      Log(kLogInfo, "Loaded script for edit: " .. EncodeJson(script))
       self:render_partial("dashboard/_modal_script", {
         db = db,
         script = script,
@@ -392,6 +393,8 @@ function QueryController:scripts_modal_edit()
       })
       return
     end
+  else
+    Log(kLogWarn, "Failed to load script " .. script_id .. ": " .. tostring(status))
   end
 
   self:html('<div class="p-4 text-error">Failed to load script</div>')
@@ -431,7 +434,7 @@ function QueryController:create_script()
   })
 
   if status == 200 or status == 201 then
-    SetHeader("HX-Trigger", '{"showToast": {"message": "Script created successfully", "type": "success"}, "closeModal": true, "refreshStats": true}')
+    SetHeader("HX-Trigger", '{"closeModal": true, "refreshStats": true}')
   else
     local err_msg = "Failed to create script"
     local ok, err_data = pcall(DecodeJson, body)
@@ -439,6 +442,7 @@ function QueryController:create_script()
       err_msg = err_data.error
     end
     SetHeader("HX-Trigger", '{"showToast": {"message": "' .. err_msg:gsub('"', '\\"') .. '", "type": "error"}}')
+    SetStatus(422)
   end
 
   self:scripts_table()
@@ -474,7 +478,7 @@ function QueryController:update_script()
   })
 
   if status == 200 then
-    SetHeader("HX-Trigger", '{"showToast": {"message": "Script updated successfully", "type": "success"}, "closeModal": true, "refreshStats": true}')
+    SetHeader("HX-Trigger", '{"refreshStats": true}')
   else
     local err_msg = "Failed to update script"
     local ok, err_data = pcall(DecodeJson, body)
@@ -482,6 +486,7 @@ function QueryController:update_script()
       err_msg = err_data.error
     end
     SetHeader("HX-Trigger", '{"showToast": {"message": "' .. err_msg:gsub('"', '\\"') .. '", "type": "error"}}')
+    SetStatus(422)
   end
 
   self:scripts_table()

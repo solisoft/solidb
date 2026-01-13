@@ -1,0 +1,88 @@
+<div class="max-w-6xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text">Materialized Views</h1>
+      <p class="text-text-muted text-sm">Manage cached query results in <span class="font-medium text-primary-light"><%= db %></span></p>
+    </div>
+
+    <!-- Create View Button -->
+    <a href="/database/<%= db %>/query"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+      <i class="fas fa-plus"></i>
+      <span>New View</span>
+    </a>
+  </div>
+
+  <!-- Views Table Container -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+    <% if #views == 0 then %>
+      <!-- Empty State -->
+      <div class="p-12 text-center">
+        <div class="w-16 h-16 mx-auto mb-4 bg-accent/10 rounded-full flex items-center justify-center">
+          <i class="fas fa-layer-group text-2xl text-accent-light"></i>
+        </div>
+        <h3 class="text-lg font-medium text-text mb-2">No materialized views yet</h3>
+        <p class="text-text-muted mb-4 max-w-sm mx-auto">Materialized views allow you to cache complex query results for high-performance access.</p>
+        <div class="bg-bg-dark/50 rounded-lg p-4 inline-block text-left mb-6 border border-white/5">
+            <code class="text-sm font-mono text-accent-light block">CREATE MATERIALIZED VIEW name AS ...</code>
+        </div>
+        <br>
+        <a href="/database/<%= db %>/query"
+           class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+          <i class="fas fa-terminal"></i>
+          <span>Open Query Editor</span>
+        </a>
+      </div>
+    <% else %>
+      <!-- Table -->
+      <table class="w-full">
+        <thead class="bg-bg/50 border-b border-border/30">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Name</th>
+            <th class="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Created At</th>
+            <th class="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Definition</th>
+            <th class="px-6 py-3 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border/20">
+          <% for _, view in ipairs(views) do %>
+          <tr class="hover:bg-white/5 transition-colors group">
+            <td class="px-6 py-4 whitespace-nowrap">
+              <div class="flex items-center">
+                <i class="fas fa-table text-accent-light mr-3 opacity-70 group-hover:opacity-100 transition-opacity"></i>
+                <div class="text-sm font-medium text-text">
+                  <a href="/database/<%= db %>/documents/<%= view._key %>" class="hover:text-primary-light transition-colors">
+                    <%= view._key %>
+                  </a>
+                </div>
+              </div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-text-muted">
+              <%= view.created_at or "-" %>
+            </td>
+            <td class="px-6 py-4 text-sm text-text-muted font-mono text-xs truncate max-w-xs opacity-70" title="Click to see full query">
+               <%= EncodeJson(view.query or {}) %>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+              <div class="flex items-center justify-end gap-2">
+                  <form action="/database/<%= db %>/views/<%= view._key %>/refresh" method="POST" class="inline-block" onsubmit="return confirm('Refresh view <%= view._key %>? This make take time.')">
+                      <button type="submit" class="p-2 rounded-lg text-text-muted hover:text-success hover:bg-success/10 transition-all" title="Refresh View">
+                         <i class="fas fa-sync-alt"></i>
+                      </button>
+                  </form>
+                  <form action="/database/<%= db %>/views/<%= view._key %>/delete" method="POST" class="inline-block" onsubmit="return confirm('Are you sure you want to delete this view?')">
+                      <input type="hidden" name="_method" value="DELETE">
+                      <button type="submit" class="p-2 rounded-lg text-text-muted hover:text-error hover:bg-error/10 transition-all" title="Delete View">
+                         <i class="fas fa-trash-alt"></i>
+                      </button>
+                  </form>
+              </div>
+            </td>
+          </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% end %>
+  </div>
+</div>

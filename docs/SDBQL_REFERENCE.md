@@ -125,6 +125,22 @@ FOR log IN system_logs
   REMOVE log IN system_logs
 ```
 
+### Materialized Views
+SoliDB supports Materialized Views to cache the results of complex queries for faster access.
+
+**Create Materialized View:**
+```sql
+CREATE MATERIALIZED VIEW view_name AS
+FOR doc IN collection
+  FILTER doc.status == "active"
+  RETURN doc
+```
+
+**Refresh Materialized View:**
+```sql
+REFRESH MATERIALIZED VIEW view_name
+```
+
 ---
 
 ## Operators

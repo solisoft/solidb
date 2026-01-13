@@ -20,6 +20,7 @@
     <form hx-post="/database/<%= db %>/queues/cron"
           hx-target="#jobs-content"
           hx-swap="innerHTML"
+          hx-on:htmx:after-request="if(event.detail.successful) { if(window.showToast) window.showToast('Cron job created successfully', 'success'); closeModal(); }"
           class="p-6 space-y-4">
 
       <!-- Name -->

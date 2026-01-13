@@ -61,6 +61,11 @@ pub enum Token {
     Tumbling, // TUMBLING
     Sliding,  // SLIDING
     Size,     // SIZE
+    
+    // Materialized View keywords
+    Materialized, // MATERIALIZED
+    View,         // VIEW
+    Refresh,      // REFRESH
 
     // CASE expression keywords
     Case, // CASE
@@ -416,6 +421,11 @@ impl Lexer {
             "TUMBLING" => Token::Tumbling,
             "SLIDING" => Token::Sliding,
             "SIZE" => Token::Size,
+
+            // Materialized View keywords
+            "MATERIALIZED" => Token::Materialized,
+            "VIEW" => Token::View,
+            "REFRESH" => Token::Refresh,
 
             // JOIN keywords
             "JOIN" => Token::Join,

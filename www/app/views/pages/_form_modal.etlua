@@ -1,0 +1,147 @@
+<div class="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
+  <!-- Backdrop -->
+  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onclick="document.getElementById('modal-container').innerHTML = ''"></div>
+
+  <!-- Modal Panel -->
+  <div class="relative bg-bg-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
+    <div class="p-6">
+      <div class="flex items-center justify-between mb-6">
+        <h3 class="text-lg font-bold text-white"><%= page and "Edit Page" or "New Page" %></h3>
+        <button class="text-text-muted hover:text-white transition-colors" onclick="document.getElementById('modal-container').innerHTML = ''">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <form hx-post="<%= page and '/pages/' .. page._key or '/pages' %>" 
+            <%= page and 'hx-put="/pages/' .. page._key .. '"' or '' %>
+            hx-target="#main-content"
+            hx-select="#main-content"
+            hx-swap="outerHTML">
+        
+        <% if parent_id then %>
+          <input type="hidden" name="parent_id" value="<%= parent_id %>">
+        <% end %>
+
+        <div class="space-y-4">
+          <!-- Icon -->
+          <div>
+            <label class="block text-xs font-semibold text-text-dim uppercase tracking-wider mb-2">Icon</label>
+            <div class="flex gap-2">
+               <input type="text" name="icon" value="<%= page and page.icon or '📄' %>" 
+                      class="w-12 text-center bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all shadow-sm">
+               <div class="text-xs text-text-muted self-center">Emoji supported</div>
+            </div>
+          </div>
+
+          <!-- Title -->
+          <div>
+            <label class="block text-xs font-semibold text-text-dim uppercase tracking-wider mb-2">Title</label>
+            <input type="text" name="title" value="<%= (page and page.title) or '' %>" placeholder="Page Title" required autofocus
+                   class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-text-muted/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all shadow-sm">
+          </div>
+
+          <!-- Cover Image URL -->
+          <div x-data="CoverUpload">
+            <label class="block text-xs font-semibold text-text-dim uppercase tracking-wider mb-2">Cover Image</label>
+            
+            <div class="relative group">
+              <!-- Drop Zone -->
+              <div 
+                   @dragover.prevent="dragover = true"
+                   @dragleave.prevent="dragover = false"
+                   @drop.prevent="handleDrop($event)"
+                   :class="{'border-primary bg-primary/10': dragover}"
+                   class="w-full min-h-[42px] bg-white/5 border border-white/10 border-dashed rounded-lg px-3 py-2 text-white focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all shadow-sm flex items-center">
+                   
+                  <input type="url" name="cover" x-model="coverUrl" placeholder="https://... or Drop image here"
+                         class="w-full bg-transparent border-none p-0 text-sm focus:ring-0 placeholder-text-muted/50">
+                  
+                  <!-- Upload Indicator -->
+                  <div x-show="uploading" class="absolute right-3 top-1/2 -translate-y-1/2">
+                    <i class="fas fa-spinner fa-spin text-primary"></i>
+                  </div>
+              </div>
+              
+              <!-- Preview (if URL is set) -->
+              <template x-if="coverUrl && coverUrl !== ''">
+                <div class="mt-2 h-20 rounded-lg overflow-hidden border border-white/10 relative group">
+                  <img :src="coverUrl" class="w-full h-full object-cover">
+                  <button type="button" @click="coverUrl = ''" class="absolute top-1 right-1 w-6 h-6 rounded bg-black/50 text-white flex items-center justify-center hover:bg-red-500 transition-colors">
+                    <i class="fas fa-times text-xs"></i>
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="mt-8 flex justify-end gap-3">
+          <button type="button" class="px-4 py-2 rounded-lg text-text-dim hover:text-white hover:bg-white/5 transition-colors" onclick="document.getElementById('modal-container').innerHTML = ''">Cancel</button>
+          <button type="submit" class="px-6 py-2 rounded-lg bg-primary hover:bg-primary-hover text-white font-medium shadow-lg shadow-primary/20 transition-all">
+            <%= page and "Save Changes" or "Create Page" %>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('alpine:init', () => {
+      Alpine.data('CoverUpload', () => ({
+        dragover: false,
+        uploading: false,
+        coverUrl: '<%= (page and page.cover) or "" %>',
+        
+        async handleDrop(e) {
+          this.dragover = false;
+          const files = e.dataTransfer.files;
+          if (files.length > 0) {
+            this.uploadFile(files[0]);
+          }
+        },
+        
+        async uploadFile(file) {
+          if (!file.type.startsWith('image/')) {
+            alert('Please drop an image file.');
+            return;
+          }
+          
+          this.uploading = true;
+          
+          // Get upload config/token first (if needed) or just upload to a generic endpoint
+          // For now, assume we have a generic upload endpoint or reuse Cruds logic?
+          // Since we don't have a dedicated easy upload endpoint in PagesController yet, let's create one or reuse.
+          // Reusing /cruds/upload/config pattern might be complex without the full JS.
+          // Let's implement a simple direct upload endpoint in PagesController for this.
+          
+          const formData = new FormData();
+          formData.append('file', file);
+          
+          try {
+            const response = await fetch('/pages/upload_cover', {
+              method: 'POST',
+              body: formData
+            });
+            
+            if (response.ok) {
+              const result = await response.json();
+              if (result.url) {
+                this.coverUrl = result.url;
+              } else {
+                alert('Upload failed: ' + (result.error || 'Unknown error'));
+              }
+            } else {
+              alert('Upload failed');
+            }
+          } catch (error) {
+            console.error(error);
+            alert('Upload error');
+          } finally {
+            this.uploading = false;
+          }
+        }
+      }));
+    });
+  </script>
+</div>

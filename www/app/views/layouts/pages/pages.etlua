@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title or "Pages" %> - SoliDB</title>
+  <link rel="stylesheet" href="<%- public_path('layouts.css') %>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Toast UI Editor -->
+  <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css" />
+  <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor-dark.min.css" />
+  <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
+  
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js" defer></script>
+  
+  <style>
+    /* Custom Scrollbar */
+    .pages-scrollbar::-webkit-scrollbar { width: 6px; }
+    .pages-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .pages-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    .pages-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+    
+    /* Toast UI Editor Customization */
+    .toastui-editor-defaultUI {
+        border: none !important;
+        background-color: transparent !important;
+    }
+    .toastui-editor-defaultUI .toastui-editor-md-container,
+    .toastui-editor-defaultUI .toastui-editor-ww-container {
+        background-color: transparent !important;
+    }
+    .toastui-editor-main {
+        background-color: transparent !important;
+    }
+    .toastui-editor-contents {
+        font-family: inherit !important;
+        font-size: 16px !important;
+    }
+    /* Hide mode switch tabs if you want a cleaner look, or style them */
+    .toastui-editor-mode-switch {
+        background-color: transparent !important;
+        border-top: 1px solid rgba(255,255,255,0.1) !important;
+    }
+    .toastui-editor-mode-switch .tab-item {
+        color: #9ca3af !important;
+    }
+    .toastui-editor-mode-switch .tab-item.active {
+        background-color: rgba(255,255,255,0.05) !important;
+        color: #e5e7eb !important;
+    }
+    
+    /* Toolbar customization */
+    .toastui-editor-defaultUI-toolbar {
+        background-color: rgba(26, 29, 33, 0.8) !important; /* Semi-transparent dark bg */
+        border-bottom: 1px solid rgba(255,255,255,0.1) !important;
+        padding: 0 0 10px 0 !important;
+        border-radius: 8px 8px 0 0;
+    }
+    .toastui-editor-toolbar-icons {
+        border-color: transparent !important;
+        color: #e5e7eb !important;
+    }
+    .toastui-editor-toolbar-icons:hover {
+        background-color: rgba(255,255,255,0.1) !important;
+        color: #fff !important;
+    }
+    .toastui-editor-toolbar-group {
+        border-right: 1px solid rgba(255,255,255,0.1) !important;
+    }
+    
+    /* Ensure tooltips and popups are visible on top of everything */
+    .toastui-editor-tooltip {
+        background-color: #1f2937 !important;
+        color: #fff !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+    }
+    
+    /* Pages specific */
+    .page-item:hover .page-actions { opacity: 1; }
+    .page-actions { opacity: 0; transition: opacity 0.15s; }
+  </style>
+</head>
+<body class="h-screen bg-bg text-text overflow-hidden font-sans antialiased selection:bg-primary/30 selection:text-white">
+
+  <!-- Background Ambient Glow -->
+  <div class="fixed inset-0 pointer-events-none z-0">
+    <div class="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] opacity-40"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-accent/20 rounded-full blur-[120px] opacity-30"></div>
+  </div>
+
+  <div class="h-full flex relative z-10 backdrop-blur-[1px]">
+    <%- partial("shared/activity_sidebar") %>
+
+    <!-- Sidebar -->
+    <aside class="w-72 glass border-r border-white/5 flex flex-col shrink-0 z-20 relative">
+      <div class="p-4 border-b border-white/5 flex items-center justify-between">
+         <div class="flex items-center gap-2">
+           <div class="w-6 h-6 rounded bg-primary/20 flex items-center justify-center text-primary">
+             <i class="fas fa-book-open text-xs"></i>
+           </div>
+           <span class="font-bold text-sm">Pages</span>
+         </div>
+         <button hx-get="/pages/modal/create" hx-target="#modal-container" 
+                 class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/10 text-text-muted hover:text-white transition-colors">
+           <i class="fas fa-plus text-xs"></i>
+         </button>
+      </div>
+      
+      <div id="pages-sidebar" class="flex-1 overflow-y-auto pages-scrollbar p-2 space-y-0.5" 
+           hx-get="/pages/sidebar<%= current_page and '?current_page_key=' .. current_page._key or '' %>" 
+           hx-trigger="load">
+         <div class="p-4 text-center text-xs text-text-dim">Loading pages...</div>
+      </div>
+      
+      <!-- User Footer -->
+      <div class="p-4 mt-auto border-t border-white/5">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-xs shadow-lg">
+            <%= current_user and string.sub(current_user.firstname or current_user.email, 1, 1):upper() or "?" %>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium text-white truncate"><%= current_user and current_user.firstname or "Guest" %></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main id="main-content" class="flex-1 flex flex-col min-w-0 relative bg-bg/50 overflow-hidden">
+      <%- yield() %>
+    </main>
+
+    <%- partial("shared/right_sidebar_toggle") %>
+    <%- partial("shared/right_sidebar") %>
+  </div>
+
+  <div id="modal-container"></div>
+  <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+</body>
+</html>
