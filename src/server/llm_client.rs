@@ -77,10 +77,11 @@ pub struct LLMClient {
     http_client: Client,
 }
 
-/// Helper to get env var from _system/_env collection or OS environment
-fn get_env_var(storage: &StorageEngine, key: &str) -> Option<String> {
-    // First, try the database _system/_env collection
-    if let Ok(db) = storage.get_database("_system") {
+/// Helper to get env var from database _env collection or OS environment
+/// Checks current database first, then _system, then OS environment
+fn get_env_var(storage: &StorageEngine, db_name: &str, key: &str) -> Option<String> {
+    // First, try the current database's _env collection
+    if let Ok(db) = storage.get_database(db_name) {
         if let Ok(coll) = db.get_collection("_env") {
             if let Ok(doc) = coll.get(key) {
                 if let Some(value) = doc.get("value") {
@@ -91,12 +92,26 @@ fn get_env_var(storage: &StorageEngine, key: &str) -> Option<String> {
             }
         }
     }
+    // Then try _system database's _env collection
+    if db_name != "_system" {
+        if let Ok(db) = storage.get_database("_system") {
+            if let Ok(coll) = db.get_collection("_env") {
+                if let Ok(doc) = coll.get(key) {
+                    if let Some(value) = doc.get("value") {
+                        if let Some(s) = value.as_str() {
+                            return Some(s.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
     // Fallback to OS environment variable
     std::env::var(key).ok()
 }
 
 impl LLMClient {
-    /// Create LLM client from _system/_env collection
+    /// Create LLM client from database _env collection
     ///
     /// Reads credentials based on provider:
     /// - OpenAI: OPENAI_API_KEY, OPENAI_MODEL (default: gpt-4o)
@@ -104,23 +119,24 @@ impl LLMClient {
     /// - Ollama: OLLAMA_URL (default: http://localhost:11434), OLLAMA_MODEL (default: llama3)
     /// - Gemini: GEMINI_API_KEY, GEMINI_MODEL (default: gemini-1.5-pro)
     ///
+    /// Checks current database _env first, then _system/_env, then OS environment.
     /// Default provider from NL_DEFAULT_PROVIDER (default: anthropic)
-    pub fn from_storage(storage: &StorageEngine, provider: Option<&str>) -> Result<Self, DbError> {
+    pub fn from_storage(storage: &StorageEngine, db_name: &str, provider: Option<&str>) -> Result<Self, DbError> {
         let provider_str = provider
             .map(|s| s.to_string())
-            .or_else(|| get_env_var(storage, "NL_DEFAULT_PROVIDER"))
+            .or_else(|| get_env_var(storage, db_name, "NL_DEFAULT_PROVIDER"))
             .unwrap_or_else(|| "anthropic".to_string());
 
         let provider = LLMProvider::from_str(&provider_str)?;
 
         let config = match provider {
             LLMProvider::OpenAI => {
-                let api_key = get_env_var(storage, "OPENAI_API_KEY").ok_or_else(|| {
+                let api_key = get_env_var(storage, db_name, "OPENAI_API_KEY").ok_or_else(|| {
                     DbError::ExecutionError(
-                        "OPENAI_API_KEY not found in _system/_env collection".to_string(),
+                        "OPENAI_API_KEY not found in _env collection".to_string(),
                     )
                 })?;
-                let model = get_env_var(storage, "OPENAI_MODEL")
+                let model = get_env_var(storage, db_name, "OPENAI_MODEL")
                     .unwrap_or_else(|| "gpt-4o".to_string());
                 LLMConfig {
                     provider,
@@ -130,12 +146,12 @@ impl LLMClient {
                 }
             }
             LLMProvider::Anthropic => {
-                let api_key = get_env_var(storage, "ANTHROPIC_API_KEY").ok_or_else(|| {
+                let api_key = get_env_var(storage, db_name, "ANTHROPIC_API_KEY").ok_or_else(|| {
                     DbError::ExecutionError(
-                        "ANTHROPIC_API_KEY not found in _system/_env collection".to_string(),
+                        "ANTHROPIC_API_KEY not found in _env collection".to_string(),
                     )
                 })?;
-                let model = get_env_var(storage, "ANTHROPIC_MODEL")
+                let model = get_env_var(storage, db_name, "ANTHROPIC_MODEL")
                     .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
                 LLMConfig {
                     provider,
@@ -145,9 +161,9 @@ impl LLMClient {
                 }
             }
             LLMProvider::Ollama => {
-                let base_url = get_env_var(storage, "OLLAMA_URL")
+                let base_url = get_env_var(storage, db_name, "OLLAMA_URL")
                     .unwrap_or_else(|| "http://localhost:11434".to_string());
-                let model = get_env_var(storage, "OLLAMA_MODEL")
+                let model = get_env_var(storage, db_name, "OLLAMA_MODEL")
                     .unwrap_or_else(|| "llama3".to_string());
                 LLMConfig {
                     provider,
@@ -157,12 +173,12 @@ impl LLMClient {
                 }
             }
             LLMProvider::Gemini => {
-                let api_key = get_env_var(storage, "GEMINI_API_KEY").ok_or_else(|| {
+                let api_key = get_env_var(storage, db_name, "GEMINI_API_KEY").ok_or_else(|| {
                     DbError::ExecutionError(
-                        "GEMINI_API_KEY not found in _system/_env collection".to_string(),
+                        "GEMINI_API_KEY not found in _env collection".to_string(),
                     )
                 })?;
-                let model = get_env_var(storage, "GEMINI_MODEL")
+                let model = get_env_var(storage, db_name, "GEMINI_MODEL")
                     .unwrap_or_else(|| "gemini-1.5-pro".to_string());
                 LLMConfig {
                     provider,

@@ -160,9 +160,20 @@ impl SchemaContext {
 }
 
 /// Build system prompt for SDBQL translation
-fn build_system_prompt(schema: &SchemaContext) -> String {
-    const SDBQL_REFERENCE: &str = include_str!("../../docs/SDBQL_REFERENCE.md");
-    
+fn build_system_prompt(schema: &SchemaContext, provider: Option<&str>) -> String {
+    let reference = if provider.map_or(false, |p| p.eq_ignore_ascii_case("ollama")) {
+        // Use condensed reference for local models to improve speed
+        r#"SDBQL Basic Syntax:
+- FOR doc IN collection FILTER doc.field == value RETURN doc
+- Operators: ==, !=, <, <=, >, >=, AND, OR, NOT, LIKE, IN
+- Functions: LENGTH(), COUNT(), SUM(), AVG(), MIN(), MAX()
+- Aggregation: COLLECT var = doc.field INTO group
+- Sorting: SORT doc.field ASC/DESC LIMIT 10"#
+    } else {
+        // Use full reference for cloud models
+        include_str!("../../docs/SDBQL_REFERENCE.md")
+    };
+
     format!(
         r#"You are a SDBQL query translator. Convert natural language to valid SDBQL queries.
 
@@ -176,14 +187,14 @@ fn build_system_prompt(schema: &SchemaContext) -> String {
 1. Return ONLY the SDBQL query - no explanations, no markdown code blocks.
 2. Use the exact collection and field names from the schema.
 3. For aggregations, prefer `COLLECT ... WITH COUNT INTO ...` syntax.
-4. For searching text, prefer `LIKE` for simple patterns or `FULLTEXT`/`BM25` for relevance.
+4. For searching text, prefer `LIKE` for simple patterns.
 5. For recent items, sort by timestamp field DESC and LIMIT.
 6. Use `LET` variables to simplify complex logic or subqueries.
 7. Use `Not In` operator `x NOT IN [...]` instead of `!(x IN [...])`.
 
 User Query: "#,
         schema.to_prompt(),
-        SDBQL_REFERENCE
+        reference
     )
 }
 
@@ -203,11 +214,12 @@ pub async fn nl_query(
         ));
     }
 
-    // 2. Create LLM client from _system/_env collection
-    let client = LLMClient::from_storage(&state.storage, req.provider.as_deref())?;
+    // 2. Create LLM client from _env collection (checks current db, then _system, then OS env)
+    let client = LLMClient::from_storage(&state.storage, &db_name, req.provider.as_deref())?;
 
     // 3. Build initial messages
-    let system_prompt = build_system_prompt(&schema);
+    // 3. Build initial messages
+    let system_prompt = build_system_prompt(&schema, req.provider.as_deref());
     let mut messages = vec![
         Message::system(&system_prompt),
         Message::user(&req.query),
@@ -221,14 +233,28 @@ pub async fn nl_query(
         let sdbql = client.chat(messages.clone()).await?;
 
         // Clean up response (remove markdown code blocks if present)
-        let sdbql = sdbql
-            .trim()
-            .trim_start_matches("```sql")
-            .trim_start_matches("```sdbql")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim()
-            .to_string();
+        // Clean up response (extract code block if present)
+        let sdbql = if let Some(start) = sdbql.find("```") {
+            let rest = &sdbql[start + 3..];
+            // Skip language identifier (e.g., "sdbql", "sql")
+            let code_start = if let Some(newline_pos) = rest.find('\n') {
+                newline_pos + 1
+            } else {
+                0
+            };
+
+            // Find end of block
+            let code_end = if let Some(end) = rest[code_start..].find("```") {
+                end
+            } else {
+                rest.len() - code_start
+            };
+
+            rest[code_start..code_start + code_end].trim().to_string()
+        } else {
+            // No code block, assume raw query
+            sdbql.trim().to_string()
+        };
 
         last_sdbql = sdbql.clone();
 
