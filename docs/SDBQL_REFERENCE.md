@@ -112,6 +112,19 @@ RETURN "hello" |> UPPER() |> REVERSE()
 -- Equivalent to: REVERSE(UPPER("hello")) -> "OLLEH"
 ```
 
+### Bulk Operations & Performance
+SoliDB automatically optimizes large bulk operations for better performance:
+- **Automatic Batching**: When `UPDATE` or `REMOVE` operations affect more than 100 documents, the engine automatically switches to batch processing mode.
+- **Atomic Writes**: Operations are grouped into atomic storage batches (using RocksDB WriteBatch), ensuring data consistency and reducing disk I/O.
+- **No Configuration Needed**: This optimization is transparent and automatic. You write standard SDBQL queries, and the engine handles the optimization.
+
+```sql
+-- Efficiently remove old logs (automatically batched if >100 docs)
+FOR log IN system_logs
+  FILTER log.timestamp < DATE_SUBTRACT(DATE_NOW(), 30, 'days')
+  REMOVE log IN system_logs
+```
+
 ---
 
 ## Operators

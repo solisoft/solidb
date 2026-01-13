@@ -76,7 +76,7 @@ pub enum Token {
     Full,  // FULL
     Outer, // OUTER
     On,    // ON
-
+    
     // Identifiers and literals
     Identifier(String),
     BindVar(String), // @variable for bind parameters

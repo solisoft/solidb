@@ -1294,53 +1294,123 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
-                    // Update documents for each row context
-                    for ctx in &mut rows {
-                        // Evaluate selector expression to get the document key
-                        let selector_value =
-                            self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
+                    // Non-sharded UPDATE: Use automatic batching for large updates (>100 rows)
+                    let bulk_mode = rows.len() > 100;
+                    
+                    if bulk_mode {
+                        // AUTOMATIC BATCH MODE - use update_batch() like INSERT uses insert_batch()
+                        tracing::debug!(
+                            "UPDATE: Bulk mode for {} rows (threshold: 100)",
+                            rows.len()
+                        );
+                        
+                        // Evaluate all updates first
+                        let eval_start = std::time::Instant::now();
+                        let mut updates: Vec<(String, Value)> = Vec::with_capacity(rows.len());
+                        
+                        for ctx in &rows {
+                            // Evaluate selector expression to get the document key
+                            let selector_value =
+                                self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
 
-                        // Extract _key from selector (can be a string key or a document with _key field)
-                        let key = match &selector_value {
-                            Value::String(s) => s.clone(),
-                            Value::Object(obj) => {
-                                obj.get("_key")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.to_string())
-                                    .ok_or_else(|| DbError::ExecutionError(
-                                        "UPDATE: selector object must have a _key field".to_string()
-                                    ))?
+                            // Extract _key from selector
+                            let key = match &selector_value {
+                                Value::String(s) => s.clone(),
+                                Value::Object(obj) => {
+                                    obj.get("_key")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                        .ok_or_else(|| DbError::ExecutionError(
+                                            "UPDATE: selector object must have a _key field".to_string()
+                                        ))?
+                                }
+                                _ => return Err(DbError::ExecutionError(
+                                    "UPDATE: selector must be a string key or an object with _key field".to_string()
+                                )),
+                            };
+
+                            // Evaluate changes expression
+                            let changes_value =
+                                self.evaluate_expr_with_context(&update_clause.changes, ctx)?;
+
+                            // Ensure changes is an object
+                            if !changes_value.is_object() {
+                                return Err(DbError::ExecutionError(
+                                    "UPDATE: changes must be an object".to_string(),
+                                ));
                             }
-                            _ => return Err(DbError::ExecutionError(
-                                "UPDATE: selector must be a string key or an object with _key field".to_string()
-                            )),
-                        };
-
-                        // Evaluate changes expression
-                        let changes_value =
-                            self.evaluate_expr_with_context(&update_clause.changes, ctx)?;
-
-                        // Ensure changes is an object
-                        if !changes_value.is_object() {
-                            return Err(DbError::ExecutionError(
-                                "UPDATE: changes must be an object".to_string(),
-                            ));
+                            
+                            updates.push((key, changes_value));
                         }
+                        let eval_time = eval_start.elapsed();
+                        tracing::debug!("UPDATE: Evaluation took {:?}", eval_time);
 
-                        // Update the document (collection.update handles merging internally)
-                        let doc = collection.update(&key, changes_value)?;
-                        stats.documents_updated += 1;
-
-                        // Log to replication
-                        self.log_mutation(
-                            &update_clause.collection,
-                            Operation::Update,
-                            &key,
-                            Some(&doc.to_value()),
+                        // Batch update all documents at once (uses RocksDB WriteBatch)
+                        let update_start = std::time::Instant::now();
+                        let updated_docs = collection.update_batch(&updates)?;
+                        let update_time = update_start.elapsed();
+                        stats.documents_updated += updated_docs.len();
+                        tracing::debug!(
+                            "UPDATE: Batch update of {} docs took {:?}",
+                            updated_docs.len(),
+                            update_time
                         );
 
-                        // Inject NEW variable
-                        ctx.insert("NEW".to_string(), doc.to_value());
+                        // Log to replication asynchronously for bulk updates
+                        self.log_mutations_async(
+                            &update_clause.collection,
+                            Operation::Update,
+                            &updated_docs,
+                        );
+                    } else {
+                        // STANDARD MODE (<=100 rows) - update individually
+                        for ctx in &mut rows {
+                            // Evaluate selector expression to get the document key
+                            let selector_value =
+                                self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
+
+                            // Extract _key from selector (can be a string key or a document with _key field)
+                            let key = match &selector_value {
+                                Value::String(s) => s.clone(),
+                                Value::Object(obj) => {
+                                    obj.get("_key")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                        .ok_or_else(|| DbError::ExecutionError(
+                                            "UPDATE: selector object must have a _key field".to_string()
+                                        ))?
+                                }
+                                _ => return Err(DbError::ExecutionError(
+                                    "UPDATE: selector must be a string key or an object with _key field".to_string()
+                                )),
+                            };
+
+                            // Evaluate changes expression
+                            let changes_value =
+                                self.evaluate_expr_with_context(&update_clause.changes, ctx)?;
+
+                            // Ensure changes is an object
+                            if !changes_value.is_object() {
+                                return Err(DbError::ExecutionError(
+                                    "UPDATE: changes must be an object".to_string(),
+                                ));
+                            }
+
+                            // Update the document (collection.update handles merging internally)
+                            let doc = collection.update(&key, changes_value)?;
+                            stats.documents_updated += 1;
+
+                            // Log to replication
+                            self.log_mutation(
+                                &update_clause.collection,
+                                Operation::Update,
+                                &key,
+                                Some(&doc.to_value()),
+                            );
+
+                            // Inject NEW variable
+                            ctx.insert("NEW".to_string(), doc.to_value());
+                        }
                     }
                 }
                 BodyClause::Remove(remove_clause) => {
@@ -1404,33 +1474,90 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
-                    // Remove documents for each row context
-                    for ctx in &rows {
-                        // Evaluate selector expression to get the document key
-                        let selector_value =
-                            self.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
+                    // Non-sharded REMOVE: Use automatic batching for large removes (>100 rows)
+                    let bulk_mode = rows.len() > 100;
+                    
+                    if bulk_mode {
+                        // AUTOMATIC BATCH MODE - use delete_batch() like INSERT uses insert_batch()
+                        tracing::debug!(
+                            "REMOVE: Bulk mode for {} rows (threshold: 100)",
+                            rows.len()
+                        );
+                        
+                        // Evaluate all keys first
+                        let eval_start = std::time::Instant::now();
+                        let mut keys: Vec<String> = Vec::with_capacity(rows.len());
+                        
+                        for ctx in &rows {
+                            // Evaluate selector expression to get the document key
+                            let selector_value =
+                                self.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
 
-                        // Extract _key from selector (can be a string key or a document with _key field)
-                        let key = match &selector_value {
-                            Value::String(s) => s.clone(),
-                            Value::Object(obj) => {
-                                obj.get("_key")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.to_string())
-                                    .ok_or_else(|| DbError::ExecutionError(
-                                        "REMOVE: selector object must have a _key field".to_string()
-                                    ))?
-                            }
-                            _ => return Err(DbError::ExecutionError(
-                                "REMOVE: selector must be a string key or an object with _key field".to_string()
-                            )),
-                        };
+                            // Extract _key from selector
+                            let key = match &selector_value {
+                                Value::String(s) => s.clone(),
+                                Value::Object(obj) => {
+                                    obj.get("_key")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                        .ok_or_else(|| DbError::ExecutionError(
+                                            "REMOVE: selector object must have a _key field".to_string()
+                                        ))?
+                                }
+                                _ => return Err(DbError::ExecutionError(
+                                    "REMOVE: selector must be a string key or an object with _key field".to_string()
+                                )),
+                            };
+                            
+                            keys.push(key);
+                        }
+                        let eval_time = eval_start.elapsed();
+                        tracing::debug!("REMOVE: Evaluation took {:?}", eval_time);
 
-                        // Delete the document
-                        collection.delete(&key)?;
-                        stats.documents_removed += 1;
-                        // Log to replication
-                        self.log_mutation(&remove_clause.collection, Operation::Delete, &key, None);
+                        // Batch delete all documents at once (uses RocksDB WriteBatch)
+                        let delete_start = std::time::Instant::now();
+                        let deleted_count = collection.delete_batch(&keys)?;
+                        let delete_time = delete_start.elapsed();
+                        stats.documents_removed += deleted_count;
+                        tracing::debug!(
+                            "REMOVE: Batch delete of {} docs took {:?}",
+                            deleted_count,
+                            delete_time
+                        );
+
+                        // Log to replication (keys only for deletes)
+                        for key in &keys {
+                            self.log_mutation(&remove_clause.collection, Operation::Delete, key, None);
+                        }
+                    } else {
+                        // STANDARD MODE (<=100 rows) - delete individually
+                        for ctx in &rows {
+                            // Evaluate selector expression to get the document key
+                            let selector_value =
+                                self.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
+
+                            // Extract _key from selector (can be a string key or a document with _key field)
+                            let key = match &selector_value {
+                                Value::String(s) => s.clone(),
+                                Value::Object(obj) => {
+                                    obj.get("_key")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                        .ok_or_else(|| DbError::ExecutionError(
+                                            "REMOVE: selector object must have a _key field".to_string()
+                                        ))?
+                                }
+                                _ => return Err(DbError::ExecutionError(
+                                    "REMOVE: selector must be a string key or an object with _key field".to_string()
+                                )),
+                            };
+
+                            // Delete the document
+                            collection.delete(&key)?;
+                            stats.documents_removed += 1;
+                            // Log to replication
+                            self.log_mutation(&remove_clause.collection, Operation::Delete, &key, None);
+                        }
                     }
                 }
                 BodyClause::Upsert(upsert_clause) => {

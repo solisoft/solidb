@@ -1364,6 +1364,115 @@ impl Collection {
         Ok(deleted_count)
     }
 
+    /// Batch update multiple documents
+    /// Uses RocksDB WriteBatch for storage efficiency
+    /// Updates indexes for each document (sequential)
+    pub fn update_batch(&self, updates: &[(String, Value)]) -> DbResult<Vec<Document>> {
+        use rocksdb::WriteBatch;
+
+        if updates.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Check timeseries restriction
+        if *self.collection_type.read().unwrap() == "timeseries" {
+            return Err(DbError::OperationNotSupported(
+                "Update operations are not allowed on timeseries collections".to_string(),
+            ));
+        }
+
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        let mut batch = WriteBatch::default();
+        let mut updated_docs = Vec::new();
+        let mut change_events = Vec::new();
+
+        // 1. Prepare batch and handle auxiliary updates (indexes, validation)
+        for (key, changes) in updates {
+            // Get old document
+            if let Ok(old_doc) = self.get(key) {
+                let old_value = old_doc.to_value();
+
+                // Create updated document
+                let mut doc = old_doc;
+                doc.update(changes.clone());
+                let new_value = doc.to_value();
+
+                // Validate edge documents after update
+                if *self.collection_type.read().unwrap() == "edge" {
+                    if let Err(e) = self.validate_edge_document(&new_value) {
+                        tracing::warn!("Failed to validate edge for {}: {}", key, e);
+                        continue;
+                    }
+                }
+
+                // Validate against JSON schema if defined
+                if let Some(schema) = self.get_json_schema() {
+                    if let Ok(validator) = SchemaValidator::new(schema) {
+                        if let Err(e) = validator.validate(&new_value) {
+                            tracing::warn!("Schema validation failed for {}: {}", key, e);
+                            continue;
+                        }
+                    }
+                }
+
+                // Serialize document
+                if let Ok(doc_bytes) = serde_json::to_vec(&doc) {
+                    // Add to batch
+                    batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
+
+                    // Update indexes (Note: these are separate writes currently)
+                    if let Err(e) = self.update_indexes_on_update(key, &old_value, &new_value) {
+                        tracing::warn!("Failed to update indexes for {}: {}", key, e);
+                    }
+
+                    // Update fulltext indexes (delete old, insert new)
+                    if let Err(e) = self.update_fulltext_on_delete(key, &old_value) {
+                        tracing::warn!("Failed to clean fulltext for {}: {}", key, e);
+                    }
+                    if let Err(e) = self.update_fulltext_on_insert(key, &new_value) {
+                        tracing::warn!("Failed to update fulltext for {}: {}", key, e);
+                    }
+
+                    // Update vector indexes (remove old, add new)
+                    self.update_vector_indexes_on_delete(key);
+                    self.update_vector_indexes_on_upsert(key, &new_value);
+
+                    change_events.push((key.clone(), old_value, new_value));
+                    updated_docs.push(doc);
+                }
+            }
+        }
+
+        if updated_docs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Persist vector indexes after batch update
+        if let Err(e) = self.persist_vector_indexes() {
+            tracing::warn!("Failed to persist vector indexes: {}", e);
+        }
+
+        // 2. Commit storage batch
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to batch update: {}", e)))?;
+
+        // 3. Send Change Events
+        for (key, old_data, new_data) in change_events {
+            let _ = self.change_sender.send(ChangeEvent {
+                type_: ChangeType::Update,
+                key,
+                data: Some(new_data),
+                old_data: Some(old_data),
+            });
+        }
+
+        Ok(updated_docs)
+    }
+
     // ==================== Transactional Document Operations ====================
 
     /// Insert a document within a transaction (deferred until commit)

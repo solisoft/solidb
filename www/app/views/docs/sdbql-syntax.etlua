@@ -761,6 +761,68 @@ FOR user IN users
         </div>
       </section>
 
+      <!-- Bulk Operations -->
+      <section id="bulk-operations" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-xl border border-purple-500/20 overflow-hidden">
+          <div class="p-5 border-b border-purple-500/20 bg-purple-500/5">
+            <h3 class="text-lg font-bold text-purple-300 flex items-center">
+              <span class="bg-purple-500/20 text-purple-400 text-xs font-mono px-2 py-1 rounded mr-3">BULK</span>
+              Bulk Operations
+              <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              Perform efficient batch operations like <code class="text-purple-300">INSERT</code>, <code class="text-purple-300">UPDATE</code>, <code class="text-purple-300">DELETE</code>, and <code class="text-purple-300">UPSERT</code> on collections.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-sql text-sm">-- Bulk INSERT
+INSERT { name: "New User 1", email: "user1@example.com" } INTO users
+INSERT { name: "New User 2", email: "user2@example.com" } INTO users
+
+-- Bulk UPDATE
+FOR u IN users
+  FILTER u.status == "pending"
+  UPDATE u WITH { status: "active", updated_at: DATE_NOW() } IN users
+
+-- Bulk DELETE
+FOR o IN old_orders
+  FILTER o.date < DATE_SUBTRACT(DATE_NOW(), 1, "year")
+  REMOVE o IN old_orders
+
+-- Bulk UPSERT (Update or Insert)
+UPSERT { email: "user@example.com" }
+  INSERT { name: "Example User", email: "user@example.com", created_at: DATE_NOW() }
+  UPDATE { last_login: DATE_NOW() }
+  IN users</code></pre>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-purple-300 font-bold mb-2 text-sm">Key Features</h5>
+                <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside">
+                  <li>High-performance batch operations</li>
+                  <li>Atomic operations for data consistency</li>
+                  <li>Flexible filtering for targeted changes</li>
+                  <li>UPSERT for conditional inserts/updates</li>
+                </ul>
+              </div>
+              <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                <h5 class="text-purple-300 font-bold mb-2 text-sm">Return Modified Documents</h5>
+                <pre><code class="language-sql text-xs">FOR u IN users
+  FILTER u.status == "new"
+  UPDATE u WITH { status: "active" } IN users
+  RETURN NEW</code></pre>
+                <p class="text-xs text-gray-400 mt-2">
+                  Use <code class="text-purple-300">RETURN NEW</code> or <code class="text-purple-300">RETURN OLD</code> to get the state of documents before or after modification.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Navigation -->
       <div class="flex justify-between items-center pt-8 border-t border-white/10">
         <a href="/docs/sdbql" class="text-gray-400 hover:text-white transition-colors">

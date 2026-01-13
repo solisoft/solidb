@@ -546,6 +546,7 @@ impl Parser {
         })
     }
 
+
     fn parse_remove_clause(&mut self) -> DbResult<RemoveClause> {
         self.expect(Token::Remove)?;
 

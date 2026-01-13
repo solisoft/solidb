@@ -562,6 +562,7 @@ mod tests {
         let query = Query {
             let_clauses: vec![],
             for_clauses: vec![],
+            join_clauses: vec![],
             filter_clauses: vec![],
             sort_clause: None,
             limit_clause: None,
