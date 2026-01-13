@@ -14,6 +14,7 @@ pub enum LLMProvider {
     OpenAI,
     Anthropic,
     Ollama,
+    Gemini,
 }
 
 impl LLMProvider {
@@ -22,8 +23,9 @@ impl LLMProvider {
             "openai" => Ok(LLMProvider::OpenAI),
             "anthropic" => Ok(LLMProvider::Anthropic),
             "ollama" => Ok(LLMProvider::Ollama),
+            "gemini" => Ok(LLMProvider::Gemini),
             _ => Err(DbError::ExecutionError(format!(
-                "Unknown LLM provider: {}. Supported: openai, anthropic, ollama",
+                "Unknown LLM provider: {}. Supported: openai, anthropic, ollama, gemini",
                 s
             ))),
         }
@@ -100,6 +102,7 @@ impl LLMClient {
     /// - OpenAI: OPENAI_API_KEY, OPENAI_MODEL (default: gpt-4o)
     /// - Anthropic: ANTHROPIC_API_KEY, ANTHROPIC_MODEL (default: claude-sonnet-4-20250514)
     /// - Ollama: OLLAMA_URL (default: http://localhost:11434), OLLAMA_MODEL (default: llama3)
+    /// - Gemini: GEMINI_API_KEY, GEMINI_MODEL (default: gemini-1.5-pro)
     ///
     /// Default provider from NL_DEFAULT_PROVIDER (default: anthropic)
     pub fn from_storage(storage: &StorageEngine, provider: Option<&str>) -> Result<Self, DbError> {
@@ -153,6 +156,22 @@ impl LLMClient {
                     model,
                 }
             }
+            LLMProvider::Gemini => {
+                let api_key = get_env_var(storage, "GEMINI_API_KEY").ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "GEMINI_API_KEY not found in _system/_env collection".to_string(),
+                    )
+                })?;
+                let model = get_env_var(storage, "GEMINI_MODEL")
+                    .unwrap_or_else(|| "gemini-1.5-pro".to_string());
+                LLMConfig {
+                    provider,
+                    // URL will be constructed dynamically in chat_gemini to include model
+                    api_url: "https://generativelanguage.googleapis.com/v1beta/models".to_string(),
+                    api_key,
+                    model,
+                }
+            }
         };
 
         Ok(LLMClient {
@@ -167,6 +186,7 @@ impl LLMClient {
             LLMProvider::OpenAI => self.chat_openai(messages).await,
             LLMProvider::Anthropic => self.chat_anthropic(messages).await,
             LLMProvider::Ollama => self.chat_ollama(messages).await,
+            LLMProvider::Gemini => self.chat_gemini(messages).await,
         }
     }
 
@@ -354,5 +374,119 @@ impl LLMClient {
         })?;
 
         Ok(result.message.content.trim().to_string())
+    }
+
+    async fn chat_gemini(&self, messages: Vec<Message>) -> Result<String, DbError> {
+        #[derive(Serialize)]
+        struct GeminiRequest {
+            contents: Vec<GeminiContent>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            system_instruction: Option<GeminiSystem>,
+        }
+
+        #[derive(Serialize)]
+        struct GeminiContent {
+            role: String,
+            parts: Vec<GeminiPart>,
+        }
+
+        #[derive(Serialize)]
+        struct GeminiSystem {
+            parts: Vec<GeminiPart>,
+        }
+
+        #[derive(Serialize)]
+        struct GeminiPart {
+            text: String,
+        }
+
+        #[derive(Deserialize)]
+        struct GeminiResponse {
+            candidates: Option<Vec<GeminiCandidate>>,
+        }
+
+        #[derive(Deserialize)]
+        struct GeminiCandidate {
+            content: Option<GeminiContentResponse>,
+        }
+
+        #[derive(Deserialize)]
+        struct GeminiContentResponse {
+            parts: Option<Vec<GeminiPartResponse>>,
+        }
+
+        #[derive(Deserialize)]
+        struct GeminiPartResponse {
+            text: Option<String>,
+        }
+
+        // Extract system message
+        let system_instruction = messages
+            .iter()
+            .find(|m| m.role == "system")
+            .map(|m| GeminiSystem {
+                parts: vec![GeminiPart {
+                    text: m.content.clone(),
+                }],
+            });
+
+        // Convert messages (skip system as it's handled separately)
+        let contents: Vec<GeminiContent> = messages
+            .into_iter()
+            .filter(|m| m.role != "system")
+            .map(|m| {
+                let role = if m.role == "assistant" {
+                    "model".to_string()
+                } else {
+                    "user".to_string()
+                };
+                GeminiContent {
+                    role,
+                    parts: vec![GeminiPart { text: m.content }],
+                }
+            })
+            .collect();
+
+        let request = GeminiRequest {
+            contents,
+            system_instruction,
+        };
+
+        let url = format!(
+            "{}/{}:generateContent?key={}",
+            self.config.api_url, self.config.model, self.config.api_key
+        );
+
+        let response = self
+            .http_client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| DbError::ExecutionError(format!("Gemini API request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(DbError::ExecutionError(format!(
+                "Gemini API error {}: {}",
+                status, body
+            )));
+        }
+
+        let result: GeminiResponse = response.json().await.map_err(|e| {
+            DbError::ExecutionError(format!("Failed to parse Gemini response: {}", e))
+        })?;
+
+        result
+            .candidates
+            .and_then(|c| c.into_iter().next())
+            .and_then(|c| c.content)
+            .and_then(|c| c.parts)
+            .and_then(|p| p.into_iter().next())
+            .and_then(|p| p.text)
+            .map(|t| t.trim().to_string())
+            .ok_or_else(|| DbError::ExecutionError("No response content from Gemini".to_string()))
     }
 }
