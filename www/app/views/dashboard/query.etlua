@@ -28,6 +28,7 @@
           <option value="ollama">Ollama</option>
           <option value="openai">OpenAI</option>
           <option value="anthropic">Anthropic</option>
+          <option value="gemini">Gemini</option>
         </select>
       </div>
       <button type="button" onclick="toggleHistory()"

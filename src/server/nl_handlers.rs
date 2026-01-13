@@ -161,101 +161,16 @@ impl SchemaContext {
 
 /// Build system prompt for SDBQL translation
 fn build_system_prompt(schema: &SchemaContext) -> String {
+    const SDBQL_REFERENCE: &str = include_str!("../../docs/SDBQL_REFERENCE.md");
+    
     format!(
         r#"You are a SDBQL query translator. Convert natural language to valid SDBQL queries.
 
 ## Database Schema
 {}
+
 ## SDBQL Syntax Reference
-
-### Basic Query Structure
-```
-FOR doc IN collection
-  FILTER condition
-  SORT field ASC|DESC
-  LIMIT n
-  // Variables & Expressions
-  LET var = expression
-  LET subquery = (FOR x IN col FILTER x.ref == doc.id RETURN x)
-  RETURN expression
-```
-
-### Advanced Syntax
-- **Range Iteration**: `FOR i IN 1..10`
-- **Pipeline**: `doc.field |> UPPER() |> TRIM()`
-- **Null Coalescing**: `value ?? default`
-- **Optional Chaining**: `doc?.user?.name`
-- **Ternary**: `condition ? trueVal : falseVal`
-- **Array Projection**: `doc.items[*].price` (Extracts `price` from all items)
-- **Object Merge**: `MERGE(obj1, obj2)`
-
-### Operators
-- **Comparison**: `==`, `!=`, `>`, `<`, `>=`, `<=`, `IN`, `NOT IN` (Array check)
-- **Logical**: `&&` (AND), `||` (OR), `!` (NOT)
-- **String Matching**:
-  - `LIKE` / `NOT LIKE`: SQL-style wildcard (`%`, `_`) e.g. `doc.name LIKE "John%"`
-  - `=~` / `!~`: Regex matching e.g. `doc.email =~ "^[a-z]+@domain\\.com$"`
-- **Fuzzy**: `~~` (Fuzzy equality/Levenshtein)
-
-### Functions Reference
-
-#### String
-- `UPPER(s)`, `LOWER(s)`, `TRIM(s)`, `LTRIM(s)`, `RTRIM(s)`
-- `CONCAT(s1, s2, ...)` - Join strings
-- `CONTAINS(s, search)`, `STARTS_WITH(s, prefix)`, `ENDS_WITH(s, suffix)`
-- `SUBSTRING(s, start, len?)`
-- `SPLIT(s, delim)`, `REVERSE(s)`, `REPEAT(s, n)`
-- `REGEX_MATCH(s, pattern)`, `REGEX_REPLACE(s, pattern, repl)`
-- `LEVENSHTEIN(s1, s2)` - Edit distance
-- `HIGHLIGHT(text, terms)` - Wraps terms in `<b>` tags
-
-#### Date & Time
-- `DATE_NOW()` - Current timestamp (ms)
-- `DATE_ISO8601(ts)` - Convert ms to ISO string
-- `DATE_TIMESTAMP(iso)` - Convert ISO string to ms
-- `DATE_YEAR(d)`, `DATE_MONTH(d)`, `DATE_DAY(d)`, `DATE_HOUR(d)`, `DATE_MINUTE(d)`
-- `DATE_DAYOFWEEK(d)` (0=Sun), `DATE_ISO_WEEK(d)`
-- `DATE_ADD(d, n, unit)`, `DATE_SUBTRACT(d, n, unit)` (unit: "days", "months", etc.)
-- `DATE_DIFF(d1, d2, unit)`
-- `DATE_FORMAT(d, fmt)` (e.g., "%Y-%m-%d")
-- `DATE_TRUNC(d, unit)`
-- `HUMAN_TIME(d)` (e.g. "5 minutes ago")
-- `TIME_BUCKET(time, interval)` (For timeseries grouping)
-
-#### Numeric
-- `ABS(n)`, `ROUND(n, prec?)`, `FLOOR(n)`, `CEIL(n)`
-- `MIN(arr)`, `MAX(arr)`, `SUM(arr)`, `AVG(arr)`, `MEDIAN(arr)`
-- `SQRT(n)`, `POW(b, e)`, `EXP(n)`, `LOG(n)`
-- `RANDOM()`, `RANDOM_INT(min, max)`
-- `CLAMP(val, min, max)`, `MOD(a, b)`
-
-#### Array & List
-- `LENGTH(arr)` - Count elements
-- `FIRST(arr)`, `LAST(arr)`, `NTH(arr, i)`
-- `PUSH(arr, val)`, `APPEND(arr1, arr2)`
-- `FLATTEN(arr, depth?)`
-- `UNIQUE(arr)`, `SORTED(arr)`, `SORTED_UNIQUE(arr)`
-- `UNION(a, b)`, `INTERSECTION(a, b)`, `MINUS(a, b)` (Set ops)
-- `REVERSE(arr)`, `SLICE(arr, start, len?)`
-- `POSITION(arr, val)`, `CONTAINS_ARRAY(arr, val)`
-- `CHUNK(arr, size)`
-
-#### Geospatial
-- `DISTANCE(lat1, lon1, lat2, lon2)` - Haversine distance in meters
-- `GEO_DISTANCE(p1, p2)` - Distance between {{lat, lon}} objects
-- `GEO_WITHIN(point, polygon)` - Point in polygon check
-
-#### Search & Fulltext
-- `FULLTEXT(coll, field, query, distance?)` - N-gram fuzzy search
-- `BM25(field, query)` - Relevance score
-- `HYBRID_SEARCH(coll, vec_idx, text_field, vector, text_query, options?)`
-- `SAMPLE(coll, n)` - Random documents
-
-#### Utility & System
-- `UUID()`, `UUIDV7()`, `ULID()`, `NANOID()`
-- `MD5(s)`, `SHA256(s)`
-- `IS_NULL(v)`, `IS_STRING(v)`, `IS_NUMBER(v)`, `IS_ARRAY(v)`
-- `ASSERT(cond, msg)`, `SLEEP(ms)`
+{}
 
 ## Rules / Best Practices
 1. Return ONLY the SDBQL query - no explanations, no markdown code blocks.
@@ -267,7 +182,8 @@ FOR doc IN collection
 7. Use `Not In` operator `x NOT IN [...]` instead of `!(x IN [...])`.
 
 User Query: "#,
-        schema.to_prompt()
+        schema.to_prompt(),
+        SDBQL_REFERENCE
     )
 }
 
