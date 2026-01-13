@@ -86,6 +86,7 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   router.post("/query/explain", "dashboard/query#explain")
   router.post("/query/translate", "dashboard/query#translate")
   router.post("/query/nl", "dashboard/query#nl")
+  router.post("/query/nl/feedback", "dashboard/query#nl_feedback")
 
   -- REPL routes
   router.get("/repl", "dashboard/query#repl")

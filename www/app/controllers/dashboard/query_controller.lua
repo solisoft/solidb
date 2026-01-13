@@ -9,7 +9,7 @@ function QueryController:index()
   local api_url = GetCookie("sdb_server") or "http://localhost:6745"
   -- Ensure no trailing slash
   api_url = api_url:gsub("/$", "")
-  
+
   self:render("dashboard/query", {
     title = "Query - " .. self:get_db(),
     db = self:get_db(),
@@ -134,17 +134,17 @@ end
 -- Translate SQL to SDBQL (JSON proxy)
 function QueryController:translate()
   local query = self.params.query or ""
-  
+
   if query == "" then
     self:json({ error = "Query cannot be empty" })
     return
   end
-  
+
   local status, headers, body = self:fetch_api("/_api/sql/translate", {
     method = "POST",
     body = EncodeJson({ query = query })
   })
-  
+
   if status and status >= 200 and status < 300 then
     local ok, data = pcall(DecodeJson, body)
     if ok then
@@ -200,6 +200,48 @@ function QueryController:nl()
   else
     local ok, err_data = pcall(DecodeJson, body or "")
     local error_msg = "NL query failed"
+    if ok and err_data and err_data.error then
+      error_msg = err_data.error
+    elseif type(body) == "string" and body ~= "" then
+      error_msg = body
+    end
+    self:json({ error = error_msg, status = status })
+  end
+end
+
+-- Natural Language feedback/correction (JSON proxy)
+function QueryController:nl_feedback()
+  local db_name = self:get_db()
+  local query = self.params.query or ""
+  local original_sdbql = self.params.original_sdbql or ""
+  local corrected_sdbql = self.params.corrected_sdbql or ""
+
+  if query == "" or original_sdbql == "" or corrected_sdbql == "" then
+    self:json({ error = "Missing required fields: query, original_sdbql, corrected_sdbql" })
+    return
+  end
+
+  local request_body = {
+    query = query,
+    original_sdbql = original_sdbql,
+    corrected_sdbql = corrected_sdbql
+  }
+
+  local status, headers, body = self:fetch_api("/_api/database/" .. db_name .. "/nl/feedback", {
+    method = "POST",
+    body = EncodeJson(request_body)
+  })
+
+  if status and status >= 200 and status < 300 then
+    local ok, data = pcall(DecodeJson, body)
+    if ok then
+      self:json(data)
+    else
+      self:json({ error = "Failed to parse backend response" })
+    end
+  else
+    local ok, err_data = pcall(DecodeJson, body or "")
+    local error_msg = "Feedback submission failed"
     if ok and err_data and err_data.error then
       error_msg = err_data.error
     elseif type(body) == "string" and body ~= "" then
@@ -473,7 +515,7 @@ end
 function QueryController:live_query()
   self.layout = "dashboard"
   local db = self:get_db()
-  
+
   -- Fetch Live Query Token
   local t_status, _, t_body = self:fetch_api("/_api/livequery/token")
   local token = ""
@@ -483,7 +525,7 @@ function QueryController:live_query()
       token = data.token
     end
   end
-  
+
   -- Determine API URL for WS
   local api_url = GetCookie("sdb_server") or "http://localhost:6745"
   -- Remove protocol and trailing slash

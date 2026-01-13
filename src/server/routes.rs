@@ -226,8 +226,9 @@ pub fn create_router(
         .route("/_api/cursor/{id}", put(get_next_batch))
         .route("/_api/cursor/{id}", delete(delete_cursor))
         .route("/_api/database/{db}/explain", post(explain_query))
-        // Natural language query route
+        // Natural language query routes
         .route("/_api/database/{db}/nl", post(nl_handlers::nl_query))
+        .route("/_api/database/{db}/nl/feedback", post(nl_handlers::nl_feedback))
         // Index routes
         .route("/_api/database/{db}/index/{collection}", post(create_index))
         .route("/_api/database/{db}/index/{collection}", get(list_indexes))

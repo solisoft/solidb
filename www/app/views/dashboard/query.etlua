@@ -498,21 +498,21 @@ function highlightSyntax(text, type) {
 
 function debounceTranslate() {
   if (translateTimeout) clearTimeout(translateTimeout);
-  
+
   if (currentQueryType !== 'sql') return;
-  
+
   var query = getQuery().trim();
   if (!query) {
     if (previewEditor) previewEditor.setValue('');
     return;
   }
-  
+
   translateTimeout = setTimeout(function() {
     // Use dashboard proxy to avoid auth/CORS issues with direct backend call
     var url = '/database/' + currentDb + '/query/translate';
     fetch(url, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest'
       },
@@ -675,7 +675,7 @@ require(['vs/editor/editor.main'], function () {
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, function () {
     executeQuery();
   });
-  
+
   // Listen for changes
   editor.onDidChangeModelContent(function() {
     if (currentQueryType === 'sql') {
@@ -733,6 +733,10 @@ function setQueryType(type) {
     editorGrid.classList.remove('grid-cols-2');
     editorGrid.classList.add('grid-cols-1');
     previewContainer.classList.add('hidden');
+    // Reset preview to read-only
+    if (previewEditor) {
+      previewEditor.updateOptions({ readOnly: true, domReadOnly: true });
+    }
 
   } else if (type === 'sql') {
     btnSql.className = 'px-3 py-2 text-sm font-medium bg-primary text-white transition-colors';
@@ -744,6 +748,10 @@ function setQueryType(type) {
     editorGrid.classList.add('grid-cols-2');
     previewContainer.classList.remove('hidden');
     if (previewLabel) previewLabel.textContent = 'SDBQL Preview';
+    // Keep preview read-only for SQL mode
+    if (previewEditor) {
+      previewEditor.updateOptions({ readOnly: true, domReadOnly: true });
+    }
 
     // Trigger translation immediately
     debounceTranslate();
@@ -756,8 +764,12 @@ function setQueryType(type) {
     editorGrid.classList.remove('grid-cols-1');
     editorGrid.classList.add('grid-cols-2');
     previewContainer.classList.remove('hidden');
-    if (previewLabel) previewLabel.textContent = 'Generated SDBQL';
-    if (previewEditor) previewEditor.setValue('// SDBQL will be generated here...');
+    if (previewLabel) previewLabel.textContent = 'Generated SDBQL (editable for corrections)';
+    if (previewEditor) {
+      previewEditor.setValue('// SDBQL will be generated here...\n// You can edit this to correct the AI and submit feedback.');
+      // Make preview editable for NL corrections
+      previewEditor.updateOptions({ readOnly: false, domReadOnly: false });
+    }
     // Show NL provider selector
     nlProviderSelector.classList.remove('hidden');
   }
@@ -869,6 +881,10 @@ function executeQuery() {
   });
 }
 
+// Store last NL query info for correction
+var lastNLQuery = null;
+var lastNLSdbql = null;
+
 // Execute Natural Language query via AI endpoint
 function executeNLQuery(query, startTime, executedQuery, executedType) {
   var btn = document.getElementById('execute-btn');
@@ -921,9 +937,12 @@ function executeNLQuery(query, startTime, executedQuery, executedType) {
       return;
     }
 
-    // Success - show generated SDBQL in preview
+    // Success - show generated SDBQL in preview (editable for corrections)
     if (previewEditor && result.data.sdbql) {
       previewEditor.setValue(result.data.sdbql);
+      // Store for correction
+      lastNLQuery = query;
+      lastNLSdbql = result.data.sdbql;
     }
 
     // Display server-side execution time if available
@@ -944,11 +963,19 @@ function executeNLQuery(query, startTime, executedQuery, executedType) {
       document.getElementById('result-count').textContent = count + ' document' + (count !== 1 ? 's' : '');
       document.getElementById('result-count').classList.remove('hidden');
 
-      // Build results table/JSON view
+      // Build results table/JSON view with correction UI
       var html = '<div class="p-2">';
-      html += '<div class="mb-2 text-xs text-text-muted flex items-center gap-2">';
-      html += '<span class="text-success"><i class="fas fa-magic mr-1"></i>AI Generated</span>';
+      html += '<div class="mb-2 text-xs text-text-muted flex items-center justify-between">';
+      html += '  <div class="flex items-center gap-2">';
+      html += '    <span class="text-success"><i class="fas fa-magic mr-1"></i>AI Generated</span>';
       html += attemptInfo;
+      html += '  </div>';
+      html += '  <div class="flex items-center gap-2">';
+      html += '    <span class="text-text-dim text-[10px]">Edit SDBQL in preview panel to correct</span>';
+      html += '    <button type="button" onclick="submitNLCorrection()" class="px-2 py-1 text-xs bg-accent hover:bg-accent/80 text-white rounded transition-colors">';
+      html += '      <i class="fas fa-check mr-1"></i>Submit Correction';
+      html += '    </button>';
+      html += '  </div>';
       html += '</div>';
 
       if (count === 0) {
@@ -977,6 +1004,69 @@ function executeNLQuery(query, startTime, executedQuery, executedType) {
     icon.className = 'fas fa-play';
     text.textContent = 'Execute';
   });
+}
+
+// Submit NL query correction
+function submitNLCorrection() {
+  if (!lastNLQuery || !lastNLSdbql) {
+    showToast('No NL query to correct', 'error');
+    return;
+  }
+
+  var correctedSdbql = previewEditor ? previewEditor.getValue().trim() : '';
+  if (!correctedSdbql) {
+    showToast('Corrected SDBQL cannot be empty', 'error');
+    return;
+  }
+
+  if (correctedSdbql === lastNLSdbql) {
+    showToast('No changes made to the SDBQL', 'warning');
+    return;
+  }
+
+  // Submit the correction
+  fetch('/database/' + currentDb + '/query/nl/feedback', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    body: JSON.stringify({
+      query: lastNLQuery,
+      original_sdbql: lastNLSdbql,
+      corrected_sdbql: correctedSdbql
+    })
+  })
+  .then(function(response) {
+    return response.json().then(function(data) {
+      return { ok: response.ok, data: data };
+    });
+  })
+  .then(function(result) {
+    if (result.ok) {
+      showToast(result.data.message || 'Correction saved! AI will learn from this.', 'success');
+      // Update stored SDBQL to the corrected one
+      lastNLSdbql = correctedSdbql;
+    } else {
+      showToast(result.data.error || 'Failed to save correction', 'error');
+    }
+  })
+  .catch(function(err) {
+    showToast('Error: ' + err.message, 'error');
+  });
+}
+
+// Simple toast notification
+function showToast(message, type) {
+  var toast = document.createElement('div');
+  var bgColor = type === 'success' ? 'bg-success' : (type === 'error' ? 'bg-error' : 'bg-warning');
+  toast.className = 'fixed bottom-4 right-4 ' + bgColor + ' text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-fade-in';
+  toast.innerHTML = '<i class="fas fa-' + (type === 'success' ? 'check' : (type === 'error' ? 'exclamation-triangle' : 'info-circle')) + ' mr-2"></i>' + escapeHtml(message);
+  document.body.appendChild(toast);
+  setTimeout(function() {
+    toast.classList.add('opacity-0', 'transition-opacity');
+    setTimeout(function() { toast.remove(); }, 300);
+  }, 3000);
 }
 
 function explainQuery() {
