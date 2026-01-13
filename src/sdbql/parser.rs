@@ -1380,6 +1380,46 @@ impl Parser {
         Ok(left)
     }
 
+    fn parse_quantifier_expression(&mut self, name: &str) -> DbResult<Expression> {
+        self.advance(); // consume ANY/SOME/ALL
+
+        // Parse variable
+        let variable = if let Token::Identifier(v) = self.current_token() {
+            v.clone()
+        } else {
+            return Err(DbError::ParseError(
+                "Expected variable name after quantifier".to_string(),
+            ));
+        };
+        self.advance();
+
+        // Parse IN
+        self.expect(Token::In)?;
+
+        // Parse array expression
+        let array_expr = self.parse_expression()?;
+
+        // Check for SATISFIES
+        let condition = if matches!(self.current_token(), Token::Satisfies) {
+            self.advance();
+            self.parse_expression()?
+        } else {
+            // Default condition: true (check existence)
+            Expression::Literal(Value::Bool(true))
+        };
+
+        // Construct desugared ANY(array, x -> condition)
+        let lambda = Expression::Lambda {
+            params: vec![variable],
+            body: Box::new(condition),
+        };
+
+        Ok(Expression::FunctionCall {
+            name: name.to_string(),
+            args: vec![array_expr, lambda],
+        })
+    }
+
     fn parse_additive_expression(&mut self) -> DbResult<Expression> {
         let mut left = self.parse_multiplicative_expression()?;
 
@@ -1633,6 +1673,8 @@ impl Parser {
                     Ok(Expression::Variable(name))
                 }
             }
+            // Handle ANY quantifier (ANY x IN params SATISFIES expr)
+            Token::Any => self.parse_quantifier_expression("ANY"),
 
             // Handle COUNT as a function call (it's a separate token but can be used as a function)
             Token::Count => {

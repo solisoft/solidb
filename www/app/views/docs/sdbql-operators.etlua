@@ -230,6 +230,91 @@
         </div>
       </section>
 
+      <!-- Array Operators -->
+      <section id="array-operators" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5 flex justify-between items-center">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+              </svg>
+              Array Operators
+            </h2>
+            <span class="px-3 py-1 bg-cyan-500/20 text-cyan-300 text-xs font-bold rounded-full border border-cyan-500/30">NEW</span>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 mb-6">
+               Quantifiers allow you to check if conditions apply to elements within an array. These are essential for querying nested data.
+            </p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <!-- ANY -->
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-cyan-500/30 transition-colors">
+                <div class="flex items-center justify-between mb-4">
+                  <code class="text-lg font-bold text-cyan-300">ANY</code>
+                  <span class="text-xs text-gray-400">At least one match</span>
+                </div>
+                <pre><code class="language-sql text-xs">FILTER ANY item IN doc.items
+SATISFIES item.price > 100</code></pre>
+                <div class="mt-3 text-xs text-gray-400">
+                  True if <strong>one or more</strong> elements satisfy the condition.
+                </div>
+              </div>
+
+              <!-- ALL -->
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-cyan-500/30 transition-colors">
+                <div class="flex items-center justify-between mb-4">
+                  <code class="text-lg font-bold text-cyan-300">ALL</code>
+                  <span class="text-xs text-gray-400">Every element matches</span>
+                </div>
+                <pre><code class="language-sql text-xs">FILTER ALL tag IN doc.tags
+SATISFIES tag != "deprecated"</code></pre>
+                <div class="mt-3 text-xs text-gray-400">
+                  True if <strong>every</strong> element satisfies the condition (or array is empty).
+                </div>
+              </div>
+
+              <!-- NONE -->
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-cyan-500/30 transition-colors">
+                <div class="flex items-center justify-between mb-4">
+                  <code class="text-lg font-bold text-cyan-300">NONE</code>
+                  <span class="text-xs text-gray-400">No matches</span>
+                </div>
+                <pre><code class="language-sql text-xs">FILTER NONE user IN doc.admins
+SATISFIES user.status == "inactive"</code></pre>
+                <div class="mt-3 text-xs text-gray-400">
+                  True if <strong>zero</strong> elements satisfy the condition.
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-gray-950/30 rounded-xl p-5 border border-white/5 mt-6">
+              <h4 class="text-sm font-bold text-white mb-3 flex items-center">
+                 <i class="fas fa-code mr-2 text-gray-500"></i> Syntax Breakdown
+              </h4>
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                <div class="p-3 bg-gray-900/50 rounded border border-white/5 text-center">
+                  <div class="text-cyan-400 font-bold mb-1">QUANTIFIER</div>
+                  <div class="text-xs text-gray-500">ANY / ALL / NONE</div>
+                </div>
+                <div class="p-3 bg-gray-900/50 rounded border border-white/5 text-center">
+                  <div class="text-yellow-400 font-bold mb-1">VARIABLE</div>
+                  <div class="text-xs text-gray-500">Loop variable</div>
+                </div>
+                <div class="p-3 bg-gray-900/50 rounded border border-white/5 text-center">
+                  <div class="text-purple-400 font-bold mb-1">ARRAY</div>
+                  <div class="text-xs text-gray-500">IN doc.items</div>
+                </div>
+                <div class="p-3 bg-gray-900/50 rounded border border-white/5 text-center">
+                  <div class="text-green-400 font-bold mb-1">CONDITION</div>
+                  <div class="text-xs text-gray-500">SATISFIES expr</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Bind Variables -->
       <section id="bind-variables" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">

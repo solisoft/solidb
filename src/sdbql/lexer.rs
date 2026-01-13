@@ -39,6 +39,7 @@ pub enum Token {
     Collect,
     Aggregate,
     Count,
+    Satisfies,
 
     // Graph traversal keywords
     Outbound,
@@ -397,6 +398,7 @@ impl Lexer {
             "COLLECT" => Token::Collect,
             "AGGREGATE" => Token::Aggregate,
             "COUNT" => Token::Count,
+            "SATISFIES" => Token::Satisfies,
 
             // Stream Processing
             "CREATE" => Token::Create,
