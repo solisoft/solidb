@@ -343,6 +343,11 @@ router.scope("/repositories", { middleware = { "session_auth" } }, function()
   router.post("/:id/collaborators", "repositories#add_collaborator")
   router.delete("/:id/collaborators/:user_key", "repositories#remove_collaborator")
 
+  -- Sync & Restore (blob storage)
+  router.post("/:id/restore", "repositories#restore")
+  router.post("/:id/sync", "repositories#sync")
+  router.get("/:id/sync_status", "repositories#sync_status")
+
   -- Merge requests
   router.get("/:repo_id/merge_requests", "merge_requests#index")
   router.get("/:repo_id/merge_requests/new", "merge_requests#new_form")
@@ -363,9 +368,12 @@ router.scope("/pages", { middleware = { "session_auth" } }, function()
   router.get("", "pages#index")
   router.get("/sidebar", "pages#sidebar")
   router.get("/sidebar/children/:parent_id", "pages#sidebar_children")
+  router.get("/favorites", "pages#favorites")
+  router.post("/:key/favorite", "pages#toggle_favorite")
   router.get("/modal/create", "pages#new_form")
   router.post("/upload_cover", "pages#upload_cover")
   router.post("/upload_file", "pages#upload_file")
+  router.post("/reorder", "pages#reorder_pages")
   router.post("", "pages#create")
   router.get("/:key", "pages#show")
   router.get("/:key/edit", "pages#edit")
@@ -375,9 +383,20 @@ router.scope("/pages", { middleware = { "session_auth" } }, function()
   -- Block management
   router.get("/:key/blocks", "pages#blocks")
   router.post("/:key/blocks", "pages#add_block")
+  router.get("/:key/blocks/:block_id", "pages#get_block")
+  router.get("/:key/blocks/:block_id/edit", "pages#get_block_edit")
   router.put("/:key/blocks/:block_id", "pages#update_block")
   router.delete("/:key/blocks/:block_id", "pages#delete_block")
+  router.post("/:key/blocks/:block_id/comment", "pages#add_block_comment")
   router.post("/:key/blocks/reorder", "pages#reorder_blocks")
+
+  -- AI block generation
+  router.post("/:key/blocks/:block_id/generate", "pages#generate_ai")
+  router.get("/ai/providers", "pages#ai_providers")
+
+  -- History
+  router.get("/:key/history", "pages#history")
+  router.get("/revision/:revision_id", "pages#revision")
 end)
 
 -- Belote Game (Demo) - requires session auth

@@ -174,7 +174,7 @@
         <div>
           <label class="block text-sm font-medium text-text-muted mb-1.5">Lua Code</label>
           <input type="hidden" name="code" id="script-code-input" value="">
-          <div id="script-monaco-editor" class="w-full h-[50vh] border border-border/50 rounded-lg overflow-hidden"></div>
+          <div id="script-monaco-editor" class="w-full h-[50vh] border border-border/50 rounded-lg overflow-hidden text-left"></div>
           <p class="mt-2 text-xs text-text-dim">
             Available globals:
             <code class="text-primary-light">db</code>,
@@ -259,6 +259,14 @@
       wordWrap: 'on',
       padding: { top: 12, bottom: 12 },
     });
+
+    // Force layout refresh after fonts load and container stabilizes
+    setTimeout(function() {
+      scriptEditor.layout();
+    }, 100);
+    setTimeout(function() {
+      scriptEditor.layout();
+    }, 500);
 
     // Sync code to hidden input on change
     scriptEditor.onDidChangeModelContent(function() {

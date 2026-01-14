@@ -1,0 +1,19 @@
+<% if editing then %>
+  <div class="flex items-center gap-2" data-editing-block="<%= block.id %>">
+    <select name="level" onchange="updateBlockField('<%= block.id %>', 'level', this.value)" class="bg-white/10 border border-white/10 rounded px-1 py-0.5 text-xs text-text-muted">
+      <option value="1" <%= block.level == 1 and 'selected' or '' %>>H1</option>
+      <option value="2" <%= block.level == 2 and 'selected' or '' %>>H2</option>
+      <option value="3" <%= (block.level == 3 or not block.level) and 'selected' or '' %>>H3</option>
+    </select>
+    <input type="text" value="<%= block.content or '' %>"
+           oninput="updateBlockField('<%= block.id %>', 'content', this.value)"
+           onkeydown="if(event.key==='Enter'){saveHeaderAndExit('<%= block.id %>', this.value)}"
+           class="flex-1 bg-transparent border-none outline-none text-white <%= block.level == 1 and 'text-3xl font-bold' or (block.level == 2 and 'text-2xl font-semibold' or 'text-xl font-medium') %>"
+           placeholder="Heading..." autofocus>
+    <button onclick="saveHeaderAndExit('<%= block.id %>', this.previousElementSibling.value)" type="button" class="text-xs text-primary hover:underline">Done</button>
+  </div>
+<% else %>
+  <h2 class="text-white cursor-text <%= block.level == 1 and 'text-3xl font-bold mt-6 mb-3' or (block.level == 2 and 'text-2xl font-semibold mt-5 mb-2' or 'text-xl font-medium mt-4 mb-2') %>">
+    <%= block.content or 'Untitled' %>
+  </h2>
+<% end %>

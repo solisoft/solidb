@@ -163,8 +163,18 @@ impl LLMClient {
             LLMProvider::Ollama => {
                 let base_url = get_env_var(storage, db_name, "OLLAMA_URL")
                     .unwrap_or_else(|| "http://localhost:11434".to_string());
+                // Trim whitespace and trailing slashes to avoid URL issues
+                let base_url = base_url.trim().trim_end_matches('/');
+                // Ensure URL has http:// scheme (Ollama is always HTTP locally)
+                let base_url = if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
+                    format!("http://{}", base_url)
+                } else {
+                    base_url.to_string()
+                };
                 let model = get_env_var(storage, db_name, "OLLAMA_MODEL")
-                    .unwrap_or_else(|| "llama3".to_string());
+                    .unwrap_or_else(|| "llama3".to_string())
+                    .trim()
+                    .to_string();
                 LLMConfig {
                     provider,
                     api_url: format!("{}/api/chat", base_url),
@@ -194,6 +204,11 @@ impl LLMClient {
             config,
             http_client: Client::new(),
         })
+    }
+
+    /// Get the configured provider
+    pub fn provider(&self) -> LLMProvider {
+        self.config.provider
     }
 
     /// Send chat messages and get response
@@ -374,7 +389,7 @@ impl LLMClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| DbError::ExecutionError(format!("Ollama API request failed: {}", e)))?;
+            .map_err(|e| DbError::ExecutionError(format!("Ollama API request to '{}' failed: {}", self.config.api_url, e)))?;
 
         if !response.status().is_success() {
             let status = response.status();

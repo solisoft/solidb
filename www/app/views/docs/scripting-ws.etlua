@@ -11,55 +11,315 @@
     <div class="relative">
       <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"></div>
       <div class="relative">
-        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">WebSockets</h1>
+        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">WebSocket Handlers</h1>
         <p class="text-lg text-gray-300 max-w-3xl leading-relaxed">
-          Build real-time applications with WebSocket support.
+          Build real-time applications with WebSocket support, channel pub/sub, and presence tracking.
         </p>
       </div>
     </div>
 
-    <!-- Sending Messages -->
-    <section id="sending">
+    <!-- Overview -->
+    <section id="overview">
       <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
         <div class="p-8 border-b border-white/5 bg-white/5">
           <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
             <span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
-            Sending Messages
+            Overview
           </h2>
         </div>
         <div class="p-8">
-          <p class="text-gray-400 text-sm mb-4">Send messages to connected clients via <code>solidb.ws</code>.</p>
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            Lua scripts can act as WebSocket handlers by registering with the <code class="text-purple-400">WS</code> HTTP method.
+            When a client connects via WebSocket, your script runs for the duration of the connection, enabling:
+          </p>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+              <h4 class="font-bold text-white mb-1 mt-0 text-sm">Basic Messaging</h4>
+              <p class="text-xs text-gray-400">Send and receive messages between server and client.</p>
+            </div>
+            <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+              <h4 class="font-bold text-white mb-1 mt-0 text-sm">Channel Pub/Sub</h4>
+              <p class="text-xs text-gray-400">Subscribe to channels and broadcast to all subscribers.</p>
+            </div>
+            <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+              <h4 class="font-bold text-white mb-1 mt-0 text-sm">Presence Tracking</h4>
+              <p class="text-xs text-gray-400">Track who's connected to each channel in real-time.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Basic WebSocket -->
+    <section id="basic">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+            Basic WebSocket Operations
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Core functions for WebSocket communication via <code>solidb.ws</code>.</p>
           <ul class="space-y-3 font-mono text-sm text-gray-300">
-             <li class="bg-black/20 p-2 rounded border border-white/5">
-               <span class="text-purple-400">solidb.ws.broadcast(channel, data)</span> <span class="text-gray-500">-&gt; nil</span>
-               <div class="text-xs text-gray-500 mt-1">Send to all clients subscribed to a channel.</div>
-             </li>
-             <li class="bg-black/20 p-2 rounded border border-white/5">
-               <span class="text-purple-400">solidb.ws.send(client_id, data)</span> <span class="text-gray-500">-&gt; nil</span>
-               <div class="text-xs text-gray-500 mt-1">Send to a specific client ID.</div>
-             </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ws.send(data)</span> <span class="text-gray-500">-&gt; nil</span>
+              <div class="text-xs text-gray-500 mt-1">Send a message (string) to the connected client.</div>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ws.recv()</span> <span class="text-gray-500">-&gt; string | nil</span>
+              <div class="text-xs text-gray-500 mt-1">Wait for and receive a message from the client. Returns nil if connection closes.</div>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ws.recv_any(timeout_ms)</span> <span class="text-gray-500">-&gt; (msg, type) | nil</span>
+              <div class="text-xs text-gray-500 mt-1">Wait for WebSocket messages OR channel/presence events. Returns message and type ("ws", "channel", "presence").</div>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ws.close()</span> <span class="text-gray-500">-&gt; nil</span>
+              <div class="text-xs text-gray-500 mt-1">Close the WebSocket connection gracefully.</div>
+            </li>
           </ul>
 
-           <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mt-6">
-                <div class="p-4 font-mono text-sm text-gray-300">
-<pre class="language-lua"><span class="text-gray-500">-- Example: Chat application endpoint</span>
-<span class="text-blue-400">local</span> message = request.body.message
-<span class="text-blue-400">local</span> user = solidb.auth.user().username
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mt-6">
+            <div class="px-4 py-2 bg-white/5 border-b border-white/10 text-xs text-gray-400">Simple Echo Server</div>
+            <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Echo server: returns every message back to the client</span>
+<span class="text-blue-400">while</span> <span class="text-blue-400">true</span> <span class="text-blue-400">do</span>
+    <span class="text-blue-400">local</span> msg = solidb.ws.recv()
+    <span class="text-blue-400">if</span> msg == <span class="text-blue-400">nil</span> <span class="text-blue-400">then</span> <span class="text-blue-400">break</span> <span class="text-blue-400">end</span>  <span class="text-gray-500">-- Connection closed</span>
 
-<span class="text-gray-500">-- Store in database</span>
-db:insert(<span class="text-green-400">"messages"</span>, { user = user, text = message })
+    solidb.ws.send(json.encode({
+        type = <span class="text-green-400">"echo"</span>,
+        message = msg,
+        timestamp = os.time() * <span class="text-yellow-400">1000</span>
+    }))
+<span class="text-blue-400">end</span></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-<span class="text-gray-500">-- Broadcast to all in 'chat_room_1'</span>
-solidb.ws.broadcast(<span class="text-green-400">"chat_room_1"</span>, {
-  type = <span class="text-green-400">"new_message"</span>,
-  user = user,
-  text = message,
-  ts = solidb.now()
-})
+    <!-- Channel Operations -->
+    <section id="channels">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
+            Channel Pub/Sub
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Channels allow broadcast messaging between WebSocket connections. Any subscriber can broadcast, and all subscribers receive the message.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ws.channel.subscribe(name)</span> <span class="text-gray-500">-&gt; true</span>
+              <div class="text-xs text-gray-500 mt-1">Subscribe to a channel to receive broadcast messages.</div>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ws.channel.unsubscribe(name)</span> <span class="text-gray-500">-&gt; true</span>
+              <div class="text-xs text-gray-500 mt-1">Unsubscribe from a channel.</div>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ws.channel.broadcast(name, data)</span> <span class="text-gray-500">-&gt; true</span>
+              <div class="text-xs text-gray-500 mt-1">Send data to all subscribers of a channel (including yourself).</div>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ws.channel.list()</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">Get list of channels this connection is subscribed to.</div>
+            </li>
+          </ul>
 
-<span class="text-blue-400">return</span> { success = <span class="text-blue-400">true</span> }</pre>
-                </div>
-           </div>
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mt-6">
+            <div class="px-4 py-2 bg-white/5 border-b border-white/10 text-xs text-gray-400">Multi-Channel Notifications</div>
+            <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Subscribe to multiple notification channels</span>
+<span class="text-blue-400">local</span> user_id = request.query.user_id
+
+solidb.ws.channel.subscribe(<span class="text-green-400">"user:"</span> .. user_id)
+solidb.ws.channel.subscribe(<span class="text-green-400">"global:announcements"</span>)
+
+<span class="text-blue-400">while</span> <span class="text-blue-400">true</span> <span class="text-blue-400">do</span>
+    <span class="text-blue-400">local</span> msg, msg_type = solidb.ws.recv_any(<span class="text-yellow-400">30000</span>)
+    <span class="text-blue-400">if</span> msg == <span class="text-blue-400">nil</span> <span class="text-blue-400">then</span> <span class="text-blue-400">break</span> <span class="text-blue-400">end</span>
+
+    <span class="text-blue-400">if</span> msg_type == <span class="text-green-400">"channel"</span> <span class="text-blue-400">then</span>
+        <span class="text-gray-500">-- Forward broadcast to client</span>
+        solidb.ws.send(json.encode({
+            type = <span class="text-green-400">"notification"</span>,
+            channel = msg.channel,
+            data = msg.data
+        }))
+    <span class="text-blue-400">end</span>
+<span class="text-blue-400">end</span></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Presence Tracking -->
+    <section id="presence">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-orange-500 mr-2"></span>
+            Presence Tracking
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Track which users are connected to each channel. When users join or leave, all subscribers receive presence events.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ws.presence.join(channel, user_info)</span> <span class="text-gray-500">-&gt; true</span>
+              <div class="text-xs text-gray-500 mt-1">Join a channel's presence list with user metadata. Other subscribers get a "join" event.</div>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ws.presence.leave(channel)</span> <span class="text-gray-500">-&gt; true</span>
+              <div class="text-xs text-gray-500 mt-1">Leave a channel's presence list. Other subscribers get a "leave" event.</div>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ws.presence.list(channel)</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">Get all users currently in a channel. Returns array of {connection_id, user_info, joined_at}.</div>
+            </li>
+          </ul>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mt-6">
+            <div class="px-4 py-2 bg-white/5 border-b border-white/10 text-xs text-gray-400">Who's Online Feature</div>
+            <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-blue-400">local</span> room = request.query.room <span class="text-blue-400">or</span> <span class="text-green-400">"lobby"</span>
+<span class="text-blue-400">local</span> user_info = {
+    id = request.user.username,
+    name = request.query.name,
+    avatar = request.query.avatar
+}
+
+<span class="text-gray-500">-- Join presence and subscribe to the room</span>
+solidb.ws.presence.join(room, user_info)
+solidb.ws.channel.subscribe(room)
+
+<span class="text-gray-500">-- Send current user list</span>
+solidb.ws.send(json.encode({
+    type = <span class="text-green-400">"init"</span>,
+    users = solidb.ws.presence.list(room)
+}))
+
+<span class="text-blue-400">while</span> <span class="text-blue-400">true</span> <span class="text-blue-400">do</span>
+    <span class="text-blue-400">local</span> msg, msg_type = solidb.ws.recv_any()
+    <span class="text-blue-400">if</span> msg == <span class="text-blue-400">nil</span> <span class="text-blue-400">then</span> <span class="text-blue-400">break</span> <span class="text-blue-400">end</span>
+
+    <span class="text-blue-400">if</span> msg_type == <span class="text-green-400">"presence"</span> <span class="text-blue-400">then</span>
+        <span class="text-gray-500">-- Someone joined or left</span>
+        solidb.ws.send(json.encode({
+            type = <span class="text-green-400">"user_"</span> .. msg.event_type,
+            user = msg.user_info
+        }))
+    <span class="text-blue-400">end</span>
+<span class="text-blue-400">end</span></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Event Types -->
+    <section id="events">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-cyan-500 mr-2"></span>
+            Event Types from recv_any()
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-6">When using <code>recv_any()</code>, you receive different event types:</p>
+
+          <div class="space-y-4">
+            <div class="bg-black/20 p-4 rounded-lg border border-white/5">
+              <h4 class="font-bold text-blue-400 mb-2 mt-0 text-sm font-mono">msg_type == "ws"</h4>
+              <p class="text-xs text-gray-400 mb-2">Direct message from the connected client (string).</p>
+              <code class="text-xs text-gray-300">local data = json.decode(msg)</code>
+            </div>
+
+            <div class="bg-black/20 p-4 rounded-lg border border-white/5">
+              <h4 class="font-bold text-purple-400 mb-2 mt-0 text-sm font-mono">msg_type == "channel"</h4>
+              <p class="text-xs text-gray-400 mb-2">Broadcast message from another connection (table).</p>
+              <code class="text-xs text-gray-300">msg.channel, msg.data, msg.timestamp, msg.sender_id</code>
+            </div>
+
+            <div class="bg-black/20 p-4 rounded-lg border border-white/5">
+              <h4 class="font-bold text-orange-400 mb-2 mt-0 text-sm font-mono">msg_type == "presence"</h4>
+              <p class="text-xs text-gray-400 mb-2">User joined or left a channel (table).</p>
+              <code class="text-xs text-gray-300">msg.event_type ("join"/"leave"), msg.channel, msg.user_info, msg.connection_id</code>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chat Room Example -->
+    <section id="chat-example">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+            Complete Example: Chat Room
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">A full chat room implementation with presence tracking.</p>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+            <div class="px-4 py-2 bg-white/5 border-b border-white/10 text-xs text-gray-400">chat_room.lua</div>
+            <div class="p-4 font-mono text-sm text-gray-300 overflow-x-auto">
+<pre class="language-lua"><span class="text-gray-500">-- Register: POST /_api/custom/_system/chat with method="WS"</span>
+<span class="text-gray-500">-- Connect: ws://localhost:6745/api/custom/_system/chat?room=general&amp;name=Alice</span>
+
+<span class="text-blue-400">local</span> room = request.query.room <span class="text-blue-400">or</span> <span class="text-green-400">"general"</span>
+<span class="text-blue-400">local</span> channel = <span class="text-green-400">"chat:"</span> .. room
+<span class="text-blue-400">local</span> user = {
+    name = request.query.name <span class="text-blue-400">or</span> <span class="text-green-400">"Anonymous"</span>,
+    joined = os.time() * <span class="text-yellow-400">1000</span>
+}
+
+<span class="text-gray-500">-- Join the room</span>
+solidb.ws.channel.subscribe(channel)
+solidb.ws.presence.join(channel, user)
+
+<span class="text-gray-500">-- Send current users to new client</span>
+solidb.ws.send(json.encode({
+    type = <span class="text-green-400">"init"</span>,
+    room = room,
+    users = solidb.ws.presence.list(channel)
+}))
+
+<span class="text-gray-500">-- Message loop</span>
+<span class="text-blue-400">while</span> <span class="text-blue-400">true</span> <span class="text-blue-400">do</span>
+    <span class="text-blue-400">local</span> msg, msg_type = solidb.ws.recv_any(<span class="text-yellow-400">30000</span>)
+    <span class="text-blue-400">if</span> msg == <span class="text-blue-400">nil</span> <span class="text-blue-400">then</span> <span class="text-blue-400">break</span> <span class="text-blue-400">end</span>
+
+    <span class="text-blue-400">if</span> msg_type == <span class="text-green-400">"ws"</span> <span class="text-blue-400">then</span>
+        <span class="text-blue-400">local</span> data = json.decode(msg)
+        <span class="text-blue-400">if</span> data.type == <span class="text-green-400">"message"</span> <span class="text-blue-400">then</span>
+            solidb.ws.channel.broadcast(channel, {
+                type = <span class="text-green-400">"chat"</span>,
+                from = user.name,
+                text = data.text,
+                timestamp = os.time() * <span class="text-yellow-400">1000</span>
+            })
+        <span class="text-blue-400">end</span>
+    <span class="text-blue-400">elseif</span> msg_type == <span class="text-green-400">"channel"</span> <span class="text-blue-400">then</span>
+        solidb.ws.send(json.encode(msg.data))
+    <span class="text-blue-400">elseif</span> msg_type == <span class="text-green-400">"presence"</span> <span class="text-blue-400">then</span>
+        solidb.ws.send(json.encode({
+            type = <span class="text-green-400">"user_"</span> .. msg.event_type,
+            user = msg.user_info
+        }))
+    <span class="text-blue-400">end</span>
+<span class="text-blue-400">end</span>
+<span class="text-gray-500">-- Cleanup is automatic when connection closes</span></pre>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -69,35 +329,85 @@ solidb.ws.broadcast(<span class="text-green-400">"chat_room_1"</span>, {
       <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
         <div class="p-8 border-b border-white/5 bg-white/5">
           <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
-            <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+            <span class="w-2 h-2 rounded-full bg-yellow-500 mr-2"></span>
             Client Integration
           </h2>
         </div>
         <div class="p-8">
-           <p class="text-gray-300 mb-4">
-             Connect from the browser or any WebSocket client.
-           </p>
-           <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
-                <div class="p-4 font-mono text-sm text-gray-300">
-<pre class="language-javascript"><span class="text-gray-500">// Connect to SoliDB WebSocket</span>
-<span class="text-purple-400">const</span> ws = <span class="text-purple-400">new</span> WebSocket(<span class="text-green-400">"ws://localhost:6745/_ws"</span>);
+          <p class="text-gray-300 mb-4">
+            Connect from the browser or any WebSocket client to your Lua handler.
+          </p>
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+            <div class="px-4 py-2 bg-white/5 border-b border-white/10 text-xs text-gray-400">JavaScript Client</div>
+            <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-javascript"><span class="text-gray-500">// Connect to WebSocket handler</span>
+<span class="text-purple-400">const</span> ws = <span class="text-purple-400">new</span> WebSocket(
+  <span class="text-green-400">"ws://localhost:6745/api/custom/_system/chat?room=general&amp;name=Alice"</span>
+);
 
 ws.<span class="text-blue-400">onopen</span> = () => {
-  <span class="text-gray-500">// Subscribe to channel</span>
-  ws.send(JSON.stringify({
-    type: <span class="text-green-400">"subscribe"</span>,
-    channel: <span class="text-green-400">"chat_room_1"</span>
-  }));
+  <span class="text-blue-400">console</span>.log(<span class="text-green-400">"Connected!"</span>);
 };
 
 ws.<span class="text-blue-400">onmessage</span> = (event) => {
   <span class="text-purple-400">const</span> msg = JSON.parse(event.data);
-  <span class="text-blue-400">console</span>.log(<span class="text-green-400">"Received:"</span>, msg);
-};</pre>
-                </div>
-           </div>
+
+  <span class="text-blue-400">if</span> (msg.type === <span class="text-green-400">"init"</span>) {
+    <span class="text-blue-400">console</span>.log(<span class="text-green-400">"Users online:"</span>, msg.users);
+  } <span class="text-blue-400">else if</span> (msg.type === <span class="text-green-400">"chat"</span>) {
+    <span class="text-blue-400">console</span>.log(<span class="text-green-400">`${msg.from}: ${msg.text}`</span>);
+  } <span class="text-blue-400">else if</span> (msg.type === <span class="text-green-400">"user_join"</span>) {
+    <span class="text-blue-400">console</span>.log(<span class="text-green-400">`${msg.user.name} joined`</span>);
+  } <span class="text-blue-400">else if</span> (msg.type === <span class="text-green-400">"user_leave"</span>) {
+    <span class="text-blue-400">console</span>.log(<span class="text-green-400">`${msg.user.name} left`</span>);
+  }
+};
+
+<span class="text-gray-500">// Send a chat message</span>
+<span class="text-purple-400">function</span> sendMessage(text) {
+  ws.send(JSON.stringify({ type: <span class="text-green-400">"message"</span>, text }));
+}</pre>
+            </div>
+          </div>
         </div>
       </div>
     </section>
+
+    <!-- Best Practices -->
+    <section id="tips">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-teal-500 mr-2"></span>
+            Best Practices
+          </h2>
+        </div>
+        <div class="p-8">
+          <ul class="space-y-3 text-sm text-gray-300">
+            <li class="flex items-start">
+              <span class="text-green-400 mr-2 mt-0.5">1.</span>
+              <div><strong class="text-white">Use recv_any() for real-time apps</strong> - It handles client messages and server events in one call.</div>
+            </li>
+            <li class="flex items-start">
+              <span class="text-green-400 mr-2 mt-0.5">2.</span>
+              <div><strong class="text-white">Structure channel names</strong> - Use prefixes like <code class="text-purple-400">chat:</code>, <code class="text-purple-400">user:</code>, <code class="text-purple-400">team:</code> for organization.</div>
+            </li>
+            <li class="flex items-start">
+              <span class="text-green-400 mr-2 mt-0.5">3.</span>
+              <div><strong class="text-white">Keep presence data minimal</strong> - Only include essential user info to reduce memory usage.</div>
+            </li>
+            <li class="flex items-start">
+              <span class="text-green-400 mr-2 mt-0.5">4.</span>
+              <div><strong class="text-white">Handle nil gracefully</strong> - A nil return from recv/recv_any means connection closed or timeout.</div>
+            </li>
+            <li class="flex items-start">
+              <span class="text-green-400 mr-2 mt-0.5">5.</span>
+              <div><strong class="text-white">Cleanup is automatic</strong> - When connection closes, presence leaves and subscriptions are removed automatically.</div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
   </div>
 </div>

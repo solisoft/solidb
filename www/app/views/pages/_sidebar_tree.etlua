@@ -1,7 +1,13 @@
+<% if is_root then %><div class="sortable-pages"><% end %>
 <% for _, page in ipairs(pages) do %>
-<div class="pl-2">
+<div class="page-tree-item" data-page-id="<%= page._key %>">
   <div class="group flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-white/5 <%= current_page_key == page._key and 'bg-white/10 text-white' or 'text-text-dim hover:text-text' %> transition-colors relative page-item">
-    
+
+    <!-- Drag Handle -->
+    <div class="page-drag-handle w-4 h-4 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-100 transition-opacity text-text-muted/50 hover:text-text-muted">
+      <i class="fas fa-grip-vertical text-[10px]"></i>
+    </div>
+
     <!-- Expand/Collapse Button -->
     <button class="w-4 h-4 flex items-center justify-center rounded hover:bg-white/10 text-text-muted/50 hover:text-text-muted transition-colors"
             onclick="toggleChildren('<%= page._key %>')"
@@ -11,16 +17,16 @@
             hx-swap="innerHTML">
       <i class="fas fa-chevron-right text-[10px] transform transition-transform" id="icon-<%= page._key %>"></i>
     </button>
-    
+
     <!-- Page Link -->
     <a href="/pages/<%= page._key %>" class="flex-1 min-w-0 flex items-center gap-2 truncate">
       <span class="text-base"><%= page.icon or "📄" %></span>
       <span class="truncate text-sm select-none"><%= page.title %></span>
     </a>
-    
+
     <!-- Actions (hover) -->
     <div class="page-actions flex items-center">
-      <button hx-delete="/pages/<%= page._key %>" hx-confirm="Are you sure?" 
+      <button hx-delete="/pages/<%= page._key %>" hx-confirm="Are you sure?"
               class="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-text-dim hover:text-red-400">
         <i class="fas fa-trash text-[10px]"></i>
       </button>
@@ -30,22 +36,130 @@
       </button>
     </div>
   </div>
-  
-  <!-- Children Container -->
-  <div id="children-<%= page._key %>" class="hidden border-l border-white/5 ml-4"></div>
-  
-  <script>
-    function toggleChildren(key) {
-      const container = document.getElementById('children-' + key);
-      const icon = document.getElementById('icon-' + key);
-      if (container.classList.contains('hidden')) {
-        container.classList.remove('hidden');
-        icon.classList.add('rotate-90');
-      } else {
-        container.classList.add('hidden');
-        icon.classList.remove('rotate-90');
-      }
-    }
-  </script>
+
+  <!-- Children Container (also sortable) -->
+  <div id="children-<%= page._key %>" class="hidden border-l border-white/5 ml-4 sortable-pages" data-parent-id="<%= page._key %>"></div>
 </div>
+<% end %>
+<% if is_root then %></div><% end %>
+
+<% if is_root then %>
+<script>
+  function toggleChildren(key) {
+    const container = document.getElementById('children-' + key);
+    const icon = document.getElementById('icon-' + key);
+    if (container.classList.contains('hidden')) {
+      container.classList.remove('hidden');
+      icon.classList.add('rotate-90');
+    } else {
+      container.classList.add('hidden');
+      icon.classList.remove('rotate-90');
+    }
+  }
+
+  // Show all children containers as drop zones during drag
+  function showAllDropZones(draggedPageId) {
+    document.querySelectorAll('.page-tree-item').forEach(item => {
+      // Don't show drop zone for the dragged item itself
+      if (item.dataset.pageId === draggedPageId) return;
+
+      const childContainer = item.querySelector(':scope > [id^="children-"]');
+      if (childContainer) {
+        childContainer.classList.remove('hidden');
+        childContainer.classList.add('drop-zone-active');
+        // Add min-height so empty containers are droppable
+        if (childContainer.children.length === 0) {
+          childContainer.style.minHeight = '24px';
+          childContainer.style.background = 'rgba(var(--color-primary-rgb, 99, 102, 241), 0.1)';
+          childContainer.style.borderRadius = '4px';
+          childContainer.style.margin = '2px 0 2px 16px';
+        }
+      }
+    });
+  }
+
+  // Hide empty children containers after drag
+  function hideEmptyDropZones() {
+    document.querySelectorAll('.sortable-pages').forEach(container => {
+      container.classList.remove('drop-zone-active');
+      container.style.minHeight = '';
+      container.style.background = '';
+      container.style.borderRadius = '';
+      container.style.margin = '';
+
+      // Hide if empty and wasn't manually expanded
+      if (container.children.length === 0 && container.id.startsWith('children-')) {
+        container.classList.add('hidden');
+        const key = container.id.replace('children-', '');
+        const icon = document.getElementById('icon-' + key);
+        if (icon) icon.classList.remove('rotate-90');
+      }
+    });
+  }
+
+  function initPagesSortable() {
+    document.querySelectorAll('.sortable-pages').forEach(container => {
+      if (container._sortable) return; // Already initialized
+
+      container._sortable = new Sortable(container, {
+        group: 'pages-tree',
+        animation: 150,
+        fallbackOnBody: true,
+        swapThreshold: 0.65,
+        handle: '.page-drag-handle',
+        draggable: '.page-tree-item',
+        ghostClass: 'opacity-30',
+        chosenClass: 'bg-primary/20',
+        onStart: function(evt) {
+          const draggedPageId = evt.item.dataset.pageId;
+          showAllDropZones(draggedPageId);
+        },
+        onEnd: function(evt) {
+          hideEmptyDropZones();
+
+          const item = evt.item;
+          const pageId = item.dataset.pageId;
+          const newParent = evt.to.dataset.parentId || null;
+
+          // Get sibling IDs for ordering
+          const siblings = Array.from(evt.to.children)
+            .filter(el => el.classList.contains('page-tree-item'))
+            .map(el => el.dataset.pageId);
+
+          // Save new position
+          fetch('/pages/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              page_id: pageId,
+              parent_id: newParent,
+              sibling_order: siblings
+            })
+          });
+
+          // Keep the children container visible if it now has children
+          if (newParent) {
+            const parentContainer = document.getElementById('children-' + newParent);
+            if (parentContainer && parentContainer.children.length > 0) {
+              parentContainer.classList.remove('hidden');
+              const icon = document.getElementById('icon-' + newParent);
+              if (icon) icon.classList.add('rotate-90');
+            }
+          }
+        }
+      });
+    });
+  }
+
+  // Initialize on load
+  initPagesSortable();
+
+  // Re-initialize when children are loaded via HTMX
+  document.body.addEventListener('htmx:afterSwap', function(e) {
+    if (e.detail.target.classList.contains('sortable-pages') ||
+        e.detail.target.querySelector('.sortable-pages')) {
+      initPagesSortable();
+    }
+  });
+</script>
 <% end %>

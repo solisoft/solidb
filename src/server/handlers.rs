@@ -172,6 +172,8 @@ pub struct AppState {
     pub permission_cache: crate::server::permission_cache::PermissionCache,
     // REPL session store
     pub repl_sessions: crate::server::repl_session::ReplSessionStore,
+    // WebSocket Channel Manager for pub/sub and presence
+    pub channel_manager: Arc<crate::scripting::ChannelManager>,
 }
 
 impl AppState {

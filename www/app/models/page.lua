@@ -1,7 +1,7 @@
 local Model = require("model")
 
 local Page = Model.create("pages", {
-  permitted_fields = { "title", "content", "parent_id", "position", "icon", "cover", "created_by", "updated_by" },
+  permitted_fields = { "title", "content", "parent_id", "position", "icon", "cover", "created_by", "updated_by", "is_favorite" },
   validations = {
     title = { presence = true, length = { between = {1, 200} } }
   },
@@ -25,7 +25,17 @@ end
 
 -- Get child pages
 function Page:children()
-  return Page:new():where({ parent_id = self._key }):order("doc.position ASC, doc.title ASC"):all()
+  local result = Sdb:Sdbql(
+    "FOR p IN pages FILTER p.parent_id == @parent_id SORT p.position ASC, p.title ASC RETURN p",
+    { parent_id = self._key }
+  )
+  local children = {}
+  if result and result.result then
+    for _, data in ipairs(result.result) do
+      table.insert(children, Page:new(data))
+    end
+  end
+  return children
 end
 
 -- Get breadcrumbs (path to root)

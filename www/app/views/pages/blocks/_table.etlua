@@ -1,0 +1,46 @@
+<%
+  local data = block.data or {{"", ""}, {"", ""}}
+  local columnWidths = block.columnWidths or {}
+  if #columnWidths == 0 and data[1] then
+    for i = 1, #data[1] do
+      columnWidths[i] = 150
+    end
+  end
+  local totalWidth = 0
+  for _, w in ipairs(columnWidths) do totalWidth = totalWidth + w end
+%>
+<div class="my-3 overflow-x-auto" data-editing-block="<%= block.id %>">
+  <table class="border-collapse table-fixed" style="width: <%= totalWidth %>px;">
+    <colgroup>
+      <% for i, width in ipairs(columnWidths) do %>
+        <col style="width: <%= width %>px;">
+      <% end %>
+    </colgroup>
+    <% for rowIndex, row in ipairs(data) do %>
+      <tr class="<%= rowIndex == 1 and 'bg-white/5 font-medium' or '' %>">
+        <% for colIndex, cell in ipairs(row) do %>
+          <td class="border border-white/10 p-0 relative">
+            <% if editing then %>
+              <input type="text" value="<%= cell %>"
+                     oninput="updateTableCell('<%= block.id %>', <%= rowIndex - 1 %>, <%= colIndex - 1 %>, this.value)"
+                     class="w-full bg-transparent border-none px-3 py-2 text-white text-sm outline-none">
+              <% if rowIndex == 1 then %>
+                <div class="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors"
+                     onmousedown="startTableResize(event, '<%= block.id %>', <%= colIndex - 1 %>)"></div>
+              <% end %>
+            <% else %>
+              <div class="px-3 py-2 text-white/90 text-sm"><%= cell ~= '' and cell or ' ' %></div>
+            <% end %>
+          </td>
+        <% end %>
+      </tr>
+    <% end %>
+  </table>
+  <% if editing then %>
+    <div class="flex gap-3 mt-2 text-xs">
+      <button onclick="addTableRow('<%= block.id %>')" type="button" class="text-primary hover:underline">+ Row</button>
+      <button onclick="addTableCol('<%= block.id %>')" type="button" class="text-primary hover:underline">+ Column</button>
+      <button onclick="saveBlock('<%= block.id %>').then(() => exitEditMode('<%= block.id %>'))" type="button" class="text-primary hover:underline ml-auto">Done</button>
+    </div>
+  <% end %>
+</div>

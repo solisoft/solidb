@@ -1,0 +1,18 @@
+<div class="my-2">
+<% if block.url and block.url ~= '' then %>
+  <a href="<%= block.url %>" download class="inline-flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">
+    <i class="fas fa-file-alt text-primary"></i>
+    <span class="text-white text-sm"><%= block.filename or 'File' %></span>
+    <i class="fas fa-download text-text-muted text-xs"></i>
+  </a>
+<% else %>
+  <div id="file-dropzone-<%= block.id %>"
+       class="border-2 border-dashed border-white/20 rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+       ondragover="event.preventDefault(); this.classList.add('border-primary')"
+       ondragleave="event.preventDefault(); this.classList.remove('border-primary')"
+       ondrop="handleFileDrop(event, '<%= block.id %>')">
+    <i class="fas fa-upload text-2xl text-text-muted/50 mb-1"></i>
+    <p class="text-sm text-text-muted">Drop file or <label class="text-primary cursor-pointer hover:underline">browse<input type="file" class="hidden" onchange="handleFileSelect(event, '<%= block.id %>')"></label></p>
+  </div>
+<% end %>
+</div>

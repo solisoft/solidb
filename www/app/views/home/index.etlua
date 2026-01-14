@@ -144,6 +144,17 @@
 FROM metrics
 GROUP BY 1</pre>
                      </div>
+                     <div class="feature-card-sm p-4 rounded-xl border border-gray-800 bg-gray-900">
+                        <h4 class="text-pink-400 font-bold text-sm mb-2">Columnar Storage</h4>
+                        <pre class="font-mono text-xs text-gray-300">POST /_api/database/mydb/columnar
+{
+  "name": "events",
+  "columns": [
+    {"name": "ts", "type": "TIMESTAMP"},
+    {"name": "value", "type": "FLOAT64"}
+  ]
+}</pre>
+                     </div>
                   </div>
                   <div class="relative bg-gradient-to-br from-blue-900/20 to-purple-900/20 rounded-xl p-6 flex flex-col justify-center items-center text-center">
                      <div class="w-20 h-20 bg-blue-500 rounded-full blur-2xl opacity-20 absolute"></div>

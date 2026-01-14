@@ -123,6 +123,7 @@ pub fn create_router(
         stream_manager,
         permission_cache,
         repl_sessions: crate::server::repl_session::ReplSessionStore::new(),
+        channel_manager: Arc::new(crate::scripting::ChannelManager::new()),
     };
 
     // Protected API routes
@@ -571,6 +572,11 @@ pub fn create_router(
         .route(
             "/_api/database/{db}/ai/tasks/{id}/fail",
             post(super::ai_handlers::fail_ai_task_handler),
+        )
+        // Generic AI content generation
+        .route(
+            "/_api/database/{db}/ai/generate",
+            post(super::ai_handlers::generate_content_handler),
         )
         // AI Agent routes
         .route(

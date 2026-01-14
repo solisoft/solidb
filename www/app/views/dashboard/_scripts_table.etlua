@@ -88,13 +88,52 @@
 <% end %>
 
 <script>
-function copyToClipboard(text) {
-  const fullUrl = window.location.origin + text;
-  navigator.clipboard.writeText(fullUrl).then(function() {
-    // Show brief toast
-    if (window.showToast) {
-      window.showToast({ message: 'URL copied to clipboard', type: 'success' });
+function getSolidbServer() {
+  var cookies = document.cookie.split(';');
+  for (var i = 0; i < cookies.length; i++) {
+    var cookie = cookies[i].trim();
+    if (cookie.startsWith('sdb_server=')) {
+      return cookie.substring('sdb_server='.length);
     }
-  });
+  }
+  return 'http://localhost:6745';
+}
+
+function copyToClipboard(text) {
+  const fullUrl = getSolidbServer() + text;
+
+  // Try modern clipboard API first (requires HTTPS)
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(fullUrl).then(function() {
+      if (window.showToast) {
+        window.showToast('URL copied to clipboard', 'success');
+      }
+    }).catch(function() {
+      fallbackCopy(fullUrl);
+    });
+  } else {
+    fallbackCopy(fullUrl);
+  }
+}
+
+function fallbackCopy(text) {
+  // Fallback for HTTP connections
+  var textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand('copy');
+    if (window.showToast) {
+      window.showToast('URL copied to clipboard', 'success');
+    }
+  } catch (e) {
+    if (window.showToast) {
+      window.showToast('Failed to copy', 'error');
+    }
+  }
+  document.body.removeChild(textarea);
 }
 </script>
