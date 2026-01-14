@@ -31,12 +31,13 @@
           <label class="block text-sm font-medium text-text-muted mb-2">Type</label>
           <div class="flex gap-4">
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" name="type" value="standard" checked class="text-primary">
+              <input type="radio" name="type" value="standard" checked class="text-primary"
+                     onchange="document.getElementById('members-section').classList.add('hidden');">
               <span class="text-text">Public</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
               <input type="radio" name="type" value="private" class="text-primary"
-                     onchange="document.getElementById('members-section').classList.toggle('hidden', !this.checked)">
+                     onchange="document.getElementById('members-section').classList.remove('hidden'); htmx.trigger(document.body, 'loadUsers');">
               <span class="text-text">Private</span>
             </label>
           </div>
@@ -45,9 +46,9 @@
         <!-- Members (for private channels) -->
         <div id="members-section" class="hidden">
           <label class="block text-sm font-medium text-text-muted mb-2">Members</label>
-          <div hx-get="/talks/channel/users" hx-trigger="load" hx-swap="innerHTML"
+          <div id="users-container" hx-get="/talks/channel/users" hx-trigger="loadUsers from:body" hx-swap="innerHTML"
                class="max-h-48 overflow-y-auto bg-bg-input border border-border rounded-lg p-2">
-            <div class="text-text-dim text-sm text-center py-2">Loading users...</div>
+            <div class="text-text-dim text-sm text-center py-2">Select Private to add members</div>
           </div>
         </div>
       </div>

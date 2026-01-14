@@ -1,0 +1,31 @@
+<% if editing then %>
+  <div class="relative" data-editing-block="<%= block.id %>">
+    <!-- Formatting Toolbar -->
+    <div class="flex gap-1 mb-2 p-1 bg-white/5 rounded-lg">
+      <button onclick="document.execCommand('bold')" type="button" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Bold"><i class="fas fa-bold text-xs"></i></button>
+      <button onclick="document.execCommand('italic')" type="button" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Italic"><i class="fas fa-italic text-xs"></i></button>
+      <button onclick="document.execCommand('underline')" type="button" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Underline"><i class="fas fa-underline text-xs"></i></button>
+      <button onclick="document.execCommand('strikeThrough')" type="button" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Strike"><i class="fas fa-strikethrough text-xs"></i></button>
+      <div class="w-px bg-white/10 mx-1"></div>
+      <button onclick="const url = prompt('Enter URL:'); if(url) document.execCommand('createLink', false, url)" type="button" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Link"><i class="fas fa-link text-xs"></i></button>
+      <button onclick="document.execCommand('unlink')" type="button" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Unlink"><i class="fas fa-unlink text-xs"></i></button>
+      <div class="w-px bg-white/10 mx-1"></div>
+      <button onclick="document.execCommand('insertUnorderedList')" type="button" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Bullet List"><i class="fas fa-list-ul text-xs"></i></button>
+      <button onclick="document.execCommand('insertOrderedList')" type="button" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Numbered List"><i class="fas fa-list-ol text-xs"></i></button>
+      <button onclick="saveParagraphAndExit('<%= block.id %>')" type="button" class="ml-auto px-2 text-xs text-primary hover:underline">Done</button>
+    </div>
+    <!-- Editable Content -->
+    <div id="editor-<%= block.id %>"
+         contenteditable="true"
+         class="w-full min-h-[80px] bg-transparent text-white/90 leading-relaxed outline-none prose prose-invert prose-sm max-w-none"
+         oninput="updateBlockField('<%= block.id %>', 'content', this.innerHTML)"><%- block.content or '' %></div>
+  </div>
+<% else %>
+  <div class="text-white/90 leading-relaxed cursor-text prose prose-invert prose-sm max-w-none">
+    <% if block.content and block.content ~= '' then %>
+      <%- block.content %>
+    <% else %>
+      <span class="text-text-muted">Click to type...</span>
+    <% end %>
+  </div>
+<% end %>

@@ -1,0 +1,45 @@
+<% if item.type == "header" then %>
+  <h<%= item.level or 2 %> class="text-white <%= item.level == 1 and 'text-2xl font-bold' or (item.level == 2 and 'text-xl font-semibold' or 'text-lg font-medium') %>">
+    <%= item.content or '' %>
+  </h<%= item.level or 2 %>>
+
+<% elseif item.type == "paragraph" then %>
+  <p class="text-white/90 leading-relaxed"><%- item.content or '' %></p>
+
+<% elseif item.type == "code" then %>
+  <pre class="bg-black/30 rounded-lg p-3 overflow-x-auto"><code class="language-<%= item.language or 'plaintext' %> text-sm"><%= item.content or '' %></code></pre>
+
+<% elseif item.type == "table" and item.data then %>
+  <div class="overflow-x-auto">
+    <table class="w-full border-collapse text-sm">
+      <% for row_idx, row in ipairs(item.data) do %>
+        <tr class="<%= row_idx == 1 and 'bg-white/10' or 'hover:bg-white/5' %>">
+          <% for _, cell in ipairs(row) do %>
+            <<%= row_idx == 1 and 'th' or 'td' %> class="border border-white/10 px-3 py-2 text-left <%= row_idx == 1 and 'font-semibold text-white' or 'text-white/80' %>">
+              <%= cell %>
+            </<%= row_idx == 1 and 'th' or 'td' %>>
+          <% end %>
+        </tr>
+      <% end %>
+    </table>
+  </div>
+
+<% elseif item.type == "list" and item.items then %>
+  <ul class="list-disc list-inside space-y-1 text-white/90">
+    <% for _, list_item in ipairs(item.items) do %>
+      <li><%= list_item %></li>
+    <% end %>
+  </ul>
+
+<% elseif item.type == "image" and item.url then %>
+  <figure class="my-2">
+    <img src="<%= item.url %>" alt="<%= item.caption or '' %>" class="rounded-lg max-w-full">
+    <% if item.caption then %>
+      <figcaption class="text-xs text-text-muted mt-1 text-center"><%= item.caption %></figcaption>
+    <% end %>
+  </figure>
+
+<% else %>
+  <!-- Fallback for unknown types - render as text -->
+  <p class="text-white/90"><%= item.content or EncodeJson(item) %></p>
+<% end %>

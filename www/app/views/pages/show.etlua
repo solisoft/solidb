@@ -1,132 +1,295 @@
 <!-- Page Container with Comments Sidebar -->
-<div x-data="{ showComments: false, selectedBlock: null, newComment: '', currentUserName: '<%= current_user and ((current_user.firstname or "") .. " " .. (current_user.lastname or "")):gsub("^%s+", ""):gsub("%s+$", "") or "Guest" %>' }" 
-     @open-comments.window="showComments = true; selectedBlock = $event.detail.block"
-     class="flex h-full">
-  
+<div class="flex h-full">
+
   <!-- Main Content Area -->
   <div class="flex-1 flex flex-col overflow-hidden">
-    
-    <!-- Cover Image -->
-    <div class="relative h-48 w-full group shrink-0">
-      <% if page.cover and page.cover ~= "" then %>
-        <img src="<%= page.cover %>" class="w-full h-full object-cover opacity-80" alt="Cover">
-      <% else %>
-        <div class="w-full h-full bg-gradient-to-r from-primary/10 to-accent/10"></div>
-      <% end %>
-      
-      <!-- Cover Actions -->
-      <div class="absolute top-4 right-4 flex gap-2">
-        <button @click="showComments = !showComments" 
-                class="px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur text-xs font-medium text-white hover:bg-black/70 transition-colors"
-                :class="showComments ? 'bg-yellow-500/50' : ''">
-          <i class="fas fa-comments mr-1"></i> Comments
-        </button>
-        <button hx-get="/pages/<%= page._key %>/edit" hx-target="#modal-container" 
-                class="px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur text-xs font-medium text-white hover:bg-black/70 transition-colors">
-          <i class="fas fa-cog mr-1"></i> Settings
-        </button>
-      </div>
-    </div>
 
-    <!-- Page Content -->
-    <div class="flex-1 overflow-y-auto relative -mt-10 z-10 px-6 sm:px-12 lg:px-16">
-      <div class="max-w-3xl mx-auto pb-32">
-        
-        <!-- Header -->
-        <div class="group relative mb-6">
-          <!-- Icon -->
-          <div class="text-5xl mb-3 cursor-pointer hover:opacity-80 transition-opacity inline-block"
-               hx-get="/pages/<%= page._key %>/edit" hx-target="#modal-container">
-            <%= page.icon or "📄" %>
-          </div>
-          
-          <!-- Title -->
-          <h1 class="text-3xl font-bold text-white outline-none placeholder:text-white/20"
-              contenteditable="true"
-              id="page-title"
-              spellcheck="false"
-              onblur="updateTitle(this.innerText)"><%= page.title %></h1>
+    <!-- Scrollable Content Wrapper -->
+    <div class="flex-1 overflow-y-auto">
+
+      <!-- Cover Image Section -->
+      <div class="relative h-52 w-full group shrink-0 overflow-hidden">
+        <% if page.cover and page.cover ~= "" then %>
+          <img src="<%= page.cover %>" class="w-full h-full object-cover" alt="Cover">
+          <!-- Gradient overlay for better text readability -->
+          <div class="absolute inset-0 bg-gradient-to-t from-bg via-transparent to-transparent"></div>
+        <% else %>
+          <div class="w-full h-full bg-gradient-to-br from-primary/20 via-accent/10 to-primary/5"></div>
+          <div class="absolute inset-0 bg-gradient-to-t from-bg via-transparent to-transparent"></div>
+        <% end %>
+
+        <!-- Cover Actions -->
+        <div class="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onclick="toggleHistoryPanel()" id="history-toggle-btn"
+                  class="px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur text-xs font-medium text-white hover:bg-black/70 transition-colors">
+            <i class="fas fa-history mr-1"></i> History
+          </button>
+          <button onclick="toggleCommentsSidebar()" id="comments-toggle-btn"
+                  class="px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur text-xs font-medium text-white hover:bg-black/70 transition-colors">
+            <i class="fas fa-comments mr-1"></i> Comments
+          </button>
+          <button hx-get="/pages/<%= page._key %>/edit" hx-target="#modal-container"
+                  class="px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur text-xs font-medium text-white hover:bg-black/70 transition-colors">
+            <i class="fas fa-cog mr-1"></i> Settings
+          </button>
         </div>
+      </div>
 
-        <!-- Block-Based Content Editor -->
-        <%- partial("pages/content_editor") %>
-        
+      <!-- Page Content -->
+      <div class="relative px-6 sm:px-12 lg:px-16 -mt-16">
+        <div class="max-w-3xl mx-auto pb-32">
+
+          <!-- Breadcrumbs -->
+          <% if breadcrumbs and #breadcrumbs > 1 then %>
+          <nav class="flex items-center gap-1 text-sm text-text-muted mb-4">
+            <% for i, crumb in ipairs(breadcrumbs) do %>
+              <% if i < #breadcrumbs then %>
+                <a href="/pages/<%= crumb._key %>" class="hover:text-white transition-colors flex items-center gap-1">
+                  <span><%= crumb.icon or "📄" %></span>
+                  <span><%= crumb.title %></span>
+                </a>
+                <i class="fas fa-chevron-right text-[10px] text-text-muted/50"></i>
+              <% end %>
+            <% end %>
+          </nav>
+          <% end %>
+
+          <!-- Header -->
+          <div class="group relative mb-6">
+            <!-- Icon -->
+            <div class="text-5xl mb-3 cursor-pointer hover:opacity-80 transition-opacity inline-block drop-shadow-lg"
+                 hx-get="/pages/<%= page._key %>/edit" hx-target="#modal-container">
+              <%= page.icon or "📄" %>
+            </div>
+
+            <!-- Title with Favorite Button -->
+            <div class="flex items-center gap-3">
+              <h1 class="text-3xl font-bold text-white outline-none placeholder:text-white/20 flex-1"
+                  contenteditable="true"
+                  id="page-title"
+                  spellcheck="false"
+                  onblur="updateTitle(this.innerText)"><%= page.title %></h1>
+
+              <!-- Favorite Toggle -->
+              <button id="favorite-btn"
+                      onclick="togglePageFavorite()"
+                      class="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors <%= page.is_favorite and 'text-yellow-400' or 'text-text-muted hover:text-yellow-400' %>"
+                      title="<%= page.is_favorite and 'Remove from favorites' or 'Add to favorites' %>">
+                <i class="<%= page.is_favorite and 'fas' or 'far' %> fa-star text-xl"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Block-Based Content Editor -->
+          <%- partial("pages/content_editor") %>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- History Sidebar -->
+  <div id="history-sidebar" class="hidden w-96 bg-bg-card border-l border-white/10 flex flex-col overflow-hidden shrink-0">
+    <div id="history-content" class="flex-1 overflow-y-auto">
+      <div class="p-4 text-center text-text-muted">
+        <i class="fas fa-spinner fa-spin"></i> Loading history...
       </div>
     </div>
   </div>
-  
+
   <!-- Comments Sidebar -->
-  <div x-show="showComments" x-transition:enter="transition ease-out duration-200"
-       x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0"
-       x-transition:leave="transition ease-in duration-150"
-       x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full"
-       class="w-80 bg-bg-card border-l border-white/10 flex flex-col overflow-hidden shrink-0">
-    
+  <div id="comments-sidebar" class="hidden w-80 bg-bg-card border-l border-white/10 flex flex-col overflow-hidden shrink-0">
+
     <!-- Sidebar Header -->
     <div class="p-4 border-b border-white/10 flex items-center justify-between">
       <h2 class="font-semibold text-white flex items-center gap-2">
         <i class="fas fa-comments text-yellow-400"></i> Comments
       </h2>
-      <button @click="showComments = false; selectedBlock = null" class="text-text-muted hover:text-white">
+      <button onclick="toggleCommentsSidebar()" class="text-text-muted hover:text-white">
         <i class="fas fa-times"></i>
       </button>
     </div>
-    
+
     <!-- Selected Block Comments -->
-    <div class="flex-1 overflow-y-auto p-4">
-      <template x-if="selectedBlock">
-        <div class="space-y-4">
-          <!-- Block Preview -->
-          <div class="text-xs text-text-muted mb-2 pb-2 border-b border-white/10">
-            Commenting on: <span class="text-white" x-text="selectedBlock.type"></span> block
-          </div>
-          
-          <!-- Comments List -->
-          <div class="space-y-3">
-            <template x-for="(comment, idx) in (selectedBlock.comments || [])" :key="idx">
-              <div class="bg-white/5 rounded-lg p-3">
-                <div class="flex items-center gap-2 mb-1">
-                  <span class="text-xs font-medium text-primary" x-text="comment.author || 'Anonymous'"></span>
-                  <span class="text-xs text-text-muted" x-text="comment.date"></span>
-                </div>
-                <div class="text-sm text-white/90" x-text="comment.text"></div>
-              </div>
-            </template>
-            <template x-if="!selectedBlock.comments || selectedBlock.comments.length === 0">
-              <div class="text-sm text-text-muted text-center py-4">No comments yet</div>
-            </template>
-          </div>
-          
-          <!-- Add Comment Input -->
-          <div class="pt-3 border-t border-white/10">
-            <textarea x-model="newComment" placeholder="Add a comment..." rows="3"
-                      class="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white outline-none resize-none"></textarea>
-            <button @click="if(newComment.trim()) { if(!selectedBlock.comments) selectedBlock.comments = []; selectedBlock.comments.push({text: newComment.trim(), author: currentUserName, date: new Date().toLocaleString()}); newComment = ''; $dispatch('save-block', { block: selectedBlock }); }"
-                    class="mt-2 w-full py-2 bg-primary rounded-lg text-sm font-medium text-white hover:bg-primary/80 transition-colors">
-              Add Comment
-            </button>
-          </div>
-        </div>
-      </template>
-      
-      <template x-if="!selectedBlock">
-        <div class="text-center text-text-muted py-8">
-          <i class="fas fa-comment-dots text-4xl mb-3 opacity-30"></i>
-          <p class="text-sm">Click the <i class="fas fa-comment text-yellow-400"></i> icon on any block to add comments.</p>
-        </div>
-      </template>
+    <div class="flex-1 overflow-y-auto p-4" id="comments-content">
+      <div class="text-center text-text-muted py-8">
+        <i class="fas fa-comment-dots text-4xl mb-3 opacity-30"></i>
+        <p class="text-sm">Click the <i class="fas fa-comment text-yellow-400"></i> icon on any block to add comments.</p>
+      </div>
     </div>
-    
+
   </div>
 </div>
 
 <script>
+  const currentUserName = '<%= current_user and ((current_user.firstname or "") .. " " .. (current_user.lastname or "")):gsub("^%s+", ""):gsub("%s+$", "") or "Guest" %>';
+  const pageKey = '<%= page._key %>';
+  let selectedBlockId = null;
+
   function updateTitle(newTitle) {
     htmx.ajax('PUT', '/pages/<%= page._key %>', {
       values: { title: newTitle },
       swap: 'none'
     });
-    // Refresh sidebar to update title there
     htmx.trigger('#pages-sidebar', 'load');
+  }
+
+  async function togglePageFavorite() {
+    const btn = document.getElementById('favorite-btn');
+    const icon = btn.querySelector('i');
+
+    const resp = await fetch(`/pages/${pageKey}/favorite`, { method: 'POST' });
+    const data = await resp.json();
+
+    if (data.success) {
+      if (data.is_favorite) {
+        btn.classList.remove('text-text-muted');
+        btn.classList.add('text-yellow-400');
+        btn.title = 'Remove from favorites';
+        icon.classList.remove('far');
+        icon.classList.add('fas');
+      } else {
+        btn.classList.remove('text-yellow-400');
+        btn.classList.add('text-text-muted');
+        btn.title = 'Add to favorites';
+        icon.classList.remove('fas');
+        icon.classList.add('far');
+      }
+      // Refresh favorites section in sidebar
+      htmx.ajax('GET', '/pages/favorites?current_page_key=' + pageKey, '#pages-favorites');
+    }
+  }
+
+  function toggleCommentsSidebar() {
+    const sidebar = document.getElementById('comments-sidebar');
+    const btn = document.getElementById('comments-toggle-btn');
+    // Close history if open
+    document.getElementById('history-sidebar').classList.add('hidden');
+    document.getElementById('history-toggle-btn').classList.remove('bg-primary/50');
+    sidebar.classList.toggle('hidden');
+    btn.classList.toggle('bg-yellow-500/50');
+  }
+
+  function toggleHistoryPanel() {
+    const sidebar = document.getElementById('history-sidebar');
+    const btn = document.getElementById('history-toggle-btn');
+    // Close comments if open
+    document.getElementById('comments-sidebar').classList.add('hidden');
+    document.getElementById('comments-toggle-btn').classList.remove('bg-yellow-500/50');
+
+    const isHidden = sidebar.classList.toggle('hidden');
+    btn.classList.toggle('bg-primary/50');
+
+    if (!isHidden) {
+      loadHistory();
+    }
+  }
+
+  function loadHistory() {
+    fetch(`/pages/${pageKey}/history`)
+      .then(r => r.text())
+      .then(html => {
+        document.getElementById('history-content').innerHTML = html;
+      });
+  }
+
+  function closeHistoryPanel() {
+    document.getElementById('history-sidebar').classList.add('hidden');
+    document.getElementById('history-toggle-btn').classList.remove('bg-primary/50');
+  }
+
+  function showRevisionDetail(revisionId) {
+    fetch(`/pages/revision/${revisionId}`)
+      .then(r => r.text())
+      .then(html => {
+        document.getElementById('history-content').innerHTML = html;
+      });
+  }
+
+  function backToHistory() {
+    loadHistory();
+  }
+
+  function openCommentsForBlock(blockId, blockType, comments) {
+    selectedBlockId = blockId;
+    const sidebar = document.getElementById('comments-sidebar');
+    const content = document.getElementById('comments-content');
+
+    // Show sidebar
+    sidebar.classList.remove('hidden');
+    document.getElementById('comments-toggle-btn').classList.add('bg-yellow-500/50');
+
+    // Render comments
+    let html = `
+      <div class="space-y-4">
+        <div class="text-xs text-text-muted mb-2 pb-2 border-b border-white/10">
+          Commenting on: <span class="text-white">${blockType}</span> block
+        </div>
+        <div class="space-y-3" id="comments-list">
+    `;
+
+    if (comments && comments.length > 0) {
+      comments.forEach((c, idx) => {
+        html += `
+          <div class="bg-white/5 rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-medium text-primary">${c.author || 'Anonymous'}</span>
+              <span class="text-xs text-text-muted">${c.date}</span>
+            </div>
+            <div class="text-sm text-white/90">${c.text}</div>
+          </div>
+        `;
+      });
+    } else {
+      html += `<div class="text-sm text-text-muted text-center py-4">No comments yet</div>`;
+    }
+
+    html += `
+        </div>
+        <div class="pt-3 border-t border-white/10">
+          <textarea id="new-comment-input" placeholder="Add a comment..." rows="3"
+                    class="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white outline-none resize-none"></textarea>
+          <button onclick="addComment()" class="mt-2 w-full py-2 bg-primary rounded-lg text-sm font-medium text-white hover:bg-primary/80 transition-colors">
+            Add Comment
+          </button>
+        </div>
+      </div>
+    `;
+
+    content.innerHTML = html;
+  }
+
+  async function addComment() {
+    const input = document.getElementById('new-comment-input');
+    const text = input.value.trim();
+    if (!text || !selectedBlockId) return;
+
+    // Get current block data and add comment
+    const resp = await fetch(`/pages/${pageKey}/blocks/${selectedBlockId}/comment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, author: currentUserName, date: new Date().toLocaleString() })
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      // Refresh comments display
+      openCommentsForBlock(selectedBlockId, data.block_type, data.comments);
+      // Update comment count badge
+      updateCommentBadge(selectedBlockId, data.comments.length);
+    }
+  }
+
+  function updateCommentBadge(blockId, count) {
+    const badge = document.querySelector(`[data-block-id="${blockId}"] .comment-count`);
+    if (badge) {
+      if (count > 0) {
+        badge.textContent = count;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
   }
 </script>

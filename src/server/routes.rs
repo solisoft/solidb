@@ -572,6 +572,11 @@ pub fn create_router(
             "/_api/database/{db}/ai/tasks/{id}/fail",
             post(super::ai_handlers::fail_ai_task_handler),
         )
+        // Generic AI content generation
+        .route(
+            "/_api/database/{db}/ai/generate",
+            post(super::ai_handlers::generate_content_handler),
+        )
         // AI Agent routes
         .route(
             "/_api/database/{db}/ai/agents",

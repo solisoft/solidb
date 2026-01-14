@@ -12,7 +12,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-  <script src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
   
   <style>
     /* Custom Scrollbar */
@@ -107,11 +107,74 @@
          </button>
       </div>
       
-      <div id="pages-sidebar" class="flex-1 overflow-y-auto pages-scrollbar p-2 space-y-0.5" 
-           hx-get="/pages/sidebar<%= current_page and '?current_page_key=' .. current_page._key or '' %>" 
-           hx-trigger="load">
-         <div class="p-4 text-center text-xs text-text-dim">Loading pages...</div>
+      <div class="flex-1 overflow-y-auto pages-scrollbar p-2">
+        <!-- Favorites Section -->
+        <div id="pages-favorites"
+             hx-get="/pages/favorites<%= current_page and '?current_page_key=' .. current_page._key or '' %>"
+             hx-trigger="load"></div>
+
+        <!-- Pages Tree -->
+        <a href="/pages" class="block px-2 py-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider hover:text-white transition-colors">Pages</a>
+        <div id="pages-sidebar" class="space-y-0.5"
+             hx-get="/pages/sidebar<%= current_page and '?current_page_key=' .. current_page._key or '' %>"
+             hx-trigger="load">
+          <div class="p-4 text-center text-xs text-text-dim">Loading pages...</div>
+        </div>
       </div>
+
+      <script>
+        window.currentPageKey = '<%= current_page and current_page._key or "" %>';
+      </script>
+      <% if current_page then %>
+      <script>
+        // Auto-expand path to current page
+        const ancestorKeys = <%- EncodeJson(breadcrumbs and (function() local keys = {} for i, c in ipairs(breadcrumbs) do if i < #breadcrumbs then table.insert(keys, c._key) end end return keys end)() or {}) %>;
+
+        function expandAncestor(index) {
+          if (index >= ancestorKeys.length) return;
+
+          const key = ancestorKeys[index];
+          const container = document.getElementById('children-' + key);
+          const icon = document.getElementById('icon-' + key);
+          const btn = container?.previousElementSibling?.querySelector('button');
+
+          if (!container) {
+            // Container not found yet, retry after a short delay
+            setTimeout(() => expandAncestor(index), 150);
+            return;
+          }
+
+          // Show container and rotate icon
+          container.classList.remove('hidden');
+          if (icon) icon.classList.add('rotate-90');
+
+          // If children not loaded yet, fetch them
+          if (container.innerHTML.trim() === '' && btn) {
+            const url = btn.getAttribute('hx-get');
+            if (url) {
+              fetch(url)
+                .then(r => r.text())
+                .then(html => {
+                  container.innerHTML = html;
+                  htmx.process(container);
+                  // Continue to next ancestor after content loads
+                  setTimeout(() => expandAncestor(index + 1), 50);
+                });
+            }
+          } else {
+            // Children already loaded, continue immediately
+            expandAncestor(index + 1);
+          }
+        }
+
+        // Run after sidebar loads
+        document.body.addEventListener('htmx:afterSwap', function(e) {
+          if (e.detail.target.id === 'pages-sidebar') {
+            expandAncestor(0);
+          }
+        });
+      </script>
+      <% end %>
       
       <!-- User Footer -->
       <div class="p-4 mt-auto border-t border-white/5">

@@ -53,13 +53,13 @@ end
 -- Send 401 Unauthorized response
 local function send_unauthorized(self)
   self:set_header("WWW-Authenticate", 'Basic realm="Git Repository"')
-  self:set_status(401)
+  self:status(401)
   self.response.body = "Unauthorized"
 end
 
 -- Send 403 Forbidden response
 local function send_forbidden(self)
-  self:set_status(403)
+  self:status(403)
   self.response.body = "Forbidden: You don't have access to this repository"
 end
 
@@ -73,8 +73,15 @@ local function check_repo_access(self, require_push)
   -- Find repository
   local repo = Repository.find_by_name(repo_name)
   if not repo then
-    self:set_status(404)
+    self:status(404)
     self.response.body = "Repository not found"
+    return nil, nil, true
+  end
+
+  -- Auto-restore from blob storage if folder is missing
+  if not GitHelper.repo_exists(repo_name) then
+    self:status(404)
+    self.response.body = "Repository folder missing - please restore first"
     return nil, nil, true
   end
 
@@ -184,6 +191,14 @@ function GitHttpController:receive_pack()
   if not response then
     return self:json({ error = "Internal Server Error" }, 500)
   end
+
+  -- Sync to blob storage after successful push (non-blocking)
+  -- Extract repo name from path (e.g., "myrepo.git" -> "myrepo")
+  local repo_name = repo_path:gsub("%.git$", "")
+  pcall(function()
+    local GitSync = require("helpers.git_sync")
+    GitSync.push(repo_name)
+  end)
 
   for k, v in pairs(response.headers or {}) do
     self:set_header(k, v)

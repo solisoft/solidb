@@ -1,0 +1,67 @@
+<div data-block-id="<%= block.id %>" class="block-item group relative rounded-lg hover:bg-white/5 transition-all -mx-2 px-2">
+
+  <!-- Block Handle (for dragging) -->
+  <div class="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab drag-handle">
+    <i class="fas fa-grip-vertical text-text-muted/50 text-sm"></i>
+  </div>
+
+  <!-- Comment Button -->
+  <% local has_comments = block.comments and #block.comments > 0 %>
+  <div class="absolute -right-8 top-1 z-10 <%= has_comments and '' or 'opacity-0 group-hover:opacity-100' %> transition-opacity">
+    <button onclick="openCommentsForBlock('<%= block.id %>', '<%= block.type %>', <%- EncodeJson(block.comments or {}) %>)"
+            class="w-6 h-6 rounded hover:bg-yellow-500/20 flex items-center justify-center relative <%= has_comments and 'text-yellow-400' or 'text-text-muted/50 hover:text-yellow-400' %>" title="<%= has_comments and (#block.comments .. ' comment' .. (#block.comments > 1 and 's' or '')) or 'Add comment' %>">
+      <i class="fas fa-comment text-xs"></i>
+      <% if has_comments then %>
+        <span class="comment-count absolute -top-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full text-[10px] text-black font-bold flex items-center justify-center"><%= #block.comments %></span>
+      <% end %>
+    </button>
+  </div>
+
+  <!-- Delete Button -->
+  <div class="absolute -right-8 top-8 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+    <button hx-delete="/pages/<%= page_key %>/blocks/<%= block.id %>"
+            hx-target="[data-block-id='<%= block.id %>']"
+            hx-swap="outerHTML"
+            hx-confirm="Delete this block?"
+            class="w-6 h-6 rounded hover:bg-red-500/20 text-text-muted/50 hover:text-red-400 flex items-center justify-center" title="Delete">
+      <i class="fas fa-trash text-xs"></i>
+    </button>
+  </div>
+
+  <!-- Insert Block After -->
+  <div class="absolute -bottom-3 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+    <button onclick="toggleInsertMenu(this)" class="w-6 h-6 rounded-full bg-primary/20 hover:bg-primary text-primary hover:text-white flex items-center justify-center shadow-lg" title="Insert block after">
+      <i class="fas fa-plus text-xs"></i>
+    </button>
+    <div class="insert-menu hidden absolute left-1/2 -translate-x-1/2 mt-2 bg-bg-card border border-white/10 rounded-xl shadow-xl z-30 p-2 flex gap-1">
+      <button hx-post="/pages/<%= page_key %>/blocks" hx-vals='{"type":"header","after_id":"<%= block.id %>"}' hx-target="#blocks-container" hx-swap="beforeend" onclick="this.closest('.insert-menu').classList.add('hidden')" class="p-2 rounded hover:bg-white/5" title="Header"><i class="fas fa-heading text-primary"></i></button>
+      <button hx-post="/pages/<%= page_key %>/blocks" hx-vals='{"type":"paragraph","after_id":"<%= block.id %>"}' hx-target="#blocks-container" hx-swap="beforeend" onclick="this.closest('.insert-menu').classList.add('hidden')" class="p-2 rounded hover:bg-white/5" title="Paragraph"><i class="fas fa-paragraph text-primary"></i></button>
+      <button hx-post="/pages/<%= page_key %>/blocks" hx-vals='{"type":"code","after_id":"<%= block.id %>"}' hx-target="#blocks-container" hx-swap="beforeend" onclick="this.closest('.insert-menu').classList.add('hidden')" class="p-2 rounded hover:bg-white/5" title="Code"><i class="fas fa-code text-primary"></i></button>
+      <button hx-post="/pages/<%= page_key %>/blocks" hx-vals='{"type":"table","after_id":"<%= block.id %>"}' hx-target="#blocks-container" hx-swap="beforeend" onclick="this.closest('.insert-menu').classList.add('hidden')" class="p-2 rounded hover:bg-white/5" title="Table"><i class="fas fa-table text-primary"></i></button>
+      <button hx-post="/pages/<%= page_key %>/blocks" hx-vals='{"type":"image","after_id":"<%= block.id %>"}' hx-target="#blocks-container" hx-swap="beforeend" onclick="this.closest('.insert-menu').classList.add('hidden')" class="p-2 rounded hover:bg-white/5" title="Image"><i class="fas fa-image text-primary"></i></button>
+      <button hx-post="/pages/<%= page_key %>/blocks" hx-vals='{"type":"file","after_id":"<%= block.id %>"}' hx-target="#blocks-container" hx-swap="beforeend" onclick="this.closest('.insert-menu').classList.add('hidden')" class="p-2 rounded hover:bg-white/5" title="File"><i class="fas fa-file text-primary"></i></button>
+      <button hx-post="/pages/<%= page_key %>/blocks" hx-vals='{"type":"ai","after_id":"<%= block.id %>"}' hx-target="#blocks-container" hx-swap="beforeend" onclick="this.closest('.insert-menu').classList.add('hidden')" class="p-2 rounded hover:bg-white/5" title="AI Content"><i class="fas fa-wand-magic-sparkles text-purple-400"></i></button>
+    </div>
+  </div>
+
+  <!-- Block Content -->
+  <div class="py-1 block-content" onclick="enterEditMode(this, '<%= block.id %>')">
+
+    <% if block.type == "header" then %>
+      <%- partial("pages/blocks/header", { block = block, page_key = page_key, editing = editing }) %>
+    <% elseif block.type == "paragraph" then %>
+      <%- partial("pages/blocks/paragraph", { block = block, page_key = page_key, editing = editing }) %>
+    <% elseif block.type == "code" then %>
+      <%- partial("pages/blocks/code", { block = block, page_key = page_key, editing = editing }) %>
+    <% elseif block.type == "table" then %>
+      <%- partial("pages/blocks/table", { block = block, page_key = page_key, editing = editing }) %>
+    <% elseif block.type == "image" then %>
+      <%- partial("pages/blocks/image", { block = block, page_key = page_key, editing = editing }) %>
+    <% elseif block.type == "file" then %>
+      <%- partial("pages/blocks/file", { block = block, page_key = page_key, editing = editing }) %>
+    <% elseif block.type == "ai" then %>
+      <%- partial("pages/blocks/ai", { block = block, page_key = page_key, editing = editing }) %>
+    <% end %>
+
+  </div>
+</div>

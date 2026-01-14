@@ -23,7 +23,7 @@
           <span class="text-2xl group-hover:scale-110 transition-transform"><%= page.icon or "📄" %></span>
           <div class="min-w-0">
             <div class="font-semibold text-white truncate"><%= page.title %></div>
-            <div class="text-xs text-text-dim">Updated <%= require("helpers.date_helper").time_ago(page.updated_at) %></div>
+            <div class="text-xs text-text-dim">Updated <%= require("helpers.date_helper").time_ago_in_words(page.updated_at) %></div>
           </div>
         </a>
       <% end %>

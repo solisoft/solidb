@@ -1,0 +1,29 @@
+<div class="my-3">
+<% if editing then %>
+  <div data-editing-block="<%= block.id %>">
+    <div class="flex items-center gap-2 mb-1">
+      <select onchange="updateBlockField('<%= block.id %>', 'language', this.value)" class="bg-white/10 border border-white/10 rounded px-1.5 py-0.5 text-xs text-text-muted">
+        <option value="lua" <%= block.language == 'lua' and 'selected' or '' %>>Lua</option>
+        <option value="javascript" <%= block.language == 'javascript' and 'selected' or '' %>>JavaScript</option>
+        <option value="python" <%= block.language == 'python' and 'selected' or '' %>>Python</option>
+        <option value="html" <%= block.language == 'html' and 'selected' or '' %>>HTML</option>
+        <option value="css" <%= block.language == 'css' and 'selected' or '' %>>CSS</option>
+        <option value="sql" <%= block.language == 'sql' and 'selected' or '' %>>SQL</option>
+        <option value="json" <%= block.language == 'json' and 'selected' or '' %>>JSON</option>
+        <option value="bash" <%= block.language == 'bash' and 'selected' or '' %>>Bash</option>
+      </select>
+      <button onclick="saveCodeAndExit('<%= block.id %>')" type="button" class="text-xs text-primary hover:underline">Done</button>
+    </div>
+    <textarea id="code-editor-<%= block.id %>"
+              oninput="updateBlockField('<%= block.id %>', 'content', this.value)"
+              rows="8"
+              class="w-full bg-gray-900/80 rounded-lg p-4 font-mono text-sm text-green-400 resize-y outline-none"
+              placeholder="// Code..." autofocus><%= block.content or '' %></textarea>
+  </div>
+<% else %>
+  <div class="relative">
+    <div class="absolute top-2 right-2 text-xs text-text-muted/50 z-10"><%= block.language or 'plaintext' %></div>
+    <pre class="rounded-lg overflow-hidden"><code class="language-<%= block.language or 'plaintext' %>"><%= block.content or '// Click to edit...' %></code></pre>
+  </div>
+<% end %>
+</div>

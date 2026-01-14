@@ -28,11 +28,96 @@
   </div>
 
   <div class="flex items-center gap-2">
+    <!-- Sync Status & Actions -->
+    <div id="sync-status" class="flex items-center gap-2">
+      <span class="text-xs text-text-dim">
+        <i class="fas fa-cloud text-text-dim"></i>
+        <span id="sync-status-text">Checking...</span>
+      </span>
+    </div>
+    <button onclick="syncRepo()" id="sync-btn" class="px-3 py-1.5 bg-surface hover:bg-white/10 border border-white/10 text-text-muted hover:text-white rounded-lg text-xs font-medium flex items-center gap-2 transition-colors">
+      <i class="fas fa-sync" id="sync-icon"></i> Sync
+    </button>
+    <button onclick="restoreRepo()" id="restore-btn" class="hidden px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-400 rounded-lg text-xs font-medium flex items-center gap-2 transition-colors">
+      <i class="fas fa-cloud-download-alt"></i> Restore
+    </button>
     <a href="/repositories/<%= repository.id %>/merge_requests/new" class="px-3 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-medium flex items-center gap-2 transition-colors">
       <i class="fas fa-code-pull-request"></i> New MR
     </a>
   </div>
 </div>
+
+<script>
+(function() {
+  const repoId = '<%= repository.id %>';
+
+  // Check sync status on load
+  checkSyncStatus();
+
+  function checkSyncStatus() {
+    fetch('/repositories/' + repoId + '/sync_status')
+      .then(r => r.json())
+      .then(data => {
+        const statusText = document.getElementById('sync-status-text');
+        if (data.synced) {
+          statusText.innerHTML = '<span class="text-green-400">' + data.blob_count + ' files synced</span>';
+        } else if (data.blob_count === 0) {
+          statusText.innerHTML = '<span class="text-amber-400">Not synced</span>';
+        } else {
+          statusText.innerHTML = '<span class="text-amber-400">' + data.blob_count + '/' + data.file_count + ' synced</span>';
+        }
+      })
+      .catch(() => {
+        document.getElementById('sync-status-text').textContent = 'Unknown';
+      });
+  }
+
+  window.syncRepo = function() {
+    const btn = document.getElementById('sync-btn');
+    const icon = document.getElementById('sync-icon');
+    btn.disabled = true;
+    icon.classList.add('fa-spin');
+
+    fetch('/repositories/' + repoId + '/sync', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          checkSyncStatus();
+        } else {
+          alert('Sync failed: ' + (data.error || 'Unknown error'));
+        }
+      })
+      .catch(err => {
+        alert('Sync failed: ' + err.message);
+      })
+      .finally(() => {
+        btn.disabled = false;
+        icon.classList.remove('fa-spin');
+      });
+  };
+
+  window.restoreRepo = function() {
+    if (!confirm('Restore repository from blob storage?')) return;
+
+    fetch('/repositories/' + repoId + '/restore', { method: 'POST' })
+      .then(r => {
+        if (r.redirected) {
+          window.location.href = r.url;
+        } else {
+          return r.json();
+        }
+      })
+      .then(data => {
+        if (data && data.error) {
+          alert('Restore failed: ' + data.error);
+        }
+      })
+      .catch(err => {
+        alert('Restore failed: ' + err.message);
+      });
+  };
+})();
+</script>
 
 <!-- Main Content Area -->
 <div class="flex-1 overflow-y-auto chat-scrollbar p-6">

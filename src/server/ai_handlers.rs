@@ -1490,3 +1490,54 @@ pub async fn update_agent_handler(
 
     Ok(Json(agent))
 }
+
+/// Request for generic content generation
+#[derive(Debug, Deserialize)]
+pub struct GenerateContentRequest {
+    /// The user prompt
+    pub prompt: String,
+    /// Optional system prompt (instructions for the AI)
+    pub system: Option<String>,
+    /// AI provider (openai, anthropic, ollama, gemini)
+    pub provider: Option<String>,
+}
+
+/// Response from content generation
+#[derive(Debug, serde::Serialize)]
+pub struct GenerateContentResponse {
+    pub content: String,
+    pub provider: String,
+}
+
+/// POST /_api/database/{db}/ai/generate - Generate content using LLM
+///
+/// Simple endpoint for generic content generation without any domain-specific prompts.
+/// Uses the same _env credentials as NL queries.
+pub async fn generate_content_handler(
+    State(state): State<AppState>,
+    Path(db_name): Path<String>,
+    Extension(_claims): Extension<Claims>,
+    Json(request): Json<GenerateContentRequest>,
+) -> Result<Json<GenerateContentResponse>, DbError> {
+    use super::llm_client::{LLMClient, Message};
+
+    let client = LLMClient::from_storage(&state.storage, &db_name, request.provider.as_deref())?;
+    let provider_name = format!("{:?}", client.provider()).to_lowercase();
+
+    let mut messages = Vec::new();
+
+    // Add system message if provided
+    if let Some(system) = &request.system {
+        messages.push(Message::system(system));
+    }
+
+    // Add user prompt
+    messages.push(Message::user(&request.prompt));
+
+    let content = client.chat(messages).await?;
+
+    Ok(Json(GenerateContentResponse {
+        content,
+        provider: provider_name,
+    }))
+}

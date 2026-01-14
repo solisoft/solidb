@@ -2,6 +2,7 @@ local Controller = require("controller")
 local RepositoriesController = Controller:extend()
 local Repository = require("models.repository")
 local GitHelper = require("helpers.git_helper")
+local GitSync = require("helpers.git_sync")
 local AuthHelper = require("helpers.auth_helper")
 local DateHelper = require("helpers.date_helper")
 
@@ -180,6 +181,9 @@ function RepositoriesController:destroy()
     return self:render("errors/403", {}, { status = 403 })
   end
 
+  -- Delete blobs from storage
+  GitSync.delete(repository.name)
+
   -- Delete physical repo files
   local repo_path = GitHelper.get_repo_path(repository.name)
   os.execute(string.format("rm -rf '%s'", repo_path))
@@ -188,6 +192,78 @@ function RepositoriesController:destroy()
   repository:destroy()
 
   self:redirect("/repositories")
+end
+
+-- Restore repository from blob storage (if local folder is missing)
+function RepositoriesController:restore()
+  local current_user = get_current_user()
+  local id = self.params.id
+  local repository = Repository:find(id)
+
+  if not repository then
+    return self:render("errors/404", {}, { status = 404 })
+  end
+
+  -- Check ownership
+  if repository.owner_id ~= current_user._key then
+    return self:render("errors/403", {}, { status = 403 })
+  end
+
+  -- Check if folder is missing
+  if GitHelper.repo_exists(repository.name) then
+    -- Folder exists, nothing to restore
+    self:redirect("/repositories/" .. id)
+    return
+  end
+
+  -- Restore from blob storage
+  local ok, msg = GitSync.pull(repository.name)
+
+  if ok then
+    self:redirect("/repositories/" .. id)
+  else
+    self:render("repositories/restore_error", {
+      repository = repository,
+      error = msg
+    })
+  end
+end
+
+-- Manual sync to blob storage
+function RepositoriesController:sync()
+  local current_user = get_current_user()
+  local id = self.params.id
+  local repository = Repository:find(id)
+
+  if not repository then
+    return self:json({ error = "Repository not found" }, 404)
+  end
+
+  -- Check ownership
+  if repository.owner_id ~= current_user._key then
+    return self:json({ error = "Forbidden" }, 403)
+  end
+
+  local ok, msg = GitSync.push(repository.name)
+
+  if ok then
+    self:json({ success = true, message = msg })
+  else
+    self:json({ success = false, error = msg }, 500)
+  end
+end
+
+-- Get sync status
+function RepositoriesController:sync_status()
+  local id = self.params.id
+  local repository = Repository:find(id)
+
+  if not repository then
+    return self:json({ error = "Repository not found" }, 404)
+  end
+
+  local status = GitSync.status(repository.name)
+  self:json(status)
 end
 
 -- Code Browser: Tree view (directory listing)

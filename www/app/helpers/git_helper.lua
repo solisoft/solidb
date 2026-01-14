@@ -2,6 +2,21 @@ local GitConfig = require("git")
 
 local M = {}
 
+-- Lazy load GitSync to avoid breaking git operations if sync module has issues
+local _git_sync = nil
+local function get_git_sync()
+  if _git_sync == nil then
+    local ok, mod = pcall(require, "helpers.git_sync")
+    if ok then
+      _git_sync = mod
+    else
+      print("Warning: Could not load git_sync: " .. tostring(mod))
+      _git_sync = false
+    end
+  end
+  return _git_sync
+end
+
 -- Cache for resolved absolute path
 local _resolved_repos_path = nil
 
@@ -108,6 +123,12 @@ function M.init_repo(name)
     -- Enable HTTP push (receive-pack)
     os.execute(string.format("%s -C %s config http.receivepack true", GitConfig.git_bin, path))
     os.execute(string.format("%s -C %s config receive.denyCurrentBranch ignore", GitConfig.git_bin, path))
+
+    -- Sync to blob storage for replication (non-blocking, errors logged)
+    local sync = get_git_sync()
+    if sync then
+      pcall(function() sync.push(name) end)
+    end
 
     return true
   else
