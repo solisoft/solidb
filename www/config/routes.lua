@@ -379,7 +379,7 @@ router.scope("/pages", { middleware = { "session_auth" } }, function()
   router.get("/:key/edit", "pages#edit")
   router.put("/:key", "pages#update")
   router.delete("/:key", "pages#destroy")
-  
+
   -- Block management
   router.get("/:key/blocks", "pages#blocks")
   router.post("/:key/blocks", "pages#add_block")
@@ -397,19 +397,6 @@ router.scope("/pages", { middleware = { "session_auth" } }, function()
   -- History
   router.get("/:key/history", "pages#history")
   router.get("/revision/:revision_id", "pages#revision")
-end)
-
--- Belote Game (Demo) - requires session auth
-router.scope("/belote", { middleware = { "session_auth" } }, function()
-  router.get("", "belote#index")
-  router.post("/new", "belote#create")
-  router.post("/join/:id", "belote#join")
-  router.get("/game/:id", "belote#show")
-  router.get("/game/:id/state", "belote#state") -- HTMX polling endpoint
-  router.post("/game/:id/play", "belote#play_card")
-  router.post("/game/:id/start", "belote#start_game") -- Manual start for testing
-  router.post("/game/:id/take", "belote#take_trump") -- Accept trump
-  router.post("/game/:id/pass", "belote#pass_trump") -- Pass on trump
 end)
 
 -- Git Smart HTTP (uses HTTP Basic Auth with user credentials)
