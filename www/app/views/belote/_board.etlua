@@ -1,0 +1,225 @@
+<%
+  local seats = { "Bottom (Me)", "Left", "Top", "Right" }
+  
+  -- Ensure player_idx has a default
+  player_idx = player_idx or 1
+  
+  -- Function to get player index from key
+  local function find_player_idx(player_key)
+    for i, p in ipairs(game.players) do
+      if p == player_key then return i end
+    end
+    return nil
+  end
+  
+  -- Function to get relative position index (0=Me, 1=Right, 2=Top, 3=Left)
+  local function get_relative_pos(me_idx, target_idx)
+    if not me_idx or not target_idx then return 0 end
+    return (target_idx - me_idx) % 4
+  end
+  
+  -- Card rendering helper
+  local function render_card(card, playable, idx) 
+    if not card then return "" end -- Back of card
+    
+    local suit_icons = { hearts = "♥", diamonds = "♦", clubs = "♣", spades = "♠" }
+    local colors = { hearts = "text-red-600", diamonds = "text-red-600", clubs = "text-gray-900", spades = "text-gray-900" }
+    local icon = suit_icons[card.suit] or "?"
+    local color = colors[card.suit] or "text-black"
+    local click_attr = playable and string.format('hx-post="/belote/game/%s/play" hx-vals=\'{"card_idx": %d}\' hx-swap="none"', game._key, idx) or ""
+    local hover_cls = playable and "hover:-translate-y-4 cursor-pointer" or ""
+    
+    return string.format([[
+      <div class="w-16 h-24 bg-white rounded-lg shadow-xl border border-gray-300 flex flex-col items-center justify-center select-none transition-transform duration-200 %s %s" %s>
+        <div class="text-lg font-bold %s">%s</div>
+        <div class="text-2xl %s">%s</div>
+      </div>
+    ]], hover_cls, playable and "ring-2 ring-yellow-400 ring-offset-2 ring-offset-green-900" or "", click_attr, color, card.rank, color, icon)
+  end
+  
+  local function render_back()
+    return [[
+      <div class="w-14 h-20 bg-blue-800 rounded-lg shadow-md border-2 border-white/20 flex items-center justify-center">
+        <div class="w-10 h-16 border border-white/10 rounded relative opacity-50">
+           <div class="absolute inset-0 bg-pattern-dots"></div>
+        </div>
+      </div>
+    ]]
+  end
+%>
+
+<!-- Opponents -->
+<% for i, p_key in ipairs(game.players) do 
+     local rel_pos = get_relative_pos(player_idx, i)
+     if rel_pos ~= 0 then -- Not me
+       local pos_cls = ""
+       if rel_pos == 1 then pos_cls = "absolute right-8 top-1/2 -translate-y-1/2 flex-col items-end" -- Right
+       elseif rel_pos == 2 then pos_cls = "absolute top-8 left-1/2 -translate-x-1/2 flex-col items-center" -- Top
+       elseif rel_pos == 3 then pos_cls = "absolute left-8 top-1/2 -translate-y-1/2 flex-col items-start" -- Left
+       end
+       
+       local is_turn = game.current_turn == i
+%>
+  <div class="<%= pos_cls %> flex gap-2">
+    <!-- User Info -->
+    <div class="bg-black/40 px-3 py-1 rounded-full text-white text-sm mb-2 backdrop-blur flex items-center gap-2 
+      <%= is_turn and 'ring-2 ring-yellow-400' or '' %>">
+      <div class="w-2 h-2 rounded-full <%= game.status == 'waiting' and 'bg-gray-400' or 'bg-green-400' %>"></div>
+      <%= players_info[i] %>
+    </div>
+    
+    <!-- Hand (Backs) -->
+    <div class="flex -space-x-10">
+      <% if game.status == "playing" then
+           local count = #(game.hands[p_key] or {})
+           for k=1, count do %>
+        <%- render_back() %>
+      <%   end 
+         end %>
+    </div>
+  </div>
+<%   end 
+   end %>
+
+<!-- Center Table -->
+<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-white/5 border border-white/10 flex flex-col items-center justify-center">
+  
+  <% if game.status == "bidding" then %>
+    <!-- Bidding Phase -->
+    <div class="text-center">
+      <div class="text-white/60 text-xs uppercase tracking-widest mb-2">
+        Bidding Round <%= game.bidding_round or 1 %>
+      </div>
+      
+      <% if game.turned_card then %>
+        <div class="mb-4">
+          <div class="text-white/40 text-xs mb-1">Proposed Trump:</div>
+          <%- render_card(game.turned_card, false) %>
+        </div>
+      <% end %>
+      
+      <% if game.current_turn == player_idx then %>
+        <div class="text-yellow-400 font-bold mb-3">Your Turn to Bid!</div>
+        
+        <% if (game.bidding_round or 1) == 1 then %>
+          <!-- Round 1: Take or Pass -->
+          <div class="flex gap-2">
+            <button hx-post="/belote/game/<%= game._key %>/take" hx-swap="none"
+              class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-white font-bold shadow-lg">
+              Take (<%= game.turned_card and game.turned_card.suit or "?" %>)
+            </button>
+            <button hx-post="/belote/game/<%= game._key %>/pass" hx-swap="none"
+              class="px-4 py-2 bg-red-600/80 hover:bg-red-500 rounded-lg text-white font-bold shadow-lg">
+              Pass
+            </button>
+          </div>
+        <% else %>
+          <!-- Round 2: Choose suit or pass -->
+          <div class="flex gap-2 flex-wrap justify-center">
+            <% local suits = { {name="hearts", icon="♥", color="text-red-500"}, {name="diamonds", icon="♦", color="text-red-500"}, {name="clubs", icon="♣", color="text-white"}, {name="spades", icon="♠", color="text-white"} }
+               for _, s in ipairs(suits) do 
+                 if not game.turned_card or s.name ~= game.turned_card.suit then %>
+              <button hx-post="/belote/game/<%= game._key %>/take?suit=<%= s.name %>" hx-swap="none"
+                class="px-3 py-2 bg-green-600/80 hover:bg-green-500 rounded-lg text-white font-bold shadow-lg">
+                <span class="<%= s.color %> text-xl"><%= s.icon %></span>
+              </button>
+            <%   end
+               end %>
+            <button hx-post="/belote/game/<%= game._key %>/pass" hx-swap="none"
+              class="px-4 py-2 bg-red-600/80 hover:bg-red-500 rounded-lg text-white font-bold shadow-lg">
+              Pass
+            </button>
+          </div>
+        <% end %>
+      <% else %>
+        <div class="text-white/40">
+          Waiting for <%= players_info[game.current_turn] or "?" %>...
+        </div>
+      <% end %>
+    </div>
+    
+  <% elseif game.status == "playing" then %>
+    <!-- Playing Phase: Show trick -->
+    <% if game.trump_suit then %>
+      <div class="absolute top-2 text-xs text-white/50">
+        Trump: <span class="<%= game.trump_suit == 'hearts' or game.trump_suit == 'diamonds' and 'text-red-500' or 'text-white' %>">
+          <%= game.trump_suit == 'hearts' and '♥' or game.trump_suit == 'diamonds' and '♦' or game.trump_suit == 'clubs' and '♣' or '♠' %>
+        </span>
+      </div>
+    <% end %>
+    
+    <% for _, play in ipairs(game.trick or {}) do 
+         local p_idx = find_player_idx(play.player)
+         local rel_pos = get_relative_pos(player_idx, p_idx)
+         
+         local card_pos_cls = ""
+         if rel_pos == 0 then card_pos_cls = "translate-y-8"
+         elseif rel_pos == 1 then card_pos_cls = "translate-x-8 rotate-90"
+         elseif rel_pos == 2 then card_pos_cls = "-translate-y-8"
+         elseif rel_pos == 3 then card_pos_cls = "-translate-x-8 -rotate-90"
+         end
+    %>
+      <div class="absolute <%= card_pos_cls %>">
+        <%- render_card(play.card, false) %>
+      </div>
+    <% end %>
+    
+    <% if (not game.trick or #game.trick == 0) and game.current_turn then %>
+       <div class="text-white/20 text-sm font-bold uppercase tracking-widest">
+         <% if game.current_turn == player_idx then %>
+           Your Turn
+         <% else %>
+           Waiting for <%= players_info[game.current_turn] %>
+         <% end %>
+       </div>
+    <% end %>
+    
+  <% else %>
+    <!-- Waiting -->
+    <div class="text-white/30 text-center">
+      Waiting to start...<br>
+      <span class="text-sm"><%= #game.players %>/4 Players</span>
+    </div>
+  <% end %>
+</div>
+
+<!-- My Hand (Bottom) -->
+<div class="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center">
+  <!-- My Info -->
+  <div class="mb-4 bg-black/40 px-4 py-1.5 rounded-full text-white text-sm backdrop-blur border border-white/10
+    <%= game.current_turn == player_idx and 'ring-2 ring-yellow-400 bg-yellow-900/40' or '' %>">
+    You (<%= players_info[player_idx] %>)
+    <% if game.current_turn == player_idx then %><span class="ml-2 font-bold text-yellow-400">YOUR TURN</span><% end %>
+  </div>
+  
+  <!-- Cards -->
+  <div class="flex -space-x-4 hover:space-x-1 transition-all duration-300 px-8 py-4">
+    <% local my_key = current_user and current_user._key
+       local my_hand = my_key and game.hands and game.hands[my_key]
+       if (game.status == "playing" or game.status == "bidding") and my_hand then %>
+      <% for idx, card in ipairs(my_hand) do 
+           local is_playable = (game.status == "playing" and game.current_turn == player_idx)
+      %>
+        <%- render_card(card, is_playable, idx) %>
+      <% end %>
+    <% end %>
+  </div>
+</div>
+
+<!-- DEBUG INFO (outside all positioned containers) -->
+<div class="fixed bottom-2 right-2 bg-black/90 text-green-400 p-2 font-mono text-[10px] z-[100] rounded pointer-events-none max-w-[200px]">
+  STATUS: <%= game.status %><br>
+  MY KEY: <%= current_user and current_user._key or "nil" %><br>
+  MY IDX: <%= player_idx %> (TURN: <%= game.current_turn %>)<br>
+  PLAYERS: <%= #game.players %><br>
+  <% if game.hands and current_user then %>
+    MY HAND: <%= game.hands[current_user._key] and #game.hands[current_user._key] or "NIL" %> Cards<br>
+    <% 
+       local hand_keys = {}
+       for k,v in pairs(game.hands) do table.insert(hand_keys, k) end
+    %>
+    KEYS IN HANDS: <%= EncodeJson(hand_keys) %><br>
+  <% else %>
+    HANDS: NIL or USER NIL<br>
+  <% end %>
+</div>

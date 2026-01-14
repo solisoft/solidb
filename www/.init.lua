@@ -66,19 +66,6 @@ if db_config_ok and db_config.solidb then
   -- Global DB connection
   _G.Sdb = SoliDB.new(db_config.solidb)
 
-  -- Add timing wrapper for Sdbql (for performance debugging)
-  if _G.Sdb then
-    local original_sdbql = _G.Sdb.Sdbql
-    _G.Sdb.Sdbql = function(self, query, params)
-      local start_time = GetTime()
-      local result = original_sdbql(self, query, params)
-      local elapsed_ms = (GetTime() - start_time) / 1000
-      local params_str = params and EncodeJson(params) or "{}"
-      P(string.format("[TIMING] Sdbql %.2fms: %s | params: %s", elapsed_ms, (query or ""):sub(1, 80), params_str:sub(1, 100)))
-      return result
-    end
-  end
-
   -- Ensure _luaonbeans system collection exists
   local function ensure_luaonbeans_collection()
     if not _G.Sdb then return end
