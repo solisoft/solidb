@@ -167,5 +167,49 @@
         </div>
       </div>
     </section>
+
+    <!-- JSON Functions -->
+    <section id="json">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+            JSON Functions
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">JSON encoding and decoding via global <code>json</code> table.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">json.encode(value)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Convert Lua value (table, string, number, bool, nil) to JSON string.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">json.decode(str)</span> <span class="text-gray-500">-&gt; value</span>
+              <div class="text-xs text-gray-500 mt-1">Parse JSON string to Lua value.</div>
+            </li>
+          </ul>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mt-6">
+            <div class="px-4 py-2 bg-white/5 border-b border-white/10 text-xs text-gray-400">Example</div>
+            <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Encode Lua table to JSON</span>
+<span class="text-blue-400">local</span> data = { name = <span class="text-green-400">"Alice"</span>, age = <span class="text-yellow-400">30</span>, active = <span class="text-blue-400">true</span> }
+<span class="text-blue-400">local</span> json_str = json.encode(data)
+<span class="text-gray-500">-- '{"name":"Alice","age":30,"active":true}'</span>
+
+<span class="text-gray-500">-- Decode JSON string to Lua table</span>
+<span class="text-blue-400">local</span> parsed = json.decode(<span class="text-green-400">'{"foo":"bar","nums":[1,2,3]}'</span>)
+print(parsed.foo)      <span class="text-gray-500">-- "bar"</span>
+print(parsed.nums[<span class="text-yellow-400">2</span>])   <span class="text-gray-500">-- 2</span></pre>
+            </div>
+          </div>
+
+          <div class="mt-4 text-xs text-gray-500">
+            <strong class="text-gray-400">Note:</strong> Also available as <code>solidb.json_encode()</code> and <code>solidb.json_decode()</code>.
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </div>
