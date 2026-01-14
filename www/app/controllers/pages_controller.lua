@@ -225,18 +225,10 @@ function PagesController:upload_cover()
     return self:json({ error = "No file uploaded" }, 400)
   end
   
-  -- Generate unique key
   local key = "cover_" .. os.time() .. "_" .. math.random(1000)
   local ext = file.name:match("%.([^%.]+)$")
   if ext then key = key .. "." .. ext end
   
-  -- Use Sdb to save blob (assuming helper or direct call)
-  -- Since we don't have explicit blob API in context, let's try to assume we can write to public folder 
-  -- OR better, use the DB's blob storage if we knew how.
-  -- Given the user context, let's try to save to `public/uploads` if possible, or use the `_uploads` collection.
-  
-  -- Try to save to `_uploads` collection using SDBQL? No, BLOBs are special.
-  -- Let's use `IO` to save to `www/public/uploads` for simplicity in this MVP.
   local upload_dir = "public/uploads"
   os.execute("mkdir -p " .. upload_dir)
   
@@ -246,6 +238,160 @@ function PagesController:upload_cover()
     f:write(file.content)
     f:close()
     return self:json({ url = "/uploads/" .. key })
+  else
+    return self:json({ error = "Failed to save file" }, 500)
+  end
+end
+
+--------------------------------------------------------------------------------
+-- Block CRUD Actions
+--------------------------------------------------------------------------------
+
+-- Get all blocks for a page (JSON)
+function PagesController:blocks()
+  if not self.params or not self.params.key then
+    return self:json({ error = "Missing page key" }, 400)
+  end
+  
+  local page = Page:find(self.params.key)
+  if not page then
+    return self:json({ error = "Page not found" }, 404)
+  end
+  
+  return self:json({ blocks = page:get_blocks() })
+end
+
+-- Add a new block to a page
+function PagesController:add_block()
+  if not self.params or not self.params.key then
+    return self:json({ error = "Missing page key" }, 400)
+  end
+  
+  local page = Page:find(self.params.key)
+  if not page then
+    return self:json({ error = "Page not found" }, 404)
+  end
+  
+  local block_type = self.params.type or "paragraph"
+  local data = {}
+  
+  -- Handle block-type-specific data
+  if block_type == "header" then
+    data.level = tonumber(self.params.level) or 2
+    data.content = self.params.content or ""
+  elseif block_type == "paragraph" then
+    data.content = self.params.content or ""
+  elseif block_type == "code" then
+    data.language = self.params.language or "lua"
+    data.content = self.params.content or ""
+  elseif block_type == "table" then
+    -- Default 2x2 table
+    data.data = self.params.data or {{"", ""}, {"", ""}}
+  elseif block_type == "image" then
+    data.url = self.params.url or ""
+    data.caption = self.params.caption or ""
+  elseif block_type == "file" then
+    data.url = self.params.url or ""
+    data.filename = self.params.filename or "file"
+  end
+  
+  local after_id = self.params.after_id
+  local new_block = page:add_block(block_type, data, after_id)
+  
+  return self:json({ block = new_block })
+end
+
+-- Update a specific block
+function PagesController:update_block()
+  if not self.params or not self.params.key or not self.params.block_id then
+    return self:json({ error = "Missing parameters" }, 400)
+  end
+  
+  local page = Page:find(self.params.key)
+  if not page then
+    return self:json({ error = "Page not found" }, 404)
+  end
+  
+  local data = {}
+  -- Allow updating any field passed in params (except id)
+  for k, v in pairs(self.params) do
+    if k ~= "key" and k ~= "block_id" and k ~= "_method" then
+      data[k] = v
+    end
+  end
+  
+  local updated = page:update_block(self.params.block_id, data)
+  if updated then
+    return self:json({ block = updated })
+  else
+    return self:json({ error = "Block not found" }, 404)
+  end
+end
+
+-- Delete a block
+function PagesController:delete_block()
+  if not self.params or not self.params.key or not self.params.block_id then
+    return self:json({ error = "Missing parameters" }, 400)
+  end
+  
+  local page = Page:find(self.params.key)
+  if not page then
+    return self:json({ error = "Page not found" }, 404)
+  end
+  
+  if page:remove_block(self.params.block_id) then
+    return self:json({ success = true })
+  else
+    return self:json({ error = "Block not found" }, 404)
+  end
+end
+
+-- Reorder blocks
+function PagesController:reorder_blocks()
+  if not self.params or not self.params.key then
+    return self:json({ error = "Missing page key" }, 400)
+  end
+  
+  local page = Page:find(self.params.key)
+  if not page then
+    return self:json({ error = "Page not found" }, 404)
+  end
+  
+  -- Parse ordered IDs (expect JSON array)
+  local ordered_ids = self.params.order
+  if type(ordered_ids) == "string" then
+    local ok, parsed = pcall(DecodeJson, ordered_ids)
+    if ok then ordered_ids = parsed end
+  end
+  
+  if type(ordered_ids) ~= "table" then
+    return self:json({ error = "Invalid order format" }, 400)
+  end
+  
+  local blocks = page:reorder_blocks(ordered_ids)
+  return self:json({ blocks = blocks })
+end
+
+-- Generic file upload (for Image/File blocks)
+function PagesController:upload_file()
+  local file = self.params.file
+  if not file then
+    return self:json({ error = "No file uploaded" }, 400)
+  end
+  
+  local key = "file_" .. os.time() .. "_" .. math.random(10000)
+  local ext = file.name:match("%.([^%.]+)$")
+  if ext then key = key .. "." .. ext end
+  
+  local upload_dir = "public/uploads"
+  os.execute("mkdir -p " .. upload_dir)
+  
+  local file_path = upload_dir .. "/" .. key
+  local f = io.open(file_path, "wb")
+  if f then
+    f:write(file.content)
+    f:close()
+    return self:json({ url = "/uploads/" .. key, filename = file.name })
   else
     return self:json({ error = "Failed to save file" }, 500)
   end

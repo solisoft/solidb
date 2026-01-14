@@ -66,4 +66,101 @@ function Page:creator()
   return User:find(created_by)
 end
 
+--------------------------------------------------------------------------------
+-- Block Management
+--------------------------------------------------------------------------------
+
+-- Generate unique block ID
+local function generate_block_id()
+  return string.format("%x%x", os.time(), math.random(10000, 99999))
+end
+
+-- Get blocks (content is now an array of blocks)
+function Page:get_blocks()
+  local content = self.content or (self.data and self.data.content)
+  if type(content) == "string" then
+    -- Migrate: old string content becomes a single paragraph block
+    if content == "" then return {} end
+    return {{ id = generate_block_id(), type = "paragraph", content = content }}
+  end
+  return content or {}
+end
+
+-- Add a new block
+function Page:add_block(block_type, data, after_id)
+  local blocks = self:get_blocks()
+  local new_block = {
+    id = generate_block_id(),
+    type = block_type,
+  }
+  
+  -- Merge block-type-specific data
+  for k, v in pairs(data or {}) do
+    new_block[k] = v
+  end
+  
+  -- Insert at position
+  if after_id then
+    for i, block in ipairs(blocks) do
+      if block.id == after_id then
+        table.insert(blocks, i + 1, new_block)
+        self:update({ content = blocks })
+        return new_block
+      end
+    end
+  end
+  
+  -- Default: append at end
+  table.insert(blocks, new_block)
+  self:update({ content = blocks })
+  return new_block
+end
+
+-- Update a specific block
+function Page:update_block(block_id, data)
+  local blocks = self:get_blocks()
+  for i, block in ipairs(blocks) do
+    if block.id == block_id then
+      for k, v in pairs(data) do
+        blocks[i][k] = v
+      end
+      self:update({ content = blocks })
+      return blocks[i]
+    end
+  end
+  return nil
+end
+
+-- Remove a block
+function Page:remove_block(block_id)
+  local blocks = self:get_blocks()
+  for i, block in ipairs(blocks) do
+    if block.id == block_id then
+      table.remove(blocks, i)
+      self:update({ content = blocks })
+      return true
+    end
+  end
+  return false
+end
+
+-- Reorder blocks (receives array of block IDs in new order)
+function Page:reorder_blocks(ordered_ids)
+  local blocks = self:get_blocks()
+  local block_map = {}
+  for _, block in ipairs(blocks) do
+    block_map[block.id] = block
+  end
+  
+  local new_blocks = {}
+  for _, id in ipairs(ordered_ids) do
+    if block_map[id] then
+      table.insert(new_blocks, block_map[id])
+    end
+  end
+  
+  self:update({ content = new_blocks })
+  return new_blocks
+end
+
 return Page

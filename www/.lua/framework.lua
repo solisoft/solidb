@@ -45,16 +45,30 @@ end
 -- Helper to parse multipart/form-data
 function Framework.parse_multipart(body, boundary)
   local result = {}
-  -- Standardize boundary
   local sep = "--" .. boundary
   
-  -- Split by boundary using pattern matching
   for part in body:gmatch("(.-)" .. sep) do
     if part ~= "" and part ~= "--" then
       local name = part:match('name="([^"]+)"')
-      local value = part:match("\r\n\r\n(.-)\r\n$") or part:match("\n\n(.-)\n$")
-      if name and value then
-        result[name] = value
+      local filename = part:match('filename="([^"]+)"')
+      
+      -- Extract content after headers (double newline)
+      local content = part:match("\r\n\r\n(.*)$") or part:match("\n\n(.*)$")
+      
+      if name and content then
+        -- Remove trailing newlines from content
+        content = content:gsub("\r\n$", ""):gsub("\n$", "")
+        
+        if filename then
+          -- File field: create object with name and content
+          result[name] = {
+            name = filename,
+            content = content
+          }
+        else
+          -- Regular field: just store the value
+          result[name] = content
+        end
       end
     end
   end

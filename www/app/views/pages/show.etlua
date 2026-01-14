@@ -1,92 +1,126 @@
-<!-- Cover Image -->
-<div class="relative h-60 w-full group shrink-0">
-  <% if page.cover and page.cover ~= "" then %>
-    <img src="<%= page.cover %>" class="w-full h-full object-cover opacity-80" alt="Cover">
-  <% else %>
-    <div class="w-full h-full bg-gradient-to-r from-primary/10 to-accent/10"></div>
-  <% end %>
+<!-- Page Container with Comments Sidebar -->
+<div x-data="{ showComments: false, selectedBlock: null, newComment: '', currentUserName: '<%= current_user and ((current_user.firstname or "") .. " " .. (current_user.lastname or "")):gsub("^%s+", ""):gsub("%s+$", "") or "Guest" %>' }" 
+     @open-comments.window="showComments = true; selectedBlock = $event.detail.block"
+     class="flex h-full">
   
-  <!-- Cover Actions -->
-  <div class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-    <button hx-get="/pages/<%= page._key %>/edit" hx-target="#modal-container" 
-            class="px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur text-xs font-medium text-white hover:bg-black/70 transition-colors">
-      <i class="fas fa-image mr-1"></i> Change Cover
-    </button>
-  </div>
-</div>
-
-<!-- Page Content -->
-<div class="flex-1 overflow-y-auto relative -mt-12 z-10 px-8 sm:px-16 lg:px-24">
-  <div class="max-w-4xl mx-auto pb-32">
+  <!-- Main Content Area -->
+  <div class="flex-1 flex flex-col overflow-hidden">
     
-    <!-- Header -->
-    <div class="group relative mb-8">
-      <!-- Icon -->
-      <div class="text-6xl mb-4 cursor-pointer hover:opacity-80 transition-opacity inline-block"
-           hx-get="/pages/<%= page._key %>/edit" hx-target="#modal-container">
-        <%= page.icon or "📄" %>
-      </div>
+    <!-- Cover Image -->
+    <div class="relative h-48 w-full group shrink-0">
+      <% if page.cover and page.cover ~= "" then %>
+        <img src="<%= page.cover %>" class="w-full h-full object-cover opacity-80" alt="Cover">
+      <% else %>
+        <div class="w-full h-full bg-gradient-to-r from-primary/10 to-accent/10"></div>
+      <% end %>
       
-      <!-- Title -->
-      <h1 class="text-4xl font-bold text-white outline-none placeholder:text-white/20"
-          contenteditable="true"
-          id="page-title"
-          spellcheck="false"
-          onblur="updateTitle(this.innerText)"><%= page.title %></h1>
+      <!-- Cover Actions -->
+      <div class="absolute top-4 right-4 flex gap-2">
+        <button @click="showComments = !showComments" 
+                class="px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur text-xs font-medium text-white hover:bg-black/70 transition-colors"
+                :class="showComments ? 'bg-yellow-500/50' : ''">
+          <i class="fas fa-comments mr-1"></i> Comments
+        </button>
+        <button hx-get="/pages/<%= page._key %>/edit" hx-target="#modal-container" 
+                class="px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur text-xs font-medium text-white hover:bg-black/70 transition-colors">
+          <i class="fas fa-cog mr-1"></i> Settings
+        </button>
+      </div>
     </div>
 
-    <!-- Editor Container -->
-    <div id="editor-container" class="mt-4"></div>
+    <!-- Page Content -->
+    <div class="flex-1 overflow-y-auto relative -mt-10 z-10 px-6 sm:px-12 lg:px-16">
+      <div class="max-w-3xl mx-auto pb-32">
+        
+        <!-- Header -->
+        <div class="group relative mb-6">
+          <!-- Icon -->
+          <div class="text-5xl mb-3 cursor-pointer hover:opacity-80 transition-opacity inline-block"
+               hx-get="/pages/<%= page._key %>/edit" hx-target="#modal-container">
+            <%= page.icon or "📄" %>
+          </div>
+          
+          <!-- Title -->
+          <h1 class="text-3xl font-bold text-white outline-none placeholder:text-white/20"
+              contenteditable="true"
+              id="page-title"
+              spellcheck="false"
+              onblur="updateTitle(this.innerText)"><%= page.title %></h1>
+        </div>
+
+        <!-- Block-Based Content Editor -->
+        <%- partial("pages/content_editor") %>
+        
+      </div>
+    </div>
+  </div>
+  
+  <!-- Comments Sidebar -->
+  <div x-show="showComments" x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full"
+       class="w-80 bg-bg-card border-l border-white/10 flex flex-col overflow-hidden shrink-0">
+    
+    <!-- Sidebar Header -->
+    <div class="p-4 border-b border-white/10 flex items-center justify-between">
+      <h2 class="font-semibold text-white flex items-center gap-2">
+        <i class="fas fa-comments text-yellow-400"></i> Comments
+      </h2>
+      <button @click="showComments = false; selectedBlock = null" class="text-text-muted hover:text-white">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <!-- Selected Block Comments -->
+    <div class="flex-1 overflow-y-auto p-4">
+      <template x-if="selectedBlock">
+        <div class="space-y-4">
+          <!-- Block Preview -->
+          <div class="text-xs text-text-muted mb-2 pb-2 border-b border-white/10">
+            Commenting on: <span class="text-white" x-text="selectedBlock.type"></span> block
+          </div>
+          
+          <!-- Comments List -->
+          <div class="space-y-3">
+            <template x-for="(comment, idx) in (selectedBlock.comments || [])" :key="idx">
+              <div class="bg-white/5 rounded-lg p-3">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs font-medium text-primary" x-text="comment.author || 'Anonymous'"></span>
+                  <span class="text-xs text-text-muted" x-text="comment.date"></span>
+                </div>
+                <div class="text-sm text-white/90" x-text="comment.text"></div>
+              </div>
+            </template>
+            <template x-if="!selectedBlock.comments || selectedBlock.comments.length === 0">
+              <div class="text-sm text-text-muted text-center py-4">No comments yet</div>
+            </template>
+          </div>
+          
+          <!-- Add Comment Input -->
+          <div class="pt-3 border-t border-white/10">
+            <textarea x-model="newComment" placeholder="Add a comment..." rows="3"
+                      class="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white outline-none resize-none"></textarea>
+            <button @click="if(newComment.trim()) { if(!selectedBlock.comments) selectedBlock.comments = []; selectedBlock.comments.push({text: newComment.trim(), author: currentUserName, date: new Date().toLocaleString()}); newComment = ''; $dispatch('save-block', { block: selectedBlock }); }"
+                    class="mt-2 w-full py-2 bg-primary rounded-lg text-sm font-medium text-white hover:bg-primary/80 transition-colors">
+              Add Comment
+            </button>
+          </div>
+        </div>
+      </template>
+      
+      <template x-if="!selectedBlock">
+        <div class="text-center text-text-muted py-8">
+          <i class="fas fa-comment-dots text-4xl mb-3 opacity-30"></i>
+          <p class="text-sm">Click the <i class="fas fa-comment text-yellow-400"></i> icon on any block to add comments.</p>
+        </div>
+      </template>
+    </div>
+    
   </div>
 </div>
 
-<!-- Hidden input for initial content -->
-<div id="initial-content" style="display:none;"><%= page.content or "" %></div>
-
 <script>
-  let editor;
-  
-  document.addEventListener('DOMContentLoaded', () => {
-    const Editor = toastui.Editor;
-    const { codeSyntaxHighlight } = Editor.plugin;
-    
-    editor = new Editor({
-      el: document.querySelector('#editor-container'),
-      height: 'auto',
-      minHeight: '400px',
-      initialEditType: 'markdown', // or 'wysiwyg'
-      previewStyle: 'vertical',
-      initialValue: document.getElementById('initial-content').innerText,
-      theme: 'dark', // Needs the dark theme CSS
-      usageStatistics: false,
-      hideModeSwitch: true, // cleaner look
-      toolbarItems: [
-        ['heading', 'bold', 'italic', 'strike'],
-        ['hr', 'quote'],
-        ['ul', 'ol', 'task', 'indent', 'outdent'],
-        ['table', 'image', 'link'],
-        ['code', 'codeblock']
-      ],
-      events: {
-        change: () => {
-          saveContent(editor.getMarkdown());
-        }
-      }
-    });
-  });
-
-  // Debounced save
-  let saveTimeout;
-  function saveContent(content) {
-    clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => {
-      htmx.ajax('PUT', '/pages/<%= page._key %>', {
-        values: { content: content },
-        swap: 'none'
-      });
-    }, 1000); 
-  }
-  
   function updateTitle(newTitle) {
     htmx.ajax('PUT', '/pages/<%= page._key %>', {
       values: { title: newTitle },

@@ -1,0 +1,424 @@
+<!-- Content Editor - Clean document-like appearance with inline editing -->
+<div x-data="ContentEditor" @save-block.window="saveBlock($event.detail.block)" class="space-y-1">
+  
+  <!-- Blocks Container (Sortable) -->
+  <div id="blocks-container" class="space-y-1">
+    <template x-for="block in blocks" :key="block.id">
+      <div :data-block-id="block.id" 
+           class="group relative rounded-lg hover:bg-white/5 transition-all -mx-2 px-2">
+        
+        <!-- Block Handle (for dragging) - appears on hover -->
+        <div class="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab drag-handle">
+          <i class="fas fa-grip-vertical text-text-muted/50 text-sm"></i>
+        </div>
+        
+        <!-- Comment Button - always visible -->
+        <div class="absolute -right-8 top-1 z-10">
+          <button @click.stop="selectBlockForComment(block)" class="w-6 h-6 rounded hover:bg-yellow-500/20 flex items-center justify-center relative" :class="block.comments && block.comments.length > 0 ? 'text-yellow-400' : 'text-text-muted/30 hover:text-yellow-400'" title="Comment">
+            <i class="fas fa-comment text-xs"></i>
+            <span x-show="block.comments && block.comments.length > 0" class="absolute -top-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full text-[10px] text-black font-bold flex items-center justify-center" x-text="block.comments.length"></span>
+          </button>
+        </div>
+        
+        <!-- Delete Button - appears on hover -->
+        <div class="absolute -right-8 top-8 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+          <button @click="deleteBlock(block.id)" class="w-6 h-6 rounded hover:bg-red-500/20 text-text-muted/50 hover:text-red-400 flex items-center justify-center" title="Delete">
+            <i class="fas fa-trash text-xs"></i>
+          </button>
+        </div>
+        
+        <!-- Insert Block After - appears on hover -->
+        <div class="absolute -bottom-3 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-10" x-data="{ showInsertMenu: false }">
+          <button @click="showInsertMenu = !showInsertMenu" class="w-6 h-6 rounded-full bg-primary/20 hover:bg-primary text-primary hover:text-white flex items-center justify-center shadow-lg" title="Insert block after">
+            <i class="fas fa-plus text-xs"></i>
+          </button>
+          <div x-show="showInsertMenu" @click.away="showInsertMenu = false" x-transition
+               class="absolute left-1/2 -translate-x-1/2 mt-2 bg-bg-card border border-white/10 rounded-xl shadow-xl z-30 p-2 flex gap-1">
+            <button @click="addBlockAfter('header', block.id); showInsertMenu = false" class="p-2 rounded hover:bg-white/5" title="Header"><i class="fas fa-heading text-primary"></i></button>
+            <button @click="addBlockAfter('paragraph', block.id); showInsertMenu = false" class="p-2 rounded hover:bg-white/5" title="Paragraph"><i class="fas fa-paragraph text-primary"></i></button>
+            <button @click="addBlockAfter('code', block.id); showInsertMenu = false" class="p-2 rounded hover:bg-white/5" title="Code"><i class="fas fa-code text-primary"></i></button>
+            <button @click="addBlockAfter('table', block.id); showInsertMenu = false" class="p-2 rounded hover:bg-white/5" title="Table"><i class="fas fa-table text-primary"></i></button>
+            <button @click="addBlockAfter('image', block.id); showInsertMenu = false" class="p-2 rounded hover:bg-white/5" title="Image"><i class="fas fa-image text-primary"></i></button>
+            <button @click="addBlockAfter('file', block.id); showInsertMenu = false" class="p-2 rounded hover:bg-white/5" title="File"><i class="fas fa-file text-primary"></i></button>
+          </div>
+        </div>
+        
+        <!-- Block Content - Click to edit -->
+        <div class="py-1" @click="if(!block.editing) { block.editing = true }">
+          
+          <!-- ========== HEADER BLOCK ========== -->
+          <template x-if="block.type === 'header'">
+            <div>
+              <template x-if="block.editing">
+                <div class="flex items-center gap-2">
+                  <select x-model="block.level" @change="saveBlock(block)" class="bg-white/10 border border-white/10 rounded px-1 py-0.5 text-xs text-text-muted">
+                    <option value="1">H1</option>
+                    <option value="2">H2</option>
+                    <option value="3">H3</option>
+                  </select>
+                  <input type="text" x-model="block.content" @blur="block.editing = false; saveBlock(block)" @keydown.enter="block.editing = false; saveBlock(block)"
+                         :class="{'text-3xl font-bold': block.level == 1, 'text-2xl font-semibold': block.level == 2, 'text-xl font-medium': block.level == 3}"
+                         class="flex-1 bg-transparent border-none outline-none text-white" placeholder="Heading..." autofocus>
+                </div>
+              </template>
+              <template x-if="!block.editing">
+                <h2 :class="{'text-3xl font-bold mt-6 mb-3': block.level == 1, 'text-2xl font-semibold mt-5 mb-2': block.level == 2, 'text-xl font-medium mt-4 mb-2': block.level == 3}"
+                    class="text-white cursor-text" x-text="block.content || 'Untitled'"></h2>
+              </template>
+            </div>
+          </template>
+          
+          <!-- ========== PARAGRAPH BLOCK ========== -->
+          <template x-if="block.type === 'paragraph'">
+            <div>
+              <template x-if="block.editing">
+                <div class="relative">
+                  <!-- Formatting Toolbar -->
+                  <div class="flex gap-1 mb-2 p-1 bg-white/5 rounded-lg">
+                    <button @click.stop="document.execCommand('bold')" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Bold"><i class="fas fa-bold text-xs"></i></button>
+                    <button @click.stop="document.execCommand('italic')" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Italic"><i class="fas fa-italic text-xs"></i></button>
+                    <button @click.stop="document.execCommand('underline')" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Underline"><i class="fas fa-underline text-xs"></i></button>
+                    <button @click.stop="document.execCommand('strikeThrough')" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Strike"><i class="fas fa-strikethrough text-xs"></i></button>
+                    <div class="w-px bg-white/10 mx-1"></div>
+                    <button @click.stop="const url = prompt('Enter URL:'); if(url) document.execCommand('createLink', false, url)" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Link"><i class="fas fa-link text-xs"></i></button>
+                    <button @click.stop="document.execCommand('unlink')" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Unlink"><i class="fas fa-unlink text-xs"></i></button>
+                    <div class="w-px bg-white/10 mx-1"></div>
+                    <button @click.stop="document.execCommand('insertUnorderedList')" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Bullet List"><i class="fas fa-list-ul text-xs"></i></button>
+                    <button @click.stop="document.execCommand('insertOrderedList')" class="w-7 h-7 rounded hover:bg-white/10 text-text-muted hover:text-white flex items-center justify-center" title="Numbered List"><i class="fas fa-list-ol text-xs"></i></button>
+                    <div class="w-px bg-white/10 mx-1"></div>
+                    <button @click.stop="highlightSelection(block)" class="w-7 h-7 rounded hover:bg-yellow-500/20 text-text-muted hover:text-yellow-400 flex items-center justify-center" title="Highlight & Comment"><i class="fas fa-highlighter text-xs"></i></button>
+                    <button @click.stop="block.editing = false; block.content = $refs['editor_' + block.id].innerHTML; saveBlock(block)" class="ml-auto px-2 text-xs text-primary hover:underline">Done</button>
+                  </div>
+                  <!-- Editable Content -->
+                  <div :x-ref="'editor_' + block.id"
+                       contenteditable="true"
+                       class="w-full min-h-[80px] bg-transparent text-white/90 leading-relaxed outline-none prose prose-invert prose-sm max-w-none"
+                       x-html="block.content || ''"
+                       @blur="block.content = $el.innerHTML; saveBlock(block)"></div>
+                </div>
+              </template>
+              <template x-if="!block.editing">
+                <div class="text-white/90 leading-relaxed cursor-text prose prose-invert prose-sm max-w-none" x-html="block.content || '<span class=&quot;text-text-muted&quot;>Click to type...</span>'"></div>
+              </template>
+            </div>
+          </template>
+          
+          <!-- ========== CODE BLOCK ========== -->
+          <template x-if="block.type === 'code'">
+            <div class="my-3">
+              <template x-if="block.editing">
+                <div>
+                  <div class="flex items-center gap-2 mb-1">
+                    <select x-model="block.language" @change="saveBlock(block)" class="bg-white/10 border border-white/10 rounded px-1.5 py-0.5 text-xs text-text-muted">
+                      <option value="lua">Lua</option>
+                      <option value="javascript">JavaScript</option>
+                      <option value="python">Python</option>
+                      <option value="html">HTML</option>
+                      <option value="css">CSS</option>
+                      <option value="sql">SQL</option>
+                      <option value="json">JSON</option>
+                      <option value="bash">Bash</option>
+                    </select>
+                    <button @click.stop="block.editing = false; saveBlock(block); $nextTick(() => highlightCode())" class="text-xs text-primary hover:underline">Done</button>
+                  </div>
+                  <textarea x-model="block.content" @blur="saveBlock(block)" rows="8"
+                            class="w-full bg-gray-900/80 rounded-lg p-4 font-mono text-sm text-green-400 resize-y outline-none"
+                            placeholder="// Code..." autofocus></textarea>
+                </div>
+              </template>
+              <template x-if="!block.editing">
+                <div class="relative">
+                  <div class="absolute top-2 right-2 text-xs text-text-muted/50 z-10" x-text="block.language"></div>
+                  <pre class="rounded-lg overflow-hidden"><code :class="'language-' + (block.language || 'plaintext')" x-text="block.content || '// Click to edit...'"></code></pre>
+                </div>
+              </template>
+            </div>
+          </template>
+          
+          <!-- ========== TABLE BLOCK ========== -->
+          <template x-if="block.type === 'table'">
+            <div class="my-3 overflow-x-auto">
+              <table class="w-full border-collapse">
+                <template x-for="(row, rowIndex) in block.data" :key="rowIndex">
+                  <tr :class="rowIndex === 0 ? 'bg-white/5 font-medium' : ''">
+                    <template x-for="(cell, colIndex) in row" :key="colIndex">
+                      <td class="border border-white/10 p-0">
+                        <template x-if="block.editing">
+                          <input type="text" :value="cell" 
+                                 @input="block.data[rowIndex][colIndex] = $event.target.value"
+                                 @blur="saveBlock(block)"
+                                 class="w-full bg-transparent border-none px-3 py-2 text-white text-sm outline-none">
+                        </template>
+                        <template x-if="!block.editing">
+                          <div class="px-3 py-2 text-white/90 text-sm" x-text="cell || ' '"></div>
+                        </template>
+                      </td>
+                    </template>
+                  </tr>
+                </template>
+              </table>
+              <template x-if="block.editing">
+                <div class="flex gap-3 mt-2 text-xs">
+                  <button @click.stop="addTableRow(block)" class="text-primary hover:underline">+ Row</button>
+                  <button @click.stop="addTableCol(block)" class="text-primary hover:underline">+ Column</button>
+                  <button @click.stop="block.editing = false" class="text-text-muted hover:text-white ml-auto">Done</button>
+                </div>
+              </template>
+            </div>
+          </template>
+          
+          <!-- ========== IMAGE BLOCK ========== -->
+          <template x-if="block.type === 'image'">
+            <div class="my-3">
+              <template x-if="block.url">
+                <figure>
+                  <img :src="block.url" class="max-w-full rounded-lg" alt="">
+                  <template x-if="block.editing">
+                    <input type="text" x-model="block.caption" @blur="block.editing = false; saveBlock(block)" 
+                           class="w-full bg-transparent text-text-muted text-sm mt-2 outline-none text-center" placeholder="Add caption...">
+                  </template>
+                  <template x-if="!block.editing && block.caption">
+                    <figcaption class="text-text-muted text-sm mt-2 text-center" x-text="block.caption"></figcaption>
+                  </template>
+                </figure>
+              </template>
+              <template x-if="!block.url">
+                <div class="border-2 border-dashed border-white/20 rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                     @dragover.prevent="$el.classList.add('border-primary')"
+                     @dragleave.prevent="$el.classList.remove('border-primary')"
+                     @drop.prevent="handleImageDrop($event, block)">
+                  <i class="fas fa-image text-2xl text-text-muted/50 mb-1"></i>
+                  <p class="text-sm text-text-muted">Drop image or <label class="text-primary cursor-pointer hover:underline">browse<input type="file" accept="image/*" class="hidden" @change="handleImageSelect($event, block)"></label></p>
+                </div>
+              </template>
+            </div>
+          </template>
+          
+          <!-- ========== FILE BLOCK ========== -->
+          <template x-if="block.type === 'file'">
+            <div class="my-2">
+              <template x-if="block.url">
+                <a :href="block.url" download class="inline-flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">
+                  <i class="fas fa-file-alt text-primary"></i>
+                  <span class="text-white text-sm" x-text="block.filename"></span>
+                  <i class="fas fa-download text-text-muted text-xs"></i>
+                </a>
+              </template>
+              <template x-if="!block.url">
+                <div class="border-2 border-dashed border-white/20 rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                     @dragover.prevent="$el.classList.add('border-primary')"
+                     @dragleave.prevent="$el.classList.remove('border-primary')"
+                     @drop.prevent="handleFileDrop($event, block)">
+                  <i class="fas fa-upload text-2xl text-text-muted/50 mb-1"></i>
+                  <p class="text-sm text-text-muted">Drop file or <label class="text-primary cursor-pointer hover:underline">browse<input type="file" class="hidden" @change="handleFileSelect($event, block)"></label></p>
+                </div>
+              </template>
+            </div>
+          </template>
+          
+        </div>
+      </div>
+    </template>
+  </div>
+  
+  <!-- Add Block - Subtle -->
+  <div class="relative pt-4" x-data="{ showMenu: false }">
+    <button @click="showMenu = !showMenu" class="text-text-muted/50 hover:text-primary transition-colors flex items-center gap-2 text-sm">
+      <i class="fas fa-plus"></i>
+      <span>Add block</span>
+    </button>
+    
+    <div x-show="showMenu" @click.away="showMenu = false" x-transition
+         class="absolute left-0 mt-2 bg-bg-card border border-white/10 rounded-xl shadow-xl z-20 p-2 flex gap-1">
+      <button @click="addBlock('header'); showMenu = false" class="p-2 rounded hover:bg-white/5" title="Header"><i class="fas fa-heading text-primary"></i></button>
+      <button @click="addBlock('paragraph'); showMenu = false" class="p-2 rounded hover:bg-white/5" title="Paragraph"><i class="fas fa-paragraph text-primary"></i></button>
+      <button @click="addBlock('code'); showMenu = false" class="p-2 rounded hover:bg-white/5" title="Code"><i class="fas fa-code text-primary"></i></button>
+      <button @click="addBlock('table'); showMenu = false" class="p-2 rounded hover:bg-white/5" title="Table"><i class="fas fa-table text-primary"></i></button>
+      <button @click="addBlock('image'); showMenu = false" class="p-2 rounded hover:bg-white/5" title="Image"><i class="fas fa-image text-primary"></i></button>
+      <button @click="addBlock('file'); showMenu = false" class="p-2 rounded hover:bg-white/5" title="File"><i class="fas fa-file text-primary"></i></button>
+    </div>
+  </div>
+  
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script>
+document.addEventListener('alpine:init', () => {
+  Alpine.data('ContentEditor', () => ({
+    blocks: [],
+    pageKey: '<%= page._key %>',
+    
+    init() {
+      this.loadBlocks();
+      this.$nextTick(() => this.initSortable());
+    },
+    
+    async loadBlocks() {
+      const resp = await fetch(`/pages/${this.pageKey}/blocks`);
+      const data = await resp.json();
+      this.blocks = (data.blocks || []).map(b => ({ ...b, editing: false }));
+      this.$nextTick(() => this.highlightCode());
+    },
+    
+    initSortable() {
+      const container = document.getElementById('blocks-container');
+      if (!container) return;
+      const self = this;
+      new Sortable(container, {
+        animation: 150,
+        handle: '.drag-handle',
+        ghostClass: 'opacity-50',
+        onEnd: (evt) => {
+          // Update local array order based on DOM order
+          const newOrder = [];
+          container.querySelectorAll('[data-block-id]').forEach(el => {
+            const id = el.getAttribute('data-block-id');
+            const block = self.blocks.find(b => b.id === id);
+            if (block) newOrder.push(block);
+          });
+          self.blocks = newOrder;
+          self.saveOrder();
+        }
+      });
+    },
+    
+    highlightCode() {
+      document.querySelectorAll('pre code').forEach(el => {
+        hljs.highlightElement(el);
+      });
+    },
+    
+    async saveOrder() {
+      const order = this.blocks.map(b => b.id);
+      await fetch(`/pages/${this.pageKey}/blocks/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order })
+      });
+    },
+    
+    async addBlock(type, afterId = null) {
+      const body = { type };
+      if (afterId) body.after_id = afterId;
+      
+      const resp = await fetch(`/pages/${this.pageKey}/blocks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await resp.json();
+      if (data.block) {
+        const newBlock = { ...data.block, editing: true };
+        if (afterId) {
+          const idx = this.blocks.findIndex(b => b.id === afterId);
+          if (idx !== -1) {
+            this.blocks.splice(idx + 1, 0, newBlock);
+          } else {
+            this.blocks.push(newBlock);
+          }
+        } else {
+          this.blocks.push(newBlock);
+        }
+      }
+    },
+    
+    async addBlockAfter(type, afterId) {
+      await this.addBlock(type, afterId);
+    },
+    
+    async saveBlock(block) {
+      const { editing, ...blockData } = block;
+      await fetch(`/pages/${this.pageKey}/blocks/${block.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(blockData)
+      });
+    },
+    
+    async deleteBlock(blockId) {
+      if (!confirm('Delete?')) return;
+      await fetch(`/pages/${this.pageKey}/blocks/${blockId}`, { method: 'DELETE' });
+      this.blocks = this.blocks.filter(b => b.id !== blockId);
+    },
+    
+    addTableRow(block) {
+      const cols = block.data[0]?.length || 2;
+      block.data.push(new Array(cols).fill(''));
+      this.saveBlock(block);
+    },
+    
+    addTableCol(block) {
+      for (let row of block.data) row.push('');
+      this.saveBlock(block);
+    },
+    
+    async handleImageDrop(e, block) { if (e.dataTransfer.files[0]) await this.uploadImage(e.dataTransfer.files[0], block); },
+    async handleImageSelect(e, block) { if (e.target.files[0]) await this.uploadImage(e.target.files[0], block); },
+    async uploadImage(file, block) {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await fetch('/pages/upload_file', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.url) { block.url = d.url; this.saveBlock(block); }
+    },
+    async handleFileDrop(e, block) { if (e.dataTransfer.files[0]) await this.uploadFile(e.dataTransfer.files[0], block); },
+    async handleFileSelect(e, block) { if (e.target.files[0]) await this.uploadFile(e.target.files[0], block); },
+    async uploadFile(file, block) {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await fetch('/pages/upload_file', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.url) { block.url = d.url; block.filename = d.filename || file.name; this.saveBlock(block); }
+    },
+    
+    // Comment functions
+    selectedBlock: null,
+    newComment: '',
+    
+    selectBlockForComment(block) {
+      this.selectedBlock = block;
+      if (!block.comments) block.comments = [];
+      // Dispatch event to open sidebar
+      window.dispatchEvent(new CustomEvent('open-comments', { detail: { block } }));
+    },
+    
+    addCommentToSelected() {
+      if (!this.selectedBlock || !this.newComment.trim()) return;
+      if (!this.selectedBlock.comments) this.selectedBlock.comments = [];
+      this.selectedBlock.comments.push({
+        text: this.newComment.trim(),
+        date: new Date().toLocaleString()
+      });
+      this.newComment = '';
+      this.saveBlock(this.selectedBlock);
+    },
+    
+    highlightSelection(block) {
+      const sel = window.getSelection();
+      if (!sel.rangeCount || sel.isCollapsed) {
+        alert('Please select some text first');
+        return;
+      }
+      
+      const comment = prompt('Add a comment for the highlighted text:');
+      if (!comment) return;
+      
+      const range = sel.getRangeAt(0);
+      const mark = document.createElement('mark');
+      mark.className = 'bg-yellow-500/30 px-0.5 rounded cursor-pointer';
+      mark.title = comment;
+      mark.setAttribute('data-comment', comment);
+      
+      try {
+        range.surroundContents(mark);
+        // Update block content
+        const editor = this.$refs['editor_' + block.id];
+        if (editor) {
+          block.content = editor.innerHTML;
+          this.saveBlock(block);
+        }
+      } catch (e) {
+        alert('Cannot highlight across elements. Select text within a single paragraph.');
+      }
+    }
+  }));
+});
+</script>
