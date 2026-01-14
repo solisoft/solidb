@@ -123,6 +123,7 @@ pub fn create_router(
         stream_manager,
         permission_cache,
         repl_sessions: crate::server::repl_session::ReplSessionStore::new(),
+        channel_manager: Arc::new(crate::scripting::ChannelManager::new()),
     };
 
     // Protected API routes

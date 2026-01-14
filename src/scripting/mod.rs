@@ -19,6 +19,7 @@ use futures::{SinkExt, StreamExt};
 // Import modules
 mod ai_bindings;
 mod auth;
+pub mod channel_manager;
 mod dev_tools;
 mod error_handling;
 mod file_handling;
@@ -26,6 +27,7 @@ mod http_helpers;
 mod string_utils;
 mod validation;
 pub use auth::ScriptUser;
+pub use channel_manager::ChannelManager;
 use dev_tools::*;
 use error_handling::*;
 use file_handling::*;
@@ -246,6 +248,7 @@ pub struct ScriptEngine {
     storage: Arc<StorageEngine>,
     queue_notifier: Option<broadcast::Sender<()>>,
     stream_manager: Option<Arc<StreamManager>>,
+    channel_manager: Option<Arc<ChannelManager>>,
     stats: Arc<ScriptStats>,
 }
 
@@ -256,6 +259,7 @@ impl ScriptEngine {
             storage,
             queue_notifier: None,
             stream_manager: None,
+            channel_manager: None,
             stats,
         }
     }
@@ -267,6 +271,11 @@ impl ScriptEngine {
     
     pub fn with_stream_manager(mut self, manager: Arc<StreamManager>) -> Self {
         self.stream_manager = Some(manager);
+        self
+    }
+
+    pub fn with_channel_manager(mut self, manager: Arc<ChannelManager>) -> Self {
+        self.channel_manager = Some(manager);
         self
     }
 
@@ -348,6 +357,8 @@ impl ScriptEngine {
         context: &ScriptContext,
         ws: axum::extract::ws::WebSocket,
     ) -> Result<(), DbError> {
+        use channel_manager::{ChannelEvent, ChannelManager, ConnectionId};
+
         self.stats.active_ws.fetch_add(1, Ordering::SeqCst);
         self.stats
             .total_ws_connections
@@ -361,6 +372,34 @@ impl ScriptEngine {
             }
         }
         let _guard = ActiveWsGuard(self.stats.clone());
+
+        // Register connection with channel manager for pub/sub and presence
+        let channel_manager = self.channel_manager.clone();
+        let (conn_id, event_rx): (ConnectionId, tokio::sync::mpsc::Receiver<ChannelEvent>) =
+            if let Some(cm) = &channel_manager {
+                cm.register_connection(db_name)
+            } else {
+                // Create a dummy receiver if no channel manager
+                let (_tx, rx) = tokio::sync::mpsc::channel(1);
+                (uuid::Uuid::new_v4().to_string(), rx)
+            };
+
+        // Guard for automatic connection cleanup
+        struct ConnectionGuard {
+            conn_id: ConnectionId,
+            channel_manager: Option<Arc<ChannelManager>>,
+        }
+        impl Drop for ConnectionGuard {
+            fn drop(&mut self) {
+                if let Some(cm) = &self.channel_manager {
+                    cm.unregister_connection(&self.conn_id);
+                }
+            }
+        }
+        let _conn_guard = ConnectionGuard {
+            conn_id: conn_id.clone(),
+            channel_manager: channel_manager.clone(),
+        };
 
         let lua = Lua::new();
 
@@ -431,6 +470,7 @@ impl ScriptEngine {
         });
 
         let receiver_arc = Arc::new(tokio::sync::Mutex::new(receiver));
+        let event_rx_arc = Arc::new(tokio::sync::Mutex::new(event_rx));
 
         // ws.send(data)
         let tx_send = tx.clone();
@@ -478,6 +518,95 @@ impl ScriptEngine {
             .set("recv", recv_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set ws.recv: {}", e)))?;
 
+        // ws.recv_any(timeout_ms) -> (msg, type) or nil
+        // Returns messages from both WebSocket and channel events
+        let ws_recv_any_clone = receiver_arc.clone();
+        let event_rx_clone = event_rx_arc.clone();
+        let recv_any_fn = lua
+            .create_async_function(move |lua, timeout_ms: Option<u64>| {
+                let ws_stream = ws_recv_any_clone.clone();
+                let event_rx = event_rx_clone.clone();
+                async move {
+                    let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(30000));
+
+                    tokio::select! {
+                        biased;
+
+                        // Check channel events first (they're usually more important for real-time)
+                        result = async {
+                            event_rx.lock().await.recv().await
+                        } => {
+                            match result {
+                                Some(ChannelEvent::Message(msg)) => {
+                                    let msg_table = lua.create_table()?;
+                                    msg_table.set("channel", msg.channel.as_str())?;
+                                    msg_table.set("data", json_to_lua(&lua, &msg.data)?)?;
+                                    msg_table.set("timestamp", msg.timestamp)?;
+                                    if let Some(sender) = &msg.sender_id {
+                                        msg_table.set("sender_id", sender.as_str())?;
+                                    }
+                                    let result_table = lua.create_table()?;
+                                    result_table.set(1, msg_table)?;
+                                    result_table.set(2, "channel")?;
+                                    Ok(LuaValue::Table(result_table))
+                                }
+                                Some(ChannelEvent::Presence(event)) => {
+                                    let event_table = lua.create_table()?;
+                                    event_table.set("event_type", event.event_type.to_string())?;
+                                    event_table.set("channel", event.channel.as_str())?;
+                                    event_table.set("user_info", json_to_lua(&lua, &event.user_info)?)?;
+                                    event_table.set("connection_id", event.connection_id.as_str())?;
+                                    event_table.set("timestamp", event.timestamp)?;
+                                    let result_table = lua.create_table()?;
+                                    result_table.set(1, event_table)?;
+                                    result_table.set(2, "presence")?;
+                                    Ok(LuaValue::Table(result_table))
+                                }
+                                None => Ok(LuaValue::Nil),
+                            }
+                        }
+
+                        // WebSocket message
+                        result = async {
+                            let mut stream = ws_stream.lock().await;
+                            stream.next().await
+                        } => {
+                            match result {
+                                Some(Ok(axum::extract::ws::Message::Text(t))) => {
+                                    let result_table = lua.create_table()?;
+                                    result_table.set(1, lua.create_string(t.as_bytes())?)?;
+                                    result_table.set(2, "ws")?;
+                                    Ok(LuaValue::Table(result_table))
+                                }
+                                Some(Ok(axum::extract::ws::Message::Binary(b))) => {
+                                    let result_table = lua.create_table()?;
+                                    result_table.set(1, lua.create_string(b.as_ref())?)?;
+                                    result_table.set(2, "ws")?;
+                                    Ok(LuaValue::Table(result_table))
+                                }
+                                Some(Ok(axum::extract::ws::Message::Close(_)))
+                                | None
+                                | Some(Err(_)) => Ok(LuaValue::Nil),
+                                Some(Ok(axum::extract::ws::Message::Pong(_)))
+                                | Some(Ok(axum::extract::ws::Message::Ping(_))) => {
+                                    // Ignore heartbeats, return nil to indicate no user message
+                                    Ok(LuaValue::Nil)
+                                }
+                            }
+                        }
+
+                        // Timeout
+                        _ = tokio::time::sleep(timeout) => {
+                            Ok(LuaValue::Nil)
+                        }
+                    }
+                }
+            })
+            .map_err(|e| DbError::InternalError(format!("Failed to create ws.recv_any: {}", e)))?;
+        ws_table
+            .set("recv_any", recv_any_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set ws.recv_any: {}", e)))?;
+
         // ws.close()
         let tx_close = tx.clone();
         let close_fn = lua
@@ -492,6 +621,136 @@ impl ScriptEngine {
         ws_table
             .set("close", close_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set ws.close: {}", e)))?;
+
+        // ==================== Channel Operations ====================
+        if let Some(cm) = &channel_manager {
+            let channel_table = lua
+                .create_table()
+                .map_err(|e| DbError::InternalError(format!("Failed to create channel table: {}", e)))?;
+
+            // ws.channel.subscribe(channel_name)
+            let cm_subscribe = cm.clone();
+            let conn_id_sub = conn_id.clone();
+            let subscribe_fn = lua
+                .create_function(move |_, channel: String| {
+                    cm_subscribe
+                        .subscribe(&conn_id_sub, &channel)
+                        .map_err(|e| mlua::Error::RuntimeError(format!("Subscribe error: {}", e)))?;
+                    Ok(true)
+                })
+                .map_err(|e| DbError::InternalError(format!("Failed to create channel.subscribe: {}", e)))?;
+            channel_table
+                .set("subscribe", subscribe_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set channel.subscribe: {}", e)))?;
+
+            // ws.channel.unsubscribe(channel_name)
+            let cm_unsub = cm.clone();
+            let conn_id_unsub = conn_id.clone();
+            let unsubscribe_fn = lua
+                .create_function(move |_, channel: String| {
+                    cm_unsub.unsubscribe(&conn_id_unsub, &channel);
+                    Ok(true)
+                })
+                .map_err(|e| DbError::InternalError(format!("Failed to create channel.unsubscribe: {}", e)))?;
+            channel_table
+                .set("unsubscribe", unsubscribe_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set channel.unsubscribe: {}", e)))?;
+
+            // ws.channel.broadcast(channel_name, data)
+            let cm_broadcast = cm.clone();
+            let conn_id_bc = conn_id.clone();
+            let broadcast_fn = lua
+                .create_function(move |_, (channel, data): (String, mlua::Value)| {
+                    let json_data = lua_value_to_json(&data)?;
+                    cm_broadcast
+                        .broadcast(&channel, json_data, Some(&conn_id_bc))
+                        .map_err(|e| mlua::Error::RuntimeError(format!("Broadcast error: {}", e)))?;
+                    Ok(true)
+                })
+                .map_err(|e| DbError::InternalError(format!("Failed to create channel.broadcast: {}", e)))?;
+            channel_table
+                .set("broadcast", broadcast_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set channel.broadcast: {}", e)))?;
+
+            // ws.channel.list() -> table of subscribed channels
+            let cm_list = cm.clone();
+            let conn_id_list = conn_id.clone();
+            let list_fn = lua
+                .create_function(move |lua, ()| {
+                    let channels = cm_list.list_subscriptions(&conn_id_list);
+                    let table = lua.create_table()?;
+                    for (i, ch) in channels.iter().enumerate() {
+                        table.set(i + 1, ch.as_str())?;
+                    }
+                    Ok(table)
+                })
+                .map_err(|e| DbError::InternalError(format!("Failed to create channel.list: {}", e)))?;
+            channel_table
+                .set("list", list_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set channel.list: {}", e)))?;
+
+            ws_table
+                .set("channel", channel_table)
+                .map_err(|e| DbError::InternalError(format!("Failed to set ws.channel: {}", e)))?;
+
+            // ==================== Presence Operations ====================
+            let presence_table = lua
+                .create_table()
+                .map_err(|e| DbError::InternalError(format!("Failed to create presence table: {}", e)))?;
+
+            // ws.presence.join(channel, user_info)
+            let cm_join = cm.clone();
+            let conn_id_join = conn_id.clone();
+            let join_fn = lua
+                .create_function(move |_, (channel, user_info): (String, mlua::Value)| {
+                    let json_info = lua_value_to_json(&user_info)?;
+                    cm_join
+                        .presence_join(&conn_id_join, &channel, json_info)
+                        .map_err(|e| mlua::Error::RuntimeError(format!("Presence join error: {}", e)))?;
+                    Ok(true)
+                })
+                .map_err(|e| DbError::InternalError(format!("Failed to create presence.join: {}", e)))?;
+            presence_table
+                .set("join", join_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set presence.join: {}", e)))?;
+
+            // ws.presence.leave(channel)
+            let cm_leave = cm.clone();
+            let conn_id_leave = conn_id.clone();
+            let leave_fn = lua
+                .create_function(move |_, channel: String| {
+                    cm_leave.presence_leave(&conn_id_leave, &channel);
+                    Ok(true)
+                })
+                .map_err(|e| DbError::InternalError(format!("Failed to create presence.leave: {}", e)))?;
+            presence_table
+                .set("leave", leave_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set presence.leave: {}", e)))?;
+
+            // ws.presence.list(channel) -> table of users
+            let cm_plist = cm.clone();
+            let list_presence_fn = lua
+                .create_function(move |lua, channel: String| {
+                    let users = cm_plist.presence_list(&channel);
+                    let table = lua.create_table()?;
+                    for (i, user) in users.iter().enumerate() {
+                        let user_table = lua.create_table()?;
+                        user_table.set("connection_id", user.connection_id.as_str())?;
+                        user_table.set("user_info", json_to_lua(lua, &user.user_info)?)?;
+                        user_table.set("joined_at", user.joined_at)?;
+                        table.set(i + 1, user_table)?;
+                    }
+                    Ok(table)
+                })
+                .map_err(|e| DbError::InternalError(format!("Failed to create presence.list: {}", e)))?;
+            presence_table
+                .set("list", list_presence_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set presence.list: {}", e)))?;
+
+            ws_table
+                .set("presence", presence_table)
+                .map_err(|e| DbError::InternalError(format!("Failed to set ws.presence: {}", e)))?;
+        }
 
         let solidb: mlua::Table = globals
             .get("solidb")
@@ -1229,7 +1488,7 @@ impl ScriptEngine {
                 DbError::InternalError(format!("Failed to create json_encode function: {}", e))
             })?;
         solidb
-            .set("json_encode", json_encode_fn)
+            .set("json_encode", json_encode_fn.clone())
             .map_err(|e| DbError::InternalError(format!("Failed to set json_encode: {}", e)))?;
 
         // solidb.json_decode(string) -> value
@@ -1243,8 +1502,22 @@ impl ScriptEngine {
                 DbError::InternalError(format!("Failed to create json_decode function: {}", e))
             })?;
         solidb
-            .set("json_decode", json_decode_fn)
+            .set("json_decode", json_decode_fn.clone())
             .map_err(|e| DbError::InternalError(format!("Failed to set json_decode: {}", e)))?;
+
+        // Create global json table for convenience (json.encode / json.decode)
+        let json_table = lua
+            .create_table()
+            .map_err(|e| DbError::InternalError(format!("Failed to create json table: {}", e)))?;
+        json_table
+            .set("encode", json_encode_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set json.encode: {}", e)))?;
+        json_table
+            .set("decode", json_decode_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set json.decode: {}", e)))?;
+        globals
+            .set("json", json_table)
+            .map_err(|e| DbError::InternalError(format!("Failed to set global json: {}", e)))?;
 
         // Add validation functions to solidb namespace
         let validate_fn = create_validate_function(lua).map_err(|e| {
@@ -3197,6 +3470,61 @@ fn json_to_lua(lua: &Lua, json: &JsonValue) -> LuaResult<LuaValue> {
             }
             Ok(LuaValue::Table(table))
         }
+    }
+}
+
+/// Convert Lua value to JSON value
+fn lua_value_to_json(value: &LuaValue) -> LuaResult<JsonValue> {
+    match value {
+        LuaValue::Nil => Ok(JsonValue::Null),
+        LuaValue::Boolean(b) => Ok(JsonValue::Bool(*b)),
+        LuaValue::Integer(i) => Ok(JsonValue::Number((*i).into())),
+        LuaValue::Number(n) => Ok(serde_json::Number::from_f64(*n)
+            .map(JsonValue::Number)
+            .unwrap_or(JsonValue::Null)),
+        LuaValue::String(s) => Ok(JsonValue::String(s.to_str()?.to_string())),
+        LuaValue::Table(t) => {
+            // Check if it's an array (sequential integer keys starting from 1)
+            let mut is_array = true;
+            let mut max_key = 0i64;
+            for pair in t.clone().pairs::<LuaValue, LuaValue>() {
+                let (k, _) = pair?;
+                match k {
+                    LuaValue::Integer(i) if i > 0 => {
+                        max_key = max_key.max(i);
+                    }
+                    _ => {
+                        is_array = false;
+                        break;
+                    }
+                }
+            }
+
+            if is_array && max_key > 0 {
+                // It's an array
+                let mut arr = Vec::new();
+                for i in 1..=max_key {
+                    let val: LuaValue = t.get(i)?;
+                    arr.push(lua_value_to_json(&val)?);
+                }
+                Ok(JsonValue::Array(arr))
+            } else {
+                // It's an object
+                let mut map = serde_json::Map::new();
+                for pair in t.clone().pairs::<LuaValue, LuaValue>() {
+                    let (k, v) = pair?;
+                    let key_str = match k {
+                        LuaValue::String(s) => s.to_str()?.to_string(),
+                        LuaValue::Integer(i) => i.to_string(),
+                        LuaValue::Number(n) => n.to_string(),
+                        _ => continue,
+                    };
+                    map.insert(key_str, lua_value_to_json(&v)?);
+                }
+                Ok(JsonValue::Object(map))
+            }
+        }
+        _ => Ok(JsonValue::Null),
     }
 }
 

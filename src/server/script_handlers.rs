@@ -403,10 +403,11 @@ pub async fn execute_script_handler(
 
     // Execute script
     let mut engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone());
-    
+
     if let Some(sm) = &state.stream_manager {
         engine = engine.with_stream_manager(sm.clone());
     }
+    engine = engine.with_channel_manager(state.channel_manager.clone());
 
     // Handle WebSocket upgrade
     if context.is_websocket {
