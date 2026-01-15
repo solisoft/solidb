@@ -222,7 +222,7 @@
 
     /* Seat positions */
     .seat { position: absolute; z-index: 20; }
-    .seat-north { top: 20px; left: 50%; transform: translateX(-50%); }
+    .seat-north { top: 5px; left: 50%; transform: translateX(-50%); }
     .seat-east { right: 20px; top: 50%; transform: translateY(-50%); }
     .seat-south { bottom: 20px; left: 50%; transform: translateX(-50%); }
     .seat-west { left: 20px; top: 50%; transform: translateY(-50%); }
@@ -232,7 +232,7 @@
 
     /* Larger spacing for tablets */
     @media (min-width: 768px) {
-      .seat-north { top: 25px; }
+      .seat-north { top: 10px; }
       .seat-east { right: 25px; }
       .seat-south { bottom: 20px; }
       .seat-west { left: 25px; }
@@ -241,7 +241,7 @@
 
     /* Even larger for desktops */
     @media (min-width: 1024px) {
-      .seat-north { top: 30px; }
+      .seat-north { top: 15px; }
       .seat-east { right: 30px; }
       .seat-south { bottom: 20px; }
       .seat-west { left: 30px; }

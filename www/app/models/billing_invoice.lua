@@ -426,4 +426,19 @@ function BillingInvoice:days_until_due()
   return math.floor(diff / 86400)
 end
 
+-- Get monthly revenue stats for the last 12 months
+function BillingInvoice.monthly_revenue_stats(owner_key)
+  local one_year_ago = os.time() - (365 * 24 * 60 * 60)
+  
+  local result = Sdb:Sdbql([[
+    FOR i IN billing_invoices
+    FILTER i.owner_key == @owner_key OR NOT HAS(i, "owner_key") OR i.owner_key == null
+    FILTER i.status != "cancelled" AND i.status != "draft"
+    FILTER i.date >= @start_date
+    RETURN { date: i.date, total: i.total, total_paid: i.total_paid }
+  ]], { owner_key = owner_key, start_date = one_year_ago })
+  
+  return result and result.result or {}
+end
+
 return BillingInvoice

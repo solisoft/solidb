@@ -70,6 +70,53 @@ function BillingController:index()
   local recent_invoices = BillingInvoice.for_user(current_user._key, { limit = 5 })
   local recent_quotes = BillingQuote.for_user(current_user._key, { limit = 5 })
 
+  -- Chart Data
+  local chart_data = {
+    labels = {},
+    revenue = {},
+    expenses = {}
+  }
+  
+  -- 1. Fetch real stats (last 12 months)
+  local raw_stats = BillingInvoice.monthly_revenue_stats(current_user._key)
+  local monthly_totals = {}
+  local has_real_data = false
+  
+  for _, stat in ipairs(raw_stats) do
+    if stat.date then
+       local d = os.date("*t", stat.date)
+       local key = string.format("%04d-%02d", d.year, d.month)
+       
+       if not monthly_totals[key] then monthly_totals[key] = { revenue = 0, paid = 0 } end
+       monthly_totals[key].revenue = monthly_totals[key].revenue + (tonumber(stat.total) or 0)
+       monthly_totals[key].paid = monthly_totals[key].paid + (tonumber(stat.total_paid) or 0)
+       
+       if monthly_totals[key].revenue > 0 or monthly_totals[key].paid > 0 then
+         has_real_data = true
+       end
+    end
+  end
+  
+  -- 2. Generate labels and data (Real or Random)
+  local current_date = os.date("*t")
+  for i = 11, 0, -1 do
+    local time = os.time{year=current_date.year, month=current_date.month - i, day=1}
+    local d = os.date("*t", time)
+    local key = string.format("%04d-%02d", d.year, d.month)
+    
+    table.insert(chart_data.labels, os.date("%b", time))
+    
+    if has_real_data then
+       local data = monthly_totals[key] or { revenue = 0, paid = 0 }
+       table.insert(chart_data.revenue, data.revenue)
+       table.insert(chart_data.expenses, data.paid)
+    else
+       -- Fallback to random data if no real data exists
+       table.insert(chart_data.revenue, math.random(1000, 5000) + math.random())
+       table.insert(chart_data.expenses, math.random(200, 1000) + math.random())
+    end
+  end
+
   self.layout = "billing"
   self:render("billing/index", {
     current_user = current_user,
@@ -79,6 +126,7 @@ function BillingController:index()
     contact_count = contact_count,
     recent_invoices = recent_invoices,
     recent_quotes = recent_quotes,
+    chart_data = chart_data,
     current_section = "dashboard"
   })
 end

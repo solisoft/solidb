@@ -1,188 +1,218 @@
 <% local data = settings and (settings.data or settings) or {} %>
-<div class="flex-1 overflow-y-auto p-6">
-  <div class="max-w-4xl mx-auto">
-    <!-- Header -->
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold text-white">Billing Settings</h1>
-      <p class="text-text-muted mt-1">Configure your company information and billing preferences</p>
+<div class="flex flex-col h-full text-slate-200 font-sans">
+  
+  <!-- Header -->
+  <header class="flex items-center justify-between px-8 py-6 border-b border-white/5 bg-gray-900/50 backdrop-blur-md sticky top-0 z-20">
+    <div>
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-slate-200 to-slate-400 bg-clip-text text-transparent">Billing Settings</h1>
+      <p class="text-sm text-slate-400 mt-1">Configure your company profile and preferences</p>
     </div>
+    <button onclick="document.getElementById('settings-form').requestSubmit()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2">
+       <i class="fas fa-save"></i> Save Changes
+    </button>
+  </header>
 
-    <!-- Form -->
-    <form hx-put="/billing/settings" hx-swap="none">
-      <div class="space-y-6">
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+    <div class="max-w-5xl mx-auto">
+      <form id="settings-form" hx-put="/billing/settings" hx-swap="none" class="space-y-8">
+        
         <!-- Company Information -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Company Information</h3>
-          <div class="space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">Company Name <span class="text-error">*</span></label>
-                <input type="text" name="company_name" value="<%= data.company_name or '' %>" required
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                       placeholder="Your Company Name">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">Legal Form</label>
-                <input type="text" name="legal_form" value="<%= data.legal_form or '' %>"
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                       placeholder="e.g., LLC, SAS, SARL">
-              </div>
+        <section class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-8 backdrop-blur-sm relative overflow-hidden group hover:border-indigo-500/30 transition-colors">
+          <div class="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
+             <i class="fas fa-building text-9xl"></i>
+          </div>
+          
+          <h3 class="text-lg font-bold text-white mb-6 flex items-center gap-3">
+             <div class="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <i class="fas fa-building"></i>
+             </div>
+             Company Information
+          </h3>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+            <div class="space-y-6">
+               <div>
+                  <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Company Name <span class="text-rose-400">*</span></label>
+                  <input type="text" name="company_name" value="<%= data.company_name or '' %>" required
+                        class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all">
+               </div>
+               <div>
+                  <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Legal Form</label>
+                  <input type="text" name="legal_form" value="<%= data.legal_form or '' %>"
+                        class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all">
+               </div>
+               <div>
+                  <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Address</label>
+                  <textarea name="company_address" rows="3"
+                           class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all resize-none"><%= data.company_address or '' %></textarea>
+               </div>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">VAT Number</label>
-                <input type="text" name="vat_number" value="<%= data.vat_number or '' %>"
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                       placeholder="e.g., FR12345678901">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">Registration Number</label>
-                <input type="text" name="registration_number" value="<%= data.registration_number or '' %>"
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                       placeholder="e.g., SIRET, Company Number">
-              </div>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Address</label>
-              <textarea name="company_address" rows="3"
-                        class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary resize-none"
-                        placeholder="Street, City, Postal Code, Country"><%= data.company_address or '' %></textarea>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">Email</label>
-                <input type="email" name="company_email" value="<%= data.company_email or '' %>"
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                       placeholder="billing@company.com">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">Phone</label>
-                <input type="tel" name="company_phone" value="<%= data.company_phone or '' %>"
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                       placeholder="+33 1 23 45 67 89">
-              </div>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Website</label>
-              <input type="url" name="company_website" value="<%= data.company_website or '' %>"
-                     class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                     placeholder="https://www.company.com">
+            
+            <div class="space-y-6">
+               <div class="grid grid-cols-2 gap-4">
+                  <div>
+                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">VAT Number</label>
+                     <input type="text" name="vat_number" value="<%= data.vat_number or '' %>"
+                           class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all">
+                  </div>
+                   <div>
+                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Registration No.</label>
+                     <input type="text" name="registration_number" value="<%= data.registration_number or '' %>"
+                           class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all">
+                  </div>
+               </div>
+               
+               <div class="grid grid-cols-2 gap-4">
+                   <div>
+                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Email</label>
+                     <input type="email" name="company_email" value="<%= data.company_email or '' %>"
+                           class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all">
+                  </div>
+                   <div>
+                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Phone</label>
+                     <input type="tel" name="company_phone" value="<%= data.company_phone or '' %>"
+                           class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all">
+                  </div>
+               </div>
+               
+               <div>
+                  <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Website</label>
+                  <input type="url" name="company_website" value="<%= data.company_website or '' %>"
+                        class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all">
+               </div>
             </div>
           </div>
-        </div>
+        </section>
 
         <!-- Document Numbering -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Document Numbering</h3>
-          <p class="text-text-muted text-sm mb-4">Configure prefixes for auto-generated document numbers. Numbers reset yearly.</p>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <section class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-8 backdrop-blur-sm relative overflow-hidden group hover:border-purple-500/30 transition-colors">
+           <div class="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
+             <i class="fas fa-list-ol text-9xl"></i>
+          </div>
+          
+           <h3 class="text-lg font-bold text-white mb-6 flex items-center gap-3">
+             <div class="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400">
+                <i class="fas fa-list-ol"></i>
+             </div>
+             Document Numbering
+          </h3>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
             <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Invoice Prefix</label>
-              <input type="text" name="invoice_prefix" value="<%= data.invoice_prefix or 'INV' %>"
-                     class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary"
-                     placeholder="INV">
-              <p class="text-xs text-text-muted mt-1">e.g., INV-2026-0001</p>
+               <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Invoice Prefix</label>
+               <input type="text" name="invoice_prefix" value="<%= data.invoice_prefix or 'INV' %>"
+                      class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all">
+               <p class="text-[10px] text-slate-500 mt-1.5"><strong class="text-slate-400">Example:</strong> INV-<%= os.date("%Y") %>-0001</p>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Quote Prefix</label>
-              <input type="text" name="quote_prefix" value="<%= data.quote_prefix or 'QUO' %>"
-                     class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary"
-                     placeholder="QUO">
-              <p class="text-xs text-text-muted mt-1">e.g., QUO-2026-0001</p>
+             <div>
+               <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Quote Prefix</label>
+               <input type="text" name="quote_prefix" value="<%= data.quote_prefix or 'QUO' %>"
+                      class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all">
+               <p class="text-[10px] text-slate-500 mt-1.5"><strong class="text-slate-400">Example:</strong> QUO-<%= os.date("%Y") %>-0001</p>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Credit Note Prefix</label>
-              <input type="text" name="credit_note_prefix" value="<%= data.credit_note_prefix or 'CN' %>"
-                     class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary"
-                     placeholder="CN">
-              <p class="text-xs text-text-muted mt-1">e.g., CN-2026-0001</p>
+             <div>
+               <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Credit Note Prefix</label>
+               <input type="text" name="credit_note_prefix" value="<%= data.credit_note_prefix or 'CN' %>"
+                      class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all">
+               <p class="text-[10px] text-slate-500 mt-1.5"><strong class="text-slate-400">Example:</strong> CN-<%= os.date("%Y") %>-0001</p>
             </div>
           </div>
-        </div>
+        </section>
 
-        <!-- Default Values -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Default Values</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Default Tax Rate (%)</label>
-              <input type="number" name="default_tax_rate" value="<%= data.default_tax_rate or 20 %>" min="0" max="100" step="0.01"
-                     class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary">
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Default Currency</label>
-              <select name="default_currency" class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary">
-                <option value="EUR" <%= (data.default_currency or 'EUR') == 'EUR' and 'selected' or '' %>>EUR - Euro</option>
-                <option value="USD" <%= data.default_currency == 'USD' and 'selected' or '' %>>USD - US Dollar</option>
-                <option value="GBP" <%= data.default_currency == 'GBP' and 'selected' or '' %>>GBP - British Pound</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Payment Due Days</label>
-              <input type="number" name="payment_due_days" value="<%= data.payment_due_days or 30 %>" min="0"
-                     class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary">
-              <p class="text-xs text-text-muted mt-1">Days after invoice date</p>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Quote Validity Days</label>
-              <input type="number" name="quote_validity_days" value="<%= data.quote_validity_days or 30 %>" min="1"
-                     class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary">
-              <p class="text-xs text-text-muted mt-1">Days quote remains valid</p>
-            </div>
-          </div>
+        <!-- Defaults & Bank -->
+         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+             <!-- Default Values -->
+            <section class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-8 backdrop-blur-sm group hover:border-emerald-500/30 transition-colors h-full">
+               <h3 class="text-lg font-bold text-white mb-6 flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                     <i class="fas fa-cog"></i>
+                  </div>
+                  Defaults
+               </h3>
+               
+               <div class="space-y-6">
+                  <div class="grid grid-cols-2 gap-4">
+                     <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tax Rate (%)</label>
+                        <input type="number" name="default_tax_rate" value="<%= data.default_tax_rate or 20 %>" min="0" max="100" step="0.01"
+                               class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+                     </div>
+                     <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Currency</label>
+                        <div class="relative">
+                            <select name="default_currency" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+                              <option value="EUR" <%= (data.default_currency or 'EUR') == 'EUR' and 'selected' or '' %>>EUR (€)</option>
+                              <option value="USD" <%= data.default_currency == 'USD' and 'selected' or '' %>>USD ($)</option>
+                              <option value="GBP" <%= data.default_currency == 'GBP' and 'selected' or '' %>>GBP (£)</option>
+                            </select>
+                            <i class="fas fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none"></i>
+                        </div>
+                     </div>
+                  </div>
+                  
+                  <div class="grid grid-cols-2 gap-4">
+                     <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Payment Due (Days)</label>
+                        <input type="number" name="payment_due_days" value="<%= data.payment_due_days or 30 %>" min="0"
+                               class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+                     </div>
+                     <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Quote Valid (Days)</label>
+                        <input type="number" name="quote_validity_days" value="<%= data.quote_validity_days or 30 %>" min="1"
+                               class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+                     </div>
+                  </div>
+                  
+                  <div>
+                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Default Payment Terms</label>
+                     <textarea name="payment_terms" rows="4"
+                              class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all resize-none"><%= data.payment_terms or '' %></textarea>
+                  </div>
+               </div>
+            </section>
+            
+            <!-- Bank Details -->
+            <section class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-8 backdrop-blur-sm group hover:border-sky-500/30 transition-colors h-full">
+               <h3 class="text-lg font-bold text-white mb-6 flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400">
+                     <i class="fas fa-university"></i>
+                  </div>
+                  Bank Details
+               </h3>
+               
+               <div class="space-y-6">
+                  <div>
+                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bank Name</label>
+                     <input type="text" name="bank_name" value="<%= data.bank_name or '' %>"
+                           class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500/50 transition-all">
+                  </div>
+                  <div>
+                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Account Holder</label>
+                     <input type="text" name="account_holder" value="<%= data.account_holder or '' %>"
+                           class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500/50 transition-all">
+                  </div>
+                  <div>
+                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">IBAN</label>
+                     <input type="text" name="iban" value="<%= data.iban or '' %>"
+                           class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500/50 transition-all">
+                  </div>
+                  <div>
+                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">BIC/SWIFT</label>
+                     <input type="text" name="bic" value="<%= data.bic or '' %>"
+                           class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500/50 transition-all">
+                  </div>
+               </div>
+            </section>
         </div>
-
-        <!-- Default Payment Terms -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Default Payment Terms</h3>
-          <textarea name="payment_terms" rows="4"
-                    class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary resize-none"
-                    placeholder="Default payment terms to appear on invoices"><%= data.payment_terms or '' %></textarea>
-        </div>
-
-        <!-- Bank Details -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Bank Details</h3>
-          <p class="text-text-muted text-sm mb-4">These will appear on invoices for payment reference.</p>
-          <div class="space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">Bank Name</label>
-                <input type="text" name="bank_name" value="<%= data.bank_name or '' %>"
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                       placeholder="Bank Name">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">Account Holder</label>
-                <input type="text" name="account_holder" value="<%= data.account_holder or '' %>"
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                       placeholder="Account Holder Name">
-              </div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">IBAN</label>
-                <input type="text" name="iban" value="<%= data.iban or '' %>"
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                       placeholder="FR76 1234 5678 9012 3456 7890 123">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">BIC/SWIFT</label>
-                <input type="text" name="bic" value="<%= data.bic or '' %>"
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                       placeholder="BNPAFRPP">
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Actions -->
-        <div class="flex items-center justify-end gap-4">
-          <button type="submit" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
-            Save Settings
-          </button>
-        </div>
+      </form>
+      
+      <!-- Footer Note -->
+      <div class="mt-8 pt-8 border-t border-white/5 text-center text-xs text-slate-500">
+         <p>These settings are used to generate your documents. Changes affect future documents.</p>
       </div>
-    </form>
+      
+    </div>
   </div>
 </div>

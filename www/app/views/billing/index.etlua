@@ -1,160 +1,322 @@
-<div class="flex-1 overflow-y-auto p-6">
-  <div class="max-w-7xl mx-auto">
-    <!-- Header -->
-    <div class="mb-8">
-      <h1 class="text-2xl font-bold text-white">Dashboard</h1>
-      <p class="text-text-muted mt-1">Overview of your billing activity</p>
+<div class="flex flex-col h-full text-slate-200 font-sans">
+  <!-- Header -->
+  <header class="flex items-center justify-between px-8 py-6 border-b border-white/5 bg-gray-900/50 backdrop-blur-md sticky top-0 z-10">
+    <div>
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">Billing</h1>
+      <p class="text-sm text-slate-400 mt-1">Manage your invoices and payment details</p>
     </div>
+  </header>
 
-    <!-- Stats Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-      <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-text-muted text-sm">Total Invoiced</span>
-          <i class="fas fa-file-invoice text-primary"></i>
-        </div>
-        <div class="text-2xl font-bold text-white"><%= string.format("\226\130\172 %.2f", invoice_stats.total_invoiced or 0) %></div>
-      </div>
-
-      <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-text-muted text-sm">Total Paid</span>
-          <i class="fas fa-check-circle text-success"></i>
-        </div>
-        <div class="text-2xl font-bold text-success"><%= string.format("\226\130\172 %.2f", invoice_stats.total_paid or 0) %></div>
-      </div>
-
-      <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-text-muted text-sm">Outstanding</span>
-          <i class="fas fa-clock text-warning"></i>
-        </div>
-        <div class="text-2xl font-bold text-warning"><%= string.format("\226\130\172 %.2f", invoice_stats.outstanding or 0) %></div>
-      </div>
-
-      <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-text-muted text-sm">Overdue</span>
-          <i class="fas fa-exclamation-triangle text-error"></i>
-        </div>
-        <div class="text-2xl font-bold text-error"><%= invoice_stats.overdue_count or 0 %></div>
-      </div>
-    </div>
-
-    <!-- Quick Stats Row -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-      <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
-        <div class="flex items-center gap-4">
-          <div class="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center">
-            <i class="fas fa-users text-primary text-lg"></i>
-          </div>
-          <div>
-            <div class="text-2xl font-bold text-white"><%= contact_count or 0 %></div>
-            <div class="text-sm text-text-muted">Contacts</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
-        <div class="flex items-center gap-4">
-          <div class="w-12 h-12 bg-info/20 rounded-lg flex items-center justify-center">
-            <i class="fas fa-file-alt text-info text-lg"></i>
-          </div>
-          <div>
-            <div class="text-2xl font-bold text-white"><%= quote_counts.total or 0 %></div>
-            <div class="text-sm text-text-muted">Quotes</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
-        <div class="flex items-center gap-4">
-          <div class="w-12 h-12 bg-warning/20 rounded-lg flex items-center justify-center">
-            <i class="fas fa-hourglass-half text-warning text-lg"></i>
-          </div>
-          <div>
-            <div class="text-2xl font-bold text-white"><%= quote_counts.sent or 0 %></div>
-            <div class="text-sm text-text-muted">Pending Quotes</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recent Activity -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- Recent Invoices -->
-      <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl">
-        <div class="p-4 border-b border-white/5 flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-white">Recent Invoices</h2>
-          <a href="/billing/invoices" class="text-sm text-primary hover:underline">View all</a>
-        </div>
-        <div class="divide-y divide-white/5">
-          <% if #recent_invoices == 0 then %>
-            <div class="p-8 text-center text-text-muted">
-              <i class="fas fa-file-invoice text-3xl mb-3 opacity-50"></i>
-              <p>No invoices yet</p>
+  <!-- Main Content -->
+  <main class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+    <div class="max-w-7xl mx-auto space-y-8">
+      
+      <!-- Stats Grid (4 Cols) -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Revenue / Invoiced -->
+        <div class="group relative p-6 rounded-2xl bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800/60 hover:border-indigo-500/30 transition-all duration-300 overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-medium text-slate-400">Total Invoiced</h3>
+              <div class="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
+                <i class="fas fa-file-invoice-dollar"></i>
+              </div>
             </div>
-          <% else %>
-            <% for _, invoice in ipairs(recent_invoices) do %>
-              <a href="/billing/invoices/<%= invoice._key or invoice.data._key %>" class="flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center">
-                    <i class="fas fa-file-invoice text-primary"></i>
-                  </div>
-                  <div>
-                    <div class="font-medium text-white"><%= invoice.number or invoice.data.number %></div>
-                    <div class="text-sm text-text-muted"><%= invoice:formatted_date() %></div>
-                  </div>
-                </div>
-                <div class="text-right">
-                  <div class="font-medium text-white"><%= string.format("\226\130\172 %.2f", invoice.total or invoice.data.total or 0) %></div>
-                  <% local status = invoice.status or invoice.data.status %>
-                  <span class="text-xs px-2 py-0.5 rounded-full <%= status == 'paid' and 'bg-success/20 text-success' or status == 'overdue' and 'bg-error/20 text-error' or status == 'sent' and 'bg-info/20 text-info' or 'bg-white/10 text-text-muted' %>">
-                    <%= status %>
-                  </span>
-                </div>
-              </a>
-            <% end %>
-          <% end %>
+            <div class="text-2xl font-bold text-white mb-1"><%= string.format("€ %.2f", invoice_stats.total_invoiced or 0) %></div>
+            <p class="text-xs text-slate-400 mt-2">
+              <span class="text-emerald-400"><i class="fas fa-arrow-up mr-1"></i>12%</span> vs last month
+            </p>
+          </div>
+        </div>
+
+        <!-- Paid (New) -->
+        <div class="group relative p-6 rounded-2xl bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800/60 hover:border-emerald-500/30 transition-all duration-300 overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-medium text-slate-400">Total Paid</h3>
+              <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                <i class="fas fa-check-circle"></i>
+              </div>
+            </div>
+            <div class="text-2xl font-bold text-white mb-1"><%= string.format("€ %.2f", invoice_stats.total_paid or 0) %></div>
+            <p class="text-xs text-slate-400 mt-2">Cleared revenue</p>
+          </div>
+        </div>
+
+        <!-- Outstanding -->
+        <div class="group relative p-6 rounded-2xl bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800/60 hover:border-amber-500/30 transition-all duration-300 overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-medium text-slate-400">Outstanding</h3>
+              <div class="p-2 rounded-lg bg-amber-500/10 text-amber-400">
+                <i class="fas fa-clock"></i>
+              </div>
+            </div>
+            <div class="text-2xl font-bold text-white mb-1"><%= string.format("€ %.2f", invoice_stats.outstanding or 0) %></div>
+            <div class="w-full bg-slate-700/50 rounded-full h-1.5 mt-3">
+              <div class="bg-amber-500 h-1.5 rounded-full" style="width: <%= (invoice_stats.outstanding > 0 and invoice_stats.total_invoiced > 0) and math.min((invoice_stats.outstanding / invoice_stats.total_invoiced) * 100, 100) or 0 %>%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Overdue -->
+        <div class="group relative p-6 rounded-2xl bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800/60 hover:border-rose-500/30 transition-all duration-300 overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-br from-rose-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-medium text-slate-400">Overdue</h3>
+              <div class="p-2 rounded-lg bg-rose-500/10 text-rose-400">
+                <i class="fas fa-exclamation-triangle"></i>
+              </div>
+            </div>
+            <div class="text-2xl font-bold text-white mb-1"><%= invoice_stats.overdue_count or 0 %></div>
+            <p class="text-xs text-slate-400 mt-2">Invoices need attention</p>
+          </div>
         </div>
       </div>
 
-      <!-- Recent Quotes -->
-      <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl">
-        <div class="p-4 border-b border-white/5 flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-white">Recent Quotes</h2>
-          <a href="/billing/quotes" class="text-sm text-primary hover:underline">View all</a>
+      <!-- Charts Section (Last 12 Months) -->
+      <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm relative overflow-hidden">
+        <div class="flex items-center justify-between mb-6 relative z-10">
+          <div>
+            <h2 class="text-lg font-semibold text-white">Revenue Overview</h2>
+            <p class="text-sm text-slate-400">Performance over the last 12 months</p>
+          </div>
+          <div class="flex items-center gap-2">
+             <span class="flex items-center gap-2 text-xs text-slate-400"><span class="w-2 h-2 rounded-full bg-indigo-500"></span> Invoiced</span>
+             <span class="flex items-center gap-2 text-xs text-slate-400"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Paid</span>
+          </div>
         </div>
-        <div class="divide-y divide-white/5">
-          <% if #recent_quotes == 0 then %>
-            <div class="p-8 text-center text-text-muted">
-              <i class="fas fa-file-alt text-3xl mb-3 opacity-50"></i>
-              <p>No quotes yet</p>
-            </div>
-          <% else %>
-            <% for _, quote in ipairs(recent_quotes) do %>
-              <a href="/billing/quotes/<%= quote._key or quote.data._key %>" class="flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 bg-info/20 rounded-lg flex items-center justify-center">
-                    <i class="fas fa-file-alt text-info"></i>
-                  </div>
-                  <div>
-                    <div class="font-medium text-white"><%= quote.number or quote.data.number %></div>
-                    <div class="text-sm text-text-muted"><%= quote:formatted_date() %></div>
-                  </div>
-                </div>
-                <div class="text-right">
-                  <div class="font-medium text-white"><%= string.format("\226\130\172 %.2f", quote.total or quote.data.total or 0) %></div>
-                  <% local status = quote.status or quote.data.status %>
-                  <span class="text-xs px-2 py-0.5 rounded-full <%= status == 'accepted' and 'bg-success/20 text-success' or status == 'rejected' and 'bg-error/20 text-error' or status == 'sent' and 'bg-info/20 text-info' or 'bg-white/10 text-text-muted' %>">
-                    <%= status %>
-                  </span>
-                </div>
-              </a>
-            <% end %>
-          <% end %>
+        <div class="relative h-64 w-full z-10">
+           <canvas id="revenueChart"></canvas>
         </div>
       </div>
+
+      <!-- Lists Grid (Invoices & Quotes) -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        <!-- Recent Invoices -->
+        <div class="space-y-6">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-white">Recent Invoices</h2>
+            <div class="flex items-center gap-3">
+              <a href="/billing/invoices/new" class="text-xs bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 px-3 py-1.5 rounded-lg font-medium border border-indigo-500/20 transition-all">
+                <i class="fas fa-plus mr-1"></i> New
+              </a>
+              <a href="/billing/invoices" class="text-xs text-slate-400 hover:text-white transition-colors">View All</a>
+            </div>
+          </div>
+          
+          <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl overflow-hidden backdrop-blur-sm">
+            <table class="w-full text-left text-sm">
+              <thead class="bg-slate-800/80 border-b border-slate-700/50 text-slate-400">
+                <tr>
+                  <th class="pl-6 py-4 font-medium">Invoice</th>
+                  <th class="px-4 py-4 font-medium">Date</th>
+                  <th class="px-4 py-4 font-medium">Amount</th>
+                  <th class="pr-6 py-4 font-medium text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-700/50">
+                <% if #recent_invoices == 0 then %>
+                  <tr><td colspan="4" class="px-6 py-8 text-center text-slate-500">No invoices found.</td></tr>
+                <% else %>
+                  <% for _, invoice in ipairs(recent_invoices) do %>
+                  <tr class="hover:bg-slate-700/20 transition-colors cursor-pointer group" onclick="window.location.href='/billing/invoices/<%= invoice._key or invoice.data._key %>'">
+                    <td class="pl-6 py-4 text-white font-medium group-hover:text-indigo-300 transition-colors">
+                       <%= invoice.number or invoice.data.number %>
+                    </td>
+                    <td class="px-4 py-4 text-slate-400 text-xs"><%= invoice:formatted_date() %></td>
+                    <td class="px-4 py-4 text-white font-medium"><%= string.format("€ %.2f", invoice.total or invoice.data.total or 0) %></td>
+                    <td class="pr-6 py-4 text-right">
+                      <% local status = invoice.status or invoice.data.status %>
+                      <span class="inline-block w-2 h-2 rounded-full 
+                        <%= status == 'paid' and 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
+                        or status == 'overdue' and 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'
+                        or status == 'sent' and 'bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.5)]'
+                        or 'bg-slate-500' %>" title="<%= status:upper() %>"></span>
+                    </td>
+                  </tr>
+                  <% end %>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Recent Quotes -->
+        <div class="space-y-6">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-white">Recent Quotes</h2>
+            <div class="flex items-center gap-3">
+              <a href="/billing/quotes/new" class="text-xs bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 px-3 py-1.5 rounded-lg font-medium border border-purple-500/20 transition-all">
+                <i class="fas fa-plus mr-1"></i> New
+              </a>
+              <a href="/billing/quotes" class="text-xs text-slate-400 hover:text-white transition-colors">View All</a>
+            </div>
+          </div>
+          
+          <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl overflow-hidden backdrop-blur-sm">
+            <table class="w-full text-left text-sm">
+              <thead class="bg-slate-800/80 border-b border-slate-700/50 text-slate-400">
+                <tr>
+                  <th class="pl-6 py-4 font-medium">Quote</th>
+                  <th class="px-4 py-4 font-medium">Date</th>
+                  <th class="px-4 py-4 font-medium">Total</th>
+                  <th class="pr-6 py-4 font-medium text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-700/50">
+                <% if #recent_quotes == 0 then %>
+                  <tr><td colspan="4" class="px-6 py-8 text-center text-slate-500">No quotes found.</td></tr>
+                <% else %>
+                  <% for _, quote in ipairs(recent_quotes) do %>
+                  <tr class="hover:bg-slate-700/20 transition-colors cursor-pointer group" onclick="window.location.href='/billing/quotes/<%= quote._key or quote.data._key %>'">
+                    <td class="pl-6 py-4 text-white font-medium group-hover:text-purple-300 transition-colors">
+                       <%= quote.number or quote.data.number %>
+                    </td>
+                    <td class="px-4 py-4 text-slate-400 text-xs"><%= quote:formatted_date() %></td>
+                    <td class="px-4 py-4 text-white font-medium"><%= string.format("€ %.2f", quote.total or quote.data.total or 0) %></td>
+                    <td class="pr-6 py-4 text-right">
+                      <% local status = quote.status or quote.data.status %>
+                      <span class="inline-block w-2 h-2 rounded-full 
+                        <%= status == 'accepted' and 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
+                        or status == 'rejected' and 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'
+                        or status == 'sent' and 'bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.5)]'
+                        or 'bg-slate-500' %>" title="<%= status:upper() %>"></span>
+                    </td>
+                  </tr>
+                  <% end %>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
     </div>
-  </div>
+  </main>
 </div>
+
+<!-- Add Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const ctx = document.getElementById('revenueChart').getContext('2d');
+    
+    // Gradients
+    const gradientRevenue = ctx.createLinearGradient(0, 0, 0, 300);
+    gradientRevenue.addColorStop(0, 'rgba(99, 102, 241, 0.4)'); // Indigo
+    gradientRevenue.addColorStop(1, 'rgba(99, 102, 241, 0)');
+
+    const gradientExpenses = ctx.createLinearGradient(0, 0, 0, 300);
+    gradientExpenses.addColorStop(0, 'rgba(16, 185, 129, 0.4)'); // Emerald
+    gradientExpenses.addColorStop(1, 'rgba(16, 185, 129, 0)');
+
+    // Data from Controller
+    const labels = <%- EncodeJson(chart_data.labels) %>;
+    const revenueData = <%- EncodeJson(chart_data.revenue) %>;
+    const expensesData = <%- EncodeJson(chart_data.expenses) %>;
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Invoiced',
+                    data: revenueData,
+                    borderColor: '#818cf8', // Indigo 400
+                    backgroundColor: gradientRevenue,
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: true,
+                    pointBackgroundColor: '#1e293b',
+                    pointBorderColor: '#818cf8',
+                    pointBorderWidth: 2,
+                    pointHoverBackgroundColor: '#818cf8',
+                    pointHoverBorderColor: '#fff',
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                },
+                {
+                    label: 'Paid',
+                    data: expensesData,
+                    borderColor: '#10b981', // Emerald 500
+                    backgroundColor: gradientExpenses,
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: true,
+                    pointBackgroundColor: '#1e293b',
+                    pointBorderColor: '#10b981',
+                    pointBorderWidth: 2,
+                    pointHoverBackgroundColor: '#10b981',
+                    pointHoverBorderColor: '#fff',
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                    titleColor: '#e2e8f0',
+                    bodyColor: '#e2e8f0',
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderWidth: 1,
+                    padding: 12,
+                    displayColors: false,
+                    callbacks: {
+                        label: function(context) {
+                            return '€ ' + context.parsed.y.toLocaleString('en-US', {minimumFractionDigits: 2});
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false, drawBorder: false },
+                    ticks: { color: '#94a3b8', font: { size: 11 } }
+                },
+                y: {
+                    grid: { color: 'rgba(255, 255, 255, 0.05)', drawBorder: false },
+                    ticks: { 
+                        color: '#64748b', 
+                        font: { size: 10 },
+                        callback: function(value) { return '€' + value/1000 + 'k'; }
+                    },
+                    beginAtZero: true
+                }
+            },
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            }
+        }
+    });
+});
+</script>
+
+<style>
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2); 
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}
+</style>

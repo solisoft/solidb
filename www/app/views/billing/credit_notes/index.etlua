@@ -1,101 +1,139 @@
-<div class="flex-1 overflow-y-auto p-6">
-  <div class="max-w-7xl mx-auto">
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h1 class="text-2xl font-bold text-white">Credit Notes</h1>
-        <p class="text-text-muted mt-1">Manage credit notes for your invoices</p>
+<div class="flex flex-col h-full text-slate-200 font-sans">
+  <!-- Header -->
+  <header class="flex items-center justify-between px-8 py-6 border-b border-white/5 bg-gray-900/50 backdrop-blur-md sticky top-0 z-10">
+    <div>
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-rose-400 via-orange-400 to-amber-400 bg-clip-text text-transparent">Credit Notes</h1>
+      <p class="text-sm text-slate-400 mt-1">Manage refunds and credit adjustments</p>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+    <div class="max-w-7xl mx-auto">
+      
+      <!-- Filters -->
+      <div class="flex items-center gap-4 mb-8 overflow-x-auto custom-scrollbar pb-2">
+          <% local function status_link(name, key, active_key, count)
+              local is_active = (key == active_key)
+              local base_classes = "px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap flex items-center gap-2"
+              local active_classes = "bg-rose-500/20 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.15)] ring-1 ring-rose-500/50"
+              local inactive_classes = "text-slate-400 hover:text-slate-200 hover:bg-white/5 bg-slate-800/40 border border-slate-700/50"
+              local href = "/billing/credit-notes" .. (key ~= "" and ("?status=" .. key) or "")
+             return string.format('<a href="%s" class="%s %s">%s <span class="%s">%s</span></a>', 
+                href, base_classes, is_active and active_classes or inactive_classes, name, 
+                is_active and "bg-rose-500 text-white px-1.5 py-0.5 rounded ml-1 text-[10px]" or "bg-slate-700/50 text-slate-400 px-1.5 py-0.5 rounded ml-1 text-[10px]", 
+                count or 0)
+             end
+          %>
+          <%- status_link("All", "", status, counts.total) %>
+          <%- status_link("Draft", "draft", status, counts.draft) %>
+          <%- status_link("Issued", "issued", status, counts.issued) %>
+          <%- status_link("Applied", "applied", status, counts.applied) %>
       </div>
-    </div>
 
-    <!-- Status Filters -->
-    <div class="flex flex-wrap gap-2 mb-6">
-      <a href="/billing/credit-notes" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == '' and 'bg-primary/20 text-primary' or 'bg-white/5 text-text-muted hover:text-white' %>">
-        All <span class="ml-1 opacity-60">(<%= counts.total or 0 %>)</span>
-      </a>
-      <a href="/billing/credit-notes?status=draft" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'draft' and 'bg-primary/20 text-primary' or 'bg-white/5 text-text-muted hover:text-white' %>">
-        Draft <span class="ml-1 opacity-60">(<%= counts.draft or 0 %>)</span>
-      </a>
-      <a href="/billing/credit-notes?status=issued" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'issued' and 'bg-info/20 text-info' or 'bg-white/5 text-text-muted hover:text-white' %>">
-        Issued <span class="ml-1 opacity-60">(<%= counts.issued or 0 %>)</span>
-      </a>
-      <a href="/billing/credit-notes?status=applied" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'applied' and 'bg-success/20 text-success' or 'bg-white/5 text-text-muted hover:text-white' %>">
-        Applied <span class="ml-1 opacity-60">(<%= counts.applied or 0 %>)</span>
-      </a>
-    </div>
-
-    <!-- Credit Notes List -->
-    <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl overflow-hidden">
-      <% if #credit_notes == 0 then %>
-        <div class="p-12 text-center">
-          <div class="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
-            <i class="fas fa-file-invoice-dollar text-2xl text-text-muted"></i>
+      <!-- Credit Notes Table -->
+      <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl overflow-hidden backdrop-blur-sm shadow-xl shadow-black/20">
+        <% if #credit_notes == 0 then %>
+          <div class="flex flex-col items-center justify-center py-20 text-center">
+            <div class="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mb-4 border border-slate-700/50">
+               <i class="fas fa-file-invoice-dollar text-3xl text-slate-600"></i>
+            </div>
+            <h3 class="text-lg font-medium text-white mb-2">No credit notes found</h3>
+            <p class="text-slate-400 text-sm max-w-xs mx-auto">Credit notes allow you to issue refunds or credits to your customers.</p>
           </div>
-          <h3 class="text-lg font-medium text-white mb-2">No credit notes yet</h3>
-          <p class="text-text-muted mb-4">Credit notes can be created from invoices</p>
-        </div>
-      <% else %>
-        <table class="w-full">
-          <thead class="bg-white/5 border-b border-white/5">
-            <tr>
-              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Number</th>
-              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Invoice</th>
-              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Contact</th>
-              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Date</th>
-              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Reason</th>
-              <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase tracking-wider">Amount</th>
-              <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase tracking-wider">Status</th>
-              <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-white/5">
-            <% for _, cn in ipairs(credit_notes) do %>
-              <% local cndata = cn.data or cn %>
-              <tr class="hover:bg-white/5 transition-colors">
-                <td class="px-4 py-3">
-                  <a href="/billing/credit-notes/<%= cn._key or cndata._key %>" class="font-medium text-white hover:text-primary transition-colors">
-                    <%= cndata.number %>
-                  </a>
-                </td>
-                <td class="px-4 py-3 text-text-muted">
-                  <% if cndata.invoice_key then %>
-                    <a href="/billing/invoices/<%= cndata.invoice_key %>" class="text-primary hover:underline">
-                      <%= cndata.invoice_number or cndata.invoice_key %>
-                    </a>
-                  <% else %>
-                    -
-                  <% end %>
-                </td>
-                <td class="px-4 py-3 text-text-muted">
-                  <% local contact = cn:get_contact() %>
-                  <%= contact and contact:display_name() or '-' %>
-                </td>
-                <td class="px-4 py-3 text-text-muted"><%= cn:formatted_date() %></td>
-                <td class="px-4 py-3 text-text-muted text-sm"><%= cndata.reason or '-' %></td>
-                <td class="px-4 py-3 text-right font-medium text-error">
-                  -<%= string.format("\226\130\172 %.2f", cndata.total or 0) %>
-                </td>
-                <td class="px-4 py-3 text-center">
-                  <% local st = cndata.status %>
-                  <span class="text-xs px-2 py-0.5 rounded-full <%= st == 'applied' and 'bg-success/20 text-success' or st == 'issued' and 'bg-info/20 text-info' or 'bg-white/10 text-text-muted' %>">
-                    <%= st %>
-                  </span>
-                </td>
-                <td class="px-4 py-3">
-                  <div class="flex items-center justify-center gap-2">
-                    <a href="/billing/credit-notes/<%= cn._key or cndata._key %>" class="p-2 text-text-muted hover:text-white transition-colors" title="View">
-                      <i class="fas fa-eye"></i>
-                    </a>
-                    <a href="/billing/credit-notes/<%= cn._key or cndata._key %>/pdf" target="_blank" class="p-2 text-text-muted hover:text-primary transition-colors" title="PDF">
-                      <i class="fas fa-file-pdf"></i>
-                    </a>
-                  </div>
-                </td>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
-      <% end %>
+        <% else %>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="border-b border-slate-700/50 bg-slate-800/40 text-xs uppercase tracking-wider text-slate-400 font-medium">
+                  <th class="pl-6 py-4">Number</th>
+                  <th class="px-4 py-4">Invoice Ref</th>
+                  <th class="px-4 py-4">Contact</th>
+                  <th class="px-4 py-4">Date</th>
+                  <th class="px-4 py-4 text-right">Amount</th>
+                  <th class="px-4 py-4 text-center">Status</th>
+                  <th class="pr-6 py-4 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-700/50 text-sm">
+                <% for _, cn in ipairs(credit_notes) do %>
+                  <% local cndata = cn.data or cn %>
+                  <tr class="group hover:bg-rose-500/5 transition-colors duration-200">
+                    <td class="pl-6 py-4">
+                      <a href="/billing/credit-notes/<%= cn._key or cndata._key %>" class="font-bold text-white group-hover:text-rose-400 transition-colors">
+                        <%= cndata.number %>
+                      </a>
+                    </td>
+                    <td class="px-4 py-4 text-slate-300">
+                       <% if cndata.invoice_key then %>
+                        <a href="/billing/invoices/<%= cndata.invoice_key %>" class="text-indigo-400 hover:text-indigo-300 hover:underline">
+                          <%= cndata.invoice_number or cndata.invoice_key %>
+                        </a>
+                      <% else %>
+                        <span class="text-slate-500">-</span>
+                      <% end %>
+                    </td>
+                    <td class="px-4 py-4 text-slate-300">
+                       <% local contact = cn:get_contact() %>
+                       <div class="flex items-center gap-2">
+                         <div class="w-6 h-6 rounded-full bg-slate-700/50 flex items-center justify-center text-[10px] text-slate-400">
+                            <i class="fas fa-user"></i>
+                         </div>
+                         <%= contact and contact:display_name() or '-' %>
+                       </div>
+                    </td>
+                    <td class="px-4 py-4 text-slate-400 text-xs"><%= cn:formatted_date() %></td>
+                    <td class="px-4 py-4 text-right font-medium text-rose-400">
+                       -<%= string.format("€ %.2f", cndata.total or 0) %>
+                    </td>
+                    <td class="px-4 py-4 text-center">
+                       <% local st = cndata.status %>
+                       <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
+                          <%= st == 'applied' and 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                          or st == 'issued' and 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+                          or 'bg-slate-700/50 text-slate-400 border border-slate-600/50' %>">
+                          <span class="w-1.5 h-1.5 rounded-full mr-1.5
+                            <%= st == 'applied' and 'bg-emerald-500' 
+                            or st == 'issued' and 'bg-sky-500'
+                            or 'bg-slate-400' %>"></span>
+                          <%= st %>
+                       </span>
+                    </td>
+                    <td class="pr-6 py-4 text-center">
+                      <div class="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <a href="/billing/credit-notes/<%= cn._key or cndata._key %>" class="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-300 hover:bg-rose-500 hover:text-white transition-all" title="View">
+                          <i class="fas fa-eye text-xs"></i>
+                        </a>
+                        <a href="/billing/credit-notes/<%= cn._key or cndata._key %>/pdf" target="_blank" class="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-300 hover:bg-indigo-500 hover:text-white transition-all" title="Download PDF">
+                          <i class="fas fa-file-pdf text-xs"></i>
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        <% end %>
+      </div>
+
     </div>
-  </div>
+  </main>
 </div>
+
+<style>
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2); 
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}
+</style>

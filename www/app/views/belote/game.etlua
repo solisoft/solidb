@@ -182,8 +182,8 @@
   </div>
 
   <!-- Player's Hand (bottom) - Canvas Version -->
-  <div id="my-hand-container" class="h-48 md:h-56 lg:h-64 px-4 py-2 bg-gradient-to-t from-bg-card to-transparent backdrop-blur-sm border-t border-white/5 shrink-0">
-    <canvas id="hand-canvas" class="w-full h-full cursor-pointer"></canvas>
+  <div id="my-hand-container" class="relative z-50 overflow-visible h-24 md:h-32 lg:h-40 px-4 py-2 bg-gradient-to-t from-bg-card to-transparent backdrop-blur-sm border-t border-white/5 shrink-0">
+    <canvas id="hand-canvas" class="absolute bottom-0 left-0 w-full cursor-pointer"></canvas>
   </div>
 </div>
 
@@ -228,7 +228,9 @@ let trickAnimating = false;
 let collectingTrick = false; // True when animating cards to winner
 
 // Bot turn delay in milliseconds
-const BOT_DELAY = 1200;
+// Bot turn delay in milliseconds
+const BOT_BID_DELAY = 2200;  // Slower for bidding (thinking time)
+const BOT_PLAY_DELAY = 100;  // Faster for playing (fluid gameplay)
 const TRICK_CLEAR_DELAY = 1200;
 const TRICK_COLLECT_ANIMATION = 600;
 
@@ -271,13 +273,18 @@ function initHandCanvas() {
   // Handle high DPI displays
   canvasDpr = window.devicePixelRatio || 1;
 
-  // Set canvas size accounting for DPI
-  handCanvas.width = rect.width * canvasDpr;
-  handCanvas.height = rect.height * canvasDpr;
+  // Set canvas size (taller than container for overflow)
+  // 150% height allows cards to "pop up" without clipping
+  const overflowScale = 1.5;
+  const displayWidth = rect.width;
+  const displayHeight = rect.height * overflowScale;
+
+  handCanvas.width = displayWidth * canvasDpr;
+  handCanvas.height = displayHeight * canvasDpr;
 
   // Set display size
-  handCanvas.style.width = rect.width + 'px';
-  handCanvas.style.height = rect.height + 'px';
+  handCanvas.style.width = displayWidth + 'px';
+  handCanvas.style.height = displayHeight + 'px';
 
   handCtx = handCanvas.getContext('2d');
   // Reset transform before scaling (fixes resize bug where scale compounds)
@@ -519,9 +526,14 @@ function renderHandCanvas(hand) {
     if (!handCanvas || !handCtx) return;
   }
 
+  const container = handCanvas.parentElement;
+  const containerRect = container.getBoundingClientRect();
   const rect = handCanvas.getBoundingClientRect();
   const canvasWidth = rect.width;
   const canvasHeight = rect.height;
+  
+  // Use container height for card sizing logic, not the extended canvas height
+  const containerHeight = containerRect.height;
 
   // Clear canvas
   handCtx.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -540,7 +552,7 @@ function renderHandCanvas(hand) {
     handCtx.font = '16px sans-serif';
     handCtx.textAlign = 'center';
     handCtx.textBaseline = 'middle';
-    handCtx.fillText('No cards', canvasWidth / 2, canvasHeight / 2);
+    handCtx.fillText('No cards', canvasWidth / 2, containerHeight / 2); // Center in visible area
     return;
   }
 
@@ -556,7 +568,7 @@ function renderHandCanvas(hand) {
     handCtx.font = '16px sans-serif';
     handCtx.textAlign = 'center';
     handCtx.textBaseline = 'middle';
-    handCtx.fillText('No cards', canvasWidth / 2, canvasHeight / 2);
+    handCtx.fillText('No cards', canvasWidth / 2, containerHeight / 2); // Center in visible area
     return;
   }
 
@@ -575,8 +587,9 @@ function renderHandCanvas(hand) {
   const isDesktop = window.innerWidth >= 1024;
   const isTablet = window.innerWidth >= 768;
 
-  // Target card height as percentage of container (leave room for hover lift)
-  const maxCardHeight = canvasHeight * 0.85;
+  // Target card height as percentage of CONTAINER (visible area)
+  // Use 90% of visible container height for good size
+  const maxCardHeight = containerHeight * 0.90;
   const cardRatio = 70 / 100; // width:height ratio from base card size
 
   let cardHeight = Math.min(maxCardHeight, isDesktop ? 220 : (isTablet ? 180 : 150));
@@ -595,7 +608,12 @@ function renderHandCanvas(hand) {
 
   // Starting position (centered horizontally, bottom-aligned with padding)
   const startX = (canvasWidth - totalWidth) / 2;
-  // Position cards with bottom padding, but ensure they fit in canvas
+  // Position cards with bottom padding relative to CANVAS bottom
+  // Since canvas is 1.5x taller, bottom of canvas is way below visible area? 
+  // No, canvas is absolute bottom-0. So canvas bottom aligns with container bottom.
+  // The TOP of canvas extends UPWARDS.
+  // So existing logic logic (canvasHeight - cardHeight - padding) puts cards at bottom.
+  // We want cards at bottom of canvas.
   const bottomPadding = 10;
   const baseY = Math.max(0, canvasHeight - cardHeight - bottomPadding);
 
@@ -1352,11 +1370,13 @@ async function triggerBotTurn() {
     await fetchGameState();
 
     // If another bot turn is needed, schedule it with delay
+    // If another bot turn is needed, schedule it with delay
     if (data.needs_bot_turn) {
+      const delay = (gameState && gameState.state === 'bidding') ? BOT_BID_DELAY : BOT_PLAY_DELAY;
       setTimeout(() => {
         botTurnPending = false;
         triggerBotTurn();
-      }, BOT_DELAY);
+      }, delay);
     } else {
       botTurnPending = false;
     }
@@ -1391,7 +1411,7 @@ function checkForBotTurn(state) {
   // Handle scoring state - need to trigger new round
   if (state.state === 'scoring') {
     console.log('[BELOTE] Scoring state detected, triggering new round...');
-    setTimeout(triggerBotTurn, BOT_DELAY);
+    setTimeout(triggerBotTurn, 2000);
     return;
   }
 
@@ -1402,7 +1422,8 @@ function checkForBotTurn(state) {
 
   const player = (state.players || []).find(p => p.seat === currentSeat);
   if (player && player.is_bot) {
-    setTimeout(triggerBotTurn, BOT_DELAY);
+    const delay = state.state === 'bidding' ? BOT_BID_DELAY : BOT_PLAY_DELAY;
+    setTimeout(triggerBotTurn, delay);
   }
 }
 
@@ -1855,7 +1876,7 @@ function renderOtherPlayerHand(seat, cardCount) {
   } else if (isNorth) {
     fanWrapper.style.transform = 'rotate(180deg)';
     fanWrapper.style.transformOrigin = 'center center';
-    container.style.marginTop = Math.round(10 * scale) + 'px';
+    container.style.marginTop = Math.round(-25 * scale) + 'px';
   }
 
   // Fan effect parameters (scaled)
@@ -2033,7 +2054,8 @@ async function startGame() {
       showToast('Game started!', 'success');
       // Trigger bot turn if needed
       if (data.needs_bot_turn && !botTurnPending) {
-        setTimeout(triggerBotTurn, BOT_DELAY);
+        const delay = (gameState && gameState.state === 'bidding') ? BOT_BID_DELAY : BOT_PLAY_DELAY;
+        setTimeout(triggerBotTurn, delay);
       }
     }
   } catch (e) {
@@ -2061,7 +2083,8 @@ async function placeBid(action) {
       await fetchGameState();
       // Trigger bot turn if needed
       if (data.needs_bot_turn && !botTurnPending) {
-        setTimeout(triggerBotTurn, BOT_DELAY);
+        const delay = (gameState && gameState.state === 'bidding') ? BOT_BID_DELAY : BOT_PLAY_DELAY;
+        setTimeout(triggerBotTurn, delay);
       }
     }
   } catch (e) {
@@ -2101,6 +2124,10 @@ async function playCard(card) {
       trickCards = trickCards.filter(tc => !(tc.seat === MY_SEAT && tc.card.suit === card.suit && tc.card.value === card.value));
       renderTrickCanvas();
       pendingPlayedCard = null;
+      // Restore card to hand
+      if (gameState && gameState.my_hand) {
+        renderHandCanvas(gameState.my_hand);
+      }
     } else {
       // If trick completed, animate cards to winner
       if (data.trick_complete && data.winner_seat !== undefined) {
@@ -2115,7 +2142,8 @@ async function playCard(card) {
       pendingPlayedCard = null;
       // Trigger bot turn if needed
       if (data.needs_bot_turn && !botTurnPending) {
-        setTimeout(triggerBotTurn, BOT_DELAY);
+        const delay = (gameState && gameState.state === 'bidding') ? BOT_BID_DELAY : BOT_PLAY_DELAY;
+        setTimeout(triggerBotTurn, delay);
       }
     }
   } catch (e) {
@@ -2123,6 +2151,10 @@ async function playCard(card) {
     trickCards = trickCards.filter(tc => !(tc.seat === MY_SEAT && tc.card.suit === card.suit && tc.card.value === card.value));
     renderTrickCanvas();
     pendingPlayedCard = null;
+    // Restore card to hand
+    if (gameState && gameState.my_hand) {
+      renderHandCanvas(gameState.my_hand);
+    }
   }
 }
 </script>

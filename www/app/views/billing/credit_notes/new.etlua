@@ -1,165 +1,138 @@
 <% local inv_data = invoice.data or invoice %>
-<div class="flex-1 overflow-y-auto p-6">
-  <div class="max-w-5xl mx-auto">
-    <!-- Header -->
-    <div class="mb-6">
-      <a href="/billing/invoices/<%= invoice._key or inv_data._key %>" class="text-text-muted hover:text-white transition-colors inline-flex items-center gap-2 mb-4">
-        <i class="fas fa-arrow-left"></i>
-        <span>Back to Invoice</span>
+<div class="flex flex-col h-full text-slate-200 font-sans">
+  
+  <!-- Header -->
+  <header class="flex items-center justify-between px-8 py-5 border-b border-white/5 bg-gray-900/50 backdrop-blur-md sticky top-0 z-20">
+    <div class="flex items-center gap-4">
+      <a href="/billing/invoices/<%= invoice._key or inv_data._key %>" class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
+        <i class="fas fa-arrow-left text-xs"></i>
       </a>
-      <h1 class="text-2xl font-bold text-white">New Credit Note</h1>
-      <p class="text-text-muted mt-1">Creating credit note for invoice <%= inv_data.number %></p>
+      <div>
+         <h1 class="text-xl font-bold text-white">New Credit Note</h1>
+         <p class="text-xs text-slate-500 mt-0.5">For Invoice <span class="text-indigo-400 font-mono"><%= inv_data.number %></span></p>
+      </div>
     </div>
+  </header>
 
-    <!-- Form -->
-    <form hx-post="/billing/credit-notes" hx-swap="none">
-      <input type="hidden" name="invoice_key" value="<%= invoice._key or inv_data._key %>">
-      <input type="hidden" name="contact_key" value="<%= inv_data.contact_key %>">
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+    <div class="max-w-4xl mx-auto">
+      <form hx-post="/billing/credit-notes" hx-swap="none" class="space-y-6">
+        <input type="hidden" name="invoice_key" value="<%= invoice._key or inv_data._key %>">
+        <input type="hidden" name="contact_key" value="<%= inv_data.contact_key %>">
 
-      <div class="space-y-6">
-        <!-- Invoice Info -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Original Invoice</h3>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label class="block text-sm text-text-muted mb-1">Invoice Number</label>
-              <div class="text-white font-medium"><%= inv_data.number %></div>
-            </div>
-            <div>
-              <label class="block text-sm text-text-muted mb-1">Invoice Total</label>
-              <div class="text-white font-medium"><%= string.format("\226\130\172 %.2f", inv_data.total or 0) %></div>
-            </div>
-            <div>
-              <label class="block text-sm text-text-muted mb-1">Contact</label>
-              <div class="text-white font-medium">
-                <% if contact then %>
-                  <%= contact:display_name() %>
-                <% else %>
-                  -
-                <% end %>
-              </div>
-            </div>
-          </div>
+        <!-- Info Cards Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+           <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+             <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Invoice Total</div>
+             <div class="text-xl text-white font-medium"><%= string.format("€ %.2f", inv_data.total or 0) %></div>
+           </div>
+            <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+             <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Balance Due</div>
+             <div class="text-xl text-emerald-400 font-medium"><%= string.format("€ %.2f", inv_data.balance_due or 0) %></div>
+           </div>
+           <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+             <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Contact</div>
+             <div class="text-xl text-white font-medium truncate">
+                <%= contact and contact:display_name() or '-' %>
+             </div>
+           </div>
         </div>
 
-        <!-- Credit Note Details -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Credit Note Details</h3>
-          <div class="space-y-4">
+        <!-- Reason Section -->
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+          <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 pb-2 border-b border-white/5">Reason</h3>
+          <div class="space-y-6">
             <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Reason <span class="text-error">*</span></label>
-              <select name="reason" required class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary">
-                <option value="">Select reason...</option>
-                <option value="goods_returned">Goods Returned</option>
-                <option value="pricing_error">Pricing Error</option>
-                <option value="quality_issue">Quality Issue</option>
-                <option value="partial_refund">Partial Refund</option>
-                <option value="service_not_provided">Service Not Provided</option>
-                <option value="discount_applied">Discount Applied</option>
-                <option value="other">Other</option>
-              </select>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Reason <span class="text-rose-400">*</span></label>
+              <div class="relative">
+                <select name="reason" required class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white appearance-none focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all">
+                  <option value="">Select reason...</option>
+                  <option value="goods_returned">Goods Returned</option>
+                  <option value="pricing_error">Pricing Error</option>
+                  <option value="quality_issue">Quality Issue</option>
+                  <option value="partial_refund">Partial Refund</option>
+                  <option value="service_not_provided">Service Not Provided</option>
+                  <option value="discount_applied">Discount Applied</option>
+                  <option value="other">Other</option>
+                </select>
+                <i class="fas fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none"></i>
+              </div>
             </div>
             <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Reason Description</label>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Detailed Description</label>
               <textarea name="reason_description" rows="3"
-                        class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary resize-none"
-                        placeholder="Detailed description of the reason for this credit note"></textarea>
+                        class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all resize-none"
+                        placeholder="Explanation for this credit note..."></textarea>
             </div>
           </div>
         </div>
 
         <!-- Credit Type -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Credit Amount</h3>
-          <div class="space-y-4">
-            <div class="flex gap-4">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="credit_type" value="full" checked onchange="toggleCreditType(this.value)"
-                       class="w-4 h-4 text-primary bg-bg-dark border-white/20 focus:ring-primary">
-                <span class="text-white">Full credit (entire invoice)</span>
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+          <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 pb-2 border-b border-white/5">Credit Amount</h3>
+          <div class="space-y-6">
+            <div class="flex gap-8">
+              <label class="relative flex items-center gap-3 cursor-pointer group">
+                <input type="radio" name="credit_type" value="full" checked onchange="toggleCreditType(this.value)" class="peer sr-only">
+                <div class="w-5 h-5 rounded-full border border-slate-600 peer-checked:border-rose-500 peer-checked:bg-rose-500 transition-all flex items-center justify-center">
+                   <div class="w-2 h-2 rounded-full bg-white opacity-0 peer-checked:opacity-100 transition-opacity"></div>
+                </div>
+                <span class="text-slate-300 group-hover:text-white transition-colors font-medium">Full Credit (Entire Invoice)</span>
               </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="credit_type" value="partial" onchange="toggleCreditType(this.value)"
-                       class="w-4 h-4 text-primary bg-bg-dark border-white/20 focus:ring-primary">
-                <span class="text-white">Partial credit</span>
+              <label class="relative flex items-center gap-3 cursor-pointer group">
+                <input type="radio" name="credit_type" value="partial" onchange="toggleCreditType(this.value)" class="peer sr-only">
+                <div class="w-5 h-5 rounded-full border border-slate-600 peer-checked:border-rose-500 peer-checked:bg-rose-500 transition-all flex items-center justify-center">
+                   <div class="w-2 h-2 rounded-full bg-white opacity-0 peer-checked:opacity-100 transition-opacity"></div>
+                </div>
+                <span class="text-slate-300 group-hover:text-white transition-colors font-medium">Partial Credit</span>
               </label>
             </div>
 
-            <div id="partial-amount" class="hidden">
-              <label class="block text-sm font-medium text-text-muted mb-2">Amount</label>
-              <input type="number" name="partial_amount" step="0.01" min="0.01" max="<%= inv_data.total or 0 %>"
-                     class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary"
-                     placeholder="Enter amount">
-            </div>
-          </div>
-        </div>
-
-        <!-- Line Items (from original invoice) -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl overflow-hidden">
-          <div class="p-4 border-b border-white/5">
-            <h3 class="text-lg font-semibold text-white">Original Line Items</h3>
-            <p class="text-sm text-text-muted mt-1">Reference from the original invoice</p>
-          </div>
-          <table class="w-full">
-            <thead class="bg-white/5 border-b border-white/5">
-              <tr>
-                <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase">Description</th>
-                <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase w-20">Qty</th>
-                <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase w-28">Unit Price</th>
-                <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase w-28">Total</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-white/5">
-              <% local items = inv_data.line_items or {} %>
-              <% for _, item in ipairs(items) do %>
-                <tr>
-                  <td class="px-4 py-3 text-white"><%= item.description or '' %></td>
-                  <td class="px-4 py-3 text-center text-text-muted"><%= item.quantity or 0 %></td>
-                  <td class="px-4 py-3 text-right text-text-muted"><%= string.format("\226\130\172 %.2f", item.unit_price or 0) %></td>
-                  <td class="px-4 py-3 text-right text-white font-medium"><%= string.format("\226\130\172 %.2f", item.total or 0) %></td>
-                </tr>
-              <% end %>
-            </tbody>
-          </table>
-          <div class="p-4 border-t border-white/5 bg-white/5">
-            <div class="flex justify-end">
-              <div class="flex justify-between w-64 py-3 text-lg font-bold">
-                <span class="text-white">Invoice Total</span>
-                <span class="text-primary"><%= string.format("\226\130\172 %.2f", inv_data.total or 0) %></span>
+            <div id="partial-amount" class="hidden animate-in fade-in slide-in-from-top-2 duration-200">
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Amount</label>
+              <div class="relative">
+                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">€</div>
+                 <input type="number" name="partial_amount" step="0.01" min="0.01" max="<%= inv_data.total or 0 %>"
+                       class="w-full pl-8 pr-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all font-mono"
+                       placeholder="Enter amount">
               </div>
             </div>
           </div>
         </div>
 
         <!-- Notes -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Additional Notes</h3>
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+          <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 pb-2 border-b border-white/5">Internal Notes</h3>
           <textarea name="notes" rows="3"
-                    class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary resize-none"
-                    placeholder="Internal notes"></textarea>
+                    class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all resize-none"
+                    placeholder="Private notes..."></textarea>
         </div>
 
-        <!-- Actions -->
-        <div class="flex items-center justify-end gap-4">
-          <a href="/billing/invoices/<%= invoice._key or inv_data._key %>" class="px-4 py-2 text-text-muted hover:text-white transition-colors">Cancel</a>
-          <button type="submit" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+        <!-- Float Actions -->
+        <div class="sticky bottom-0 z-10 bg-gray-900/80 backdrop-blur-md border-t border-white/5 p-4 -mx-8 -mb-8 flex justify-end gap-4 mt-8">
+          <a href="/billing/invoices/<%= invoice._key or inv_data._key %>" class="px-6 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all font-medium">Cancel</a>
+          <button type="submit" class="px-8 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold shadow-lg shadow-rose-500/20 transition-all">
             Create Credit Note
           </button>
         </div>
-      </div>
-    </form>
+
+      </form>
+    </div>
   </div>
 </div>
 
 <script>
 function toggleCreditType(value) {
   const partialAmount = document.getElementById('partial-amount');
+  const input = partialAmount.querySelector('input');
   if (value === 'partial') {
     partialAmount.classList.remove('hidden');
-    partialAmount.querySelector('input').required = true;
+    input.required = true;
+    input.focus();
   } else {
     partialAmount.classList.add('hidden');
-    partialAmount.querySelector('input').required = false;
+    input.required = false;
   }
 }
 </script>

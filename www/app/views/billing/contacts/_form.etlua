@@ -1,139 +1,160 @@
 <% local data = contact.data or contact or {} %>
 
 <div class="space-y-6">
+  
   <!-- Type Selection -->
-  <div>
-    <label class="block text-sm font-medium text-text-muted mb-2">Contact Type</label>
-    <div class="flex gap-4">
-      <label class="flex items-center gap-2 cursor-pointer">
-        <input type="radio" name="type" value="individual" class="text-primary" <%= (data.type or 'individual') == 'individual' and 'checked' or '' %>>
-        <span class="text-white">Individual</span>
+  <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 pb-2 border-b border-white/5">Contact Type</h3>
+    <div class="flex gap-6">
+      <label class="relative flex items-center gap-3 cursor-pointer group">
+        <input type="radio" name="type" value="individual" class="peer sr-only" <%= (data.type or 'individual') == 'individual' and 'checked' or '' %>>
+        <div class="w-5 h-5 rounded-full border border-slate-600 peer-checked:border-emerald-500 peer-checked:bg-emerald-500 transition-all flex items-center justify-center">
+           <div class="w-2 h-2 rounded-full bg-white opacity-0 peer-checked:opacity-100 transition-opacity"></div>
+        </div>
+        <span class="text-slate-300 group-hover:text-white transition-colors">Individual</span>
       </label>
-      <label class="flex items-center gap-2 cursor-pointer">
-        <input type="radio" name="type" value="company" class="text-primary" <%= data.type == 'company' and 'checked' or '' %>>
-        <span class="text-white">Company</span>
+      <label class="relative flex items-center gap-3 cursor-pointer group">
+        <input type="radio" name="type" value="company" class="peer sr-only" <%= data.type == 'company' and 'checked' or '' %>>
+        <div class="w-5 h-5 rounded-full border border-slate-600 peer-checked:border-emerald-500 peer-checked:bg-emerald-500 transition-all flex items-center justify-center">
+           <div class="w-2 h-2 rounded-full bg-white opacity-0 peer-checked:opacity-100 transition-opacity"></div>
+        </div>
+        <span class="text-slate-300 group-hover:text-white transition-colors">Company</span>
       </label>
     </div>
   </div>
 
   <!-- Basic Info -->
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div>
-      <label class="block text-sm font-medium text-text-muted mb-2">Name <span class="text-error">*</span></label>
-      <input type="text" name="name" value="<%= data.name or '' %>" required
-             class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
-    </div>
-    <div>
-      <label class="block text-sm font-medium text-text-muted mb-2">Company Name</label>
-      <input type="text" name="company_name" value="<%= data.company_name or '' %>"
-             class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
-    </div>
-  </div>
-
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div>
-      <label class="block text-sm font-medium text-text-muted mb-2">Email</label>
-      <input type="email" name="email" value="<%= data.email or '' %>"
-             class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
-    </div>
-    <div>
-      <label class="block text-sm font-medium text-text-muted mb-2">Phone</label>
-      <input type="tel" name="phone" value="<%= data.phone or '' %>"
-             class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
-    </div>
-  </div>
-
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div>
-      <label class="block text-sm font-medium text-text-muted mb-2">VAT Number</label>
-      <input type="text" name="vat_number" value="<%= data.vat_number or '' %>"
-             class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
-    </div>
-    <div>
-      <label class="block text-sm font-medium text-text-muted mb-2">Registration Number</label>
-      <input type="text" name="registration_number" value="<%= data.registration_number or '' %>"
-             class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
-    </div>
-  </div>
-
-  <!-- Billing Address -->
-  <div>
-    <h3 class="text-lg font-medium text-white mb-4">Billing Address</h3>
-    <% local billing = data.billing_address or {} %>
-    <div class="space-y-4">
-      <div>
-        <label class="block text-sm font-medium text-text-muted mb-2">Street</label>
-        <input type="text" name="billing_street" value="<%= billing.street or '' %>"
-               class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
+  <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 pb-2 border-b border-white/5">Basic Information</h3>
+    <div class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Name <span class="text-rose-400">*</span></label>
+          <input type="text" name="name" value="<%= data.name or '' %>" required
+                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Company Name</label>
+          <input type="text" name="company_name" value="<%= data.company_name or '' %>"
+                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+        </div>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label class="block text-sm font-medium text-text-muted mb-2">Postal Code</label>
-          <input type="text" name="billing_postal_code" value="<%= billing.postal_code or '' %>"
-                 class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Email</label>
+          <input type="email" name="email" value="<%= data.email or '' %>"
+                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
         </div>
         <div>
-          <label class="block text-sm font-medium text-text-muted mb-2">City</label>
-          <input type="text" name="billing_city" value="<%= billing.city or '' %>"
-                 class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Phone</label>
+          <input type="tel" name="phone" value="<%= data.phone or '' %>"
+                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">VAT Number</label>
+          <input type="text" name="vat_number" value="<%= data.vat_number or '' %>"
+                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
         </div>
         <div>
-          <label class="block text-sm font-medium text-text-muted mb-2">Country</label>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Registration Number</label>
+          <input type="text" name="registration_number" value="<%= data.registration_number or '' %>"
+                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Addresses -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Billing Address -->
+    <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+      <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 pb-2 border-b border-white/5">Billing Address</h3>
+      <% local billing = data.billing_address or {} %>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Street</label>
+          <input type="text" name="billing_street" value="<%= billing.street or '' %>"
+                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Postal Code</label>
+            <input type="text" name="billing_postal_code" value="<%= billing.postal_code or '' %>"
+                   class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">City</label>
+            <input type="text" name="billing_city" value="<%= billing.city or '' %>"
+                   class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Country</label>
           <input type="text" name="billing_country" value="<%= billing.country or '' %>"
-                 class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
+                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Shipping Address -->
-  <div>
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-medium text-white">Shipping Address</h3>
-      <label class="flex items-center gap-2 cursor-pointer">
-        <input type="checkbox" name="same_as_billing" class="text-primary" <%= data.same_as_billing and 'checked' or '' %>>
-        <span class="text-sm text-text-muted">Same as billing</span>
-      </label>
-    </div>
-    <% local shipping = data.shipping_address or {} %>
-    <div class="space-y-4">
-      <div>
-        <label class="block text-sm font-medium text-text-muted mb-2">Street</label>
-        <input type="text" name="shipping_street" value="<%= shipping.street or '' %>"
-               class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
+    <!-- Shipping Address -->
+    <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+      <div class="flex items-center justify-between mb-6 pb-2 border-b border-white/5">
+        <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider">Shipping Address</h3>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" name="same_as_billing" class="rounded border-slate-600 text-emerald-500 focus:ring-emerald-500 bg-slate-700" <%= data.same_as_billing and 'checked' or '' %>>
+          <span class="text-xs text-slate-400 font-medium">Same as billing</span>
+        </label>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <% local shipping = data.shipping_address or {} %>
+      <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-text-muted mb-2">Postal Code</label>
-          <input type="text" name="shipping_postal_code" value="<%= shipping.postal_code or '' %>"
-                 class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Street</label>
+          <input type="text" name="shipping_street" value="<%= shipping.street or '' %>"
+                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Postal Code</label>
+            <input type="text" name="shipping_postal_code" value="<%= shipping.postal_code or '' %>"
+                   class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">City</label>
+            <input type="text" name="shipping_city" value="<%= shipping.city or '' %>"
+                   class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+          </div>
         </div>
         <div>
-          <label class="block text-sm font-medium text-text-muted mb-2">City</label>
-          <input type="text" name="shipping_city" value="<%= shipping.city or '' %>"
-                 class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-text-muted mb-2">Country</label>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Country</label>
           <input type="text" name="shipping_country" value="<%= shipping.country or '' %>"
-                 class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
+                 class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Notes -->
-  <div>
-    <label class="block text-sm font-medium text-text-muted mb-2">Notes</label>
-    <textarea name="notes" rows="4"
-              class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary resize-none"><%= data.notes or '' %></textarea>
+  <!-- Additional Info -->
+  <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 pb-2 border-b border-white/5">Additional Information</h3>
+    <div class="space-y-6">
+      <!-- Notes -->
+      <div>
+        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Notes</label>
+        <textarea name="notes" rows="3"
+                  class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all resize-none"><%= data.notes or '' %></textarea>
+      </div>
+      <!-- Tags -->
+      <div>
+        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tags</label>
+        <input type="text" name="tags" value="<%= data.tags and table.concat(data.tags, ', ') or '' %>"
+               placeholder="Separate tags with commas"
+               class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all">
+      </div>
+    </div>
   </div>
 
-  <!-- Tags -->
-  <div>
-    <label class="block text-sm font-medium text-text-muted mb-2">Tags</label>
-    <input type="text" name="tags" value="<%= data.tags and table.concat(data.tags, ', ') or '' %>"
-           placeholder="Separate tags with commas"
-           class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary">
-  </div>
 </div>

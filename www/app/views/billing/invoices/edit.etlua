@@ -1,109 +1,119 @@
 <% local data = invoice.data or invoice %>
-<div class="flex-1 overflow-y-auto p-6">
-  <div class="max-w-5xl mx-auto">
-    <!-- Header -->
-    <div class="mb-6">
-      <a href="/billing/invoices/<%= invoice._key or data._key %>" class="text-text-muted hover:text-white transition-colors inline-flex items-center gap-2 mb-4">
-        <i class="fas fa-arrow-left"></i>
-        <span>Back to Invoice</span>
+<div class="flex flex-col h-full text-slate-200 font-sans">
+  
+  <!-- Header -->
+  <header class="flex items-center justify-between px-8 py-5 border-b border-white/5 bg-gray-900/50 backdrop-blur-md sticky top-0 z-20">
+    <div class="flex items-center gap-4">
+      <a href="/billing/invoices/<%= invoice._key or data._key %>" class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
+        <i class="fas fa-arrow-left text-xs"></i>
       </a>
-      <h1 class="text-2xl font-bold text-white">Edit Invoice <%= data.number %></h1>
+      <h1 class="text-xl font-bold text-white">Edit Invoice <%= data.number %></h1>
     </div>
+  </header>
 
-    <!-- Form -->
-    <form hx-put="/billing/invoices/<%= invoice._key or data._key %>" hx-swap="none">
-      <div class="space-y-6">
-        <!-- Contact Selection -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Customer</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+    <div class="max-w-4xl mx-auto">
+      <form hx-put="/billing/invoices/<%= invoice._key or data._key %>" hx-swap="none" class="space-y-6">
+        
+        <!-- Customer Section -->
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+          <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 pb-2 border-b border-white/5">Customer Details</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Contact <span class="text-error">*</span></label>
-              <select name="contact_key" required
-                      class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary">
-                <option value="">Select a contact...</option>
-                <% for _, c in ipairs(contacts) do %>
-                  <option value="<%= c._key or c.data._key %>" <%= data.contact_key == (c._key or c.data._key) and 'selected' or '' %>>
-                    <%= c:display_name() %>
-                  </option>
-                <% end %>
-              </select>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Contact <span class="text-rose-400">*</span></label>
+              <div class="relative">
+                <select name="contact_key" required
+                        class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all">
+                  <option value="">Select a contact...</option>
+                  <% for _, c in ipairs(contacts) do %>
+                    <option value="<%= c._key or c.data._key %>" <%= data.contact_key == (c._key or c.data._key) and 'selected' or '' %>>
+                      <%= c:display_name() %>
+                    </option>
+                  <% end %>
+                </select>
+                <i class="fas fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none"></i>
+              </div>
             </div>
             <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Currency</label>
-              <select name="currency" class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary">
-                <option value="EUR" <%= data.currency == 'EUR' and 'selected' or '' %>>EUR - Euro</option>
-                <option value="USD" <%= data.currency == 'USD' and 'selected' or '' %>>USD - US Dollar</option>
-                <option value="GBP" <%= data.currency == 'GBP' and 'selected' or '' %>>GBP - British Pound</option>
-              </select>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Currency</label>
+              <div class="relative">
+                <select name="currency" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all">
+                  <option value="EUR" <%= data.currency == 'EUR' and 'selected' or '' %>>EUR - Euro (€)</option>
+                  <option value="USD" <%= data.currency == 'USD' and 'selected' or '' %>>USD - US Dollar ($)</option>
+                  <option value="GBP" <%= data.currency == 'GBP' and 'selected' or '' %>>GBP - British Pound (£)</option>
+                </select>
+                <i class="fas fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none"></i>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- Invoice Details -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Details</h3>
-          <div class="space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+          <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 pb-2 border-b border-white/5">Invoice Details</h3>
+          <div class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">Invoice Date</label>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Invoice Date</label>
                 <input type="date" name="date" value="<%= data.date and os.date('%Y-%m-%d', data.date) or '' %>"
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary">
+                       class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all">
               </div>
               <div>
-                <label class="block text-sm font-medium text-text-muted mb-2">Due Date</label>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Due Date</label>
                 <input type="date" name="due_date" value="<%= data.due_date and os.date('%Y-%m-%d', data.due_date) or '' %>"
-                       class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary">
+                       class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all">
               </div>
             </div>
             <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Subject</label>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Subject</label>
               <input type="text" name="subject" value="<%= data.subject or '' %>"
-                     class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
-                     placeholder="Invoice subject">
+                     class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
+                     placeholder="e.g. Web Design Services">
             </div>
             <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Introduction</label>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Introduction</label>
               <textarea name="introduction" rows="3"
-                        class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary resize-none"
-                        placeholder="Introduction text for the invoice"><%= data.introduction or '' %></textarea>
+                        class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all resize-none"
+                        placeholder="Optional introduction text"><%= data.introduction or '' %></textarea>
             </div>
           </div>
         </div>
 
         <!-- Line Items -->
-        <div>
-          <h3 class="text-lg font-semibold text-white mb-4">Line Items</h3>
-          <%- partial("billing/line_items", { line_items = data.line_items or {}, settings = settings, subtotal = data.subtotal, total_tax = data.total_tax, total = data.total }) %>
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+           <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 pb-2 border-b border-white/5">Line Items</h3>
+           <%- partial("billing/line_items", { line_items = data.line_items or {}, settings = settings, subtotal = data.subtotal, total_tax = data.total_tax, total = data.total }) %>
         </div>
 
-        <!-- Notes -->
-        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-          <h3 class="text-lg font-semibold text-white mb-4">Additional Information</h3>
-          <div class="space-y-4">
+        <!-- Additional Info -->
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+          <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 pb-2 border-b border-white/5">Terms & Notes</h3>
+          <div class="space-y-6">
             <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Notes</label>
-              <textarea name="notes" rows="3"
-                        class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary resize-none"
-                        placeholder="Internal notes (not shown on invoice)"><%= data.notes or '' %></textarea>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Internal Notes</label>
+              <textarea name="notes" rows="2"
+                        class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all resize-none"
+                        placeholder="Private notes"><%= data.notes or '' %></textarea>
             </div>
             <div>
-              <label class="block text-sm font-medium text-text-muted mb-2">Payment Terms</label>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Payment Terms</label>
               <textarea name="payment_terms" rows="3"
-                        class="w-full px-4 py-2 bg-bg-dark/50 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary resize-none"
-                        placeholder="Payment terms and conditions"><%= data.payment_terms or '' %></textarea>
+                        class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all resize-none"
+                        placeholder="e.g. Net 30"><%= data.payment_terms or '' %></textarea>
             </div>
           </div>
         </div>
 
-        <!-- Actions -->
-        <div class="flex items-center justify-end gap-4">
-          <a href="/billing/invoices/<%= invoice._key or data._key %>" class="px-4 py-2 text-text-muted hover:text-white transition-colors">Cancel</a>
-          <button type="submit" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+        <!-- Float Actions -->
+        <div class="sticky bottom-0 z-10 bg-gray-900/80 backdrop-blur-md border-t border-white/5 p-4 -mx-8 -mb-8 flex justify-end gap-4 mt-8">
+          <a href="/billing/invoices/<%= invoice._key or data._key %>" class="px-6 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all font-medium">Cancel</a>
+          <button type="submit" class="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition-all">
             Save Changes
           </button>
         </div>
-      </div>
-    </form>
+
+      </form>
+    </div>
   </div>
 </div>

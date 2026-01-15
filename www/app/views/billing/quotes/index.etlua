@@ -1,111 +1,174 @@
-<div class="flex-1 overflow-y-auto p-6">
-  <div class="max-w-7xl mx-auto">
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h1 class="text-2xl font-bold text-white">Quotes</h1>
-        <p class="text-text-muted mt-1">Manage your price quotes</p>
-      </div>
-      <a href="/billing/quotes/new" class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
-        <i class="fas fa-plus text-sm"></i>
-        <span>New Quote</span>
-      </a>
+<div class="flex flex-col h-full text-slate-200 font-sans">
+  <!-- Header -->
+  <header class="flex items-center justify-between px-8 py-6 border-b border-white/5 bg-gray-900/50 backdrop-blur-md sticky top-0 z-10">
+    <div>
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-purple-400 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">Quotes</h1>
+      <p class="text-sm text-slate-400 mt-1">Manage and track your price quotes</p>
     </div>
+    <a href="/billing/quotes/new" class="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold rounded-lg shadow-lg shadow-purple-500/20 transition-all duration-200 group">
+      <i class="fas fa-plus group-hover:rotate-90 transition-transform duration-300"></i>
+      <span>New Quote</span>
+    </a>
+  </header>
 
-    <!-- Status Filters -->
-    <div class="flex flex-wrap gap-2 mb-6">
-      <a href="/billing/quotes" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == '' and 'bg-primary/20 text-primary' or 'bg-white/5 text-text-muted hover:text-white' %>">
-        All <span class="ml-1 opacity-60">(<%= counts.total or 0 %>)</span>
-      </a>
-      <a href="/billing/quotes?status=draft" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'draft' and 'bg-primary/20 text-primary' or 'bg-white/5 text-text-muted hover:text-white' %>">
-        Draft <span class="ml-1 opacity-60">(<%= counts.draft or 0 %>)</span>
-      </a>
-      <a href="/billing/quotes?status=sent" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'sent' and 'bg-info/20 text-info' or 'bg-white/5 text-text-muted hover:text-white' %>">
-        Sent <span class="ml-1 opacity-60">(<%= counts.sent or 0 %>)</span>
-      </a>
-      <a href="/billing/quotes?status=accepted" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'accepted' and 'bg-success/20 text-success' or 'bg-white/5 text-text-muted hover:text-white' %>">
-        Accepted <span class="ml-1 opacity-60">(<%= counts.accepted or 0 %>)</span>
-      </a>
-      <a href="/billing/quotes?status=rejected" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'rejected' and 'bg-error/20 text-error' or 'bg-white/5 text-text-muted hover:text-white' %>">
-        Rejected <span class="ml-1 opacity-60">(<%= counts.rejected or 0 %>)</span>
-      </a>
-    </div>
-
-    <!-- Quotes List -->
-    <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl overflow-hidden">
-      <% if #quotes == 0 then %>
-        <div class="p-12 text-center">
-          <div class="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
-            <i class="fas fa-file-alt text-2xl text-text-muted"></i>
-          </div>
-          <h3 class="text-lg font-medium text-white mb-2">No quotes yet</h3>
-          <p class="text-text-muted mb-4">Create your first quote to get started</p>
-          <a href="/billing/quotes/new" class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
-            <i class="fas fa-plus text-sm"></i>
-            <span>New Quote</span>
-          </a>
+  <!-- Main Content -->
+  <main class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+    <div class="max-w-7xl mx-auto">
+      
+      <!-- Filters & Search -->
+      <div class="flex flex-col md:flex-row items-center justify-between gap-4 mb-8">
+        <!-- Status Tabs -->
+        <div class="flex items-center p-1 bg-slate-800/40 border border-slate-700/50 rounded-xl overflow-x-auto custom-scrollbar max-w-full">
+          <% local function status_link(name, key, active_key, count)
+              local is_active = (key == active_key)
+              local base_classes = "px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap flex items-center gap-2"
+              local active_classes = "bg-purple-500/20 text-purple-300 shadow-[0_0_10px_rgba(168,85,247,0.15)] ring-1 ring-purple-500/50"
+              local inactive_classes = "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+              local href = "/billing/quotes" .. (key ~= "" and ("?status=" .. key) or "")
+             return string.format('<a href="%s" class="%s %s">%s <span class="%s">%s</span></a>', 
+                href, base_classes, is_active and active_classes or inactive_classes, name, 
+                is_active and "bg-purple-500 text-white px-1.5 py-0.5 rounded ml-1 text-[10px]" or "bg-slate-700/50 text-slate-400 px-1.5 py-0.5 rounded ml-1 text-[10px]", 
+                count or 0)
+             end
+          %>
+          <%- status_link("All", "", status, counts.total) %>
+          <%- status_link("Draft", "draft", status, counts.draft) %>
+          <%- status_link("Sent", "sent", status, counts.sent) %>
+          <%- status_link("Accepted", "accepted", status, counts.accepted) %>
+          <%- status_link("Rejected", "rejected", status, counts.rejected) %>
         </div>
-      <% else %>
-        <table class="w-full">
-          <thead class="bg-white/5 border-b border-white/5">
-            <tr>
-              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Number</th>
-              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Contact</th>
-              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Date</th>
-              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Valid Until</th>
-              <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase tracking-wider">Total</th>
-              <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase tracking-wider">Status</th>
-              <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-white/5">
-            <% for _, quote in ipairs(quotes) do %>
-              <% local qdata = quote.data or quote %>
-              <tr class="hover:bg-white/5 transition-colors">
-                <td class="px-4 py-3">
-                  <a href="/billing/quotes/<%= quote._key or qdata._key %>" class="font-medium text-white hover:text-primary transition-colors">
-                    <%= qdata.number %>
-                  </a>
-                </td>
-                <td class="px-4 py-3 text-text-muted">
-                  <% local contact = quote:get_contact() %>
-                  <%= contact and contact:display_name() or '-' %>
-                </td>
-                <td class="px-4 py-3 text-text-muted"><%= quote:formatted_date() %></td>
-                <td class="px-4 py-3">
-                  <span class="<%= quote:is_expired() and 'text-error' or 'text-text-muted' %>">
-                    <%= quote:formatted_valid_until() %>
-                  </span>
-                </td>
-                <td class="px-4 py-3 text-right font-medium text-white">
-                  <%= string.format("\226\130\172 %.2f", qdata.total or 0) %>
-                </td>
-                <td class="px-4 py-3 text-center">
-                  <% local st = qdata.status %>
-                  <span class="text-xs px-2 py-0.5 rounded-full <%= st == 'accepted' and 'bg-success/20 text-success' or st == 'rejected' and 'bg-error/20 text-error' or st == 'sent' and 'bg-info/20 text-info' or st == 'converted' and 'bg-primary/20 text-primary' or 'bg-white/10 text-text-muted' %>">
-                    <%= st %>
-                  </span>
-                </td>
-                <td class="px-4 py-3">
-                  <div class="flex items-center justify-center gap-2">
-                    <a href="/billing/quotes/<%= quote._key or qdata._key %>" class="p-2 text-text-muted hover:text-white transition-colors" title="View">
-                      <i class="fas fa-eye"></i>
-                    </a>
-                    <% if st == 'draft' then %>
-                      <a href="/billing/quotes/<%= quote._key or qdata._key %>/edit" class="p-2 text-text-muted hover:text-white transition-colors" title="Edit">
-                        <i class="fas fa-edit"></i>
+
+        <!-- Search -->
+        <div class="relative w-full md:w-64">
+           <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+           <input type="text" placeholder="Search quotes..." 
+                  class="w-full bg-slate-800/40 border border-slate-700/50 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all placeholder:text-slate-600">
+        </div>
+      </div>
+
+      <!-- Quotes Table -->
+      <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl overflow-hidden backdrop-blur-sm shadow-xl shadow-black/20">
+        <% if #quotes == 0 then %>
+          <div class="flex flex-col items-center justify-center py-20 text-center">
+            <div class="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mb-4 border border-slate-700/50">
+               <i class="fas fa-file-pen text-3xl text-slate-600"></i>
+            </div>
+            <h3 class="text-lg font-medium text-white mb-2">No quotes found</h3>
+            <p class="text-slate-400 text-sm max-w-xs mx-auto mb-6">There are no quotes matching your current filters.</p>
+            <a href="/billing/quotes/new" class="px-4 py-2 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 rounded-lg text-sm font-medium transition-all">
+               Create First Quote
+            </a>
+          </div>
+        <% else %>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="border-b border-slate-700/50 bg-slate-800/40 text-xs uppercase tracking-wider text-slate-400 font-medium">
+                  <th class="pl-6 py-4">Number</th>
+                  <th class="px-4 py-4">Contact</th>
+                  <th class="px-4 py-4">Date</th>
+                  <th class="px-4 py-4">Valid Until</th>
+                  <th class="px-4 py-4 text-right">Total</th>
+                  <th class="px-4 py-4 text-center">Status</th>
+                  <th class="pr-6 py-4 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-700/50 text-sm">
+                <% for _, quote in ipairs(quotes) do %>
+                  <% local qdata = quote.data or quote %>
+                  <tr class="group hover:bg-purple-500/5 transition-colors duration-200">
+                    <td class="pl-6 py-4">
+                      <a href="/billing/quotes/<%= quote._key or qdata._key %>" class="font-bold text-white group-hover:text-purple-400 transition-colors">
+                        <%= qdata.number %>
                       </a>
-                    <% end %>
-                    <a href="/billing/quotes/<%= quote._key or qdata._key %>/pdf" target="_blank" class="p-2 text-text-muted hover:text-primary transition-colors" title="PDF">
-                      <i class="fas fa-file-pdf"></i>
-                    </a>
-                  </div>
-                </td>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
+                    </td>
+                    <td class="px-4 py-4 text-slate-300">
+                       <% local contact = quote:get_contact() %>
+                       <div class="flex items-center gap-2">
+                         <div class="w-6 h-6 rounded-full bg-slate-700/50 flex items-center justify-center text-[10px] text-slate-400">
+                            <i class="fas fa-user"></i>
+                         </div>
+                         <%= contact and contact:display_name() or '-' %>
+                       </div>
+                    </td>
+                    <td class="px-4 py-4 text-slate-400 text-xs"><%= quote:formatted_date() %></td>
+                    <td class="px-4 py-4 text-xs font-medium">
+                       <span class="<%= quote:is_expired() and 'text-rose-400' or 'text-slate-400' %>">
+                         <%= quote:formatted_valid_until() %>
+                         <% if quote:is_expired() then %> <i class="fas fa-clock ml-1"></i> <% end %>
+                       </span>
+                    </td>
+                    <td class="px-4 py-4 text-right font-medium text-white">
+                       <%= string.format("€ %.2f", qdata.total or 0) %>
+                    </td>
+                    <td class="px-4 py-4 text-center">
+                       <% local st = qdata.status %>
+                       <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
+                          <%= st == 'accepted' and 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                          or st == 'rejected' and 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                          or st == 'converted' and 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                          or st == 'sent' and 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+                          or 'bg-slate-700/50 text-slate-400 border border-slate-600/50' %>">
+                          <span class="w-1.5 h-1.5 rounded-full mr-1.5
+                            <%= st == 'accepted' and 'bg-emerald-500' 
+                            or st == 'rejected' and 'bg-rose-500'
+                            or st == 'converted' and 'bg-blue-500'
+                            or st == 'sent' and 'bg-sky-500'
+                            or 'bg-slate-400' %>"></span>
+                          <%= st %>
+                       </span>
+                    </td>
+                    <td class="pr-6 py-4 text-center">
+                      <div class="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <a href="/billing/quotes/<%= quote._key or qdata._key %>" class="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-300 hover:bg-purple-500 hover:text-white transition-all" title="View">
+                          <i class="fas fa-eye text-xs"></i>
+                        </a>
+                        <% if st == 'draft' then %>
+                          <a href="/billing/quotes/<%= quote._key or qdata._key %>/edit" class="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-300 hover:bg-emerald-500 hover:text-white transition-all" title="Edit">
+                            <i class="fas fa-edit text-xs"></i>
+                          </a>
+                        <% end %>
+                        <a href="/billing/quotes/<%= quote._key or qdata._key %>/pdf" target="_blank" class="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-300 hover:bg-rose-500 hover:text-white transition-all" title="Download PDF">
+                          <i class="fas fa-file-pdf text-xs"></i>
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        <% end %>
+      </div>
+      
+       <!-- Pagination (Simple Placeholder) -->
+      <% if #quotes > 0 then %>
+      <div class="flex items-center justify-between mt-6">
+         <div class="text-xs text-slate-500">Showing recent quotes</div>
+         <div class="flex gap-2">
+            <button class="px-3 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-lg text-slate-400 text-xs hover:bg-slate-800 hover:text-white transition-all disabled:opacity-50" disabled>Previous</button>
+            <button class="px-3 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-lg text-slate-400 text-xs hover:bg-slate-800 hover:text-white transition-all">Next</button>
+         </div>
+      </div>
       <% end %>
+
     </div>
-  </div>
+  </main>
 </div>
+
+<style>
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2); 
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}
+</style>

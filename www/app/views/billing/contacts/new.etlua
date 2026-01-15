@@ -1,25 +1,31 @@
-<div class="flex-1 overflow-y-auto p-6">
-  <div class="max-w-3xl mx-auto">
-    <!-- Header -->
-    <div class="mb-6">
-      <a href="/billing/contacts" class="text-text-muted hover:text-white transition-colors inline-flex items-center gap-2 mb-4">
-        <i class="fas fa-arrow-left"></i>
-        <span>Back to Contacts</span>
+<div class="flex flex-col h-full text-slate-200 font-sans">
+  
+  <!-- Header -->
+  <header class="flex items-center justify-between px-8 py-5 border-b border-white/5 bg-gray-900/50 backdrop-blur-md sticky top-0 z-20">
+    <div class="flex items-center gap-4">
+      <a href="/billing/contacts" class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
+        <i class="fas fa-arrow-left text-xs"></i>
       </a>
-      <h1 class="text-2xl font-bold text-white">New Contact</h1>
+      <h1 class="text-xl font-bold text-white">New Contact</h1>
     </div>
+  </header>
 
-    <!-- Form -->
-    <form hx-post="/billing/contacts" hx-swap="none" class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-      <%- partial("billing/contacts/form") %>
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+    <div class="max-w-4xl mx-auto">
+      <form hx-post="/billing/contacts" hx-swap="none" class="space-y-6">
+        
+        <%- partial("billing/contacts/form", { contact = contact }) %>
 
-      <!-- Actions -->
-      <div class="flex items-center justify-end gap-4 mt-8 pt-6 border-t border-white/5">
-        <a href="/billing/contacts" class="px-4 py-2 text-text-muted hover:text-white transition-colors">Cancel</a>
-        <button type="submit" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
-          Create Contact
-        </button>
-      </div>
-    </form>
+        <!-- Float Actions -->
+        <div class="sticky bottom-0 z-10 bg-gray-900/80 backdrop-blur-md border-t border-white/5 p-4 -mx-8 -mb-8 flex justify-end gap-4 mt-8">
+          <a href="/billing/contacts" class="px-6 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all font-medium">Cancel</a>
+          <button type="submit" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all">
+            Create Contact
+          </button>
+        </div>
+
+      </form>
+    </div>
   </div>
 </div>
