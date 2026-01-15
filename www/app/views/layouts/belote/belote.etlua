@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title or "Belote" %> - SoliDB</title>
+  <link rel="stylesheet" href="<%- public_path('layouts.css') %>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    /* Game specific styles */
+    :root {
+      --card-width: 70px;
+      --card-height: 100px;
+      --card-radius: 6px;
+      --felt-color-center: #0f6b4e;
+      --felt-color-edge: #064e3b;
+    }
+
+    /* Larger cards for tablets */
+    @media (min-width: 768px) {
+      :root {
+        --card-width: 90px;
+        --card-height: 129px;
+        --card-radius: 8px;
+      }
+    }
+
+    /* Even larger for desktops */
+    @media (min-width: 1024px) {
+      :root {
+        --card-width: 110px;
+        --card-height: 157px;
+        --card-radius: 10px;
+      }
+    }
+
+    /* Immersive Background */
+    body {
+      background-color: #0f172a; /* Slate 900 */
+      background-image: 
+        radial-gradient(circle at 50% 0%, #1e293b 0%, #0f172a 70%);
+    }
+
+    .card-shadow { 
+      box-shadow: 
+        1px 1px 2px rgba(0,0,0,0.1),
+        2px 2px 4px rgba(0,0,0,0.1),
+        4px 4px 8px rgba(0,0,0,0.1); 
+    }
+    
+    .card-glow { 
+      box-shadow: 0 0 15px rgba(251, 191, 36, 0.6); /* Amber glow */
+    }
+
+    .trump-indicator { 
+      animation: pulse-gold 3s infinite ease-in-out; 
+    }
+    
+    @keyframes pulse-gold {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+      70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+    }
+
+    /* Suit colors */
+    .suit-hearts, .suit-diamonds { color: #dc2626; /* Red 600 */ }
+    .suit-clubs, .suit-spades { color: #1e293b; /* Slate 800 */ }
+
+    /* Card styles - GPU accelerated */
+    .playing-card {
+      position: relative;
+      width: var(--card-width);
+      height: var(--card-height);
+      border-radius: var(--card-radius);
+      background-color: #fff;
+      background-image: radial-gradient(circle at center, #ffffff 60%, #e2e8f0 100%);
+      border: 1px solid #94a3b8;
+      font-family: 'Times New Roman', serif;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease-out;
+      flex-shrink: 0;
+      user-select: none;
+      overflow: hidden;
+      /* GPU acceleration */
+      will-change: transform, opacity;
+      transform: translateZ(0);
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+    
+    /* Subtle paper texture/noise via pseudo-element if desired, but gradient is cleaner for web performance */
+    
+    .playing-card.large {
+      width: calc(var(--card-width) * 1.6);
+      height: calc(var(--card-height) * 1.6);
+      border-radius: calc(var(--card-radius) * 1.5);
+    }
+
+    /* Normal cards (trick area) - scale center content on larger screens */
+    .playing-card:not(.large) .card-center { font-size: 1.5rem; }
+    .playing-card:not(.large) .card-center span { font-size: 1.5em !important; }
+
+    @media (min-width: 768px) {
+      .playing-card:not(.large) .card-center { font-size: 2.5rem; }
+      .playing-card:not(.large) .card-center span { font-size: 1.8em !important; }
+    }
+
+    @media (min-width: 1024px) {
+      .playing-card:not(.large) .card-center { font-size: 3.5rem; }
+      .playing-card:not(.large) .card-center span { font-size: 2em !important; }
+    }
+
+    /* Large cards (player hand) */
+    .playing-card.large .card-corner span:first-child { font-size: 1.1em; }
+    .playing-card.large .card-corner span:last-child { font-size: 0.9em; }
+    .playing-card.large .card-center { font-size: 2.5rem; }
+
+    @media (min-width: 768px) {
+      .playing-card.large {
+        width: calc(var(--card-width) * 1.5);
+        height: calc(var(--card-height) * 1.5);
+      }
+      .playing-card.large .card-corner span:first-child { font-size: 1.2em; }
+      .playing-card.large .card-corner span:last-child { font-size: 1em; }
+      .playing-card.large .card-center { font-size: 3rem; }
+    }
+
+    @media (min-width: 1024px) {
+      .playing-card.large {
+        width: calc(var(--card-width) * 1.6);
+        height: calc(var(--card-height) * 1.6);
+      }
+      .playing-card.large .card-corner span:first-child { font-size: 1.3em; }
+      .playing-card.large .card-corner span:last-child { font-size: 1.1em; }
+      .playing-card.large .card-center { font-size: 3.5rem; }
+    }
+    
+    /* Card Container for Fan Positioning - GPU accelerated */
+    .card-container {
+      position: relative;
+      pointer-events: auto;
+      will-change: transform;
+      transform: translateZ(0);
+      backface-visibility: hidden;
+    }
+    
+    /* z-index boost removed per request - cards stay in stack order */
+    
+    .playing-card.interactive-card {
+      cursor: pointer;
+      transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+    }
+    
+    .card-container:hover .playing-card.interactive-card {
+      /* Subtle lift relative to its container */
+      transform: translateY(-25px) scale(1.05) !important;
+      transform-origin: bottom center;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.3), 0 0 0 1px #fbbf24;
+      border-color: #fbbf24;
+    }
+    
+    .playing-card.selected {
+      transform: translateY(-20px) scale(1.05);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3), 0 0 0 2px #fbbf24;
+      border-color: #fbbf24;
+      z-index: 40;
+    }
+
+    /* Card back - Elegant Pattern */
+    .card-back {
+      background-color: #1e3a8a; /* Blue 900 */
+      background-image: 
+        radial-gradient(circle, #3b82f6 1px, transparent 1.5px),
+        radial-gradient(circle, #3b82f6 1px, transparent 1.5px);
+      background-size: 12px 12px;
+      background-position: 0 0, 6px 6px;
+      border: 2px solid #fff;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    }
+
+    /* Table felt - Realistic Look */
+    .table-felt {
+      background-color: var(--felt-color-edge);
+      background-image: 
+        radial-gradient(circle at 50% 50%, var(--felt-color-center) 0%, var(--felt-color-edge) 90%),
+        url("data:image/svg+xml,%3Csvg width='200' height='200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.05'/%3E%3C/svg%3E");
+      border: 12px solid #3f1d0b; /* Dark Wood */
+      border-radius: 40px;
+      box-shadow: 
+        inset 0 0 80px rgba(0,0,0,0.6), /* Inner shadow for depth */
+        0 20px 50px rgba(0,0,0,0.5), /* Outer shadow for floating effect */
+        0 0 0 1px rgba(255,255,255,0.05); /* Highlight on wood */
+      position: absolute;
+    }
+    
+    /* Wood texture via border-image would be nice, but simple color is safer for now. 
+       Let's add a pseudo-element for a "lip" or inner border */
+    .table-felt::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 28px;
+      border: 2px solid rgba(255,255,255,0.1);
+      pointer-events: none;
+    }
+    
+    /* Center logo/mark on table */
+    .table-felt::after {
+      content: 'SoliDB Belote';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+      font-size: 4rem;
+      color: rgba(0,0,0,0.1);
+      pointer-events: none;
+      white-space: nowrap;
+      letter-spacing: 4px;
+      z-index: 0;
+    }
+
+    /* Seat positions */
+    .seat { position: absolute; z-index: 20; }
+    .seat-north { top: 20px; left: 50%; transform: translateX(-50%); }
+    .seat-east { right: 20px; top: 50%; transform: translateY(-50%); }
+    .seat-south { bottom: 20px; left: 50%; transform: translateX(-50%); }
+    .seat-west { left: 20px; top: 50%; transform: translateY(-50%); }
+
+    /* West and East need vertical card space */
+    .seat-west, .seat-east { min-height: 240px; }
+
+    /* Larger spacing for tablets */
+    @media (min-width: 768px) {
+      .seat-north { top: 25px; }
+      .seat-east { right: 25px; }
+      .seat-south { bottom: 20px; }
+      .seat-west { left: 25px; }
+      .seat-west, .seat-east { min-height: 280px; }
+    }
+
+    /* Even larger for desktops */
+    @media (min-width: 1024px) {
+      .seat-north { top: 30px; }
+      .seat-east { right: 30px; }
+      .seat-south { bottom: 20px; }
+      .seat-west { left: 30px; }
+      .seat-west, .seat-east { min-height: 320px; }
+    }
+
+    /* Trick area - GPU accelerated */
+    .trick-area {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) translateZ(0);
+      width: 240px;
+      height: 180px;
+      z-index: 10;
+      will-change: contents;
+      backface-visibility: hidden;
+    }
+
+    /* Larger trick area for tablets */
+    @media (min-width: 768px) {
+      .trick-area {
+        width: 320px;
+        height: 240px;
+      }
+    }
+
+    /* Even larger for desktops */
+    @media (min-width: 1024px) {
+      .trick-area {
+        width: 400px;
+        height: 300px;
+      }
+    }
+
+    /* Custom scrollbar */
+    .game-scrollbar::-webkit-scrollbar { width: 6px; }
+    .game-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .game-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    
+    /* Animations */
+    @keyframes float {
+      0% { transform: translateY(0px); }
+      50% { transform: translateY(-5px); }
+      100% { transform: translateY(0px); }
+    }
+
+    /* GPU acceleration utility class */
+    .gpu-accelerated {
+      will-change: transform, opacity;
+      transform: translateZ(0);
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+
+    /* Reduce motion for users who prefer it */
+    @media (prefers-reduced-motion: reduce) {
+      .playing-card,
+      .card-container,
+      .trick-area {
+        transition: none !important;
+        animation: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="h-screen bg-bg text-text overflow-hidden font-sans antialiased selection:bg-primary/30 selection:text-white">
+
+  <!-- Background Ambience -->
+  <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+    <div class="absolute top-[-20%] left-[-10%] w-[800px] h-[800px] bg-emerald-900/30 rounded-full blur-[120px] mix-blend-screen animate-pulse" style="animation-duration: 8s;"></div>
+    <div class="absolute bottom-[-20%] right-[-10%] w-[900px] h-[900px] bg-indigo-900/30 rounded-full blur-[150px] mix-blend-screen animate-pulse" style="animation-duration: 10s;"></div>
+    <div class="absolute top-[40%] left-[60%] w-[500px] h-[500px] bg-amber-900/10 rounded-full blur-[100px] mix-blend-screen"></div>
+  </div>
+
+  <div class="h-full flex relative z-10">
+    <%- partial("shared/activity_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col min-w-0 relative">
+      <%- yield() %>
+    </main>
+  </div>
+
+  <!-- Modal Container -->
+  <div id="modal-container"></div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <script>
+    // Toast notification function
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const colors = {
+        success: 'bg-success',
+        error: 'bg-error',
+        info: 'bg-primary',
+        warning: 'bg-warning'
+      };
+      toast.className = `pointer-events-auto px-4 py-3 rounded-xl ${colors[type] || colors.info} text-white font-medium shadow-lg transform transition-all duration-300 translate-y-2 opacity-0`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+      setTimeout(() => {
+        toast.classList.add('translate-y-2', 'opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Close modal function
+    function closeModal() {
+      document.getElementById('modal-container').innerHTML = '';
+    }
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeModal();
+    });
+  </script>
+</body>
+</html>

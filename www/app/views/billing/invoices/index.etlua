@@ -1,0 +1,118 @@
+<div class="flex-1 overflow-y-auto p-6">
+  <div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-white">Invoices</h1>
+        <p class="text-text-muted mt-1">Manage your invoices and payments</p>
+      </div>
+      <a href="/billing/invoices/new" class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+        <i class="fas fa-plus text-sm"></i>
+        <span>New Invoice</span>
+      </a>
+    </div>
+
+    <!-- Status Filters -->
+    <div class="flex flex-wrap gap-2 mb-6">
+      <a href="/billing/invoices" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == '' and 'bg-primary/20 text-primary' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        All <span class="ml-1 opacity-60">(<%= counts.total or 0 %>)</span>
+      </a>
+      <a href="/billing/invoices?status=draft" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'draft' and 'bg-primary/20 text-primary' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Draft <span class="ml-1 opacity-60">(<%= counts.draft or 0 %>)</span>
+      </a>
+      <a href="/billing/invoices?status=sent" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'sent' and 'bg-info/20 text-info' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Sent <span class="ml-1 opacity-60">(<%= counts.sent or 0 %>)</span>
+      </a>
+      <a href="/billing/invoices?status=partially_paid" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'partially_paid' and 'bg-warning/20 text-warning' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Partially Paid <span class="ml-1 opacity-60">(<%= counts.partially_paid or 0 %>)</span>
+      </a>
+      <a href="/billing/invoices?status=paid" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'paid' and 'bg-success/20 text-success' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Paid <span class="ml-1 opacity-60">(<%= counts.paid or 0 %>)</span>
+      </a>
+      <a href="/billing/invoices?status=overdue" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'overdue' and 'bg-error/20 text-error' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Overdue <span class="ml-1 opacity-60">(<%= counts.overdue or 0 %>)</span>
+      </a>
+    </div>
+
+    <!-- Invoices List -->
+    <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl overflow-hidden">
+      <% if #invoices == 0 then %>
+        <div class="p-12 text-center">
+          <div class="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-file-invoice text-2xl text-text-muted"></i>
+          </div>
+          <h3 class="text-lg font-medium text-white mb-2">No invoices yet</h3>
+          <p class="text-text-muted mb-4">Create your first invoice to get started</p>
+          <a href="/billing/invoices/new" class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+            <i class="fas fa-plus text-sm"></i>
+            <span>New Invoice</span>
+          </a>
+        </div>
+      <% else %>
+        <table class="w-full">
+          <thead class="bg-white/5 border-b border-white/5">
+            <tr>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Number</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Contact</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Date</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Due Date</th>
+              <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase tracking-wider">Total</th>
+              <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase tracking-wider">Balance</th>
+              <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase tracking-wider">Status</th>
+              <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5">
+            <% for _, invoice in ipairs(invoices) do %>
+              <% local idata = invoice.data or invoice %>
+              <tr class="hover:bg-white/5 transition-colors">
+                <td class="px-4 py-3">
+                  <a href="/billing/invoices/<%= invoice._key or idata._key %>" class="font-medium text-white hover:text-primary transition-colors">
+                    <%= idata.number %>
+                  </a>
+                </td>
+                <td class="px-4 py-3 text-text-muted">
+                  <% local contact = invoice:get_contact() %>
+                  <%= contact and contact:display_name() or '-' %>
+                </td>
+                <td class="px-4 py-3 text-text-muted"><%= invoice:formatted_date() %></td>
+                <td class="px-4 py-3">
+                  <span class="<%= invoice:is_overdue() and 'text-error' or 'text-text-muted' %>">
+                    <%= invoice:formatted_due_date() %>
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-right font-medium text-white">
+                  <%= string.format("\226\130\172 %.2f", idata.total or 0) %>
+                </td>
+                <td class="px-4 py-3 text-right font-medium <%= (idata.balance_due or 0) > 0 and 'text-warning' or 'text-success' %>">
+                  <%= string.format("\226\130\172 %.2f", idata.balance_due or 0) %>
+                </td>
+                <td class="px-4 py-3 text-center">
+                  <% local st = idata.status %>
+                  <span class="text-xs px-2 py-0.5 rounded-full <%= st == 'paid' and 'bg-success/20 text-success' or st == 'overdue' and 'bg-error/20 text-error' or st == 'partially_paid' and 'bg-warning/20 text-warning' or st == 'sent' and 'bg-info/20 text-info' or st == 'cancelled' and 'bg-gray-500/20 text-gray-400' or 'bg-white/10 text-text-muted' %>">
+                    <%= st %>
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center justify-center gap-2">
+                    <a href="/billing/invoices/<%= invoice._key or idata._key %>" class="p-2 text-text-muted hover:text-white transition-colors" title="View">
+                      <i class="fas fa-eye"></i>
+                    </a>
+                    <% if st == 'draft' then %>
+                      <a href="/billing/invoices/<%= invoice._key or idata._key %>/edit" class="p-2 text-text-muted hover:text-white transition-colors" title="Edit">
+                        <i class="fas fa-edit"></i>
+                      </a>
+                    <% end %>
+                    <a href="/billing/invoices/<%= invoice._key or idata._key %>/pdf" target="_blank" class="p-2 text-text-muted hover:text-primary transition-colors" title="PDF">
+                      <i class="fas fa-file-pdf"></i>
+                    </a>
+                  </div>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% end %>
+    </div>
+  </div>
+</div>

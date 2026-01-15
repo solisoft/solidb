@@ -1,0 +1,213 @@
+<% local data = credit_note.data or credit_note %>
+<div class="flex-1 overflow-y-auto p-6">
+  <div class="max-w-5xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <a href="/billing/credit-notes" class="text-text-muted hover:text-white transition-colors inline-flex items-center gap-2 mb-4">
+          <i class="fas fa-arrow-left"></i>
+          <span>Back to Credit Notes</span>
+        </a>
+        <h1 class="text-2xl font-bold text-white"><%= data.number %></h1>
+        <p class="text-text-muted mt-1">Created on <%= credit_note:formatted_date() %></p>
+      </div>
+      <div class="flex items-center gap-2">
+        <% local st = data.status %>
+        <% if st == 'draft' then %>
+          <button hx-post="/billing/credit-notes/<%= credit_note._key or data._key %>/issue"
+                  hx-swap="none"
+                  class="px-4 py-2 bg-info hover:bg-info/80 text-white rounded-lg transition-colors">
+            <i class="fas fa-check mr-2"></i>Issue
+          </button>
+        <% elseif st == 'issued' then %>
+          <button hx-post="/billing/credit-notes/<%= credit_note._key or data._key %>/apply"
+                  hx-swap="none"
+                  class="px-4 py-2 bg-success hover:bg-success/80 text-white rounded-lg transition-colors">
+            <i class="fas fa-check-double mr-2"></i>Apply to Invoice
+          </button>
+        <% end %>
+        <a href="/billing/credit-notes/<%= credit_note._key or data._key %>/pdf" target="_blank" class="px-4 py-2 bg-white/5 hover:bg-white/10 text-text-muted hover:text-white rounded-lg transition-colors">
+          <i class="fas fa-file-pdf mr-2"></i>PDF
+        </a>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Left Column: Details -->
+      <div class="lg:col-span-1 space-y-6">
+        <!-- Status -->
+        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
+          <h3 class="text-lg font-semibold text-white mb-4">Status</h3>
+          <span class="text-sm px-3 py-1 rounded-full <%= st == 'applied' and 'bg-success/20 text-success' or st == 'issued' and 'bg-info/20 text-info' or 'bg-white/10 text-text-muted' %>">
+            <%= st %>
+          </span>
+          <div class="mt-4 space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-text-muted">Amount</span>
+              <span class="text-error font-bold">-<%= string.format("\226\130\172 %.2f", data.total or 0) %></span>
+            </div>
+            <% if data.invoice_key then %>
+              <div class="flex justify-between">
+                <span class="text-text-muted">Invoice</span>
+                <a href="/billing/invoices/<%= data.invoice_key %>" class="text-primary hover:underline">
+                  <%= data.invoice_number or 'View Invoice' %>
+                </a>
+              </div>
+            <% end %>
+            <% if data.applied_at then %>
+              <div class="flex justify-between">
+                <span class="text-text-muted">Applied On</span>
+                <span class="text-white"><%= os.date('%Y-%m-%d', data.applied_at) %></span>
+              </div>
+            <% end %>
+          </div>
+        </div>
+
+        <!-- Contact -->
+        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
+          <h3 class="text-lg font-semibold text-white mb-4">Customer</h3>
+          <% if contact then %>
+            <div class="flex items-center gap-3 mb-3">
+              <div class="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center">
+                <i class="fas fa-user text-primary"></i>
+              </div>
+              <div>
+                <a href="/billing/contacts/<%= contact._key or contact.data._key %>" class="font-medium text-white hover:text-primary transition-colors">
+                  <%= contact:display_name() %>
+                </a>
+              </div>
+            </div>
+            <div class="text-sm text-text-muted space-y-1">
+              <% if contact.email or (contact.data and contact.data.email) then %>
+                <div><%= contact.email or contact.data.email %></div>
+              <% end %>
+              <div class="whitespace-pre-line"><%= contact:billing_address_string() %></div>
+            </div>
+          <% end %>
+        </div>
+
+        <!-- Reason -->
+        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
+          <h3 class="text-lg font-semibold text-white mb-4">Reason</h3>
+          <div class="space-y-2">
+            <% local reason_labels = {
+              goods_returned = "Goods Returned",
+              pricing_error = "Pricing Error",
+              quality_issue = "Quality Issue",
+              partial_refund = "Partial Refund",
+              service_not_provided = "Service Not Provided",
+              discount_applied = "Discount Applied",
+              other = "Other"
+            } %>
+            <div class="text-white font-medium"><%= reason_labels[data.reason] or data.reason or '-' %></div>
+            <% if data.reason_description and data.reason_description ~= '' then %>
+              <p class="text-text-muted text-sm whitespace-pre-wrap"><%= data.reason_description %></p>
+            <% end %>
+          </div>
+        </div>
+
+        <!-- Notes -->
+        <% if data.notes and data.notes ~= '' then %>
+          <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
+            <h3 class="text-lg font-semibold text-white mb-4">Notes</h3>
+            <p class="text-text-muted whitespace-pre-wrap text-sm"><%= data.notes %></p>
+          </div>
+        <% end %>
+      </div>
+
+      <!-- Right Column: Credit Note Content -->
+      <div class="lg:col-span-2 space-y-6">
+        <!-- Line Items -->
+        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl overflow-hidden">
+          <table class="w-full">
+            <thead class="bg-white/5 border-b border-white/5">
+              <tr>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase">Description</th>
+                <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase w-20">Qty</th>
+                <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase w-28">Unit Price</th>
+                <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase w-20">Tax</th>
+                <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase w-28">Total</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5">
+              <% local items = data.line_items or {} %>
+              <% if #items > 0 then %>
+                <% for _, item in ipairs(items) do %>
+                  <tr>
+                    <td class="px-4 py-3 text-white"><%= item.description or '' %></td>
+                    <td class="px-4 py-3 text-center text-text-muted"><%= item.quantity or 0 %></td>
+                    <td class="px-4 py-3 text-right text-text-muted"><%= string.format("\226\130\172 %.2f", item.unit_price or 0) %></td>
+                    <td class="px-4 py-3 text-center text-text-muted"><%= item.tax_rate or 0 %>%</td>
+                    <td class="px-4 py-3 text-right text-white font-medium"><%= string.format("\226\130\172 %.2f", item.total or 0) %></td>
+                  </tr>
+                <% end %>
+              <% else %>
+                <tr>
+                  <td class="px-4 py-3 text-white">Credit adjustment</td>
+                  <td class="px-4 py-3 text-center text-text-muted">1</td>
+                  <td class="px-4 py-3 text-right text-text-muted"><%= string.format("\226\130\172 %.2f", data.subtotal or data.total or 0) %></td>
+                  <td class="px-4 py-3 text-center text-text-muted">-</td>
+                  <td class="px-4 py-3 text-right text-white font-medium"><%= string.format("\226\130\172 %.2f", data.total or 0) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+
+          <!-- Totals -->
+          <div class="p-4 border-t border-white/5 bg-white/5">
+            <div class="flex justify-end">
+              <div class="w-64 space-y-2">
+                <% if data.subtotal then %>
+                  <div class="flex justify-between py-2">
+                    <span class="text-text-muted">Subtotal</span>
+                    <span class="font-medium text-white"><%= string.format("\226\130\172 %.2f", data.subtotal or 0) %></span>
+                  </div>
+                <% end %>
+                <% if data.total_tax and data.total_tax > 0 then %>
+                  <div class="flex justify-between py-2">
+                    <span class="text-text-muted">Tax</span>
+                    <span class="font-medium text-white"><%= string.format("\226\130\172 %.2f", data.total_tax or 0) %></span>
+                  </div>
+                <% end %>
+                <div class="flex justify-between py-3 text-lg font-bold border-t border-white/10">
+                  <span class="text-white">Credit Total</span>
+                  <span class="text-error">-<%= string.format("\226\130\172 %.2f", data.total or 0) %></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Original Invoice Reference -->
+        <% if invoice then %>
+          <% local inv_data = invoice.data or invoice %>
+          <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
+            <h3 class="text-lg font-semibold text-white mb-4">Original Invoice</h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <span class="text-text-muted block">Number</span>
+                <a href="/billing/invoices/<%= invoice._key or inv_data._key %>" class="text-primary hover:underline font-medium">
+                  <%= inv_data.number %>
+                </a>
+              </div>
+              <div>
+                <span class="text-text-muted block">Date</span>
+                <span class="text-white"><%= invoice:formatted_date() %></span>
+              </div>
+              <div>
+                <span class="text-text-muted block">Total</span>
+                <span class="text-white"><%= string.format("\226\130\172 %.2f", inv_data.total or 0) %></span>
+              </div>
+              <div>
+                <span class="text-text-muted block">Status</span>
+                <span class="text-xs px-2 py-0.5 rounded-full <%= inv_data.status == 'paid' and 'bg-success/20 text-success' or inv_data.status == 'overdue' and 'bg-error/20 text-error' or 'bg-white/10 text-text-muted' %>">
+                  <%= inv_data.status %>
+                </span>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>

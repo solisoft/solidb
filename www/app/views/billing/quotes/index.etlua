@@ -1,0 +1,111 @@
+<div class="flex-1 overflow-y-auto p-6">
+  <div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-white">Quotes</h1>
+        <p class="text-text-muted mt-1">Manage your price quotes</p>
+      </div>
+      <a href="/billing/quotes/new" class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+        <i class="fas fa-plus text-sm"></i>
+        <span>New Quote</span>
+      </a>
+    </div>
+
+    <!-- Status Filters -->
+    <div class="flex flex-wrap gap-2 mb-6">
+      <a href="/billing/quotes" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == '' and 'bg-primary/20 text-primary' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        All <span class="ml-1 opacity-60">(<%= counts.total or 0 %>)</span>
+      </a>
+      <a href="/billing/quotes?status=draft" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'draft' and 'bg-primary/20 text-primary' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Draft <span class="ml-1 opacity-60">(<%= counts.draft or 0 %>)</span>
+      </a>
+      <a href="/billing/quotes?status=sent" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'sent' and 'bg-info/20 text-info' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Sent <span class="ml-1 opacity-60">(<%= counts.sent or 0 %>)</span>
+      </a>
+      <a href="/billing/quotes?status=accepted" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'accepted' and 'bg-success/20 text-success' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Accepted <span class="ml-1 opacity-60">(<%= counts.accepted or 0 %>)</span>
+      </a>
+      <a href="/billing/quotes?status=rejected" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'rejected' and 'bg-error/20 text-error' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Rejected <span class="ml-1 opacity-60">(<%= counts.rejected or 0 %>)</span>
+      </a>
+    </div>
+
+    <!-- Quotes List -->
+    <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl overflow-hidden">
+      <% if #quotes == 0 then %>
+        <div class="p-12 text-center">
+          <div class="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-file-alt text-2xl text-text-muted"></i>
+          </div>
+          <h3 class="text-lg font-medium text-white mb-2">No quotes yet</h3>
+          <p class="text-text-muted mb-4">Create your first quote to get started</p>
+          <a href="/billing/quotes/new" class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+            <i class="fas fa-plus text-sm"></i>
+            <span>New Quote</span>
+          </a>
+        </div>
+      <% else %>
+        <table class="w-full">
+          <thead class="bg-white/5 border-b border-white/5">
+            <tr>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Number</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Contact</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Date</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Valid Until</th>
+              <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase tracking-wider">Total</th>
+              <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase tracking-wider">Status</th>
+              <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5">
+            <% for _, quote in ipairs(quotes) do %>
+              <% local qdata = quote.data or quote %>
+              <tr class="hover:bg-white/5 transition-colors">
+                <td class="px-4 py-3">
+                  <a href="/billing/quotes/<%= quote._key or qdata._key %>" class="font-medium text-white hover:text-primary transition-colors">
+                    <%= qdata.number %>
+                  </a>
+                </td>
+                <td class="px-4 py-3 text-text-muted">
+                  <% local contact = quote:get_contact() %>
+                  <%= contact and contact:display_name() or '-' %>
+                </td>
+                <td class="px-4 py-3 text-text-muted"><%= quote:formatted_date() %></td>
+                <td class="px-4 py-3">
+                  <span class="<%= quote:is_expired() and 'text-error' or 'text-text-muted' %>">
+                    <%= quote:formatted_valid_until() %>
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-right font-medium text-white">
+                  <%= string.format("\226\130\172 %.2f", qdata.total or 0) %>
+                </td>
+                <td class="px-4 py-3 text-center">
+                  <% local st = qdata.status %>
+                  <span class="text-xs px-2 py-0.5 rounded-full <%= st == 'accepted' and 'bg-success/20 text-success' or st == 'rejected' and 'bg-error/20 text-error' or st == 'sent' and 'bg-info/20 text-info' or st == 'converted' and 'bg-primary/20 text-primary' or 'bg-white/10 text-text-muted' %>">
+                    <%= st %>
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center justify-center gap-2">
+                    <a href="/billing/quotes/<%= quote._key or qdata._key %>" class="p-2 text-text-muted hover:text-white transition-colors" title="View">
+                      <i class="fas fa-eye"></i>
+                    </a>
+                    <% if st == 'draft' then %>
+                      <a href="/billing/quotes/<%= quote._key or qdata._key %>/edit" class="p-2 text-text-muted hover:text-white transition-colors" title="Edit">
+                        <i class="fas fa-edit"></i>
+                      </a>
+                    <% end %>
+                    <a href="/billing/quotes/<%= quote._key or qdata._key %>/pdf" target="_blank" class="p-2 text-text-muted hover:text-primary transition-colors" title="PDF">
+                      <i class="fas fa-file-pdf"></i>
+                    </a>
+                  </div>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% end %>
+    </div>
+  </div>
+</div>

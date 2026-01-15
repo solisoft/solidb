@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%- title or "Billing" %></title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="<%- public_path('layouts.css') %>">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+</head>
+<body class="min-h-screen bg-bg text-text">
+  <!-- Background decorations -->
+  <div class="fixed inset-0 overflow-hidden pointer-events-none z-0">
+    <div class="absolute top-[-10%] left-[-10%] w-1/2 h-1/2 bg-primary/10 rounded-full blur-[120px]"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-1/2 h-1/2 bg-accent/10 rounded-full blur-[120px]"></div>
+  </div>
+
+  <div class="flex h-screen relative z-10">
+    <!-- Main Activity Sidebar -->
+    <%- partial("shared/activity_sidebar") %>
+
+    <!-- Billing Sidebar -->
+    <%- partial("billing/sidebar") %>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col min-w-0 overflow-hidden bg-bg/50">
+      <%- yield() %>
+    </main>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-[200] space-y-2"></div>
+
+  <!-- Modal container -->
+  <div id="modal-container"></div>
+
+  <script>
+    function closeModal() {
+      document.getElementById('modal-container').innerHTML = '';
+    }
+
+    function showToast(message, type) {
+      type = type || 'info';
+      var container = document.getElementById('toast-container');
+      var toast = document.createElement('div');
+      toast.className = 'px-4 py-3 rounded-lg shadow-lg backdrop-blur-xl animate-in ' +
+        (type === 'success' ? 'bg-success/90 text-white' :
+         type === 'error' ? 'bg-error/90 text-white' :
+         'bg-bg-card/90 text-text border border-border/50');
+      toast.innerHTML = '<div class="flex items-center gap-2"><i class="fas ' +
+        (type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle') +
+        '"></i><span>' + message + '</span></div>';
+      container.appendChild(toast);
+      setTimeout(function() {
+        toast.classList.add('animate-out');
+        setTimeout(function() { toast.remove(); }, 300);
+      }, 5000);
+    }
+
+    document.body.addEventListener('showToast', function(evt) {
+      showToast(evt.detail.message, evt.detail.type);
+    });
+
+    document.body.addEventListener('closeModal', function(evt) {
+      closeModal();
+    });
+
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+      htmx.process(evt.detail.target);
+    });
+
+    // Line items calculation
+    function recalculateTotals() {
+      var subtotal = 0;
+      var totalTax = 0;
+      var totalDiscount = 0;
+
+      document.querySelectorAll('[data-line-item]').forEach(function(row, index) {
+        var qty = parseFloat(row.querySelector('.qty-input').value) || 0;
+        var price = parseFloat(row.querySelector('.price-input').value) || 0;
+        var taxRate = parseFloat(row.querySelector('.tax-input').value) || 0;
+        var discountRate = parseFloat(row.querySelector('.discount-input').value) || 0;
+
+        var lineSubtotal = qty * price;
+        var discount = lineSubtotal * discountRate / 100;
+        var afterDiscount = lineSubtotal - discount;
+        var tax = afterDiscount * taxRate / 100;
+        var lineTotal = afterDiscount + tax;
+
+        var totalEl = row.querySelector('.line-total');
+        if (totalEl) totalEl.textContent = formatCurrency(lineTotal);
+
+        subtotal += afterDiscount;
+        totalTax += tax;
+        totalDiscount += discount;
+      });
+
+      var total = subtotal + totalTax;
+
+      var subtotalEl = document.getElementById('calc-subtotal');
+      var taxEl = document.getElementById('calc-tax');
+      var totalEl = document.getElementById('calc-total');
+
+      if (subtotalEl) subtotalEl.textContent = formatCurrency(subtotal);
+      if (taxEl) taxEl.textContent = formatCurrency(totalTax);
+      if (totalEl) totalEl.textContent = formatCurrency(total);
+
+      // Update hidden inputs
+      var hiddenSubtotal = document.getElementById('hidden-subtotal');
+      var hiddenTax = document.getElementById('hidden-total-tax');
+      var hiddenTotal = document.getElementById('hidden-total');
+      var hiddenDiscount = document.getElementById('hidden-total-discount');
+
+      if (hiddenSubtotal) hiddenSubtotal.value = subtotal.toFixed(2);
+      if (hiddenTax) hiddenTax.value = totalTax.toFixed(2);
+      if (hiddenTotal) hiddenTotal.value = total.toFixed(2);
+      if (hiddenDiscount) hiddenDiscount.value = totalDiscount.toFixed(2);
+    }
+
+    function formatCurrency(amount) {
+      return '\u20ac ' + amount.toFixed(2);
+    }
+
+    function addLineItem() {
+      var container = document.getElementById('line-items-body');
+      var count = container.querySelectorAll('[data-line-item]').length + 1;
+      var defaultTax = document.getElementById('default-tax-rate');
+      var taxRate = defaultTax ? defaultTax.value : '20';
+
+      var row = document.createElement('tr');
+      row.setAttribute('data-line-item', '');
+      row.className = 'group';
+      row.innerHTML = '<td class="px-3 py-2"><i class="fas fa-grip-vertical text-text-muted cursor-move drag-handle"></i></td>' +
+        '<td class="px-3 py-2"><input type="text" name="line_item_' + count + '_description" class="w-full bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary outline-none py-1" placeholder="Description"></td>' +
+        '<td class="px-3 py-2"><input type="number" name="line_item_' + count + '_quantity" class="qty-input w-16 bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary outline-none py-1 text-center" value="1" min="0" step="any" onchange="recalculateTotals()"></td>' +
+        '<td class="px-3 py-2"><input type="number" name="line_item_' + count + '_unit_price" class="price-input w-24 bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary outline-none py-1 text-right" value="0" min="0" step="0.01" onchange="recalculateTotals()"></td>' +
+        '<td class="px-3 py-2"><input type="number" name="line_item_' + count + '_tax_rate" class="tax-input w-16 bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary outline-none py-1 text-center" value="' + taxRate + '" min="0" max="100" step="0.01" onchange="recalculateTotals()"></td>' +
+        '<td class="px-3 py-2"><input type="number" name="line_item_' + count + '_discount_percent" class="discount-input w-16 bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary outline-none py-1 text-center" value="0" min="0" max="100" step="0.01" onchange="recalculateTotals()"></td>' +
+        '<td class="px-3 py-2 text-right"><span class="line-total">\u20ac 0.00</span></td>' +
+        '<td class="px-3 py-2"><button type="button" onclick="removeLineItem(this)" class="p-1 text-text-muted hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"><i class="fas fa-times"></i></button></td>';
+      container.appendChild(row);
+      recalculateTotals();
+    }
+
+    function removeLineItem(btn) {
+      btn.closest('[data-line-item]').remove();
+      renumberLineItems();
+      recalculateTotals();
+    }
+
+    function renumberLineItems() {
+      document.querySelectorAll('[data-line-item]').forEach(function(row, index) {
+        var num = index + 1;
+        row.querySelectorAll('input').forEach(function(input) {
+          var name = input.name;
+          if (name) {
+            input.name = name.replace(/line_item_\d+_/, 'line_item_' + num + '_');
+          }
+        });
+      });
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      var lineItemsBody = document.getElementById('line-items-body');
+      if (lineItemsBody) {
+        new Sortable(lineItemsBody, {
+          animation: 150,
+          handle: '.drag-handle',
+          onEnd: function() {
+            renumberLineItems();
+            recalculateTotals();
+          }
+        });
+        recalculateTotals();
+      }
+    });
+  </script>
+
+  <style>
+    .animate-in { animation: slideIn 0.3s ease-out; }
+    .animate-out { animation: slideOut 0.3s ease-in forwards; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
+  </style>
+  <%- RefreshPageForDevMode() %>
+</body>
+</html>

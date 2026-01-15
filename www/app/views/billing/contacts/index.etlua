@@ -1,0 +1,101 @@
+<div class="flex-1 overflow-y-auto p-6">
+  <div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-white">Contacts</h1>
+        <p class="text-text-muted mt-1">Manage your customers and clients</p>
+      </div>
+      <a href="/billing/contacts/new" class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+        <i class="fas fa-plus text-sm"></i>
+        <span>Add Contact</span>
+      </a>
+    </div>
+
+    <!-- Search -->
+    <div class="mb-6">
+      <div class="relative">
+        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"></i>
+        <input type="text"
+               name="search"
+               value="<%= search or '' %>"
+               placeholder="Search contacts..."
+               class="w-full pl-10 pr-4 py-2 bg-bg-card/40 border border-white/10 rounded-lg text-white placeholder-text-muted focus:outline-none focus:border-primary"
+               hx-get="/billing/contacts"
+               hx-trigger="keyup changed delay:300ms"
+               hx-target="#contacts-list"
+               hx-select="#contacts-list">
+      </div>
+    </div>
+
+    <!-- Contacts List -->
+    <div id="contacts-list" class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl overflow-hidden">
+      <% if #contacts == 0 then %>
+        <div class="p-12 text-center">
+          <div class="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-address-book text-2xl text-text-muted"></i>
+          </div>
+          <h3 class="text-lg font-medium text-white mb-2">No contacts yet</h3>
+          <p class="text-text-muted mb-4">Add your first contact to get started</p>
+          <a href="/billing/contacts/new" class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+            <i class="fas fa-plus text-sm"></i>
+            <span>Add Contact</span>
+          </a>
+        </div>
+      <% else %>
+        <table class="w-full">
+          <thead class="bg-white/5 border-b border-white/5">
+            <tr>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Name</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Email</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Phone</th>
+              <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase tracking-wider">Outstanding</th>
+              <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5">
+            <% for _, contact in ipairs(contacts) do %>
+              <tr class="hover:bg-white/5 transition-colors">
+                <td class="px-4 py-3">
+                  <a href="/billing/contacts/<%= contact._key or contact.data._key %>" class="flex items-center gap-3 group">
+                    <div class="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center">
+                      <% local contact_type = contact.type or contact.data.type or 'individual' %>
+                      <i class="fas <%= contact_type == 'company' and 'fa-building' or 'fa-user' %> text-primary"></i>
+                    </div>
+                    <div>
+                      <div class="font-medium text-white group-hover:text-primary transition-colors"><%= contact:display_name() %></div>
+                      <% if contact_type == 'company' and (contact.name or contact.data.name) then %>
+                        <div class="text-sm text-text-muted"><%= contact.name or contact.data.name %></div>
+                      <% end %>
+                    </div>
+                  </a>
+                </td>
+                <td class="px-4 py-3 text-text-muted"><%= contact.email or contact.data.email or '-' %></td>
+                <td class="px-4 py-3 text-text-muted"><%= contact.phone or contact.data.phone or '-' %></td>
+                <td class="px-4 py-3 text-right">
+                  <% local outstanding = contact.outstanding_balance or contact.data.outstanding_balance or 0 %>
+                  <span class="<%= outstanding > 0 and 'text-warning' or 'text-text-muted' %>">
+                    <%= string.format("\226\130\172 %.2f", outstanding) %>
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center justify-center gap-2">
+                    <a href="/billing/contacts/<%= contact._key or contact.data._key %>/edit" class="p-2 text-text-muted hover:text-white transition-colors" title="Edit">
+                      <i class="fas fa-edit"></i>
+                    </a>
+                    <a href="/billing/quotes/new?contact_key=<%= contact._key or contact.data._key %>" class="p-2 text-text-muted hover:text-primary transition-colors" title="New Quote">
+                      <i class="fas fa-file-alt"></i>
+                    </a>
+                    <a href="/billing/invoices/new?contact_key=<%= contact._key or contact.data._key %>" class="p-2 text-text-muted hover:text-primary transition-colors" title="New Invoice">
+                      <i class="fas fa-file-invoice"></i>
+                    </a>
+                  </div>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% end %>
+    </div>
+  </div>
+</div>

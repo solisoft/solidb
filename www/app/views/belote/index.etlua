@@ -1,0 +1,261 @@
+<!-- Belote Lobby -->
+<div class="h-full flex flex-col">
+  <!-- Header -->
+  <header class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/50 backdrop-blur-sm shrink-0">
+    <div class="flex items-center gap-4">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-lg">
+        <i class="fas fa-cards text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold text-white">Belote</h1>
+        <p class="text-xs text-text-muted">Classic French Card Game</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <div id="connection-status" class="flex items-center gap-1.5 text-xs text-text-muted">
+        <span class="w-2 h-2 rounded-full bg-gray-500"></span>
+        <span>Connecting...</span>
+      </div>
+      <button hx-get="/belote/modal/create" hx-target="#modal-container"
+              class="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all">
+        <i class="fas fa-plus mr-2"></i>Create Game
+      </button>
+    </div>
+  </header>
+
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto game-scrollbar p-6">
+    <div class="max-w-5xl mx-auto space-y-8">
+
+      <!-- My Active Games -->
+      <% if my_games and #my_games > 0 then %>
+      <section id="my-games-section">
+        <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+          <i class="fas fa-play text-primary"></i>
+          My Active Games
+        </h2>
+        <div id="my-games-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <% for _, game in ipairs(my_games) do %>
+          <a href="/belote/game/<%= game._key %>"
+             class="glass-card rounded-xl p-4 hover:bg-white/5 transition-all group border border-primary/30">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-white font-semibold"><%= game.name %></span>
+              <span class="px-2 py-0.5 text-xs rounded-full
+                <% if game.state == 'waiting' then %>bg-yellow-500/20 text-yellow-400
+                <% elseif game.state == 'playing' or game.state == 'bidding' then %>bg-green-500/20 text-green-400
+                <% else %>bg-gray-500/20 text-gray-400<% end %>">
+                <%= game.state %>
+              </span>
+            </div>
+            <div class="flex items-center gap-2 text-sm text-text-muted">
+              <i class="fas fa-users"></i>
+              <span><%= #(game.players or {}) %>/4 players</span>
+              <% if game.scores then %>
+              <span class="ml-auto text-xs">
+                <span class="text-blue-400"><%= game.scores.team_a or 0 %></span>
+                <span class="text-text-dim">-</span>
+                <span class="text-orange-400"><%= game.scores.team_b or 0 %></span>
+              </span>
+              <% end %>
+            </div>
+            <div class="mt-2 text-xs text-primary group-hover:text-primary-light">
+              Continue playing <i class="fas fa-arrow-right ml-1"></i>
+            </div>
+          </a>
+          <% end %>
+        </div>
+      </section>
+      <% end %>
+
+      <!-- Available Games -->
+      <section>
+        <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+          <i class="fas fa-door-open text-accent"></i>
+          Available Games
+          <span id="games-count" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-white/10 text-text-muted">
+            <%= games and #games or 0 %>
+          </span>
+          <button onclick="refreshGames()" id="refresh-btn"
+                  class="ml-auto text-xs text-text-muted hover:text-white transition-colors">
+            <i class="fas fa-sync-alt mr-1"></i>Refresh
+          </button>
+        </h2>
+        <div id="games-list">
+          <%- partial("belote/games_list", { games = games, current_user = current_user }) %>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const DB_NAME = '<%= db_name %>';
+const DB_HOST = window.location.host.replace(/:\d+$/, '') + ':6745';
+const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+let liveQueryWs = null;
+let tokenCache = { token: null, expiry: 0 };
+let refreshTimeout = null;
+
+// Initialize on load
+document.addEventListener('DOMContentLoaded', function() {
+  connectLiveQuery();
+});
+
+// Clean up on page unload
+window.addEventListener('beforeunload', function() {
+  if (liveQueryWs) {
+    liveQueryWs.onclose = null;
+    liveQueryWs.close();
+  }
+});
+
+// Get LiveQuery token
+async function getToken() {
+  if (tokenCache.token && Date.now() < tokenCache.expiry - 5000) {
+    return tokenCache.token;
+  }
+  try {
+    const res = await fetch('/belote/livequery_token');
+    const data = await res.json();
+    tokenCache.token = data.token;
+    tokenCache.expiry = Date.now() + (data.expires_in || 30) * 1000;
+    return data.token;
+  } catch (e) {
+    console.error('Token fetch failed:', e);
+    return null;
+  }
+}
+
+// Update connection status indicator
+function setConnectionStatus(status) {
+  const el = document.getElementById('connection-status');
+  if (!el) return;
+
+  const colors = {
+    connected: 'bg-success',
+    connecting: 'bg-yellow-500',
+    disconnected: 'bg-gray-500'
+  };
+  const labels = {
+    connected: 'Live',
+    connecting: 'Connecting...',
+    disconnected: 'Offline'
+  };
+
+  el.innerHTML = `
+    <span class="w-2 h-2 rounded-full ${colors[status]} ${status === 'connected' ? 'animate-pulse' : ''}"></span>
+    <span>${labels[status]}</span>
+  `;
+}
+
+// Connect to LiveQuery for real-time updates
+async function connectLiveQuery() {
+  setConnectionStatus('connecting');
+
+  const token = await getToken();
+  if (!token) {
+    setConnectionStatus('disconnected');
+    setTimeout(connectLiveQuery, 5000);
+    return;
+  }
+
+  const url = `${WS_PROTOCOL}//${DB_HOST}/_api/ws/changefeed?token=${token}`;
+  liveQueryWs = new WebSocket(url);
+
+  liveQueryWs.onopen = () => {
+    console.log('[LOBBY] LiveQuery WebSocket connected');
+    setConnectionStatus('connected');
+
+    // Subscribe to all belote_games changes
+    const subscribeMsg = JSON.stringify({
+      type: 'subscribe',
+      collection: 'belote_games',
+      database: DB_NAME
+    });
+    console.log('[LOBBY] Sending subscription:', subscribeMsg);
+    liveQueryWs.send(subscribeMsg);
+  };
+
+  liveQueryWs.onmessage = (event) => {
+    console.log('[LOBBY] WebSocket message received:', event.data);
+    try {
+      const data = JSON.parse(event.data);
+
+      // Handle subscription confirmation
+      if (data.type === 'subscribed' || data.type === 'SUBSCRIBED') {
+        console.log('[LOBBY] Subscription confirmed');
+        return;
+      }
+
+      // Handle any change event - server sends 'operation' field
+      if (data.operation === 'insert' || data.operation === 'update' || data.operation === 'delete' || data.document) {
+        console.log('[LOBBY] Games change detected:', data.operation);
+        // Debounce refresh
+        if (refreshTimeout) clearTimeout(refreshTimeout);
+        refreshTimeout = setTimeout(refreshGames, 300);
+      }
+    } catch (err) {
+      console.error('[LOBBY] Message parse error:', err);
+    }
+  };
+
+  liveQueryWs.onclose = (event) => {
+    console.log('[LOBBY] WebSocket closed, code:', event.code, 'reason:', event.reason);
+    setConnectionStatus('disconnected');
+    setTimeout(connectLiveQuery, 3000);
+  };
+
+  liveQueryWs.onerror = (err) => {
+    console.error('[LOBBY] WebSocket error:', err);
+    setConnectionStatus('disconnected');
+  };
+}
+
+// Refresh games list
+async function refreshGames() {
+  const btn = document.getElementById('refresh-btn');
+  const gamesList = document.getElementById('games-list');
+
+  if (btn) {
+    btn.innerHTML = '<i class="fas fa-sync-alt fa-spin mr-1"></i>Refreshing...';
+  }
+
+  try {
+    const response = await fetch('/belote/games');
+    const html = await response.text();
+    if (gamesList) {
+      gamesList.innerHTML = html;
+    }
+  } catch (e) {
+    console.error('Failed to refresh games:', e);
+  }
+
+  if (btn) {
+    btn.innerHTML = '<i class="fas fa-sync-alt mr-1"></i>Refresh';
+  }
+}
+
+// Quick join a game at a specific seat
+async function quickJoin(gameKey, seat) {
+  try {
+    const response = await fetch('/belote/game/' + gameKey + '/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'seat=' + seat
+    });
+    const data = await response.json();
+
+    if (data.error) {
+      showToast(data.error, 'error');
+    } else {
+      showToast('Joined game!', 'success');
+      // Redirect to game
+      window.location.href = '/belote/game/' + gameKey;
+    }
+  } catch (e) {
+    showToast('Failed to join game', 'error');
+  }
+}
+</script>

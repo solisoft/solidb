@@ -1,11 +1,11 @@
-<aside class="w-[70px] bg-black/40 backdrop-blur-xl border-r border-white/5 flex flex-col items-center py-6 gap-4 z-30 shrink-0">
+<aside class="w-[70px] bg-black/40 backdrop-blur-xl border-r border-white/5 flex flex-col items-center py-6 gap-4 z-30 shrink-0 overflow-y-auto no-scrollbar">
   <!-- Logo/Home -->
-  <a href="/" class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg mb-2 hover:scale-105 transition-transform" title="Home">
+  <a href="/" class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg mb-2 hover:scale-105 transition-transform shrink-0" title="Home">
     <span class="font-bold text-lg">S</span>
   </a>
 
   <!-- Separator -->
-  <div class="w-8 h-px bg-white/10"></div>
+  <div class="w-8 h-px bg-white/10 shrink-0"></div>
 
   <%
   local current_path = GetPath() or ""
@@ -50,6 +50,19 @@
     </div>
     <% if is_active("^/talks") then %>
     <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-6 bg-emerald-500 rounded-r-full"></div>
+    <% end %>
+  </a>
+
+  <!-- Belote -->
+  <a href="/belote" class="relative group">
+    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 <%= is_active("^/belote") and 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.3)]' or 'text-text-muted hover:bg-white/10 hover:text-white' %>">
+      <i class="fas fa-gamepad text-lg"></i>
+    </div>
+    <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
+      Belote
+    </div>
+    <% if is_active("^/belote") then %>
+    <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-6 bg-purple-600 rounded-r-full"></div>
     <% end %>
   </a>
 

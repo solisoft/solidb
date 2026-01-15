@@ -274,6 +274,29 @@ router.scope("/talks", { middleware = { "session_auth" } }, function()
   router.delete("/call/signal/:key", "talks#call_signal_delete")
 end)
 
+-- Belote (Card Game) routes - requires session auth
+router.scope("/belote", { middleware = { "session_auth" } }, function()
+  -- Lobby
+  router.get("", "belote#index")
+  router.get("/games", "belote#games_list")
+  router.get("/modal/create", "belote#modal_create")
+  router.post("/games", "belote#create")
+  router.get("/livequery_token", "belote#livequery_token")
+
+  -- Game room
+  router.get("/game/:key", "belote#show")
+  router.get("/game/:key/state", "belote#state")
+  router.post("/game/:key/join", "belote#join")
+  router.post("/game/:key/leave", "belote#leave")
+  router.post("/game/:key/add_bot", "belote#add_bot")
+  router.post("/game/:key/start", "belote#start")
+  router.post("/game/:key/bid", "belote#bid")
+  router.post("/game/:key/play", "belote#play")
+  router.post("/game/:key/bot_turn", "belote#bot_turn")
+  router.post("/game/:key/heartbeat", "belote#heartbeat")
+  router.post("/game/:key/disconnect", "belote#disconnect")
+end)
+
 -- MailBox (Internal Webmail + Calendar) routes - requires session auth
 router.scope("/mailbox", { middleware = { "session_auth" } }, function()
   -- Main dashboard
@@ -318,6 +341,65 @@ router.scope("/mailbox", { middleware = { "session_auth" } }, function()
   -- Settings
   router.get("/settings", "mailbox/settings#index")
   router.post("/settings", "mailbox/settings#update")
+end)
+
+-- Billing App routes - requires session auth
+router.scope("/billing", { middleware = { "session_auth" } }, function()
+  -- Dashboard
+  router.get("", "billing#index")
+
+  -- Contacts CRUD
+  router.get("/contacts", "billing#contacts")
+  router.get("/contacts/new", "billing#contacts_new")
+  router.post("/contacts", "billing#contacts_create")
+  router.get("/contacts/search", "billing#contacts_search")
+  router.get("/contacts/:key", "billing#contacts_show")
+  router.get("/contacts/:key/edit", "billing#contacts_edit")
+  router.put("/contacts/:key", "billing#contacts_update")
+  router.delete("/contacts/:key", "billing#contacts_destroy")
+
+  -- Quotes CRUD + actions
+  router.get("/quotes", "billing#quotes")
+  router.get("/quotes/new", "billing#quotes_new")
+  router.post("/quotes", "billing#quotes_create")
+  router.get("/quotes/:key", "billing#quotes_show")
+  router.get("/quotes/:key/edit", "billing#quotes_edit")
+  router.put("/quotes/:key", "billing#quotes_update")
+  router.delete("/quotes/:key", "billing#quotes_destroy")
+  router.post("/quotes/:key/send", "billing#quotes_send")
+  router.post("/quotes/:key/accept", "billing#quotes_accept")
+  router.post("/quotes/:key/reject", "billing#quotes_reject")
+  router.post("/quotes/:key/convert", "billing#quotes_convert")
+  router.get("/quotes/:key/pdf", "billing#quotes_pdf")
+
+  -- Invoices CRUD + actions
+  router.get("/invoices", "billing#invoices")
+  router.get("/invoices/new", "billing#invoices_new")
+  router.post("/invoices", "billing#invoices_create")
+  router.get("/invoices/:key", "billing#invoices_show")
+  router.get("/invoices/:key/edit", "billing#invoices_edit")
+  router.put("/invoices/:key", "billing#invoices_update")
+  router.delete("/invoices/:key", "billing#invoices_destroy")
+  router.post("/invoices/:key/send", "billing#invoices_send")
+  router.post("/invoices/:key/payment", "billing#invoices_add_payment")
+  router.post("/invoices/:key/cancel", "billing#invoices_cancel")
+  router.get("/invoices/:key/pdf", "billing#invoices_pdf")
+
+  -- Credit Notes
+  router.get("/credit-notes", "billing#credit_notes")
+  router.get("/credit-notes/new/:invoice_key", "billing#credit_notes_new")
+  router.post("/credit-notes", "billing#credit_notes_create")
+  router.get("/credit-notes/:key", "billing#credit_notes_show")
+  router.post("/credit-notes/:key/issue", "billing#credit_notes_issue")
+  router.post("/credit-notes/:key/apply", "billing#credit_notes_apply")
+  router.get("/credit-notes/:key/pdf", "billing#credit_notes_pdf")
+
+  -- Settings
+  router.get("/settings", "billing#settings")
+  router.put("/settings", "billing#settings_update")
+
+  -- Line Items (HTMX)
+  router.get("/line-item/new", "billing#line_item_new")
 end)
 
 -- Repositories - requires session auth

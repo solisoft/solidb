@@ -140,6 +140,32 @@ function MailboxEvent.for_month(user_key, year, month)
   return MailboxEvent.for_user(user_key, start_of_month, end_of_month)
 end
 
+-- Get events for a year (returns a lookup table by date key "YYYY-MM-DD")
+function MailboxEvent.for_year(user_key, year)
+  local start_of_year = os.time({ year = year, month = 1, day = 1, hour = 0, min = 0, sec = 0 })
+  local end_of_year = os.time({ year = year + 1, month = 1, day = 1, hour = 0, min = 0, sec = 0 }) - 1
+
+  local events = MailboxEvent.for_user(user_key, start_of_year, end_of_year)
+
+  -- Build lookup table by date
+  local events_by_date = {}
+  for _, event in ipairs(events) do
+    local start_time = event.start_time or event.data.start_time
+    if start_time then
+      local e_year = tonumber(os.date("%Y", start_time))
+      if e_year == year then
+        local date_key = os.date("%Y-%m-%d", start_time)
+        if not events_by_date[date_key] then
+          events_by_date[date_key] = {}
+        end
+        table.insert(events_by_date[date_key], event)
+      end
+    end
+  end
+
+  return events_by_date
+end
+
 
 -- Get events for a user with pending status
 function MailboxEvent.pending_for_user(user_key)

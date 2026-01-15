@@ -1,0 +1,162 @@
+<% local data = contact.data or contact or {} %>
+<div class="flex-1 overflow-y-auto p-6">
+  <div class="max-w-5xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <a href="/billing/contacts" class="text-text-muted hover:text-white transition-colors inline-flex items-center gap-2 mb-4">
+          <i class="fas fa-arrow-left"></i>
+          <span>Back to Contacts</span>
+        </a>
+        <div class="flex items-center gap-4">
+          <div class="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center">
+            <i class="fas <%= data.type == 'company' and 'fa-building' or 'fa-user' %> text-primary text-2xl"></i>
+          </div>
+          <div>
+            <h1 class="text-2xl font-bold text-white"><%= contact:display_name() %></h1>
+            <% if data.type == 'company' and data.name then %>
+              <p class="text-text-muted"><%= data.name %></p>
+            <% end %>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="/billing/quotes/new?contact_key=<%= contact._key or data._key %>" class="px-4 py-2 bg-info/20 hover:bg-info/30 text-info rounded-lg transition-colors">
+          <i class="fas fa-file-alt mr-2"></i>New Quote
+        </a>
+        <a href="/billing/invoices/new?contact_key=<%= contact._key or data._key %>" class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg transition-colors">
+          <i class="fas fa-file-invoice mr-2"></i>New Invoice
+        </a>
+        <a href="/billing/contacts/<%= contact._key or data._key %>/edit" class="px-4 py-2 bg-white/5 hover:bg-white/10 text-text-muted hover:text-white rounded-lg transition-colors">
+          <i class="fas fa-edit mr-2"></i>Edit
+        </a>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Left Column: Contact Details -->
+      <div class="lg:col-span-1 space-y-6">
+        <!-- Contact Info -->
+        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
+          <h3 class="text-lg font-semibold text-white mb-4">Contact Info</h3>
+          <div class="space-y-3">
+            <% if data.email and data.email ~= '' then %>
+              <div class="flex items-center gap-3">
+                <i class="fas fa-envelope text-text-muted w-5"></i>
+                <a href="mailto:<%= data.email %>" class="text-primary hover:underline"><%= data.email %></a>
+              </div>
+            <% end %>
+            <% if data.phone and data.phone ~= '' then %>
+              <div class="flex items-center gap-3">
+                <i class="fas fa-phone text-text-muted w-5"></i>
+                <span class="text-white"><%= data.phone %></span>
+              </div>
+            <% end %>
+            <% if data.vat_number and data.vat_number ~= '' then %>
+              <div class="flex items-center gap-3">
+                <i class="fas fa-id-card text-text-muted w-5"></i>
+                <span class="text-white">VAT: <%= data.vat_number %></span>
+              </div>
+            <% end %>
+          </div>
+        </div>
+
+        <!-- Billing Address -->
+        <% if data.billing_address then %>
+          <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
+            <h3 class="text-lg font-semibold text-white mb-4">Billing Address</h3>
+            <div class="text-text-muted whitespace-pre-line"><%= contact:billing_address_string() %></div>
+          </div>
+        <% end %>
+
+        <!-- Stats -->
+        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
+          <h3 class="text-lg font-semibold text-white mb-4">Statistics</h3>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-text-muted">Total Invoiced</span>
+              <span class="text-white font-medium"><%= string.format("\226\130\172 %.2f", data.total_invoiced or 0) %></span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-text-muted">Total Paid</span>
+              <span class="text-success font-medium"><%= string.format("\226\130\172 %.2f", data.total_paid or 0) %></span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-text-muted">Outstanding</span>
+              <span class="<%= (data.outstanding_balance or 0) > 0 and 'text-warning' or 'text-text-muted' %> font-medium">
+                <%= string.format("\226\130\172 %.2f", data.outstanding_balance or 0) %>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Notes -->
+        <% if data.notes and data.notes ~= '' then %>
+          <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-5">
+            <h3 class="text-lg font-semibold text-white mb-4">Notes</h3>
+            <p class="text-text-muted whitespace-pre-wrap"><%= data.notes %></p>
+          </div>
+        <% end %>
+      </div>
+
+      <!-- Right Column: Documents -->
+      <div class="lg:col-span-2 space-y-6">
+        <!-- Invoices -->
+        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl">
+          <div class="p-4 border-b border-white/5 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-white">Invoices</h3>
+          </div>
+          <% if #invoices == 0 then %>
+            <div class="p-8 text-center text-text-muted">No invoices yet</div>
+          <% else %>
+            <div class="divide-y divide-white/5">
+              <% for _, inv in ipairs(invoices) do %>
+                <a href="/billing/invoices/<%= inv._key or inv.data._key %>" class="flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
+                  <div>
+                    <div class="font-medium text-white"><%= inv.number or inv.data.number %></div>
+                    <div class="text-sm text-text-muted"><%= inv:formatted_date() %></div>
+                  </div>
+                  <div class="text-right">
+                    <div class="font-medium text-white"><%= string.format("\226\130\172 %.2f", inv.total or inv.data.total or 0) %></div>
+                    <% local status = inv.status or inv.data.status %>
+                    <span class="text-xs px-2 py-0.5 rounded-full <%= status == 'paid' and 'bg-success/20 text-success' or status == 'overdue' and 'bg-error/20 text-error' or 'bg-white/10 text-text-muted' %>">
+                      <%= status %>
+                    </span>
+                  </div>
+                </a>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+
+        <!-- Quotes -->
+        <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl">
+          <div class="p-4 border-b border-white/5 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-white">Quotes</h3>
+          </div>
+          <% if #quotes == 0 then %>
+            <div class="p-8 text-center text-text-muted">No quotes yet</div>
+          <% else %>
+            <div class="divide-y divide-white/5">
+              <% for _, q in ipairs(quotes) do %>
+                <a href="/billing/quotes/<%= q._key or q.data._key %>" class="flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
+                  <div>
+                    <div class="font-medium text-white"><%= q.number or q.data.number %></div>
+                    <div class="text-sm text-text-muted"><%= q:formatted_date() %></div>
+                  </div>
+                  <div class="text-right">
+                    <div class="font-medium text-white"><%= string.format("\226\130\172 %.2f", q.total or q.data.total or 0) %></div>
+                    <% local status = q.status or q.data.status %>
+                    <span class="text-xs px-2 py-0.5 rounded-full <%= status == 'accepted' and 'bg-success/20 text-success' or status == 'rejected' and 'bg-error/20 text-error' or 'bg-white/10 text-text-muted' %>">
+                      <%= status %>
+                    </span>
+                  </div>
+                </a>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

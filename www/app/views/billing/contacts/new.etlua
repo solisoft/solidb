@@ -1,0 +1,25 @@
+<div class="flex-1 overflow-y-auto p-6">
+  <div class="max-w-3xl mx-auto">
+    <!-- Header -->
+    <div class="mb-6">
+      <a href="/billing/contacts" class="text-text-muted hover:text-white transition-colors inline-flex items-center gap-2 mb-4">
+        <i class="fas fa-arrow-left"></i>
+        <span>Back to Contacts</span>
+      </a>
+      <h1 class="text-2xl font-bold text-white">New Contact</h1>
+    </div>
+
+    <!-- Form -->
+    <form hx-post="/billing/contacts" hx-swap="none" class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-6">
+      <%- partial("billing/contacts/form") %>
+
+      <!-- Actions -->
+      <div class="flex items-center justify-end gap-4 mt-8 pt-6 border-t border-white/5">
+        <a href="/billing/contacts" class="px-4 py-2 text-text-muted hover:text-white transition-colors">Cancel</a>
+        <button type="submit" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+          Create Contact
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

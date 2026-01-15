@@ -81,6 +81,8 @@ function CalendarController:index()
     -- current_date already set
   elseif view == "year" then
     calendar = { year = year }
+    -- Fetch events for the entire year as a date lookup
+    events = MailboxEvent.for_year(current_user._key, year)
   end
   
   if not calendar then

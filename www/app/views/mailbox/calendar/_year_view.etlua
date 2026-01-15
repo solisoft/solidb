@@ -31,9 +31,16 @@
          <div></div>
        <% end %>
        
-       <% for d = 1, dim do %>
-         <div class="aspect-square flex items-center justify-center rounded-sm <%= (year == today.year and m == today.month and d == today.day) and 'bg-primary text-white font-bold' or 'text-text-muted' %>">
+       <% for d = 1, dim do
+         local date_key = string.format("%04d-%02d-%02d", year, m, d)
+         local has_events = events and events[date_key] and #events[date_key] > 0
+         local is_today = (year == today.year and m == today.month and d == today.day)
+       %>
+         <div class="aspect-square flex flex-col items-center justify-center rounded-sm relative <%= is_today and 'bg-primary text-white font-bold' or 'text-text-muted' %>">
            <%= d %>
+           <% if has_events then %>
+             <div class="absolute bottom-0 w-1 h-1 rounded-full <%= is_today and 'bg-white' or 'bg-primary' %>"></div>
+           <% end %>
          </div>
        <% end %>
     </div>

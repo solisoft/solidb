@@ -1,0 +1,101 @@
+<div class="flex-1 overflow-y-auto p-6">
+  <div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-white">Credit Notes</h1>
+        <p class="text-text-muted mt-1">Manage credit notes for your invoices</p>
+      </div>
+    </div>
+
+    <!-- Status Filters -->
+    <div class="flex flex-wrap gap-2 mb-6">
+      <a href="/billing/credit-notes" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == '' and 'bg-primary/20 text-primary' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        All <span class="ml-1 opacity-60">(<%= counts.total or 0 %>)</span>
+      </a>
+      <a href="/billing/credit-notes?status=draft" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'draft' and 'bg-primary/20 text-primary' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Draft <span class="ml-1 opacity-60">(<%= counts.draft or 0 %>)</span>
+      </a>
+      <a href="/billing/credit-notes?status=issued" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'issued' and 'bg-info/20 text-info' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Issued <span class="ml-1 opacity-60">(<%= counts.issued or 0 %>)</span>
+      </a>
+      <a href="/billing/credit-notes?status=applied" class="px-3 py-1.5 rounded-lg text-sm transition-colors <%= status == 'applied' and 'bg-success/20 text-success' or 'bg-white/5 text-text-muted hover:text-white' %>">
+        Applied <span class="ml-1 opacity-60">(<%= counts.applied or 0 %>)</span>
+      </a>
+    </div>
+
+    <!-- Credit Notes List -->
+    <div class="bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl overflow-hidden">
+      <% if #credit_notes == 0 then %>
+        <div class="p-12 text-center">
+          <div class="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-file-invoice-dollar text-2xl text-text-muted"></i>
+          </div>
+          <h3 class="text-lg font-medium text-white mb-2">No credit notes yet</h3>
+          <p class="text-text-muted mb-4">Credit notes can be created from invoices</p>
+        </div>
+      <% else %>
+        <table class="w-full">
+          <thead class="bg-white/5 border-b border-white/5">
+            <tr>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Number</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Invoice</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Contact</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Date</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Reason</th>
+              <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase tracking-wider">Amount</th>
+              <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase tracking-wider">Status</th>
+              <th class="px-4 py-3 text-center text-[10px] font-bold text-text-dim uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5">
+            <% for _, cn in ipairs(credit_notes) do %>
+              <% local cndata = cn.data or cn %>
+              <tr class="hover:bg-white/5 transition-colors">
+                <td class="px-4 py-3">
+                  <a href="/billing/credit-notes/<%= cn._key or cndata._key %>" class="font-medium text-white hover:text-primary transition-colors">
+                    <%= cndata.number %>
+                  </a>
+                </td>
+                <td class="px-4 py-3 text-text-muted">
+                  <% if cndata.invoice_key then %>
+                    <a href="/billing/invoices/<%= cndata.invoice_key %>" class="text-primary hover:underline">
+                      <%= cndata.invoice_number or cndata.invoice_key %>
+                    </a>
+                  <% else %>
+                    -
+                  <% end %>
+                </td>
+                <td class="px-4 py-3 text-text-muted">
+                  <% local contact = cn:get_contact() %>
+                  <%= contact and contact:display_name() or '-' %>
+                </td>
+                <td class="px-4 py-3 text-text-muted"><%= cn:formatted_date() %></td>
+                <td class="px-4 py-3 text-text-muted text-sm"><%= cndata.reason or '-' %></td>
+                <td class="px-4 py-3 text-right font-medium text-error">
+                  -<%= string.format("\226\130\172 %.2f", cndata.total or 0) %>
+                </td>
+                <td class="px-4 py-3 text-center">
+                  <% local st = cndata.status %>
+                  <span class="text-xs px-2 py-0.5 rounded-full <%= st == 'applied' and 'bg-success/20 text-success' or st == 'issued' and 'bg-info/20 text-info' or 'bg-white/10 text-text-muted' %>">
+                    <%= st %>
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center justify-center gap-2">
+                    <a href="/billing/credit-notes/<%= cn._key or cndata._key %>" class="p-2 text-text-muted hover:text-white transition-colors" title="View">
+                      <i class="fas fa-eye"></i>
+                    </a>
+                    <a href="/billing/credit-notes/<%= cn._key or cndata._key %>/pdf" target="_blank" class="p-2 text-text-muted hover:text-primary transition-colors" title="PDF">
+                      <i class="fas fa-file-pdf"></i>
+                    </a>
+                  </div>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% end %>
+    </div>
+  </div>
+</div>

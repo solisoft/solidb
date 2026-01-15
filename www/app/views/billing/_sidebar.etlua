@@ -1,0 +1,68 @@
+<aside id="sidebar" class="w-64 bg-bg-dark/50 backdrop-blur-sm border-r border-white/5 flex flex-col">
+  <!-- Header -->
+  <div class="p-4 border-b border-white/5">
+    <h1 class="text-lg font-bold text-white flex items-center gap-2">
+      <i class="fas fa-file-invoice-dollar text-primary"></i>
+      Billing
+    </h1>
+  </div>
+
+  <!-- Navigation -->
+  <nav class="flex-1 p-4 space-y-1 overflow-y-auto">
+    <a href="/billing"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-all <%= current_section == 'dashboard' and 'bg-primary/20 text-primary' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-chart-line w-5 text-center"></i>
+      <span>Dashboard</span>
+    </a>
+
+    <div class="pt-4 pb-2">
+      <span class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-3">Documents</span>
+    </div>
+
+    <a href="/billing/quotes"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-all <%= current_section == 'quotes' and 'bg-primary/20 text-primary' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-file-alt w-5 text-center"></i>
+      <span>Quotes</span>
+    </a>
+
+    <a href="/billing/invoices"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-all <%= current_section == 'invoices' and 'bg-primary/20 text-primary' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-file-invoice w-5 text-center"></i>
+      <span>Invoices</span>
+    </a>
+
+    <a href="/billing/credit-notes"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-all <%= current_section == 'credit_notes' and 'bg-primary/20 text-primary' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-receipt w-5 text-center"></i>
+      <span>Credit Notes</span>
+    </a>
+
+    <div class="pt-4 pb-2">
+      <span class="text-[10px] font-bold text-text-dim uppercase tracking-wider px-3">Management</span>
+    </div>
+
+    <a href="/billing/contacts"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-all <%= current_section == 'contacts' and 'bg-primary/20 text-primary' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-address-book w-5 text-center"></i>
+      <span>Contacts</span>
+    </a>
+
+    <a href="/billing/settings"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg transition-all <%= current_section == 'settings' and 'bg-primary/20 text-primary' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-cog w-5 text-center"></i>
+      <span>Settings</span>
+    </a>
+  </nav>
+
+  <!-- Quick Actions -->
+  <div class="p-4 border-t border-white/5 space-y-2">
+    <a href="/billing/quotes/new" class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg transition-all">
+      <i class="fas fa-plus text-xs"></i>
+      <span class="text-sm font-medium">New Quote</span>
+    </a>
+    <a href="/billing/invoices/new" class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-white/5 hover:bg-white/10 text-text-muted hover:text-white rounded-lg transition-all">
+      <i class="fas fa-plus text-xs"></i>
+      <span class="text-sm font-medium">New Invoice</span>
+    </a>
+  </div>
+</aside>

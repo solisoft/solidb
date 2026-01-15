@@ -1,0 +1,2128 @@
+<!-- Game Room -->
+<div class="h-full flex flex-col">
+  <!-- Header -->
+  <header class="h-14 px-4 flex items-center justify-between border-b border-white/5 bg-bg-card/50 backdrop-blur-sm shrink-0">
+    <div class="flex items-center gap-3">
+      <a href="/belote" class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-white hover:bg-white/5 transition-colors">
+        <i class="fas fa-arrow-left"></i>
+      </a>
+      <div>
+        <h1 class="text-lg font-bold text-white"><%= game.name %></h1>
+        <p class="text-xs text-text-muted">
+          <span id="game-state-label"><%= game.state %></span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Scores -->
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/20 border border-blue-500/30">
+        <span class="text-xs text-blue-400">Team A (N/S)</span>
+        <span id="score-a" class="text-lg font-bold text-blue-400"><%= game.scores and game.scores.team_a or 0 %></span>
+      </div>
+      <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/20 border border-orange-500/30">
+        <span class="text-xs text-orange-400">Team B (E/W)</span>
+        <span id="score-b" class="text-lg font-bold text-orange-400"><%= game.scores and game.scores.team_b or 0 %></span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-2">
+      <% if game.state == "waiting" and is_host then %>
+      <button id="start-btn" onclick="startGame()"
+              class="px-4 py-2 bg-success hover:bg-success/80 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              <%= game:player_count() < 4 and "disabled" or "" %>>
+        <i class="fas fa-play mr-2"></i>Start Game
+      </button>
+      <% end %>
+    </div>
+  </header>
+
+  <!-- Game Area -->
+  <div class="flex-1 relative overflow-hidden">
+    <!-- Table -->
+    <div class="absolute inset-4 table-felt shadow-2xl">
+      <!-- Trump indicator -->
+      <div id="trump-indicator" class="absolute top-4 left-4 hidden">
+        <div class="px-4 py-3 rounded-xl bg-gradient-to-br from-amber-900/80 to-amber-800/60 backdrop-blur-sm border border-amber-500/30 shadow-lg">
+          <div class="flex items-center gap-3">
+            <div id="trump-suit" class="w-12 h-12 rounded-lg bg-white/90 flex items-center justify-center text-3xl font-bold shadow-inner"></div>
+            <div>
+              <div class="text-amber-200 text-xs font-medium uppercase tracking-wide">Trump</div>
+              <div id="trump-taker" class="text-white font-semibold text-sm"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Player Seats -->
+      <% local seat_positions = { [0] = "south", [1] = "west", [2] = "north", [3] = "east" } %>
+      <% local seat_labels = { [0] = "South", [1] = "West", [2] = "North", [3] = "East" } %>
+      <% -- Flex direction: south=col-reverse (cards above name), north=col (name above cards), west/east=row with name toward center %>
+      <% local seat_flex = { [0] = "flex-col-reverse", [1] = "flex-col", [2] = "flex-col", [3] = "flex-col" } %>
+
+      <% for seat = 0, 3 do %>
+      <div id="seat-<%= seat %>" class="seat seat-<%= seat_positions[seat] %> flex <%= seat_flex[seat] %> items-center gap-2">
+        <!-- Player info -->
+        <div id="player-info-<%= seat %>" class="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-white/20 shadow-xl z-20 relative transition-all duration-300
+                    <%= seat == my_seat and 'border-primary/50 ring-1 ring-primary/30' or '' %>">
+          <%
+            local player = game:player_at_seat(seat)
+            local team = seat % 2 == 0 and "A" or "B"
+          %>
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold
+                      <%= player and 'bg-gradient-to-br from-primary to-accent' or 'bg-white/10' %>">
+            <% if player then %>
+              <%= player.is_bot and "🤖" or string.sub(player.name or "?", 1, 1):upper() %>
+            <% else %>
+              <i class="fas fa-user-plus text-xs text-text-dim"></i>
+            <% end %>
+          </div>
+          <div class="text-left">
+            <div class="text-sm font-medium text-white">
+              <% if player then %>
+                <%= player.name %><%= player.is_bot and " 🤖" or "" %>
+              <% else %>
+                <span class="text-text-dim">Empty</span>
+              <% end %>
+            </div>
+            <div class="text-[10px] text-text-muted">
+              <%= seat_labels[seat] %> - Team <%= team %>
+            </div>
+          </div>
+          <% if not player and game.state == "waiting" then %>
+            <% if my_seat < 0 then %>
+            <button onclick="joinSeat(<%= seat %>)"
+                    class="ml-2 px-2 py-1 text-xs bg-success hover:bg-success/80 text-white rounded-lg transition-colors">
+              Join
+            </button>
+            <% elseif is_host then %>
+            <button onclick="addBot(<%= seat %>)"
+                    class="ml-2 px-2 py-1 text-xs bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+              + Bot
+            </button>
+            <% end %>
+          <% end %>
+        </div>
+
+        <!-- Cards (for this seat) -->
+        <div id="hand-<%= seat %>" class="flex gap-1">
+          <!-- Cards will be rendered here by JS -->
+        </div>
+      </div>
+      <% end %>
+
+      <!-- Trick Area (center) - Canvas Version -->
+      <div id="trick-area" class="trick-area flex items-center justify-center">
+        <canvas id="trick-canvas" class="w-full h-full"></canvas>
+      </div>
+
+      <!-- Last Trick (bottom left corner) -->
+      <div id="last-trick-container" class="absolute bottom-4 left-4 hidden">
+        <div class="bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-white/10">
+          <div class="text-[10px] text-white/60 font-medium uppercase tracking-wide mb-2 flex items-center gap-1">
+            <i class="fas fa-history"></i> Last Trick
+            <span id="last-trick-winner-label" class="ml-1 text-amber-400"></span>
+          </div>
+          <div id="last-trick-cards" class="flex gap-1">
+            <!-- Last trick cards rendered here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Bidding UI (overlay) -->
+      <div id="bidding-ui" class="absolute inset-0 flex items-center justify-center hidden z-50">
+        <div class="bg-bg-card/95 backdrop-blur-xl rounded-2xl p-6 shadow-2xl border border-white/10 max-w-sm w-full mx-4">
+          <h3 id="bidding-title" class="text-lg font-bold text-white mb-4 text-center">Bidding</h3>
+
+          <!-- Turned card -->
+          <div id="turned-card-container" class="mb-4 text-center">
+            <p class="text-sm text-text-muted mb-2">Proposed trump:</p>
+            <div id="turned-card" class="inline-block"></div>
+          </div>
+
+          <!-- Bidding actions -->
+          <div id="bidding-actions" class="hidden">
+            <div class="flex gap-3">
+              <button onclick="placeBid('pass')"
+                      class="flex-1 px-4 py-3 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded-xl transition-colors">
+                Pass
+              </button>
+              <button onclick="placeBid('take')"
+                      class="flex-1 px-4 py-3 bg-success hover:bg-success/80 text-white font-bold rounded-xl transition-colors">
+                Take
+              </button>
+            </div>
+          </div>
+
+          <!-- Waiting message -->
+          <div id="bidding-waiting" class="text-center text-text-muted">
+            <i class="fas fa-spinner fa-spin mr-2"></i>
+            Waiting for <span id="bidding-player-name">player</span> to bid...
+          </div>
+        </div>
+      </div>
+
+      <!-- Game Over UI -->
+      <div id="game-over-ui" class="absolute inset-0 flex items-center justify-center hidden z-50 bg-black/50">
+        <div class="bg-bg-card/95 backdrop-blur-xl rounded-2xl p-8 shadow-2xl border border-white/10 max-w-md w-full mx-4 text-center">
+          <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center">
+            <i class="fas fa-trophy text-3xl text-white"></i>
+          </div>
+          <h3 class="text-2xl font-bold text-white mb-2">Game Over!</h3>
+          <p id="winner-text" class="text-lg text-text-muted mb-6">Team A wins!</p>
+          <div class="flex gap-3">
+            <a href="/belote" class="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-xl transition-colors">
+              Back to Lobby
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Player's Hand (bottom) - Canvas Version -->
+  <div id="my-hand-container" class="h-48 md:h-56 lg:h-64 px-4 py-2 bg-gradient-to-t from-bg-card to-transparent backdrop-blur-sm border-t border-white/5 shrink-0">
+    <canvas id="hand-canvas" class="w-full h-full cursor-pointer"></canvas>
+  </div>
+</div>
+
+<script>
+// Game state
+const GAME_KEY = '<%= game._key %>';
+const DB_NAME = '<%= db_name %>';
+const MY_SEAT = <%= my_seat %>;
+const IS_HOST = <%= is_host and "true" or "false" %>;
+const DB_HOST = window.location.host.replace(/:\d+$/, '') + ':6745';
+const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+let gameState = null;
+let liveQueryWs = null;
+let heartbeatInterval = null;
+let botTurnPending = false;
+let lastTrickState = null;
+let lastTrickLength = 0;
+let trickClearTimeout = null;
+let tokenCache = { token: null, expiry: 0 };
+let lastTrickWinner = null;
+let pendingPlayedCard = null; // Track card being played to prevent flash-back
+let previousCardCounts = {}; // Track card counts for animation
+
+// Canvas state for player's hand
+let handCanvas = null;
+let handCtx = null;
+let handCards = []; // Array of { card, bounds: {x, y, width, height, rotation} }
+let hoveredCardIndex = -1;
+let canvasDpr = 1;
+
+// Animation state for smooth hover transitions
+let cardHoverStates = {}; // { cardIndex: { current: 0-1, target: 0-1 } }
+let animationFrameId = null;
+
+// Trick canvas state
+let trickCanvas = null;
+let trickCtx = null;
+let trickCanvasDpr = 1;
+let trickCards = []; // Array of { card, seat, state: { x, y, scale, opacity, rotation, targetX, targetY, targetScale, targetOpacity, targetRotation } }
+let trickAnimating = false;
+let collectingTrick = false; // True when animating cards to winner
+
+// Bot turn delay in milliseconds
+const BOT_DELAY = 1200;
+const TRICK_CLEAR_DELAY = 1200;
+const TRICK_COLLECT_ANIMATION = 600;
+
+// Suit symbols (HTML version for DOM elements - kept for last trick display)
+const SUIT_SYMBOLS = {
+  hearts: '<span class="text-red-500">&#9829;</span>',
+  diamonds: '<span class="text-red-500">&#9830;</span>',
+  clubs: '<span class="text-gray-800">&#9827;</span>',
+  spades: '<span class="text-gray-800">&#9824;</span>'
+};
+
+// Suit symbols (Unicode for canvas)
+const SUIT_CHARS = {
+  hearts: '\u2665',    // ♥
+  diamonds: '\u2666',  // ♦
+  clubs: '\u2663',     // ♣
+  spades: '\u2660'     // ♠
+};
+
+// Suit colors for canvas
+const SUIT_COLORS = {
+  hearts: '#dc2626',   // Red
+  diamonds: '#dc2626', // Red
+  clubs: '#1e293b',    // Dark
+  spades: '#1e293b'    // Dark
+};
+
+// ============================================================================
+// CANVAS RENDERING FUNCTIONS
+// ============================================================================
+
+// Initialize the hand canvas with HiDPI support
+function initHandCanvas() {
+  handCanvas = document.getElementById('hand-canvas');
+  if (!handCanvas) return;
+
+  const container = handCanvas.parentElement;
+  const rect = container.getBoundingClientRect();
+
+  // Handle high DPI displays
+  canvasDpr = window.devicePixelRatio || 1;
+
+  // Set canvas size accounting for DPI
+  handCanvas.width = rect.width * canvasDpr;
+  handCanvas.height = rect.height * canvasDpr;
+
+  // Set display size
+  handCanvas.style.width = rect.width + 'px';
+  handCanvas.style.height = rect.height + 'px';
+
+  handCtx = handCanvas.getContext('2d');
+  // Reset transform before scaling (fixes resize bug where scale compounds)
+  handCtx.setTransform(1, 0, 0, 1, 0, 0);
+  handCtx.scale(canvasDpr, canvasDpr);
+
+  // Remove old listeners before adding new ones (prevents duplicates on resize)
+  handCanvas.removeEventListener('mousemove', handleHandMouseMove);
+  handCanvas.removeEventListener('mouseleave', handleHandMouseLeave);
+  handCanvas.removeEventListener('click', handleHandClick);
+  handCanvas.removeEventListener('touchstart', handleHandTouch);
+
+  // Add event listeners
+  handCanvas.addEventListener('mousemove', handleHandMouseMove);
+  handCanvas.addEventListener('mouseleave', handleHandMouseLeave);
+  handCanvas.addEventListener('click', handleHandClick);
+  handCanvas.addEventListener('touchstart', handleHandTouch, { passive: false });
+}
+
+// Draw a rounded rectangle
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
+// Draw a single card on canvas
+// hoverAmount: 0 = not hovered, 1 = fully hovered (for smooth animation)
+function drawCardCanvas(ctx, card, x, y, width, height, rotation, hoverAmount, isInteractive) {
+  ctx.save();
+
+  // Apply rotation around card center
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+  ctx.translate(centerX, centerY);
+  ctx.rotate(rotation * Math.PI / 180);
+
+  // Hover effect: smooth lift and scale based on hoverAmount (0-1)
+  const maxScale = 1.06;
+  const maxLift = -20;
+  const scale = 1 + (maxScale - 1) * hoverAmount;
+  const offsetY = maxLift * hoverAmount;
+
+  ctx.scale(scale, scale);
+  ctx.translate(0, offsetY);
+  ctx.translate(-width / 2, -height / 2);
+
+  const radius = Math.round(width * 0.08);
+  const color = SUIT_COLORS[card.suit] || '#1e293b';
+  const suitChar = SUIT_CHARS[card.suit] || '?';
+
+  // Card shadow - interpolate between normal and hover states
+  const baseShadowBlur = 8;
+  const hoverShadowBlur = 15;
+  const shadowBlur = baseShadowBlur + (hoverShadowBlur - baseShadowBlur) * hoverAmount;
+
+  if (hoverAmount > 0 && isInteractive) {
+    // Blend shadow color from black to amber based on hover amount
+    const amberAlpha = 0.4 * hoverAmount;
+    ctx.shadowColor = `rgba(251, 191, 36, ${amberAlpha})`;
+    ctx.shadowBlur = shadowBlur;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 4 + 4 * hoverAmount;
+  } else {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+    ctx.shadowBlur = baseShadowBlur;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 4;
+  }
+
+  // Card background - solid white with subtle gradient
+  drawRoundedRect(ctx, 0, 0, width, height, radius);
+
+  // Fill with gradient
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  gradient.addColorStop(0, '#ffffff');
+  gradient.addColorStop(1, '#f8fafc');
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  // Reset shadow for border
+  ctx.shadowColor = 'transparent';
+
+  // Card border
+  ctx.strokeStyle = '#94a3b8';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Inner decorative frame
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+  ctx.lineWidth = 1;
+  const frameInset = width * 0.08;
+  drawRoundedRect(ctx, frameInset, frameInset, width - frameInset * 2, height - frameInset * 2, radius * 0.5);
+  ctx.stroke();
+
+  // Large background filigree (faint suit symbol)
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.05;
+  ctx.font = `bold ${Math.round(height * 0.5)}px serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(suitChar, width / 2, height / 2);
+  ctx.globalAlpha = 1;
+
+  // Corner value and suit - top left
+  const cornerX = width * 0.12;
+  const cornerY = height * 0.12;
+  const valueSize = Math.round(height * 0.14);
+  const suitSize = Math.round(height * 0.10);
+
+  ctx.fillStyle = color;
+  ctx.font = `bold ${valueSize}px "Times New Roman", serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(card.value, cornerX, cornerY);
+
+  ctx.font = `${suitSize}px serif`;
+  ctx.fillText(suitChar, cornerX, cornerY + valueSize * 0.9);
+
+  // Corner value and suit - bottom right (rotated 180)
+  ctx.save();
+  ctx.translate(width - cornerX, height - cornerY);
+  ctx.rotate(Math.PI);
+  ctx.font = `bold ${valueSize}px "Times New Roman", serif`;
+  ctx.textBaseline = 'top';
+  ctx.fillText(card.value, 0, 0);
+  ctx.font = `${suitSize}px serif`;
+  ctx.fillText(suitChar, 0, valueSize * 0.9);
+  ctx.restore();
+
+  // Center content
+  drawCardCenter(ctx, card, width, height, color, suitChar);
+
+  ctx.restore();
+}
+
+// Draw the center content of a card
+function drawCardCenter(ctx, card, width, height, color, suitChar) {
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  ctx.fillStyle = color;
+
+  if (card.value === 'A') {
+    // Ace: Large suit symbol
+    ctx.font = `${Math.round(height * 0.35)}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(suitChar, centerX, centerY);
+  } else if (['J', 'Q', 'K'].includes(card.value)) {
+    // Face cards: Large letter + decorative
+    ctx.font = `bold ${Math.round(height * 0.25)}px "Times New Roman", serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = 0.15;
+    ctx.fillText(card.value, centerX, centerY - height * 0.05);
+    ctx.globalAlpha = 1;
+
+    // Crown/symbol for face cards
+    const iconSize = Math.round(height * 0.18);
+    ctx.font = `${iconSize}px serif`;
+    const icons = { K: '\u265A', Q: '\u265B', J: '\u2658' }; // Chess pieces
+    ctx.fillText(icons[card.value] || suitChar, centerX, centerY + height * 0.08);
+  } else {
+    // Number cards: Draw pips
+    const count = parseInt(card.value) || 0;
+    const pipSize = Math.round(height * 0.10);
+    ctx.font = `${pipSize}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const pipPositions = getPipPositions(count, width, height);
+    pipPositions.forEach(pos => {
+      ctx.save();
+      ctx.translate(pos.x, pos.y);
+      if (pos.inverted) ctx.rotate(Math.PI);
+      ctx.fillText(suitChar, 0, 0);
+      ctx.restore();
+    });
+  }
+}
+
+// Get pip positions for number cards
+function getPipPositions(count, width, height) {
+  const cx = width / 2;
+  const top = height * 0.22;
+  const bottom = height * 0.78;
+  const mid = height * 0.5;
+  const left = width * 0.30;
+  const right = width * 0.70;
+
+  const positions = [];
+
+  if (count === 7) {
+    positions.push({ x: left, y: top }, { x: right, y: top });
+    positions.push({ x: left, y: mid }, { x: right, y: mid });
+    positions.push({ x: left, y: bottom, inverted: true }, { x: right, y: bottom, inverted: true });
+    positions.push({ x: cx, y: (top + mid) / 2 });
+  } else if (count === 8) {
+    positions.push({ x: left, y: top }, { x: right, y: top });
+    positions.push({ x: left, y: mid }, { x: right, y: mid });
+    positions.push({ x: left, y: bottom, inverted: true }, { x: right, y: bottom, inverted: true });
+    positions.push({ x: cx, y: (top + mid) / 2 });
+    positions.push({ x: cx, y: (mid + bottom) / 2, inverted: true });
+  } else if (count === 9) {
+    const third1 = top + (bottom - top) * 0.25;
+    const third2 = top + (bottom - top) * 0.75;
+    positions.push({ x: left, y: top }, { x: right, y: top });
+    positions.push({ x: left, y: third1 }, { x: right, y: third1 });
+    positions.push({ x: cx, y: mid });
+    positions.push({ x: left, y: third2, inverted: true }, { x: right, y: third2, inverted: true });
+    positions.push({ x: left, y: bottom, inverted: true }, { x: right, y: bottom, inverted: true });
+  } else if (count === 10) {
+    const third1 = top + (bottom - top) * 0.25;
+    const third2 = top + (bottom - top) * 0.75;
+    positions.push({ x: left, y: top }, { x: right, y: top });
+    positions.push({ x: cx, y: (top + third1) / 2 });
+    positions.push({ x: left, y: third1 }, { x: right, y: third1 });
+    positions.push({ x: left, y: third2, inverted: true }, { x: right, y: third2, inverted: true });
+    positions.push({ x: cx, y: (third2 + bottom) / 2, inverted: true });
+    positions.push({ x: left, y: bottom, inverted: true }, { x: right, y: bottom, inverted: true });
+  }
+
+  return positions;
+}
+
+// Render the entire hand on canvas
+function renderHandCanvas(hand) {
+  if (!handCanvas || !handCtx) {
+    initHandCanvas();
+    if (!handCanvas || !handCtx) return;
+  }
+
+  const rect = handCanvas.getBoundingClientRect();
+  const canvasWidth = rect.width;
+  const canvasHeight = rect.height;
+
+  // Clear canvas
+  handCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+  // Convert object to array if needed
+  let handArray = hand;
+  if (hand && !Array.isArray(hand)) {
+    handArray = Object.values(hand);
+  }
+
+  handCards = []; // Reset card bounds
+
+  if (!handArray || handArray.length === 0) {
+    // Draw "No cards" text
+    handCtx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    handCtx.font = '16px sans-serif';
+    handCtx.textAlign = 'center';
+    handCtx.textBaseline = 'middle';
+    handCtx.fillText('No cards', canvasWidth / 2, canvasHeight / 2);
+    return;
+  }
+
+  // Filter out pending played card
+  if (pendingPlayedCard) {
+    handArray = handArray.filter(c =>
+      !(c.suit === pendingPlayedCard.suit && c.value === pendingPlayedCard.value)
+    );
+  }
+
+  if (handArray.length === 0) {
+    handCtx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    handCtx.font = '16px sans-serif';
+    handCtx.textAlign = 'center';
+    handCtx.textBaseline = 'middle';
+    handCtx.fillText('No cards', canvasWidth / 2, canvasHeight / 2);
+    return;
+  }
+
+  // Sort hand by suit then value
+  const suitOrder = { 'spades': 0, 'hearts': 1, 'clubs': 2, 'diamonds': 3 };
+  const valueOrder = ['7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+  handArray.sort((a, b) => {
+    if (suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[a.suit] - suitOrder[b.suit];
+    return valueOrder.indexOf(a.value) - valueOrder.indexOf(b.value);
+  });
+
+  const isMyTurn = gameState && gameState.current_player === MY_SEAT && gameState.state === 'playing';
+  const cardCount = handArray.length;
+
+  // Card dimensions (responsive) - scale to fit container
+  const isDesktop = window.innerWidth >= 1024;
+  const isTablet = window.innerWidth >= 768;
+
+  // Target card height as percentage of container (leave room for hover lift)
+  const maxCardHeight = canvasHeight * 0.85;
+  const cardRatio = 70 / 100; // width:height ratio from base card size
+
+  let cardHeight = Math.min(maxCardHeight, isDesktop ? 220 : (isTablet ? 180 : 150));
+  let cardWidth = Math.round(cardHeight * cardRatio);
+
+  // Fan parameters
+  const fanAngle = Math.min(4, 30 / cardCount);
+  const totalAngle = fanAngle * (cardCount - 1);
+  const startAngle = -totalAngle / 2;
+
+  // Overlap calculation - make cards overlap nicely
+  // Scale overlap based on card width (about 50-60% overlap)
+  const cardOverlap = cardWidth * 0.55;
+  const cardSpacing = cardWidth - cardOverlap;
+  const totalWidth = cardWidth + (cardCount - 1) * cardSpacing;
+
+  // Starting position (centered horizontally, bottom-aligned with padding)
+  const startX = (canvasWidth - totalWidth) / 2;
+  // Position cards with bottom padding, but ensure they fit in canvas
+  const bottomPadding = 10;
+  const baseY = Math.max(0, canvasHeight - cardHeight - bottomPadding);
+
+  // Draw cards from left to right (first card is bottom of stack)
+  handArray.forEach((card, index) => {
+    const angle = startAngle + (index * fanAngle);
+    const lift = Math.abs(angle) * 1.5; // Lift at edges
+
+    const x = startX + index * cardSpacing;
+    const y = baseY + lift;
+
+    // Store card bounds for hit testing
+    handCards.push({
+      card: card,
+      index: index,
+      bounds: {
+        x: x,
+        y: y,
+        width: cardWidth,
+        height: cardHeight,
+        rotation: angle
+      }
+    });
+  });
+
+  // Draw cards in natural order with animated hover states
+  handCards.forEach(({ card, index, bounds }) => {
+    // Get or initialize hover state for this card
+    if (!cardHoverStates[index]) {
+      cardHoverStates[index] = { current: 0, target: 0 };
+    }
+
+    // Set target based on whether card is hovered
+    cardHoverStates[index].target = (index === hoveredCardIndex && isMyTurn) ? 1 : 0;
+
+    const hoverAmount = cardHoverStates[index].current;
+
+    drawCardCanvas(
+      handCtx,
+      card,
+      bounds.x,
+      bounds.y,
+      bounds.width,
+      bounds.height,
+      bounds.rotation,
+      hoverAmount,
+      isMyTurn
+    );
+  });
+
+  // Clean up old hover states for cards that no longer exist
+  const validIndices = new Set(handCards.map(c => c.index));
+  Object.keys(cardHoverStates).forEach(key => {
+    if (!validIndices.has(parseInt(key))) {
+      delete cardHoverStates[key];
+    }
+  });
+}
+
+// Animation loop for smooth hover transitions
+function animateHandCanvas() {
+  let needsRedraw = false;
+  const animationSpeed = 0.35; // How fast to animate (0-1, higher = faster)
+
+  // Update all hover states
+  Object.keys(cardHoverStates).forEach(key => {
+    const state = cardHoverStates[key];
+    const diff = state.target - state.current;
+
+    if (Math.abs(diff) > 0.01) {
+      state.current += diff * animationSpeed;
+      needsRedraw = true;
+    } else if (state.current !== state.target) {
+      state.current = state.target;
+      needsRedraw = true;
+    }
+  });
+
+  // Redraw if animation is in progress
+  if (needsRedraw && gameState && gameState.my_hand) {
+    renderHandCanvas(gameState.my_hand);
+  }
+
+  // Also animate trick canvas
+  animateTrickCanvas();
+
+  // Continue animation loop
+  animationFrameId = requestAnimationFrame(animateHandCanvas);
+}
+
+// ============================================================================
+// TRICK CANVAS RENDERING FUNCTIONS
+// ============================================================================
+
+// Initialize the trick canvas
+function initTrickCanvas() {
+  trickCanvas = document.getElementById('trick-canvas');
+  if (!trickCanvas) return;
+
+  const container = trickCanvas.parentElement;
+  const rect = container.getBoundingClientRect();
+
+  trickCanvasDpr = window.devicePixelRatio || 1;
+
+  trickCanvas.width = rect.width * trickCanvasDpr;
+  trickCanvas.height = rect.height * trickCanvasDpr;
+
+  trickCanvas.style.width = rect.width + 'px';
+  trickCanvas.style.height = rect.height + 'px';
+
+  trickCtx = trickCanvas.getContext('2d');
+  trickCtx.setTransform(1, 0, 0, 1, 0, 0);
+  trickCtx.scale(trickCanvasDpr, trickCanvasDpr);
+}
+
+// Get trick card positions based on screen size
+function getTrickCardPositions() {
+  if (!trickCanvas) return { center: { x: 0, y: 0 }, positions: {}, startPositions: {} };
+
+  const rect = trickCanvas.getBoundingClientRect();
+  const centerX = rect.width / 2;
+  const centerY = rect.height / 2;
+
+  const isDesktop = window.innerWidth >= 1024;
+  const isTablet = window.innerWidth >= 768;
+  const spread = isDesktop ? 70 : (isTablet ? 55 : 40);
+
+  return {
+    center: { x: centerX, y: centerY },
+    // Final positions for each seat (offset from center)
+    positions: {
+      0: { x: centerX, y: centerY + spread },        // South
+      1: { x: centerX - spread, y: centerY },        // West
+      2: { x: centerX, y: centerY - spread },        // North
+      3: { x: centerX + spread, y: centerY }         // East
+    },
+    // Starting positions (off-screen from each direction)
+    startPositions: {
+      0: { x: centerX, y: rect.height + 100 },       // South - from bottom
+      1: { x: -100, y: centerY },                    // West - from left
+      2: { x: centerX, y: -100 },                    // North - from top
+      3: { x: rect.width + 100, y: centerY }         // East - from right
+    },
+    // Collection targets (off toward winner)
+    collectTargets: {
+      0: { x: centerX, y: rect.height + 150 },
+      1: { x: -150, y: centerY },
+      2: { x: centerX, y: -150 },
+      3: { x: rect.width + 150, y: centerY }
+    }
+  };
+}
+
+// Get card size for trick area
+function getTrickCardSize() {
+  const isDesktop = window.innerWidth >= 1024;
+  const isTablet = window.innerWidth >= 768;
+
+  if (isDesktop) {
+    return { width: 110, height: 157 };
+  } else if (isTablet) {
+    return { width: 90, height: 129 };
+  } else {
+    return { width: 70, height: 100 };
+  }
+}
+
+// Add a card to the trick with fly-in animation
+function addCardToTrick(card, seat) {
+  if (collectingTrick) return; // Don't add cards while collecting
+
+  const { positions, startPositions } = getTrickCardPositions();
+  const startPos = startPositions[seat];
+  const targetPos = positions[seat];
+  const randomRotation = (Math.random() - 0.5) * 8; // -4 to 4 degrees
+
+  // Check if card from this seat already exists
+  const existingIndex = trickCards.findIndex(tc => tc.seat === seat);
+  if (existingIndex >= 0) {
+    trickCards.splice(existingIndex, 1);
+  }
+
+  trickCards.push({
+    card: card,
+    seat: seat,
+    state: {
+      x: startPos.x,
+      y: startPos.y,
+      scale: 0.5,
+      opacity: 0,
+      rotation: randomRotation + (Math.random() - 0.5) * 10,
+      targetX: targetPos.x,
+      targetY: targetPos.y,
+      targetScale: 1,
+      targetOpacity: 1,
+      targetRotation: randomRotation
+    }
+  });
+
+  trickAnimating = true;
+}
+
+// Animate trick cards to winner and clear
+function collectTrickToWinner(winnerSeat) {
+  return new Promise(resolve => {
+    if (trickCards.length === 0) {
+      resolve();
+      return;
+    }
+
+    collectingTrick = true;
+    const { collectTargets } = getTrickCardPositions();
+    const target = collectTargets[winnerSeat];
+
+    // Set all cards to animate to winner position
+    trickCards.forEach(tc => {
+      tc.state.targetX = target.x;
+      tc.state.targetY = target.y;
+      tc.state.targetScale = 0.3;
+      tc.state.targetOpacity = 0;
+      tc.state.targetRotation = tc.state.rotation + (Math.random() - 0.5) * 40;
+    });
+
+    trickAnimating = true;
+
+    // Wait for animation to complete, then clear
+    setTimeout(() => {
+      trickCards = [];
+      collectingTrick = false;
+      lastTrickLength = 0;
+      lastTrickState = '';
+      renderTrickCanvas();
+      resolve();
+    }, 200); // Fast collection
+  });
+}
+
+// Clear trick immediately (for new round)
+function clearTrickCanvas() {
+  trickCards = [];
+  collectingTrick = false;
+  lastTrickLength = 0;
+  lastTrickState = '';
+  if (trickCtx && trickCanvas) {
+    const rect = trickCanvas.getBoundingClientRect();
+    trickCtx.clearRect(0, 0, rect.width, rect.height);
+  }
+}
+
+// Render the trick canvas
+function renderTrickCanvas() {
+  if (!trickCanvas || !trickCtx) {
+    initTrickCanvas();
+    if (!trickCanvas || !trickCtx) return;
+  }
+
+  const rect = trickCanvas.getBoundingClientRect();
+  trickCtx.clearRect(0, 0, rect.width, rect.height);
+
+  if (trickCards.length === 0) return;
+
+  const cardSize = getTrickCardSize();
+
+  // Draw each card
+  trickCards.forEach(({ card, state }) => {
+    drawTrickCard(
+      trickCtx,
+      card,
+      state.x,
+      state.y,
+      cardSize.width,
+      cardSize.height,
+      state.rotation,
+      state.scale,
+      state.opacity
+    );
+  });
+}
+
+// Draw a single card in the trick area
+function drawTrickCard(ctx, card, x, y, width, height, rotation, scale, opacity) {
+  ctx.save();
+
+  ctx.globalAlpha = opacity;
+  ctx.translate(x, y);
+  ctx.rotate(rotation * Math.PI / 180);
+  ctx.scale(scale, scale);
+
+  const halfW = width / 2;
+  const halfH = height / 2;
+  const radius = Math.round(width * 0.08);
+  const color = SUIT_COLORS[card.suit] || '#1e293b';
+  const suitChar = SUIT_CHARS[card.suit] || '?';
+
+  // Shadow
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetX = 2;
+  ctx.shadowOffsetY = 4;
+
+  // Card background
+  drawRoundedRect(ctx, -halfW, -halfH, width, height, radius);
+  const gradient = ctx.createLinearGradient(-halfW, -halfH, -halfW, halfH);
+  gradient.addColorStop(0, '#ffffff');
+  gradient.addColorStop(1, '#f8fafc');
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  // Reset shadow for border
+  ctx.shadowColor = 'transparent';
+
+  // Border
+  ctx.strokeStyle = '#94a3b8';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Inner frame
+  const frameInset = width * 0.06;
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.06)';
+  drawRoundedRect(ctx, -halfW + frameInset, -halfH + frameInset, width - frameInset * 2, height - frameInset * 2, radius * 0.5);
+  ctx.stroke();
+
+  // Filigree
+  ctx.fillStyle = color;
+  ctx.globalAlpha = opacity * 0.05;
+  ctx.font = `bold ${Math.round(height * 0.4)}px serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(suitChar, 0, 0);
+  ctx.globalAlpha = opacity;
+
+  // Corners
+  const cornerX = -halfW + width * 0.15;
+  const cornerY = -halfH + height * 0.12;
+  const valueSize = Math.round(height * 0.15);
+  const suitSize = Math.round(height * 0.12);
+
+  ctx.fillStyle = color;
+  ctx.font = `bold ${valueSize}px "Times New Roman", serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(card.value, cornerX, cornerY);
+  ctx.font = `${suitSize}px serif`;
+  ctx.fillText(suitChar, cornerX, cornerY + valueSize * 0.85);
+
+  // Bottom right corner (rotated)
+  ctx.save();
+  ctx.translate(halfW - width * 0.15, halfH - height * 0.12);
+  ctx.rotate(Math.PI);
+  ctx.font = `bold ${valueSize}px "Times New Roman", serif`;
+  ctx.textBaseline = 'top';
+  ctx.fillText(card.value, 0, 0);
+  ctx.font = `${suitSize}px serif`;
+  ctx.fillText(suitChar, 0, valueSize * 0.85);
+  ctx.restore();
+
+  // Center content
+  drawTrickCardCenter(ctx, card, width, height, color, suitChar, opacity);
+
+  ctx.restore();
+}
+
+// Draw center content for trick card
+function drawTrickCardCenter(ctx, card, width, height, color, suitChar, opacity) {
+  ctx.fillStyle = color;
+  ctx.globalAlpha = opacity;
+
+  if (card.value === 'A') {
+    ctx.font = `${Math.round(height * 0.35)}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(suitChar, 0, 0);
+  } else if (['J', 'Q', 'K'].includes(card.value)) {
+    ctx.font = `bold ${Math.round(height * 0.22)}px "Times New Roman", serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = opacity * 0.15;
+    ctx.fillText(card.value, 0, -height * 0.03);
+    ctx.globalAlpha = opacity;
+
+    const iconSize = Math.round(height * 0.16);
+    ctx.font = `${iconSize}px serif`;
+    const icons = { K: '\u265A', Q: '\u265B', J: '\u2658' };
+    ctx.fillText(icons[card.value] || suitChar, 0, height * 0.08);
+  } else {
+    const count = parseInt(card.value) || 0;
+    const pipSize = Math.round(height * 0.11);
+    ctx.font = `${pipSize}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const positions = getTrickPipPositions(count, width, height);
+    positions.forEach(pos => {
+      ctx.save();
+      ctx.translate(pos.x, pos.y);
+      if (pos.inverted) ctx.rotate(Math.PI);
+      ctx.fillText(suitChar, 0, 0);
+      ctx.restore();
+    });
+  }
+}
+
+// Get pip positions for trick cards (centered at origin)
+function getTrickPipPositions(count, width, height) {
+  const top = -height * 0.28;
+  const bottom = height * 0.28;
+  const mid = 0;
+  const left = -width * 0.20;
+  const right = width * 0.20;
+
+  const positions = [];
+
+  if (count === 7) {
+    positions.push({ x: left, y: top }, { x: right, y: top });
+    positions.push({ x: left, y: mid }, { x: right, y: mid });
+    positions.push({ x: left, y: bottom, inverted: true }, { x: right, y: bottom, inverted: true });
+    positions.push({ x: 0, y: (top + mid) / 2 });
+  } else if (count === 8) {
+    positions.push({ x: left, y: top }, { x: right, y: top });
+    positions.push({ x: left, y: mid }, { x: right, y: mid });
+    positions.push({ x: left, y: bottom, inverted: true }, { x: right, y: bottom, inverted: true });
+    positions.push({ x: 0, y: (top + mid) / 2 });
+    positions.push({ x: 0, y: (mid + bottom) / 2, inverted: true });
+  } else if (count === 9) {
+    const third1 = top + (bottom - top) * 0.25;
+    const third2 = top + (bottom - top) * 0.75;
+    positions.push({ x: left, y: top }, { x: right, y: top });
+    positions.push({ x: left, y: third1 }, { x: right, y: third1 });
+    positions.push({ x: 0, y: mid });
+    positions.push({ x: left, y: third2, inverted: true }, { x: right, y: third2, inverted: true });
+    positions.push({ x: left, y: bottom, inverted: true }, { x: right, y: bottom, inverted: true });
+  } else if (count === 10) {
+    const third1 = top + (bottom - top) * 0.25;
+    const third2 = top + (bottom - top) * 0.75;
+    positions.push({ x: left, y: top }, { x: right, y: top });
+    positions.push({ x: 0, y: (top + third1) / 2 });
+    positions.push({ x: left, y: third1 }, { x: right, y: third1 });
+    positions.push({ x: left, y: third2, inverted: true }, { x: right, y: third2, inverted: true });
+    positions.push({ x: 0, y: (third2 + bottom) / 2, inverted: true });
+    positions.push({ x: left, y: bottom, inverted: true }, { x: right, y: bottom, inverted: true });
+  }
+
+  return positions;
+}
+
+// Animation loop for trick cards
+function animateTrickCanvas() {
+  if (!trickAnimating || trickCards.length === 0) return;
+
+  let stillAnimating = false;
+  const speed = 0.4; // Fast animation
+
+  trickCards.forEach(tc => {
+    const s = tc.state;
+
+    // Animate each property toward target
+    ['x', 'y', 'scale', 'opacity', 'rotation'].forEach(prop => {
+      const target = s['target' + prop.charAt(0).toUpperCase() + prop.slice(1)];
+      const diff = target - s[prop];
+      if (Math.abs(diff) > 0.01) {
+        s[prop] += diff * speed;
+        stillAnimating = true;
+      } else {
+        s[prop] = target;
+      }
+    });
+  });
+
+  if (stillAnimating) {
+    renderTrickCanvas();
+  } else {
+    trickAnimating = false;
+  }
+}
+
+// Get card at mouse position (returns index or -1)
+function getCardAtPoint(canvasX, canvasY) {
+  // Check cards in reverse order (top card first)
+  for (let i = handCards.length - 1; i >= 0; i--) {
+    const { bounds } = handCards[i];
+
+    // Simple rectangle check (ignoring rotation for simplicity)
+    // For more accurate hit testing, we'd need to transform the point
+    const padding = 5;
+    if (canvasX >= bounds.x - padding &&
+        canvasX <= bounds.x + bounds.width + padding &&
+        canvasY >= bounds.y - padding &&
+        canvasY <= bounds.y + bounds.height + padding) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Mouse move handler
+function handleHandMouseMove(e) {
+  if (!handCanvas) return;
+
+  const rect = handCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  const cardIndex = getCardAtPoint(x, y);
+
+  if (cardIndex !== hoveredCardIndex) {
+    hoveredCardIndex = cardIndex;
+    handCanvas.style.cursor = cardIndex >= 0 ? 'pointer' : 'default';
+    if (gameState && gameState.my_hand) {
+      renderHandCanvas(gameState.my_hand);
+    }
+  }
+}
+
+// Mouse leave handler
+function handleHandMouseLeave() {
+  if (hoveredCardIndex !== -1) {
+    hoveredCardIndex = -1;
+    if (gameState && gameState.my_hand) {
+      renderHandCanvas(gameState.my_hand);
+    }
+  }
+}
+
+// Click handler
+function handleHandClick(e) {
+  if (!handCanvas || !gameState) return;
+
+  const isMyTurn = gameState.current_player === MY_SEAT && gameState.state === 'playing';
+  if (!isMyTurn) return;
+
+  const rect = handCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  const cardIndex = getCardAtPoint(x, y);
+  if (cardIndex >= 0 && handCards[cardIndex]) {
+    const card = handCards[cardIndex].card;
+    playCard(card);
+  }
+}
+
+// Touch handler
+function handleHandTouch(e) {
+  if (!handCanvas || !gameState) return;
+
+  e.preventDefault();
+  const touch = e.touches[0];
+  const rect = handCanvas.getBoundingClientRect();
+  const x = touch.clientX - rect.left;
+  const y = touch.clientY - rect.top;
+
+  // Update hover state
+  const cardIndex = getCardAtPoint(x, y);
+  hoveredCardIndex = cardIndex;
+
+  if (gameState && gameState.my_hand) {
+    renderHandCanvas(gameState.my_hand);
+  }
+
+  // If it's my turn, play the card
+  const isMyTurn = gameState.current_player === MY_SEAT && gameState.state === 'playing';
+  if (isMyTurn && cardIndex >= 0 && handCards[cardIndex]) {
+    const card = handCards[cardIndex].card;
+    setTimeout(() => {
+      playCard(card);
+      hoveredCardIndex = -1;
+    }, 100);
+  }
+}
+
+// Initialize on load
+document.addEventListener('DOMContentLoaded', function() {
+  initHandCanvas();
+  initTrickCanvas();
+  fetchGameState();
+  connectLiveQuery();
+  startHeartbeat();
+
+  // Start animation loop for smooth hover transitions
+  animateHandCanvas();
+
+  // Handle window resize
+  window.addEventListener('resize', () => {
+    initHandCanvas();
+    initTrickCanvas();
+    if (gameState && gameState.my_hand) {
+      renderHandCanvas(gameState.my_hand);
+    }
+    renderTrickCanvas();
+  });
+});
+
+// Clean up on page unload
+window.addEventListener('beforeunload', function() {
+  stopHeartbeat();
+  sendDisconnect();
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+  }
+  if (liveQueryWs) {
+    liveQueryWs.onclose = null;
+    liveQueryWs.close();
+  }
+});
+
+// Send heartbeat to keep presence alive
+function sendHeartbeat() {
+  fetch('/belote/game/' + GAME_KEY + '/heartbeat', {
+    method: 'POST',
+    keepalive: true
+  }).catch(() => {});
+}
+
+// Start heartbeat interval (every 15 seconds)
+function startHeartbeat() {
+  sendHeartbeat();  // Send immediately
+  heartbeatInterval = setInterval(sendHeartbeat, 15000);
+}
+
+// Stop heartbeat interval
+function stopHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+}
+
+// Notify server of disconnect
+function sendDisconnect() {
+  // Use sendBeacon for reliable delivery during unload
+  navigator.sendBeacon('/belote/game/' + GAME_KEY + '/disconnect');
+}
+
+// Get LiveQuery token
+async function getToken() {
+  if (tokenCache.token && Date.now() < tokenCache.expiry - 5000) {
+    return tokenCache.token;
+  }
+  try {
+    const res = await fetch('/belote/livequery_token');
+    const data = await res.json();
+    tokenCache.token = data.token;
+    tokenCache.expiry = Date.now() + (data.expires_in || 30) * 1000;
+    return data.token;
+  } catch (e) {
+    console.error('Token fetch failed:', e);
+    return null;
+  }
+}
+
+// LiveQuery WebSocket for real-time game updates
+async function connectLiveQuery() {
+  const token = await getToken();
+  if (!token) return setTimeout(connectLiveQuery, 5000);
+
+  const url = `${WS_PROTOCOL}//${DB_HOST}/_api/ws/changefeed?token=${token}`;
+  liveQueryWs = new WebSocket(url);
+
+  liveQueryWs.onopen = () => {
+    console.log('[BELOTE] LiveQuery connected');
+    // Subscribe to changes on this specific game
+    const subscribeMsg = JSON.stringify({
+      type: 'subscribe',
+      collection: 'belote_games',
+      database: DB_NAME,
+      filter: { _key: GAME_KEY }
+    });
+    liveQueryWs.send(subscribeMsg);
+  };
+
+  liveQueryWs.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'CHANGE' || data.type === 'INSERT' || data.type === 'UPDATE') {
+        console.log('[BELOTE] Game update received');
+        // Skip updates while trick animation is in progress to avoid interrupting
+        if (trickAnimating || collectingTrick) {
+          console.log('[BELOTE] Skipping update - trick animation in progress');
+          return;
+        }
+        // Fetch full state (to get hand and card counts)
+        fetchGameState();
+      }
+    } catch (err) {
+      console.error('LiveQuery message error:', err);
+    }
+  };
+
+  liveQueryWs.onclose = () => {
+    console.log('[BELOTE] LiveQuery disconnected, reconnecting...');
+    setTimeout(connectLiveQuery, 3000);
+  };
+
+  liveQueryWs.onerror = (err) => {
+    console.error('[BELOTE] LiveQuery error:', err);
+  };
+}
+
+// Trigger a single bot turn
+async function triggerBotTurn() {
+  if (botTurnPending) return;
+  botTurnPending = true;
+
+  try {
+    const response = await fetch('/belote/game/' + GAME_KEY + '/bot_turn', {
+      method: 'POST'
+    });
+    const data = await response.json();
+
+    if (data.error) {
+      console.error('Bot turn error:', data.error);
+      botTurnPending = false;
+      return;
+    }
+
+    // Check for redeal (all players passed)
+    if (data.action === 'redeal') {
+      showToast('🔄 All players passed! Reshuffling and redealing...', 'info');
+      await fetchGameState();
+      if (data.needs_bot_turn) {
+        setTimeout(() => {
+          botTurnPending = false;
+          triggerBotTurn();
+        }, BOT_DELAY);
+      } else {
+        botTurnPending = false;
+      }
+      return;
+    }
+
+    // If bot played a card, render it immediately before fetching state
+    if (data.action === 'play' && data.card) {
+      // Clear previous trick if it had 4 cards (starting new trick)
+      if (trickCards.length >= 4) {
+        clearTrickCanvas();
+      }
+
+      // Add card to trick canvas with animation
+      addCardToTrick(data.card, data.seat);
+      lastTrickLength = trickCards.length;
+
+      // Wait for card fly-in animation to complete
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // If trick just completed (4 cards), animate cards to winner
+      if (data.trick_complete && data.winner_seat !== undefined) {
+        lastTrickWinner = data.winner_seat;
+        await new Promise(resolve => setTimeout(resolve, TRICK_CLEAR_DELAY - 300));
+        await collectTrickToWinner(data.winner_seat);
+      }
+    }
+
+    // Fetch updated state
+    await fetchGameState();
+
+    // If another bot turn is needed, schedule it with delay
+    if (data.needs_bot_turn) {
+      setTimeout(() => {
+        botTurnPending = false;
+        triggerBotTurn();
+      }, BOT_DELAY);
+    } else {
+      botTurnPending = false;
+    }
+  } catch (e) {
+    console.error('Failed to trigger bot turn:', e);
+    botTurnPending = false;
+  }
+}
+
+// Fetch game state
+async function fetchGameState() {
+  try {
+    const response = await fetch('/belote/game/' + GAME_KEY + '/state');
+    const data = await response.json();
+    if (data.error) {
+      console.error('Error:', data.error);
+      return;
+    }
+    updateUI(data);
+
+    // Check if bot turn needed
+    if (!botTurnPending) {
+      checkForBotTurn(data);
+    }
+  } catch (e) {
+    console.error('Failed to fetch state:', e);
+  }
+}
+
+// Check if the current player is a bot and trigger their turn
+function checkForBotTurn(state) {
+  // Handle scoring state - need to trigger new round
+  if (state.state === 'scoring') {
+    console.log('[BELOTE] Scoring state detected, triggering new round...');
+    setTimeout(triggerBotTurn, BOT_DELAY);
+    return;
+  }
+
+  if (state.state !== 'bidding' && state.state !== 'playing') return;
+
+  const currentSeat = state.state === 'bidding' ? state.bidding_seat : state.current_player;
+  if (currentSeat === undefined || currentSeat === null) return;
+
+  const player = (state.players || []).find(p => p.seat === currentSeat);
+  if (player && player.is_bot) {
+    setTimeout(triggerBotTurn, BOT_DELAY);
+  }
+}
+
+// Update UI based on game state
+function updateUI(state) {
+  gameState = state;
+
+  // Update state label
+  document.getElementById('game-state-label').textContent = state.state;
+
+  // Update scores
+  if (state.scores) {
+    document.getElementById('score-a').textContent = state.scores.team_a || 0;
+    document.getElementById('score-b').textContent = state.scores.team_b || 0;
+  }
+
+  // Update start button
+  const startBtn = document.getElementById('start-btn');
+  if (startBtn) {
+    const playerCount = (state.players || []).length;
+    startBtn.disabled = playerCount < 4;
+  }
+
+  // Show/hide trump indicator with taker info
+  const trumpIndicator = document.getElementById('trump-indicator');
+  if (state.trump_suit) {
+    trumpIndicator.classList.remove('hidden');
+    const suitEl = document.getElementById('trump-suit');
+    
+    const suitColors = {
+      'hearts': 'text-red-600',
+      'diamonds': 'text-pink-500',
+      'spades': 'text-black',
+      'clubs': 'text-slate-700'
+    };
+    
+    suitEl.innerHTML = SUIT_SYMBOLS[state.trump_suit];
+    suitEl.className = 'w-12 h-12 rounded-lg bg-white/90 flex items-center justify-center text-3xl font-bold shadow-inner ' + (suitColors[state.trump_suit] || 'text-gray-950');
+
+    // Find who took
+    const takerEl = document.getElementById('trump-taker');
+    if (state.trump_chooser !== undefined && state.trump_chooser !== null) {
+      const taker = (state.players || []).find(p => p.seat === state.trump_chooser);
+      if (taker) {
+        const isPartner = (state.my_seat === 0 || state.my_seat === 2) === (state.trump_chooser === 0 || state.trump_chooser === 2);
+        const teamLabel = isPartner ? '(Your team)' : '(Opponents)';
+        takerEl.innerHTML = taker.name + ' <span class="text-amber-300/70 text-xs">' + teamLabel + '</span>';
+      }
+    }
+  } else {
+    trumpIndicator.classList.add('hidden');
+  }
+
+  // Update player hand (canvas version)
+  renderHandCanvas(state.my_hand || []);
+
+  // Update trick area (canvas version) - sync state with server
+  let currentTrick = state.current_trick || [];
+  if (currentTrick && !Array.isArray(currentTrick)) {
+    currentTrick = Object.values(currentTrick);
+  }
+
+  // Sync trick cards with server state (add any missing cards)
+  if (!collectingTrick) {
+    currentTrick.forEach(play => {
+      const exists = trickCards.some(tc => tc.seat === play.seat);
+      if (!exists) {
+        addCardToTrick(play.card, play.seat);
+      }
+    });
+
+    // If server has no trick but we have cards (and not collecting), clear
+    if (currentTrick.length === 0 && trickCards.length > 0 && !collectingTrick) {
+      clearTrickCanvas();
+    }
+  }
+
+  lastTrickLength = trickCards.length;
+
+  // Render last trick reminder (bottom left)
+  renderLastTrick(state.last_trick, state.last_trick_winner, state.players);
+
+  // Show/hide bidding UI
+  const biddingUI = document.getElementById('bidding-ui');
+  if (state.state === 'bidding') {
+    // If trick animation is in progress, delay showing bidding UI
+    if (trickAnimating || collectingTrick || trickCards.length > 0) {
+      // Schedule a check after animation should be done
+      setTimeout(() => {
+        if (gameState && gameState.state === 'bidding') {
+          clearTrickCanvas();
+          previousCardCounts = {};
+          const lastTrickContainer = document.getElementById('last-trick-container');
+          if (lastTrickContainer) {
+            lastTrickContainer.classList.add('hidden');
+          }
+          biddingUI.classList.remove('hidden');
+          updateBiddingUI(gameState);
+        }
+      }, 400);
+    } else {
+      // No animation in progress, show immediately
+      clearTrickCanvas();
+      previousCardCounts = {};
+      const lastTrickContainer = document.getElementById('last-trick-container');
+      if (lastTrickContainer) {
+        lastTrickContainer.classList.add('hidden');
+      }
+      biddingUI.classList.remove('hidden');
+      updateBiddingUI(state);
+    }
+  } else {
+    biddingUI.classList.add('hidden');
+  }
+
+  // Show/hide game over UI
+  const gameOverUI = document.getElementById('game-over-ui');
+  const isGameOver = state.state === 'finished' ||
+                     (state.scores && (state.scores.team_a >= 501 || state.scores.team_b >= 501));
+  if (isGameOver) {
+    gameOverUI.classList.remove('hidden');
+    const winnerTeam = (state.scores.team_a >= 501) ? 'A (North/South)' : 'B (East/West)';
+    document.getElementById('winner-text').textContent = 'Team ' + winnerTeam + ' wins!';
+  } else {
+    gameOverUI.classList.add('hidden');
+  }
+
+  // Update seats and highlight current player
+  const currentSeat = state.state === 'bidding' ? state.bidding_seat : state.current_player;
+  const isActive = state.state === 'playing' || state.state === 'bidding';
+  const seatLabels = { 0: 'South', 1: 'West', 2: 'North', 3: 'East' };
+
+  for (let seat = 0; seat < 4; seat++) {
+    const seatEl = document.getElementById('seat-' + seat);
+    const isCurrent = currentSeat === seat && isActive;
+    const player = (state.players || []).find(p => p.seat === seat);
+    const isBot = player && player.is_bot;
+    const team = seat % 2 === 0 ? 'A' : 'B';
+
+    // Update player info display
+    const playerInfoEl = document.getElementById('player-info-' + seat);
+    if (playerInfoEl) {
+      const avatarEl = playerInfoEl.querySelector('.w-8.h-8');
+      const nameEl = playerInfoEl.querySelector('.text-sm.font-medium');
+
+      if (player) {
+        // Show player/bot info
+        if (avatarEl) {
+          avatarEl.className = 'w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold bg-gradient-to-br from-primary to-accent';
+          avatarEl.innerHTML = player.is_bot ? '🤖' : (player.name ? player.name.charAt(0).toUpperCase() : '?');
+        }
+        if (nameEl) {
+          nameEl.innerHTML = player.name + (player.is_bot ? ' 🤖' : '');
+        }
+        // Hide join/add bot buttons
+        const btns = playerInfoEl.querySelectorAll('button');
+        btns.forEach(btn => btn.style.display = 'none');
+      } else {
+        // Show empty seat
+        if (avatarEl) {
+          avatarEl.className = 'w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold bg-white/10';
+          avatarEl.innerHTML = '<i class="fas fa-user-plus text-xs text-text-dim"></i>';
+        }
+        if (nameEl) {
+          nameEl.innerHTML = '<span class="text-text-dim">Empty</span>';
+        }
+        // Show buttons if waiting state
+        if (state.state === 'waiting') {
+          const btns = playerInfoEl.querySelectorAll('button');
+          btns.forEach(btn => btn.style.display = '');
+        }
+      }
+    }
+
+    // Highlight current player with nice glow effect
+    const playerInfoEl2 = document.getElementById('player-info-' + seat);
+    if (playerInfoEl2) {
+      // Remove existing active badge if any
+      const existingBadge = playerInfoEl2.querySelector('.active-badge');
+      if (existingBadge) existingBadge.remove();
+
+      if (isCurrent) {
+        playerInfoEl2.classList.remove('bg-slate-900/80', 'border-white/20');
+        playerInfoEl2.classList.add('bg-gradient-to-r', 'from-amber-500/40', 'to-orange-500/40', 'border-amber-400/80', 'shadow-2xl', 'shadow-amber-500/30', 'scale-105');
+        playerInfoEl2.style.animation = 'pulse 2s ease-in-out infinite';
+
+        // Add active badge
+        const badge = document.createElement('div');
+        badge.className = 'active-badge absolute -top-3 -right-3 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide shadow-lg border border-white/20';
+        if (seat === MY_SEAT) {
+          badge.className += ' bg-gradient-to-r from-emerald-500 to-green-600 text-white';
+          badge.innerHTML = '⚡ Your Turn';
+        } else {
+          badge.className += ' bg-gradient-to-r from-amber-500 to-orange-600 text-white';
+          badge.innerHTML = '🎯 Playing';
+        }
+        playerInfoEl2.style.position = 'relative';
+        playerInfoEl2.appendChild(badge);
+      } else {
+        playerInfoEl2.classList.add('bg-slate-900/80', 'border-white/20');
+        playerInfoEl2.classList.remove('bg-gradient-to-r', 'from-amber-500/40', 'to-orange-500/40', 'border-amber-400/80', 'shadow-2xl', 'shadow-amber-500/30', 'scale-105');
+        playerInfoEl2.style.animation = '';
+      }
+    }
+
+    // Add/remove thinking indicator for bots
+    let thinkingIndicator = seatEl.querySelector('.bot-thinking');
+    if (isCurrent && isBot && playerInfoEl) {
+      if (!thinkingIndicator) {
+        thinkingIndicator = document.createElement('div');
+        thinkingIndicator.className = 'bot-thinking flex gap-1 justify-center mt-1';
+        thinkingIndicator.innerHTML = `
+          <span class="w-2 h-2 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+          <span class="w-2 h-2 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+          <span class="w-2 h-2 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+        `;
+        playerInfoEl.appendChild(thinkingIndicator);
+      }
+    } else if (thinkingIndicator) {
+      thinkingIndicator.remove();
+    }
+
+    // Render card backs for other players
+    if (seat !== MY_SEAT) {
+      renderOtherPlayerHand(seat, state.card_counts ? state.card_counts[seat] : 0);
+    }
+  }
+}
+
+// NOTE: DOM-based renderMyHand() has been replaced by canvas version renderHandCanvas()
+// See game.etlua.html-backup for the original DOM implementation
+
+// Create a card element
+function createCardElement(card, interactive = false, large = false) {
+  const div = document.createElement('div');
+  div.className = 'playing-card card-shadow ' + (interactive ? 'interactive-card' : '') + (large ? ' large' : '');
+
+  const suitColors = {
+    'hearts': 'text-red-600',      // Solid Red
+    'diamonds': 'text-red-600',    // Solid Red (Standard)
+    'spades': 'text-slate-900',    // Deep Black
+    'clubs': 'text-slate-900'      // Deep Black (Standard)
+  };
+  const colorClass = suitColors[card.suit] || 'text-slate-900';
+  const suitSymbol = getSuitSymbol(card.suit);
+  
+  // Center content based on card value
+  let centerHtml = '';
+  const isFace = ['J', 'Q', 'K'].includes(card.value);
+  const fontSize = large ? 'text-3xl' : 'text-xs';
+  
+  if (isFace) {
+    const icons = {
+      'K': 'fa-chess-king',
+      'Q': 'fa-chess-queen',
+      'J': 'fa-user-shield'
+    };
+    const icon = icons[card.value] || 'fa-user';
+    // Face card design: Large faint letter + Icon
+    centerHtml = `
+      <div class="absolute inset-0 flex items-center justify-center opacity-10">
+        <span class="text-[5rem] font-serif font-bold ${colorClass}">${card.value}</span>
+      </div>
+      <div class="flex flex-col items-center z-10 mt-2">
+        <i class="fas ${icon} text-4xl ${colorClass} drop-shadow-sm"></i>
+      </div>
+    `;
+  } else if (card.value === 'A') {
+    // Ace design: Huge symbol
+    centerHtml = `
+      <span class="text-6xl ${colorClass} drop-shadow-sm transform scale-125">${suitSymbol}</span>
+    `;
+  } else {
+    // Number design: Pattern of pips
+    const count = parseInt(card.value) || 0;
+    
+    // Generate simple grid of pips with tight spacing for 70px cards
+    let pipsHtml = '';
+    
+    if (count === 7) {
+      // 7: 2 cols of 3 + 1 top center
+      pipsHtml = `
+        <div class="grid grid-cols-2 gap-1 w-full px-2 h-full py-1 relative">
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="absolute top-[25%] left-1/2 -translate-x-1/2">${suitSymbol}</div>
+        </div>
+      `;
+    } else if (count === 8) {
+       // 8: 2 cols of 3 + 1 top center + 1 bottom center
+       pipsHtml = `
+        <div class="grid grid-cols-2 gap-1 w-full px-2 h-full py-1 relative">
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="absolute top-[25%] left-1/2 -translate-x-1/2">${suitSymbol}</div>
+          <div class="absolute bottom-[25%] left-1/2 -translate-x-1/2 rotate-180">${suitSymbol}</div>
+        </div>
+      `;
+    } else if (count === 9) {
+       // 9: 2 cols of 4 + 1 center
+       pipsHtml = `
+        <div class="grid grid-cols-2 gap-1 w-full px-2 h-full py-1 relative">
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">${suitSymbol}</div>
+        </div>
+      `;
+    } else if (count === 10) {
+       // 10: 2 cols of 4 + 1 top center + 1 bottom center
+       pipsHtml = `
+        <div class="grid grid-cols-2 gap-1 w-full px-2 h-full py-1 relative">
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="absolute top-[20%] left-1/2 -translate-x-1/2">${suitSymbol}</div>
+          <div class="absolute bottom-[20%] left-1/2 -translate-x-1/2 rotate-180">${suitSymbol}</div>
+        </div>
+      `;
+    } else {
+        // Fallback for others just in case
+        pipsHtml = `<span class="text-5xl ${colorClass}">${suitSymbol}</span>`;
+    }
+
+    centerHtml = `
+      <div class="w-full h-full flex items-center justify-center ${fontSize} ${colorClass} leading-none">
+        ${pipsHtml}
+      </div>
+    `;
+  }
+
+  // Use larger font sizes for large cards
+  const valueSize = large ? 'text-xl' : 'text-lg';
+  const suitSize = large ? 'text-sm' : 'text-base';
+  const cornerSpacing = large ? 'top-1.5 left-2' : 'top-1 left-1.5';
+  const cornerSpacingBottom = large ? 'bottom-1.5 right-2' : 'bottom-1 right-1.5';
+
+  div.innerHTML = `
+    <!-- Decorative Inner Frame -->
+    <div class="absolute ${large ? 'inset-2' : 'inset-1.5'} border border-black/10 rounded-[4px] pointer-events-none"></div>
+
+    <!-- Large Background Filigram -->
+    <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.05]">
+      <span class="${large ? 'text-[8rem]' : 'text-[5rem]'} ${colorClass}">${suitSymbol}</span>
+    </div>
+
+    <!-- Top Left Corner -->
+    <div class="card-corner absolute ${cornerSpacing} flex flex-col items-center leading-none">
+      <span class="${valueSize} font-bold font-serif ${colorClass}">${card.value}</span>
+      <span class="${suitSize} ${colorClass} ${large ? '' : 'mt-[-2px]'}">${suitSymbol}</span>
+    </div>
+
+    <!-- Center Content -->
+    <div class="card-center absolute inset-0 flex items-center justify-center p-4">
+      ${centerHtml}
+    </div>
+
+    <!-- Bottom Right Corner (Inverted) -->
+    <div class="card-corner absolute ${cornerSpacingBottom} flex flex-col items-center leading-none rotate-180">
+      <span class="${valueSize} font-bold font-serif ${colorClass}">${card.value}</span>
+      <span class="${suitSize} ${colorClass} ${large ? '' : 'mt-[-2px]'}">${suitSymbol}</span>
+    </div>
+  `;
+
+  // Interactive styling handled by CSS now
+  
+  return div;
+}
+
+// Get suit symbol
+function getSuitSymbol(suit) {
+  const symbols = { hearts: '&#9829;', diamonds: '&#9830;', clubs: '&#9827;', spades: '&#9824;' };
+  return symbols[suit] || '?';
+}
+
+// Create a card back element with responsive sizing
+function createCardBack(size = 'normal') {
+  const div = document.createElement('div');
+
+  // Get responsive scale factor
+  const isDesktop = window.innerWidth >= 1024;
+  const isTablet = window.innerWidth >= 768;
+  const scale = isDesktop ? 1.4 : (isTablet ? 1.2 : 1);
+
+  const baseSizes = {
+    small: { w: 45, h: 65, radius: 4 },
+    normal: { w: 70, h: 100, radius: 6 },
+    large: { w: 100, h: 143, radius: 10 }
+  };
+  const base = baseSizes[size] || baseSizes.normal;
+  const s = {
+    w: Math.round(base.w * scale),
+    h: Math.round(base.h * scale),
+    radius: Math.round(base.radius * scale)
+  };
+
+  div.className = 'card-back card-shadow';
+  div.style.width = s.w + 'px';
+  div.style.height = s.h + 'px';
+  div.style.borderRadius = s.radius + 'px';
+  div.style.flexShrink = '0';
+
+  // Crown icon scales with card
+  const iconSize = isDesktop ? 'text-base' : (isTablet ? 'text-sm' : 'text-xs');
+  div.innerHTML = '<div class="w-full h-full flex items-center justify-center opacity-30"><i class="fas fa-crown text-white/50 ' + iconSize + '"></i></div>';
+
+  return div;
+}
+
+// Render other player's hand (card backs) with smooth transition
+function renderOtherPlayerHand(seat, cardCount) {
+  const container = document.getElementById('hand-' + seat);
+  if (!container) return;
+
+  const prevCount = previousCardCounts[seat] || cardCount;
+  previousCardCounts[seat] = cardCount;
+
+  // Skip re-render if count hasn't changed
+  if (container.children.length > 0 && prevCount === cardCount) {
+    return;
+  }
+
+  container.innerHTML = '';
+
+  if (cardCount === 0) return;
+
+  // Seat positions: 0=South, 1=West, 2=North, 3=East
+  const isWest = seat === 1;
+  const isEast = seat === 3;
+  const isNorth = seat === 2;
+
+  // Get responsive scale
+  const isDesktop = window.innerWidth >= 1024;
+  const isTablet = window.innerWidth >= 768;
+  const scale = isDesktop ? 1.4 : (isTablet ? 1.2 : 1);
+
+  // Create wrapper for fan effect
+  const fanWrapper = document.createElement('div');
+  fanWrapper.className = 'relative flex items-center justify-center';
+
+  // Rotation and spacing for different positions
+  if (isWest) {
+    fanWrapper.style.transform = 'rotate(90deg)';
+    fanWrapper.style.transformOrigin = 'center center';
+    container.style.marginTop = Math.round(20 * scale) + 'px';
+    container.style.height = Math.round(110 * scale) + 'px';
+  } else if (isEast) {
+    fanWrapper.style.transform = 'rotate(-90deg)';
+    fanWrapper.style.transformOrigin = 'center center';
+    container.style.marginTop = Math.round(20 * scale) + 'px';
+    container.style.height = Math.round(110 * scale) + 'px';
+  } else if (isNorth) {
+    fanWrapper.style.transform = 'rotate(180deg)';
+    fanWrapper.style.transformOrigin = 'center center';
+    container.style.marginTop = Math.round(10 * scale) + 'px';
+  }
+
+  // Fan effect parameters (scaled)
+  const fanAngle = Math.min(5, 40 / cardCount);
+  const totalAngle = fanAngle * (cardCount - 1);
+  const startAngle = -totalAngle / 2;
+  const overlap = Math.max(18 * scale, (40 - cardCount * 2) * scale);
+
+  for (let i = 0; i < cardCount; i++) {
+    const cardEl = createCardBack('small');
+    const angle = startAngle + (i * fanAngle);
+
+    cardEl.style.position = 'relative';
+    cardEl.style.marginLeft = i === 0 ? '0' : `-${overlap}px`;
+    cardEl.style.transform = `rotate(${angle}deg)`;
+    cardEl.style.transformOrigin = 'bottom center';
+    cardEl.style.zIndex = i + 1;
+    // GPU acceleration for smooth animations
+    cardEl.style.willChange = 'transform, opacity';
+    cardEl.style.backfaceVisibility = 'hidden';
+
+    fanWrapper.appendChild(cardEl);
+  }
+
+  // Add transition for smooth fan adjustment
+  fanWrapper.style.transition = 'all 0.3s ease-out';
+
+  container.appendChild(fanWrapper);
+}
+
+// Render last trick in bottom left corner
+function renderLastTrick(lastTrick, winnerSeat, players) {
+  const container = document.getElementById('last-trick-container');
+  const cardsContainer = document.getElementById('last-trick-cards');
+  const winnerLabel = document.getElementById('last-trick-winner-label');
+
+  if (!container || !cardsContainer) return;
+
+  // Convert object to array if needed
+  if (lastTrick && !Array.isArray(lastTrick)) {
+    lastTrick = Object.values(lastTrick);
+  }
+
+  // Hide if no last trick or during bidding
+  if (!lastTrick || lastTrick.length === 0) {
+    container.classList.add('hidden');
+    return;
+  }
+
+  container.classList.remove('hidden');
+  cardsContainer.innerHTML = '';
+
+  // Show winner name
+  if (winnerSeat !== undefined && winnerSeat !== null && players) {
+    const winner = players.find(p => p.seat === winnerSeat);
+    if (winner) {
+      const seatNames = { 0: 'S', 1: 'W', 2: 'N', 3: 'E' };
+      winnerLabel.textContent = '→ ' + winner.name + ' (' + seatNames[winnerSeat] + ')';
+    }
+  } else {
+    winnerLabel.textContent = '';
+  }
+
+  // Render cards in order they were played (by seat order in trick)
+  lastTrick.forEach((play) => {
+    const miniCard = createMiniCard(play.card, play.seat === winnerSeat);
+    cardsContainer.appendChild(miniCard);
+  });
+}
+
+// Create a mini card for the last trick display
+function createMiniCard(card, isWinner) {
+  const div = document.createElement('div');
+  div.className = 'relative flex flex-col items-center justify-center rounded-md bg-white shadow-md';
+  div.style.width = '36px';
+  div.style.height = '50px';
+  div.style.fontSize = '10px';
+
+  if (isWinner) {
+    div.classList.add('ring-2', 'ring-amber-400');
+  }
+
+  const suitColors = {
+    'hearts': 'text-red-600',
+    'diamonds': 'text-pink-500',
+    'spades': 'text-black',
+    'clubs': 'text-slate-700'
+  };
+  const colorClass = suitColors[card.suit] || 'text-slate-900';
+  const suitSymbol = getSuitSymbol(card.suit);
+
+  div.innerHTML = `
+    <span class="font-bold ${colorClass}">${card.value}</span>
+    <span class="${colorClass}">${suitSymbol}</span>
+  `;
+
+  return div;
+}
+
+// Update bidding UI
+function updateBiddingUI(state) {
+  const isMyBid = state.bidding_seat === MY_SEAT;
+
+  const actionsEl = document.getElementById('bidding-actions');
+  const waitingEl = document.getElementById('bidding-waiting');
+
+  // Show actions if it's my turn, otherwise show waiting message
+  actionsEl.classList.toggle('hidden', !isMyBid);
+  waitingEl.classList.toggle('hidden', isMyBid);
+
+  if (!isMyBid) {
+    // Find bidding player name
+    const bidder = (state.players || []).find(p => p.seat === state.bidding_seat);
+    document.getElementById('bidding-player-name').textContent = bidder ? bidder.name : 'opponent';
+  }
+
+  // Show turned card
+  if (state.turned_card) {
+    const turnedCard = document.getElementById('turned-card');
+    turnedCard.innerHTML = '';
+    turnedCard.appendChild(createCardElement(state.turned_card, false));
+  }
+}
+
+// Join a seat
+async function joinSeat(seat) {
+  try {
+    const response = await fetch('/belote/game/' + GAME_KEY + '/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'seat=' + seat
+    });
+    const data = await response.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+    } else {
+      location.reload();
+    }
+  } catch (e) {
+    showToast('Failed to join', 'error');
+  }
+}
+
+// Add bot to seat
+async function addBot(seat) {
+  try {
+    const response = await fetch('/belote/game/' + GAME_KEY + '/add_bot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'seat=' + seat
+    });
+    const data = await response.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+    } else {
+      await fetchGameState();
+      showToast('Bot added', 'success');
+    }
+  } catch (e) {
+    showToast('Failed to add bot', 'error');
+  }
+}
+
+// Start game
+async function startGame() {
+  try {
+    const response = await fetch('/belote/game/' + GAME_KEY + '/start', {
+      method: 'POST'
+    });
+    const data = await response.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+    } else {
+      await fetchGameState();
+      showToast('Game started!', 'success');
+      // Trigger bot turn if needed
+      if (data.needs_bot_turn && !botTurnPending) {
+        setTimeout(triggerBotTurn, BOT_DELAY);
+      }
+    }
+  } catch (e) {
+    showToast('Failed to start game', 'error');
+  }
+}
+
+// Place a bid
+async function placeBid(action) {
+  const suit = gameState.turned_card ? gameState.turned_card.suit : null;
+  try {
+    const response = await fetch('/belote/game/' + GAME_KEY + '/bid', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'action=' + action + (action === 'take' && suit ? '&suit=' + suit : '')
+    });
+    const data = await response.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+    } else {
+      // Check if it was a redeal (all passed)
+      if (data.action === 'redeal') {
+        showToast('🔄 All players passed! Reshuffling and redealing...', 'info');
+      }
+      await fetchGameState();
+      // Trigger bot turn if needed
+      if (data.needs_bot_turn && !botTurnPending) {
+        setTimeout(triggerBotTurn, BOT_DELAY);
+      }
+    }
+  } catch (e) {
+    showToast('Failed to bid', 'error');
+  }
+}
+
+// Play a card with animation
+async function playCard(card) {
+  // Track the card being played to prevent flash-back on re-render
+  pendingPlayedCard = { suit: card.suit, value: card.value };
+
+  // Re-render hand immediately without the played card (optimistic update via canvas)
+  if (gameState && gameState.my_hand) {
+    renderHandCanvas(gameState.my_hand);
+  }
+
+  // Clear previous trick if it had 4 cards (starting new trick)
+  if (trickCards.length >= 4) {
+    clearTrickCanvas();
+  }
+
+  // Add card to trick canvas with animation
+  addCardToTrick(card, MY_SEAT);
+  lastTrickLength = trickCards.length;
+
+  try {
+    const response = await fetch('/belote/game/' + GAME_KEY + '/play', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'suit=' + card.suit + '&value=' + card.value
+    });
+    const data = await response.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+      // Remove the optimistic card on error
+      trickCards = trickCards.filter(tc => !(tc.seat === MY_SEAT && tc.card.suit === card.suit && tc.card.value === card.value));
+      renderTrickCanvas();
+      pendingPlayedCard = null;
+    } else {
+      // If trick completed, animate cards to winner
+      if (data.trick_complete && data.winner_seat !== undefined) {
+        lastTrickWinner = data.winner_seat;
+        // Wait a moment to let card animation complete, then collect
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, TRICK_CLEAR_DELAY - 300));
+        await collectTrickToWinner(data.winner_seat);
+      }
+      await fetchGameState();
+      // Clear pending card after state is refreshed
+      pendingPlayedCard = null;
+      // Trigger bot turn if needed
+      if (data.needs_bot_turn && !botTurnPending) {
+        setTimeout(triggerBotTurn, BOT_DELAY);
+      }
+    }
+  } catch (e) {
+    showToast('Failed to play card', 'error');
+    trickCards = trickCards.filter(tc => !(tc.seat === MY_SEAT && tc.card.suit === card.suit && tc.card.value === card.value));
+    renderTrickCanvas();
+    pendingPlayedCard = null;
+  }
+}
+</script>

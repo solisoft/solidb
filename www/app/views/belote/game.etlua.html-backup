@@ -1,0 +1,227 @@
+// ============================================================================
+// BACKUP: DOM-Based Card Rendering Functions
+// Created: 2026-01-15
+//
+// To restore: Copy these functions back to game.etlua and remove canvas code
+// ============================================================================
+
+// Render player's hand with fan effect (DOM version)
+function renderMyHand(hand) {
+  const container = document.getElementById('my-hand');
+  container.innerHTML = '';
+
+  // Convert object to array if needed (Lua tables can serialize as objects)
+  let handArray = hand;
+  if (hand && !Array.isArray(hand)) {
+    handArray = Object.values(hand);
+  }
+
+  if (!handArray || handArray.length === 0) {
+    container.innerHTML = '<span class="text-text-muted">No cards</span>';
+    return;
+  }
+
+  // Filter out the pending played card to prevent flash-back
+  if (pendingPlayedCard) {
+    handArray = handArray.filter(c =>
+      !(c.suit === pendingPlayedCard.suit && c.value === pendingPlayedCard.value)
+    );
+  }
+
+  if (handArray.length === 0) {
+    container.innerHTML = '<span class="text-text-muted">No cards</span>';
+    return;
+  }
+
+  // Sort hand by suit then value
+  const suitOrder = { 'spades': 0, 'hearts': 1, 'clubs': 2, 'diamonds': 3 };
+  const valueOrder = ['7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+  handArray.sort((a, b) => {
+    if (suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[a.suit] - suitOrder[b.suit];
+    return valueOrder.indexOf(a.value) - valueOrder.indexOf(b.value);
+  });
+
+  const isMyTurn = gameState && gameState.current_player === MY_SEAT && gameState.state === 'playing';
+  const cardCount = handArray.length;
+  const fanAngle = Math.min(4, 30 / cardCount); // Degrees per card
+  const totalAngle = fanAngle * (cardCount - 1);
+  const startAngle = -totalAngle / 2;
+  // Get responsive scale for player's hand
+  const isDesktop = window.innerWidth >= 1024;
+  const isTablet = window.innerWidth >= 768;
+  const handScale = isDesktop ? 1.6 : (isTablet ? 1.4 : 1.2);
+
+  const cardOverlap = Math.max(45 * handScale, (80 - cardCount * 4) * handScale); // Overlap based on card count
+
+  // Create wrapper for fan effect
+  const fanWrapper = document.createElement('div');
+  fanWrapper.className = 'relative flex items-end justify-center';
+  fanWrapper.style.height = Math.round(160 * handScale) + 'px';
+  fanWrapper.style.paddingBottom = Math.round(10 * handScale) + 'px';
+
+  handArray.forEach((card, index) => {
+    const angle = startAngle + (index * fanAngle);
+    const lift = Math.abs(angle) * 0.8; // Cards at edges lift less
+
+    // Create container for fan positioning
+    const containerEl = document.createElement('div');
+    containerEl.className = 'card-container';
+    containerEl.style.setProperty('--rot', angle + 'deg');
+    containerEl.style.marginLeft = index === 0 ? '0' : `-${cardOverlap}px`;
+    containerEl.style.zIndex = index + 1;
+    containerEl.style.transform = `rotate(${angle}deg) translateY(${lift}px)`;
+    containerEl.style.transformOrigin = 'bottom center';
+
+    const cardEl = createCardElement(card, isMyTurn, true); // Use large cards for player's hand
+    // Card's own transform is handled by CSS on hover
+    cardEl.dataset.suit = card.suit;
+    cardEl.dataset.value = card.value;
+
+    if (isMyTurn) {
+      cardEl.onclick = () => playCard(card);
+    }
+
+    containerEl.appendChild(cardEl);
+    fanWrapper.appendChild(containerEl);
+  });
+
+  container.appendChild(fanWrapper);
+}
+
+// Create a card element (DOM version)
+function createCardElement(card, interactive = false, large = false) {
+  const div = document.createElement('div');
+  div.className = 'playing-card card-shadow ' + (interactive ? 'interactive-card' : '') + (large ? ' large' : '');
+
+  const suitColors = {
+    'hearts': 'text-red-600',      // Solid Red
+    'diamonds': 'text-red-600',    // Solid Red (Standard)
+    'spades': 'text-slate-900',    // Deep Black
+    'clubs': 'text-slate-900'      // Deep Black (Standard)
+  };
+  const colorClass = suitColors[card.suit] || 'text-slate-900';
+  const suitSymbol = getSuitSymbol(card.suit);
+
+  // Center content based on card value
+  let centerHtml = '';
+  const isFace = ['J', 'Q', 'K'].includes(card.value);
+  const fontSize = large ? 'text-3xl' : 'text-xs';
+
+  if (isFace) {
+    const icons = {
+      'K': 'fa-chess-king',
+      'Q': 'fa-chess-queen',
+      'J': 'fa-user-shield'
+    };
+    const icon = icons[card.value] || 'fa-user';
+    // Face card design: Large faint letter + Icon
+    centerHtml = `
+      <div class="absolute inset-0 flex items-center justify-center opacity-10">
+        <span class="text-[5rem] font-serif font-bold ${colorClass}">${card.value}</span>
+      </div>
+      <div class="flex flex-col items-center z-10 mt-2">
+        <i class="fas ${icon} text-4xl ${colorClass} drop-shadow-sm"></i>
+      </div>
+    `;
+  } else if (card.value === 'A') {
+    // Ace design: Huge symbol
+    centerHtml = `
+      <span class="text-6xl ${colorClass} drop-shadow-sm transform scale-125">${suitSymbol}</span>
+    `;
+  } else {
+    // Number design: Pattern of pips
+    const count = parseInt(card.value) || 0;
+
+    // Generate simple grid of pips with tight spacing for 70px cards
+    let pipsHtml = '';
+
+    if (count === 7) {
+      pipsHtml = `
+        <div class="grid grid-cols-2 gap-1 w-full px-2 h-full py-1 relative">
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="absolute top-[25%] left-1/2 -translate-x-1/2">${suitSymbol}</div>
+        </div>
+      `;
+    } else if (count === 8) {
+       pipsHtml = `
+        <div class="grid grid-cols-2 gap-1 w-full px-2 h-full py-1 relative">
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="absolute top-[25%] left-1/2 -translate-x-1/2">${suitSymbol}</div>
+          <div class="absolute bottom-[25%] left-1/2 -translate-x-1/2 rotate-180">${suitSymbol}</div>
+        </div>
+      `;
+    } else if (count === 9) {
+       pipsHtml = `
+        <div class="grid grid-cols-2 gap-1 w-full px-2 h-full py-1 relative">
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">${suitSymbol}</div>
+        </div>
+      `;
+    } else if (count === 10) {
+       pipsHtml = `
+        <div class="grid grid-cols-2 gap-1 w-full px-2 h-full py-1 relative">
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="flex flex-col justify-between items-center h-full"><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span><span>${suitSymbol}</span></div>
+          <div class="absolute top-[20%] left-1/2 -translate-x-1/2">${suitSymbol}</div>
+          <div class="absolute bottom-[20%] left-1/2 -translate-x-1/2 rotate-180">${suitSymbol}</div>
+        </div>
+      `;
+    } else {
+        pipsHtml = `<span class="text-5xl ${colorClass}">${suitSymbol}</span>`;
+    }
+
+    centerHtml = `
+      <div class="w-full h-full flex items-center justify-center ${fontSize} ${colorClass} leading-none">
+        ${pipsHtml}
+      </div>
+    `;
+  }
+
+  // Use larger font sizes for large cards
+  const valueSize = large ? 'text-xl' : 'text-lg';
+  const suitSize = large ? 'text-sm' : 'text-base';
+  const cornerSpacing = large ? 'top-1.5 left-2' : 'top-1 left-1.5';
+  const cornerSpacingBottom = large ? 'bottom-1.5 right-2' : 'bottom-1 right-1.5';
+
+  div.innerHTML = `
+    <!-- Decorative Inner Frame -->
+    <div class="absolute ${large ? 'inset-2' : 'inset-1.5'} border border-black/10 rounded-[4px] pointer-events-none"></div>
+
+    <!-- Large Background Filigram -->
+    <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.05]">
+      <span class="${large ? 'text-[8rem]' : 'text-[5rem]'} ${colorClass}">${suitSymbol}</span>
+    </div>
+
+    <!-- Top Left Corner -->
+    <div class="card-corner absolute ${cornerSpacing} flex flex-col items-center leading-none">
+      <span class="${valueSize} font-bold font-serif ${colorClass}">${card.value}</span>
+      <span class="${suitSize} ${colorClass} ${large ? '' : 'mt-[-2px]'}">${suitSymbol}</span>
+    </div>
+
+    <!-- Center Content -->
+    <div class="card-center absolute inset-0 flex items-center justify-center p-4">
+      ${centerHtml}
+    </div>
+
+    <!-- Bottom Right Corner (Inverted) -->
+    <div class="card-corner absolute ${cornerSpacingBottom} flex flex-col items-center leading-none rotate-180">
+      <span class="${valueSize} font-bold font-serif ${colorClass}">${card.value}</span>
+      <span class="${suitSize} ${colorClass} ${large ? '' : 'mt-[-2px]'}">${suitSymbol}</span>
+    </div>
+  `;
+
+  return div;
+}
+
+// ============================================================================
+// HTML Structure for DOM version:
+//
+// <div id="my-hand-container" class="h-48 md:h-56 lg:h-64 px-4 py-2 bg-gradient-to-t from-bg-card to-transparent backdrop-blur-sm border-t border-white/5 shrink-0">
+//   <div class="h-full flex items-center justify-center" id="my-hand">
+//     <!-- Player's cards will be rendered here -->
+//   </div>
+// </div>
+// ============================================================================
