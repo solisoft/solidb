@@ -26,7 +26,7 @@ function BillingContact.for_user(owner_key, options)
 
   local query = [[
     FOR c IN billing_contacts
-    FILTER c.owner_key == @owner_key
+    FILTER c.owner_key == @owner_key OR NOT HAS(c, "owner_key") OR c.owner_key == null
   ]]
 
   if search and search ~= "" then
@@ -64,7 +64,7 @@ function BillingContact.search(owner_key, query, limit)
   limit = limit or 10
   local result = Sdb:Sdbql([[
     FOR c IN billing_contacts
-    FILTER c.owner_key == @owner_key
+    FILTER c.owner_key == @owner_key OR NOT HAS(c, "owner_key") OR c.owner_key == null
     FILTER CONTAINS(LOWER(c.name || ''), LOWER(@query))
         OR CONTAINS(LOWER(c.email || ''), LOWER(@query))
         OR CONTAINS(LOWER(c.company_name || ''), LOWER(@query))
@@ -84,7 +84,7 @@ end
 -- Count contacts for a user
 function BillingContact.count_for_user(owner_key)
   local result = Sdb:Sdbql([[
-    RETURN LENGTH(FOR c IN billing_contacts FILTER c.owner_key == @owner_key RETURN 1)
+    RETURN LENGTH(FOR c IN billing_contacts FILTER c.owner_key == @owner_key OR NOT HAS(c, "owner_key") OR c.owner_key == null RETURN 1)
   ]], { owner_key = owner_key })
 
   if result and result.result and result.result[1] then

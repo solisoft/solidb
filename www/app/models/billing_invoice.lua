@@ -42,7 +42,7 @@ function BillingInvoice.for_user(owner_key, options)
 
   local query = [[
     FOR i IN billing_invoices
-    FILTER i.owner_key == @owner_key
+    FILTER i.owner_key == @owner_key OR NOT HAS(i, "owner_key") OR i.owner_key == null
   ]]
 
   if status and status ~= "" then
@@ -95,16 +95,17 @@ end
 function BillingInvoice.count_by_status(owner_key)
   local result = Sdb:Sdbql([[
     FOR i IN billing_invoices
-    FILTER i.owner_key == @owner_key
     COLLECT status = i.status WITH COUNT INTO count
     RETURN { status: status, count: count }
-  ]], { owner_key = owner_key })
+  ]])
 
   local counts = { total = 0 }
   if result and result.result then
     for _, r in ipairs(result.result) do
-      counts[r.status] = r.count
-      counts.total = counts.total + r.count
+      if r.status then
+        counts[r.status] = r.count
+        counts.total = counts.total + r.count
+      end
     end
   end
   return counts
@@ -113,7 +114,7 @@ end
 -- Get dashboard stats
 function BillingInvoice.stats_for_user(owner_key)
   local result = Sdb:Sdbql([[
-    LET invoices = (FOR i IN billing_invoices FILTER i.owner_key == @owner_key RETURN i)
+    LET invoices = (FOR i IN billing_invoices FILTER i.owner_key == @owner_key OR NOT HAS(i, "owner_key") OR i.owner_key == null RETURN i)
     RETURN {
       total_invoiced: SUM(FOR i IN invoices FILTER i.status != "cancelled" RETURN i.total) || 0,
       total_paid: SUM(invoices[*].total_paid) || 0,

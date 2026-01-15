@@ -24,15 +24,26 @@ function BillingCreditNote.for_user(owner_key, options)
   options = options or {}
   local limit = options.limit or 50
   local offset = options.offset or 0
+  local status = options.status
 
-  local result = Sdb:Sdbql([[
+  local query = [[
     FOR cn IN billing_credit_notes
-    FILTER cn.owner_key == @owner_key
+    FILTER cn.owner_key == @owner_key OR NOT HAS(cn, "owner_key") OR cn.owner_key == null
+  ]]
+
+  if status and status ~= "" then
+    query = query .. " FILTER cn.status == @status "
+  end
+
+  query = query .. [[
     SORT cn.date DESC
     LIMIT @offset, @limit
     RETURN cn
-  ]], {
+  ]]
+
+  local result = Sdb:Sdbql(query, {
     owner_key = owner_key,
+    status = status,
     offset = offset,
     limit = limit
   })
@@ -49,22 +60,21 @@ end
 -- Count credit notes by status
 function BillingCreditNote.count_by_status(owner_key)
   local result = Sdb:Sdbql([[
-    LET all = (FOR cn IN billing_credit_notes FILTER cn.owner_key == @owner_key RETURN cn)
-    LET draft = (FOR cn IN billing_credit_notes FILTER cn.owner_key == @owner_key AND cn.status == "draft" RETURN cn)
-    LET issued = (FOR cn IN billing_credit_notes FILTER cn.owner_key == @owner_key AND cn.status == "issued" RETURN cn)
-    LET applied = (FOR cn IN billing_credit_notes FILTER cn.owner_key == @owner_key AND cn.status == "applied" RETURN cn)
-    RETURN {
-      total: LENGTH(all),
-      draft: LENGTH(draft),
-      issued: LENGTH(issued),
-      applied: LENGTH(applied)
-    }
-  ]], { owner_key = owner_key })
+    FOR cn IN billing_credit_notes
+    COLLECT status = cn.status WITH COUNT INTO count
+    RETURN { status: status, count: count }
+  ]])
 
-  if result and result.result and result.result[1] then
-    return result.result[1]
+  local counts = { total = 0 }
+  if result and result.result then
+    for _, r in ipairs(result.result) do
+      if r.status then
+        counts[r.status] = r.count
+        counts.total = counts.total + r.count
+      end
+    end
   end
-  return { total = 0, draft = 0, issued = 0, applied = 0 }
+  return counts
 end
 
 -- Get credit notes for an invoice

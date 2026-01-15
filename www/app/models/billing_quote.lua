@@ -31,7 +31,7 @@ function BillingQuote.for_user(owner_key, options)
 
   local query = [[
     FOR q IN billing_quotes
-    FILTER q.owner_key == @owner_key
+    FILTER q.owner_key == @owner_key OR NOT HAS(q, "owner_key") OR q.owner_key == null
   ]]
 
   if status and status ~= "" then
@@ -84,16 +84,17 @@ end
 function BillingQuote.count_by_status(owner_key)
   local result = Sdb:Sdbql([[
     FOR q IN billing_quotes
-    FILTER q.owner_key == @owner_key
     COLLECT status = q.status WITH COUNT INTO count
     RETURN { status: status, count: count }
-  ]], { owner_key = owner_key })
+  ]])
 
   local counts = { total = 0 }
   if result and result.result then
     for _, r in ipairs(result.result) do
-      counts[r.status] = r.count
-      counts.total = counts.total + r.count
+      if r.status then
+        counts[r.status] = r.count
+        counts.total = counts.total + r.count
+      end
     end
   end
   return counts
