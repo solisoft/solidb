@@ -1,51 +1,6 @@
-//! Wire protocol definitions for the native driver
-//!
-//! Uses MessagePack for efficient binary serialization.
-
+use super::types::IsolationLevel;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
-
-/// Magic header sent at the start of a driver connection
-pub const DRIVER_MAGIC: &[u8] = b"solidb-drv-v1\0";
-
-/// Maximum message size (16 MB)
-pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
-
-/// Driver protocol error types
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DriverError {
-    /// Connection or I/O error
-    ConnectionError(String),
-    /// Protocol violation
-    ProtocolError(String),
-    /// Database operation error
-    DatabaseError(String),
-    /// Authentication error
-    AuthError(String),
-    /// Transaction error
-    TransactionError(String),
-    /// Message too large
-    MessageTooLarge,
-    /// Invalid command
-    InvalidCommand(String),
-}
-
-impl std::fmt::Display for DriverError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DriverError::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
-            DriverError::ProtocolError(msg) => write!(f, "Protocol error: {}", msg),
-            DriverError::DatabaseError(msg) => write!(f, "Database error: {}", msg),
-            DriverError::AuthError(msg) => write!(f, "Auth error: {}", msg),
-            DriverError::TransactionError(msg) => write!(f, "Transaction error: {}", msg),
-            DriverError::MessageTooLarge => write!(f, "Message too large"),
-            DriverError::InvalidCommand(msg) => write!(f, "Invalid command: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for DriverError {}
+use serde_json::Value; // Added this import
 
 /// Commands that can be sent to the server
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,17 +56,17 @@ pub enum Command {
     Insert {
         database: String,
         collection: String,
-        #[serde(default)]
         key: Option<String>,
         document: Value,
     },
 
-    /// Update an existing document
+    /// Update a document
     Update {
         database: String,
         collection: String,
         key: String,
         document: Value,
+        /// If true, merge with existing document (PATCH-like)
         #[serde(default)]
         merge: bool,
     },
@@ -123,31 +78,27 @@ pub enum Command {
         key: String,
     },
 
-    /// List documents (with pagination)
+    /// List documents with pagination
     List {
         database: String,
         collection: String,
-        #[serde(default)]
         limit: Option<usize>,
-        #[serde(default)]
         offset: Option<usize>,
     },
 
     // ==================== Query Operations ====================
-    /// Execute an SDBQL query
+    /// Execute a SDBQL query
     Query {
         database: String,
         sdbql: String,
-        #[serde(default)]
-        bind_vars: HashMap<String, Value>,
+        bind_vars: Option<std::collections::HashMap<String, Value>>,
     },
 
-    /// Explain an SDBQL query (without executing)
+    /// Explain a SDBQL query
     Explain {
         database: String,
         sdbql: String,
-        #[serde(default)]
-        bind_vars: HashMap<String, Value>,
+        bind_vars: Option<std::collections::HashMap<String, Value>>,
     },
 
     // ==================== Index Operations ====================
@@ -170,14 +121,11 @@ pub enum Command {
         name: String,
     },
 
-    /// List indexes on a collection
-    ListIndexes {
-        database: String,
-        collection: String,
-    },
+    /// List indexes
+    ListIndexes { database: String, collection: String },
 
     // ==================== Transaction Operations ====================
-    /// Begin a new transaction
+    /// Begin a transaction
     BeginTransaction {
         database: String,
         #[serde(default)]
@@ -197,7 +145,7 @@ pub enum Command {
     },
 
     // ==================== Bulk Operations ====================
-    /// Execute multiple commands in a batch
+    /// Execute a batch of commands
     Batch { commands: Vec<Command> },
 
     /// Bulk insert documents
@@ -208,16 +156,15 @@ pub enum Command {
     },
 
     // ==================== Script Management ====================
-    /// Create a Lua script
+    /// Create a new script
     CreateScript {
         database: String,
         name: String,
         path: String,
+        #[serde(default)]
         methods: Vec<String>,
         code: String,
-        #[serde(default)]
         description: Option<String>,
-        #[serde(default)]
         collection: Option<String>,
     },
 
@@ -231,53 +178,41 @@ pub enum Command {
     UpdateScript {
         database: String,
         script_id: String,
-        #[serde(default)]
         name: Option<String>,
-        #[serde(default)]
         path: Option<String>,
-        #[serde(default)]
         methods: Option<Vec<String>>,
-        #[serde(default)]
         code: Option<String>,
-        #[serde(default)]
         description: Option<String>,
     },
 
     /// Delete a script
     DeleteScript { database: String, script_id: String },
 
-    /// Get script execution statistics
+    /// Get script runtime statistics
     GetScriptStats,
 
     // ==================== Job/Queue Management ====================
-    /// List all queues
+    /// List all job queues
     ListQueues { database: String },
 
     /// List jobs in a queue
     ListJobs {
         database: String,
         queue_name: String,
-        #[serde(default)]
         status: Option<String>,
-        #[serde(default)]
         limit: Option<usize>,
-        #[serde(default)]
         offset: Option<usize>,
     },
 
-    /// Enqueue a new job
+    /// Enqueue a background job
     EnqueueJob {
         database: String,
         queue_name: String,
         script_path: String,
-        #[serde(default)]
-        params: HashMap<String, Value>,
-        #[serde(default)]
+        params: Option<Value>,
         priority: Option<i32>,
-        #[serde(default)]
-        run_at: Option<String>,
-        #[serde(default)]
-        max_retries: Option<i32>,
+        run_at: Option<i64>,     // Timestamp in ms
+        max_retries: Option<u32>,
     },
 
     /// Cancel a job
@@ -287,40 +222,29 @@ pub enum Command {
     /// List all cron jobs
     ListCronJobs { database: String },
 
-    /// Create a cron job
+    /// Create a new cron job
     CreateCronJob {
         database: String,
         name: String,
         cron_expression: String,
         script_path: String,
-        #[serde(default)]
-        params: HashMap<String, Value>,
-        #[serde(default)]
+        params: Option<Value>,
         queue: Option<String>,
-        #[serde(default)]
         priority: Option<i32>,
-        #[serde(default)]
-        max_retries: Option<i32>,
+        max_retries: Option<u32>,
     },
 
     /// Update a cron job
     UpdateCronJob {
         database: String,
         cron_id: String,
-        #[serde(default)]
         name: Option<String>,
-        #[serde(default)]
         cron_expression: Option<String>,
-        #[serde(default)]
         script_path: Option<String>,
-        #[serde(default)]
-        params: Option<HashMap<String, Value>>,
-        #[serde(default)]
+        params: Option<Value>,
         queue: Option<String>,
-        #[serde(default)]
         priority: Option<i32>,
-        #[serde(default)]
-        max_retries: Option<i32>,
+        max_retries: Option<u32>,
     },
 
     /// Delete a cron job
@@ -333,54 +257,42 @@ pub enum Command {
     /// List triggers for a collection
     ListCollectionTriggers { database: String, collection: String },
 
-    /// Create a trigger
+    /// Create a new trigger
     CreateTrigger {
         database: String,
         name: String,
         collection: String,
         events: Vec<String>,
         script_path: String,
-        #[serde(default)]
         filter: Option<String>,
-        #[serde(default)]
         queue: Option<String>,
-        #[serde(default)]
         priority: Option<i32>,
-        #[serde(default)]
-        max_retries: Option<i32>,
-        #[serde(default)]
-        enabled: Option<bool>,
+        max_retries: Option<u32>,
+        #[serde(default = "default_true")]
+        enabled: bool,
     },
 
-    /// Get a trigger
+    /// Get a trigger by ID
     GetTrigger { database: String, trigger_id: String },
 
     /// Update a trigger
     UpdateTrigger {
         database: String,
         trigger_id: String,
-        #[serde(default)]
         name: Option<String>,
-        #[serde(default)]
         events: Option<Vec<String>>,
-        #[serde(default)]
         script_path: Option<String>,
-        #[serde(default)]
         filter: Option<String>,
-        #[serde(default)]
         queue: Option<String>,
-        #[serde(default)]
         priority: Option<i32>,
-        #[serde(default)]
-        max_retries: Option<i32>,
-        #[serde(default)]
+        max_retries: Option<u32>,
         enabled: Option<bool>,
     },
 
     /// Delete a trigger
     DeleteTrigger { database: String, trigger_id: String },
 
-    /// Toggle a trigger's enabled state
+    /// Toggle a trigger (enable/disable)
     ToggleTrigger { database: String, trigger_id: String },
 
     // ==================== Environment Variables ====================
@@ -401,19 +313,19 @@ pub enum Command {
     /// List all roles
     ListRoles,
 
-    /// Create a role
+    /// Create a new role
     CreateRole {
         name: String,
-        permissions: Vec<Value>,
+        permissions: Vec<String>,
     },
 
-    /// Get a role
+    /// Get a role by name
     GetRole { name: String },
 
-    /// Update a role
+    /// Update a role's permissions
     UpdateRole {
         name: String,
-        permissions: Vec<Value>,
+        permissions: Vec<String>,
     },
 
     /// Delete a role
@@ -423,48 +335,46 @@ pub enum Command {
     /// List all users
     ListUsers,
 
-    /// Create a user
+    /// Create a new user
     CreateUser {
         username: String,
         password: String,
         #[serde(default)]
-        roles: Option<Vec<String>>,
+        roles: Vec<String>,
     },
 
     /// Delete a user
     DeleteUser { username: String },
 
-    /// Get user roles
+    /// Get a user's roles
     GetUserRoles { username: String },
 
-    /// Assign a role to a user
+    /// Assign a role to a user (optionally scoped to a database)
     AssignRole {
         username: String,
         role: String,
-        #[serde(default)]
         database: Option<String>,
     },
 
     /// Revoke a role from a user
     RevokeRole { username: String, role: String },
 
-    /// Get current user info
-    GetCurrentUser,
-
-    /// Get current user permissions
+    /// Get permissions for the current user (requires authentication)
     GetCurrentUserPermissions,
+
+    /// Get current user info (requires authentication)
+    GetCurrentUser,
 
     // ==================== API Key Management ====================
     /// List API keys
     ListApiKeys,
 
-    /// Create an API key
+    /// Create a new API key
     CreateApiKey {
         name: String,
         #[serde(default)]
-        permissions: Option<Vec<Value>>,
-        #[serde(default)]
-        expires_at: Option<String>,
+        permissions: Vec<String>,
+        expires_at: Option<i64>,
     },
 
     /// Delete an API key
@@ -480,41 +390,38 @@ pub enum Command {
     /// Remove a node from the cluster
     ClusterRemoveNode { node_id: String },
 
-    /// Rebalance the cluster
+    /// Trigger cluster rebalancing
     ClusterRebalance,
 
-    /// Cleanup the cluster
+    /// Trigger cluster cleanup
     ClusterCleanup,
 
-    /// Reshard the cluster
-    ClusterReshard {
-        #[serde(default)]
-        num_shards: Option<i32>,
-    },
+    /// Reshard database
+    ClusterReshard { database: String, shards: u32 },
 
     // ==================== Advanced Collection Operations ====================
-    /// Truncate a collection
+    /// Truncate a collection (remove all documents)
     TruncateCollection { database: String, collection: String },
 
-    /// Compact a collection
+    /// Compact a collection (reclaim space)
     CompactCollection { database: String, collection: String },
 
-    /// Prune a collection
+    /// Prune a collection (remove deleted documents history)
     PruneCollection { database: String, collection: String },
 
-    /// Recount documents in a collection
+    /// Recount collection documents
     RecountCollection { database: String, collection: String },
 
     /// Repair a collection
     RepairCollection { database: String, collection: String },
 
-    /// Get collection sharding details
+    /// Get collection sharding info
     GetCollectionSharding { database: String, collection: String },
 
     /// Export collection data
     ExportCollection { database: String, collection: String },
 
-    /// Import documents into a collection
+    /// Import collection data
     ImportCollection {
         database: String,
         collection: String,
@@ -535,22 +442,17 @@ pub enum Command {
     DeleteCollectionSchema { database: String, collection: String },
 
     // ==================== Advanced Index Operations ====================
-    /// Rebuild all indexes on a collection
+    /// Rebuild all indexes for a collection
     RebuildIndexes { database: String, collection: String },
 
-    /// Hybrid search
+    /// Hybrid search (vector + keyword)
     HybridSearch {
         database: String,
         collection: String,
         query: String,
-        #[serde(default)]
-        vector: Option<Vec<f32>>,
-        #[serde(default)]
-        vector_field: Option<String>,
-        #[serde(default)]
-        limit: Option<i32>,
-        #[serde(default)]
-        alpha: Option<f32>,
+        vector: Vec<f32>,
+        limit: Option<u32>,
+        filter: Option<String>,
     },
 
     // ==================== Geo Index Operations ====================
@@ -572,25 +474,23 @@ pub enum Command {
         name: String,
     },
 
-    /// Geo near query
+    /// Find documents near a point
     GeoNear {
         database: String,
         collection: String,
         field: String,
         latitude: f64,
         longitude: f64,
-        #[serde(default)]
         radius: Option<f64>,
-        #[serde(default)]
-        limit: Option<i32>,
+        limit: Option<i32>, // Changed from u32 to i32 based on previous handler fix
     },
 
-    /// Geo within query
+    /// Find documents within a polygon
     GeoWithin {
         database: String,
         collection: String,
         field: String,
-        polygon: Vec<Vec<f64>>,
+        polygon: Vec<(f64, f64)>,
     },
 
     // ==================== Vector Index Operations ====================
@@ -600,13 +500,10 @@ pub enum Command {
         collection: String,
         name: String,
         field: String,
-        dimensions: i32,
-        #[serde(default)]
+        dimensions: i32, // Changed from u32 to i32
         metric: Option<String>,
-        #[serde(default)]
-        ef_construction: Option<i32>,
-        #[serde(default)]
-        m: Option<i32>,
+        ef_construction: Option<i32>, // Changed from u32 to i32
+        m: Option<i32>, // Changed from u32 to i32
     },
 
     /// List vector indexes
@@ -619,28 +516,25 @@ pub enum Command {
         name: String,
     },
 
-    /// Vector search
+    /// Search similar vectors
     VectorSearch {
         database: String,
         collection: String,
         index_name: String,
         vector: Vec<f32>,
-        #[serde(default)]
-        limit: Option<i32>,
-        #[serde(default)]
-        ef_search: Option<i32>,
-        #[serde(default)]
+        limit: Option<i32>, // Changed from u32 to i32
+        ef_search: Option<i32>, // Changed from u32 to i32
         filter: Option<String>,
     },
 
-    /// Quantize a vector index
+    /// Quantize a vector index (optimize for size/speed)
     QuantizeVectorIndex {
         database: String,
         collection: String,
         index_name: String,
     },
 
-    /// Dequantize a vector index
+    /// Dequantize a vector index (restore precision)
     DequantizeVectorIndex {
         database: String,
         collection: String,
@@ -654,7 +548,7 @@ pub enum Command {
         collection: String,
         name: String,
         field: String,
-        expire_after_seconds: i64,
+        expire_after_seconds: i64, // Changed from u32 to i64
     },
 
     /// List TTL indexes
@@ -668,7 +562,7 @@ pub enum Command {
     },
 
     // ==================== Columnar Storage ====================
-    /// Create a columnar collection
+    /// Create a columnar collection (table)
     CreateColumnar {
         database: String,
         name: String,
@@ -678,55 +572,49 @@ pub enum Command {
     /// List columnar collections
     ListColumnar { database: String },
 
-    /// Get columnar collection details
+    /// Get columnar collection status
     GetColumnar { database: String, collection: String },
 
     /// Delete a columnar collection
     DeleteColumnar { database: String, collection: String },
 
-    /// Insert rows into columnar collection
+    /// Insert rows into a columnar collection
     InsertColumnar {
         database: String,
         collection: String,
         rows: Vec<Value>,
     },
 
-    /// Aggregate columnar data
+    /// Aggregate data in a columnar collection
     AggregateColumnar {
         database: String,
         collection: String,
         aggregations: Vec<Value>,
-        #[serde(default)]
         group_by: Option<Vec<String>>,
-        #[serde(default)]
         filter: Option<String>,
     },
 
-    /// Query columnar collection
+    /// Query data from a columnar collection
     QueryColumnar {
         database: String,
         collection: String,
-        #[serde(default)]
         columns: Option<Vec<String>>,
-        #[serde(default)]
         filter: Option<String>,
-        #[serde(default)]
         order_by: Option<String>,
-        #[serde(default)]
         limit: Option<i32>,
     },
 
-    /// Create columnar index
+    /// Create an index on a columnar collection
     CreateColumnarIndex {
         database: String,
         collection: String,
         column: String,
     },
 
-    /// List columnar indexes
+    /// List indexes on a columnar collection
     ListColumnarIndexes { database: String, collection: String },
 
-    /// Delete columnar index
+    /// Delete an index on a columnar collection
     DeleteColumnarIndex {
         database: String,
         collection: String,
@@ -734,198 +622,6 @@ pub enum Command {
     },
 }
 
-/// Isolation level for transactions
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IsolationLevel {
-    #[default]
-    ReadCommitted,
-    RepeatableRead,
-    Serializable,
-}
-
-impl From<IsolationLevel> for crate::transaction::IsolationLevel {
-    fn from(level: IsolationLevel) -> Self {
-        match level {
-            IsolationLevel::ReadCommitted => crate::transaction::IsolationLevel::ReadCommitted,
-            IsolationLevel::RepeatableRead => crate::transaction::IsolationLevel::RepeatableRead,
-            IsolationLevel::Serializable => crate::transaction::IsolationLevel::Serializable,
-        }
-    }
-}
-
-/// Response from the server
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum Response {
-    /// Success with optional data
-    Ok {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        data: Option<Value>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        count: Option<usize>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        tx_id: Option<String>,
-    },
-
-    /// Error response
-    Error { error: DriverError },
-
-    /// Pong response (for Ping)
-    Pong { timestamp: i64 },
-
-    /// Batch response (for Batch command)
-    Batch { responses: Vec<Response> },
-}
-
-impl Response {
-    /// Create a success response with data
-    pub fn ok(data: Value) -> Self {
-        Response::Ok {
-            data: Some(data),
-            count: None,
-            tx_id: None,
-        }
-    }
-
-    /// Create a success response with count
-    pub fn ok_count(count: usize) -> Self {
-        Response::Ok {
-            data: None,
-            count: Some(count),
-            tx_id: None,
-        }
-    }
-
-    /// Create a success response with no data
-    pub fn ok_empty() -> Self {
-        Response::Ok {
-            data: None,
-            count: None,
-            tx_id: None,
-        }
-    }
-
-    /// Create a success response with transaction ID
-    pub fn ok_tx(tx_id: String) -> Self {
-        Response::Ok {
-            data: None,
-            count: None,
-            tx_id: Some(tx_id),
-        }
-    }
-
-    /// Create an error response
-    pub fn error(err: DriverError) -> Self {
-        Response::Error { error: err }
-    }
-
-    /// Create a pong response
-    pub fn pong() -> Self {
-        Response::Pong {
-            timestamp: chrono::Utc::now().timestamp_millis(),
-        }
-    }
-}
-
-/// Helper to encode a command with length prefix (uses compact/fast serialization)
-/// Commands are sent from client to server
-pub fn encode_command(cmd: &Command) -> Result<Vec<u8>, DriverError> {
-    // Use named serialization for commands (required for tagged enums)
-    let payload = rmp_serde::to_vec_named(cmd)
-        .map_err(|e| DriverError::ProtocolError(format!("Serialization failed: {}", e)))?;
-
-    if payload.len() > MAX_MESSAGE_SIZE {
-        return Err(DriverError::MessageTooLarge);
-    }
-
-    let mut buf = Vec::with_capacity(4 + payload.len());
-    buf.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-    buf.extend_from_slice(&payload);
-    Ok(buf)
-}
-
-/// Helper to encode a response with length prefix (uses named serialization for compatibility)
-/// Responses are sent from server to client
-pub fn encode_response(resp: &Response) -> Result<Vec<u8>, DriverError> {
-    // Use named serialization for responses (required for tagged enums + external clients)
-    let payload = rmp_serde::to_vec_named(resp)
-        .map_err(|e| DriverError::ProtocolError(format!("Serialization failed: {}", e)))?;
-
-    if payload.len() > MAX_MESSAGE_SIZE {
-        return Err(DriverError::MessageTooLarge);
-    }
-
-    let mut buf = Vec::with_capacity(4 + payload.len());
-    buf.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-    buf.extend_from_slice(&payload);
-    Ok(buf)
-}
-
-/// Helper to encode a generic message with length prefix
-pub fn encode_message<T: Serialize>(msg: &T) -> Result<Vec<u8>, DriverError> {
-    // Use named serialization to ensure maps are serialized with string keys
-    let payload = rmp_serde::to_vec_named(msg)
-        .map_err(|e| DriverError::ProtocolError(format!("Serialization failed: {}", e)))?;
-
-    if payload.len() > MAX_MESSAGE_SIZE {
-        return Err(DriverError::MessageTooLarge);
-    }
-
-    let mut buf = Vec::with_capacity(4 + payload.len());
-    buf.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-    buf.extend_from_slice(&payload);
-    Ok(buf)
-}
-
-/// Helper to decode a message from bytes
-pub fn decode_message<T: for<'de> Deserialize<'de>>(data: &[u8]) -> Result<T, DriverError> {
-    rmp_serde::from_slice(data)
-        .map_err(|e| DriverError::ProtocolError(format!("Deserialization failed: {}", e)))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_command_serialization() {
-        let cmd = Command::Get {
-            database: "test".to_string(),
-            collection: "users".to_string(),
-            key: "user1".to_string(),
-        };
-
-        let encoded = encode_message(&cmd).unwrap();
-        assert!(encoded.len() > 4);
-
-        // Decode (skip length prefix)
-        let decoded: Command = decode_message(&encoded[4..]).unwrap();
-        match decoded {
-            Command::Get {
-                database,
-                collection,
-                key,
-            } => {
-                assert_eq!(database, "test");
-                assert_eq!(collection, "users");
-                assert_eq!(key, "user1");
-            }
-            _ => panic!("Wrong command type"),
-        }
-    }
-
-    #[test]
-    fn test_response_serialization() {
-        let resp = Response::ok(serde_json::json!({"name": "Alice"}));
-        let encoded = encode_message(&resp).unwrap();
-        let decoded: Response = decode_message(&encoded[4..]).unwrap();
-
-        match decoded {
-            Response::Ok { data, .. } => {
-                assert_eq!(data.unwrap()["name"], "Alice");
-            }
-            _ => panic!("Wrong response type"),
-        }
-    }
+fn default_true() -> bool {
+    true
 }

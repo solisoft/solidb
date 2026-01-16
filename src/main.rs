@@ -480,7 +480,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
 
         // 3. Spawn Driver Handler (native binary protocol)
         let driver_storage = storage_for_shutdown.clone();
-        let driver_tx = solidb::driver::handler::spawn_driver_handler(driver_storage);
+        let driver_tx = solidb::driver::spawn_driver_handler(driver_storage);
         tracing::info!("Native driver protocol enabled on port {}", args.port);
 
         // 3. Dispatch Loop (Main Task) with shutdown handling

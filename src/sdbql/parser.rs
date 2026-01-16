@@ -130,13 +130,13 @@ impl Parser {
             } else if matches!(self.current_token(), Token::Collect) {
                 let collect_clause = self.parse_collect_clause()?;
                 body_clauses.push(BodyClause::Collect(collect_clause));
-            } else if matches!(self.current_token(), Token::Join) || 
-                      (matches!(self.current_token(), Token::Left) && 
+            } else if matches!(self.current_token(), Token::Join) ||
+                      (matches!(self.current_token(), Token::Left) &&
                        matches!(self.peek_token(1), Token::Join)) ||
-                      (matches!(self.current_token(), Token::Right) && 
+                      (matches!(self.current_token(), Token::Right) &&
                        matches!(self.peek_token(1), Token::Join)) ||
-                      (matches!(self.current_token(), Token::Full) && 
-                       (matches!(self.peek_token(1), Token::Join) || 
+                      (matches!(self.current_token(), Token::Full) &&
+                       (matches!(self.peek_token(1), Token::Join) ||
                         matches!(self.peek_token(1), Token::Outer))) {
                 let join_clause = self.parse_join_clause()?;
                 body_clauses.push(BodyClause::Join(join_clause));
@@ -186,11 +186,11 @@ impl Parser {
                 )
             });
 
-            if return_clause.is_none() 
-                && !has_mutation 
-                && create_stream_clause.is_none() 
-                && create_mv_clause.is_none() 
-                && refresh_mv_clause.is_none() 
+            if return_clause.is_none()
+                && !has_mutation
+                && create_stream_clause.is_none()
+                && create_mv_clause.is_none()
+                && refresh_mv_clause.is_none()
             {
                 // Check if there are unexpected tokens
                 if !matches!(self.current_token(), Token::Eof) {
@@ -2357,7 +2357,7 @@ mod tests {
         "#;
         let mut parser = Parser::new(input).unwrap();
         let query = parser.parse().unwrap();
-        
+
         assert!(query.create_stream_clause.is_some());
         assert_eq!(query.create_stream_clause.unwrap().name, "high_value_txns");
         assert!(query.window_clause.is_some());
