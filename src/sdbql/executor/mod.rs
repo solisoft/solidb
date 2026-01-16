@@ -21,8 +21,6 @@ pub mod utils;
 pub use types::*;
 pub use utils::*;
 
-
-
 pub struct QueryExecutor<'a> {
     storage: &'a StorageEngine,
     bind_vars: BindVars,
@@ -35,9 +33,6 @@ pub struct QueryExecutor<'a> {
 }
 
 /// Extracted filter condition for index optimization
-
-
-
 
 impl<'a> QueryExecutor<'a> {
     pub fn new(storage: &'a StorageEngine) -> Self {
@@ -1111,18 +1106,18 @@ impl<'a> QueryExecutor<'a> {
 
                     // Non-sharded UPDATE: Use automatic batching for large updates (>100 rows)
                     let bulk_mode = rows.len() > 100;
-                    
+
                     if bulk_mode {
                         // AUTOMATIC BATCH MODE - use update_batch() like INSERT uses insert_batch()
                         tracing::debug!(
                             "UPDATE: Bulk mode for {} rows (threshold: 100)",
                             rows.len()
                         );
-                        
+
                         // Evaluate all updates first
                         let eval_start = std::time::Instant::now();
                         let mut updates: Vec<(String, Value)> = Vec::with_capacity(rows.len());
-                        
+
                         for ctx in &rows {
                             // Evaluate selector expression to get the document key
                             let selector_value =
@@ -1154,7 +1149,7 @@ impl<'a> QueryExecutor<'a> {
                                     "UPDATE: changes must be an object".to_string(),
                                 ));
                             }
-                            
+
                             updates.push((key, changes_value));
                         }
                         let eval_time = eval_start.elapsed();
@@ -1291,18 +1286,18 @@ impl<'a> QueryExecutor<'a> {
 
                     // Non-sharded REMOVE: Use automatic batching for large removes (>100 rows)
                     let bulk_mode = rows.len() > 100;
-                    
+
                     if bulk_mode {
                         // AUTOMATIC BATCH MODE - use delete_batch() like INSERT uses insert_batch()
                         tracing::debug!(
                             "REMOVE: Bulk mode for {} rows (threshold: 100)",
                             rows.len()
                         );
-                        
+
                         // Evaluate all keys first
                         let eval_start = std::time::Instant::now();
                         let mut keys: Vec<String> = Vec::with_capacity(rows.len());
-                        
+
                         for ctx in &rows {
                             // Evaluate selector expression to get the document key
                             let selector_value =
@@ -1323,7 +1318,7 @@ impl<'a> QueryExecutor<'a> {
                                     "REMOVE: selector must be a string key or an object with _key field".to_string()
                                 )),
                             };
-                            
+
                             keys.push(key);
                         }
                         let eval_time = eval_start.elapsed();
@@ -1342,7 +1337,12 @@ impl<'a> QueryExecutor<'a> {
 
                         // Log to replication (keys only for deletes)
                         for key in &keys {
-                            self.log_mutation(&remove_clause.collection, Operation::Delete, key, None);
+                            self.log_mutation(
+                                &remove_clause.collection,
+                                Operation::Delete,
+                                key,
+                                None,
+                            );
                         }
                     } else {
                         // STANDARD MODE (<=100 rows) - delete individually
@@ -1371,7 +1371,12 @@ impl<'a> QueryExecutor<'a> {
                             collection.delete(&key)?;
                             stats.documents_removed += 1;
                             // Log to replication
-                            self.log_mutation(&remove_clause.collection, Operation::Delete, &key, None);
+                            self.log_mutation(
+                                &remove_clause.collection,
+                                Operation::Delete,
+                                &key,
+                                None,
+                            );
                         }
                     }
                 }
@@ -1738,12 +1743,12 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::Join(join_clause) => {
                     // Execute JOIN using appropriate strategy based on join type
                     let collection = self.get_collection(&join_clause.collection)?;
-                    
+
                     match join_clause.join_type {
                         JoinType::Inner | JoinType::Left => {
                             // Standard LEFT/INNER JOIN: iterate left side, find matches on right
                             let mut new_rows = Vec::new();
-                            
+
                             for ctx in &rows {
                                 // Get all documents from joined collection
                                 let all_docs: Vec<Value> = collection
@@ -1758,9 +1763,10 @@ impl<'a> QueryExecutor<'a> {
                                     let mut temp_ctx = ctx.clone();
                                     temp_ctx.insert(join_clause.variable.clone(), doc.clone());
 
-                                    if let Ok(result) =
-                                        self.evaluate_expr_with_context(&join_clause.condition, &temp_ctx)
-                                    {
+                                    if let Ok(result) = self.evaluate_expr_with_context(
+                                        &join_clause.condition,
+                                        &temp_ctx,
+                                    ) {
                                         if result.as_bool().unwrap_or(false) {
                                             matches.push(doc);
                                         }
@@ -1792,7 +1798,7 @@ impl<'a> QueryExecutor<'a> {
                             }
                             rows = new_rows;
                         }
-                        
+
                         JoinType::Right => {
                             // RIGHT JOIN: iterate right side, find matching left rows
                             // Keep all right rows, group left matches into array
@@ -1809,14 +1815,20 @@ impl<'a> QueryExecutor<'a> {
                                 for left_ctx in &rows {
                                     // Check if left row matches this right doc
                                     let mut temp_ctx = left_ctx.clone();
-                                    temp_ctx.insert(join_clause.variable.clone(), right_doc.clone());
+                                    temp_ctx
+                                        .insert(join_clause.variable.clone(), right_doc.clone());
 
-                                    if let Ok(result) =
-                                        self.evaluate_expr_with_context(&join_clause.condition, &temp_ctx)
-                                    {
+                                    if let Ok(result) = self.evaluate_expr_with_context(
+                                        &join_clause.condition,
+                                        &temp_ctx,
+                                    ) {
                                         if result.as_bool().unwrap_or(false) {
                                             // Convert left context to Value for grouping
-                                            left_matches.push(serde_json::to_value(left_ctx).unwrap_or(Value::Object(serde_json::Map::new())));
+                                            left_matches.push(
+                                                serde_json::to_value(left_ctx).unwrap_or(
+                                                    Value::Object(serde_json::Map::new()),
+                                                ),
+                                            );
                                         }
                                     }
                                 }
@@ -1825,7 +1837,7 @@ impl<'a> QueryExecutor<'a> {
                                 //  This mirrors LEFT JOIN behavior but from right perspective
                                 let mut new_ctx = std::collections::HashMap::new();
                                 new_ctx.insert(join_clause.variable.clone(), right_doc);
-                                
+
                                 // For RIGHT JOIN, we need a way to access left-side data
                                 // Since we don't have a specific variable for it, we'll flatten the first match
                                 // and put the rest in an array if there are multiple matches
@@ -1841,12 +1853,12 @@ impl<'a> QueryExecutor<'a> {
                             }
                             rows = new_rows;
                         }
-                        
+
                         JoinType::FullOuter => {
                             // FULL OUTER JOIN: combination of LEFT and RIGHT
                             let mut new_rows = Vec::new();
                             let mut matched_right_indices = std::collections::HashSet::new();
-                            
+
                             let all_right_docs: Vec<Value> = collection
                                 .scan(None)
                                 .into_iter()
@@ -1860,9 +1872,10 @@ impl<'a> QueryExecutor<'a> {
                                     let mut temp_ctx = ctx.clone();
                                     temp_ctx.insert(join_clause.variable.clone(), doc.clone());
 
-                                    if let Ok(result) =
-                                        self.evaluate_expr_with_context(&join_clause.condition, &temp_ctx)
-                                    {
+                                    if let Ok(result) = self.evaluate_expr_with_context(
+                                        &join_clause.condition,
+                                        &temp_ctx,
+                                    ) {
                                         if result.as_bool().unwrap_or(false) {
                                             matches.push(doc.clone());
                                             matched_right_indices.insert(idx);
@@ -1872,10 +1885,7 @@ impl<'a> QueryExecutor<'a> {
 
                                 // Always include left row (LEFT JOIN semantics)
                                 let mut new_ctx = ctx.clone();
-                                new_ctx.insert(
-                                    join_clause.variable.clone(),
-                                    Value::Array(matches),
-                                );
+                                new_ctx.insert(join_clause.variable.clone(), Value::Array(matches));
                                 new_rows.push(new_ctx);
                             }
 
@@ -3225,9 +3235,11 @@ impl<'a> QueryExecutor<'a> {
                     Value::String(s) => s.len(),
                     Value::Object(obj) => obj.len(),
                     Value::Null => 0,
-                    _ => return Err(DbError::ExecutionError(
-                        "LENGTH: argument must be array, string, or object".to_string(),
-                    )),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "LENGTH: argument must be array, string, or object".to_string(),
+                        ))
+                    }
                 };
                 Ok(Value::Number(serde_json::Number::from(len)))
             }
@@ -3300,13 +3312,18 @@ impl<'a> QueryExecutor<'a> {
 
                 if let (Some(point_val), Some(Value::Array(poly_coords))) = (point, polygon) {
                     let (px, py) = match point_val {
-                        Value::Array(arr) if arr.len() >= 2 => (
-                            val_to_f64(&arr[0]),
-                            val_to_f64(&arr[1]),
-                        ),
+                        Value::Array(arr) if arr.len() >= 2 => {
+                            (val_to_f64(&arr[0]), val_to_f64(&arr[1]))
+                        }
                         Value::Object(obj) => (
-                            obj.get("lon").or_else(|| obj.get("x")).map(val_to_f64).unwrap_or(0.0),
-                            obj.get("lat").or_else(|| obj.get("y")).map(val_to_f64).unwrap_or(0.0),
+                            obj.get("lon")
+                                .or_else(|| obj.get("x"))
+                                .map(val_to_f64)
+                                .unwrap_or(0.0),
+                            obj.get("lat")
+                                .or_else(|| obj.get("y"))
+                                .map(val_to_f64)
+                                .unwrap_or(0.0),
                         ),
                         _ => return Ok(Value::Bool(false)),
                     };
@@ -3317,24 +3334,34 @@ impl<'a> QueryExecutor<'a> {
                         let mut j = n - 1;
                         for i in 0..n {
                             let (xi, yi) = match &poly_coords[i] {
-                                Value::Array(arr) if arr.len() >= 2 => (
-                                    val_to_f64(&arr[0]),
-                                    val_to_f64(&arr[1]),
-                                ),
+                                Value::Array(arr) if arr.len() >= 2 => {
+                                    (val_to_f64(&arr[0]), val_to_f64(&arr[1]))
+                                }
                                 Value::Object(obj) => (
-                                    obj.get("lon").or_else(|| obj.get("x")).map(val_to_f64).unwrap_or(0.0),
-                                    obj.get("lat").or_else(|| obj.get("y")).map(val_to_f64).unwrap_or(0.0),
+                                    obj.get("lon")
+                                        .or_else(|| obj.get("x"))
+                                        .map(val_to_f64)
+                                        .unwrap_or(0.0),
+                                    obj.get("lat")
+                                        .or_else(|| obj.get("y"))
+                                        .map(val_to_f64)
+                                        .unwrap_or(0.0),
                                 ),
                                 _ => (0.0, 0.0),
                             };
                             let (xj, yj) = match &poly_coords[j] {
-                                Value::Array(arr) if arr.len() >= 2 => (
-                                    val_to_f64(&arr[0]),
-                                    val_to_f64(&arr[1]),
-                                ),
+                                Value::Array(arr) if arr.len() >= 2 => {
+                                    (val_to_f64(&arr[0]), val_to_f64(&arr[1]))
+                                }
                                 Value::Object(obj) => (
-                                    obj.get("lon").or_else(|| obj.get("x")).map(val_to_f64).unwrap_or(0.0),
-                                    obj.get("lat").or_else(|| obj.get("y")).map(val_to_f64).unwrap_or(0.0),
+                                    obj.get("lon")
+                                        .or_else(|| obj.get("x"))
+                                        .map(val_to_f64)
+                                        .unwrap_or(0.0),
+                                    obj.get("lat")
+                                        .or_else(|| obj.get("y"))
+                                        .map(val_to_f64)
+                                        .unwrap_or(0.0),
                                 ),
                                 _ => (0.0, 0.0),
                             };
@@ -3353,7 +3380,6 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
             // Type conversion
-
             "TO_NUMBER" => {
                 if args.len() != 1 {
                     return Err(DbError::ExecutionError(
@@ -4150,17 +4176,21 @@ impl<'a> QueryExecutor<'a> {
             "VECTOR_SIMILARITY" => {
                 if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
                     return Err(DbError::ExecutionError(
-                        "VECTOR_SIMILARITY requires 2-3 arguments: vector1, vector2, [metric]".to_string(),
+                        "VECTOR_SIMILARITY requires 2-3 arguments: vector1, vector2, [metric]"
+                            .to_string(),
                     ));
                 }
 
-                let vec1 = Self::extract_vector_arg(&evaluated_args[0], "VECTOR_SIMILARITY: vector1")?;
-                let vec2 = Self::extract_vector_arg(&evaluated_args[1], "VECTOR_SIMILARITY: vector2")?;
+                let vec1 =
+                    Self::extract_vector_arg(&evaluated_args[0], "VECTOR_SIMILARITY: vector1")?;
+                let vec2 =
+                    Self::extract_vector_arg(&evaluated_args[1], "VECTOR_SIMILARITY: vector2")?;
 
                 if vec1.len() != vec2.len() {
                     return Err(DbError::ExecutionError(format!(
                         "VECTOR_SIMILARITY: vectors must have same dimension ({} vs {})",
-                        vec1.len(), vec2.len()
+                        vec1.len(),
+                        vec2.len()
                     )));
                 }
 
@@ -4190,17 +4220,21 @@ impl<'a> QueryExecutor<'a> {
             "VECTOR_DISTANCE" => {
                 if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
                     return Err(DbError::ExecutionError(
-                        "VECTOR_DISTANCE requires 2-3 arguments: vector1, vector2, [metric]".to_string(),
+                        "VECTOR_DISTANCE requires 2-3 arguments: vector1, vector2, [metric]"
+                            .to_string(),
                     ));
                 }
 
-                let vec1 = Self::extract_vector_arg(&evaluated_args[0], "VECTOR_DISTANCE: vector1")?;
-                let vec2 = Self::extract_vector_arg(&evaluated_args[1], "VECTOR_DISTANCE: vector2")?;
+                let vec1 =
+                    Self::extract_vector_arg(&evaluated_args[0], "VECTOR_DISTANCE: vector1")?;
+                let vec2 =
+                    Self::extract_vector_arg(&evaluated_args[1], "VECTOR_DISTANCE: vector2")?;
 
                 if vec1.len() != vec2.len() {
                     return Err(DbError::ExecutionError(format!(
                         "VECTOR_DISTANCE: vectors must have same dimension ({} vs {})",
-                        vec1.len(), vec2.len()
+                        vec1.len(),
+                        vec2.len()
                     )));
                 }
 
@@ -4239,7 +4273,10 @@ impl<'a> QueryExecutor<'a> {
 
                 if magnitude < 1e-10 {
                     // Return zero vector if magnitude is too small
-                    let result: Vec<Value> = vec.iter().map(|_| Value::Number(number_from_f64(0.0))).collect();
+                    let result: Vec<Value> = vec
+                        .iter()
+                        .map(|_| Value::Number(number_from_f64(0.0)))
+                        .collect();
                     return Ok(Value::Array(result));
                 }
 
@@ -4255,19 +4292,22 @@ impl<'a> QueryExecutor<'a> {
             "VECTOR_INDEX_STATS" => {
                 if evaluated_args.len() != 2 {
                     return Err(DbError::ExecutionError(
-                        "VECTOR_INDEX_STATS requires 2 arguments: collection, index_name".to_string(),
+                        "VECTOR_INDEX_STATS requires 2 arguments: collection, index_name"
+                            .to_string(),
                     ));
                 }
 
                 let coll_name = evaluated_args[0].as_str().ok_or_else(|| {
                     DbError::ExecutionError(
-                        "VECTOR_INDEX_STATS: first argument must be a string (collection name)".to_string(),
+                        "VECTOR_INDEX_STATS: first argument must be a string (collection name)"
+                            .to_string(),
                     )
                 })?;
 
                 let index_name = evaluated_args[1].as_str().ok_or_else(|| {
                     DbError::ExecutionError(
-                        "VECTOR_INDEX_STATS: second argument must be a string (index name)".to_string(),
+                        "VECTOR_INDEX_STATS: second argument must be a string (index name)"
+                            .to_string(),
                     )
                 })?;
 
@@ -4275,25 +4315,52 @@ impl<'a> QueryExecutor<'a> {
                 let indexes = collection.list_vector_indexes();
 
                 // Find the specific index
-                let stats = indexes.into_iter().find(|idx| idx.name == index_name).ok_or_else(|| {
-                    DbError::ExecutionError(format!(
-                        "VECTOR_INDEX_STATS: index '{}' not found in collection '{}'",
-                        index_name, coll_name
-                    ))
-                })?;
+                let stats = indexes
+                    .into_iter()
+                    .find(|idx| idx.name == index_name)
+                    .ok_or_else(|| {
+                        DbError::ExecutionError(format!(
+                            "VECTOR_INDEX_STATS: index '{}' not found in collection '{}'",
+                            index_name, coll_name
+                        ))
+                    })?;
 
                 // Build result object
                 let mut result = serde_json::Map::new();
                 result.insert("name".to_string(), Value::String(stats.name));
                 result.insert("field".to_string(), Value::String(stats.field));
-                result.insert("dimension".to_string(), Value::Number(serde_json::Number::from(stats.dimension)));
-                result.insert("vectors".to_string(), Value::Number(serde_json::Number::from(stats.indexed_vectors)));
-                result.insert("metric".to_string(), Value::String(format!("{:?}", stats.metric).to_lowercase()));
-                result.insert("quantization".to_string(), Value::String(format!("{:?}", stats.quantization).to_lowercase()));
-                result.insert("memory_bytes".to_string(), Value::Number(serde_json::Number::from(stats.memory_bytes)));
-                result.insert("compression_ratio".to_string(), Value::Number(number_from_f64(stats.compression_ratio as f64)));
-                result.insert("m".to_string(), Value::Number(serde_json::Number::from(stats.m)));
-                result.insert("ef_construction".to_string(), Value::Number(serde_json::Number::from(stats.ef_construction)));
+                result.insert(
+                    "dimension".to_string(),
+                    Value::Number(serde_json::Number::from(stats.dimension)),
+                );
+                result.insert(
+                    "vectors".to_string(),
+                    Value::Number(serde_json::Number::from(stats.indexed_vectors)),
+                );
+                result.insert(
+                    "metric".to_string(),
+                    Value::String(format!("{:?}", stats.metric).to_lowercase()),
+                );
+                result.insert(
+                    "quantization".to_string(),
+                    Value::String(format!("{:?}", stats.quantization).to_lowercase()),
+                );
+                result.insert(
+                    "memory_bytes".to_string(),
+                    Value::Number(serde_json::Number::from(stats.memory_bytes)),
+                );
+                result.insert(
+                    "compression_ratio".to_string(),
+                    Value::Number(number_from_f64(stats.compression_ratio as f64)),
+                );
+                result.insert(
+                    "m".to_string(),
+                    Value::Number(serde_json::Number::from(stats.m)),
+                );
+                result.insert(
+                    "ef_construction".to_string(),
+                    Value::Number(serde_json::Number::from(stats.ef_construction)),
+                );
 
                 Ok(Value::Object(result))
             }
@@ -5029,9 +5096,8 @@ impl<'a> QueryExecutor<'a> {
                 };
 
                 // Use safe_regex to prevent DoS from malicious patterns
-                let re = safe_regex(&pattern).map_err(|e| {
-                    DbError::ExecutionError(format!("REGEX_REPLACE: {}", e))
-                })?;
+                let re = safe_regex(&pattern)
+                    .map_err(|e| DbError::ExecutionError(format!("REGEX_REPLACE: {}", e)))?;
 
                 let result = re.replace_all(text, replacement).to_string();
                 Ok(Value::String(result))
@@ -5651,9 +5717,7 @@ impl<'a> QueryExecutor<'a> {
 
             // SQRT(n) - square root
 
-
             // SLUGIFY(text) - Convert text to URL-friendly slug
-
 
             // ============================================================
             // STRING FUNCTIONS
@@ -5708,14 +5772,18 @@ impl<'a> QueryExecutor<'a> {
                             DbError::ExecutionError("PAD_LEFT: length must be a number".to_string())
                         })? as usize;
                         let pad_char = if evaluated_args.len() == 3 {
-                            evaluated_args[2].as_str().and_then(|s| s.chars().next()).unwrap_or(' ')
+                            evaluated_args[2]
+                                .as_str()
+                                .and_then(|s| s.chars().next())
+                                .unwrap_or(' ')
                         } else {
                             ' '
                         };
                         if s.len() >= len {
                             Ok(Value::String(s.clone()))
                         } else {
-                            let padding: String = std::iter::repeat(pad_char).take(len - s.len()).collect();
+                            let padding: String =
+                                std::iter::repeat(pad_char).take(len - s.len()).collect();
                             Ok(Value::String(format!("{}{}", padding, s)))
                         }
                     }
@@ -5736,17 +5804,23 @@ impl<'a> QueryExecutor<'a> {
                 match &evaluated_args[0] {
                     Value::String(s) => {
                         let len = evaluated_args[1].as_u64().ok_or_else(|| {
-                            DbError::ExecutionError("PAD_RIGHT: length must be a number".to_string())
+                            DbError::ExecutionError(
+                                "PAD_RIGHT: length must be a number".to_string(),
+                            )
                         })? as usize;
                         let pad_char = if evaluated_args.len() == 3 {
-                            evaluated_args[2].as_str().and_then(|s| s.chars().next()).unwrap_or(' ')
+                            evaluated_args[2]
+                                .as_str()
+                                .and_then(|s| s.chars().next())
+                                .unwrap_or(' ')
                         } else {
                             ' '
                         };
                         if s.len() >= len {
                             Ok(Value::String(s.clone()))
                         } else {
-                            let padding: String = std::iter::repeat(pad_char).take(len - s.len()).collect();
+                            let padding: String =
+                                std::iter::repeat(pad_char).take(len - s.len()).collect();
                             Ok(Value::String(format!("{}{}", s, padding)))
                         }
                     }
@@ -5767,7 +5841,9 @@ impl<'a> QueryExecutor<'a> {
                 match &evaluated_args[0] {
                     Value::String(s) => {
                         let count = evaluated_args[1].as_u64().ok_or_else(|| {
-                            DbError::ExecutionError("REPEAT: count must be a positive integer".to_string())
+                            DbError::ExecutionError(
+                                "REPEAT: count must be a positive integer".to_string(),
+                            )
                         })? as usize;
                         if count > 10000 {
                             return Err(DbError::ExecutionError(
@@ -5782,7 +5858,6 @@ impl<'a> QueryExecutor<'a> {
                     )),
                 }
             }
-
 
             // IS_EMPTY(val) - Check if null, "", [], {}
             "IS_EMPTY" => {
@@ -5802,7 +5877,6 @@ impl<'a> QueryExecutor<'a> {
             }
 
             // IS_BLANK(str) - Check if string is blank (whitespace only)
-
 
             // ============================================================
             // ARRAY FUNCTIONS
@@ -5853,7 +5927,9 @@ impl<'a> QueryExecutor<'a> {
                 match &evaluated_args[0] {
                     Value::Array(arr) => {
                         let size = evaluated_args[1].as_u64().ok_or_else(|| {
-                            DbError::ExecutionError("CHUNK: size must be a positive integer".to_string())
+                            DbError::ExecutionError(
+                                "CHUNK: size must be a positive integer".to_string(),
+                            )
                         })? as usize;
                         if size == 0 {
                             return Err(DbError::ExecutionError(
@@ -5883,7 +5959,9 @@ impl<'a> QueryExecutor<'a> {
                 match &evaluated_args[0] {
                     Value::Array(arr) => {
                         let n = evaluated_args[1].as_u64().ok_or_else(|| {
-                            DbError::ExecutionError("TAKE: count must be a positive integer".to_string())
+                            DbError::ExecutionError(
+                                "TAKE: count must be a positive integer".to_string(),
+                            )
                         })? as usize;
                         let result: Vec<Value> = arr.iter().take(n).cloned().collect();
                         Ok(Value::Array(result))
@@ -5905,7 +5983,9 @@ impl<'a> QueryExecutor<'a> {
                 match &evaluated_args[0] {
                     Value::Array(arr) => {
                         let n = evaluated_args[1].as_u64().ok_or_else(|| {
-                            DbError::ExecutionError("DROP: count must be a positive integer".to_string())
+                            DbError::ExecutionError(
+                                "DROP: count must be a positive integer".to_string(),
+                            )
                         })? as usize;
                         let result: Vec<Value> = arr.iter().skip(n).cloned().collect();
                         Ok(Value::Array(result))
@@ -5942,23 +6022,38 @@ impl<'a> QueryExecutor<'a> {
                             len
                         };
                         let mask_char = if evaluated_args.len() > 3 {
-                            evaluated_args[3].as_str().and_then(|s| s.chars().next()).unwrap_or('*')
+                            evaluated_args[3]
+                                .as_str()
+                                .and_then(|s| s.chars().next())
+                                .unwrap_or('*')
                         } else {
                             '*'
                         };
 
                         // Handle negative indices
-                        let start_idx = if start < 0 { (len + start).max(0) as usize } else { start.min(len) as usize };
-                        let end_idx = if end < 0 { (len + end).max(0) as usize } else { end.min(len) as usize };
+                        let start_idx = if start < 0 {
+                            (len + start).max(0) as usize
+                        } else {
+                            start.min(len) as usize
+                        };
+                        let end_idx = if end < 0 {
+                            (len + end).max(0) as usize
+                        } else {
+                            end.min(len) as usize
+                        };
 
                         let chars: Vec<char> = s.chars().collect();
-                        let result: String = chars.iter().enumerate().map(|(i, c)| {
-                            if i >= start_idx && i < end_idx {
-                                mask_char
-                            } else {
-                                *c
-                            }
-                        }).collect();
+                        let result: String = chars
+                            .iter()
+                            .enumerate()
+                            .map(|(i, c)| {
+                                if i >= start_idx && i < end_idx {
+                                    mask_char
+                                } else {
+                                    *c
+                                }
+                            })
+                            .collect();
                         Ok(Value::String(result))
                     }
                     Value::Null => Ok(Value::Null),
@@ -5972,13 +6067,16 @@ impl<'a> QueryExecutor<'a> {
             "TRUNCATE_TEXT" | "ELLIPSIS" => {
                 if evaluated_args.is_empty() || evaluated_args.len() > 3 {
                     return Err(DbError::ExecutionError(
-                        "TRUNCATE_TEXT requires 2-3 arguments (string, length, suffix?)".to_string(),
+                        "TRUNCATE_TEXT requires 2-3 arguments (string, length, suffix?)"
+                            .to_string(),
                     ));
                 }
                 match &evaluated_args[0] {
                     Value::String(s) => {
                         let max_len = evaluated_args[1].as_u64().ok_or_else(|| {
-                            DbError::ExecutionError("TRUNCATE_TEXT: length must be a positive integer".to_string())
+                            DbError::ExecutionError(
+                                "TRUNCATE_TEXT: length must be a positive integer".to_string(),
+                            )
                         })? as usize;
                         let suffix = if evaluated_args.len() > 2 {
                             evaluated_args[2].as_str().unwrap_or("...").to_string()
@@ -6054,7 +6152,13 @@ impl<'a> QueryExecutor<'a> {
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("SIGN: argument must be a number".to_string())
                 })?;
-                let sign = if num > 0.0 { 1 } else if num < 0.0 { -1 } else { 0 };
+                let sign = if num > 0.0 {
+                    1
+                } else if num < 0.0 {
+                    -1
+                } else {
+                    0
+                };
                 Ok(Value::Number(serde_json::Number::from(sign)))
             }
 
@@ -6072,9 +6176,7 @@ impl<'a> QueryExecutor<'a> {
                     DbError::ExecutionError("MOD: second argument must be a number".to_string())
                 })?;
                 if b == 0.0 {
-                    return Err(DbError::ExecutionError(
-                        "MOD: division by zero".to_string(),
-                    ));
+                    return Err(DbError::ExecutionError("MOD: division by zero".to_string()));
                 }
                 Ok(Value::Number(number_from_f64(a % b)))
             }
@@ -6193,7 +6295,8 @@ impl<'a> QueryExecutor<'a> {
                 }
                 match &evaluated_args[0] {
                     Value::Object(obj) => {
-                        let entries: Vec<Value> = obj.iter()
+                        let entries: Vec<Value> = obj
+                            .iter()
                             .map(|(k, v)| Value::Array(vec![Value::String(k.clone()), v.clone()]))
                             .collect();
                         Ok(Value::Array(entries))
@@ -6590,7 +6693,6 @@ impl<'a> QueryExecutor<'a> {
 
             // DATE_YEAR(date) - extract year from date
 
-
             // RANGE(start, end, step?) - generate array of numbers
             "RANGE" => {
                 if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
@@ -6819,7 +6921,8 @@ impl<'a> QueryExecutor<'a> {
                                     }
                                 } else {
                                     Err(DbError::ExecutionError(
-                                        "DOCUMENT: id must be in format 'collection/key'".to_string(),
+                                        "DOCUMENT: id must be in format 'collection/key'"
+                                            .to_string(),
                                     ))
                                 }
                             }
@@ -6829,7 +6932,8 @@ impl<'a> QueryExecutor<'a> {
                                 for id_val in ids {
                                     if let Some(id) = id_val.as_str() {
                                         if let Some((collection_name, key)) = id.split_once('/') {
-                                            let collection_result = if collection_name.contains(':') {
+                                            let collection_result = if collection_name.contains(':')
+                                            {
                                                 self.storage.get_collection(collection_name)
                                             } else {
                                                 self.get_collection(collection_name)
@@ -7191,7 +7295,6 @@ impl<'a> QueryExecutor<'a> {
 
             // DATE_NOW() - current timestamp in milliseconds since Unix epoch
 
-
             // COLLECTION_COUNT(collection) - get the count of documents in a collection
             "COLLECTION_COUNT" => {
                 if evaluated_args.len() != 1 {
@@ -7212,7 +7315,6 @@ impl<'a> QueryExecutor<'a> {
 
             // DATE_ISO8601(date) - convert timestamp to ISO 8601 string
 
-
             // HYBRID_SEARCH(collection, vector_index, fulltext_field, query_vector, text_query, options?)
             // Combines vector similarity with fulltext search for better RAG results
             // options: { vector_weight: 0.5, text_weight: 0.5, limit: 10, fusion: "weighted" | "rrf" }
@@ -7226,17 +7328,26 @@ impl<'a> QueryExecutor<'a> {
 
                 // Extract arguments
                 let collection_name = evaluated_args[0].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("HYBRID_SEARCH: collection must be a string".to_string())
+                    DbError::ExecutionError(
+                        "HYBRID_SEARCH: collection must be a string".to_string(),
+                    )
                 })?;
                 let vector_index = evaluated_args[1].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("HYBRID_SEARCH: vector_index must be a string".to_string())
+                    DbError::ExecutionError(
+                        "HYBRID_SEARCH: vector_index must be a string".to_string(),
+                    )
                 })?;
                 let fulltext_field = evaluated_args[2].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("HYBRID_SEARCH: fulltext_field must be a string".to_string())
+                    DbError::ExecutionError(
+                        "HYBRID_SEARCH: fulltext_field must be a string".to_string(),
+                    )
                 })?;
-                let query_vector = Self::extract_vector_arg(&evaluated_args[3], "HYBRID_SEARCH: query_vector")?;
+                let query_vector =
+                    Self::extract_vector_arg(&evaluated_args[3], "HYBRID_SEARCH: query_vector")?;
                 let text_query = evaluated_args[4].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("HYBRID_SEARCH: text_query must be a string".to_string())
+                    DbError::ExecutionError(
+                        "HYBRID_SEARCH: text_query must be a string".to_string(),
+                    )
                 })?;
 
                 // Parse options (defaults)
@@ -7265,22 +7376,25 @@ impl<'a> QueryExecutor<'a> {
                 let collection = self.get_collection(collection_name)?;
 
                 // Step 1: Vector search (get more candidates than limit for better fusion)
-                let vector_results = collection.vector_search(
-                    vector_index,
-                    &query_vector,
-                    limit * 3,
-                    None,
-                )?;
+                let vector_results =
+                    collection.vector_search(vector_index, &query_vector, limit * 3, None)?;
 
                 // Step 2: Fulltext search
-                let fulltext_results = collection.fulltext_search(fulltext_field, text_query, 2)
+                let fulltext_results = collection
+                    .fulltext_search(fulltext_field, text_query, 2)
                     .unwrap_or_default();
 
                 // Step 3: Normalize vector scores to 0-1 range
                 let mut vector_scores: HashMap<String, f32> = HashMap::new();
                 if !vector_results.is_empty() {
-                    let max_vec = vector_results.iter().map(|r| r.score).fold(f32::NEG_INFINITY, f32::max);
-                    let min_vec = vector_results.iter().map(|r| r.score).fold(f32::INFINITY, f32::min);
+                    let max_vec = vector_results
+                        .iter()
+                        .map(|r| r.score)
+                        .fold(f32::NEG_INFINITY, f32::max);
+                    let min_vec = vector_results
+                        .iter()
+                        .map(|r| r.score)
+                        .fold(f32::INFINITY, f32::min);
                     let range = max_vec - min_vec;
                     for result in &vector_results {
                         let normalized = if range > 0.0 {
@@ -7295,8 +7409,14 @@ impl<'a> QueryExecutor<'a> {
                 // Step 4: Normalize text scores to 0-1 range
                 let mut text_scores: HashMap<String, f32> = HashMap::new();
                 if !fulltext_results.is_empty() {
-                    let max_text = fulltext_results.iter().map(|r| r.score).fold(f64::NEG_INFINITY, f64::max);
-                    let min_text = fulltext_results.iter().map(|r| r.score).fold(f64::INFINITY, f64::min);
+                    let max_text = fulltext_results
+                        .iter()
+                        .map(|r| r.score)
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    let min_text = fulltext_results
+                        .iter()
+                        .map(|r| r.score)
+                        .fold(f64::INFINITY, f64::min);
                     let range = max_text - min_text;
                     for result in &fulltext_results {
                         let normalized = if range > 0.0 {
@@ -7309,7 +7429,13 @@ impl<'a> QueryExecutor<'a> {
                 }
 
                 // Step 5: Combine scores based on fusion method
-                let mut combined_results: Vec<(String, f32, Option<f32>, Option<f32>, Vec<String>)> = Vec::new();
+                let mut combined_results: Vec<(
+                    String,
+                    f32,
+                    Option<f32>,
+                    Option<f32>,
+                    Vec<String>,
+                )> = Vec::new();
 
                 if fusion_method == "rrf" {
                     // Reciprocal Rank Fusion
@@ -7323,7 +7449,10 @@ impl<'a> QueryExecutor<'a> {
                     for (rank, result) in vector_results.iter().enumerate() {
                         let rrf_score = 1.0 / (k + rank as f32 + 1.0);
                         *rrf_scores.entry(result.doc_key.clone()).or_insert(0.0) += rrf_score;
-                        doc_sources.entry(result.doc_key.clone()).or_default().push("vector".to_string());
+                        doc_sources
+                            .entry(result.doc_key.clone())
+                            .or_default()
+                            .push("vector".to_string());
                         doc_vector_scores.insert(result.doc_key.clone(), result.score);
                     }
 
@@ -7331,7 +7460,10 @@ impl<'a> QueryExecutor<'a> {
                     for (rank, result) in fulltext_results.iter().enumerate() {
                         let rrf_score = 1.0 / (k + rank as f32 + 1.0);
                         *rrf_scores.entry(result.doc_key.clone()).or_insert(0.0) += rrf_score;
-                        doc_sources.entry(result.doc_key.clone()).or_default().push("fulltext".to_string());
+                        doc_sources
+                            .entry(result.doc_key.clone())
+                            .or_default()
+                            .push("fulltext".to_string());
                         doc_text_scores.insert(result.doc_key.clone(), result.score as f32);
                     }
 
@@ -7343,7 +7475,8 @@ impl<'a> QueryExecutor<'a> {
                     }
                 } else {
                     // Weighted sum fusion (default)
-                    let mut all_doc_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    let mut all_doc_keys: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
                     all_doc_keys.extend(vector_scores.keys().cloned());
                     all_doc_keys.extend(text_scores.keys().cloned());
 
@@ -7364,19 +7497,28 @@ impl<'a> QueryExecutor<'a> {
                         }
 
                         // Get original (non-normalized) scores for output
-                        let orig_vec_score = vector_results.iter()
+                        let orig_vec_score = vector_results
+                            .iter()
                             .find(|r| r.doc_key == doc_key)
                             .map(|r| r.score);
-                        let orig_txt_score = fulltext_results.iter()
+                        let orig_txt_score = fulltext_results
+                            .iter()
                             .find(|r| r.doc_key == doc_key)
                             .map(|r| r.score as f32);
 
-                        combined_results.push((doc_key, combined_score, orig_vec_score, orig_txt_score, sources));
+                        combined_results.push((
+                            doc_key,
+                            combined_score,
+                            orig_vec_score,
+                            orig_txt_score,
+                            sources,
+                        ));
                     }
                 }
 
                 // Step 6: Sort by combined score and limit
-                combined_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                combined_results
+                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                 combined_results.truncate(limit);
 
                 // Step 7: Build result objects with documents
@@ -7502,18 +7644,14 @@ impl<'a> QueryExecutor<'a> {
     /// Extract a vector (array of f32) from a JSON value
     fn extract_vector_arg(value: &Value, context: &str) -> DbResult<Vec<f32>> {
         match value {
-            Value::Array(arr) => {
-                arr.iter()
-                    .map(|v| {
-                        v.as_f64()
-                            .map(|f| f as f32)
-                            .ok_or_else(|| DbError::ExecutionError(format!(
-                                "{} must be an array of numbers",
-                                context
-                            )))
+            Value::Array(arr) => arr
+                .iter()
+                .map(|v| {
+                    v.as_f64().map(|f| f as f32).ok_or_else(|| {
+                        DbError::ExecutionError(format!("{} must be an array of numbers", context))
                     })
-                    .collect()
-            }
+                })
+                .collect(),
             _ => Err(DbError::ExecutionError(format!(
                 "{} must be an array",
                 context
@@ -9656,7 +9794,7 @@ impl<'a> QueryExecutor<'a> {
     ) -> DbResult<QueryExecutionResult> {
         let view_name = &clause.name;
         let db_name = self.database.as_deref().unwrap_or("_system");
-        
+
         // Handle database prefixing
         let full_view_name = if view_name.contains(':') {
             view_name.to_string()
@@ -9666,23 +9804,23 @@ impl<'a> QueryExecutor<'a> {
 
         // 1. Create the target collection for the view
         match self.storage.create_collection(full_view_name.clone(), None) {
-             Ok(_) => {}
-             Err(e) => {
-                 // If it already exists (checking error string or type would be better, but consistent with existing logic)
-                 // DbError::CollectionAlreadyExists
-                 if matches!(e, DbError::CollectionAlreadyExists(_)) {
-                     if clause.if_not_exists {
+            Ok(_) => {}
+            Err(e) => {
+                // If it already exists (checking error string or type would be better, but consistent with existing logic)
+                // DbError::CollectionAlreadyExists
+                if matches!(e, DbError::CollectionAlreadyExists(_)) {
+                    if clause.if_not_exists {
                         return Ok(QueryExecutionResult {
                             results: vec![],
                             mutations: MutationStats::default(),
                         });
-                     } else {
+                    } else {
                         return Err(e);
-                     }
-                 } else {
-                     return Err(e);
-                 }
-             }
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
         }
 
         // 2. Serialize the query for storage
@@ -9695,23 +9833,25 @@ impl<'a> QueryExecutor<'a> {
         // Ensure _views exists
         // We use create_collection but ignore "AlreadyExists" error
         if let Err(_) = self.storage.get_collection(&views_coll_name) {
-             let _ = self.storage.create_collection(views_coll_name.clone(), None);
+            let _ = self
+                .storage
+                .create_collection(views_coll_name.clone(), None);
         }
-        
+
         // We need to use "raw" storage access or construct a Collection object to insert metadata.
         // self.storage.get_collection returns Collection.
         let views_coll = self.storage.get_collection(&views_coll_name)?;
-        
+
         // Metadata document
         let metadata = serde_json::json!({
-            "_key": view_name, // Store simple name as key? Or full name? 
+            "_key": view_name, // Store simple name as key? Or full name?
                                // Scoping: views are per database. Unique by key in _views.
                                // So simple name is fine if _views is per-db.
             "type": "materialized",
             "query": query_json,
             "created_at": chrono::Utc::now().to_rfc3339()
         });
-        
+
         // Convert json Value to Document for upsert?
         // Collection::upsert takes Value (which is converted to Document internally if needed, or expected to be object)
         views_coll.upsert_batch(vec![(view_name.to_string(), metadata)])?;
@@ -9722,20 +9862,23 @@ impl<'a> QueryExecutor<'a> {
 
         // 5. Bulk insert results into the view collection
         let target_coll = self.storage.get_collection(&full_view_name)?;
-        
+
         // Capture count before move
         let inserted_count = results.len();
         if !results.is_empty() {
-             target_coll.insert_batch(results)?;
+            target_coll.insert_batch(results)?;
         }
 
         Ok(QueryExecutionResult {
-            results: vec![Value::String(format!("Materialized view '{}' created", view_name))],
+            results: vec![Value::String(format!(
+                "Materialized view '{}' created",
+                view_name
+            ))],
             mutations: MutationStats {
                 documents_inserted: inserted_count,
                 documents_updated: 0,
-                documents_removed: 0
-            }
+                documents_removed: 0,
+            },
         })
     }
 
@@ -9746,31 +9889,37 @@ impl<'a> QueryExecutor<'a> {
     ) -> DbResult<QueryExecutionResult> {
         let view_name = &clause.name;
         let db_name = self.database.as_deref().unwrap_or("_system");
-        
+
         let views_coll_name = format!("{}:_views", db_name);
-        
+
         // 1. Get metadata from _views
         let views_coll = self.storage.get_collection(&views_coll_name).map_err(|_| {
-             DbError::CollectionNotFound(format!("System collection _views not found. View '{}' probably doesn't exist.", view_name))
+            DbError::CollectionNotFound(format!(
+                "System collection _views not found. View '{}' probably doesn't exist.",
+                view_name
+            ))
         })?;
 
         // Simple name as key
         let metadata = views_coll.get(view_name).map_err(|_| {
-            DbError::DocumentNotFound(format!("Materialized view definition for '{}' not found", view_name))
+            DbError::DocumentNotFound(format!(
+                "Materialized view definition for '{}' not found",
+                view_name
+            ))
         })?;
 
         // 2. Deserialize query
         // metadata is Document. to_value()? Or access fields directly.
         // Document has Get.
         let query_val = metadata.get("query").ok_or_else(|| {
-             DbError::InternalError("Corrupted view metadata: missing query field".to_string())
+            DbError::InternalError("Corrupted view metadata: missing query field".to_string())
         })?;
 
         // Deserialize Value -> Query
-        // Need to clone query_val because from_value consumes? 
-        // serde_json::from_value takes Value. 
+        // Need to clone query_val because from_value consumes?
+        // serde_json::from_value takes Value.
         let inner_query: Query = serde_json::from_value(query_val.clone()).map_err(|e| {
-             DbError::InternalError(format!("Failed to deserialize view query: {}", e))
+            DbError::InternalError(format!("Failed to deserialize view query: {}", e))
         })?;
 
         // 3. Execute the query
@@ -9783,23 +9932,26 @@ impl<'a> QueryExecutor<'a> {
         } else {
             format!("{}:{}", db_name, view_name)
         };
-        
+
         let target_coll = self.storage.get_collection(&full_view_name)?;
-        target_coll.truncate()?; 
+        target_coll.truncate()?;
 
         // 5. Bulk insert new results
         let inserted_count = results.len();
         if !results.is_empty() {
-             target_coll.insert_batch(results)?;
+            target_coll.insert_batch(results)?;
         }
 
         Ok(QueryExecutionResult {
-            results: vec![Value::String(format!("Materialized view '{}' refreshed", view_name))],
-             mutations: MutationStats {
+            results: vec![Value::String(format!(
+                "Materialized view '{}' refreshed",
+                view_name
+            ))],
+            mutations: MutationStats {
                 documents_inserted: inserted_count,
                 documents_updated: 0,
-                documents_removed: 0 // count truncated?
-            }
+                documents_removed: 0, // count truncated?
+            },
         })
     }
 }

@@ -1,5 +1,5 @@
-use serde_json::Value;
 use crate::error::{DbError, DbResult};
+use serde_json::Value;
 
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     match name {
@@ -13,7 +13,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             Ok(Some(Value::String(id)))
         }
         "UUID_V7" => {
-             if !args.is_empty() {
+            if !args.is_empty() {
                 return Err(DbError::ExecutionError(
                     "UUID_V7 takes no arguments".to_string(),
                 ));
@@ -22,7 +22,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             Ok(Some(Value::String(id)))
         }
         "ULID" => {
-             if !args.is_empty() {
+            if !args.is_empty() {
                 return Err(DbError::ExecutionError(
                     "ULID takes no arguments".to_string(),
                 ));

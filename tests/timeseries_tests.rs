@@ -25,12 +25,9 @@ fn create_test_app() -> (axum::Router, TempDir, String) {
 
     let router = create_router(engine, None, None, None, None, script_stats, None, 0);
 
-    let token = AuthService::create_jwt_with_roles(
-        "test_admin",
-        Some(vec!["admin".to_string()]),
-        None,
-    )
-    .expect("Failed to create test token");
+    let token =
+        AuthService::create_jwt_with_roles("test_admin", Some(vec!["admin".to_string()]), None)
+            .expect("Failed to create test token");
 
     (router, tmp_dir, token)
 }

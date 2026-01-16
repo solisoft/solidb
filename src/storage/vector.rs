@@ -202,11 +202,7 @@ pub fn euclidean_distance_asymmetric(
 }
 
 /// Calculate dot product between full-precision query and quantized vector
-pub fn dot_product_asymmetric(
-    query: &[f32],
-    quantized: &[u8],
-    params: &ScalarQuantParams,
-) -> f32 {
+pub fn dot_product_asymmetric(query: &[f32], quantized: &[u8], params: &ScalarQuantParams) -> f32 {
     let mut dot = 0.0f32;
 
     for i in 0..query.len() {
@@ -397,8 +393,10 @@ impl HnswGraph {
                 if level < node.neighbors.len() {
                     for neighbor_key in &node.neighbors[level] {
                         if visited.insert(neighbor_key.clone()) {
-                            let dist = Self::calculate_distance(query, neighbor_key, vectors, metric);
-                            let furthest_dist = result.peek().map(|n| n.0.distance).unwrap_or(f32::MAX);
+                            let dist =
+                                Self::calculate_distance(query, neighbor_key, vectors, metric);
+                            let furthest_dist =
+                                result.peek().map(|n| n.0.distance).unwrap_or(f32::MAX);
 
                             if dist < furthest_dist || result.len() < ef {
                                 let neighbor = Neighbor {
@@ -421,7 +419,11 @@ impl HnswGraph {
 
         // Convert result to vec, sorted by distance (best first)
         let mut results: Vec<Neighbor> = result.into_iter().map(|mn| mn.0).collect();
-        results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+        results.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(Ordering::Equal)
+        });
         results
     }
 
@@ -487,7 +489,14 @@ impl HnswGraph {
             let m_level = if level == 0 { self.m0 } else { self.m };
 
             // Search for nearest neighbors at this level
-            let candidates = self.search_layer(query, &current_ep, self.ef_construction, level, vectors, metric);
+            let candidates = self.search_layer(
+                query,
+                &current_ep,
+                self.ef_construction,
+                level,
+                vectors,
+                metric,
+            );
 
             // Select best neighbors
             let selected = self.select_neighbors(&candidates, m_level);
@@ -506,7 +515,8 @@ impl HnswGraph {
                         // Prune if exceeds limit
                         if neighbor_node.neighbors[level].len() > m_level {
                             // Keep only the best M neighbors
-                            let mut neighbor_candidates: Vec<Neighbor> = neighbor_node.neighbors[level]
+                            let mut neighbor_candidates: Vec<Neighbor> = neighbor_node.neighbors
+                                [level]
                                 .iter()
                                 .filter_map(|k| {
                                     vectors.get(neighbor_key).map(|nv| Neighbor {
@@ -516,7 +526,9 @@ impl HnswGraph {
                                 })
                                 .collect();
                             neighbor_candidates.sort_by(|a, b| {
-                                a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal)
+                                a.distance
+                                    .partial_cmp(&b.distance)
+                                    .unwrap_or(Ordering::Equal)
                             });
                             // Select best M neighbors (inline to avoid borrow conflict)
                             neighbor_node.neighbors[level] = neighbor_candidates
@@ -813,7 +825,12 @@ impl VectorIndex {
     ///
     /// # Returns
     /// Vector of search results sorted by similarity (best first)
-    pub fn search(&self, query: &[f32], limit: usize, ef: usize) -> DbResult<Vec<VectorSearchResult>> {
+    pub fn search(
+        &self,
+        query: &[f32],
+        limit: usize,
+        ef: usize,
+    ) -> DbResult<Vec<VectorSearchResult>> {
         // Validate dimension
         if query.len() != self.config.dimension {
             return Err(DbError::BadRequest(format!(
@@ -829,7 +846,8 @@ impl VectorIndex {
             if let Some(graph) = hnsw.as_ref() {
                 let vectors = self.vectors.read().unwrap();
                 let ef_search = ef.max(limit * 2).max(40);
-                let hnsw_results = graph.search(query, limit, ef_search, &vectors, self.config.metric);
+                let hnsw_results =
+                    graph.search(query, limit, ef_search, &vectors, self.config.metric);
 
                 // Convert HNSW results (distance) back to score format
                 let results: Vec<VectorSearchResult> = hnsw_results
@@ -917,9 +935,15 @@ impl VectorIndex {
             .iter()
             .map(|(doc_key, quantized_vec)| {
                 let score = match self.config.metric {
-                    VectorMetric::Cosine => cosine_similarity_asymmetric(query, quantized_vec, params),
-                    VectorMetric::Euclidean => euclidean_distance_asymmetric(query, quantized_vec, params),
-                    VectorMetric::DotProduct => dot_product_asymmetric(query, quantized_vec, params),
+                    VectorMetric::Cosine => {
+                        cosine_similarity_asymmetric(query, quantized_vec, params)
+                    }
+                    VectorMetric::Euclidean => {
+                        euclidean_distance_asymmetric(query, quantized_vec, params)
+                    }
+                    VectorMetric::DotProduct => {
+                        dot_product_asymmetric(query, quantized_vec, params)
+                    }
                 };
                 VectorSearchResult {
                     doc_key: doc_key.clone(),
@@ -982,7 +1006,8 @@ impl VectorIndex {
             quantized_vectors: quantized.clone(),
             hnsw_graph: hnsw.clone(),
         };
-        bincode::serialize(&data).map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))
+        bincode::serialize(&data)
+            .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))
     }
 
     /// Deserialize a vector index from bytes
@@ -1008,8 +1033,8 @@ impl VectorIndex {
         }
 
         // Fall back to V1 format (without HNSW graph)
-        let data: VectorIndexData =
-            bincode::deserialize(bytes).map_err(|e| DbError::InternalError(format!("Deserialization error: {}", e)))?;
+        let data: VectorIndexData = bincode::deserialize(bytes)
+            .map_err(|e| DbError::InternalError(format!("Deserialization error: {}", e)))?;
 
         Ok(Self {
             config: data.config,
@@ -1076,7 +1101,8 @@ impl VectorIndex {
         quantized.as_ref().map(|q| {
             let vector_count = q.len();
             let memory_bytes = vector_count * self.config.dimension; // u8 per dim
-            let full_memory_bytes = vector_count * self.config.dimension * std::mem::size_of::<f32>();
+            let full_memory_bytes =
+                vector_count * self.config.dimension * std::mem::size_of::<f32>();
             QuantizationStats {
                 vector_count,
                 memory_bytes,

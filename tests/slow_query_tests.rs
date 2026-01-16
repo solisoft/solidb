@@ -3,10 +3,7 @@
 //! Tests for the slow query logging feature that logs queries
 //! exceeding the SLOW_QUERY_THRESHOLD_MS to _slow_queries collection.
 
-use axum::{
-    body::Body,
-    http::Request,
-};
+use axum::{body::Body, http::Request};
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
 use solidb::server::routes::create_router;
@@ -121,10 +118,7 @@ async fn get_slow_queries(app: &axum::Router, token: &str, db_name: &str) -> Vec
         .unwrap();
 
     let json = response_json(response).await;
-    json["result"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
+    json["result"].as_array().cloned().unwrap_or_default()
 }
 
 // ============================================================================
@@ -236,14 +230,12 @@ async fn test_slow_query_document_structure() {
         let slow_queries = get_slow_queries(&app, &token, "structdb").await;
 
         // Find the scan query in slow_queries
-        let scan_log = slow_queries
-            .iter()
-            .find(|sq| {
-                sq.get("query")
-                    .and_then(|q| q.as_str())
-                    .map(|q| q.contains("FILTER item.payload"))
-                    .unwrap_or(false)
-            });
+        let scan_log = slow_queries.iter().find(|sq| {
+            sq.get("query")
+                .and_then(|q| q.as_str())
+                .map(|q| q.contains("FILTER item.payload"))
+                .unwrap_or(false)
+        });
 
         if let Some(sq) = scan_log {
             // Verify document structure
@@ -251,15 +243,9 @@ async fn test_slow_query_document_structure() {
             assert!(sq["execution_time_ms"].is_f64());
             assert!(sq["timestamp"].is_string());
             assert!(sq["results_count"].is_u64() || sq["results_count"].is_i64());
-            assert!(
-                sq["documents_inserted"].is_u64() || sq["documents_inserted"].is_i64()
-            );
-            assert!(
-                sq["documents_updated"].is_u64() || sq["documents_updated"].is_i64()
-            );
-            assert!(
-                sq["documents_removed"].is_u64() || sq["documents_removed"].is_i64()
-            );
+            assert!(sq["documents_inserted"].is_u64() || sq["documents_inserted"].is_i64());
+            assert!(sq["documents_updated"].is_u64() || sq["documents_updated"].is_i64());
+            assert!(sq["documents_removed"].is_u64() || sq["documents_removed"].is_i64());
 
             println!("Slow query logged: {:?}", sq);
         }

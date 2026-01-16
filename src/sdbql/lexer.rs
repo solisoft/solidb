@@ -61,7 +61,7 @@ pub enum Token {
     Tumbling, // TUMBLING
     Sliding,  // SLIDING
     Size,     // SIZE
-    
+
     // Materialized View keywords
     Materialized, // MATERIALIZED
     View,         // VIEW
@@ -81,7 +81,7 @@ pub enum Token {
     Full,  // FULL
     Outer, // OUTER
     On,    // ON
-    
+
     // Identifiers and literals
     Identifier(String),
     BindVar(String), // @variable for bind parameters

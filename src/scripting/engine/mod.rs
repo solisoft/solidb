@@ -1,22 +1,22 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use mlua::{Value as LuaValue, Lua};
+use mlua::{Lua, Value as LuaValue};
 use serde_json::Value as JsonValue;
 use tokio::sync::broadcast;
 
 use crate::error::DbError;
+use crate::scripting::channel_manager::ChannelManager;
 use crate::storage::StorageEngine;
 use crate::stream::StreamManager;
-use crate::scripting::channel_manager::ChannelManager;
 
 use super::conversion::lua_to_json_value;
 use super::types::{Script, ScriptContext, ScriptResult, ScriptStats};
 
-pub mod websocket;
-pub mod repl;
 pub mod globals;
+pub mod repl;
+pub mod websocket;
 
 /// Lua scripting engine
 pub struct ScriptEngine {
@@ -43,7 +43,7 @@ impl ScriptEngine {
         self.queue_notifier = Some(notifier);
         self
     }
-    
+
     pub fn with_stream_manager(mut self, manager: Arc<StreamManager>) -> Self {
         self.stream_manager = Some(manager);
         self

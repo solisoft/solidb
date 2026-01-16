@@ -146,21 +146,17 @@ pub fn handle_geo_near(
     match handler.get_collection(&database, &collection) {
         Ok(coll) => {
             let limit_val = limit.map(|l| l.max(0) as usize).unwrap_or(10);
-            
+
             let results_opt = if let Some(r) = radius {
-                coll.geo_within(&field, latitude, longitude, r).map(|mut res| {
-                    if limit_val < res.len() {
-                        res.truncate(limit_val);
-                    }
-                    res
-                })
+                coll.geo_within(&field, latitude, longitude, r)
+                    .map(|mut res| {
+                        if limit_val < res.len() {
+                            res.truncate(limit_val);
+                        }
+                        res
+                    })
             } else {
-                coll.geo_near(
-                    &field,
-                    latitude,
-                    longitude,
-                    limit_val,
-                )
+                coll.geo_near(&field, latitude, longitude, limit_val)
             };
 
             match results_opt {
@@ -190,17 +186,19 @@ pub fn handle_create_vector_index(
     match handler.get_collection(&database, &collection) {
         Ok(coll) => {
             let mut config = VectorIndexConfig::new(name, field, dimensions as usize);
-            
+
             if let Some(m_str) = metric {
-                if let Ok(val) = serde_json::from_value::<VectorMetric>(serde_json::Value::String(m_str)) {
+                if let Ok(val) =
+                    serde_json::from_value::<VectorMetric>(serde_json::Value::String(m_str))
+                {
                     config = config.with_metric(val);
                 }
             }
-            
+
             if let Some(ef) = ef_construction {
                 config = config.with_ef_construction(ef as usize);
             }
-            
+
             if let Some(m_val) = m {
                 config = config.with_m(m_val as usize);
             }
@@ -310,12 +308,10 @@ pub fn handle_create_ttl_index(
     expire_after_seconds: i64,
 ) -> Response {
     match handler.get_collection(&database, &collection) {
-        Ok(coll) => {
-            match coll.create_ttl_index(name, field, expire_after_seconds as u64) {
-                Ok(_) => Response::ok_empty(),
-                Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-            }
-        }
+        Ok(coll) => match coll.create_ttl_index(name, field, expire_after_seconds as u64) {
+            Ok(_) => Response::ok_empty(),
+            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+        },
         Err(e) => Response::error(e),
     }
 }

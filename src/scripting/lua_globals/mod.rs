@@ -1,5 +1,5 @@
 //! Lua globals setup helpers
-//! 
+//!
 //! This module contains helper functions for setting up Lua globals.
 //! Each submodule handles a specific category of functions.
 

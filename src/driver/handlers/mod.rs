@@ -293,7 +293,9 @@ impl DriverHandler {
                 .await
             }
 
-            Command::ListScripts { database } => scheduler::handle_script_list(self, database).await,
+            Command::ListScripts { database } => {
+                scheduler::handle_script_list(self, database).await
+            }
 
             Command::GetScript {
                 database,
@@ -741,13 +743,7 @@ impl DriverHandler {
                 ef_search,
                 filter: _,
             } => index::handle_vector_search(
-                self,
-                database,
-                collection,
-                index_name,
-                vector,
-                limit,
-                ef_search,
+                self, database, collection, index_name, vector, limit, ef_search,
             ),
 
             Command::QuantizeVectorIndex {
@@ -837,13 +833,7 @@ impl DriverHandler {
                 order_by,
                 limit,
             } => database::handle_query_columnar(
-                self,
-                database,
-                collection,
-                columns,
-                filter,
-                order_by,
-                limit,
+                self, database, collection, columns, filter, order_by, limit,
             ),
 
             Command::CreateColumnarIndex {

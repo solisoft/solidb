@@ -1,5 +1,5 @@
 pub mod manager;
 pub mod task;
 
-pub use manager::{StreamManager, StreamDefinition};
+pub use manager::{StreamDefinition, StreamManager};
 pub use task::StreamTask;

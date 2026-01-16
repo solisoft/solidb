@@ -47,7 +47,11 @@ pub fn handle_create_collection(
     }
 }
 
-pub fn handle_delete_collection(handler: &DriverHandler, database: String, name: String) -> Response {
+pub fn handle_delete_collection(
+    handler: &DriverHandler,
+    database: String,
+    name: String,
+) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => match db.delete_collection(&name) {
             Ok(_) => Response::ok_empty(),
@@ -57,7 +61,11 @@ pub fn handle_delete_collection(handler: &DriverHandler, database: String, name:
     }
 }
 
-pub fn handle_collection_stats(handler: &DriverHandler, database: String, name: String) -> Response {
+pub fn handle_collection_stats(
+    handler: &DriverHandler,
+    database: String,
+    name: String,
+) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => match db.get_collection(&name) {
             Ok(coll) => {
@@ -148,15 +156,16 @@ pub fn handle_set_collection_schema(
     schema: serde_json::Value,
 ) -> Response {
     match handler.get_collection(&database, &collection) {
-        Ok(coll) => {
-            match serde_json::from_value::<CollectionSchema>(schema) {
-                Ok(s) => match coll.set_json_schema(s) {
-                    Ok(_) => Response::ok_empty(),
-                    Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-                },
-                Err(e) => Response::error(DriverError::InvalidCommand(format!("Invalid schema: {}", e))),
-            }
-        }
+        Ok(coll) => match serde_json::from_value::<CollectionSchema>(schema) {
+            Ok(s) => match coll.set_json_schema(s) {
+                Ok(_) => Response::ok_empty(),
+                Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+            },
+            Err(e) => Response::error(DriverError::InvalidCommand(format!(
+                "Invalid schema: {}",
+                e
+            ))),
+        },
         Err(e) => Response::error(e),
     }
 }
@@ -267,12 +276,10 @@ pub fn handle_aggregate_columnar(
     filter: Option<String>,
 ) -> Response {
     match handler.storage.get_database(&database) {
-        Ok(db) => {
-            match db.aggregate_columnar(&collection, aggregations, group_by, filter) {
-                Ok(results) => Response::ok(serde_json::json!(results)),
-                Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-            }
-        }
+        Ok(db) => match db.aggregate_columnar(&collection, aggregations, group_by, filter) {
+            Ok(results) => Response::ok(serde_json::json!(results)),
+            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+        },
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
     }
 }
@@ -288,18 +295,10 @@ pub fn handle_query_columnar(
 ) -> Response {
     let limit_usize = limit.map(|l| l as usize);
     match handler.storage.get_database(&database) {
-        Ok(db) => {
-            match db.query_columnar(
-                &collection,
-                columns,
-                filter,
-                order_by,
-                limit_usize,
-            ) {
-                Ok(results) => Response::ok(serde_json::json!(results)),
-                Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-            }
-        }
+        Ok(db) => match db.query_columnar(&collection, columns, filter, order_by, limit_usize) {
+            Ok(results) => Response::ok(serde_json::json!(results)),
+            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+        },
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
     }
 }

@@ -1,5 +1,5 @@
-use serde_json::Value;
 use regex::Regex;
+use serde_json::Value;
 
 use super::super::utils::safe_regex;
 use crate::error::{DbError, DbResult};
@@ -77,18 +77,18 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             })?;
 
             let limit = if args.len() > 2 {
-                args[2].as_i64().or_else(|| args[2].as_f64().map(|f| f as i64))
+                args[2]
+                    .as_i64()
+                    .or_else(|| args[2].as_f64().map(|f| f as i64))
             } else {
                 None
             };
 
             let parts: Vec<Value> = match limit {
-                Some(n) if n > 0 => {
-                    value
-                        .splitn(n as usize, separator)
-                        .map(|s| Value::String(s.to_string()))
-                        .collect()
-                }
+                Some(n) if n > 0 => value
+                    .splitn(n as usize, separator)
+                    .map(|s| Value::String(s.to_string()))
+                    .collect(),
                 Some(n) if n < 0 => {
                     let mut p: Vec<Value> = value
                         .rsplitn(n.abs() as usize, separator)
@@ -132,39 +132,42 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 }
 
                 if terms.is_empty() {
-                        return Ok(Some(Value::String(text.clone())));
+                    return Ok(Some(Value::String(text.clone())));
                 }
 
                 // Sort terms by length descending to handle overlapping terms (longest first)
                 terms.sort_by(|a, b| b.len().cmp(&a.len()));
-                
+
                 let mut result = String::new();
                 let mut i = 0;
                 let text_chars: Vec<char> = text.chars().collect();
                 // Pre-convert terms to lowercase chars for comparison
-                let terms_chars: Vec<Vec<char>> = terms.iter().map(|t| t.to_lowercase().chars().collect()).collect();
-                
+                let terms_chars: Vec<Vec<char>> = terms
+                    .iter()
+                    .map(|t| t.to_lowercase().chars().collect())
+                    .collect();
+
                 while i < text_chars.len() {
                     let mut matched = false;
                     for term_chars in &terms_chars {
-                            if i + term_chars.len() <= text_chars.len() {
-                                let slice = &text_chars[i..i+term_chars.len()];
-                                // Case-insensitive comparison
-                                if slice.iter().zip(term_chars.iter()).all(|(c1, c2)| {
-                                    c1.to_lowercase().collect::<String>() == c2.to_string()
-                                }) {
-                                    result.push_str("<b>");
-                                    for k in 0..term_chars.len() {
-                                        result.push(text_chars[i+k]);
-                                    }
-                                    result.push_str("</b>");
-                                    i += term_chars.len();
-                                    matched = true;
-                                    break; 
+                        if i + term_chars.len() <= text_chars.len() {
+                            let slice = &text_chars[i..i + term_chars.len()];
+                            // Case-insensitive comparison
+                            if slice.iter().zip(term_chars.iter()).all(|(c1, c2)| {
+                                c1.to_lowercase().collect::<String>() == c2.to_string()
+                            }) {
+                                result.push_str("<b>");
+                                for k in 0..term_chars.len() {
+                                    result.push(text_chars[i + k]);
                                 }
+                                result.push_str("</b>");
+                                i += term_chars.len();
+                                matched = true;
+                                break;
                             }
+                        }
                     }
-                    
+
                     if !matched {
                         result.push(text_chars[i]);
                         i += 1;
@@ -228,23 +231,70 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                                 result = result.to_uppercase();
                             }
                             "alphanumeric" | "alnum" => {
-                                result = result.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
+                                result = result
+                                    .chars()
+                                    .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+                                    .collect();
                             }
                             "alpha" => {
-                                result = result.chars().filter(|c| c.is_alphabetic() || c.is_whitespace()).collect();
+                                result = result
+                                    .chars()
+                                    .filter(|c| c.is_alphabetic() || c.is_whitespace())
+                                    .collect();
                             }
                             "numeric" | "digits" => {
-                                result = result.chars().filter(|c| c.is_numeric() || *c == '.' || *c == '-').collect();
+                                result = result
+                                    .chars()
+                                    .filter(|c| c.is_numeric() || *c == '.' || *c == '-')
+                                    .collect();
                             }
                             "email" => {
                                 // Basic email sanitization: lowercase, trim, remove invalid chars
                                 result = result.trim().to_lowercase();
-                                result = result.chars().filter(|c| c.is_alphanumeric() || *c == '@' || *c == '.' || *c == '_' || *c == '-' || *c == '+').collect();
+                                result = result
+                                    .chars()
+                                    .filter(|c| {
+                                        c.is_alphanumeric()
+                                            || *c == '@'
+                                            || *c == '.'
+                                            || *c == '_'
+                                            || *c == '-'
+                                            || *c == '+'
+                                    })
+                                    .collect();
                             }
                             "url" => {
                                 // URL-safe characters only
                                 result = result.trim().to_string();
-                                result = result.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.' || *c == '~' || *c == ':' || *c == '/' || *c == '?' || *c == '#' || *c == '[' || *c == ']' || *c == '@' || *c == '!' || *c == '$' || *c == '&' || *c == '\'' || *c == '(' || *c == ')' || *c == '*' || *c == '+' || *c == ',' || *c == ';' || *c == '=' || *c == '%').collect();
+                                result = result
+                                    .chars()
+                                    .filter(|c| {
+                                        c.is_alphanumeric()
+                                            || *c == '-'
+                                            || *c == '_'
+                                            || *c == '.'
+                                            || *c == '~'
+                                            || *c == ':'
+                                            || *c == '/'
+                                            || *c == '?'
+                                            || *c == '#'
+                                            || *c == '['
+                                            || *c == ']'
+                                            || *c == '@'
+                                            || *c == '!'
+                                            || *c == '$'
+                                            || *c == '&'
+                                            || *c == '\''
+                                            || *c == '('
+                                            || *c == ')'
+                                            || *c == '*'
+                                            || *c == '+'
+                                            || *c == ','
+                                            || *c == ';'
+                                            || *c == '='
+                                            || *c == '%'
+                                    })
+                                    .collect();
                             }
                             "html" => {
                                 // Escape HTML entities
@@ -315,9 +365,8 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             };
 
             // Use safe_regex to prevent DoS from malicious patterns
-            let re = safe_regex(&pattern).map_err(|e| {
-                DbError::ExecutionError(format!("REGEX_REPLACE: {}", e))
-            })?;
+            let re = safe_regex(&pattern)
+                .map_err(|e| DbError::ExecutionError(format!("REGEX_REPLACE: {}", e)))?;
 
             let result = re.replace_all(text, replacement).to_string();
             Ok(Some(Value::String(result)))
@@ -334,9 +383,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             })?;
 
             let search = args[1].as_str().ok_or_else(|| {
-                DbError::ExecutionError(
-                    "CONTAINS: second argument must be a string".to_string(),
-                )
+                DbError::ExecutionError("CONTAINS: second argument must be a string".to_string())
             })?;
 
             let return_index = if args.len() > 2 {
@@ -362,9 +409,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }
 
             let text = args[0].as_str().ok_or_else(|| {
-                DbError::ExecutionError(
-                    "SUBSTITUTE: first argument must be a string".to_string(),
-                )
+                DbError::ExecutionError("SUBSTITUTE: first argument must be a string".to_string())
             })?;
 
             let (limit, mapping_mode) = if args[1].is_object() {
@@ -484,12 +529,10 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             match val {
                 Value::Null => Ok(Some(Value::String("".to_string()))),
                 Value::String(s) => Ok(Some(Value::String(s.clone()))),
-                _ => {
-                    match serde_json::to_string(val) {
-                        Ok(s) => Ok(Some(Value::String(s))),
-                        Err(_) => Ok(Some(Value::String("".to_string()))),
-                    }
-                }
+                _ => match serde_json::to_string(val) {
+                    Ok(s) => Ok(Some(Value::String(s))),
+                    Err(_) => Ok(Some(Value::String("".to_string()))),
+                },
             }
         }
         "CAPITALIZE" => {
@@ -521,13 +564,15 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }
             match &args[0] {
                 Value::String(s) => {
-                    let result = s.split_whitespace()
+                    let result = s
+                        .split_whitespace()
                         .map(|word| {
                             let mut chars = word.chars();
                             match chars.next() {
                                 None => String::new(),
                                 Some(first) => {
-                                    first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                                    first.to_uppercase().collect::<String>()
+                                        + &chars.as_str().to_lowercase()
                                 }
                             }
                         })
@@ -549,12 +594,15 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }
             match &args[0] {
                 Value::String(s) => {
-                    let encoded: String = s.chars().map(|c| {
-                        match c {
-                            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
+                    let encoded: String = s
+                        .chars()
+                        .map(|c| match c {
+                            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => {
+                                c.to_string()
+                            }
                             _ => format!("%{:02X}", c as u32),
-                        }
-                    }).collect();
+                        })
+                        .collect();
                     Ok(Some(Value::String(encoded)))
                 }
                 Value::Null => Ok(Some(Value::Null)),
@@ -609,7 +657,8 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }
             match &args[0] {
                 Value::String(s) => {
-                    let re = Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
+                    let re =
+                        Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
                     Ok(Some(Value::Bool(re.is_match(s))))
                 }
                 Value::Null => Ok(Some(Value::Bool(false))),

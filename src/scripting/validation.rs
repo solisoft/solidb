@@ -182,17 +182,18 @@ fn sanitize_string(s: &str, operations: &JsonValue, field_name: Option<&str>) ->
         }
 
         // Convert to lowercase - check for field-specific lowercase
-        let should_lowercase = match ops.get("lowercase") {
-            Some(JsonValue::Bool(true)) => true,
-            Some(JsonValue::Array(fields)) => {
-                if let Some(field) = field_name {
-                    fields.iter().any(|f| f.as_str() == Some(field))
-                } else {
-                    false
+        let should_lowercase =
+            match ops.get("lowercase") {
+                Some(JsonValue::Bool(true)) => true,
+                Some(JsonValue::Array(fields)) => {
+                    if let Some(field) = field_name {
+                        fields.iter().any(|f| f.as_str() == Some(field))
+                    } else {
+                        false
+                    }
                 }
-            }
-            _ => false,
-        } || matches!(ops.get("lowercase_keys"), Some(JsonValue::Bool(true)));
+                _ => false,
+            } || matches!(ops.get("lowercase_keys"), Some(JsonValue::Bool(true)));
 
         if should_lowercase {
             result = result.to_lowercase();

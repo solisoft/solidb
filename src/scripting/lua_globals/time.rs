@@ -1,12 +1,12 @@
 //! Time-related Lua globals
 
-use mlua::Lua;
 use crate::error::DbError;
+use mlua::Lua;
 
 /// Setup the time table with date/time functions
 pub fn setup_time_globals(lua: &Lua) -> Result<(), DbError> {
     let globals = lua.globals();
-    
+
     let time_table = lua
         .create_table()
         .map_err(|e| DbError::InternalError(format!("Failed to create time table: {}", e)))?;

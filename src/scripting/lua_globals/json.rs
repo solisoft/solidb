@@ -1,14 +1,14 @@
 //! JSON encode/decode functions for Lua
 
-use mlua::{Lua, Value as LuaValue};
-use serde_json::Value as JsonValue;
 use crate::error::DbError;
 use crate::scripting::conversion::{json_to_lua, lua_to_json_value};
+use mlua::{Lua, Value as LuaValue};
+use serde_json::Value as JsonValue;
 
 /// Setup JSON globals (solidb.json_encode, solidb.json_decode, and global json table)
 pub fn setup_json_globals(lua: &Lua, solidb: &mlua::Table) -> Result<(), DbError> {
     let globals = lua.globals();
-    
+
     // solidb.json_encode(value) -> string
     let json_encode_fn = lua
         .create_function(|lua, val: LuaValue| {
@@ -25,8 +25,7 @@ pub fn setup_json_globals(lua: &Lua, solidb: &mlua::Table) -> Result<(), DbError
     // solidb.json_decode(string) -> value
     let json_decode_fn = lua
         .create_function(|lua, s: String| {
-            let json_val: JsonValue =
-                serde_json::from_str(&s).map_err(mlua::Error::external)?;
+            let json_val: JsonValue = serde_json::from_str(&s).map_err(mlua::Error::external)?;
             json_to_lua(lua, &json_val)
         })
         .map_err(|e| {

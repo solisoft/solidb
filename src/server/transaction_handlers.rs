@@ -249,7 +249,7 @@ pub async fn execute_transactional_sdbql(
             BodyClause::Insert(_) => has_insert = true,
             BodyClause::Update(_) => has_update = true,
             BodyClause::Remove(_) => has_remove = true,
-            BodyClause::Join(_) => {} // JOIN is read-only
+            BodyClause::Join(_) => {}   // JOIN is read-only
             BodyClause::Window(_) => {} // Window does not mutate
             _ => {}
         }

@@ -432,7 +432,9 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     tracing::info!("AI Recovery Worker started");
 
     // Initialize Stream Manager
-    let stream_manager = Arc::new(solidb::stream::StreamManager::new(Arc::new(storage.clone())));
+    let stream_manager = Arc::new(solidb::stream::StreamManager::new(Arc::new(
+        storage.clone(),
+    )));
 
     // Create Router - use the shared coordinator so all parts share the same shard table cache
     let app = create_router(

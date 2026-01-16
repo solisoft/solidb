@@ -23,8 +23,8 @@ pub use index::{
     FulltextMatch, Index, IndexStats, IndexType, TtlIndex, TtlIndexStats, VectorIndexConfig,
     VectorIndexStats, VectorMetric, NGRAM_SIZE,
 };
-pub use vector::{VectorIndex, VectorSearchResult};
 pub use schema::{
     CollectionSchema, SchemaCompilationError, SchemaValidationError, SchemaValidationMode,
     SchemaValidator, ValidationResult, ValidationViolation,
 };
+pub use vector::{VectorIndex, VectorSearchResult};

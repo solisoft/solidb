@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use mlua::{Value as LuaValue, Lua};
+use mlua::{Lua, Value as LuaValue};
 use serde_json::Value as JsonValue;
 
 use crate::error::DbError;
@@ -19,7 +19,8 @@ pub async fn execute_repl(
     output_capture: &mut Vec<String>,
 ) -> Result<(JsonValue, HashMap<String, JsonValue>), DbError> {
     engine.stats.active_scripts.fetch_add(1, Ordering::SeqCst);
-    engine.stats
+    engine
+        .stats
         .total_scripts_executed
         .fetch_add(1, Ordering::SeqCst);
 
@@ -143,9 +144,7 @@ pub async fn execute_repl(
 
             Ok(())
         })
-        .map_err(|e| {
-            DbError::InternalError(format!("Failed to create capture log fn: {}", e))
-        })?;
+        .map_err(|e| DbError::InternalError(format!("Failed to create capture log fn: {}", e)))?;
 
     // Update solidb.log with capture version
     let solidb: mlua::Table = globals
@@ -172,8 +171,7 @@ pub async fn execute_repl(
                         .unwrap_or_else(|_| "[invalid string]".to_string()),
                     mlua::Value::Table(t) => {
                         if let Ok(json) = table_to_json_static(lua, t) {
-                            serde_json::to_string(&json)
-                                .unwrap_or_else(|_| "[table]".to_string())
+                            serde_json::to_string(&json).unwrap_or_else(|_| "[table]".to_string())
                         } else {
                             "[table]".to_string()
                         }
@@ -219,12 +217,46 @@ pub async fn execute_repl(
 
     // Built-in globals to skip (Lua standard library + solidb namespace)
     let skip_globals: std::collections::HashSet<&str> = [
-        "solidb", "string", "table", "math", "utf8", "bit32", "coroutine", 
-        "print", "type", "tostring", "tonumber", "pairs", "ipairs", "next", 
-        "select", "error", "pcall", "xpcall", "assert", "rawget", "rawset", 
-        "rawequal", "rawlen", "setmetatable", "getmetatable", "collectgarbage", 
-        "_G", "_VERSION", "db", "request", "response", "time", 
-        "os", "io", "debug", "package", "dofile", "load", "loadfile", "require",
+        "solidb",
+        "string",
+        "table",
+        "math",
+        "utf8",
+        "bit32",
+        "coroutine",
+        "print",
+        "type",
+        "tostring",
+        "tonumber",
+        "pairs",
+        "ipairs",
+        "next",
+        "select",
+        "error",
+        "pcall",
+        "xpcall",
+        "assert",
+        "rawget",
+        "rawset",
+        "rawequal",
+        "rawlen",
+        "setmetatable",
+        "getmetatable",
+        "collectgarbage",
+        "_G",
+        "_VERSION",
+        "db",
+        "request",
+        "response",
+        "time",
+        "os",
+        "io",
+        "debug",
+        "package",
+        "dofile",
+        "load",
+        "loadfile",
+        "require",
     ]
     .iter()
     .cloned()
@@ -274,7 +306,10 @@ pub async fn execute_repl(
 }
 
 /// Static helper for table_to_json used in closures
-pub(crate) fn table_to_json_static(lua: &Lua, table: mlua::Table) -> Result<JsonValue, mlua::Error> {
+pub(crate) fn table_to_json_static(
+    lua: &Lua,
+    table: mlua::Table,
+) -> Result<JsonValue, mlua::Error> {
     let mut is_array = true;
     let mut expected_index = 1i64;
 
@@ -315,7 +350,10 @@ pub(crate) fn table_to_json_static(lua: &Lua, table: mlua::Table) -> Result<Json
 }
 
 /// Static helper for lua_value to json conversion
-pub(crate) fn lua_value_to_json_static(lua: &Lua, value: LuaValue) -> Result<JsonValue, mlua::Error> {
+pub(crate) fn lua_value_to_json_static(
+    lua: &Lua,
+    value: LuaValue,
+) -> Result<JsonValue, mlua::Error> {
     match value {
         LuaValue::Nil => Ok(JsonValue::Null),
         LuaValue::Boolean(b) => Ok(JsonValue::Bool(b)),

@@ -122,7 +122,10 @@ pub enum Command {
     },
 
     /// List indexes
-    ListIndexes { database: String, collection: String },
+    ListIndexes {
+        database: String,
+        collection: String,
+    },
 
     // ==================== Transaction Operations ====================
     /// Begin a transaction
@@ -211,7 +214,7 @@ pub enum Command {
         script_path: String,
         params: Option<Value>,
         priority: Option<i32>,
-        run_at: Option<i64>,     // Timestamp in ms
+        run_at: Option<i64>, // Timestamp in ms
         max_retries: Option<u32>,
     },
 
@@ -255,7 +258,10 @@ pub enum Command {
     ListTriggers { database: String },
 
     /// List triggers for a collection
-    ListCollectionTriggers { database: String, collection: String },
+    ListCollectionTriggers {
+        database: String,
+        collection: String,
+    },
 
     /// Create a new trigger
     CreateTrigger {
@@ -273,7 +279,10 @@ pub enum Command {
     },
 
     /// Get a trigger by ID
-    GetTrigger { database: String, trigger_id: String },
+    GetTrigger {
+        database: String,
+        trigger_id: String,
+    },
 
     /// Update a trigger
     UpdateTrigger {
@@ -290,10 +299,16 @@ pub enum Command {
     },
 
     /// Delete a trigger
-    DeleteTrigger { database: String, trigger_id: String },
+    DeleteTrigger {
+        database: String,
+        trigger_id: String,
+    },
 
     /// Toggle a trigger (enable/disable)
-    ToggleTrigger { database: String, trigger_id: String },
+    ToggleTrigger {
+        database: String,
+        trigger_id: String,
+    },
 
     // ==================== Environment Variables ====================
     /// List environment variables
@@ -401,25 +416,46 @@ pub enum Command {
 
     // ==================== Advanced Collection Operations ====================
     /// Truncate a collection (remove all documents)
-    TruncateCollection { database: String, collection: String },
+    TruncateCollection {
+        database: String,
+        collection: String,
+    },
 
     /// Compact a collection (reclaim space)
-    CompactCollection { database: String, collection: String },
+    CompactCollection {
+        database: String,
+        collection: String,
+    },
 
     /// Prune a collection (remove deleted documents history)
-    PruneCollection { database: String, collection: String },
+    PruneCollection {
+        database: String,
+        collection: String,
+    },
 
     /// Recount collection documents
-    RecountCollection { database: String, collection: String },
+    RecountCollection {
+        database: String,
+        collection: String,
+    },
 
     /// Repair a collection
-    RepairCollection { database: String, collection: String },
+    RepairCollection {
+        database: String,
+        collection: String,
+    },
 
     /// Get collection sharding info
-    GetCollectionSharding { database: String, collection: String },
+    GetCollectionSharding {
+        database: String,
+        collection: String,
+    },
 
     /// Export collection data
-    ExportCollection { database: String, collection: String },
+    ExportCollection {
+        database: String,
+        collection: String,
+    },
 
     /// Import collection data
     ImportCollection {
@@ -436,14 +472,23 @@ pub enum Command {
     },
 
     /// Get collection schema
-    GetCollectionSchema { database: String, collection: String },
+    GetCollectionSchema {
+        database: String,
+        collection: String,
+    },
 
     /// Delete collection schema
-    DeleteCollectionSchema { database: String, collection: String },
+    DeleteCollectionSchema {
+        database: String,
+        collection: String,
+    },
 
     // ==================== Advanced Index Operations ====================
     /// Rebuild all indexes for a collection
-    RebuildIndexes { database: String, collection: String },
+    RebuildIndexes {
+        database: String,
+        collection: String,
+    },
 
     /// Hybrid search (vector + keyword)
     HybridSearch {
@@ -465,7 +510,10 @@ pub enum Command {
     },
 
     /// List geo indexes
-    ListGeoIndexes { database: String, collection: String },
+    ListGeoIndexes {
+        database: String,
+        collection: String,
+    },
 
     /// Delete a geo index
     DeleteGeoIndex {
@@ -503,11 +551,14 @@ pub enum Command {
         dimensions: i32, // Changed from u32 to i32
         metric: Option<String>,
         ef_construction: Option<i32>, // Changed from u32 to i32
-        m: Option<i32>, // Changed from u32 to i32
+        m: Option<i32>,               // Changed from u32 to i32
     },
 
     /// List vector indexes
-    ListVectorIndexes { database: String, collection: String },
+    ListVectorIndexes {
+        database: String,
+        collection: String,
+    },
 
     /// Delete a vector index
     DeleteVectorIndex {
@@ -522,7 +573,7 @@ pub enum Command {
         collection: String,
         index_name: String,
         vector: Vec<f32>,
-        limit: Option<i32>, // Changed from u32 to i32
+        limit: Option<i32>,     // Changed from u32 to i32
         ef_search: Option<i32>, // Changed from u32 to i32
         filter: Option<String>,
     },
@@ -552,7 +603,10 @@ pub enum Command {
     },
 
     /// List TTL indexes
-    ListTtlIndexes { database: String, collection: String },
+    ListTtlIndexes {
+        database: String,
+        collection: String,
+    },
 
     /// Delete a TTL index
     DeleteTtlIndex {
@@ -573,10 +627,16 @@ pub enum Command {
     ListColumnar { database: String },
 
     /// Get columnar collection status
-    GetColumnar { database: String, collection: String },
+    GetColumnar {
+        database: String,
+        collection: String,
+    },
 
     /// Delete a columnar collection
-    DeleteColumnar { database: String, collection: String },
+    DeleteColumnar {
+        database: String,
+        collection: String,
+    },
 
     /// Insert rows into a columnar collection
     InsertColumnar {
@@ -612,7 +672,10 @@ pub enum Command {
     },
 
     /// List indexes on a columnar collection
-    ListColumnarIndexes { database: String, collection: String },
+    ListColumnarIndexes {
+        database: String,
+        collection: String,
+    },
 
     /// Delete an index on a columnar collection
     DeleteColumnarIndex {

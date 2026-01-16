@@ -58,17 +58,20 @@ impl Parser {
     /// Parse a query, optionally checking for trailing tokens (false for subqueries)
     fn parse_query(&mut self, check_trailing: bool) -> DbResult<Query> {
         // Parse optional CREATE STREAM or CREATE MATERIALIZED VIEW
-        let (create_stream_clause, create_mv_clause) = if matches!(self.current_token(), Token::Create) {
-            if matches!(self.peek_token(1), Token::Stream) {
-                (Some(self.parse_create_stream_clause()?), None)
-            } else if matches!(self.peek_token(1), Token::Materialized) {
-                (None, Some(self.parse_create_materialized_view_clause()?))
+        let (create_stream_clause, create_mv_clause) =
+            if matches!(self.current_token(), Token::Create) {
+                if matches!(self.peek_token(1), Token::Stream) {
+                    (Some(self.parse_create_stream_clause()?), None)
+                } else if matches!(self.peek_token(1), Token::Materialized) {
+                    (None, Some(self.parse_create_materialized_view_clause()?))
+                } else {
+                    return Err(DbError::ParseError(
+                        "Expected STREAM or MATERIALIZED VIEW after CREATE".to_string(),
+                    ));
+                }
             } else {
-                return Err(DbError::ParseError("Expected STREAM or MATERIALIZED VIEW after CREATE".to_string()));
-            }
-        } else {
-            (None, None)
-        };
+                (None, None)
+            };
 
         // Parse optional REFRESH MATERIALIZED VIEW
         let refresh_mv_clause = if matches!(self.current_token(), Token::Refresh) {
@@ -130,14 +133,15 @@ impl Parser {
             } else if matches!(self.current_token(), Token::Collect) {
                 let collect_clause = self.parse_collect_clause()?;
                 body_clauses.push(BodyClause::Collect(collect_clause));
-            } else if matches!(self.current_token(), Token::Join) ||
-                      (matches!(self.current_token(), Token::Left) &&
-                       matches!(self.peek_token(1), Token::Join)) ||
-                      (matches!(self.current_token(), Token::Right) &&
-                       matches!(self.peek_token(1), Token::Join)) ||
-                      (matches!(self.current_token(), Token::Full) &&
-                       (matches!(self.peek_token(1), Token::Join) ||
-                        matches!(self.peek_token(1), Token::Outer))) {
+            } else if matches!(self.current_token(), Token::Join)
+                || (matches!(self.current_token(), Token::Left)
+                    && matches!(self.peek_token(1), Token::Join))
+                || (matches!(self.current_token(), Token::Right)
+                    && matches!(self.peek_token(1), Token::Join))
+                || (matches!(self.current_token(), Token::Full)
+                    && (matches!(self.peek_token(1), Token::Join)
+                        || matches!(self.peek_token(1), Token::Outer)))
+            {
                 let join_clause = self.parse_join_clause()?;
                 body_clauses.push(BodyClause::Join(join_clause));
             } else if matches!(self.current_token(), Token::Window) {
@@ -462,7 +466,9 @@ impl Parser {
         })
     }
 
-    fn parse_refresh_materialized_view_clause(&mut self) -> DbResult<RefreshMaterializedViewClause> {
+    fn parse_refresh_materialized_view_clause(
+        &mut self,
+    ) -> DbResult<RefreshMaterializedViewClause> {
         self.expect(Token::Refresh)?;
         self.expect(Token::Materialized)?;
         self.expect(Token::View)?;
@@ -490,7 +496,11 @@ impl Parser {
                 self.advance();
                 WindowType::Sliding
             }
-            _ => return Err(DbError::ParseError("Expected TUMBLING or SLIDING".to_string())),
+            _ => {
+                return Err(DbError::ParseError(
+                    "Expected TUMBLING or SLIDING".to_string(),
+                ))
+            }
         };
 
         // Expect (SIZE "duration")
@@ -531,7 +541,7 @@ impl Parser {
             JoinType::Right
         } else if matches!(self.current_token(), Token::Full) {
             self.advance(); // consume FULL
-            // Check for optional OUTER keyword
+                            // Check for optional OUTER keyword
             if matches!(self.current_token(), Token::Outer) {
                 self.advance(); // consume OUTER
             }
@@ -625,7 +635,6 @@ impl Parser {
             collection,
         })
     }
-
 
     fn parse_remove_clause(&mut self) -> DbResult<RemoveClause> {
         self.expect(Token::Remove)?;
@@ -1903,7 +1912,9 @@ impl Parser {
                     self.expect(Token::RightParen)?;
                     Ok(Expression::FunctionCall { name, args })
                 } else {
-                    Err(DbError::ParseError("Unexpected token in expression: Left".to_string()))
+                    Err(DbError::ParseError(
+                        "Unexpected token in expression: Left".to_string(),
+                    ))
                 }
             }
 
@@ -1931,7 +1942,9 @@ impl Parser {
                     self.expect(Token::RightParen)?;
                     Ok(Expression::FunctionCall { name, args })
                 } else {
-                    Err(DbError::ParseError("Unexpected token in expression: Right".to_string()))
+                    Err(DbError::ParseError(
+                        "Unexpected token in expression: Right".to_string(),
+                    ))
                 }
             }
 
@@ -2286,7 +2299,11 @@ mod tests {
     fn test_parse_let_multiple_in_body() {
         // Test comma-separated LET bindings after FOR
         let query = parse("FOR doc IN users LET x = doc.a, y = doc.b RETURN {x, y}").unwrap();
-        let let_count = query.body_clauses.iter().filter(|c| matches!(c, BodyClause::Let(_))).count();
+        let let_count = query
+            .body_clauses
+            .iter()
+            .filter(|c| matches!(c, BodyClause::Let(_)))
+            .count();
         assert_eq!(let_count, 2);
     }
 
@@ -2346,22 +2363,22 @@ mod tests {
     }
 }
 
-    #[test]
-    fn test_parse_create_stream() {
-        let input = r#"
+#[test]
+fn test_parse_create_stream() {
+    let input = r#"
             CREATE STREAM high_value_txns AS
             FOR txn IN transactions
             WINDOW TUMBLING (SIZE "1m")
             FILTER txn.amount > 1000
             RETURN txn
         "#;
-        let mut parser = Parser::new(input).unwrap();
-        let query = parser.parse().unwrap();
+    let mut parser = Parser::new(input).unwrap();
+    let query = parser.parse().unwrap();
 
-        assert!(query.create_stream_clause.is_some());
-        assert_eq!(query.create_stream_clause.unwrap().name, "high_value_txns");
-        assert!(query.window_clause.is_some());
-        assert_eq!(query.window_clause.unwrap().duration, "1m");
-        assert_eq!(query.for_clauses.len(), 1);
-        assert_eq!(query.for_clauses[0].collection, "transactions");
-    }
+    assert!(query.create_stream_clause.is_some());
+    assert_eq!(query.create_stream_clause.unwrap().name, "high_value_txns");
+    assert!(query.window_clause.is_some());
+    assert_eq!(query.window_clause.unwrap().duration, "1m");
+    assert_eq!(query.for_clauses.len(), 1);
+    assert_eq!(query.for_clauses[0].collection, "transactions");
+}

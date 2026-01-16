@@ -121,7 +121,11 @@ impl LLMClient {
     ///
     /// Checks current database _env first, then _system/_env, then OS environment.
     /// Default provider from NL_DEFAULT_PROVIDER (default: anthropic)
-    pub fn from_storage(storage: &StorageEngine, db_name: &str, provider: Option<&str>) -> Result<Self, DbError> {
+    pub fn from_storage(
+        storage: &StorageEngine,
+        db_name: &str,
+        provider: Option<&str>,
+    ) -> Result<Self, DbError> {
         let provider_str = provider
             .map(|s| s.to_string())
             .or_else(|| get_env_var(storage, db_name, "NL_DEFAULT_PROVIDER"))
@@ -146,11 +150,12 @@ impl LLMClient {
                 }
             }
             LLMProvider::Anthropic => {
-                let api_key = get_env_var(storage, db_name, "ANTHROPIC_API_KEY").ok_or_else(|| {
-                    DbError::ExecutionError(
-                        "ANTHROPIC_API_KEY not found in _env collection".to_string(),
-                    )
-                })?;
+                let api_key =
+                    get_env_var(storage, db_name, "ANTHROPIC_API_KEY").ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "ANTHROPIC_API_KEY not found in _env collection".to_string(),
+                        )
+                    })?;
                 let model = get_env_var(storage, db_name, "ANTHROPIC_MODEL")
                     .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
                 LLMConfig {
@@ -166,11 +171,12 @@ impl LLMClient {
                 // Trim whitespace and trailing slashes to avoid URL issues
                 let base_url = base_url.trim().trim_end_matches('/');
                 // Ensure URL has http:// scheme (Ollama is always HTTP locally)
-                let base_url = if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
-                    format!("http://{}", base_url)
-                } else {
-                    base_url.to_string()
-                };
+                let base_url =
+                    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
+                        format!("http://{}", base_url)
+                    } else {
+                        base_url.to_string()
+                    };
                 let model = get_env_var(storage, db_name, "OLLAMA_MODEL")
                     .unwrap_or_else(|| "llama3".to_string())
                     .trim()
@@ -389,7 +395,12 @@ impl LLMClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| DbError::ExecutionError(format!("Ollama API request to '{}' failed: {}", self.config.api_url, e)))?;
+            .map_err(|e| {
+                DbError::ExecutionError(format!(
+                    "Ollama API request to '{}' failed: {}",
+                    self.config.api_url, e
+                ))
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -452,14 +463,15 @@ impl LLMClient {
         }
 
         // Extract system message
-        let system_instruction = messages
-            .iter()
-            .find(|m| m.role == "system")
-            .map(|m| GeminiSystem {
-                parts: vec![GeminiPart {
-                    text: m.content.clone(),
-                }],
-            });
+        let system_instruction =
+            messages
+                .iter()
+                .find(|m| m.role == "system")
+                .map(|m| GeminiSystem {
+                    parts: vec![GeminiPart {
+                        text: m.content.clone(),
+                    }],
+                });
 
         // Convert messages (skip system as it's handled separately)
         let contents: Vec<GeminiContent> = messages

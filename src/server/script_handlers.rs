@@ -600,7 +600,7 @@ pub async fn repl_eval_handler(
 
     // Create script engine
     let mut engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone());
-    
+
     if let Some(sm) = &state.stream_manager {
         engine = engine.with_stream_manager(sm.clone());
     }

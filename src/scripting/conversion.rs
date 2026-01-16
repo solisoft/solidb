@@ -1,5 +1,5 @@
-use serde_json::Value as JsonValue;
 use mlua::{Lua, Result as LuaResult, Value as LuaValue};
+use serde_json::Value as JsonValue;
 
 /// Convert JSON value to Lua value
 pub fn json_to_lua(lua: &Lua, json: &JsonValue) -> LuaResult<LuaValue> {

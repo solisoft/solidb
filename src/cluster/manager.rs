@@ -340,8 +340,7 @@ impl ClusterManager {
                 match entry.operation {
                     Operation::Insert | Operation::Update => {
                         if let Some(data) = &entry.document_data {
-                            if let Ok(doc_value) =
-                                serde_json::from_slice::<serde_json::Value>(data)
+                            if let Ok(doc_value) = serde_json::from_slice::<serde_json::Value>(data)
                             {
                                 let key = (entry.database.clone(), entry.collection.clone());
                                 insert_update_groups

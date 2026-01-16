@@ -20,12 +20,9 @@ fn create_test_app() -> (axum::Router, TempDir, String) {
 
     let router = create_router(engine, None, None, None, None, script_stats, None, 0);
 
-    let token = AuthService::create_jwt_with_roles(
-        "test_admin",
-        Some(vec!["admin".to_string()]),
-        None,
-    )
-    .expect("Failed to create test token");
+    let token =
+        AuthService::create_jwt_with_roles("test_admin", Some(vec!["admin".to_string()]), None)
+            .expect("Failed to create test token");
 
     (router, tmp_dir, token)
 }
@@ -69,7 +66,7 @@ async fn run_query(app: axum::Router, token: &str, db: &str, query: &str) -> Val
         )
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::OK);
     response_json(response).await
 }
@@ -160,5 +157,5 @@ async fn test_human_time() {
     let query_future = "RETURN HUMAN_TIME(DATE_ADD(DATE_NOW(), 1, 'hour'))";
     let result = run_query(app.clone(), &token, "testdb", query_future).await;
     let rows = result.get("result").unwrap().as_array().unwrap();
-    assert_eq!(rows[0], json!("in the future")); 
+    assert_eq!(rows[0], json!("in the future"));
 }

@@ -113,10 +113,7 @@ struct SchemaContext {
 
 impl SchemaContext {
     /// Build schema context from database
-    fn build(
-        storage: &crate::storage::StorageEngine,
-        db_name: &str,
-    ) -> Result<Self, DbError> {
+    fn build(storage: &crate::storage::StorageEngine, db_name: &str) -> Result<Self, DbError> {
         let db = storage.get_database(db_name)?;
         let collection_names = db.list_collections();
 
@@ -386,10 +383,7 @@ pub async fn nl_query(
 
     // 4. Build initial messages with few-shot examples
     let system_prompt = build_system_prompt(&schema, req.provider.as_deref(), &examples);
-    let mut messages = vec![
-        Message::system(&system_prompt),
-        Message::user(&req.query),
-    ];
+    let mut messages = vec![Message::system(&system_prompt), Message::user(&req.query)];
 
     let mut last_sdbql = String::new();
     let mut last_error = String::new();
@@ -427,12 +421,12 @@ pub async fn nl_query(
         match parse(&sdbql) {
             Ok(query) => {
                 // Valid! Save to history for future few-shot learning
-                let history_id = save_to_history(&state.storage, &db_name, &req.query, &sdbql, true);
+                let history_id =
+                    save_to_history(&state.storage, &db_name, &req.query, &sdbql, true);
 
                 // Execute if requested
                 if req.execute {
-                    let executor =
-                        QueryExecutor::with_database(&state.storage, db_name.clone());
+                    let executor = QueryExecutor::with_database(&state.storage, db_name.clone());
                     let results = executor.execute(&query)?;
                     return Ok(Json(NLQueryResponse {
                         sdbql,

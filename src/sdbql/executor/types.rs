@@ -4,7 +4,6 @@ use std::collections::HashMap;
 
 use super::super::ast::BinaryOperator;
 
-
 /// Execution context holding variable bindings
 pub type Context = HashMap<String, Value>;
 
@@ -113,8 +112,6 @@ pub struct ExecutionTiming {
     pub limit_us: u64,
     pub return_projection_us: u64,
 }
-
-
 
 /// Extracted filter condition for index optimization
 #[derive(Debug)]

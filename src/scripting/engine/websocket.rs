@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use futures::{SinkExt, StreamExt};
-use mlua::{Value as LuaValue, Lua};
+use mlua::{Lua, Value as LuaValue};
 use tokio::sync::mpsc;
 use tracing;
 
@@ -21,7 +21,8 @@ pub async fn execute_ws(
     ws: axum::extract::ws::WebSocket,
 ) -> Result<(), DbError> {
     engine.stats.active_ws.fetch_add(1, Ordering::SeqCst);
-    engine.stats
+    engine
+        .stats
         .total_ws_connections
         .fetch_add(1, Ordering::SeqCst);
 
@@ -168,9 +169,9 @@ pub async fn execute_ws(
                         Some(Ok(axum::extract::ws::Message::Binary(b))) => {
                             return Ok(LuaValue::String(lua.create_string(b.as_ref())?))
                         }
-                        Some(Ok(axum::extract::ws::Message::Close(_)))
-                        | None
-                        | Some(Err(_)) => return Ok(LuaValue::Nil),
+                        Some(Ok(axum::extract::ws::Message::Close(_))) | None | Some(Err(_)) => {
+                            return Ok(LuaValue::Nil)
+                        }
                         Some(Ok(axum::extract::ws::Message::Pong(_)))
                         | Some(Ok(axum::extract::ws::Message::Ping(_))) => continue, // Ignore heartbeats
                     }
@@ -288,9 +289,9 @@ pub async fn execute_ws(
 
     // ==================== Channel Operations ====================
     if let Some(cm) = &channel_manager {
-        let channel_table = lua
-            .create_table()
-            .map_err(|e| DbError::InternalError(format!("Failed to create channel table: {}", e)))?;
+        let channel_table = lua.create_table().map_err(|e| {
+            DbError::InternalError(format!("Failed to create channel table: {}", e))
+        })?;
 
         // ws.channel.subscribe(channel_name)
         let cm_subscribe = cm.clone();
@@ -302,10 +303,12 @@ pub async fn execute_ws(
                     .map_err(|e| mlua::Error::RuntimeError(format!("Subscribe error: {}", e)))?;
                 Ok(true)
             })
-            .map_err(|e| DbError::InternalError(format!("Failed to create channel.subscribe: {}", e)))?;
-        channel_table
-            .set("subscribe", subscribe_fn)
-            .map_err(|e| DbError::InternalError(format!("Failed to set channel.subscribe: {}", e)))?;
+            .map_err(|e| {
+                DbError::InternalError(format!("Failed to create channel.subscribe: {}", e))
+            })?;
+        channel_table.set("subscribe", subscribe_fn).map_err(|e| {
+            DbError::InternalError(format!("Failed to set channel.subscribe: {}", e))
+        })?;
 
         // ws.channel.unsubscribe(channel_name)
         let cm_unsub = cm.clone();
@@ -315,10 +318,14 @@ pub async fn execute_ws(
                 cm_unsub.unsubscribe(&conn_id_unsub, &channel);
                 Ok(true)
             })
-            .map_err(|e| DbError::InternalError(format!("Failed to create channel.unsubscribe: {}", e)))?;
+            .map_err(|e| {
+                DbError::InternalError(format!("Failed to create channel.unsubscribe: {}", e))
+            })?;
         channel_table
             .set("unsubscribe", unsubscribe_fn)
-            .map_err(|e| DbError::InternalError(format!("Failed to set channel.unsubscribe: {}", e)))?;
+            .map_err(|e| {
+                DbError::InternalError(format!("Failed to set channel.unsubscribe: {}", e))
+            })?;
 
         // ws.channel.broadcast(channel_name, data)
         let cm_broadcast = cm.clone();
@@ -331,10 +338,12 @@ pub async fn execute_ws(
                     .map_err(|e| mlua::Error::RuntimeError(format!("Broadcast error: {}", e)))?;
                 Ok(true)
             })
-            .map_err(|e| DbError::InternalError(format!("Failed to create channel.broadcast: {}", e)))?;
-        channel_table
-            .set("broadcast", broadcast_fn)
-            .map_err(|e| DbError::InternalError(format!("Failed to set channel.broadcast: {}", e)))?;
+            .map_err(|e| {
+                DbError::InternalError(format!("Failed to create channel.broadcast: {}", e))
+            })?;
+        channel_table.set("broadcast", broadcast_fn).map_err(|e| {
+            DbError::InternalError(format!("Failed to set channel.broadcast: {}", e))
+        })?;
 
         // ws.channel.list() -> table of subscribed channels
         let cm_list = cm.clone();
@@ -358,9 +367,9 @@ pub async fn execute_ws(
             .map_err(|e| DbError::InternalError(format!("Failed to set ws.channel: {}", e)))?;
 
         // ==================== Presence Operations ====================
-        let presence_table = lua
-            .create_table()
-            .map_err(|e| DbError::InternalError(format!("Failed to create presence table: {}", e)))?;
+        let presence_table = lua.create_table().map_err(|e| {
+            DbError::InternalError(format!("Failed to create presence table: {}", e))
+        })?;
 
         // ws.presence.join(channel, user_info)
         let cm_join = cm.clone();
@@ -370,10 +379,14 @@ pub async fn execute_ws(
                 let json_info = lua_value_to_json(&user_info)?;
                 cm_join
                     .presence_join(&conn_id_join, &channel, json_info)
-                    .map_err(|e| mlua::Error::RuntimeError(format!("Presence join error: {}", e)))?;
+                    .map_err(|e| {
+                        mlua::Error::RuntimeError(format!("Presence join error: {}", e))
+                    })?;
                 Ok(true)
             })
-            .map_err(|e| DbError::InternalError(format!("Failed to create presence.join: {}", e)))?;
+            .map_err(|e| {
+                DbError::InternalError(format!("Failed to create presence.join: {}", e))
+            })?;
         presence_table
             .set("join", join_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set presence.join: {}", e)))?;
@@ -386,7 +399,9 @@ pub async fn execute_ws(
                 cm_leave.presence_leave(&conn_id_leave, &channel);
                 Ok(true)
             })
-            .map_err(|e| DbError::InternalError(format!("Failed to create presence.leave: {}", e)))?;
+            .map_err(|e| {
+                DbError::InternalError(format!("Failed to create presence.leave: {}", e))
+            })?;
         presence_table
             .set("leave", leave_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set presence.leave: {}", e)))?;
@@ -406,7 +421,9 @@ pub async fn execute_ws(
                 }
                 Ok(table)
             })
-            .map_err(|e| DbError::InternalError(format!("Failed to create presence.list: {}", e)))?;
+            .map_err(|e| {
+                DbError::InternalError(format!("Failed to create presence.list: {}", e))
+            })?;
         presence_table
             .set("list", list_presence_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set presence.list: {}", e)))?;

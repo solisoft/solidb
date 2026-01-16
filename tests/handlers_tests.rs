@@ -41,12 +41,9 @@ fn create_test_app() -> (TempDir, axum::Router, String) {
     );
 
     // Create a JWT token for authentication
-    let token = AuthService::create_jwt_with_roles(
-        "test_admin",
-        Some(vec!["admin".to_string()]),
-        None,
-    )
-    .expect("Failed to create test token");
+    let token =
+        AuthService::create_jwt_with_roles("test_admin", Some(vec!["admin".to_string()]), None)
+            .expect("Failed to create test token");
 
     (tmp_dir, router, token)
 }
@@ -62,12 +59,7 @@ async fn response_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&body).unwrap_or(json!({"error": "Invalid JSON"}))
 }
 
-async fn setup_db_and_collection(
-    app: &axum::Router,
-    token: &str,
-    db_name: &str,
-    coll_name: &str,
-) {
+async fn setup_db_and_collection(app: &axum::Router, token: &str, db_name: &str, coll_name: &str) {
     // Create DB
     let _ = app
         .clone()

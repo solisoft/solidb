@@ -9,7 +9,8 @@ use super::document::Document;
 use super::geo::{GeoIndex, GeoIndexStats};
 use super::index::{
     extract_field_value, generate_ngrams, levenshtein_distance, tokenize, FulltextMatch, Index,
-    IndexStats, IndexType, TtlIndex, TtlIndexStats, VectorIndexConfig, VectorIndexStats, NGRAM_SIZE,
+    IndexStats, IndexType, TtlIndex, TtlIndexStats, VectorIndexConfig, VectorIndexStats,
+    NGRAM_SIZE,
 };
 use super::vector::{VectorIndex, VectorSearchResult};
 use crate::error::{DbError, DbResult};
@@ -251,13 +252,13 @@ impl Collection {
         let cf = db
             .cf_handle(&self.name)
             .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
-        
+
         let prefix = DOC_PREFIX.as_bytes();
         let count = db
             .prefix_iterator_cf(cf, prefix)
             .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
             .count();
-        
+
         self.doc_count.store(count, Ordering::Relaxed);
         self.count_dirty.store(true, Ordering::Relaxed);
         Ok(count)
@@ -269,10 +270,10 @@ impl Collection {
         let cf = db
             .cf_handle(&self.name)
             .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
-            
+
         db.delete_cf(cf, SCHEMA_KEY.as_bytes())
             .map_err(|e| DbError::InternalError(format!("Failed to delete schema: {}", e)))?;
-            
+
         Ok(())
     }
 
@@ -3377,16 +3378,16 @@ impl Collection {
         }
 
         // Get config from disk
-        let config = self.get_vector_index(name).ok_or_else(|| {
-            DbError::BadRequest(format!("Vector index '{}' not found", name))
-        })?;
+        let config = self
+            .get_vector_index(name)
+            .ok_or_else(|| DbError::BadRequest(format!("Vector index '{}' not found", name)))?;
 
         // Try to load serialized index data
         let index = {
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).ok_or_else(|| {
-                DbError::InternalError("Column family not found".to_string())
-            })?;
+            let cf = db
+                .cf_handle(&self.name)
+                .ok_or_else(|| DbError::InternalError("Column family not found".to_string()))?;
 
             match db.get_cf(cf, Self::vec_data_key(name)).ok().flatten() {
                 Some(bytes) => VectorIndex::deserialize(&bytes)?,
@@ -3517,8 +3518,9 @@ impl Collection {
         db.delete_cf(cf, Self::vec_meta_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop vector index: {}", e)))?;
 
-        db.delete_cf(cf, Self::vec_data_key(name))
-            .map_err(|e| DbError::InternalError(format!("Failed to drop vector index data: {}", e)))?;
+        db.delete_cf(cf, Self::vec_data_key(name)).map_err(|e| {
+            DbError::InternalError(format!("Failed to drop vector index data: {}", e))
+        })?;
 
         Ok(())
     }
@@ -3642,7 +3644,10 @@ impl Collection {
                 .expect("Column family should exist");
             db.put_cf(cf, Self::vec_data_key(index_name), &index_bytes)
                 .map_err(|e| {
-                    DbError::InternalError(format!("Failed to persist quantized vector index: {}", e))
+                    DbError::InternalError(format!(
+                        "Failed to persist quantized vector index: {}",
+                        e
+                    ))
                 })?;
         }
 
@@ -3679,7 +3684,10 @@ impl Collection {
                 .expect("Column family should exist");
             db.put_cf(cf, Self::vec_data_key(index_name), &index_bytes)
                 .map_err(|e| {
-                    DbError::InternalError(format!("Failed to persist dequantized vector index: {}", e))
+                    DbError::InternalError(format!(
+                        "Failed to persist dequantized vector index: {}",
+                        e
+                    ))
                 })?;
         }
 

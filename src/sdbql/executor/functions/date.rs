@@ -1,4 +1,4 @@
-use chrono::{Datelike, TimeZone, Timelike, Utc, Duration, NaiveDate, NaiveDateTime};
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use serde_json::Value;
 
@@ -30,7 +30,10 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     } else if let Some(f) = n.as_f64() {
                         f as i64
                     } else {
-                        return Err(DbError::ExecutionError("DATE_ISO8601: argument must be a number (timestamp in milliseconds)".to_string()));
+                        return Err(DbError::ExecutionError(
+                            "DATE_ISO8601: argument must be a number (timestamp in milliseconds)"
+                                .to_string(),
+                        ));
                     }
                 }
                 _ => {
@@ -53,7 +56,9 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     )))
                 }
             };
-            Ok(Some(Value::String(datetime.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))))
+            Ok(Some(Value::String(
+                datetime.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            )))
         }
         "DATE_TIMESTAMP" => {
             if args.len() != 1 {
@@ -79,7 +84,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             Ok(Some(Value::Number(serde_json::Number::from(timestamp_ms))))
         }
         "DATE_YEAR" => {
-             if args.len() != 1 {
+            if args.len() != 1 {
                 return Err(DbError::ExecutionError(
                     "DATE_YEAR requires 1 argument".to_string(),
                 ));
@@ -88,7 +93,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             Ok(Some(Value::Number(serde_json::Number::from(dt.year()))))
         }
         "DATE_MONTH" => {
-             if args.len() != 1 {
+            if args.len() != 1 {
                 return Err(DbError::ExecutionError(
                     "DATE_MONTH requires 1 argument".to_string(),
                 ));
@@ -97,7 +102,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             Ok(Some(Value::Number(serde_json::Number::from(dt.month()))))
         }
         "DATE_DAY" => {
-             if args.len() != 1 {
+            if args.len() != 1 {
                 return Err(DbError::ExecutionError(
                     "DATE_DAY requires 1 argument".to_string(),
                 ));
@@ -106,7 +111,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             Ok(Some(Value::Number(serde_json::Number::from(dt.day()))))
         }
         "DATE_HOUR" => {
-             if args.len() != 1 {
+            if args.len() != 1 {
                 return Err(DbError::ExecutionError(
                     "DATE_HOUR requires 1 argument".to_string(),
                 ));
@@ -115,7 +120,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             Ok(Some(Value::Number(serde_json::Number::from(dt.hour()))))
         }
         "DATE_MINUTE" => {
-             if args.len() != 1 {
+            if args.len() != 1 {
                 return Err(DbError::ExecutionError(
                     "DATE_MINUTE requires 1 argument".to_string(),
                 ));
@@ -124,7 +129,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             Ok(Some(Value::Number(serde_json::Number::from(dt.minute()))))
         }
         "DATE_SECOND" => {
-             if args.len() != 1 {
+            if args.len() != 1 {
                 return Err(DbError::ExecutionError(
                     "DATE_SECOND requires 1 argument".to_string(),
                 ));
@@ -143,7 +148,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             Ok(Some(Value::Number(serde_json::Number::from(weekday))))
         }
         "DATE_QUARTER" => {
-             if args.len() != 1 {
+            if args.len() != 1 {
                 return Err(DbError::ExecutionError(
                     "DATE_QUARTER requires 1 argument".to_string(),
                 ));
@@ -160,9 +165,12 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }
 
             let datetime_utc = parse_datetime(&args[0])?;
-            let unit = args[1].as_str().ok_or_else(|| {
-                DbError::ExecutionError("DATE_TRUNC: unit must be a string".to_string())
-            })?.to_lowercase();
+            let unit = args[1]
+                .as_str()
+                .ok_or_else(|| {
+                    DbError::ExecutionError("DATE_TRUNC: unit must be a string".to_string())
+                })?
+                .to_lowercase();
 
             let tz: Tz = if args.len() == 3 {
                 let tz_str = args[2].as_str().ok_or_else(|| {
@@ -179,55 +187,91 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
 
             let truncated = match unit.as_str() {
                 "y" | "year" | "years" => {
-                     let naive = NaiveDateTime::new(
+                    let naive = NaiveDateTime::new(
                         NaiveDate::from_ymd_opt(datetime_tz.year(), 1, 1).unwrap(),
-                        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap()
+                        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
                     );
                     tz.from_local_datetime(&naive).single().unwrap()
                 }
                 "m" | "month" | "months" => {
                     let naive = NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(datetime_tz.year(), datetime_tz.month(), 1).unwrap(),
-                        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap()
+                        NaiveDate::from_ymd_opt(datetime_tz.year(), datetime_tz.month(), 1)
+                            .unwrap(),
+                        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
                     );
                     tz.from_local_datetime(&naive).single().unwrap()
                 }
                 "d" | "day" | "days" => {
                     let naive = NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(datetime_tz.year(), datetime_tz.month(), datetime_tz.day()).unwrap(),
-                        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap()
+                        NaiveDate::from_ymd_opt(
+                            datetime_tz.year(),
+                            datetime_tz.month(),
+                            datetime_tz.day(),
+                        )
+                        .unwrap(),
+                        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
                     );
                     tz.from_local_datetime(&naive).single().unwrap()
                 }
                 "h" | "hour" | "hours" => {
                     let naive = NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(datetime_tz.year(), datetime_tz.month(), datetime_tz.day()).unwrap(),
-                        chrono::NaiveTime::from_hms_opt(datetime_tz.hour(), 0, 0).unwrap()
+                        NaiveDate::from_ymd_opt(
+                            datetime_tz.year(),
+                            datetime_tz.month(),
+                            datetime_tz.day(),
+                        )
+                        .unwrap(),
+                        chrono::NaiveTime::from_hms_opt(datetime_tz.hour(), 0, 0).unwrap(),
                     );
                     tz.from_local_datetime(&naive).single().unwrap()
                 }
                 "i" | "minute" | "minutes" => {
                     let naive = NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(datetime_tz.year(), datetime_tz.month(), datetime_tz.day()).unwrap(),
-                        chrono::NaiveTime::from_hms_opt(datetime_tz.hour(), datetime_tz.minute(), 0).unwrap()
+                        NaiveDate::from_ymd_opt(
+                            datetime_tz.year(),
+                            datetime_tz.month(),
+                            datetime_tz.day(),
+                        )
+                        .unwrap(),
+                        chrono::NaiveTime::from_hms_opt(
+                            datetime_tz.hour(),
+                            datetime_tz.minute(),
+                            0,
+                        )
+                        .unwrap(),
                     );
                     tz.from_local_datetime(&naive).single().unwrap()
                 }
                 "s" | "second" | "seconds" => {
                     let naive = NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(datetime_tz.year(), datetime_tz.month(), datetime_tz.day()).unwrap(),
-                        chrono::NaiveTime::from_hms_opt(datetime_tz.hour(), datetime_tz.minute(), datetime_tz.second()).unwrap()
+                        NaiveDate::from_ymd_opt(
+                            datetime_tz.year(),
+                            datetime_tz.month(),
+                            datetime_tz.day(),
+                        )
+                        .unwrap(),
+                        chrono::NaiveTime::from_hms_opt(
+                            datetime_tz.hour(),
+                            datetime_tz.minute(),
+                            datetime_tz.second(),
+                        )
+                        .unwrap(),
                     );
                     tz.from_local_datetime(&naive).single().unwrap()
                 }
                 "f" | "millisecond" | "milliseconds" => datetime_tz,
-                _ => return Err(DbError::ExecutionError(
-                    format!("DATE_TRUNC: unknown unit '{}'", unit)
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(format!(
+                        "DATE_TRUNC: unknown unit '{}'",
+                        unit
+                    )))
+                }
             };
 
             let truncated_utc = truncated.with_timezone(&Utc);
-            Ok(Some(Value::String(truncated_utc.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))))
+            Ok(Some(Value::String(
+                truncated_utc.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            )))
         }
         "DATE_DAYS_IN_MONTH" => {
             if args.is_empty() || args.len() > 2 {
@@ -238,10 +282,15 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let datetime_utc = parse_datetime(&args[0])?;
             let (year, month) = if args.len() == 2 {
                 let tz_str = args[1].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("DATE_DAYS_IN_MONTH: timezone must be a string".to_string())
+                    DbError::ExecutionError(
+                        "DATE_DAYS_IN_MONTH: timezone must be a string".to_string(),
+                    )
                 })?;
                 let tz: Tz = tz_str.parse().map_err(|_| {
-                    DbError::ExecutionError(format!("DATE_DAYS_IN_MONTH: unknown timezone '{}'", tz_str))
+                    DbError::ExecutionError(format!(
+                        "DATE_DAYS_IN_MONTH: unknown timezone '{}'",
+                        tz_str
+                    ))
                 })?;
                 let dt_tz = datetime_utc.with_timezone(&tz);
                 (dt_tz.year(), dt_tz.month())
@@ -264,7 +313,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         }
         "DATE_DAYOFYEAR" => {
             if args.is_empty() || args.len() > 2 {
-                 return Err(DbError::ExecutionError(
+                return Err(DbError::ExecutionError(
                     "DATE_DAYOFYEAR requires 1-2 arguments: date, [timezone]".to_string(),
                 ));
             }
@@ -274,7 +323,10 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     DbError::ExecutionError("DATE_DAYOFYEAR: timezone must be a string".to_string())
                 })?;
                 let tz: Tz = tz_str.parse().map_err(|_| {
-                    DbError::ExecutionError(format!("DATE_DAYOFYEAR: unknown timezone '{}'", tz_str))
+                    DbError::ExecutionError(format!(
+                        "DATE_DAYOFYEAR: unknown timezone '{}'",
+                        tz_str
+                    ))
                 })?;
                 datetime_utc.with_timezone(&tz).ordinal()
             } else {
@@ -284,12 +336,14 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         }
         "DATE_ISOWEEK" => {
             if args.len() != 1 {
-                 return Err(DbError::ExecutionError(
+                return Err(DbError::ExecutionError(
                     "DATE_ISOWEEK requires 1 argument".to_string(),
                 ));
             }
             let datetime_utc = parse_datetime(&args[0])?;
-            Ok(Some(Value::Number(serde_json::Number::from(datetime_utc.iso_week().week()))))
+            Ok(Some(Value::Number(serde_json::Number::from(
+                datetime_utc.iso_week().week(),
+            ))))
         }
         "DATE_FORMAT" => {
             if args.len() < 2 || args.len() > 3 {
@@ -312,7 +366,9 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 chrono_tz::UTC
             };
             let datetime_tz = datetime_utc.with_timezone(&tz);
-            Ok(Some(Value::String(datetime_tz.format(format_str).to_string())))
+            Ok(Some(Value::String(
+                datetime_tz.format(format_str).to_string(),
+            )))
         }
         "DATE_ADD" => {
             if args.len() < 3 || args.len() > 4 {
@@ -321,16 +377,22 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 ));
             }
             let datetime_utc = parse_datetime(&args[0])?;
-            let amount = args[1].as_i64().or_else(|| args[1].as_f64().map(|f| f as i64)).ok_or_else(|| {
-                DbError::ExecutionError("DATE_ADD: amount must be a number".to_string())
-            })?;
-            let unit = args[2].as_str().ok_or_else(|| {
-                DbError::ExecutionError("DATE_ADD: unit must be a string".to_string())
-            })?.to_lowercase();
-            
+            let amount = args[1]
+                .as_i64()
+                .or_else(|| args[1].as_f64().map(|f| f as i64))
+                .ok_or_else(|| {
+                    DbError::ExecutionError("DATE_ADD: amount must be a number".to_string())
+                })?;
+            let unit = args[2]
+                .as_str()
+                .ok_or_else(|| {
+                    DbError::ExecutionError("DATE_ADD: unit must be a string".to_string())
+                })?
+                .to_lowercase();
+
             let tz: Tz = if args.len() > 3 {
                 let tz_str = args[3].as_str().ok_or_else(|| {
-                     DbError::ExecutionError("DATE_ADD: timezone must be a string".to_string())
+                    DbError::ExecutionError("DATE_ADD: timezone must be a string".to_string())
                 })?;
                 tz_str.parse().map_err(|_| {
                     DbError::ExecutionError(format!("DATE_ADD: unknown timezone '{}'", tz_str))
@@ -340,10 +402,10 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             };
 
             let datetime_tz = datetime_utc.with_timezone(&tz);
-            
+
             // Implementation of date addition logic
             // Simplified using Duration for standard units, special logic for year/month
-             let result_tz = match unit.as_str() {
+            let result_tz = match unit.as_str() {
                 "y" | "year" | "years" => {
                     let new_year = datetime_tz.year() + amount as i32;
                     let naive = NaiveDateTime::new(
@@ -353,84 +415,126 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                                 NaiveDate::from_ymd_opt(new_year, datetime_tz.month(), 28).unwrap()
                             }),
                         chrono::NaiveTime::from_hms_milli_opt(
-                            datetime_tz.hour(), datetime_tz.minute(), datetime_tz.second(),
-                            datetime_tz.timestamp_subsec_millis()
-                        ).unwrap()
+                            datetime_tz.hour(),
+                            datetime_tz.minute(),
+                            datetime_tz.second(),
+                            datetime_tz.timestamp_subsec_millis(),
+                        )
+                        .unwrap(),
                     );
-                    tz.from_local_datetime(&naive).single().ok_or_else(|| DbError::ExecutionError("DATE_ADD: invalid datetime".to_string()))?
+                    tz.from_local_datetime(&naive).single().ok_or_else(|| {
+                        DbError::ExecutionError("DATE_ADD: invalid datetime".to_string())
+                    })?
                 }
                 "m" | "month" | "months" => {
-                    let total_months = datetime_tz.year() * 12 + datetime_tz.month() as i32 - 1 + amount as i32;
+                    let total_months =
+                        datetime_tz.year() * 12 + datetime_tz.month() as i32 - 1 + amount as i32;
                     let new_year = total_months / 12;
                     let new_month = (total_months % 12 + 1) as u32;
                     let max_day = NaiveDate::from_ymd_opt(new_year, new_month + 1, 1)
                         .unwrap_or_else(|| NaiveDate::from_ymd_opt(new_year + 1, 1, 1).unwrap())
-                        .pred_opt().unwrap().day();
+                        .pred_opt()
+                        .unwrap()
+                        .day();
                     let new_day = datetime_tz.day().min(max_day);
-                     let naive = NaiveDateTime::new(
+                    let naive = NaiveDateTime::new(
                         NaiveDate::from_ymd_opt(new_year, new_month, new_day).unwrap(),
                         chrono::NaiveTime::from_hms_milli_opt(
-                            datetime_tz.hour(), datetime_tz.minute(), datetime_tz.second(),
-                            datetime_tz.timestamp_subsec_millis()
-                        ).unwrap()
+                            datetime_tz.hour(),
+                            datetime_tz.minute(),
+                            datetime_tz.second(),
+                            datetime_tz.timestamp_subsec_millis(),
+                        )
+                        .unwrap(),
                     );
-                    tz.from_local_datetime(&naive).single().ok_or_else(|| DbError::ExecutionError("DATE_ADD: invalid datetime".to_string()))?
+                    tz.from_local_datetime(&naive).single().ok_or_else(|| {
+                        DbError::ExecutionError("DATE_ADD: invalid datetime".to_string())
+                    })?
                 }
                 "w" | "week" | "weeks" => datetime_tz + Duration::weeks(amount),
                 "d" | "day" | "days" => datetime_tz + Duration::days(amount),
                 "h" | "hour" | "hours" => datetime_tz + Duration::hours(amount),
                 "i" | "minute" | "minutes" => datetime_tz + Duration::minutes(amount),
                 "s" | "second" | "seconds" => datetime_tz + Duration::seconds(amount),
-                "f" | "millisecond" | "milliseconds" => datetime_tz + Duration::milliseconds(amount),
-                _ => return Err(DbError::ExecutionError(format!("DATE_ADD: unknown unit '{}'", unit))),
+                "f" | "millisecond" | "milliseconds" => {
+                    datetime_tz + Duration::milliseconds(amount)
+                }
+                _ => {
+                    return Err(DbError::ExecutionError(format!(
+                        "DATE_ADD: unknown unit '{}'",
+                        unit
+                    )))
+                }
             };
 
             let result_utc = result_tz.with_timezone(&Utc);
-            Ok(Some(Value::String(result_utc.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))))
+            Ok(Some(Value::String(
+                result_utc.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            )))
         }
         "DATE_SUBTRACT" => {
             // DATE_SUBTRACT is just negation of amount in DATE_ADD
             // Implemented by calling our own DATE_ADD logic or recursively?
             // Recursive call is hard because we are inside the match.
             // But we can just duplicate logic or create internal helper.
-            // For now, I'll return None and let Executor handle it? 
+            // For now, I'll return None and let Executor handle it?
             // NO, executor delegates to us.
             // I'll implement it by copying logic but negating amount.
-             if args.len() < 3 || args.len() > 4 {
+            if args.len() < 3 || args.len() > 4 {
                 return Err(DbError::ExecutionError(
                     "DATE_SUBTRACT requires 3-4 arguments".to_string(),
                 ));
             }
-             let amount = args[1].as_i64().or_else(|| args[1].as_f64().map(|f| f as i64)).ok_or_else(|| {
-                DbError::ExecutionError("DATE_SUBTRACT: amount must be a number".to_string())
-            })?;
-            
+            let amount = args[1]
+                .as_i64()
+                .or_else(|| args[1].as_f64().map(|f| f as i64))
+                .ok_or_else(|| {
+                    DbError::ExecutionError("DATE_SUBTRACT: amount must be a number".to_string())
+                })?;
+
             // Construct new args with negated amount
             let mut new_args = args.to_vec();
             new_args[1] = Value::Number(serde_json::Number::from(-amount));
             evaluate("DATE_ADD", &new_args)
         }
         "DATE_DIFF" => {
-             if args.len() < 3 || args.len() > 6 {
+            if args.len() < 3 || args.len() > 6 {
                 return Err(DbError::ExecutionError(
                     "DATE_DIFF requires 3-6 arguments".to_string(),
                 ));
             }
             let datetime1_utc = parse_datetime(&args[0])?;
             let datetime2_utc = parse_datetime(&args[1])?;
-            let unit = args[2].as_str().ok_or_else(|| {
-                DbError::ExecutionError("DATE_DIFF: unit must be a string".to_string())
-            })?.to_lowercase();
-            let as_float = if args.len() >= 4 { args[3].as_bool().unwrap_or(false) } else { false };
-            
+            let unit = args[2]
+                .as_str()
+                .ok_or_else(|| {
+                    DbError::ExecutionError("DATE_DIFF: unit must be a string".to_string())
+                })?
+                .to_lowercase();
+            let as_float = if args.len() >= 4 {
+                args[3].as_bool().unwrap_or(false)
+            } else {
+                false
+            };
+
             let (tz1, tz2) = if args.len() >= 5 {
                 let tz1_str = args[4].as_str();
-                let tz1 = if let Some(s) = tz1_str { s.parse::<Tz>().unwrap_or(chrono_tz::UTC) } else { chrono_tz::UTC };
-                 let tz2 = if args.len() >= 6 {
+                let tz1 = if let Some(s) = tz1_str {
+                    s.parse::<Tz>().unwrap_or(chrono_tz::UTC)
+                } else {
+                    chrono_tz::UTC
+                };
+                let tz2 = if args.len() >= 6 {
                     let tz2_str = args[5].as_str();
-                    if let Some(s) = tz2_str { s.parse::<Tz>().unwrap_or(chrono_tz::UTC) } else { tz1 }
-                 } else { tz1 };
-                 (tz1, tz2)
+                    if let Some(s) = tz2_str {
+                        s.parse::<Tz>().unwrap_or(chrono_tz::UTC)
+                    } else {
+                        tz1
+                    }
+                } else {
+                    tz1
+                };
+                (tz1, tz2)
             } else {
                 (chrono_tz::UTC, chrono_tz::UTC)
             };
@@ -442,15 +546,16 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 "y" | "year" | "years" => {
                     let year_diff = dt2.year() - dt1.year();
                     if as_float {
-                         year_diff as f64 + (dt2.month() as f64 - dt1.month() as f64) / 12.0
+                        year_diff as f64 + (dt2.month() as f64 - dt1.month() as f64) / 12.0
                     } else {
                         year_diff as f64
                     }
                 }
                 "m" | "month" | "months" => {
-                    let months = (dt2.year() * 12 + dt2.month() as i32) - (dt1.year() * 12 + dt1.month() as i32);
-                     if as_float {
-                         months as f64 + (dt2.day() as f64 - dt1.day() as f64) / 30.0
+                    let months = (dt2.year() * 12 + dt2.month() as i32)
+                        - (dt1.year() * 12 + dt1.month() as i32);
+                    if as_float {
+                        months as f64 + (dt2.day() as f64 - dt1.day() as f64) / 30.0
                     } else {
                         months as f64
                     }
@@ -458,33 +563,53 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 "d" | "day" | "days" => {
                     let diff_ms = dt2.timestamp_millis() - dt1.timestamp_millis();
                     let days = diff_ms as f64 / (24.0 * 3600.0 * 1000.0);
-                    if as_float { days } else { days.trunc() }
+                    if as_float {
+                        days
+                    } else {
+                        days.trunc()
+                    }
                 }
-                 "h" | "hour" | "hours" => {
+                "h" | "hour" | "hours" => {
                     let diff_ms = dt2.timestamp_millis() - dt1.timestamp_millis();
                     let vals = diff_ms as f64 / (3600.0 * 1000.0);
-                    if as_float { vals } else { vals.trunc() }
+                    if as_float {
+                        vals
+                    } else {
+                        vals.trunc()
+                    }
                 }
-                 "i" | "minute" | "minutes" => {
+                "i" | "minute" | "minutes" => {
                     let diff_ms = dt2.timestamp_millis() - dt1.timestamp_millis();
                     let vals = diff_ms as f64 / (60.0 * 1000.0);
-                    if as_float { vals } else { vals.trunc() }
+                    if as_float {
+                        vals
+                    } else {
+                        vals.trunc()
+                    }
                 }
-                 "s" | "second" | "seconds" => {
+                "s" | "second" | "seconds" => {
                     let diff_ms = dt2.timestamp_millis() - dt1.timestamp_millis();
                     let vals = diff_ms as f64 / 1000.0;
-                    if as_float { vals } else { vals.trunc() }
+                    if as_float {
+                        vals
+                    } else {
+                        vals.trunc()
+                    }
                 }
-                 "f" | "millisecond" | "milliseconds" => {
+                "f" | "millisecond" | "milliseconds" => {
                     (dt2.timestamp_millis() - dt1.timestamp_millis()) as f64
                 }
-                _ => return Err(DbError::ExecutionError(format!("DATE_DIFF: unknown unit '{}'", unit))),
+                _ => {
+                    return Err(DbError::ExecutionError(format!(
+                        "DATE_DIFF: unknown unit '{}'",
+                        unit
+                    )))
+                }
             };
-            
+
             Ok(Some(Value::Number(number_from_f64(diff))))
         }
         // ... I'll add more dates in update steps ...
         _ => Ok(None),
-
     }
 }

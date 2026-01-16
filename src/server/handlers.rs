@@ -89,7 +89,10 @@ fn log_slow_query(
             Err(_) => {
                 // Collection doesn't exist, try to create it
                 if let Ok(db) = storage.get_database(&db_name) {
-                    if db.create_collection("_slow_queries".to_string(), None).is_err() {
+                    if db
+                        .create_collection("_slow_queries".to_string(), None)
+                        .is_err()
+                    {
                         // Might fail if another request created it concurrently, try again
                         match storage.get_collection(&slow_query_coll) {
                             Ok(coll) => coll,
@@ -103,7 +106,10 @@ fn log_slow_query(
                         match storage.get_collection(&slow_query_coll) {
                             Ok(coll) => coll,
                             Err(e) => {
-                                tracing::warn!("Failed to get _slow_queries collection after creation: {}", e);
+                                tracing::warn!(
+                                    "Failed to get _slow_queries collection after creation: {}",
+                                    e
+                                );
                                 return;
                             }
                         }
@@ -4542,31 +4548,33 @@ pub async fn execute_query(
 
     // Non-transactional execution (existing logic)
     let query = parse(&req.query)?;
-    
+
     // Handle CREATE STREAM clause
     if let Some(ref _create_stream) = query.create_stream_clause {
         if let Some(manager) = &state.stream_manager {
             match manager.create_stream(&db_name, query) {
                 Ok(_name) => {
-                        return Ok(ApiResponse::new(
-                            ExecuteQueryResponse {
-                                result: Vec::new(),
-                                count: 0,
-                                has_more: false,
-                                id: None,
-                                cached: false,
-                                execution_time_ms: 0.0,
-                                documents_inserted: 0,
-                                documents_updated: 0,
-                                documents_removed: 0,
-                            },
-                            &headers,
-                        ));
+                    return Ok(ApiResponse::new(
+                        ExecuteQueryResponse {
+                            result: Vec::new(),
+                            count: 0,
+                            has_more: false,
+                            id: None,
+                            cached: false,
+                            execution_time_ms: 0.0,
+                            documents_inserted: 0,
+                            documents_updated: 0,
+                            documents_removed: 0,
+                        },
+                        &headers,
+                    ));
                 }
                 Err(e) => return Err(e),
             }
         } else {
-                return Err(DbError::OperationNotSupported("Stream processing not enabled".to_string()));
+            return Err(DbError::OperationNotSupported(
+                "Stream processing not enabled".to_string(),
+            ));
         }
     }
 
@@ -5367,25 +5375,33 @@ pub async fn hybrid_search(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
-    let fusion_method = if req.fusion.is_empty() { "weighted" } else { &req.fusion };
+    let fusion_method = if req.fusion.is_empty() {
+        "weighted"
+    } else {
+        &req.fusion
+    };
 
     // Step 1: Vector search (get more candidates for better fusion)
-    let vector_results = collection.vector_search(
-        &req.vector_index,
-        &req.vector,
-        req.limit * 3,
-        None,
-    )?;
+    let vector_results =
+        collection.vector_search(&req.vector_index, &req.vector, req.limit * 3, None)?;
 
     // Step 2: Fulltext search
-    let fulltext_results = collection.fulltext_search(&req.fulltext_field, &req.text_query, 2)
+    let fulltext_results = collection
+        .fulltext_search(&req.fulltext_field, &req.text_query, 2)
         .unwrap_or_default();
 
     // Step 3: Normalize vector scores to 0-1 range
-    let mut vector_scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
+    let mut vector_scores: std::collections::HashMap<String, f32> =
+        std::collections::HashMap::new();
     if !vector_results.is_empty() {
-        let max_vec = vector_results.iter().map(|r| r.score).fold(f32::NEG_INFINITY, f32::max);
-        let min_vec = vector_results.iter().map(|r| r.score).fold(f32::INFINITY, f32::min);
+        let max_vec = vector_results
+            .iter()
+            .map(|r| r.score)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_vec = vector_results
+            .iter()
+            .map(|r| r.score)
+            .fold(f32::INFINITY, f32::min);
         let range = max_vec - min_vec;
         for result in &vector_results {
             let normalized = if range > 0.0 {
@@ -5400,8 +5416,14 @@ pub async fn hybrid_search(
     // Step 4: Normalize text scores to 0-1 range
     let mut text_scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
     if !fulltext_results.is_empty() {
-        let max_text = fulltext_results.iter().map(|r| r.score).fold(f64::NEG_INFINITY, f64::max);
-        let min_text = fulltext_results.iter().map(|r| r.score).fold(f64::INFINITY, f64::min);
+        let max_text = fulltext_results
+            .iter()
+            .map(|r| r.score)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let min_text = fulltext_results
+            .iter()
+            .map(|r| r.score)
+            .fold(f64::INFINITY, f64::min);
         let range = max_text - min_text;
         for result in &fulltext_results {
             let normalized = if range > 0.0 {
@@ -5414,27 +5436,38 @@ pub async fn hybrid_search(
     }
 
     // Step 5: Combine scores based on fusion method
-    let mut combined_results: Vec<(String, f32, Option<f32>, Option<f32>, Vec<String>)> = Vec::new();
+    let mut combined_results: Vec<(String, f32, Option<f32>, Option<f32>, Vec<String>)> =
+        Vec::new();
 
     if fusion_method == "rrf" {
         // Reciprocal Rank Fusion
         let k: f32 = 60.0;
-        let mut rrf_scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
-        let mut doc_sources: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-        let mut doc_vector_scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
-        let mut doc_text_scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
+        let mut rrf_scores: std::collections::HashMap<String, f32> =
+            std::collections::HashMap::new();
+        let mut doc_sources: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        let mut doc_vector_scores: std::collections::HashMap<String, f32> =
+            std::collections::HashMap::new();
+        let mut doc_text_scores: std::collections::HashMap<String, f32> =
+            std::collections::HashMap::new();
 
         for (rank, result) in vector_results.iter().enumerate() {
             let rrf_score = 1.0 / (k + rank as f32 + 1.0);
             *rrf_scores.entry(result.doc_key.clone()).or_insert(0.0) += rrf_score;
-            doc_sources.entry(result.doc_key.clone()).or_default().push("vector".to_string());
+            doc_sources
+                .entry(result.doc_key.clone())
+                .or_default()
+                .push("vector".to_string());
             doc_vector_scores.insert(result.doc_key.clone(), result.score);
         }
 
         for (rank, result) in fulltext_results.iter().enumerate() {
             let rrf_score = 1.0 / (k + rank as f32 + 1.0);
             *rrf_scores.entry(result.doc_key.clone()).or_insert(0.0) += rrf_score;
-            doc_sources.entry(result.doc_key.clone()).or_default().push("fulltext".to_string());
+            doc_sources
+                .entry(result.doc_key.clone())
+                .or_default()
+                .push("fulltext".to_string());
             doc_text_scores.insert(result.doc_key.clone(), result.score as f32);
         }
 
@@ -5467,14 +5500,22 @@ pub async fn hybrid_search(
             }
 
             // Get original scores for output
-            let orig_vec_score = vector_results.iter()
+            let orig_vec_score = vector_results
+                .iter()
                 .find(|r| r.doc_key == doc_key)
                 .map(|r| r.score);
-            let orig_txt_score = fulltext_results.iter()
+            let orig_txt_score = fulltext_results
+                .iter()
                 .find(|r| r.doc_key == doc_key)
                 .map(|r| r.score as f32);
 
-            combined_results.push((doc_key, combined_score, orig_vec_score, orig_txt_score, sources));
+            combined_results.push((
+                doc_key,
+                combined_score,
+                orig_vec_score,
+                orig_txt_score,
+                sources,
+            ));
         }
     }
 

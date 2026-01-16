@@ -1,5 +1,5 @@
-use serde_json::Value;
 use crate::error::DbResult;
+use serde_json::Value;
 
 pub mod date;
 pub mod id;

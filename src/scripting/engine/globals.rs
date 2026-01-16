@@ -1,18 +1,18 @@
-use std::sync::atomic::Ordering;
-use mlua::{Value as LuaValue, Lua, FromLua};
+use mlua::{FromLua, Lua, Value as LuaValue};
 use serde_json::Value as JsonValue;
+use std::sync::atomic::Ordering;
 
 use crate::error::DbError;
-use crate::QueryExecutor;
-use crate::sdbql::parser::parse;
-use crate::scripting::types::ScriptContext;
 use crate::scripting::conversion::{json_to_lua, lua_to_json_value, matches_filter};
-use crate::scripting::{auth, ai_bindings, lua_globals};
 use crate::scripting::dev_tools::*;
 use crate::scripting::error_handling::*;
 use crate::scripting::file_handling::*;
 use crate::scripting::http_helpers::*;
+use crate::scripting::types::ScriptContext;
 use crate::scripting::validation::*;
+use crate::scripting::{ai_bindings, auth, lua_globals};
+use crate::sdbql::parser::parse;
+use crate::QueryExecutor;
 
 use super::ScriptEngine;
 
@@ -108,9 +108,7 @@ pub fn setup_lua_globals(
             )?;
             Ok(table)
         })
-        .map_err(|e| {
-            DbError::InternalError(format!("Failed to create stats function: {}", e))
-        })?;
+        .map_err(|e| DbError::InternalError(format!("Failed to create stats function: {}", e)))?;
     solidb
         .set("stats", stats_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set stats: {}", e)))?;
@@ -159,9 +157,7 @@ pub fn setup_lua_globals(
     })?;
     solidb
         .set("validate_detailed", validate_detailed_fn)
-        .map_err(|e| {
-            DbError::InternalError(format!("Failed to set validate_detailed: {}", e))
-        })?;
+        .map_err(|e| DbError::InternalError(format!("Failed to set validate_detailed: {}", e)))?;
 
     let sanitize_fn = create_sanitize_function(lua).map_err(|e| {
         DbError::InternalError(format!("Failed to create sanitize function: {}", e))
@@ -170,9 +166,8 @@ pub fn setup_lua_globals(
         .set("sanitize", sanitize_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set sanitize: {}", e)))?;
 
-    let typeof_fn = create_typeof_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create typeof function: {}", e))
-    })?;
+    let typeof_fn = create_typeof_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create typeof function: {}", e)))?;
     solidb
         .set("typeof", typeof_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set typeof: {}", e)))?;
@@ -192,9 +187,8 @@ pub fn setup_lua_globals(
         .set("set_cookie", set_cookie_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set set_cookie: {}", e)))?;
 
-    let cache_fn = create_cache_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create cache function: {}", e))
-    })?;
+    let cache_fn = create_cache_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create cache function: {}", e)))?;
     solidb
         .set("cache", cache_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set cache: {}", e)))?;
@@ -207,9 +201,8 @@ pub fn setup_lua_globals(
         .map_err(|e| DbError::InternalError(format!("Failed to set cache_get: {}", e)))?;
 
     // Error handling functions
-    let error_fn = create_error_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create error function: {}", e))
-    })?;
+    let error_fn = create_error_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create error function: {}", e)))?;
     solidb
         .set("error", error_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set error: {}", e)))?;
@@ -235,9 +228,7 @@ pub fn setup_lua_globals(
     })?;
     solidb
         .set("validate_condition", validate_condition_fn)
-        .map_err(|e| {
-            DbError::InternalError(format!("Failed to set validate_condition: {}", e))
-        })?;
+        .map_err(|e| DbError::InternalError(format!("Failed to set validate_condition: {}", e)))?;
 
     let check_permissions_fn = create_check_permissions_function(lua).map_err(|e| {
         DbError::InternalError(format!(
@@ -247,9 +238,7 @@ pub fn setup_lua_globals(
     })?;
     solidb
         .set("check_permissions", check_permissions_fn)
-        .map_err(|e| {
-            DbError::InternalError(format!("Failed to set check_permissions: {}", e))
-        })?;
+        .map_err(|e| DbError::InternalError(format!("Failed to set check_permissions: {}", e)))?;
 
     let validate_input_fn = create_validate_input_function(lua).map_err(|e| {
         DbError::InternalError(format!("Failed to create validate_input function: {}", e))
@@ -265,16 +254,14 @@ pub fn setup_lua_globals(
         .set("rate_limit", rate_limit_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set rate_limit: {}", e)))?;
 
-    let timeout_fn = create_timeout_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create timeout function: {}", e))
-    })?;
+    let timeout_fn = create_timeout_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create timeout function: {}", e)))?;
     solidb
         .set("timeout", timeout_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set timeout: {}", e)))?;
 
-    let retry_fn = create_retry_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create retry function: {}", e))
-    })?;
+    let retry_fn = create_retry_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create retry function: {}", e)))?;
     solidb
         .set("retry", retry_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set retry: {}", e)))?;
@@ -295,25 +282,23 @@ pub fn setup_lua_globals(
 
     // File & Media Handling (using blob storage)
     let upload_fn = create_upload_function(lua, engine.storage.clone(), db_name.to_string())
-        .map_err(|e| {
-            DbError::InternalError(format!("Failed to create upload function: {}", e))
-        })?;
+        .map_err(|e| DbError::InternalError(format!("Failed to create upload function: {}", e)))?;
     solidb
         .set("upload", upload_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set upload: {}", e)))?;
 
-    let file_info_fn =
-        create_file_info_function(lua, engine.storage.clone(), db_name.to_string()).map_err(
-            |e| DbError::InternalError(format!("Failed to create file_info function: {}", e)),
-        )?;
+    let file_info_fn = create_file_info_function(lua, engine.storage.clone(), db_name.to_string())
+        .map_err(|e| {
+            DbError::InternalError(format!("Failed to create file_info function: {}", e))
+        })?;
     solidb
         .set("file_info", file_info_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set file_info: {}", e)))?;
 
-    let file_read_fn =
-        create_file_read_function(lua, engine.storage.clone(), db_name.to_string()).map_err(
-            |e| DbError::InternalError(format!("Failed to create file_read function: {}", e)),
-        )?;
+    let file_read_fn = create_file_read_function(lua, engine.storage.clone(), db_name.to_string())
+        .map_err(|e| {
+            DbError::InternalError(format!("Failed to create file_read function: {}", e))
+        })?;
     solidb
         .set("file_read", file_read_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set file_read: {}", e)))?;
@@ -326,44 +311,37 @@ pub fn setup_lua_globals(
         .set("file_delete", file_delete_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set file_delete: {}", e)))?;
 
-    let file_list_fn =
-        create_file_list_function(lua, engine.storage.clone(), db_name.to_string()).map_err(
-            |e| DbError::InternalError(format!("Failed to create file_list function: {}", e)),
-        )?;
+    let file_list_fn = create_file_list_function(lua, engine.storage.clone(), db_name.to_string())
+        .map_err(|e| {
+            DbError::InternalError(format!("Failed to create file_list function: {}", e))
+        })?;
     solidb
         .set("file_list", file_list_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set file_list: {}", e)))?;
 
-    let image_process_fn = create_image_process_function(
-        lua,
-        engine.storage.clone(),
-        db_name.to_string(),
-    )
-    .map_err(|e| {
-        DbError::InternalError(format!("Failed to create image_process function: {}", e))
-    })?;
+    let image_process_fn =
+        create_image_process_function(lua, engine.storage.clone(), db_name.to_string()).map_err(
+            |e| DbError::InternalError(format!("Failed to create image_process function: {}", e)),
+        )?;
     solidb
         .set("image_process", image_process_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set image_process: {}", e)))?;
 
     // Development Tools
-    let debug_fn = create_debug_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create debug function: {}", e))
-    })?;
+    let debug_fn = create_debug_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create debug function: {}", e)))?;
     solidb
         .set("debug", debug_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set debug: {}", e)))?;
 
-    let inspect_fn = create_inspect_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create inspect function: {}", e))
-    })?;
+    let inspect_fn = create_inspect_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create inspect function: {}", e)))?;
     solidb
         .set("inspect", inspect_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set inspect: {}", e)))?;
 
-    let profile_fn = create_profile_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create profile function: {}", e))
-    })?;
+    let profile_fn = create_profile_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create profile function: {}", e)))?;
     solidb
         .set("profile", profile_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set profile: {}", e)))?;
@@ -375,9 +353,8 @@ pub fn setup_lua_globals(
         .set("benchmark", benchmark_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set benchmark: {}", e)))?;
 
-    let mock_fn = create_mock_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create mock function: {}", e))
-    })?;
+    let mock_fn = create_mock_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create mock function: {}", e)))?;
     solidb
         .set("mock", mock_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set mock: {}", e)))?;
@@ -396,9 +373,8 @@ pub fn setup_lua_globals(
         .set("assert_eq", assert_eq_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set assert_eq: {}", e)))?;
 
-    let dump_fn = create_dump_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create dump function: {}", e))
-    })?;
+    let dump_fn = create_dump_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create dump function: {}", e)))?;
     solidb
         .set("dump", dump_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set dump: {}", e)))?;
@@ -431,38 +407,55 @@ pub fn setup_lua_globals(
 
     // Create 'streams' module
     if let Some(stream_manager) = engine.stream_manager.clone() {
-        let streams_table = lua.create_table().map_err(|e| DbError::InternalError(format!("Failed to create streams table: {}", e)))?;
+        let streams_table = lua.create_table().map_err(|e| {
+            DbError::InternalError(format!("Failed to create streams table: {}", e))
+        })?;
 
         // solidb.streams.list() -> array of {name: string, query: string, created_at: number}
         let manager_list = stream_manager.clone();
-        let list_fn = lua.create_function(move |lua, (): ()| {
-            let streams = manager_list.list_streams();
-            let mut result = Vec::new();
-            for stream in streams {
-                let mut s = serde_json::Map::new();
-                s.insert("name".to_string(), serde_json::Value::String(stream.name));
-                // We might not want to expose full complex query object, maybe just source collection?
-                // Or string representation if we had it.
-                // For now, let's just expose created_at
-                s.insert("created_at".to_string(), serde_json::Value::Number(serde_json::Number::from(stream.created_at)));
-                result.push(serde_json::Value::Object(s));
-            }
-            
-            // Use the json helper to convert to Lua table
-            json_to_lua(lua, &serde_json::Value::Array(result))
-        }).map_err(|e| DbError::InternalError(format!("Failed to create streams.list: {}", e)))?;
-        
-        streams_table.set("list", list_fn).map_err(|e| DbError::InternalError(format!("Failed to set streams.list: {}", e)))?;
+        let list_fn = lua
+            .create_function(move |lua, (): ()| {
+                let streams = manager_list.list_streams();
+                let mut result = Vec::new();
+                for stream in streams {
+                    let mut s = serde_json::Map::new();
+                    s.insert("name".to_string(), serde_json::Value::String(stream.name));
+                    // We might not want to expose full complex query object, maybe just source collection?
+                    // Or string representation if we had it.
+                    // For now, let's just expose created_at
+                    s.insert(
+                        "created_at".to_string(),
+                        serde_json::Value::Number(serde_json::Number::from(stream.created_at)),
+                    );
+                    result.push(serde_json::Value::Object(s));
+                }
+
+                // Use the json helper to convert to Lua table
+                json_to_lua(lua, &serde_json::Value::Array(result))
+            })
+            .map_err(|e| DbError::InternalError(format!("Failed to create streams.list: {}", e)))?;
+
+        streams_table
+            .set("list", list_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set streams.list: {}", e)))?;
 
         // solidb.streams.stop(name) -> void
         let manager_stop = stream_manager.clone();
-        let stop_fn = lua.create_function(move |_, name: String| {
-            manager_stop.stop_stream(&name).map_err(|e| mlua::Error::RuntimeError(e.to_string()))
-        }).map_err(|e| DbError::InternalError(format!("Failed to create streams.stop: {}", e)))?;
-        
-        streams_table.set("stop", stop_fn).map_err(|e| DbError::InternalError(format!("Failed to set streams.stop: {}", e)))?;
-        
-        solidb.set("streams", streams_table).map_err(|e| DbError::InternalError(format!("Failed to set solidb.streams: {}", e)))?;
+        let stop_fn = lua
+            .create_function(move |_, name: String| {
+                manager_stop
+                    .stop_stream(&name)
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))
+            })
+            .map_err(|e| DbError::InternalError(format!("Failed to create streams.stop: {}", e)))?;
+
+        streams_table
+            .set("stop", stop_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set streams.stop: {}", e)))?;
+
+        solidb
+            .set("streams", streams_table)
+            .map_err(|e| DbError::InternalError(format!("Failed to set solidb.streams: {}", e)))?;
     }
 
     solidb
@@ -536,31 +529,28 @@ pub fn setup_lua_globals(
             let storage_insert = storage.clone();
             let db_insert = db_name.clone();
             let coll_insert = coll_name.clone();
-            let insert_fn =
-                lua.create_function(move |lua, (_, doc): (LuaValue, LuaValue)| {
-                    let json_doc = lua_to_json_value(lua, doc)?;
+            let insert_fn = lua.create_function(move |lua, (_, doc): (LuaValue, LuaValue)| {
+                let json_doc = lua_to_json_value(lua, doc)?;
 
-                    let db = storage_insert
-                        .get_database(&db_insert)
-                        .map_err(mlua::Error::external)?;
-                    let collection = db
-                        .get_collection(&coll_insert)
-                        .map_err(mlua::Error::external)?;
+                let db = storage_insert
+                    .get_database(&db_insert)
+                    .map_err(mlua::Error::external)?;
+                let collection = db
+                    .get_collection(&coll_insert)
+                    .map_err(mlua::Error::external)?;
 
-                    let inserted = collection
-                        .insert(json_doc)
-                        .map_err(mlua::Error::external)?;
+                let inserted = collection.insert(json_doc).map_err(mlua::Error::external)?;
 
-                    json_to_lua(lua, &inserted.to_value())
-                })?;
+                json_to_lua(lua, &inserted.to_value())
+            })?;
             coll_handle.set("insert", insert_fn)?;
 
             // col:update(key, doc)
             let storage_update = storage.clone();
             let db_update = db_name.clone();
             let coll_update = coll_name.clone();
-            let update_fn = lua.create_function(
-                move |lua, (_, key, doc): (LuaValue, String, LuaValue)| {
+            let update_fn =
+                lua.create_function(move |lua, (_, key, doc): (LuaValue, String, LuaValue)| {
                     let json_doc = lua_to_json_value(lua, doc)?;
 
                     let db = storage_update
@@ -575,8 +565,7 @@ pub fn setup_lua_globals(
                         .map_err(mlua::Error::external)?;
 
                     json_to_lua(lua, &updated.to_value())
-                },
-            )?;
+                })?;
             coll_handle.set("update", update_fn)?;
 
             // col:delete(key)
@@ -591,9 +580,7 @@ pub fn setup_lua_globals(
                     .get_collection(&coll_delete)
                     .map_err(mlua::Error::external)?;
 
-                collection
-                    .delete(&key)
-                    .map_err(mlua::Error::external)?;
+                collection.delete(&key).map_err(mlua::Error::external)?;
 
                 Ok(true)
             })?;
@@ -632,36 +619,35 @@ pub fn setup_lua_globals(
             let storage_find = storage.clone();
             let db_find = db_name.clone();
             let coll_find = coll_name.clone();
-            let find_fn =
-                lua.create_function(move |lua, (_, filter): (LuaValue, LuaValue)| {
-                    let filter_json = lua_to_json_value(lua, filter)?;
+            let find_fn = lua.create_function(move |lua, (_, filter): (LuaValue, LuaValue)| {
+                let filter_json = lua_to_json_value(lua, filter)?;
 
-                    let db = storage_find
-                        .get_database(&db_find)
-                        .map_err(mlua::Error::external)?;
-                    let collection = db
-                        .get_collection(&coll_find)
-                        .map_err(mlua::Error::external)?;
+                let db = storage_find
+                    .get_database(&db_find)
+                    .map_err(mlua::Error::external)?;
+                let collection = db
+                    .get_collection(&coll_find)
+                    .map_err(mlua::Error::external)?;
 
-                    // Scan all documents and filter
-                    let all_docs = collection.scan(None);
-                    let mut results = Vec::new();
+                // Scan all documents and filter
+                let all_docs = collection.scan(None);
+                let mut results = Vec::new();
 
-                    for doc in all_docs {
-                        let doc_value = doc.to_value();
-                        if matches_filter(&doc_value, &filter_json) {
-                            results.push(doc_value);
-                        }
+                for doc in all_docs {
+                    let doc_value = doc.to_value();
+                    if matches_filter(&doc_value, &filter_json) {
+                        results.push(doc_value);
                     }
+                }
 
-                    // Convert to Lua table
-                    let result_table = lua.create_table()?;
-                    for (i, doc) in results.iter().enumerate() {
-                        result_table.set(i + 1, json_to_lua(lua, doc)?)?;
-                    }
+                // Convert to Lua table
+                let result_table = lua.create_table()?;
+                for (i, doc) in results.iter().enumerate() {
+                    result_table.set(i + 1, json_to_lua(lua, doc)?)?;
+                }
 
-                    Ok(LuaValue::Table(result_table))
-                })?;
+                Ok(LuaValue::Table(result_table))
+            })?;
             coll_handle.set("find", find_fn)?;
 
             // col:find_one(filter) - find first document matching filter
@@ -719,9 +705,7 @@ pub fn setup_lua_globals(
 
                     let mut inserted = Vec::new();
                     for doc in docs_array {
-                        let result = collection
-                            .insert(doc)
-                            .map_err(mlua::Error::external)?;
+                        let result = collection.insert(doc).map_err(mlua::Error::external)?;
                         inserted.push(result.to_value());
                     }
 
@@ -817,9 +801,9 @@ pub fn setup_lua_globals(
             DbError::InternalError(format!("Failed to create collection function: {}", e))
         })?;
 
-    db_handle.set("collection", collection_fn).map_err(|e| {
-        DbError::InternalError(format!("Failed to set collection function: {}", e))
-    })?;
+    db_handle
+        .set("collection", collection_fn)
+        .map_err(|e| DbError::InternalError(format!("Failed to set collection function: {}", e)))?;
 
     // db:query(query, bind_vars) -> results
     let storage_query = engine.storage.clone();
@@ -868,9 +852,7 @@ pub fn setup_lua_globals(
                 Ok(LuaValue::Table(result_table))
             },
         )
-        .map_err(|e| {
-            DbError::InternalError(format!("Failed to create query function: {}", e))
-        })?;
+        .map_err(|e| DbError::InternalError(format!("Failed to create query function: {}", e)))?;
 
     db_handle
         .set("query", query_fn.clone())
@@ -1070,23 +1052,22 @@ pub fn setup_lua_globals(
     let enqueue_fn = lua
         .create_function(move |lua, args: mlua::MultiValue| {
             // Detect if called with colon (db:enqueue) or dot (db.enqueue)
-            let (queue, script_path, params, options) = if args.len() >= 4
-                && matches!(args[0], LuaValue::Table(_))
-            {
-                // Colon call: (self, queue, script, params, options)
-                let q = String::from_lua(args.get(1).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                let s = String::from_lua(args.get(2).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                let p = args.get(3).cloned().unwrap_or(LuaValue::Nil);
-                let o = args.get(4).cloned();
-                (q, s, p, o)
-            } else {
-                // Dot call: (queue, script, params, options)
-                let q = String::from_lua(args.get(0).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                let s = String::from_lua(args.get(1).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                let p = args.get(2).cloned().unwrap_or(LuaValue::Nil);
-                let o = args.get(3).cloned();
-                (q, s, p, o)
-            };
+            let (queue, script_path, params, options) =
+                if args.len() >= 4 && matches!(args[0], LuaValue::Table(_)) {
+                    // Colon call: (self, queue, script, params, options)
+                    let q = String::from_lua(args.get(1).cloned().unwrap_or(LuaValue::Nil), lua)?;
+                    let s = String::from_lua(args.get(2).cloned().unwrap_or(LuaValue::Nil), lua)?;
+                    let p = args.get(3).cloned().unwrap_or(LuaValue::Nil);
+                    let o = args.get(4).cloned();
+                    (q, s, p, o)
+                } else {
+                    // Dot call: (queue, script, params, options)
+                    let q = String::from_lua(args.get(0).cloned().unwrap_or(LuaValue::Nil), lua)?;
+                    let s = String::from_lua(args.get(1).cloned().unwrap_or(LuaValue::Nil), lua)?;
+                    let p = args.get(2).cloned().unwrap_or(LuaValue::Nil);
+                    let o = args.get(3).cloned();
+                    (q, s, p, o)
+                };
 
             let json_params = lua_to_json_value(lua, params)?;
 
@@ -1134,14 +1115,10 @@ pub fn setup_lua_globals(
                     .map_err(mlua::Error::external)?;
             }
 
-            let jobs_coll = db
-                .get_collection("_jobs")
-                .map_err(mlua::Error::external)?;
+            let jobs_coll = db.get_collection("_jobs").map_err(mlua::Error::external)?;
 
             let doc_val = serde_json::to_value(&job).unwrap();
-            jobs_coll
-                .insert(doc_val)
-                .map_err(mlua::Error::external)?;
+            jobs_coll.insert(doc_val).map_err(mlua::Error::external)?;
 
             // Notify worker
             if let Some(ref notifier) = notifier_enqueue {
@@ -1150,22 +1127,20 @@ pub fn setup_lua_globals(
 
             Ok(job_id)
         })
-        .map_err(|e| {
-            DbError::InternalError(format!("Failed to create enqueue function: {}", e))
-        })?;
+        .map_err(|e| DbError::InternalError(format!("Failed to create enqueue function: {}", e)))?;
 
-    db_handle.set("enqueue", enqueue_fn).map_err(|e| {
-        DbError::InternalError(format!("Failed to set enqueue function: {}", e))
-    })?;
+    db_handle
+        .set("enqueue", enqueue_fn)
+        .map_err(|e| DbError::InternalError(format!("Failed to set enqueue function: {}", e)))?;
 
     globals
         .set("db", db_handle)
         .map_err(|e| DbError::InternalError(format!("Failed to set db global: {}", e)))?;
 
     // Create 'request' table with context info
-    let request = lua.create_table().map_err(|e| {
-        DbError::InternalError(format!("Failed to create request table: {}", e))
-    })?;
+    let request = lua
+        .create_table()
+        .map_err(|e| DbError::InternalError(format!("Failed to create request table: {}", e)))?;
 
     request
         .set("method", context.method.clone())
@@ -1204,9 +1179,9 @@ pub fn setup_lua_globals(
         .map_err(|e| DbError::InternalError(format!("Failed to set params: {}", e)))?;
 
     // Headers
-    let headers = lua.create_table().map_err(|e| {
-        DbError::InternalError(format!("Failed to create headers table: {}", e))
-    })?;
+    let headers = lua
+        .create_table()
+        .map_err(|e| DbError::InternalError(format!("Failed to create headers table: {}", e)))?;
     for (k, v) in &context.headers {
         headers
             .set(k.clone(), v.clone())
@@ -1238,48 +1213,42 @@ pub fn setup_lua_globals(
         .map_err(|e| DbError::InternalError(format!("Failed to set context global: {}", e)))?;
 
     // Create 'response' helper table
-    let response = lua.create_table().map_err(|e| {
-        DbError::InternalError(format!("Failed to create response table: {}", e))
-    })?;
+    let response = lua
+        .create_table()
+        .map_err(|e| DbError::InternalError(format!("Failed to create response table: {}", e)))?;
 
     // response.json(data) - helper to return JSON
     let json_fn = lua
         .create_function(|_, data: LuaValue| Ok(data))
-        .map_err(|e| {
-            DbError::InternalError(format!("Failed to create json function: {}", e))
-        })?;
+        .map_err(|e| DbError::InternalError(format!("Failed to create json function: {}", e)))?;
     response
         .set("json", json_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set json: {}", e)))?;
 
     // response.html(content) - HTML response
-    let html_fn = create_response_html_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create html function: {}", e))
-    })?;
+    let html_fn = create_response_html_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create html function: {}", e)))?;
     response
         .set("html", html_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set html: {}", e)))?;
 
     // response.file(path) - file download
-    let file_fn = create_response_file_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create file function: {}", e))
-    })?;
+    let file_fn = create_response_file_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create file function: {}", e)))?;
     response
         .set("file", file_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set file: {}", e)))?;
 
     // response.stream(data) - streaming response
-    let stream_fn = create_response_stream_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create stream function: {}", e))
-    })?;
+    let stream_fn = create_response_stream_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create stream function: {}", e)))?;
     response
         .set("stream", stream_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set stream: {}", e)))?;
 
     // response.cors(options) - CORS headers
-    let cors_fn = create_response_cors_function(lua).map_err(|e| {
-        DbError::InternalError(format!("Failed to create cors function: {}", e))
-    })?;
+    let cors_fn = create_response_cors_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create cors function: {}", e)))?;
     response
         .set("cors", cors_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set cors: {}", e)))?;

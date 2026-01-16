@@ -1,7 +1,7 @@
 //! Standard library extensions for Lua (table, string)
 
-use mlua::Lua;
 use crate::error::DbError;
+use mlua::Lua;
 
 /// Setup enhanced table functions using pure Lua
 pub fn setup_table_extensions(lua: &Lua) -> Result<(), DbError> {

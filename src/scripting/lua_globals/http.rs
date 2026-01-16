@@ -1,7 +1,7 @@
 //! HTTP fetch function for Lua
 
-use mlua::{Lua, Value as LuaValue};
 use crate::error::DbError;
+use mlua::{Lua, Value as LuaValue};
 
 /// Create the fetch function for HTTP requests
 pub fn create_fetch_function(lua: &Lua) -> Result<mlua::Function, DbError> {

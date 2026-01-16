@@ -36,9 +36,8 @@ impl Database {
             collections: Arc::new(RwLock::new(HashMap::new())),
         }
     }
-    
-    // ... existing ...
 
+    // ... existing ...
 
     /// Create a new collection in this database
     pub fn create_collection(
@@ -226,40 +225,51 @@ impl Database {
         filter: Option<String>,
     ) -> DbResult<Vec<Value>> {
         let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
-        
+
         // TODO: Full implementation of aggregation parsing
         if filter.is_some() {
-             return Err(DbError::OperationNotSupported("Filtering in aggregation not yet supported via driver".to_string()));
+            return Err(DbError::OperationNotSupported(
+                "Filtering in aggregation not yet supported via driver".to_string(),
+            ));
         }
 
         if let Some(groups) = group_by {
-             // Only simple column grouping supported for now via this interface
-             let group_cols: Vec<GroupByColumn> = groups.into_iter().map(GroupByColumn::Simple).collect();
-             
-             // Extract first aggregation (limited support)
-             if let Some(first_agg) = aggregations.first() {
-                 if let Some(obj) = first_agg.as_object() {
-                     if let (Some(col), Some(op_str)) = (obj.get("column").and_then(|v| v.as_str()), obj.get("op").and_then(|v| v.as_str())) {
-                         if let Some(op) = AggregateOp::from_str(op_str) {
-                             return coll.group_by(&group_cols, col, op);
-                         }
-                     }
-                 }
-             }
-             return Err(DbError::OperationNotSupported("Complex aggregation not supported".to_string()));
+            // Only simple column grouping supported for now via this interface
+            let group_cols: Vec<GroupByColumn> =
+                groups.into_iter().map(GroupByColumn::Simple).collect();
+
+            // Extract first aggregation (limited support)
+            if let Some(first_agg) = aggregations.first() {
+                if let Some(obj) = first_agg.as_object() {
+                    if let (Some(col), Some(op_str)) = (
+                        obj.get("column").and_then(|v| v.as_str()),
+                        obj.get("op").and_then(|v| v.as_str()),
+                    ) {
+                        if let Some(op) = AggregateOp::from_str(op_str) {
+                            return coll.group_by(&group_cols, col, op);
+                        }
+                    }
+                }
+            }
+            return Err(DbError::OperationNotSupported(
+                "Complex aggregation not supported".to_string(),
+            ));
         }
 
         // No group by
         let mut result = serde_json::Map::new();
         for agg in aggregations {
-             if let Some(obj) = agg.as_object() {
-                 if let (Some(col), Some(op_str)) = (obj.get("column").and_then(|v| v.as_str()), obj.get("op").and_then(|v| v.as_str())) {
-                     if let Some(op) = AggregateOp::from_str(op_str) {
-                         let val = coll.aggregate(col, op)?;
-                         result.insert(format!("{}_{}", col, op_str.to_lowercase()), val);
-                     }
-                 }
-             }
+            if let Some(obj) = agg.as_object() {
+                if let (Some(col), Some(op_str)) = (
+                    obj.get("column").and_then(|v| v.as_str()),
+                    obj.get("op").and_then(|v| v.as_str()),
+                ) {
+                    if let Some(op) = AggregateOp::from_str(op_str) {
+                        let val = coll.aggregate(col, op)?;
+                        result.insert(format!("{}_{}", col, op_str.to_lowercase()), val);
+                    }
+                }
+            }
         }
         Ok(vec![Value::Object(result)])
     }
@@ -273,9 +283,9 @@ impl Database {
         limit: Option<usize>,
     ) -> DbResult<Vec<Value>> {
         let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
-        
+
         // Default to all columns if none specified? Or error?
-        // ColumnarCollection::read_columns expects columns. 
+        // ColumnarCollection::read_columns expects columns.
         // If columns is None, we could read all columns from metadata?
         let cols_to_read = if let Some(cols) = columns {
             cols
@@ -283,12 +293,14 @@ impl Database {
             let meta = coll.metadata()?;
             meta.columns.into_iter().map(|c| c.name).collect()
         };
-        
+
         let cols_refs: Vec<&str> = cols_to_read.iter().map(|s| s.as_str()).collect();
-        
+
         // Ignore filter string for now or error
         if filter.is_some() {
-             return Err(DbError::OperationNotSupported("Filtering in query not yet supported via driver".to_string()));
+            return Err(DbError::OperationNotSupported(
+                "Filtering in query not yet supported via driver".to_string(),
+            ));
         }
 
         let mut results = coll.read_columns(&cols_refs, None)?;

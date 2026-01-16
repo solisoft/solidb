@@ -28,9 +28,9 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     "POW requires 2 arguments".to_string(),
                 ));
             }
-            let base = args[0].as_f64().ok_or_else(|| {
-                DbError::ExecutionError("POW: base must be a number".to_string())
-            })?;
+            let base = args[0]
+                .as_f64()
+                .ok_or_else(|| DbError::ExecutionError("POW: base must be a number".to_string()))?;
             let exp = args[1].as_f64().ok_or_else(|| {
                 DbError::ExecutionError("POW: exponent must be a number".to_string())
             })?;
@@ -48,7 +48,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let random_val: f64 = rand::thread_rng().gen();
             Ok(Some(Value::Number(number_from_f64(random_val))))
         }
-        
+
         // ROUND, ABS, FLOOR, CEIL were in evaluate_function_with_values
         "ROUND" => {
             if args.is_empty() || args.len() > 2 {

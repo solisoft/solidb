@@ -46,7 +46,8 @@ fn setup_test_data() -> DbResult<(StorageEngine, String)> {
 
 #[test]
 fn test_parse_basic_join() -> DbResult<()> {
-    let query = "FOR user IN users JOIN orders ON user._key == orders.user_key RETURN {user, orders}";
+    let query =
+        "FOR user IN users JOIN orders ON user._key == orders.user_key RETURN {user, orders}";
     let parsed = parse(query)?;
 
     assert_eq!(parsed.join_clauses.len(), 1);
@@ -63,7 +64,10 @@ fn test_parse_left_join() -> DbResult<()> {
 
     assert_eq!(parsed.join_clauses.len(), 1);
     assert_eq!(parsed.join_clauses[0].variable, "profiles");
-    assert!(matches!(parsed.join_clauses[0].join_type, solidb::sdbql::ast::JoinType::Left));
+    assert!(matches!(
+        parsed.join_clauses[0].join_type,
+        solidb::sdbql::ast::JoinType::Left
+    ));
 
     Ok(())
 }
@@ -136,7 +140,10 @@ fn test_execute_left_join() -> DbResult<()> {
     assert_eq!(alice["profiles"].as_array().unwrap().len(), 1);
 
     // Check Charlie has empty array (no profile)
-    let charlie = results.iter().find(|r| r["user_name"] == "Charlie").unwrap();
+    let charlie = results
+        .iter()
+        .find(|r| r["user_name"] == "Charlie")
+        .unwrap();
     assert_eq!(charlie["profiles"].as_array().unwrap().len(), 0);
 
     drop(storage);
@@ -293,12 +300,16 @@ fn test_join_empty_collection() -> DbResult<()> {
 
 #[test]
 fn test_parse_right_join() -> DbResult<()> {
-    let query = "FOR user IN users RIGHT JOIN orders ON user._key == orders.user_key RETURN {user, orders}";
+    let query =
+        "FOR user IN users RIGHT JOIN orders ON user._key == orders.user_key RETURN {user, orders}";
     let parsed = parse(query)?;
 
     assert_eq!(parsed.join_clauses.len(), 1);
     assert_eq!(parsed.join_clauses[0].variable, "orders");
-    assert!(matches!(parsed.join_clauses[0].join_type, solidb::sdbql::ast::JoinType::Right));
+    assert!(matches!(
+        parsed.join_clauses[0].join_type,
+        solidb::sdbql::ast::JoinType::Right
+    ));
 
     Ok(())
 }
@@ -310,18 +321,25 @@ fn test_parse_full_outer_join() -> DbResult<()> {
 
     assert_eq!(parsed.join_clauses.len(), 1);
     assert_eq!(parsed.join_clauses[0].variable, "orders");
-    assert!(matches!(parsed.join_clauses[0].join_type, solidb::sdbql::ast::JoinType::FullOuter));
+    assert!(matches!(
+        parsed.join_clauses[0].join_type,
+        solidb::sdbql::ast::JoinType::FullOuter
+    ));
 
     Ok(())
 }
 
 #[test]
 fn test_parse_full_join_without_outer() -> DbResult<()> {
-    let query = "FOR user IN users FULL JOIN orders ON user._key == orders.user_key RETURN {user, orders}";
+    let query =
+        "FOR user IN users FULL JOIN orders ON user._key == orders.user_key RETURN {user, orders}";
     let parsed = parse(query)?;
 
     assert_eq!(parsed.join_clauses.len(), 1);
-    assert!(matches!(parsed.join_clauses[0].join_type, solidb::sdbql::ast::JoinType::FullOuter));
+    assert!(matches!(
+        parsed.join_clauses[0].join_type,
+        solidb::sdbql::ast::JoinType::FullOuter
+    ));
 
     Ok(())
 }
@@ -375,9 +393,9 @@ fn test_execute_full_outer_join() -> DbResult<()> {
     assert_eq!(results.len(), 3);
 
     // Charlie should have empty orders array
-    let charlie = results.iter().find(|r| {
-        r.get("user_name").and_then(|v| v.as_str()) == Some("Charlie")
-    });
+    let charlie = results
+        .iter()
+        .find(|r| r.get("user_name").and_then(|v| v.as_str()) == Some("Charlie"));
     assert!(charlie.is_some());
     let charlie_orders = charlie.unwrap().get("orders").unwrap().as_array().unwrap();
     assert_eq!(charlie_orders.len(), 0);
@@ -467,15 +485,17 @@ fn test_full_outer_join_comprehensive() -> DbResult<()> {
     assert_eq!(results.len(), 4);
 
     // Count users with orders
-    let with_orders = results.iter().filter(|r| {
-        r.get("has_orders").and_then(|v| v.as_bool()) == Some(true)
-    }).count();
+    let with_orders = results
+        .iter()
+        .filter(|r| r.get("has_orders").and_then(|v| v.as_bool()) == Some(true))
+        .count();
     assert_eq!(with_orders, 1); // Only Alice
 
     // Count rows without user_name (orphan orders)
-    let orphan_orders = results.iter().filter(|r| {
-        r.get("user_name").is_none() || r.get("user_name").unwrap().is_null()
-    }).count();
+    let orphan_orders = results
+        .iter()
+        .filter(|r| r.get("user_name").is_none() || r.get("user_name").unwrap().is_null())
+        .count();
     assert_eq!(orphan_orders, 1); // Orphan order o3
 
     drop(storage);

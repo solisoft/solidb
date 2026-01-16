@@ -210,11 +210,7 @@ impl TriggerManager {
                     job_ids.push(job_id);
                 }
                 Err(e) => {
-                    tracing::error!(
-                        "Failed to create job for trigger '{}': {}",
-                        trigger.name,
-                        e
-                    );
+                    tracing::error!("Failed to create job for trigger '{}': {}", trigger.name, e);
                 }
             }
         }

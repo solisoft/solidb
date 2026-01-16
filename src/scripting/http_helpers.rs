@@ -77,10 +77,9 @@ pub fn create_set_cookie_function(lua: &Lua) -> LuaResult<Function> {
                         if let Ok(datetime) = OffsetDateTime::from_unix_timestamp(timestamp) {
                             cookie.set_expires(datetime);
                         }
-                    } else if let Ok(datetime) = OffsetDateTime::parse(
-                        &expires,
-                        &format_description::well_known::Rfc3339,
-                    ) {
+                    } else if let Ok(datetime) =
+                        OffsetDateTime::parse(&expires, &format_description::well_known::Rfc3339)
+                    {
                         cookie.set_expires(datetime);
                     }
                 }

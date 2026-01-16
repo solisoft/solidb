@@ -79,9 +79,7 @@ pub fn create_template_function(lua: &Lua) -> LuaResult<Function> {
             for (key, value) in t.pairs::<String, LuaValue>().flatten() {
                 let placeholder = format!("{{{{{}}}}}", key); // {{key}}
                 let replacement = match value {
-                    LuaValue::String(s) => {
-                        s.to_str().map(|s| s.to_string()).unwrap_or_default()
-                    }
+                    LuaValue::String(s) => s.to_str().map(|s| s.to_string()).unwrap_or_default(),
                     LuaValue::Integer(i) => i.to_string(),
                     LuaValue::Number(n) => n.to_string(),
                     LuaValue::Boolean(b) => b.to_string(),

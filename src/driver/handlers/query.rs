@@ -46,7 +46,9 @@ pub fn handle_explain(
             };
 
             match executor.explain(&query) {
-                Ok(explanation) => Response::ok(serde_json::to_value(explanation).unwrap_or_default()),
+                Ok(explanation) => {
+                    Response::ok(serde_json::to_value(explanation).unwrap_or_default())
+                }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
             }
         }

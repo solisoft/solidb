@@ -59,7 +59,6 @@ pub fn create_try_function(lua: &Lua) -> LuaResult<Function> {
     )
 }
 
-
 /// Create solidb.validate_condition(condition, error_message, error_code) function
 pub fn create_validate_condition_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(
@@ -142,9 +141,7 @@ pub fn create_rate_limit_function(lua: &Lua) -> LuaResult<Function> {
                 .as_secs();
 
             let mut requests = self.requests.lock().unwrap();
-            let user_requests = requests
-                .entry(identifier.to_string())
-                .or_default();
+            let user_requests = requests.entry(identifier.to_string()).or_default();
 
             // Remove old requests outside the window
             user_requests.retain(|&timestamp| timestamp > now - window_seconds);

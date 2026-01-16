@@ -42,7 +42,11 @@ fn setup_hybrid_collection(engine: &StorageEngine) {
 
     // Create fulltext index
     collection
-        .create_fulltext_index("content_ft".to_string(), vec!["content".to_string()], Some(3))
+        .create_fulltext_index(
+            "content_ft".to_string(),
+            vec!["content".to_string()],
+            Some(3),
+        )
         .unwrap();
 
     // Insert test documents
@@ -122,10 +126,7 @@ fn test_hybrid_search_basic() {
     let results = execute_query(&engine, query);
 
     // Should return results
-    assert!(
-        !results.is_empty(),
-        "Hybrid search should return results"
-    );
+    assert!(!results.is_empty(), "Hybrid search should return results");
 
     // First result should have both vector and fulltext match (doc1 or doc5)
     let first = &results[0];
@@ -156,10 +157,7 @@ fn test_hybrid_search_with_options() {
     let results = execute_query(&engine, query);
 
     // Should respect limit
-    assert!(
-        results.len() <= 3,
-        "Should respect limit option"
-    );
+    assert!(results.len() <= 3, "Should respect limit option");
 }
 
 #[test]
@@ -183,10 +181,7 @@ fn test_hybrid_search_rrf_fusion() {
 
     let results = execute_query(&engine, query);
 
-    assert!(
-        !results.is_empty(),
-        "RRF fusion should return results"
-    );
+    assert!(!results.is_empty(), "RRF fusion should return results");
 }
 
 #[test]
@@ -362,10 +357,7 @@ fn test_hybrid_search_documents_included() {
     let results = execute_query(&engine, query);
 
     // Should return document titles
-    assert!(
-        !results.is_empty(),
-        "Should return results with documents"
-    );
+    assert!(!results.is_empty(), "Should return results with documents");
 
     // First result should have a title
     assert!(
@@ -394,10 +386,7 @@ fn test_hybrid_search_sorted_by_score() {
     let results = execute_query(&engine, query);
 
     // Verify results are sorted in descending order
-    let scores: Vec<f64> = results
-        .iter()
-        .filter_map(|r| r.as_f64())
-        .collect();
+    let scores: Vec<f64> = results.iter().filter_map(|r| r.as_f64()).collect();
 
     for i in 1..scores.len() {
         assert!(
@@ -431,10 +420,7 @@ fn test_hybrid_search_error_missing_vector_index() {
     let executor = QueryExecutor::new(&engine);
     let result = executor.execute(&query_parsed);
 
-    assert!(
-        result.is_err(),
-        "Should error on missing vector index"
-    );
+    assert!(result.is_err(), "Should error on missing vector index");
 }
 
 #[test]

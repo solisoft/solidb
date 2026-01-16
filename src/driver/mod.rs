@@ -16,6 +16,6 @@ pub mod handlers;
 pub mod protocol;
 
 pub use client::SoliDBClient;
-pub use handlers::DriverHandler;
 pub use handlers::spawn_driver_handler;
+pub use handlers::DriverHandler;
 pub use protocol::{Command, DriverError, Response};

@@ -3,12 +3,12 @@
 //! This module provides shared state for WebSocket channel subscriptions
 //! and presence tracking across all Lua scripts.
 
-use std::sync::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::RwLock;
 use tokio::sync::{broadcast, mpsc};
 
 /// Unique identifier for a WebSocket connection
@@ -179,7 +179,10 @@ impl ChannelManager {
             connected_at: chrono::Utc::now().timestamp_millis(),
         };
 
-        self.connections.write().unwrap().insert(conn_id.clone(), info);
+        self.connections
+            .write()
+            .unwrap()
+            .insert(conn_id.clone(), info);
         self.stats.active_connections.fetch_add(1, Ordering::SeqCst);
 
         (conn_id, event_rx)
@@ -324,7 +327,9 @@ impl ChannelManager {
         channel_state
             .presence
             .insert(conn_id.clone(), presence_info);
-        self.stats.total_presence_joins.fetch_add(1, Ordering::SeqCst);
+        self.stats
+            .total_presence_joins
+            .fetch_add(1, Ordering::SeqCst);
 
         // Broadcast presence event to all subscribers
         let event = PresenceEvent {
@@ -408,7 +413,9 @@ impl ChannelManager {
             if conn.subscribed_channels.contains(channel)
                 || conn.presence_channels.contains(channel)
             {
-                let _ = conn.event_tx.try_send(ChannelEvent::Presence(event.clone()));
+                let _ = conn
+                    .event_tx
+                    .try_send(ChannelEvent::Presence(event.clone()));
             }
         }
     }

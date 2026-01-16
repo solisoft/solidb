@@ -34,7 +34,9 @@ fn execute_query(engine: &StorageEngine, query_str: &str) -> Vec<serde_json::Val
 fn test_vector_index_create() {
     let (engine, _tmp) = create_test_engine();
 
-    engine.create_collection("products".to_string(), None).unwrap();
+    engine
+        .create_collection("products".to_string(), None)
+        .unwrap();
     let collection = engine.get_collection("products").unwrap();
 
     let config = VectorIndexConfig::new(
@@ -44,7 +46,11 @@ fn test_vector_index_create() {
     );
 
     let result = collection.create_vector_index(config);
-    assert!(result.is_ok(), "Should create vector index: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Should create vector index: {:?}",
+        result.err()
+    );
 
     let stats = result.unwrap();
     assert_eq!(stats.name, "embedding_idx");
@@ -56,14 +62,13 @@ fn test_vector_index_create() {
 fn test_vector_index_create_with_metric() {
     let (engine, _tmp) = create_test_engine();
 
-    engine.create_collection("products".to_string(), None).unwrap();
+    engine
+        .create_collection("products".to_string(), None)
+        .unwrap();
     let collection = engine.get_collection("products").unwrap();
 
-    let config = VectorIndexConfig::new(
-        "embedding_idx".to_string(),
-        "embedding".to_string(),
-        3,
-    ).with_metric(VectorMetric::Euclidean);
+    let config = VectorIndexConfig::new("embedding_idx".to_string(), "embedding".to_string(), 3)
+        .with_metric(VectorMetric::Euclidean);
 
     let result = collection.create_vector_index(config);
     assert!(result.is_ok());
@@ -76,7 +81,9 @@ fn test_vector_index_create_with_metric() {
 fn test_vector_index_list() {
     let (engine, _tmp) = create_test_engine();
 
-    engine.create_collection("products".to_string(), None).unwrap();
+    engine
+        .create_collection("products".to_string(), None)
+        .unwrap();
     let collection = engine.get_collection("products").unwrap();
 
     let config1 = VectorIndexConfig::new("idx1".to_string(), "vec1".to_string(), 3);
@@ -93,7 +100,9 @@ fn test_vector_index_list() {
 fn test_vector_index_drop() {
     let (engine, _tmp) = create_test_engine();
 
-    engine.create_collection("products".to_string(), None).unwrap();
+    engine
+        .create_collection("products".to_string(), None)
+        .unwrap();
     let collection = engine.get_collection("products").unwrap();
 
     let config = VectorIndexConfig::new("embedding_idx".to_string(), "embedding".to_string(), 3);
@@ -110,7 +119,9 @@ fn test_vector_index_drop() {
 fn test_vector_index_duplicate_name() {
     let (engine, _tmp) = create_test_engine();
 
-    engine.create_collection("products".to_string(), None).unwrap();
+    engine
+        .create_collection("products".to_string(), None)
+        .unwrap();
     let collection = engine.get_collection("products").unwrap();
 
     let config1 = VectorIndexConfig::new("embedding_idx".to_string(), "embedding".to_string(), 3);
@@ -130,34 +141,44 @@ fn test_vector_index_duplicate_name() {
 fn test_vector_search_basic() {
     let (engine, _tmp) = create_test_engine();
 
-    engine.create_collection("products".to_string(), None).unwrap();
+    engine
+        .create_collection("products".to_string(), None)
+        .unwrap();
     let collection = engine.get_collection("products").unwrap();
 
     // Insert documents with vectors
-    collection.insert(json!({
-        "_key": "p1",
-        "name": "Product A",
-        "embedding": [1.0, 0.0, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "p1",
+            "name": "Product A",
+            "embedding": [1.0, 0.0, 0.0]
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "p2",
-        "name": "Product B",
-        "embedding": [0.0, 1.0, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "p2",
+            "name": "Product B",
+            "embedding": [0.0, 1.0, 0.0]
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "p3",
-        "name": "Product C",
-        "embedding": [0.9, 0.1, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "p3",
+            "name": "Product C",
+            "embedding": [0.9, 0.1, 0.0]
+        }))
+        .unwrap();
 
     // Create vector index
     let config = VectorIndexConfig::new("embedding_idx".to_string(), "embedding".to_string(), 3);
     collection.create_vector_index(config).unwrap();
 
     // Search for similar vectors to [1, 0, 0]
-    let results = collection.vector_search("embedding_idx", &[1.0, 0.0, 0.0], 2, None).unwrap();
+    let results = collection
+        .vector_search("embedding_idx", &[1.0, 0.0, 0.0], 2, None)
+        .unwrap();
 
     assert_eq!(results.len(), 2);
     // p1 should be most similar (exact match)
@@ -169,24 +190,32 @@ fn test_vector_search_basic() {
 fn test_vector_search_euclidean() {
     let (engine, _tmp) = create_test_engine();
 
-    engine.create_collection("products".to_string(), None).unwrap();
+    engine
+        .create_collection("products".to_string(), None)
+        .unwrap();
     let collection = engine.get_collection("products").unwrap();
 
     // Insert documents
-    collection.insert(json!({
-        "_key": "p1",
-        "embedding": [0.0, 0.0, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "p1",
+            "embedding": [0.0, 0.0, 0.0]
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "p2",
-        "embedding": [1.0, 0.0, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "p2",
+            "embedding": [1.0, 0.0, 0.0]
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "p3",
-        "embedding": [10.0, 0.0, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "p3",
+            "embedding": [10.0, 0.0, 0.0]
+        }))
+        .unwrap();
 
     // Create vector index with Euclidean metric
     let config = VectorIndexConfig::new("embedding_idx".to_string(), "embedding".to_string(), 3)
@@ -194,7 +223,9 @@ fn test_vector_search_euclidean() {
     collection.create_vector_index(config).unwrap();
 
     // Search from origin - p1 should be closest (distance 0)
-    let results = collection.vector_search("embedding_idx", &[0.0, 0.0, 0.0], 3, None).unwrap();
+    let results = collection
+        .vector_search("embedding_idx", &[0.0, 0.0, 0.0], 3, None)
+        .unwrap();
 
     assert_eq!(results[0].doc_key, "p1");
     assert!(results[0].score < 0.001); // distance ~0
@@ -209,11 +240,17 @@ fn test_sdbql_vector_similarity() {
     let (engine, _tmp) = create_test_engine();
 
     // Test cosine similarity of identical vectors
-    let result = execute_query(&engine, "RETURN VECTOR_SIMILARITY([1.0, 0.0, 0.0], [1.0, 0.0, 0.0])");
+    let result = execute_query(
+        &engine,
+        "RETURN VECTOR_SIMILARITY([1.0, 0.0, 0.0], [1.0, 0.0, 0.0])",
+    );
 
     let value = &result[0];
     let score = value.as_f64().unwrap();
-    assert!((score - 1.0).abs() < 0.001, "Identical vectors should have similarity 1.0");
+    assert!(
+        (score - 1.0).abs() < 0.001,
+        "Identical vectors should have similarity 1.0"
+    );
 }
 
 #[test]
@@ -221,11 +258,17 @@ fn test_sdbql_vector_similarity_orthogonal() {
     let (engine, _tmp) = create_test_engine();
 
     // Test cosine similarity of orthogonal vectors
-    let result = execute_query(&engine, "RETURN VECTOR_SIMILARITY([1.0, 0.0, 0.0], [0.0, 1.0, 0.0])");
+    let result = execute_query(
+        &engine,
+        "RETURN VECTOR_SIMILARITY([1.0, 0.0, 0.0], [0.0, 1.0, 0.0])",
+    );
 
     let value = &result[0];
     let score = value.as_f64().unwrap();
-    assert!(score.abs() < 0.001, "Orthogonal vectors should have similarity ~0");
+    assert!(
+        score.abs() < 0.001,
+        "Orthogonal vectors should have similarity ~0"
+    );
 }
 
 #[test]
@@ -233,11 +276,17 @@ fn test_sdbql_vector_distance() {
     let (engine, _tmp) = create_test_engine();
 
     // Test Euclidean distance
-    let result = execute_query(&engine, "RETURN VECTOR_DISTANCE([0.0, 0.0], [3.0, 4.0], 'euclidean')");
+    let result = execute_query(
+        &engine,
+        "RETURN VECTOR_DISTANCE([0.0, 0.0], [3.0, 4.0], 'euclidean')",
+    );
 
     let value = &result[0];
     let distance = value.as_f64().unwrap();
-    assert!((distance - 5.0).abs() < 0.001, "Distance should be 5.0 (3-4-5 triangle)");
+    assert!(
+        (distance - 5.0).abs() < 0.001,
+        "Distance should be 5.0 (3-4-5 triangle)"
+    );
 }
 
 #[test]
@@ -254,8 +303,11 @@ fn test_sdbql_vector_normalize() {
     let x = normalized[0].as_f64().unwrap();
     let y = normalized[1].as_f64().unwrap();
     let z = normalized[2].as_f64().unwrap();
-    let magnitude = (x*x + y*y + z*z).sqrt();
-    assert!((magnitude - 1.0).abs() < 0.001, "Normalized vector should have magnitude 1.0");
+    let magnitude = (x * x + y * y + z * z).sqrt();
+    assert!(
+        (magnitude - 1.0).abs() < 0.001,
+        "Normalized vector should have magnitude 1.0"
+    );
 }
 
 #[test]
@@ -265,20 +317,26 @@ fn test_sdbql_vector_in_filter() {
     engine.create_collection("items".to_string(), None).unwrap();
     let collection = engine.get_collection("items").unwrap();
 
-    collection.insert(json!({
-        "_key": "item1",
-        "embedding": [1.0, 0.0, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "item1",
+            "embedding": [1.0, 0.0, 0.0]
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "item2",
-        "embedding": [0.9, 0.1, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "item2",
+            "embedding": [0.9, 0.1, 0.0]
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "item3",
-        "embedding": [0.0, 1.0, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "item3",
+            "embedding": [0.0, 1.0, 0.0]
+        }))
+        .unwrap();
 
     // Find items with high similarity to [1, 0, 0]
     let query = r#"
@@ -299,20 +357,26 @@ fn test_sdbql_vector_sort() {
     engine.create_collection("items".to_string(), None).unwrap();
     let collection = engine.get_collection("items").unwrap();
 
-    collection.insert(json!({
-        "_key": "item1",
-        "embedding": [1.0, 0.0, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "item1",
+            "embedding": [1.0, 0.0, 0.0]
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "item2",
-        "embedding": [0.5, 0.5, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "item2",
+            "embedding": [0.5, 0.5, 0.0]
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "item3",
-        "embedding": [0.0, 1.0, 0.0]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "item3",
+            "embedding": [0.0, 1.0, 0.0]
+        }))
+        .unwrap();
 
     // Sort by similarity to [1, 0, 0]
     let query = r#"
@@ -340,15 +404,20 @@ fn test_vector_index_persistence() {
     // Create engine, collection, and index
     {
         let engine = StorageEngine::new(&path).expect("Failed to create storage engine");
-        engine.create_collection("products".to_string(), None).unwrap();
+        engine
+            .create_collection("products".to_string(), None)
+            .unwrap();
         let collection = engine.get_collection("products").unwrap();
 
-        collection.insert(json!({
-            "_key": "p1",
-            "embedding": [1.0, 0.0, 0.0]
-        })).unwrap();
+        collection
+            .insert(json!({
+                "_key": "p1",
+                "embedding": [1.0, 0.0, 0.0]
+            }))
+            .unwrap();
 
-        let config = VectorIndexConfig::new("embedding_idx".to_string(), "embedding".to_string(), 3);
+        let config =
+            VectorIndexConfig::new("embedding_idx".to_string(), "embedding".to_string(), 3);
         collection.create_vector_index(config).unwrap();
     }
 
@@ -358,7 +427,10 @@ fn test_vector_index_persistence() {
         let collection = engine.get_collection("products").unwrap();
 
         let config = collection.get_vector_index("embedding_idx");
-        assert!(config.is_some(), "Vector index should persist across restarts");
+        assert!(
+            config.is_some(),
+            "Vector index should persist across restarts"
+        );
     }
 }
 
@@ -376,10 +448,12 @@ fn test_vector_search_with_ef_search_parameter() {
     // Insert test vectors
     for i in 0..100 {
         let x = (i as f32) / 100.0;
-        collection.insert(json!({
-            "_key": format!("item_{}", i),
-            "embedding": [x, 1.0 - x, 0.0]
-        })).unwrap();
+        collection
+            .insert(json!({
+                "_key": format!("item_{}", i),
+                "embedding": [x, 1.0 - x, 0.0]
+            }))
+            .unwrap();
     }
 
     let config = VectorIndexConfig::new("embedding_idx".to_string(), "embedding".to_string(), 3);
@@ -389,15 +463,21 @@ fn test_vector_search_with_ef_search_parameter() {
     let query = vec![0.5, 0.5, 0.0];
 
     // Low ef_search
-    let results_low_ef = collection.vector_search("embedding_idx", &query, 5, Some(10)).unwrap();
+    let results_low_ef = collection
+        .vector_search("embedding_idx", &query, 5, Some(10))
+        .unwrap();
     assert_eq!(results_low_ef.len(), 5, "Should return 5 results");
 
     // High ef_search
-    let results_high_ef = collection.vector_search("embedding_idx", &query, 5, Some(100)).unwrap();
+    let results_high_ef = collection
+        .vector_search("embedding_idx", &query, 5, Some(100))
+        .unwrap();
     assert_eq!(results_high_ef.len(), 5, "Should return 5 results");
 
     // Default ef_search (None)
-    let results_default = collection.vector_search("embedding_idx", &query, 5, None).unwrap();
+    let results_default = collection
+        .vector_search("embedding_idx", &query, 5, None)
+        .unwrap();
     assert_eq!(results_default.len(), 5, "Should return 5 results");
 
     // All results should find similar items (around item_50)
@@ -422,18 +502,25 @@ fn test_vector_index_serialization_v2() {
         // Insert some vectors with different directions (for cosine similarity)
         for i in 0..50 {
             let angle = (i as f32) * std::f32::consts::PI / 100.0; // 0 to ~pi/2
-            collection.insert(json!({
-                "_key": format!("doc_{}", i),
-                "embedding": [angle.cos(), angle.sin(), 0.0]
-            })).unwrap();
+            collection
+                .insert(json!({
+                    "_key": format!("doc_{}", i),
+                    "embedding": [angle.cos(), angle.sin(), 0.0]
+                }))
+                .unwrap();
         }
 
         let config = VectorIndexConfig::new("idx".to_string(), "embedding".to_string(), 3);
         collection.create_vector_index(config).unwrap();
 
         // Perform a search to verify it works
-        let results = collection.vector_search("idx", &[1.0, 0.0, 0.0], 3, None).unwrap();
-        assert!(!results.is_empty(), "Search should return results before restart");
+        let results = collection
+            .vector_search("idx", &[1.0, 0.0, 0.0], 3, None)
+            .unwrap();
+        assert!(
+            !results.is_empty(),
+            "Search should return results before restart"
+        );
     }
 
     // Reopen and verify search still works
@@ -442,7 +529,9 @@ fn test_vector_index_serialization_v2() {
         let collection = engine.get_collection("docs").unwrap();
 
         // Search should work after restart
-        let results = collection.vector_search("idx", &[1.0, 0.0, 0.0], 3, None).unwrap();
+        let results = collection
+            .vector_search("idx", &[1.0, 0.0, 0.0], 3, None)
+            .unwrap();
         assert!(!results.is_empty(), "Search should work after restart");
 
         // Verify best result is doc_0 (angle 0 = [1, 0, 0])
@@ -458,15 +547,23 @@ fn test_vector_index_delete_and_search() {
     let collection = engine.get_collection("items").unwrap();
 
     // Insert test vectors
-    collection.insert(json!({"_key": "a", "vec": [1.0, 0.0, 0.0]})).unwrap();
-    collection.insert(json!({"_key": "b", "vec": [0.9, 0.1, 0.0]})).unwrap();
-    collection.insert(json!({"_key": "c", "vec": [0.0, 1.0, 0.0]})).unwrap();
+    collection
+        .insert(json!({"_key": "a", "vec": [1.0, 0.0, 0.0]}))
+        .unwrap();
+    collection
+        .insert(json!({"_key": "b", "vec": [0.9, 0.1, 0.0]}))
+        .unwrap();
+    collection
+        .insert(json!({"_key": "c", "vec": [0.0, 1.0, 0.0]}))
+        .unwrap();
 
     let config = VectorIndexConfig::new("idx".to_string(), "vec".to_string(), 3);
     collection.create_vector_index(config).unwrap();
 
     // Verify initial search
-    let results = collection.vector_search("idx", &[1.0, 0.0, 0.0], 3, None).unwrap();
+    let results = collection
+        .vector_search("idx", &[1.0, 0.0, 0.0], 3, None)
+        .unwrap();
     assert_eq!(results.len(), 3);
     assert_eq!(results[0].doc_key, "a", "Closest should be 'a'");
 
@@ -474,8 +571,16 @@ fn test_vector_index_delete_and_search() {
     collection.delete("a").unwrap();
 
     // Search again - 'a' should not appear
-    let results_after = collection.vector_search("idx", &[1.0, 0.0, 0.0], 3, None).unwrap();
+    let results_after = collection
+        .vector_search("idx", &[1.0, 0.0, 0.0], 3, None)
+        .unwrap();
     assert_eq!(results_after.len(), 2, "Should have 2 results after delete");
-    assert!(!results_after.iter().any(|r| r.doc_key == "a"), "Deleted doc should not appear");
-    assert_eq!(results_after[0].doc_key, "b", "Second closest 'b' should now be first");
+    assert!(
+        !results_after.iter().any(|r| r.doc_key == "a"),
+        "Deleted doc should not appear"
+    );
+    assert_eq!(
+        results_after[0].doc_key, "b",
+        "Second closest 'b' should now be first"
+    );
 }
