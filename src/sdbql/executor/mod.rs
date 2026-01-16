@@ -1,5 +1,5 @@
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
+
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -35,12 +35,7 @@ pub struct QueryExecutor<'a> {
 }
 
 /// Extracted filter condition for index optimization
-#[derive(Debug)]
-struct IndexableCondition {
-    field: String,
-    op: BinaryOperator,
-    value: Value,
-}
+
 
 
 

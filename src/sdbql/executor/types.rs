@@ -3,8 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use super::super::ast::BinaryOperator;
-use crate::storage::StorageEngine;
-use crate::sync::log::SyncLog;
+
 
 /// Execution context holding variable bindings
 pub type Context = HashMap<String, Value>;
@@ -115,16 +114,7 @@ pub struct ExecutionTiming {
     pub return_projection_us: u64,
 }
 
-pub struct QueryExecutor<'a> {
-    pub(crate) storage: &'a StorageEngine,
-    pub(crate) bind_vars: BindVars,
-    pub(crate) database: Option<String>,
-    pub(crate) replication: Option<&'a SyncLog>,
-    // Flag to indicate if we should defer mutations for transactional execution
 
-    // Shard coordinator for scatter-gather queries on sharded collections
-    pub(crate) shard_coordinator: Option<std::sync::Arc<crate::sharding::ShardCoordinator>>,
-}
 
 /// Extracted filter condition for index optimization
 #[derive(Debug)]

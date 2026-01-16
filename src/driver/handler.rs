@@ -1052,7 +1052,7 @@ impl DriverHandler {
             Command::GeoWithin {
                 database,
                 collection,
-                field,
+                field: _,
                 polygon: _,
             } => match self.get_collection(&database, &collection) {
                 Ok(_) => Response::error(DriverError::InvalidCommand(
@@ -1127,7 +1127,7 @@ impl DriverHandler {
                 vector,
                 limit,
                 ef_search,
-                filter,
+                filter: _,
             } => match self.get_collection(&database, &collection) {
                 Ok(coll) => {
                     // TODO: Implement filter support when Collection::vector_search supports it

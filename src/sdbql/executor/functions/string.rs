@@ -1,7 +1,7 @@
 use serde_json::Value;
 use regex::Regex;
 
-use super::super::utils::{number_from_f64, safe_regex};
+use super::super::utils::safe_regex;
 use crate::error::{DbError, DbResult};
 
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {

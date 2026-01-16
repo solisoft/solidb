@@ -269,7 +269,7 @@ impl Database {
         name: &str,
         columns: Option<Vec<String>>,
         filter: Option<String>,
-        order_by: Option<String>,
+        _order_by: Option<String>,
         limit: Option<usize>,
     ) -> DbResult<Vec<Value>> {
         let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
