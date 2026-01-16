@@ -1,0 +1,1721 @@
+{
+  "functions": [
+    {
+      "name": "STARTS_WITH",
+      "description": "Check if string starts with prefix",
+      "category": "string",
+      "signature": "STARTS_WITH(str, prefix)",
+      "url": "/docs/sdbql-functions-string#fn-STARTS_WITH"
+    },
+    {
+      "name": "ENDS_WITH",
+      "description": "Check if string ends with suffix",
+      "category": "string",
+      "signature": "ENDS_WITH(str, suffix)",
+      "url": "/docs/sdbql-functions-string#fn-ENDS_WITH"
+    },
+    {
+      "name": "PAD_LEFT",
+      "description": "Pad string from left. Alias: LPAD",
+      "category": "string",
+      "signature": "PAD_LEFT(str, len, char?)",
+      "url": "/docs/sdbql-functions-string#fn-PAD_LEFT"
+    },
+    {
+      "name": "PAD_RIGHT",
+      "description": "Pad string from right. Alias: RPAD",
+      "category": "string",
+      "signature": "PAD_RIGHT(str, len, char?)",
+      "url": "/docs/sdbql-functions-string#fn-PAD_RIGHT"
+    },
+    {
+      "name": "REPEAT",
+      "description": "Repeat string n times",
+      "category": "string",
+      "signature": "REPEAT(str, count)",
+      "url": "/docs/sdbql-functions-string#fn-REPEAT"
+    },
+    {
+      "name": "CAPITALIZE",
+      "description": "Capitalize first letter of string",
+      "category": "string",
+      "signature": "CAPITALIZE(str)",
+      "url": "/docs/sdbql-functions-string#fn-CAPITALIZE"
+    },
+    {
+      "name": "TITLE_CASE",
+      "description": "Title case all words. Alias: INITCAP",
+      "category": "string",
+      "signature": "TITLE_CASE(str)",
+      "url": "/docs/sdbql-functions-string#fn-TITLE_CASE"
+    },
+    {
+      "name": "ENCODE_URI",
+      "description": "URL encode string. Alias: URL_ENCODE",
+      "category": "string",
+      "signature": "ENCODE_URI(str)",
+      "url": "/docs/sdbql-functions-string#fn-ENCODE_URI"
+    },
+    {
+      "name": "DECODE_URI",
+      "description": "URL decode string. Alias: URL_DECODE",
+      "category": "string",
+      "signature": "DECODE_URI(str)",
+      "url": "/docs/sdbql-functions-string#fn-DECODE_URI"
+    },
+    {
+      "name": "WORD_COUNT",
+      "description": "Count words in string",
+      "category": "string",
+      "signature": "WORD_COUNT(str)",
+      "url": "/docs/sdbql-functions-string#fn-WORD_COUNT"
+    },
+    {
+      "name": "TRUNCATE_TEXT",
+      "description": "Truncate with ellipsis. Alias: ELLIPSIS",
+      "category": "string",
+      "signature": "TRUNCATE_TEXT(str, len, suffix?)",
+      "url": "/docs/sdbql-functions-string#fn-TRUNCATE_TEXT"
+    },
+    {
+      "name": "MASK",
+      "description": "Mask string for PII protection",
+      "category": "string",
+      "signature": "MASK(str, start?, end?, char?)",
+      "url": "/docs/sdbql-functions-string#fn-MASK"
+    },
+    {
+      "name": "CONCAT",
+      "description": "Concatenates strings",
+      "category": "string",
+      "signature": "CONCAT(str1, ...)",
+      "url": "/docs/sdbql-functions-string#fn-CONCAT"
+    },
+    {
+      "name": "CONCAT_SEPARATOR",
+      "description": "Joins array with separator",
+      "category": "string",
+      "signature": "CONCAT_SEPARATOR(sep, arr)",
+      "url": "/docs/sdbql-functions-string#fn-CONCAT_SEPARATOR"
+    },
+    {
+      "name": "LENGTH",
+      "description": "Returns string/array/object length",
+      "category": "string",
+      "signature": "LENGTH(val)",
+      "url": "/docs/sdbql-functions-string#fn-LENGTH"
+    },
+    {
+      "name": "SUBSTRING",
+      "description": "Extracts substring",
+      "category": "string",
+      "signature": "SUBSTRING(str, start, len?)",
+      "url": "/docs/sdbql-functions-string#fn-SUBSTRING"
+    },
+    {
+      "name": "LOWER",
+      "description": "Convert string to lowercase",
+      "category": "string",
+      "signature": "LOWER(str)",
+      "url": "/docs/sdbql-functions-string#fn-LOWER"
+    },
+    {
+      "name": "UPPER",
+      "description": "Convert string to uppercase",
+      "category": "string",
+      "signature": "UPPER(str)",
+      "url": "/docs/sdbql-functions-string#fn-LOWER"
+    },
+    {
+      "name": "LEFT",
+      "description": "Extracts n characters from start",
+      "category": "string",
+      "signature": "LEFT(str, n)",
+      "url": "/docs/sdbql-functions-string#fn-LEFT"
+    },
+    {
+      "name": "RIGHT",
+      "description": "Extracts n characters from end",
+      "category": "string",
+      "signature": "RIGHT(str, n)",
+      "url": "/docs/sdbql-functions-string#fn-LEFT"
+    },
+    {
+      "name": "CHAR_LENGTH",
+      "description": "Returns number of characters (Unicode aware)",
+      "category": "string",
+      "signature": "CHAR_LENGTH(str)",
+      "url": "/docs/sdbql-functions-string#fn-CHAR_LENGTH"
+    },
+    {
+      "name": "TRIM",
+      "description": "Trims whitespace or chars",
+      "category": "string",
+      "signature": "TRIM(val, type?/chars?)",
+      "url": "/docs/sdbql-functions-string#fn-TRIM"
+    },
+    {
+      "name": "LTRIM",
+      "description": "Trims from start",
+      "category": "string",
+      "signature": "LTRIM(val, chars?)",
+      "url": "/docs/sdbql-functions-string#fn-LTRIM"
+    },
+    {
+      "name": "RTRIM",
+      "description": "Trims from end",
+      "category": "string",
+      "signature": "RTRIM(val, chars?)",
+      "url": "/docs/sdbql-functions-string#fn-LTRIM"
+    },
+    {
+      "name": "SPLIT",
+      "description": "Splits string into array",
+      "category": "string",
+      "signature": "SPLIT(val, sep, limit?)",
+      "url": "/docs/sdbql-functions-string#fn-SPLIT"
+    },
+    {
+      "name": "SUBSTITUTE",
+      "description": "Replaces occurrences of search with replace",
+      "category": "string",
+      "signature": "SUBSTITUTE(val, search, replace, limit?)",
+      "url": "/docs/sdbql-functions-string#fn-SUBSTITUTE"
+    },
+    {
+      "name": "CONTAINS",
+      "description": "Checks if search string is in text",
+      "category": "string",
+      "signature": "CONTAINS(text, search, returnIndex?)",
+      "url": "/docs/sdbql-functions-string#fn-CONTAINS"
+    },
+    {
+      "name": "FIND_FIRST",
+      "description": "Returns index of first occurrence",
+      "category": "string",
+      "signature": "FIND_FIRST(str, search)",
+      "url": "/docs/sdbql-functions-string#fn-FIND_FIRST"
+    },
+    {
+      "name": "FIND_LAST",
+      "description": "Returns index of last occurrence",
+      "category": "string",
+      "signature": "FIND_LAST(str, search)",
+      "url": "/docs/sdbql-functions-string#fn-FIND_FIRST"
+    },
+    {
+      "name": "REGEX_TEST",
+      "description": "Tests if string matches regex. Alias: REGEX_MATCH",
+      "category": "string",
+      "signature": "REGEX_TEST(str, pattern)",
+      "url": "/docs/sdbql-functions-string#fn-REGEX_TEST"
+    },
+    {
+      "name": "REGEX_REPLACE",
+      "description": "Replace occurrences of a pattern in a string",
+      "category": "string",
+      "signature": "REGEX_REPLACE(text, pattern, replacement)",
+      "url": "/docs/sdbql-functions-string#fn-REGEX_REPLACE"
+    },
+    {
+      "name": "JSON_PARSE",
+      "description": "Parses JSON string to value",
+      "category": "string",
+      "signature": "JSON_PARSE(text)",
+      "url": "/docs/sdbql-functions-string#fn-JSON_PARSE"
+    },
+    {
+      "name": "JSON_STRINGIFY",
+      "description": "Serializes value to JSON string",
+      "category": "string",
+      "signature": "JSON_STRINGIFY(value)",
+      "url": "/docs/sdbql-functions-string#fn-JSON_STRINGIFY"
+    },
+    {
+      "name": "LEVENSHTEIN",
+      "description": "Calculates edit distance between strings",
+      "category": "string",
+      "signature": "LEVENSHTEIN(s1, s2)",
+      "url": "/docs/sdbql-functions-string#fn-LEVENSHTEIN"
+    },
+    {
+      "name": "SIMILARITY",
+      "description": "Returns trigram similarity score (0.0 to 1.0)",
+      "category": "string",
+      "signature": "SIMILARITY(s1, s2)",
+      "url": "/docs/sdbql-functions-string#fn-SIMILARITY"
+    },
+    {
+      "name": "FUZZY_MATCH",
+      "description": "Returns true if text matches pattern within edit distance",
+      "category": "string",
+      "signature": "FUZZY_MATCH(text, pattern, max_distance?)",
+      "url": "/docs/sdbql-functions-string#fn-FUZZY_MATCH"
+    },
+    {
+      "name": "SOUNDEX",
+      "description": "Returns phonetic code for name matching",
+      "category": "string",
+      "signature": "SOUNDEX(str, locale?)",
+      "url": "/docs/sdbql-functions-string#fn-SOUNDEX"
+    },
+    {
+      "name": "METAPHONE",
+      "description": "Returns phonetic encoding using Metaphone algorithm",
+      "category": "string",
+      "signature": "METAPHONE(str)",
+      "url": "/docs/sdbql-functions-string#fn-METAPHONE"
+    },
+    {
+      "name": "DOUBLE_METAPHONE",
+      "description": "Returns array with [primary, secondary] phonetic codes",
+      "category": "string",
+      "signature": "DOUBLE_METAPHONE(str)",
+      "url": "/docs/sdbql-functions-string#fn-DOUBLE_METAPHONE"
+    },
+    {
+      "name": "COLOGNE",
+      "description": "Cologne Phonetic algorithm for German names",
+      "category": "string",
+      "signature": "COLOGNE(str)",
+      "url": "/docs/sdbql-functions-string#fn-COLOGNE"
+    },
+    {
+      "name": "CAVERPHONE",
+      "description": "Caverphone algorithm for European surnames",
+      "category": "string",
+      "signature": "CAVERPHONE(str)",
+      "url": "/docs/sdbql-functions-string#fn-CAVERPHONE"
+    },
+    {
+      "name": "NYSIIS",
+      "description": "New York State algorithm for various ethnic origins",
+      "category": "string",
+      "signature": "NYSIIS(str)",
+      "url": "/docs/sdbql-functions-string#fn-NYSIIS"
+    },
+    {
+      "name": "SLUGIFY",
+      "description": "Converts text to a URL-friendly slug",
+      "category": "string",
+      "signature": "SLUGIFY(text)",
+      "url": "/docs/sdbql-functions-string#fn-SLUGIFY"
+    },
+    {
+      "name": "SANITIZE",
+      "description": "Cleans and sanitizes input strings",
+      "category": "string",
+      "signature": "SANITIZE(text, options?)",
+      "url": "/docs/sdbql-functions-string#fn-SANITIZE"
+    },
+    {
+      "name": "ABS",
+      "description": "Returns the absolute value",
+      "category": "numeric",
+      "signature": "ABS(number)",
+      "url": "/docs/sdbql-functions-numeric#fn-ABS"
+    },
+    {
+      "name": "CEIL",
+      "description": "Rounds up to nearest integer",
+      "category": "numeric",
+      "signature": "CEIL(number)",
+      "url": "/docs/sdbql-functions-numeric#fn-CEIL"
+    },
+    {
+      "name": "FLOOR",
+      "description": "Rounds down to nearest integer",
+      "category": "numeric",
+      "signature": "FLOOR(number)",
+      "url": "/docs/sdbql-functions-numeric#fn-FLOOR"
+    },
+    {
+      "name": "ROUND",
+      "description": "Rounds to specified precision",
+      "category": "numeric",
+      "signature": "ROUND(num, prec?)",
+      "url": "/docs/sdbql-functions-numeric#fn-ROUND"
+    },
+    {
+      "name": "RANDOM",
+      "description": "Returns a random float between 0 and 1",
+      "category": "numeric",
+      "signature": "RANDOM()",
+      "url": "/docs/sdbql-functions-numeric#fn-RANDOM"
+    },
+    {
+      "name": "RANDOM_INT",
+      "description": "Random integer in range (inclusive)",
+      "category": "numeric",
+      "signature": "RANDOM_INT(min, max)",
+      "url": "/docs/sdbql-functions-numeric#fn-RANDOM_INT"
+    },
+    {
+      "name": "MOD",
+      "description": "Modulo operation",
+      "category": "numeric",
+      "signature": "MOD(a, b)",
+      "url": "/docs/sdbql-functions-numeric#fn-MOD"
+    },
+    {
+      "name": "CLAMP",
+      "description": "Clamp value to range",
+      "category": "numeric",
+      "signature": "CLAMP(val, min, max)",
+      "url": "/docs/sdbql-functions-numeric#fn-CLAMP"
+    },
+    {
+      "name": "SIGN",
+      "description": "Returns sign of number (-1, 0, 1)",
+      "category": "numeric",
+      "signature": "SIGN(num)",
+      "url": "/docs/sdbql-functions-numeric#fn-SIGN"
+    },
+    {
+      "name": "SQRT",
+      "description": "Returns the square root",
+      "category": "numeric",
+      "signature": "SQRT(number)",
+      "url": "/docs/sdbql-functions-numeric#fn-SQRT"
+    },
+    {
+      "name": "POW",
+      "description": "Returns base raised to exponent",
+      "category": "numeric",
+      "signature": "POW(base, exp)",
+      "url": "/docs/sdbql-functions-numeric#fn-POW"
+    },
+    {
+      "name": "EXP",
+      "description": "Returns e raised to the power of x",
+      "category": "numeric",
+      "signature": "EXP(x)",
+      "url": "/docs/sdbql-functions-numeric#fn-EXP"
+    },
+    {
+      "name": "LOG",
+      "description": "Natural logarithm",
+      "category": "numeric",
+      "signature": "LOG(x)",
+      "url": "/docs/sdbql-functions-numeric#fn-LOG"
+    },
+    {
+      "name": "LOG10",
+      "description": "Base-10 logarithm",
+      "category": "numeric",
+      "signature": "LOG10(x)",
+      "url": "/docs/sdbql-functions-numeric#fn-LOG"
+    },
+    {
+      "name": "LOG2",
+      "description": "Base-2 logarithm",
+      "category": "numeric",
+      "signature": "LOG2(x)",
+      "url": "/docs/sdbql-functions-numeric#fn-LOG"
+    },
+    {
+      "name": "PI",
+      "description": "Returns the value of PI",
+      "category": "numeric",
+      "signature": "PI()",
+      "url": "/docs/sdbql-functions-numeric#fn-PI"
+    },
+    {
+      "name": "DEGREES",
+      "description": "Convert radians to degrees",
+      "category": "numeric",
+      "signature": "DEGREES(radians)",
+      "url": "/docs/sdbql-functions-numeric#fn-DEGREES"
+    },
+    {
+      "name": "DEG",
+      "description": "Convert radians to degrees (alias for DEGREES)",
+      "category": "numeric",
+      "signature": "DEG(radians)",
+      "url": "/docs/sdbql-functions-numeric#fn-DEGREES"
+    },
+    {
+      "name": "RADIANS",
+      "description": "Convert degrees to radians",
+      "category": "numeric",
+      "signature": "RADIANS(degrees)",
+      "url": "/docs/sdbql-functions-numeric#fn-RADIANS"
+    },
+    {
+      "name": "RAD",
+      "description": "Convert degrees to radians (alias for RADIANS)",
+      "category": "numeric",
+      "signature": "RAD(degrees)",
+      "url": "/docs/sdbql-functions-numeric#fn-RADIANS"
+    },
+    {
+      "name": "SIN",
+      "description": "Sine function (radians)",
+      "category": "numeric",
+      "signature": "SIN(x)",
+      "url": "/docs/sdbql-functions-numeric#fn-SIN"
+    },
+    {
+      "name": "COS",
+      "description": "Cosine function (radians)",
+      "category": "numeric",
+      "signature": "COS(x)",
+      "url": "/docs/sdbql-functions-numeric#fn-SIN"
+    },
+    {
+      "name": "TAN",
+      "description": "Tangent function (radians)",
+      "category": "numeric",
+      "signature": "TAN(x)",
+      "url": "/docs/sdbql-functions-numeric#fn-SIN"
+    },
+    {
+      "name": "ASIN",
+      "description": "Inverse sine function",
+      "category": "numeric",
+      "signature": "ASIN(x)",
+      "url": "/docs/sdbql-functions-numeric#fn-ASIN"
+    },
+    {
+      "name": "ACOS",
+      "description": "Inverse cosine function",
+      "category": "numeric",
+      "signature": "ACOS(x)",
+      "url": "/docs/sdbql-functions-numeric#fn-ASIN"
+    },
+    {
+      "name": "ATAN",
+      "description": "Inverse tangent function",
+      "category": "numeric",
+      "signature": "ATAN(x)",
+      "url": "/docs/sdbql-functions-numeric#fn-ASIN"
+    },
+    {
+      "name": "SUM",
+      "description": "Sum of all values in the array",
+      "category": "numeric",
+      "signature": "SUM(arr)",
+      "url": "/docs/sdbql-functions-numeric#fn-SUM"
+    },
+    {
+      "name": "AVG",
+      "description": "Average of all values",
+      "category": "numeric",
+      "signature": "AVG(arr)",
+      "url": "/docs/sdbql-functions-numeric#fn-AVG"
+    },
+    {
+      "name": "MIN",
+      "description": "Smallest value in the array",
+      "category": "numeric",
+      "signature": "MIN(arr)",
+      "url": "/docs/sdbql-functions-numeric#fn-MIN"
+    },
+    {
+      "name": "MAX",
+      "description": "Largest value in the array",
+      "category": "numeric",
+      "signature": "MAX(arr)",
+      "url": "/docs/sdbql-functions-numeric#fn-MAX"
+    },
+    {
+      "name": "COUNT",
+      "description": "Number of elements in the array",
+      "category": "numeric",
+      "signature": "COUNT(arr)",
+      "url": "/docs/sdbql-functions-numeric#fn-COUNT"
+    },
+    {
+      "name": "COUNT_DISTINCT",
+      "description": "Number of unique elements",
+      "category": "numeric",
+      "signature": "COUNT_DISTINCT(arr)",
+      "url": "/docs/sdbql-functions-numeric#fn-COUNT_DISTINCT"
+    },
+    {
+      "name": "MEDIAN",
+      "description": "Median value of the array",
+      "category": "numeric",
+      "signature": "MEDIAN(arr)",
+      "url": "/docs/sdbql-functions-numeric#fn-MEDIAN"
+    },
+    {
+      "name": "PERCENTILE",
+      "description": "Returns the p-th percentile (0-100)",
+      "category": "numeric",
+      "signature": "PERCENTILE(arr, p)",
+      "url": "/docs/sdbql-functions-numeric#fn-PERCENTILE"
+    },
+    {
+      "name": "VARIANCE",
+      "description": "Population variance",
+      "category": "numeric",
+      "signature": "VARIANCE(arr)",
+      "url": "/docs/sdbql-functions-numeric#fn-VARIANCE"
+    },
+    {
+      "name": "VARIANCE_SAMPLE",
+      "description": "Sample variance",
+      "category": "numeric",
+      "signature": "VARIANCE_SAMPLE(arr)",
+      "url": "/docs/sdbql-functions-numeric#fn-VARIANCE_SAMPLE"
+    },
+    {
+      "name": "STDDEV",
+      "description": "Sample standard deviation",
+      "category": "numeric",
+      "signature": "STDDEV(arr)",
+      "url": "/docs/sdbql-functions-numeric#fn-STDDEV"
+    },
+    {
+      "name": "STDDEV_POPULATION",
+      "description": "Population standard deviation",
+      "category": "numeric",
+      "signature": "STDDEV_POPULATION(arr)",
+      "url": "/docs/sdbql-functions-numeric#fn-STDDEV_POPULATION"
+    },
+    {
+      "name": "FIRST",
+      "description": "Returns the first element",
+      "category": "array",
+      "signature": "FIRST(arr)",
+      "url": "/docs/sdbql-functions-array#fn-FIRST"
+    },
+    {
+      "name": "LAST",
+      "description": "Returns the last element",
+      "category": "array",
+      "signature": "LAST(arr)",
+      "url": "/docs/sdbql-functions-array#fn-LAST"
+    },
+    {
+      "name": "NTH",
+      "description": "Returns element at index n (0-based)",
+      "category": "array",
+      "signature": "NTH(arr, n)",
+      "url": "/docs/sdbql-functions-array#fn-NTH"
+    },
+    {
+      "name": "SLICE",
+      "description": "Extracts a portion of the array",
+      "category": "array",
+      "signature": "SLICE(arr, start, len?)",
+      "url": "/docs/sdbql-functions-array#fn-SLICE"
+    },
+    {
+      "name": "COLLECTION_COUNT",
+      "description": "Returns the number of documents in a collection",
+      "category": "array",
+      "signature": "COLLECTION_COUNT(coll)",
+      "url": "/docs/sdbql-functions-array#fn-COLLECTION_COUNT"
+    },
+    {
+      "name": "INDEX_OF",
+      "description": "Returns index of value, or -1 if not found",
+      "category": "array",
+      "signature": "INDEX_OF(arr, value)",
+      "url": "/docs/sdbql-functions-array#fn-INDEX_OF"
+    },
+    {
+      "name": "TAKE",
+      "description": "Returns first n elements",
+      "category": "array",
+      "signature": "TAKE(arr, n)",
+      "url": "/docs/sdbql-functions-array#fn-TAKE"
+    },
+    {
+      "name": "DROP",
+      "description": "Returns array without first n elements. Alias: SKIP",
+      "category": "array",
+      "signature": "DROP(arr, n)",
+      "url": "/docs/sdbql-functions-array#fn-DROP"
+    },
+    {
+      "name": "CHUNK",
+      "description": "Splits array into chunks of specified size",
+      "category": "array",
+      "signature": "CHUNK(arr, size)",
+      "url": "/docs/sdbql-functions-array#fn-CHUNK"
+    },
+    {
+      "name": "UNIQUE",
+      "description": "Removes duplicate values",
+      "category": "array",
+      "signature": "UNIQUE(arr)",
+      "url": "/docs/sdbql-functions-array#fn-UNIQUE"
+    },
+    {
+      "name": "SORTED",
+      "description": "Sorts the array in ascending order",
+      "category": "array",
+      "signature": "SORTED(arr)",
+      "url": "/docs/sdbql-functions-array#fn-SORTED"
+    },
+    {
+      "name": "SORTED_UNIQUE",
+      "description": "Sorts and removes duplicates",
+      "category": "array",
+      "signature": "SORTED_UNIQUE(arr)",
+      "url": "/docs/sdbql-functions-array#fn-SORTED_UNIQUE"
+    },
+    {
+      "name": "REVERSE",
+      "description": "Reverses the array order",
+      "category": "array",
+      "signature": "REVERSE(arr)",
+      "url": "/docs/sdbql-functions-array#fn-REVERSE"
+    },
+    {
+      "name": "FLATTEN",
+      "description": "Flattens nested arrays",
+      "category": "array",
+      "signature": "FLATTEN(arr, depth?)",
+      "url": "/docs/sdbql-functions-array#fn-FLATTEN"
+    },
+    {
+      "name": "RANGE",
+      "description": "Generates an array of numbers",
+      "category": "array",
+      "signature": "RANGE(start, end, step?)",
+      "url": "/docs/sdbql-functions-array#fn-RANGE"
+    },
+    {
+      "name": "PUSH",
+      "description": "Appends an element to the array",
+      "category": "array",
+      "signature": "PUSH(arr, elem)",
+      "url": "/docs/sdbql-functions-array#fn-PUSH"
+    },
+    {
+      "name": "APPEND",
+      "description": "Concatenates two arrays",
+      "category": "array",
+      "signature": "APPEND(arr1, arr2)",
+      "url": "/docs/sdbql-functions-array#fn-APPEND"
+    },
+    {
+      "name": "UNION",
+      "description": "Union of arrays (produces unique values)",
+      "category": "array",
+      "signature": "UNION(arr1, arr2)",
+      "url": "/docs/sdbql-functions-array#fn-UNION"
+    },
+    {
+      "name": "INTERSECTION",
+      "description": "Returns common elements between arrays",
+      "category": "array",
+      "signature": "INTERSECTION(arr1, arr2...)",
+      "url": "/docs/sdbql-functions-array#fn-INTERSECTION"
+    },
+    {
+      "name": "MINUS",
+      "description": "Returns elements in arr1 not in arr2",
+      "category": "array",
+      "signature": "MINUS(arr1, arr2)",
+      "url": "/docs/sdbql-functions-array#fn-MINUS"
+    },
+    {
+      "name": "ZIP",
+      "description": "Zips two arrays into an array of pairs",
+      "category": "array",
+      "signature": "ZIP(arr1, arr2)",
+      "url": "/docs/sdbql-functions-array#fn-ZIP"
+    },
+    {
+      "name": "REMOVE_VALUE",
+      "description": "Removes all occurrences of value from array",
+      "category": "array",
+      "signature": "REMOVE_VALUE(arr, val, limit?)",
+      "url": "/docs/sdbql-functions-array#fn-REMOVE_VALUE"
+    },
+    {
+      "name": "POSITION",
+      "description": "Returns 0-based index if element exists, -1 otherwise",
+      "category": "array",
+      "signature": "POSITION(arr, elem, start?)",
+      "url": "/docs/sdbql-functions-array#fn-POSITION"
+    },
+    {
+      "name": "CONTAINS_ARRAY",
+      "description": "Returns true if array contains element",
+      "category": "array",
+      "signature": "CONTAINS_ARRAY(arr, elem)",
+      "url": "/docs/sdbql-functions-array#fn-CONTAINS_ARRAY"
+    },
+    {
+      "name": "DATE_NOW",
+      "description": "Returns current Unix timestamp (ms)",
+      "category": "date",
+      "signature": "DATE_NOW()",
+      "url": "/docs/sdbql-functions-date#fn-DATE_NOW"
+    },
+    {
+      "name": "DATE_ISO8601",
+      "description": "Converts timestamp to ISO 8601 string",
+      "category": "date",
+      "signature": "DATE_ISO8601(timestamp)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_ISO8601"
+    },
+    {
+      "name": "DATE_TIMESTAMP",
+      "description": "Converts ISO 8601 string to timestamp (ms)",
+      "category": "date",
+      "signature": "DATE_TIMESTAMP(date)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_TIMESTAMP"
+    },
+    {
+      "name": "HUMAN_TIME",
+      "description": "Converts date to relative human-readable string",
+      "category": "date",
+      "signature": "HUMAN_TIME(date, now?)",
+      "url": "/docs/sdbql-functions-date#fn-HUMAN_TIME"
+    },
+    {
+      "name": "DATE_YEAR",
+      "description": "Extracts year from date",
+      "category": "date",
+      "signature": "DATE_YEAR(date)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_YEAR"
+    },
+    {
+      "name": "DATE_MONTH",
+      "description": "Extracts month from date",
+      "category": "date",
+      "signature": "DATE_MONTH(date)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_YEAR"
+    },
+    {
+      "name": "DATE_DAY",
+      "description": "Extracts day from date",
+      "category": "date",
+      "signature": "DATE_DAY(date)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_YEAR"
+    },
+    {
+      "name": "DATE_HOUR",
+      "description": "Extracts hour from date",
+      "category": "date",
+      "signature": "DATE_HOUR(date)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_HOUR"
+    },
+    {
+      "name": "DATE_MINUTE",
+      "description": "Extracts minute from date",
+      "category": "date",
+      "signature": "DATE_MINUTE(date)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_HOUR"
+    },
+    {
+      "name": "DATE_SECOND",
+      "description": "Extracts second from date",
+      "category": "date",
+      "signature": "DATE_SECOND(date)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_HOUR"
+    },
+    {
+      "name": "DATE_DAYOFWEEK",
+      "description": "Returns day of week (0=Sunday to 6=Saturday)",
+      "category": "date",
+      "signature": "DATE_DAYOFWEEK(date)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_DAYOFWEEK"
+    },
+    {
+      "name": "DATE_QUARTER",
+      "description": "Returns quarter of the year (1-4)",
+      "category": "date",
+      "signature": "DATE_QUARTER(date)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_QUARTER"
+    },
+    {
+      "name": "DATE_ISOWEEK",
+      "description": "Returns ISO 8601 week number (1-53)",
+      "category": "date",
+      "signature": "DATE_ISOWEEK(date)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_ISOWEEK"
+    },
+    {
+      "name": "DATE_DAYOFYEAR",
+      "description": "Returns day of year (1-366)",
+      "category": "date",
+      "signature": "DATE_DAYOFYEAR(date, tz?)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_DAYOFYEAR"
+    },
+    {
+      "name": "DATE_DAYS_IN_MONTH",
+      "description": "Returns days in the month (28-31)",
+      "category": "date",
+      "signature": "DATE_DAYS_IN_MONTH(date, tz?)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_DAYS_IN_MONTH"
+    },
+    {
+      "name": "DATE_TRUNC",
+      "description": "Truncates date to specified unit",
+      "category": "date",
+      "signature": "DATE_TRUNC(date, unit, timezone?)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_TRUNC"
+    },
+    {
+      "name": "DATE_FORMAT",
+      "description": "Formats date according to format string (strftime-style)",
+      "category": "date",
+      "signature": "DATE_FORMAT(date, format, timezone?)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_FORMAT"
+    },
+    {
+      "name": "DATE_ADD",
+      "description": "Add a specified amount of time to a date",
+      "category": "date",
+      "signature": "DATE_ADD(date, amount, unit, timezone?)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_ADD"
+    },
+    {
+      "name": "DATE_SUBTRACT",
+      "description": "Subtract a specified amount of time from a date",
+      "category": "date",
+      "signature": "DATE_SUBTRACT(date, amount, unit, timezone?)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_SUBTRACT"
+    },
+    {
+      "name": "DATE_DIFF",
+      "description": "Calculate the difference between two dates",
+      "category": "date",
+      "signature": "DATE_DIFF(date1, date2, unit, asFloat?, tz1?, tz2?)",
+      "url": "/docs/sdbql-functions-date#fn-DATE_DIFF"
+    },
+    {
+      "name": "TIME_BUCKET",
+      "description": "Buckets timestamp into fixed intervals for time series aggregation",
+      "category": "date",
+      "signature": "TIME_BUCKET(time, interval)",
+      "url": "/docs/sdbql-functions-date#fn-TIME_BUCKET"
+    },
+    {
+      "name": "HIGHLIGHT",
+      "description": "Wraps matching terms in text with bold tags",
+      "category": "date",
+      "signature": "HIGHLIGHT(text, terms)",
+      "url": "/docs/sdbql-functions-date#fn-HIGHLIGHT"
+    },
+    {
+      "name": "DISTANCE",
+      "description": "Calculates distance in meters between two coordinate pairs using Haversine formula",
+      "category": "geo",
+      "signature": "DISTANCE(lat1, lon1, lat2, lon2)",
+      "url": "/docs/sdbql-functions-geo#fn-DISTANCE"
+    },
+    {
+      "name": "GEO_DISTANCE",
+      "description": "Distance in meters between GeoPoint objects",
+      "category": "geo",
+      "signature": "GEO_DISTANCE(p1, p2)",
+      "url": "/docs/sdbql-functions-geo#fn-GEO_DISTANCE"
+    },
+    {
+      "name": "GEO_WITHIN",
+      "description": "Returns true if point is inside the specified polygon",
+      "category": "geo",
+      "signature": "GEO_WITHIN(point, polygon)",
+      "url": "/docs/sdbql-functions-geo#fn-GEO_WITHIN"
+    },
+    {
+      "name": "VECTOR_SIMILARITY",
+      "description": "Calculates cosine similarity between two vectors",
+      "category": "vector",
+      "signature": "VECTOR_SIMILARITY(vec1, vec2)",
+      "url": "/docs/sdbql-functions-vector#fn-VECTOR_SIMILARITY"
+    },
+    {
+      "name": "VECTOR_DISTANCE",
+      "description": "Calculates the distance between two vectors using specified metric",
+      "category": "vector",
+      "signature": "VECTOR_DISTANCE(vec1, vec2, metric)",
+      "url": "/docs/sdbql-functions-vector#fn-VECTOR_DISTANCE"
+    },
+    {
+      "name": "VECTOR_NORMALIZE",
+      "description": "Normalizes a vector to unit length",
+      "category": "vector",
+      "signature": "VECTOR_NORMALIZE(vec)",
+      "url": "/docs/sdbql-functions-vector#fn-VECTOR_NORMALIZE"
+    },
+    {
+      "name": "VECTOR_INDEX_STATS",
+      "description": "Returns statistics about a vector index",
+      "category": "vector",
+      "signature": "VECTOR_INDEX_STATS(collection, index_name)",
+      "url": "/docs/sdbql-functions-vector#fn-VECTOR_INDEX_STATS"
+    },
+    {
+      "name": "FULLTEXT",
+      "description": "N-Gram fulltext search with fuzzy matching",
+      "category": "search",
+      "signature": "FULLTEXT(collection, field, query, distance?)",
+      "url": "/docs/sdbql-functions-search#fn-FULLTEXT"
+    },
+    {
+      "name": "BM25",
+      "description": "BM25 relevance scoring for ranking search results",
+      "category": "search",
+      "signature": "BM25(field, query)",
+      "url": "/docs/sdbql-functions-search#fn-BM25"
+    },
+    {
+      "name": "HYBRID_SEARCH",
+      "description": "Combines vector similarity search with fulltext search",
+      "category": "search",
+      "signature": "HYBRID_SEARCH(collection, vector_index, fulltext_field, query_vector, text_query, options?)",
+      "url": "/docs/sdbql-functions-search#fn-HYBRID_SEARCH"
+    },
+    {
+      "name": "SAMPLE",
+      "description": "Returns a random sample of documents from a collection",
+      "category": "search",
+      "signature": "SAMPLE(collection, count)",
+      "url": "/docs/sdbql-functions-search#fn-SAMPLE"
+    },
+    {
+      "name": "ARGON2_HASH",
+      "description": "Securely hash a password using Argon2id",
+      "category": "crypto",
+      "signature": "ARGON2_HASH(password)",
+      "url": "/docs/sdbql-functions-crypto#fn-ARGON2_HASH"
+    },
+    {
+      "name": "ARGON2_VERIFY",
+      "description": "Verify a password against a stored Argon2 hash",
+      "category": "crypto",
+      "signature": "ARGON2_VERIFY(hash, password)",
+      "url": "/docs/sdbql-functions-crypto#fn-ARGON2_VERIFY"
+    },
+    {
+      "name": "MD5",
+      "description": "Computes MD5 hash (128-bit)",
+      "category": "crypto",
+      "signature": "MD5(string)",
+      "url": "/docs/sdbql-functions-crypto#fn-MD5"
+    },
+    {
+      "name": "SHA256",
+      "description": "Computes SHA-256 hash (256-bit)",
+      "category": "crypto",
+      "signature": "SHA256(string)",
+      "url": "/docs/sdbql-functions-crypto#fn-SHA256"
+    },
+    {
+      "name": "BASE64_ENCODE",
+      "description": "Encode string to Base64 format",
+      "category": "crypto",
+      "signature": "BASE64_ENCODE(string)",
+      "url": "/docs/sdbql-functions-crypto#fn-BASE64_ENCODE"
+    },
+    {
+      "name": "BASE64_DECODE",
+      "description": "Decode Base64 string back to original",
+      "category": "crypto",
+      "signature": "BASE64_DECODE(string)",
+      "url": "/docs/sdbql-functions-crypto#fn-BASE64_DECODE"
+    },
+    {
+      "name": "IS_ARRAY",
+      "description": "Returns true if value is an array",
+      "category": "misc",
+      "signature": "IS_ARRAY(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_ARRAY"
+    },
+    {
+      "name": "IS_BOOLEAN",
+      "description": "Returns true if value is a boolean",
+      "category": "misc",
+      "signature": "IS_BOOLEAN(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_BOOLEAN"
+    },
+    {
+      "name": "IS_NUMBER",
+      "description": "Returns true if value is a number",
+      "category": "misc",
+      "signature": "IS_NUMBER(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_NUMBER"
+    },
+    {
+      "name": "IS_INTEGER",
+      "description": "Returns true if value is an integer",
+      "category": "misc",
+      "signature": "IS_INTEGER(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_INTEGER"
+    },
+    {
+      "name": "IS_STRING",
+      "description": "Returns true if value is a string",
+      "category": "misc",
+      "signature": "IS_STRING(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_STRING"
+    },
+    {
+      "name": "IS_OBJECT",
+      "description": "Returns true if value is an object",
+      "category": "misc",
+      "signature": "IS_OBJECT(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_OBJECT"
+    },
+    {
+      "name": "IS_NULL",
+      "description": "Returns true if value is null",
+      "category": "misc",
+      "signature": "IS_NULL(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_NULL"
+    },
+    {
+      "name": "IS_DATETIME",
+      "description": "Returns true if value is an ISO 8601 date string",
+      "category": "misc",
+      "signature": "IS_DATETIME(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_DATETIME"
+    },
+    {
+      "name": "TYPENAME",
+      "description": "Returns the type name as a string",
+      "category": "misc",
+      "signature": "TYPENAME(val)",
+      "url": "/docs/sdbql-functions-misc#fn-TYPENAME"
+    },
+    {
+      "name": "IS_EMAIL",
+      "description": "Returns true if value is a valid email format",
+      "category": "misc",
+      "signature": "IS_EMAIL(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_EMAIL"
+    },
+    {
+      "name": "IS_URL",
+      "description": "Returns true if value is a valid URL format",
+      "category": "misc",
+      "signature": "IS_URL(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_URL"
+    },
+    {
+      "name": "IS_UUID",
+      "description": "Returns true if value is a valid UUID format",
+      "category": "misc",
+      "signature": "IS_UUID(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_UUID"
+    },
+    {
+      "name": "IS_EMPTY",
+      "description": "Returns true if value is null, empty string, empty array, or empty object",
+      "category": "misc",
+      "signature": "IS_EMPTY(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_EMPTY"
+    },
+    {
+      "name": "IS_BLANK",
+      "description": "Returns true if string is blank (whitespace only)",
+      "category": "misc",
+      "signature": "IS_BLANK(val)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_BLANK"
+    },
+    {
+      "name": "TO_BOOL",
+      "description": "Casts value to boolean",
+      "category": "misc",
+      "signature": "TO_BOOL(value)",
+      "url": "/docs/sdbql-functions-misc#fn-TO_BOOL"
+    },
+    {
+      "name": "TO_NUMBER",
+      "description": "Casts value to number",
+      "category": "misc",
+      "signature": "TO_NUMBER(value)",
+      "url": "/docs/sdbql-functions-misc#fn-TO_NUMBER"
+    },
+    {
+      "name": "TO_STRING",
+      "description": "Casts value to string",
+      "category": "misc",
+      "signature": "TO_STRING(value)",
+      "url": "/docs/sdbql-functions-misc#fn-TO_STRING"
+    },
+    {
+      "name": "TO_ARRAY",
+      "description": "Casts value to array",
+      "category": "misc",
+      "signature": "TO_ARRAY(value)",
+      "url": "/docs/sdbql-functions-misc#fn-TO_ARRAY"
+    },
+    {
+      "name": "IF",
+      "description": "Condition evaluation. Returns true_val if cond is true, else false_val",
+      "category": "misc",
+      "signature": "IF(cond, true_val, false_val)",
+      "url": "/docs/sdbql-functions-misc#fn-IF"
+    },
+    {
+      "name": "COALESCE",
+      "description": "Returns the first non-null value. Alias: NOT_NULL",
+      "category": "misc",
+      "signature": "COALESCE(val1, val2, ...)",
+      "url": "/docs/sdbql-functions-misc#fn-COALESCE"
+    },
+    {
+      "name": "MERGE",
+      "description": "Shallow merge of objects",
+      "category": "misc",
+      "signature": "MERGE(obj1, obj2)",
+      "url": "/docs/sdbql-functions-misc#fn-MERGE"
+    },
+    {
+      "name": "DEEP_MERGE",
+      "description": "Deep merge objects recursively",
+      "category": "misc",
+      "signature": "DEEP_MERGE(obj1, obj2, ...)",
+      "url": "/docs/sdbql-functions-misc#fn-DEEP_MERGE"
+    },
+    {
+      "name": "GET",
+      "description": "Get nested value by dot-notation path",
+      "category": "misc",
+      "signature": "GET(obj, path, default?)",
+      "url": "/docs/sdbql-functions-misc#fn-GET"
+    },
+    {
+      "name": "HAS",
+      "description": "Checks if document contains attribute",
+      "category": "misc",
+      "signature": "HAS(doc, attr)",
+      "url": "/docs/sdbql-functions-misc#fn-HAS"
+    },
+    {
+      "name": "KEEP",
+      "description": "Keep only specified attributes",
+      "category": "misc",
+      "signature": "KEEP(doc, attr...)",
+      "url": "/docs/sdbql-functions-misc#fn-KEEP"
+    },
+    {
+      "name": "UNSET",
+      "description": "Removes specified attributes",
+      "category": "misc",
+      "signature": "UNSET(doc, attr...)",
+      "url": "/docs/sdbql-functions-misc#fn-UNSET"
+    },
+    {
+      "name": "ATTRIBUTES",
+      "description": "Top-level attribute keys of the document",
+      "category": "misc",
+      "signature": "ATTRIBUTES(doc, removeInternal?, sort?)",
+      "url": "/docs/sdbql-functions-misc#fn-ATTRIBUTES"
+    },
+    {
+      "name": "VALUES",
+      "description": "Returns top-level attribute values",
+      "category": "misc",
+      "signature": "VALUES(doc, removeInternal?)",
+      "url": "/docs/sdbql-functions-misc#fn-VALUES"
+    },
+    {
+      "name": "ENTRIES",
+      "description": "Convert object to [key, value] pairs",
+      "category": "misc",
+      "signature": "ENTRIES(obj)",
+      "url": "/docs/sdbql-functions-misc#fn-ENTRIES"
+    },
+    {
+      "name": "FROM_ENTRIES",
+      "description": "Convert [key, value] pairs to object",
+      "category": "misc",
+      "signature": "FROM_ENTRIES(arr)",
+      "url": "/docs/sdbql-functions-misc#fn-FROM_ENTRIES"
+    },
+    {
+      "name": "UUID",
+      "description": "Generates a random UUID v4. Alias: UUID_V4",
+      "category": "misc",
+      "signature": "UUID()",
+      "url": "/docs/sdbql-functions-misc#fn-UUID"
+    },
+    {
+      "name": "UUIDV7",
+      "description": "Generates a time-ordered UUID v7",
+      "category": "misc",
+      "signature": "UUIDV7()",
+      "url": "/docs/sdbql-functions-misc#fn-UUIDV7"
+    },
+    {
+      "name": "ULID",
+      "description": "Generates a Lexicographically Sortable Identifier",
+      "category": "misc",
+      "signature": "ULID()",
+      "url": "/docs/sdbql-functions-misc#fn-ULID"
+    },
+    {
+      "name": "NANOID",
+      "description": "Generates a Nano ID (default 21 chars)",
+      "category": "misc",
+      "signature": "NANOID(size?)",
+      "url": "/docs/sdbql-functions-misc#fn-NANOID"
+    },
+    {
+      "name": "ASSERT",
+      "description": "Throws error if condition false",
+      "category": "misc",
+      "signature": "ASSERT(cond, msg)",
+      "url": "/docs/sdbql-functions-misc#fn-ASSERT"
+    },
+    {
+      "name": "SLEEP",
+      "description": "Pauses execution (for testing)",
+      "category": "misc",
+      "signature": "SLEEP(ms)",
+      "url": "/docs/sdbql-functions-misc#fn-SLEEP"
+    },
+    {
+      "name": "COLLECT_LIST",
+      "description": "Aggregates values from the group into an array",
+      "category": "aggregation",
+      "signature": "COLLECT_LIST(expr)",
+      "url": "/docs/sdbql-aggregations#aggregation-functions"
+    },
+    {
+      "name": "SHORTEST_PATH",
+      "description": "Find the shortest path between two vertices in a graph",
+      "category": "graph",
+      "signature": "SHORTEST_PATH start TO end direction edgeCollection",
+      "url": "/docs/sdbql-graphs#fn-SHORTEST_PATH"
+    }
+  ],
+  "operators": [
+    {
+      "name": "==",
+      "description": "Equality check",
+      "category": "comparison",
+      "url": "/docs/sdbql-operators#op-equality"
+    },
+    {
+      "name": "!=",
+      "description": "Inequality check",
+      "category": "comparison",
+      "url": "/docs/sdbql-operators#op-equality"
+    },
+    {
+      "name": "<",
+      "description": "Less than",
+      "category": "comparison",
+      "url": "/docs/sdbql-operators#op-relational"
+    },
+    {
+      "name": "<=",
+      "description": "Less than or equal",
+      "category": "comparison",
+      "url": "/docs/sdbql-operators#op-relational"
+    },
+    {
+      "name": ">",
+      "description": "Greater than",
+      "category": "comparison",
+      "url": "/docs/sdbql-operators#op-relational"
+    },
+    {
+      "name": ">=",
+      "description": "Greater than or equal",
+      "category": "comparison",
+      "url": "/docs/sdbql-operators#op-relational"
+    },
+    {
+      "name": "IN",
+      "description": "Value in array",
+      "category": "comparison",
+      "url": "/docs/sdbql-operators#op-in"
+    },
+    {
+      "name": "LIKE",
+      "description": "Pattern matching with wildcards",
+      "category": "comparison",
+      "url": "/docs/sdbql-operators#op-like"
+    },
+    {
+      "name": "=~",
+      "description": "Regex match",
+      "category": "comparison",
+      "url": "/docs/sdbql-operators#op-like"
+    },
+    {
+      "name": "!~",
+      "description": "Regex not match",
+      "category": "comparison",
+      "url": "/docs/sdbql-operators#op-like"
+    },
+    {
+      "name": "~=",
+      "description": "Fuzzy match (edit distance <= 2)",
+      "category": "comparison",
+      "url": "/docs/sdbql-operators#op-fuzzy"
+    },
+    {
+      "name": "AND",
+      "description": "Logical AND",
+      "category": "logical",
+      "url": "/docs/sdbql-operators#op-and-or"
+    },
+    {
+      "name": "OR",
+      "description": "Logical OR",
+      "category": "logical",
+      "url": "/docs/sdbql-operators#op-and-or"
+    },
+    {
+      "name": "NOT",
+      "description": "Logical NOT (negation)",
+      "category": "logical",
+      "url": "/docs/sdbql-operators#op-not"
+    },
+    {
+      "name": "??",
+      "description": "Null coalesce - returns left if not null",
+      "category": "logical",
+      "url": "/docs/sdbql-operators#op-nullcoalesce"
+    },
+    {
+      "name": "||",
+      "description": "Logical OR (falsy coalesce) - returns left if truthy",
+      "category": "logical",
+      "url": "/docs/sdbql-operators#op-logicalor"
+    },
+    {
+      "name": "+",
+      "description": "Addition",
+      "category": "arithmetic",
+      "url": "/docs/sdbql-operators#op-arithmetic"
+    },
+    {
+      "name": "-",
+      "description": "Subtraction",
+      "category": "arithmetic",
+      "url": "/docs/sdbql-operators#op-arithmetic"
+    },
+    {
+      "name": "*",
+      "description": "Multiplication",
+      "category": "arithmetic",
+      "url": "/docs/sdbql-operators#op-arithmetic"
+    },
+    {
+      "name": "/",
+      "description": "Division",
+      "category": "arithmetic",
+      "url": "/docs/sdbql-operators#op-arithmetic"
+    },
+    {
+      "name": "%",
+      "description": "Modulo (remainder)",
+      "category": "arithmetic",
+      "url": "/docs/sdbql-operators#op-modulo"
+    },
+    {
+      "name": "&",
+      "description": "Bitwise AND",
+      "category": "bitwise",
+      "url": "/docs/sdbql-operators#op-bitwise"
+    },
+    {
+      "name": "|",
+      "description": "Bitwise OR",
+      "category": "bitwise",
+      "url": "/docs/sdbql-operators#op-bitwise"
+    },
+    {
+      "name": "^",
+      "description": "Bitwise XOR",
+      "category": "bitwise",
+      "url": "/docs/sdbql-operators#op-bitwise"
+    },
+    {
+      "name": "~",
+      "description": "Bitwise NOT",
+      "category": "bitwise",
+      "url": "/docs/sdbql-operators#op-bitwise"
+    },
+    {
+      "name": "<<",
+      "description": "Shift left",
+      "category": "bitwise",
+      "url": "/docs/sdbql-operators#op-shift"
+    },
+    {
+      "name": ">>",
+      "description": "Shift right",
+      "category": "bitwise",
+      "url": "/docs/sdbql-operators#op-shift"
+    },
+    {
+      "name": "ANY",
+      "description": "True if one or more elements satisfy the condition",
+      "category": "array",
+      "url": "/docs/sdbql-operators#op-any"
+    },
+    {
+      "name": "ALL",
+      "description": "True if every element satisfies the condition",
+      "category": "array",
+      "url": "/docs/sdbql-operators#op-all"
+    },
+    {
+      "name": "NONE",
+      "description": "True if zero elements satisfy the condition",
+      "category": "array",
+      "url": "/docs/sdbql-operators#op-none"
+    },
+    {
+      "name": "|>",
+      "description": "Pipeline operator - chains function calls, passing left value as first argument to right function",
+      "category": "pipeline",
+      "url": "/docs/sdbql-syntax#pipeline"
+    }
+  ],
+  "keywords": [
+    {
+      "name": "FOR",
+      "description": "Iterate over collection or array",
+      "category": "clause",
+      "url": "/docs/sdbql-syntax#syntax"
+    },
+    {
+      "name": "FILTER",
+      "description": "Restrict results based on conditions",
+      "category": "clause",
+      "url": "/docs/sdbql-syntax#syntax"
+    },
+    {
+      "name": "SORT",
+      "description": "Sort results by field",
+      "category": "clause",
+      "url": "/docs/sdbql-syntax#syntax"
+    },
+    {
+      "name": "LIMIT",
+      "description": "Limit number of results",
+      "category": "clause",
+      "url": "/docs/sdbql-syntax#syntax"
+    },
+    {
+      "name": "RETURN",
+      "description": "Construct and return result documents",
+      "category": "clause",
+      "url": "/docs/sdbql-syntax#syntax"
+    },
+    {
+      "name": "COLLECT",
+      "description": "Group results for aggregation",
+      "category": "clause",
+      "url": "/docs/sdbql-syntax#syntax"
+    },
+    {
+      "name": "INSERT",
+      "description": "Insert new document into collection",
+      "category": "mutation",
+      "url": "/docs/sdbql-syntax#bulk-operations"
+    },
+    {
+      "name": "UPDATE",
+      "description": "Update existing document",
+      "category": "mutation",
+      "url": "/docs/sdbql-syntax#bulk-operations"
+    },
+    {
+      "name": "REMOVE",
+      "description": "Remove document from collection",
+      "category": "mutation",
+      "url": "/docs/sdbql-syntax#bulk-operations"
+    },
+    {
+      "name": "UPSERT",
+      "description": "Update or insert document",
+      "category": "mutation",
+      "url": "/docs/sdbql-syntax#bulk-operations"
+    },
+    {
+      "name": "LET",
+      "description": "Bind values or subquery results to variables",
+      "category": "clause",
+      "url": "/docs/sdbql-syntax#let-subqueries"
+    },
+    {
+      "name": "WITH",
+      "description": "Specify collection dependencies or aggregation context",
+      "category": "clause",
+      "url": "/docs/sdbql-syntax#syntax"
+    },
+    {
+      "name": "INTO",
+      "description": "Specify target collection for mutations",
+      "category": "clause",
+      "url": "/docs/sdbql-syntax#bulk-operations"
+    },
+    {
+      "name": "GRAPH",
+      "description": "Traverse a named graph",
+      "category": "graph",
+      "url": "/docs/sdbql-graphs#kw-TRAVERSAL"
+    },
+    {
+      "name": "OUTBOUND",
+      "description": "Follow outgoing edges in graph traversal (_from -> _to)",
+      "category": "graph",
+      "url": "/docs/sdbql-graphs#kw-TRAVERSAL"
+    },
+    {
+      "name": "INBOUND",
+      "description": "Follow incoming edges in graph traversal (_to <- _from)",
+      "category": "graph",
+      "url": "/docs/sdbql-graphs#kw-TRAVERSAL"
+    },
+    {
+      "name": "JOIN",
+      "description": "Inner join with another collection",
+      "category": "join",
+      "url": "/docs/sdbql-syntax#join-operations"
+    },
+    {
+      "name": "LEFT JOIN",
+      "description": "Left outer join with another collection",
+      "category": "join",
+      "url": "/docs/sdbql-syntax#join-operations"
+    },
+    {
+      "name": "RIGHT JOIN",
+      "description": "Right outer join with another collection",
+      "category": "join",
+      "url": "/docs/sdbql-syntax#join-operations"
+    },
+    {
+      "name": "FULL OUTER JOIN",
+      "description": "Full outer join with another collection",
+      "category": "join",
+      "url": "/docs/sdbql-syntax#join-operations"
+    },
+    {
+      "name": "ON",
+      "description": "Specify join condition",
+      "category": "join",
+      "url": "/docs/sdbql-syntax#join-operations"
+    },
+    {
+      "name": "CASE",
+      "description": "SQL-style conditional expression",
+      "category": "conditional",
+      "url": "/docs/sdbql-syntax#case-when"
+    },
+    {
+      "name": "WHEN",
+      "description": "Condition in CASE expression",
+      "category": "conditional",
+      "url": "/docs/sdbql-syntax#case-when"
+    },
+    {
+      "name": "THEN",
+      "description": "Result value in CASE expression",
+      "category": "conditional",
+      "url": "/docs/sdbql-syntax#case-when"
+    },
+    {
+      "name": "ELSE",
+      "description": "Default result in CASE expression",
+      "category": "conditional",
+      "url": "/docs/sdbql-syntax#case-when"
+    },
+    {
+      "name": "END",
+      "description": "End of CASE expression",
+      "category": "conditional",
+      "url": "/docs/sdbql-syntax#case-when"
+    },
+    {
+      "name": "OVER",
+      "description": "Window function clause",
+      "category": "window",
+      "url": "/docs/sdbql-syntax#window-functions"
+    },
+    {
+      "name": "PARTITION BY",
+      "description": "Partition data for window functions",
+      "category": "window",
+      "url": "/docs/sdbql-syntax#window-functions"
+    },
+    {
+      "name": "ORDER BY",
+      "description": "Order data for window functions",
+      "category": "window",
+      "url": "/docs/sdbql-syntax#window-functions"
+    },
+    {
+      "name": "ROW_NUMBER",
+      "description": "Window function for sequential row numbers",
+      "category": "window",
+      "url": "/docs/sdbql-syntax#window-functions"
+    },
+    {
+      "name": "RANK",
+      "description": "Window function for ranking with gaps",
+      "category": "window",
+      "url": "/docs/sdbql-syntax#window-functions"
+    },
+    {
+      "name": "DENSE_RANK",
+      "description": "Window function for ranking without gaps",
+      "category": "window",
+      "url": "/docs/sdbql-syntax#window-functions"
+    },
+    {
+      "name": "LAG",
+      "description": "Window function to access previous row value",
+      "category": "window",
+      "url": "/docs/sdbql-syntax#window-functions"
+    },
+    {
+      "name": "LEAD",
+      "description": "Window function to access next row value",
+      "category": "window",
+      "url": "/docs/sdbql-syntax#window-functions"
+    },
+    {
+      "name": "FIRST_VALUE",
+      "description": "Window function for first value in partition",
+      "category": "window",
+      "url": "/docs/sdbql-syntax#window-functions"
+    },
+    {
+      "name": "LAST_VALUE",
+      "description": "Window function for last value in partition",
+      "category": "window",
+      "url": "/docs/sdbql-syntax#window-functions"
+    },
+    {
+      "name": "ASC",
+      "description": "Sort in ascending order",
+      "category": "modifier",
+      "url": "/docs/sdbql-syntax#syntax"
+    },
+    {
+      "name": "DESC",
+      "description": "Sort in descending order",
+      "category": "modifier",
+      "url": "/docs/sdbql-syntax#syntax"
+    },
+    {
+      "name": "NEW",
+      "description": "Reference to document state after modification",
+      "category": "modifier",
+      "url": "/docs/sdbql-syntax#bulk-operations"
+    },
+    {
+      "name": "OLD",
+      "description": "Reference to document state before modification",
+      "category": "modifier",
+      "url": "/docs/sdbql-syntax#bulk-operations"
+    },
+    {
+      "name": "SATISFIES",
+      "description": "Condition in array quantifier expression",
+      "category": "array",
+      "url": "/docs/sdbql-operators#array-operators"
+    }
+  ]
+}

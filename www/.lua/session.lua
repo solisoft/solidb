@@ -6,7 +6,7 @@ local Session = {}
 -- Configuration
 Session.COOKIE_NAME = "luaonbeans_session"
 Session.FLASH_COOKIE_NAME = "luaonbeans_flash"
-Session.DEFAULT_TTL = 60 -- minutes
+Session.DEFAULT_TTL = 60 * 24 * 7 -- 1 week in minutes
 
 -- Get secret key with validation
 local function get_secret_key()

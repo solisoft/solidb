@@ -46,24 +46,28 @@
                 Current Time & Conversion
               </h3>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-DATE_NOW" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DATE_NOW" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_NOW()</code>
                   <p class="text-sm text-gray-400 mb-3">Returns current Unix timestamp (ms).</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_NOW() --1733234387000</code></pre>
                 </div>
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-DATE_ISO8601" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DATE_ISO8601" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_ISO8601(timestamp)</code>
                   <p class="text-sm text-gray-400 mb-3">Converts timestamp to ISO 8601 string.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_ISO8601(1733234387000)
 --"2025-12-03T13:59:47.000Z"</code></pre>
                 </div>
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-DATE_TIMESTAMP" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DATE_TIMESTAMP" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_TIMESTAMP(date)</code>
                   <p class="text-sm text-gray-400 mb-3">Converts ISO 8601 string to timestamp (ms).</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_TIMESTAMP("2025-12-03T13:59:47.000Z")
 --1764770387000</code></pre>
                 </div>
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-HUMAN_TIME" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-HUMAN_TIME" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">HUMAN_TIME(date)</code>
                   <p class="text-sm text-gray-400 mb-3">Converts date to relative human-readable string (e.g. "5 minutes ago").</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN HUMAN_TIME(DATE_SUBTRACT(DATE_NOW(), 5, "minutes"))
@@ -79,39 +83,46 @@
                 Component Extraction
               </h3>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-DATE_YEAR" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DATE_YEAR" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_YEAR/MONTH/DAY(date)</code>
                   <p class="text-sm text-gray-400 mb-3">Extracts year, month, or day.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_MONTH(DATE_NOW())</code></pre>
                 </div>
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-DATE_HOUR" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DATE_HOUR" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_HOUR/MINUTE/SECOND(date)</code>
                   <p class="text-sm text-gray-400 mb-3">Extracts time components.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_HOUR("2024-01-01T15:00:00Z") --15</code></pre>
                 </div>
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-DATE_DAYOFWEEK" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DATE_DAYOFWEEK" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_DAYOFWEEK(date)</code>
                   <p class="text-sm text-gray-400 mb-3">Returns day of week (0=Sunday to 6=Saturday).</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_DAYOFWEEK("2024-01-07") --0</code></pre>
                 </div>
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-DATE_QUARTER" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DATE_QUARTER" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_QUARTER(date)</code>
                   <p class="text-sm text-gray-400 mb-3">Returns quarter of the year (1-4).</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_QUARTER("2024-12-01") --4</code></pre>
                 </div>
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-DATE_ISOWEEK" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DATE_ISOWEEK" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_ISOWEEK(date)</code>
                   <p class="text-sm text-gray-400 mb-3">Returns ISO 8601 week number (1-53).</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_ISOWEEK("2025-06-15T14:30:45Z")
 --24</code></pre>
                 </div>
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-DATE_DAYOFYEAR" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DATE_DAYOFYEAR" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_DAYOFYEAR(date, tz?)</code>
                   <p class="text-sm text-gray-400 mb-3">Returns day of year (1-366). Optional timezone.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_DAYOFYEAR("2025-06-15T14:30:45Z")
 --166</code></pre>
                 </div>
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-DATE_DAYS_IN_MONTH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DATE_DAYS_IN_MONTH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_DAYS_IN_MONTH(date, tz?)</code>
                   <p class="text-sm text-gray-400 mb-3">Returns days in the month (28-31). Optional timezone.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_DAYS_IN_MONTH("2024-02-15T00:00:00Z")
@@ -121,7 +132,8 @@
             </div>
 
             <!-- DATE_TRUNC -->
-            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+            <div id="fn-DATE_TRUNC" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_TRUNC" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
               <div class="p-5 border-b border-white/5 bg-white/5">
                 <h3 class="text-lg font-bold text-pink-300 flex items-center">
                   <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_TRUNC</span>
@@ -155,7 +167,8 @@ DATE_TRUNC("2025-06-15T20:30:00Z", "day", "America/New_York")
             </div>
 
             <!-- DATE_FORMAT -->
-            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+            <div id="fn-DATE_FORMAT" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_FORMAT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
               <div class="p-5 border-b border-white/5 bg-white/5">
                 <h3 class="text-lg font-bold text-pink-300 flex items-center">
                   <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_FORMAT</span>
@@ -201,7 +214,8 @@ DATE_FORMAT("2025-06-15T14:30:00Z", "%H:%M", "America/New_York")
             </div>
 
             <!-- DATE_ADD -->
-            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+            <div id="fn-DATE_ADD" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_ADD" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
               <div class="p-5 border-b border-white/5 bg-white/5">
                 <h3 class="text-lg font-bold text-pink-300 flex items-center">
                   <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_ADD</span>
@@ -239,7 +253,8 @@ DATE_ADD(1733234387000, 2, "hours")
             </div>
 
             <!-- DATE_SUBTRACT -->
-            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+            <div id="fn-DATE_SUBTRACT" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_SUBTRACT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
               <div class="p-5 border-b border-white/5 bg-white/5">
                 <h3 class="text-lg font-bold text-pink-300 flex items-center">
                   <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_SUBTRACT</span>
@@ -277,7 +292,8 @@ DATE_SUBTRACT(1733234387000, 1, "day")
             </div>
 
             <!-- DATE_DIFF -->
-            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+            <div id="fn-DATE_DIFF" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_DIFF" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
               <div class="p-5 border-b border-white/5 bg-white/5">
                 <h3 class="text-lg font-bold text-pink-300 flex items-center">
                   <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_DIFF</span>
@@ -317,7 +333,8 @@ DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-10T00:00:00Z", "days")
             </div>
 
             <!-- TIME_BUCKET -->
-            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+            <div id="fn-TIME_BUCKET" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-TIME_BUCKET" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
               <div class="p-5 border-b border-white/5 bg-white/5">
                 <h3 class="text-lg font-bold text-cyan-300 flex items-center">
                   <span class="bg-cyan-500/20 text-cyan-400 text-xs font-mono px-2 py-1 rounded mr-3">TIME_BUCKET</span>
@@ -341,7 +358,8 @@ FOR event IN events
             </div>
 
             <!-- HUMAN_TIME -->
-            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+            <div id="fn-HUMAN_TIME_DETAILED" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-HUMAN_TIME_DETAILED" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
               <div class="p-5 border-b border-white/5 bg-white/5">
                 <h3 class="text-lg font-bold text-emerald-300 flex items-center">
                   <span class="bg-emerald-500/20 text-emerald-400 text-xs font-mono px-2 py-1 rounded mr-3">HUMAN_TIME</span>
@@ -377,7 +395,8 @@ HUMAN_TIME("2025-06-15T14:30:00Z", "2025-06-15T14:35:00Z")
             </div>
 
             <!-- HIGHLIGHT -->
-            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+            <div id="fn-HIGHLIGHT" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-HIGHLIGHT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
               <div class="p-5 border-b border-white/5 bg-white/5">
                 <h3 class="text-lg font-bold text-yellow-300 flex items-center">
                   <span class="bg-yellow-500/20 text-yellow-400 text-xs font-mono px-2 py-1 rounded mr-3">HIGHLIGHT</span>

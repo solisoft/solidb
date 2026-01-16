@@ -101,6 +101,12 @@ end
     <span class="text-sm">Queues</span>
   </a>
 
+  <a href="/database/<%= db %>/triggers"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('triggers') %>">
+    <i class="fas fa-bolt w-5 text-center text-warning"></i>
+    <span class="text-sm">Triggers</span>
+  </a>
+
   <a href="/database/<%= db %>/env"
      class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('env') %>">
     <i class="fas fa-cog w-5 text-center text-text-muted"></i>

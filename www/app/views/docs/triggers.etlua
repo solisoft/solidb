@@ -1,0 +1,528 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Main Content -->
+    <main class="col-span-12 lg:col-span-12 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-amber-600 to-orange-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-400 mb-4 tracking-tight">Collection Triggers</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Event-driven automation that creates background jobs when documents change.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview Section -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              Overview
+            </h2>
+          </div>
+          <div class="p-8 text-gray-300 space-y-4 leading-relaxed">
+            <p>
+              Triggers allow you to automatically execute Lua scripts when documents are inserted, updated, or deleted in a collection.
+              Instead of executing synchronously, triggers create background jobs in the <code class="text-amber-400">_jobs</code> collection,
+              which are then processed by SoliDB's distributed queue workers.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg p-6 border border-white/5 my-6">
+              <h4 class="text-white font-semibold mb-4">How It Works</h4>
+              <div class="flex flex-col md:flex-row items-start md:items-center gap-4 text-sm">
+                <div class="flex items-center gap-2 bg-green-500/10 px-3 py-2 rounded-lg border border-green-500/30">
+                  <span class="text-green-400 font-mono">1</span>
+                  <span class="text-gray-300">Document Operation</span>
+                </div>
+                <svg class="w-6 h-6 text-gray-500 hidden md:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                <div class="flex items-center gap-2 bg-blue-500/10 px-3 py-2 rounded-lg border border-blue-500/30">
+                  <span class="text-blue-400 font-mono">2</span>
+                  <span class="text-gray-300">Check Triggers</span>
+                </div>
+                <svg class="w-6 h-6 text-gray-500 hidden md:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                <div class="flex items-center gap-2 bg-purple-500/10 px-3 py-2 rounded-lg border border-purple-500/30">
+                  <span class="text-purple-400 font-mono">3</span>
+                  <span class="text-gray-300">Create Job</span>
+                </div>
+                <svg class="w-6 h-6 text-gray-500 hidden md:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                <div class="flex items-center gap-2 bg-amber-500/10 px-3 py-2 rounded-lg border border-amber-500/30">
+                  <span class="text-amber-400 font-mono">4</span>
+                  <span class="text-gray-300">Execute Script</span>
+                </div>
+              </div>
+            </div>
+
+            <p>Key features include:</p>
+            <ul class="list-disc list-inside space-y-2 ml-4">
+              <li><strong>Asynchronous Execution</strong>: Triggers don't block document operations - they create jobs for later processing.</li>
+              <li><strong>Event Types</strong>: React to <code class="text-amber-400">insert</code>, <code class="text-amber-400">update</code>, and <code class="text-amber-400">delete</code> events.</li>
+              <li><strong>Full Context</strong>: Scripts receive the document data, old data (for updates/deletes), and event metadata.</li>
+              <li><strong>Reliable Processing</strong>: Jobs support priority, retries, and are processed by distributed workers.</li>
+              <li><strong>Dashboard Management</strong>: Create, edit, and monitor triggers through the web dashboard.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Trigger Schema Section -->
+      <section id="schema" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+              Trigger Schema
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6">
+              Triggers are stored in the <code class="text-amber-400">_triggers</code> collection within each database.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                  <tr>
+                    <th class="p-4">Field</th>
+                    <th class="p-4">Type</th>
+                    <th class="p-4">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="text-gray-400 divide-y divide-white/5">
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">_key</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">Unique identifier (UUID)</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">name</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">Human-readable trigger name</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">collection</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">Collection to watch for changes</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">events</td>
+                    <td class="p-4 font-mono">array</td>
+                    <td class="p-4">Events to trigger on: <code class="text-amber-400">"insert"</code>, <code class="text-amber-400">"update"</code>, <code class="text-amber-400">"delete"</code></td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">script_path</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">Path to the Lua script in <code class="text-indigo-400">_scripts</code> collection</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">queue</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">Queue name for job execution (default: "default")</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">priority</td>
+                    <td class="p-4 font-mono">integer</td>
+                    <td class="p-4">Job priority (higher = more important, default: 0)</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">max_retries</td>
+                    <td class="p-4 font-mono">integer</td>
+                    <td class="p-4">Maximum retry attempts on failure (default: 5)</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">enabled</td>
+                    <td class="p-4 font-mono">boolean</td>
+                    <td class="p-4">Whether the trigger is active</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="mt-6">
+              <h4 class="text-white font-semibold mb-3">Example Trigger Document</h4>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-json text-sm">{
+  "_key": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "send_welcome_email",
+  "collection": "users",
+  "events": ["insert"],
+  "script_path": "triggers/welcome_email.lua",
+  "queue": "emails",
+  "priority": 10,
+  "max_retries": 3,
+  "enabled": true,
+  "created_at": 1705312800,
+  "updated_at": 1705312800
+}</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Job Parameters Section -->
+      <section id="job-params" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+              Job Parameters
+            </h2>
+          </div>
+          <div class="p-8 text-gray-300">
+            <p class="mb-6">
+              When a trigger fires, it creates a job with the following parameters passed to your Lua script:
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 mb-6">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                  <tr>
+                    <th class="p-4">Parameter</th>
+                    <th class="p-4">Type</th>
+                    <th class="p-4">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="text-gray-400 divide-y divide-white/5">
+                  <tr>
+                    <td class="p-4 text-purple-400 font-mono">trigger_name</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">Name of the trigger that fired</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-purple-400 font-mono">event</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">Event type: "insert", "update", or "delete"</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-purple-400 font-mono">collection</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">Collection where the change occurred</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-purple-400 font-mono">key</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">Document key</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-purple-400 font-mono">data</td>
+                    <td class="p-4 font-mono">object|null</td>
+                    <td class="p-4">New document data (for insert/update)</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-purple-400 font-mono">old_data</td>
+                    <td class="p-4 font-mono">object|null</td>
+                    <td class="p-4">Previous document data (for update/delete)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h4 class="text-white font-semibold mb-3">Example Job Params</h4>
+            <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-json text-sm">{
+  "trigger_name": "send_welcome_email",
+  "event": "insert",
+  "collection": "users",
+  "key": "user_123",
+  "data": {
+    "_key": "user_123",
+    "email": "jane@example.com",
+    "name": "Jane Doe"
+  },
+  "old_data": null
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Script Example Section -->
+      <section id="script-example" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+              Trigger Script Example
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6">
+              Here's an example Lua script that handles a trigger event:
+            </p>
+
+            <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-lua text-sm">-- triggers/welcome_email.lua
+-- This script runs when a new user is inserted
+
+-- params contains all the trigger context
+local trigger_name = params.trigger_name
+local event = params.event
+local collection = params.collection
+local key = params.key
+local data = params.data
+local old_data = params.old_data
+
+Log(kLogInfo, "Trigger fired: " .. trigger_name .. " on " .. event)
+
+if event == "insert" and data then
+  -- Send welcome email to new user
+  local email = data.email
+  local name = data.name or "User"
+
+  if email then
+    -- Use your email service
+    local result = Fetch("https://api.emailservice.com/send", {
+      method = "POST",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["Authorization"] = "Bearer " .. GetEnv("EMAIL_API_KEY")
+      },
+      body = EncodeJson({
+        to = email,
+        subject = "Welcome to Our App!",
+        body = "Hello " .. name .. ", welcome aboard!"
+      })
+    })
+
+    Log(kLogInfo, "Welcome email sent to: " .. email)
+  end
+
+elseif event == "update" and data and old_data then
+  -- Check if email changed
+  if data.email ~= old_data.email then
+    Log(kLogInfo, "User email changed from " .. (old_data.email or "nil") .. " to " .. (data.email or "nil"))
+    -- Send email change notification
+  end
+
+elseif event == "delete" and old_data then
+  -- Handle user deletion
+  Log(kLogInfo, "User deleted: " .. (old_data.email or key))
+  -- Cleanup or send goodbye email
+end
+
+return { success = true }</code></pre>
+            </div>
+
+            <div class="mt-6 bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+              <div class="flex items-start">
+                <svg class="w-5 h-5 text-amber-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                <div>
+                  <strong class="text-amber-300">Important:</strong>
+                  <span class="text-gray-400"> Trigger scripts are stored in the <code class="text-amber-400">_scripts</code> collection. Create your script first, then reference its path when creating the trigger.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Use Cases Section -->
+      <section id="use-cases" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+              Common Use Cases
+            </h2>
+          </div>
+          <div class="p-8">
+            <div class="grid md:grid-cols-2 gap-6">
+              <div class="bg-gray-950/30 rounded-lg p-6 border border-white/5">
+                <div class="flex items-center gap-3 mb-3">
+                  <span class="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center">
+                    <i class="fas fa-envelope text-green-400 text-sm"></i>
+                  </span>
+                  <h4 class="font-semibold text-white">Notifications</h4>
+                </div>
+                <p class="text-gray-400 text-sm">Send emails, SMS, or push notifications when documents change.</p>
+              </div>
+
+              <div class="bg-gray-950/30 rounded-lg p-6 border border-white/5">
+                <div class="flex items-center gap-3 mb-3">
+                  <span class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                    <i class="fas fa-sync text-blue-400 text-sm"></i>
+                  </span>
+                  <h4 class="font-semibold text-white">Data Sync</h4>
+                </div>
+                <p class="text-gray-400 text-sm">Sync changes to external systems, APIs, or other databases.</p>
+              </div>
+
+              <div class="bg-gray-950/30 rounded-lg p-6 border border-white/5">
+                <div class="flex items-center gap-3 mb-3">
+                  <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                    <i class="fas fa-history text-purple-400 text-sm"></i>
+                  </span>
+                  <h4 class="font-semibold text-white">Audit Logging</h4>
+                </div>
+                <p class="text-gray-400 text-sm">Track all changes to sensitive documents for compliance.</p>
+              </div>
+
+              <div class="bg-gray-950/30 rounded-lg p-6 border border-white/5">
+                <div class="flex items-center gap-3 mb-3">
+                  <span class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                    <i class="fas fa-calculator text-amber-400 text-sm"></i>
+                  </span>
+                  <h4 class="font-semibold text-white">Denormalization</h4>
+                </div>
+                <p class="text-gray-400 text-sm">Update derived data or materialized views when source data changes.</p>
+              </div>
+
+              <div class="bg-gray-950/30 rounded-lg p-6 border border-white/5">
+                <div class="flex items-center gap-3 mb-3">
+                  <span class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center">
+                    <i class="fas fa-broom text-red-400 text-sm"></i>
+                  </span>
+                  <h4 class="font-semibold text-white">Cleanup Tasks</h4>
+                </div>
+                <p class="text-gray-400 text-sm">Delete related data or resources when documents are removed.</p>
+              </div>
+
+              <div class="bg-gray-950/30 rounded-lg p-6 border border-white/5">
+                <div class="flex items-center gap-3 mb-3">
+                  <span class="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                    <i class="fas fa-cogs text-cyan-400 text-sm"></i>
+                  </span>
+                  <h4 class="font-semibold text-white">Workflow Automation</h4>
+                </div>
+                <p class="text-gray-400 text-sm">Trigger multi-step business processes based on data changes.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dashboard Section -->
+      <section id="dashboard" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+              Dashboard Management
+            </h2>
+          </div>
+          <div class="p-8 text-gray-300">
+            <p class="mb-6">
+              Manage your triggers visually using the <strong>Triggers</strong> section in the database dashboard:
+            </p>
+            <ul class="list-disc list-inside space-y-2 ml-4">
+              <li>View all triggers with their collection, events, and status</li>
+              <li>Create new triggers with a form-based interface</li>
+              <li>Edit trigger configuration (name, events, script, queue settings)</li>
+              <li>Toggle triggers enabled/disabled with one click</li>
+              <li>Delete triggers you no longer need</li>
+            </ul>
+
+            <div class="mt-6 bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4">
+              <div class="flex items-start">
+                <svg class="w-5 h-5 text-indigo-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <div>
+                  <strong class="text-indigo-300">Tip:</strong>
+                  <span class="text-gray-400"> Monitor triggered jobs in the <strong>Queues</strong> section. Jobs created by triggers show the trigger name in their parameters.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- API Reference Section -->
+      <section id="api" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+              API Reference
+            </h2>
+          </div>
+          <div class="divide-y divide-white/5">
+
+            <!-- List Triggers -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/triggers</code>
+              </div>
+              <p class="text-sm text-gray-400">List all triggers in the database.</p>
+            </div>
+
+            <!-- Create Trigger -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/triggers</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a new trigger.</p>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300 overflow-x-auto">
+<pre>{
+  "name": "send_welcome_email",
+  "collection": "users",
+  "events": ["insert"],
+  "script_path": "triggers/welcome_email.lua",
+  "queue": "emails",
+  "priority": 10,
+  "max_retries": 3,
+  "enabled": true
+}</pre>
+              </div>
+            </div>
+
+            <!-- Get Trigger -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/triggers/:id</code>
+              </div>
+              <p class="text-sm text-gray-400">Get a specific trigger by ID.</p>
+            </div>
+
+            <!-- Update Trigger -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/triggers/:id</code>
+              </div>
+              <p class="text-sm text-gray-400">Update an existing trigger.</p>
+            </div>
+
+            <!-- Delete Trigger -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/triggers/:id</code>
+              </div>
+              <p class="text-sm text-gray-400">Delete a trigger.</p>
+            </div>
+
+            <!-- Toggle Trigger -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/triggers/:id/toggle</code>
+              </div>
+              <p class="text-sm text-gray-400">Toggle a trigger's enabled/disabled state.</p>
+            </div>
+
+            <!-- Collection Triggers -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/collections/:coll/triggers</code>
+              </div>
+              <p class="text-sm text-gray-400">List triggers for a specific collection.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

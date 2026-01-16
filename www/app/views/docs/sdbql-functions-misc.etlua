@@ -39,74 +39,88 @@
               Functions to check the type of values at runtime.
             </p>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_ARRAY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_ARRAY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_ARRAY(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is an array.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_ARRAY([1,2]) --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_BOOLEAN" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_BOOLEAN" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_BOOLEAN(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is a boolean.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_BOOLEAN(true) --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_NUMBER" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_NUMBER" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_NUMBER(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is a number.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_NUMBER(42) --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_INTEGER" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_INTEGER" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_INTEGER(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is an integer (no decimals).</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_INTEGER(3.14) --false</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_STRING" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_STRING" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_STRING(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is a string.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_STRING("hi") --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_OBJECT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_OBJECT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_OBJECT(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is an object.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_OBJECT({a:1}) --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_NULL" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_NULL" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_NULL(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is null.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_NULL(null) --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_DATETIME" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_DATETIME" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_DATETIME(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is an ISO 8601 date string.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_DATETIME("2024-01-15T10:30:00Z") --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-TYPENAME" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-TYPENAME" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">TYPENAME(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns the type name as a string.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TYPENAME([1,2]) --"array"
 RETURN TYPENAME("hi") --"string"</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_EMAIL" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_EMAIL" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_EMAIL(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is a valid email format.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_EMAIL("user@example.com") --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_URL" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_URL" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_URL(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is a valid URL format.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_URL("https://example.com") --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_UUID" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_UUID" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_UUID(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is a valid UUID format.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_UUID("550e8400-e29b-41d4-...") --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_EMPTY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_EMPTY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_EMPTY(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if value is null, "", [], or {}.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_EMPTY([]) --true
 RETURN IS_EMPTY("") --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IS_BLANK" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IS_BLANK" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_BLANK(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if string is blank (whitespace only).</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_BLANK("   ") --true</code></pre>
@@ -132,28 +146,32 @@ RETURN IS_EMPTY("") --true</code></pre>
               Functions to convert values between different types.
             </p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-TO_BOOL" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-TO_BOOL" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TO_BOOL(value)</code>
                 <p class="text-sm text-gray-400 mb-3">Casts value to boolean.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TO_BOOL(null) --false
 RETURN TO_BOOL(1) --true
 RETURN TO_BOOL(0) --false</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-TO_NUMBER" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-TO_NUMBER" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TO_NUMBER(value)</code>
                 <p class="text-sm text-gray-400 mb-3">Casts value to number.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TO_NUMBER("123") --123
 RETURN TO_NUMBER(true) --1
 RETURN TO_NUMBER("foo") --0</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-TO_STRING" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-TO_STRING" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TO_STRING(value)</code>
                 <p class="text-sm text-gray-400 mb-3">Casts value to string.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TO_STRING(123) --"123"
 RETURN TO_STRING(true) --"true"
 RETURN TO_STRING(null) --""</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-TO_ARRAY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-TO_ARRAY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TO_ARRAY(value)</code>
                 <p class="text-sm text-gray-400 mb-3">Casts value to array.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TO_ARRAY(null) --[]
@@ -181,19 +199,22 @@ RETURN TO_ARRAY({a:1}) --[1]</code></pre>
               Functions for conditional logic and null handling.
             </p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-IF" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IF" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">IF(cond, true, false)</code>
                 <p class="text-sm text-gray-400 mb-3">Condition evaluation. Returns true_val if cond is true, else false_val.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IF(1 > 0, "yes", "no") --"yes"
 RETURN IF(null, 1, 0) --0</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-TERNARY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-TERNARY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">cond ? true : false</code>
                 <p class="text-sm text-gray-400 mb-3">Ternary operator. Syntactic sugar for IF function.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN doc.age >= 18 ? "Adult" : "Minor"
 RETURN a ? b ? "both" : "a" : "none"</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-COALESCE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-COALESCE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">COALESCE(val1, val2, ...)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns the first non-null value. Alias: NOT_NULL.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COALESCE(null, 0, 5) --0</code></pre>
@@ -219,60 +240,71 @@ RETURN a ? b ? "both" : "a" : "none"</code></pre>
               Functions for manipulating objects and documents.
             </p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-MERGE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-MERGE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">MERGE(obj1, obj2)</code>
                 <p class="text-sm text-gray-400 mb-3">Shallow merge of objects.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MERGE({a:1}, {b:2})</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-DEEP_MERGE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-DEEP_MERGE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">DEEP_MERGE(obj1, obj2, ...)</code>
                 <p class="text-sm text-gray-400 mb-3">Deep merge objects recursively.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DEEP_MERGE({a:{b:1}}, {a:{c:2}})
 --{a:{b:1,c:2}}</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-GET" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-GET" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">GET(obj, path, default?)</code>
                 <p class="text-sm text-gray-400 mb-3">Get nested value by dot-notation path.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN GET(doc, "user.name", "N/A")</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-HAS" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-HAS" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">HAS(doc, attr)</code>
                 <p class="text-sm text-gray-400 mb-3">Checks if document contains attribute.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FILTER HAS(doc, "email")</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-KEEP" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-KEEP" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">KEEP(doc, attr...)</code>
                 <p class="text-sm text-gray-400 mb-3">Keep only specified attributes.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN KEEP(doc, "name", "email")</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-UNSET" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-UNSET" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">UNSET(doc, attr...)</code>
                 <p class="text-sm text-gray-400 mb-3">Removes specified attributes.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UNSET(doc, "password")</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-ATTRIBUTES" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-ATTRIBUTES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">ATTRIBUTES(doc, removeInternal?, sort?)</code>
                 <p class="text-sm text-gray-400 mb-3">Top-level attribute keys of the document.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ATTRIBUTES(doc, true)</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-VALUES" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-VALUES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">VALUES(doc, removeInternal?)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns top-level attribute values.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VALUES(doc, true)</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-ENTRIES" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-ENTRIES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">ENTRIES(obj)</code>
                 <p class="text-sm text-gray-400 mb-3">Convert object to [key, value] pairs.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ENTRIES({a:1,b:2})
 --[["a",1],["b",2]]</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-FROM_ENTRIES" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-FROM_ENTRIES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">FROM_ENTRIES(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Convert [key, value] pairs to object.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FROM_ENTRIES([["a",1],["b",2]])
 --{a:1,b:2}</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-LENGTH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-LENGTH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">LENGTH(val)</code>
                 <p class="text-sm text-gray-400 mb-3">Count elements in array/object.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LENGTH([1,2,3]) --3</code></pre>
@@ -295,7 +327,8 @@ RETURN a ? b ? "both" : "a" : "none"</code></pre>
           </div>
           <div class="p-8 space-y-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-COLLECTION_COUNT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-COLLECTION_COUNT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded border border-cyan-500/30 w-fit mb-3">COLLECTION_COUNT(name)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns the number of documents in a collection. Efficient metadata lookup without iterating documents.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COLLECTION_COUNT("users") --42</code></pre>
@@ -330,22 +363,26 @@ RETURN a ? b ? "both" : "a" : "none"</code></pre>
               Functions for hashing strings and encoding/decoding data.
             </p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-MD5-misc" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-MD5-misc" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-amber-500/20 px-2 py-1 rounded border border-amber-500/30 w-fit mb-3">MD5(string)</code>
                 <p class="text-sm text-gray-400 mb-3">Calculates MD5 hash of a string.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MD5("hello") --"5d41402abc4b2a76..."</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-SHA256-misc" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-SHA256-misc" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-amber-500/20 px-2 py-1 rounded border border-amber-500/30 w-fit mb-3">SHA256(string)</code>
                 <p class="text-sm text-gray-400 mb-3">Calculates SHA256 hash of a string.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SHA256("hello") --"2cf24dba5fb0a30e..."</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-BASE64_ENCODE-misc" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-BASE64_ENCODE-misc" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-amber-500/20 px-2 py-1 rounded border border-amber-500/30 w-fit mb-3">BASE64_ENCODE(string)</code>
                 <p class="text-sm text-gray-400 mb-3">Encodes string to Base64.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN BASE64_ENCODE("hello") --"aGVsbG8="</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-BASE64_DECODE-misc" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-BASE64_DECODE-misc" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-amber-500/20 px-2 py-1 rounded border border-amber-500/30 w-fit mb-3">BASE64_DECODE(string)</code>
                 <p class="text-sm text-gray-400 mb-3">Decodes Base64 string.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN BASE64_DECODE("aGVsbG8=") --"hello"</code></pre>
@@ -371,25 +408,29 @@ RETURN a ? b ? "both" : "a" : "none"</code></pre>
               Functions for generating unique identifiers for documents and keys.
             </p>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-UUID" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-UUID" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">UUID()</code>
                 <p class="text-sm text-gray-400 mb-3">Generates a random UUID v4. Alias: UUID_V4().</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UUID()
 --"550e8400-e29b-41d4-..."</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-UUIDV7" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-UUIDV7" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">UUIDV7()</code>
                 <p class="text-sm text-gray-400 mb-3">Generates a time-ordered UUID v7.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UUIDV7()
 --"018f6e4a-5b7c-7d8e-..."</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-ULID" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-ULID" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-emerald-500/20 px-2 py-1 rounded border border-emerald-500/30 w-fit mb-3">ULID()</code>
                 <p class="text-sm text-gray-400 mb-3">Generates a Lexicographically Sortable Identifier.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ULID()
 --"01ARZ3NDEKTSV4RR..."</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-NANOID" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-NANOID" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-emerald-500/20 px-2 py-1 rounded border border-emerald-500/30 w-fit mb-3">NANOID(size?)</code>
                 <p class="text-sm text-gray-400 mb-3">Generates a Nano ID (default 21 chars).</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN NANOID()
@@ -456,12 +497,14 @@ RETURN a ? b ? "both" : "a" : "none"</code></pre>
           </div>
           <div class="p-8 space-y-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-ASSERT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-ASSERT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-red-500/20 px-2 py-1 rounded border border-red-500/30 w-fit mb-3">ASSERT(cond, msg)</code>
                 <p class="text-sm text-gray-400 mb-3">Throws error if condition false.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ASSERT(x > 0, "Fail")</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-SLEEP" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-SLEEP" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">SLEEP(ms)</code>
                 <p class="text-sm text-gray-400 mb-3">Pauses execution (for testing).</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SLEEP(1000) --1s</code></pre>

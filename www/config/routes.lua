@@ -27,6 +27,7 @@ router.get("/auth/logout", "auth#logout")
 
 -- SoliDB Documentation
 router.get("/docs", "docs#index")
+router.get("/docs/search", "docs/search#search")
 router.get("/docs/:page", "docs#show")
 router.get("/slides", "docs#slides")
 
@@ -93,6 +94,9 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   router.post("/query/nl", "dashboard/query#nl")
   router.post("/query/nl/feedback", "dashboard/query#nl_feedback")
 
+  -- API routes for editor features
+  router.get("/api/collections", "dashboard/query#api_collections")
+
   -- REPL routes
   router.get("/repl", "dashboard/query#repl")
   router.get("/repl/execute", "dashboard/query#repl_execute")
@@ -134,6 +138,16 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   router.get("/queues/modal/create-cron", "dashboard/queue#modal_create_cron")
   router.post("/queues/cron", "dashboard/queue#create_cron")
   router.delete("/queues/cron/:cron_id", "dashboard/queue#delete_cron")
+
+  -- Triggers routes
+  router.get("/triggers", "dashboard/triggers#index")
+  router.get("/triggers/table", "dashboard/triggers#table")
+  router.get("/triggers/modal/create", "dashboard/triggers#modal_create")
+  router.get("/triggers/:id/modal/edit", "dashboard/triggers#modal_edit")
+  router.post("/triggers", "dashboard/triggers#create")
+  router.put("/triggers/:id", "dashboard/triggers#update")
+  router.delete("/triggers/:id", "dashboard/triggers#destroy")
+  router.post("/triggers/:id/toggle", "dashboard/triggers#toggle")
 
   -- Environment routes
   router.get("/env", "dashboard/admin#env")

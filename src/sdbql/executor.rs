@@ -2950,6 +2950,14 @@ impl<'a> QueryExecutor<'a> {
                     }
                     self.evaluate_expr_with_context(right, ctx)
                 }
+                BinaryOperator::LogicalOr => {
+                    // || returns left if truthy, otherwise right (short-circuit)
+                    let left_val = self.evaluate_expr_with_context(left, ctx)?;
+                    if to_bool(&left_val) {
+                        return Ok(left_val);
+                    }
+                    self.evaluate_expr_with_context(right, ctx)
+                }
                 _ => {
                     let left_val = self.evaluate_expr_with_context(left, ctx)?;
                     let right_val = self.evaluate_expr_with_context(right, ctx)?;
@@ -7222,6 +7230,32 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Number(number_from_f64(std::f64::consts::PI)))
             }
 
+            // DEGREES(radians) / DEG(radians) - convert radians to degrees
+            "DEGREES" | "DEG" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "DEGREES requires 1 argument".to_string(),
+                    ));
+                }
+                let radians = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("DEGREES: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(number_from_f64(radians.to_degrees())))
+            }
+
+            // RADIANS(degrees) / RAD(degrees) - convert degrees to radians
+            "RADIANS" | "RAD" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "RADIANS requires 1 argument".to_string(),
+                    ));
+                }
+                let degrees = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("RADIANS: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(number_from_f64(degrees.to_radians())))
+            }
+
             // COALESCE(a, b, ...) - return first non-null value
             "COALESCE" | "NOT_NULL" | "FIRST_NOT_NULL" => {
                 for arg in &evaluated_args {
@@ -9917,6 +9951,16 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
                 Ok(right.clone())
             } else {
                 Ok(left.clone())
+            }
+        }
+
+        BinaryOperator::LogicalOr => {
+            // Short-circuit evaluation is handled in evaluate_expr_with_context
+            // This branch is here for exhaustiveness but shouldn't be reached
+            if to_bool(left) {
+                Ok(left.clone())
+            } else {
+                Ok(right.clone())
             }
         }
     }

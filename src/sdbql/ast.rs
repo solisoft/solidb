@@ -421,6 +421,9 @@ pub enum BinaryOperator {
 
     // Null coalescing
     NullCoalesce,
+
+    // Logical OR (||) - returns left if truthy, otherwise right
+    LogicalOr,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

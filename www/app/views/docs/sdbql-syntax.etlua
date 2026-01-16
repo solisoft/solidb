@@ -277,6 +277,93 @@ items |> FILTER(x -> x.active) |> FIRST() ?? { name: "None" }</code></pre>
         </div>
       </section>
 
+      <!-- Logical OR Operator -->
+      <section id="logical-or" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-xl border border-amber-500/20 overflow-hidden">
+          <div class="p-5 border-b border-amber-500/20 bg-amber-500/5">
+            <h3 class="text-lg font-bold text-amber-300 flex items-center">
+              <span class="bg-amber-500/20 text-amber-400 text-xs font-mono px-2 py-1 rounded mr-3">||</span>
+              Logical OR Operator
+              <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              The <code class="text-amber-300">||</code> operator returns the left operand if it's <strong>truthy</strong>, otherwise evaluates and returns the right operand. Use this when you want to fall back on any falsy value (null, false, 0, "").
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-sql text-sm">-- Basic usage
+RETURN null || "default"       -- Result: "default"
+RETURN false || "default"      -- Result: "default"
+RETURN 0 || 42                 -- Result: 42
+RETURN "" || "default"         -- Result: "default"
+
+-- Non-falsy values pass through
+RETURN "value" || "default"    -- Result: "value"
+RETURN 1 || 42                 -- Result: 1</code></pre>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-amber-300 font-bold mb-2 text-sm">?? vs || Comparison</h5>
+              <p class="text-xs text-gray-400 mb-3">
+                Use <code class="text-cyan-300">??</code> when only null should trigger fallback. Use <code class="text-amber-300">||</code> when any falsy value should trigger fallback.
+              </p>
+              <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                  <thead>
+                    <tr class="border-b border-white/10">
+                      <th class="text-left py-2 pr-4 text-gray-400">Expression</th>
+                      <th class="text-left py-2 pr-4 text-cyan-400">?? (null coalesce)</th>
+                      <th class="text-left py-2 text-amber-400">|| (logical OR)</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-300">
+                    <tr class="border-b border-white/5">
+                      <td class="py-2 pr-4 font-mono">null _ 0</td>
+                      <td class="py-2 pr-4">0</td>
+                      <td class="py-2">0</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="py-2 pr-4 font-mono">false _ 0</td>
+                      <td class="py-2 pr-4 text-cyan-300">false</td>
+                      <td class="py-2 text-amber-300">0</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="py-2 pr-4 font-mono">0 _ 42</td>
+                      <td class="py-2 pr-4 text-cyan-300">0</td>
+                      <td class="py-2 text-amber-300">42</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="py-2 pr-4 font-mono">"" _ "default"</td>
+                      <td class="py-2 pr-4 text-cyan-300">""</td>
+                      <td class="py-2 text-amber-300">"default"</td>
+                    </tr>
+                    <tr>
+                      <td class="py-2 pr-4 font-mono">"value" _ "default"</td>
+                      <td class="py-2 pr-4">"value"</td>
+                      <td class="py-2">"value"</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-amber-300 font-bold mb-2 text-sm">Common Use Cases</h5>
+              <pre><code class="language-sql text-xs">-- Default for empty strings
+RETURN doc.nickname || doc.name || "Anonymous"
+
+-- Default for zero values
+RETURN doc.count || 1
+
+-- Use in aggregations
+RETURN SUM(FOR i IN items RETURN i.qty) || 0</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Optional Chaining -->
       <section id="optional-chaining" class="scroll-mt-24">
         <div class="bg-gradient-to-r from-rose-500/10 to-pink-500/10 rounded-xl border border-rose-500/20 overflow-hidden">

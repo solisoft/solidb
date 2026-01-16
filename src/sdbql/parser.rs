@@ -78,9 +78,10 @@ impl Parser {
         };
 
         // Parse initial LET clauses (before any FOR - these are evaluated once)
+        // Supports multiple comma-separated bindings: LET a = 1, b = 2, c = 3
         let mut let_clauses = Vec::new();
         while matches!(self.current_token(), Token::Let) {
-            let_clauses.push(self.parse_let_clause()?);
+            let_clauses.extend(self.parse_let_clause()?);
         }
 
         // Parse body clauses (FOR, LET, FILTER) preserving order for correlated subqueries
@@ -121,9 +122,11 @@ impl Parser {
                 let upsert_clause = self.parse_upsert_clause()?;
                 body_clauses.push(BodyClause::Upsert(upsert_clause));
             } else if matches!(self.current_token(), Token::Let) {
-                let let_clause = self.parse_let_clause()?;
+                let let_clauses_parsed = self.parse_let_clause()?;
                 // LET after FOR goes to body_clauses (correlated), not let_clauses
-                body_clauses.push(BodyClause::Let(let_clause));
+                for let_clause in let_clauses_parsed {
+                    body_clauses.push(BodyClause::Let(let_clause));
+                }
             } else if matches!(self.current_token(), Token::Collect) {
                 let collect_clause = self.parse_collect_clause()?;
                 body_clauses.push(BodyClause::Collect(collect_clause));
@@ -375,27 +378,42 @@ impl Parser {
 }
 
 impl Parser {
-    fn parse_let_clause(&mut self) -> DbResult<LetClause> {
+    /// Parse LET clause with support for multiple comma-separated bindings
+    /// e.g., LET a = 1, b = 2, c = 3
+    fn parse_let_clause(&mut self) -> DbResult<Vec<LetClause>> {
         self.expect(Token::Let)?;
 
-        let variable = if let Token::Identifier(name) = self.current_token() {
-            let var = name.clone();
-            self.advance();
-            var
-        } else {
-            return Err(DbError::ParseError(
-                "Expected variable name after LET".to_string(),
-            ));
-        };
+        let mut clauses = Vec::new();
 
-        self.expect(Token::Assign)?;
+        loop {
+            let variable = if let Token::Identifier(name) = self.current_token() {
+                let var = name.clone();
+                self.advance();
+                var
+            } else {
+                return Err(DbError::ParseError(
+                    "Expected variable name after LET".to_string(),
+                ));
+            };
 
-        let expression = self.parse_expression()?;
+            self.expect(Token::Assign)?;
 
-        Ok(LetClause {
-            variable,
-            expression,
-        })
+            let expression = self.parse_expression()?;
+
+            clauses.push(LetClause {
+                variable,
+                expression,
+            });
+
+            // Check for comma to continue parsing more bindings
+            if matches!(self.current_token(), Token::Comma) {
+                self.advance(); // consume comma
+            } else {
+                break;
+            }
+        }
+
+        Ok(clauses)
     }
 
     fn parse_create_stream_clause(&mut self) -> DbResult<CreateStreamClause> {
@@ -1056,16 +1074,35 @@ impl Parser {
 
     /// Parse null coalescing expression: left ?? right
     /// Returns left if left is not null, otherwise evaluates and returns right
-    /// Left-associative, precedence between ternary and pipeline
+    /// Left-associative, precedence between ternary and logical OR
     fn parse_null_coalesce_expression(&mut self) -> DbResult<Expression> {
-        let mut left = self.parse_pipeline_expression()?;
+        let mut left = self.parse_logical_or_expression()?;
 
         while matches!(self.current_token(), Token::NullCoalesce) {
             self.advance(); // consume ??
-            let right = self.parse_pipeline_expression()?;
+            let right = self.parse_logical_or_expression()?;
             left = Expression::BinaryOp {
                 left: Box::new(left),
                 op: BinaryOperator::NullCoalesce,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    /// Parse logical OR expression: left || right
+    /// Returns left if left is truthy, otherwise evaluates and returns right
+    /// Left-associative, precedence between null coalesce and pipeline
+    fn parse_logical_or_expression(&mut self) -> DbResult<Expression> {
+        let mut left = self.parse_pipeline_expression()?;
+
+        while matches!(self.current_token(), Token::DoublePipe) {
+            self.advance(); // consume ||
+            let right = self.parse_pipeline_expression()?;
+            left = Expression::BinaryOp {
+                left: Box::new(left),
+                op: BinaryOperator::LogicalOr,
                 right: Box::new(right),
             };
         }
@@ -2177,6 +2214,24 @@ mod tests {
     fn test_parse_let_clause() {
         let query = parse("LET x = 5 RETURN x").unwrap();
         assert_eq!(query.let_clauses.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_let_multiple_bindings() {
+        // Test comma-separated LET bindings
+        let query = parse("LET a = 1, b = 2, c = 3 RETURN a + b + c").unwrap();
+        assert_eq!(query.let_clauses.len(), 3);
+        assert_eq!(query.let_clauses[0].variable, "a");
+        assert_eq!(query.let_clauses[1].variable, "b");
+        assert_eq!(query.let_clauses[2].variable, "c");
+    }
+
+    #[test]
+    fn test_parse_let_multiple_in_body() {
+        // Test comma-separated LET bindings after FOR
+        let query = parse("FOR doc IN users LET x = doc.a, y = doc.b RETURN {x, y}").unwrap();
+        let let_count = query.body_clauses.iter().filter(|c| matches!(c, BodyClause::Let(_))).count();
+        assert_eq!(let_count, 2);
     }
 
     #[test]

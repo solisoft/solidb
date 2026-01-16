@@ -17,6 +17,7 @@ pub mod routes;
 pub mod script_handlers;
 pub mod sql_handlers;
 pub mod transaction_handlers;
+pub mod trigger_handlers;
 
 pub use authorization::{
     AuthorizationService, Permission, PermissionAction, PermissionScope, Role, UserRole,

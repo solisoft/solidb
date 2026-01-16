@@ -46,7 +46,8 @@
                 Similarity Functions
               </h3>
               <div class="grid grid-cols-1 gap-4">
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-VECTOR_SIMILARITY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-VECTOR_SIMILARITY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">VECTOR_SIMILARITY(vec1, vec2)</code>
                   <p class="text-sm text-gray-400 mb-3">Calculates cosine similarity between two vectors. Returns a value between -1 and 1, where 1 means identical direction, 0 means orthogonal, and -1 means opposite direction.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Identical vectors have similarity 1.0
@@ -71,7 +72,8 @@ RETURN VECTOR_SIMILARITY([0.9, 0.1, 0], [1, 0, 0])
                 Distance Functions
               </h3>
               <div class="grid grid-cols-1 gap-4">
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-VECTOR_DISTANCE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-VECTOR_DISTANCE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">VECTOR_DISTANCE(vec1, vec2, metric)</code>
                   <p class="text-sm text-gray-400 mb-3">Calculates the distance between two vectors using the specified metric. Supported metrics: "cosine", "euclidean", "dot".</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Euclidean distance (3-4-5 triangle)
@@ -96,7 +98,8 @@ RETURN VECTOR_DISTANCE([0.6, 0.8], [1, 0], "dot")
                 Utility Functions
               </h3>
               <div class="grid grid-cols-1 gap-4">
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-VECTOR_NORMALIZE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-VECTOR_NORMALIZE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-rose-500/20 px-2 py-1 rounded border border-rose-500/30 w-fit mb-3">VECTOR_NORMALIZE(vec)</code>
                   <p class="text-sm text-gray-400 mb-3">Normalizes a vector to unit length (magnitude = 1). Useful for preparing vectors for dot product similarity.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Normalize a 3-4-5 vector
@@ -118,7 +121,8 @@ RETURN SQRT(norm[0]*norm[0] + norm[1]*norm[1] + norm[2]*norm[2])
                 Index Statistics
               </h3>
               <div class="grid grid-cols-1 gap-4">
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-VECTOR_INDEX_STATS" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-VECTOR_INDEX_STATS" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded border border-cyan-500/30 w-fit mb-3">VECTOR_INDEX_STATS(collection, index_name)</code>
                   <p class="text-sm text-gray-400 mb-3">Returns statistics about a vector index including dimension, vector count, quantization status, and memory usage.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Get statistics for a vector index

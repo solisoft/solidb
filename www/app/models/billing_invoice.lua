@@ -117,7 +117,7 @@ function BillingInvoice.stats_for_user(owner_key)
     LET invoices = (FOR i IN billing_invoices FILTER i.owner_key == @owner_key OR NOT HAS(i, "owner_key") OR i.owner_key == null RETURN i)
     RETURN {
       total_invoiced: SUM(FOR i IN invoices FILTER i.status != "cancelled" RETURN i.total) || 0,
-      total_paid: SUM(invoices[*].total_paid) || 0,
+      total_paid: SUM(FOR i IN invoices RETURN i.total_paid) || 0,
       outstanding: SUM(FOR i IN invoices FILTER i.status IN ["sent", "partially_paid", "overdue"] RETURN i.balance_due) || 0,
       overdue_count: LENGTH(FOR i IN invoices FILTER i.status == "overdue" RETURN 1),
       draft_count: LENGTH(FOR i IN invoices FILTER i.status == "draft" RETURN 1)

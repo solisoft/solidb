@@ -26,6 +26,7 @@ use crate::sdbql::{parse, BodyClause, Query, QueryExecutor};
 use crate::server::response::ApiResponse;
 use crate::sync::blob_replication::replicate_blob_to_node;
 use crate::sync::{LogEntry, Operation};
+use crate::triggers::{fire_collection_triggers, TriggerEvent};
 
 /// Default query execution timeout (30 seconds)
 const QUERY_TIMEOUT_SECS: u64 = 30;
@@ -3626,6 +3627,20 @@ pub async fn insert_document(
         }
     }
 
+    // Fire triggers for the insert
+    if !coll_name.starts_with('_') {
+        let notifier = state.queue_worker.as_ref().map(|w| w.notifier());
+        let _ = fire_collection_triggers(
+            &state.storage,
+            notifier.as_ref(),
+            &db_name,
+            &coll_name,
+            TriggerEvent::Insert,
+            &doc,
+            None,
+        );
+    }
+
     Ok(Json(doc.to_value()))
 }
 
@@ -4093,15 +4108,18 @@ pub async fn update_document(
         }
     }
 
+    // Get old document for trigger (before update)
+    let old_doc_value = collection.get(&key).ok().map(|d| d.to_value());
+
     // Try update, or insert if upsert=true and document not found
-    let doc = match collection.update(&key, data.clone()) {
-        Ok(doc) => doc,
+    let (doc, was_upsert) = match collection.update(&key, data.clone()) {
+        Ok(doc) => (doc, false),
         Err(DbError::DocumentNotFound(_)) if upsert => {
             // Ensure _key is set for insert
             if let Value::Object(ref mut obj) = data {
                 obj.insert("_key".to_string(), Value::String(key.clone()));
             }
-            collection.insert(data)?
+            (collection.insert(data)?, true)
         }
         Err(e) => return Err(e),
     };
@@ -4126,6 +4144,25 @@ pub async fn update_document(
             };
             let _ = log.append(entry);
         }
+    }
+
+    // Fire triggers for the update (or insert if upsert)
+    if !coll_name.starts_with('_') {
+        let notifier = state.queue_worker.as_ref().map(|w| w.notifier());
+        let event = if was_upsert {
+            TriggerEvent::Insert
+        } else {
+            TriggerEvent::Update
+        };
+        let _ = fire_collection_triggers(
+            &state.storage,
+            notifier.as_ref(),
+            &db_name,
+            &coll_name,
+            event,
+            &doc,
+            old_doc_value.as_ref(),
+        );
     }
 
     Ok(Json(doc.to_value()))
@@ -4174,6 +4211,9 @@ pub async fn delete_document(
         }
     }
 
+    // Get document before deletion (for trigger)
+    let old_doc = collection.get(&key).ok();
+
     collection.delete(&key)?;
 
     // If this is a blob collection, trigger compaction to reclaim space from deleted chunks immediately
@@ -4210,6 +4250,23 @@ pub async fn delete_document(
                 origin_sequence: None,
             };
             let _ = log.append(entry);
+        }
+    }
+
+    // Fire triggers for the delete
+    if !coll_name.starts_with('_') {
+        if let Some(old_doc) = old_doc {
+            let notifier = state.queue_worker.as_ref().map(|w| w.notifier());
+            let old_doc_value = old_doc.to_value();
+            let _ = fire_collection_triggers(
+                &state.storage,
+                notifier.as_ref(),
+                &db_name,
+                &coll_name,
+                TriggerEvent::Delete,
+                &old_doc,
+                Some(&old_doc_value),
+            );
         }
     }
 

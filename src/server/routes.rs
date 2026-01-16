@@ -493,6 +493,35 @@ pub fn create_router(
             "/_api/database/{db}/cron/{id}",
             delete(super::queue_handlers::delete_cron_job_handler),
         )
+        // Trigger Management
+        .route(
+            "/_api/database/{db}/triggers",
+            get(super::trigger_handlers::list_triggers_handler),
+        )
+        .route(
+            "/_api/database/{db}/triggers",
+            post(super::trigger_handlers::create_trigger_handler),
+        )
+        .route(
+            "/_api/database/{db}/triggers/{id}",
+            get(super::trigger_handlers::get_trigger_handler),
+        )
+        .route(
+            "/_api/database/{db}/triggers/{id}",
+            put(super::trigger_handlers::update_trigger_handler),
+        )
+        .route(
+            "/_api/database/{db}/triggers/{id}",
+            delete(super::trigger_handlers::delete_trigger_handler),
+        )
+        .route(
+            "/_api/database/{db}/triggers/{id}/toggle",
+            post(super::trigger_handlers::toggle_trigger_handler),
+        )
+        .route(
+            "/_api/database/{db}/collections/{coll}/triggers",
+            get(super::trigger_handlers::list_collection_triggers_handler),
+        )
         // Script management routes
         .route(
             "/_api/database/{db}/scripts",

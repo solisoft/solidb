@@ -46,14 +46,16 @@
                 Distance Calculations
               </h3>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-DISTANCE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DISTANCE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-green-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">DISTANCE(lat1, lon1, lat2, lon2)</code>
                   <p class="text-sm text-gray-400 mb-3">Calculates distance in meters between two coordinate pairs using the Haversine formula.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Distance from Paris to London
 RETURN DISTANCE(48.8566, 2.3522, 51.5074, -0.1278)
 -- ~343,563 meters (343 km)</code></pre>
                 </div>
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <div id="fn-GEO_DISTANCE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-GEO_DISTANCE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-green-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">GEO_DISTANCE(p1, p2)</code>
                   <p class="text-sm text-gray-400 mb-3">Distance in meters between GeoPoint objects (with lat/lon properties).</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Using GeoPoint objects
@@ -72,7 +74,8 @@ RETURN GEO_DISTANCE(paris, london)</code></pre>
                 Geometric Tests
               </h3>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
+                <div id="fn-GEO_WITHIN" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
+                  <a href="#fn-GEO_WITHIN" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-green-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">GEO_WITHIN(point, polygon)</code>
                   <p class="text-sm text-gray-400 mb-3">Returns true if the point is inside the specified polygon (ray casting). Polygon is an array of points (LinearRing).</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Check if point is inside a zone

@@ -1,0 +1,113 @@
+<% if #triggers == 0 then %>
+<div class="p-16 text-center">
+  <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-bg-dark border border-border/50 mb-6 shadow-sm">
+    <i class="fas fa-bolt text-3xl text-text-muted/50"></i>
+  </div>
+  <h3 class="text-xl font-semibold text-text mb-2">No triggers yet</h3>
+  <p class="text-text-muted max-w-md mx-auto mb-8">Create your first trigger to automate actions when documents change in your collections.</p>
+  <button type="button"
+          hx-get="/database/<%= db %>/triggers/modal/create"
+          hx-target="#modal-container"
+          hx-swap="innerHTML"
+          class="inline-flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary-light text-white font-medium rounded-lg shadow-lg shadow-primary/20 transition-all hover:-translate-y-0.5 active:translate-y-0">
+    <i class="fas fa-plus"></i>
+    <span>Create Trigger</span>
+  </button>
+</div>
+<% else %>
+<div class="overflow-x-auto">
+  <table class="w-full">
+    <thead>
+      <tr class="bg-bg-dark/50 border-b border-border/50">
+        <th class="px-6 py-4 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Name</th>
+        <th class="px-6 py-4 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Collection</th>
+        <th class="px-6 py-4 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Events</th>
+        <th class="px-6 py-4 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Script</th>
+        <th class="px-6 py-4 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Queue</th>
+        <th class="px-6 py-4 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Status</th>
+        <th class="px-6 py-4 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-border/30">
+      <% for _, trigger in ipairs(triggers) do %>
+      <tr class="group hover:bg-white/5 transition-colors">
+        <td class="px-6 py-4">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded bg-primary/10 text-primary">
+              <i class="fas fa-bolt text-xs"></i>
+            </div>
+            <span class="font-medium text-text"><%= trigger.name or trigger._key %></span>
+          </div>
+        </td>
+        <td class="px-6 py-4">
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-bg-dark border border-border/50 text-text-muted font-mono">
+            <%= trigger.collection %>
+          </span>
+        </td>
+        <td class="px-6 py-4">
+          <div class="flex flex-wrap gap-1.5">
+            <% if trigger.events then %>
+              <% for _, event in ipairs(trigger.events) do %>
+                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold border
+                  <% if event == "insert" then %>bg-emerald-500/10 text-emerald-500 border-emerald-500/20
+                  <% elseif event == "update" then %>bg-amber-500/10 text-amber-500 border-amber-500/20
+                  <% else %>bg-rose-500/10 text-rose-500 border-rose-500/20<% end %>">
+                  <%= event:upper() %>
+                </span>
+              <% end %>
+            <% end %>
+          </div>
+        </td>
+        <td class="px-6 py-4">
+          <div class="flex items-center gap-2 text-text-muted" title="<%= trigger.script_path %>">
+            <i class="fas fa-file-code text-xs"></i>
+            <span class="text-sm font-mono truncate max-w-[150px]"><%= trigger.script_path %></span>
+          </div>
+        </td>
+        <td class="px-6 py-4">
+          <span class="text-sm text-text-muted"><%= trigger.queue or "default" %></span>
+        </td>
+        <td class="px-6 py-4">
+          <button type="button"
+                  hx-post="/database/<%= db %>/triggers/<%= trigger._key %>/toggle"
+                  hx-target="#triggers-table"
+                  hx-swap="innerHTML"
+                  class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium transition-all
+                    <% if trigger.enabled then %>bg-success/10 text-success hover:bg-success/20 ring-1 ring-success/20
+                    <% else %>bg-bg-dark text-text-muted hover:bg-white/10 ring-1 ring-border/50<% end %>">
+            <% if trigger.enabled then %>
+              <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+              <span>Active</span>
+            <% else %>
+              <span class="w-1.5 h-1.5 rounded-full bg-text-muted"></span>
+              <span>Paused</span>
+            <% end %>
+          </button>
+        </td>
+        <td class="px-6 py-4 text-right">
+          <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button type="button"
+                    hx-get="/database/<%= db %>/triggers/<%= trigger._key %>/modal/edit"
+                    hx-target="#modal-container"
+                    hx-swap="innerHTML"
+                    class="p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                    title="Edit Trigger">
+              <i class="fas fa-pen"></i>
+            </button>
+            <button type="button"
+                    hx-delete="/database/<%= db %>/triggers/<%= trigger._key %>"
+                    hx-target="closest tr"
+                    hx-swap="outerHTML"
+                    hx-confirm="Delete trigger '<%= trigger.name or trigger._key %>'?"
+                    class="p-2 text-text-muted hover:text-error hover:bg-error/10 rounded-lg transition-colors"
+                    title="Delete Trigger">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>
+<% end %>

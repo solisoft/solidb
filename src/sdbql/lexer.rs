@@ -120,6 +120,7 @@ pub enum Token {
     PipeRight,    // |> (pipeline)
     Arrow,        // -> (lambda)
     NullCoalesce, // ?? (null coalescing)
+    DoublePipe,   // || (logical OR, returns value)
 
     // Delimiters
     Dot,          // .
@@ -589,6 +590,9 @@ impl Lexer {
                 if self.current_char == Some('>') {
                     self.advance();
                     Token::PipeRight
+                } else if self.current_char == Some('|') {
+                    self.advance();
+                    Token::DoublePipe // || logical OR (returns falsy left or right value)
                 } else {
                     Token::Pipe
                 }

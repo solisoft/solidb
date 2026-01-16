@@ -1,0 +1,380 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs/api" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to API Reference
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Main Content -->
+    <main class="col-span-12 lg:col-span-12 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-amber-600 to-orange-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-400 mb-4 tracking-tight">Triggers API</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            REST API for managing collection triggers that create background jobs on document changes.
+          </p>
+        </div>
+      </div>
+
+      <!-- List Triggers -->
+      <section id="list-triggers" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <div class="flex items-center gap-3">
+              <span class="px-3 py-1.5 bg-blue-500/20 text-blue-400 text-sm font-bold rounded-lg">GET</span>
+              <code class="text-xl text-gray-200">/_api/database/:db/triggers</code>
+            </div>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300">List all triggers in the database.</p>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Response</h4>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-json text-sm">{
+  "triggers": [
+    {
+      "_key": "550e8400-e29b-41d4-a716-446655440000",
+      "_rev": "1234567890",
+      "name": "send_welcome_email",
+      "collection": "users",
+      "events": ["insert"],
+      "script_path": "triggers/welcome_email.lua",
+      "queue": "emails",
+      "priority": 10,
+      "max_retries": 3,
+      "enabled": true,
+      "created_at": 1705312800,
+      "updated_at": 1705312800
+    }
+  ],
+  "total": 1
+}</code></pre>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">cURL Example</h4>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-bash text-sm">curl -X GET "http://localhost:6745/_api/database/mydb/triggers" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Create Trigger -->
+      <section id="create-trigger" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <div class="flex items-center gap-3">
+              <span class="px-3 py-1.5 bg-green-500/20 text-green-400 text-sm font-bold rounded-lg">POST</span>
+              <code class="text-xl text-gray-200">/_api/database/:db/triggers</code>
+            </div>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300">Create a new trigger for a collection.</p>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Request Body</h4>
+              <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                <table class="w-full text-left text-sm">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-4">Field</th>
+                      <th class="p-4">Type</th>
+                      <th class="p-4">Required</th>
+                      <th class="p-4">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">name</td>
+                      <td class="p-4 font-mono">string</td>
+                      <td class="p-4"><span class="text-green-400">Yes</span></td>
+                      <td class="p-4">Human-readable trigger name</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">collection</td>
+                      <td class="p-4 font-mono">string</td>
+                      <td class="p-4"><span class="text-green-400">Yes</span></td>
+                      <td class="p-4">Collection to watch (must exist)</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">events</td>
+                      <td class="p-4 font-mono">array</td>
+                      <td class="p-4"><span class="text-green-400">Yes</span></td>
+                      <td class="p-4">Events: "insert", "update", "delete"</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">script_path</td>
+                      <td class="p-4 font-mono">string</td>
+                      <td class="p-4"><span class="text-green-400">Yes</span></td>
+                      <td class="p-4">Path to Lua script in _scripts</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">queue</td>
+                      <td class="p-4 font-mono">string</td>
+                      <td class="p-4"><span class="text-gray-500">No</span></td>
+                      <td class="p-4">Queue name (default: "default")</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">priority</td>
+                      <td class="p-4 font-mono">integer</td>
+                      <td class="p-4"><span class="text-gray-500">No</span></td>
+                      <td class="p-4">Job priority (default: 0)</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">max_retries</td>
+                      <td class="p-4 font-mono">integer</td>
+                      <td class="p-4"><span class="text-gray-500">No</span></td>
+                      <td class="p-4">Max retry attempts (default: 5)</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">enabled</td>
+                      <td class="p-4 font-mono">boolean</td>
+                      <td class="p-4"><span class="text-gray-500">No</span></td>
+                      <td class="p-4">Active state (default: true)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">cURL Example</h4>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-bash text-sm">curl -X POST "http://localhost:6745/_api/database/mydb/triggers" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "send_welcome_email",
+    "collection": "users",
+    "events": ["insert"],
+    "script_path": "triggers/welcome_email.lua",
+    "queue": "emails",
+    "priority": 10,
+    "max_retries": 3,
+    "enabled": true
+  }'</code></pre>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Response</h4>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-json text-sm">{
+  "_key": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "send_welcome_email",
+  "collection": "users",
+  "events": ["insert"],
+  "script_path": "triggers/welcome_email.lua",
+  "queue": "emails",
+  "priority": 10,
+  "max_retries": 3,
+  "enabled": true,
+  "created_at": 1705312800,
+  "updated_at": 1705312800
+}</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Get Trigger -->
+      <section id="get-trigger" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <div class="flex items-center gap-3">
+              <span class="px-3 py-1.5 bg-blue-500/20 text-blue-400 text-sm font-bold rounded-lg">GET</span>
+              <code class="text-xl text-gray-200">/_api/database/:db/triggers/:id</code>
+            </div>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300">Get a specific trigger by its ID.</p>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Path Parameters</h4>
+              <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                <table class="w-full text-left text-sm">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-4">Parameter</th>
+                      <th class="p-4">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">db</td>
+                      <td class="p-4">Database name</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">id</td>
+                      <td class="p-4">Trigger ID (_key)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">cURL Example</h4>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-bash text-sm">curl -X GET "http://localhost:6745/_api/database/mydb/triggers/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Update Trigger -->
+      <section id="update-trigger" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <div class="flex items-center gap-3">
+              <span class="px-3 py-1.5 bg-yellow-500/20 text-yellow-400 text-sm font-bold rounded-lg">PUT</span>
+              <code class="text-xl text-gray-200">/_api/database/:db/triggers/:id</code>
+            </div>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300">Update an existing trigger. Only provided fields will be updated.</p>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">cURL Example</h4>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-bash text-sm">curl -X PUT "http://localhost:6745/_api/database/mydb/triggers/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "events": ["insert", "update"],
+    "priority": 20
+  }'</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Delete Trigger -->
+      <section id="delete-trigger" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <div class="flex items-center gap-3">
+              <span class="px-3 py-1.5 bg-red-500/20 text-red-400 text-sm font-bold rounded-lg">DELETE</span>
+              <code class="text-xl text-gray-200">/_api/database/:db/triggers/:id</code>
+            </div>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300">Delete a trigger.</p>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">cURL Example</h4>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-bash text-sm">curl -X DELETE "http://localhost:6745/_api/database/mydb/triggers/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Response</h4>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-json text-sm">{ "success": true }</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Toggle Trigger -->
+      <section id="toggle-trigger" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <div class="flex items-center gap-3">
+              <span class="px-3 py-1.5 bg-green-500/20 text-green-400 text-sm font-bold rounded-lg">POST</span>
+              <code class="text-xl text-gray-200">/_api/database/:db/triggers/:id/toggle</code>
+            </div>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300">Toggle a trigger's enabled/disabled state.</p>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">cURL Example</h4>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-bash text-sm">curl -X POST "http://localhost:6745/_api/database/mydb/triggers/550e8400-e29b-41d4-a716-446655440000/toggle" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Response</h4>
+              <p class="text-gray-400 text-sm mb-2">Returns the updated trigger with the new enabled state.</p>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-json text-sm">{
+  "_key": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "send_welcome_email",
+  "enabled": false,
+  ...
+}</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Collection Triggers -->
+      <section id="collection-triggers" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <div class="flex items-center gap-3">
+              <span class="px-3 py-1.5 bg-blue-500/20 text-blue-400 text-sm font-bold rounded-lg">GET</span>
+              <code class="text-xl text-gray-200">/_api/database/:db/collections/:coll/triggers</code>
+            </div>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300">List all triggers for a specific collection.</p>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Path Parameters</h4>
+              <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                <table class="w-full text-left text-sm">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-4">Parameter</th>
+                      <th class="p-4">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">db</td>
+                      <td class="p-4">Database name</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">coll</td>
+                      <td class="p-4">Collection name</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">cURL Example</h4>
+              <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 overflow-x-auto">
+<pre><code class="language-bash text-sm">curl -X GET "http://localhost:6745/_api/database/mydb/collections/users/triggers" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
