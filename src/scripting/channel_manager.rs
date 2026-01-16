@@ -490,6 +490,14 @@ mod tests {
             assert_eq!(event.channel, "room-1");
         }
 
+        // conn_id should ALSO receive presence event (self-presence)
+        if let Ok(Some(ChannelEvent::Presence(event))) =
+            tokio::time::timeout(std::time::Duration::from_millis(100), event_rx.recv()).await
+        {
+            assert!(matches!(event.event_type, PresenceEventType::Join));
+            assert_eq!(event.channel, "room-1");
+        }
+
         // Check presence list
         let users = manager.presence_list("room-1");
         assert_eq!(users.len(), 1);
