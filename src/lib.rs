@@ -9,6 +9,7 @@ pub mod sharding;
 pub mod sql;
 pub mod storage;
 pub mod transaction;
+pub mod triggers;
 pub mod ttl;
 
 // Synchronization module (new architecture)

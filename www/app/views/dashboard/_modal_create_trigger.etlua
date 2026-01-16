@@ -1,0 +1,155 @@
+<div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[150]"
+     onclick="if(event.target === this) closeModal()">
+  <div class="bg-bg-card border border-border/50 rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[90vh] flex flex-col"
+       onclick="event.stopPropagation()">
+    
+    <!-- Header -->
+    <div class="px-6 py-5 border-b border-border/50 flex items-center justify-between sticky top-0 bg-bg-card/95 backdrop-blur z-10 rounded-t-xl">
+      <div>
+        <h3 class="text-xl font-semibold text-text">Create Trigger</h3>
+        <p class="text-sm text-text-muted mt-0.5">Configure a new event-based automation</p>
+      </div>
+      <button type="button" onclick="closeModal()" class="p-2 text-text-muted hover:text-text hover:bg-white/10 rounded-lg transition-colors">
+        <i class="fas fa-times text-lg"></i>
+      </button>
+    </div>
+
+    <!-- Scrollable Content -->
+    <div class="overflow-y-auto custom-scrollbar">
+      <form hx-post="/database/<%= db %>/triggers"
+            hx-target="#triggers-table"
+            hx-swap="innerHTML"
+            class="p-6 space-y-6">
+
+        <!-- Name & Collection -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="space-y-2">
+            <label class="block text-sm font-medium text-text">Name</label>
+            <input type="text" name="name" required
+                   placeholder="e.g., welcome_email"
+                   class="w-full px-4 py-2.5 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all">
+          </div>
+          
+          <div class="space-y-2">
+            <label class="block text-sm font-medium text-text">Collection</label>
+            <div class="relative">
+              <select name="collection" required
+                      class="w-full px-4 py-2.5 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none transition-all">
+                <option value="">Select collection...</option>
+                <% for _, coll in ipairs(collections or {}) do %>
+                  <option value="<%= coll %>"><%= coll %></option>
+                <% end %>
+              </select>
+              <div class="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-text-muted">
+                <i class="fas fa-chevron-down text-xs"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Events Selection -->
+        <div class="space-y-3">
+          <label class="block text-sm font-medium text-text">Trigger Events</label>
+          <input type="hidden" name="events" id="events-input" value="">
+          <div class="grid grid-cols-3 gap-3">
+            <label class="cursor-pointer group">
+              <input type="checkbox" value="insert" onchange="updateEvents()" class="peer sr-only event-checkbox">
+              <div class="flex flex-col items-center justify-center p-3 rounded-lg border border-border/50 bg-bg-dark peer-checked:border-emerald-500/50 peer-checked:bg-emerald-500/10 transition-all group-hover:border-border">
+                <span class="text-sm font-medium text-text-muted peer-checked:text-emerald-500">Insert</span>
+              </div>
+            </label>
+            <label class="cursor-pointer group">
+              <input type="checkbox" value="update" onchange="updateEvents()" class="peer sr-only event-checkbox">
+              <div class="flex flex-col items-center justify-center p-3 rounded-lg border border-border/50 bg-bg-dark peer-checked:border-amber-500/50 peer-checked:bg-amber-500/10 transition-all group-hover:border-border">
+                <span class="text-sm font-medium text-text-muted peer-checked:text-amber-500">Update</span>
+              </div>
+            </label>
+            <label class="cursor-pointer group">
+              <input type="checkbox" value="delete" onchange="updateEvents()" class="peer sr-only event-checkbox">
+              <div class="flex flex-col items-center justify-center p-3 rounded-lg border border-border/50 bg-bg-dark peer-checked:border-rose-500/50 peer-checked:bg-rose-500/10 transition-all group-hover:border-border">
+                <span class="text-sm font-medium text-text-muted peer-checked:text-rose-500">Delete</span>
+              </div>
+            </label>
+          </div>
+          <p class="text-xs text-text-muted">Select at least one event type to trigger this automation.</p>
+        </div>
+
+        <!-- Script Selection -->
+        <div class="space-y-2">
+          <label class="block text-sm font-medium text-text">Lua Script</label>
+          <div class="relative">
+            <select name="script_path" required
+                    class="w-full px-4 py-2.5 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none transition-all">
+              <option value="">Select a script to execute...</option>
+              <% for _, script in ipairs(scripts or {}) do %>
+                <option value="<%= script.path or script %>"><%= script.path or script %></option>
+              <% end %>
+            </select>
+            <div class="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-text-muted">
+              <i class="fas fa-chevron-down text-xs"></i>
+            </div>
+          </div>
+          <p class="text-xs text-text-muted">
+            The script receives: <code class="bg-bg-dark px-1 py-0.5 rounded text-primary-light">trigger_name</code>, 
+            <code class="bg-bg-dark px-1 py-0.5 rounded text-primary-light">event</code>, 
+            <code class="bg-bg-dark px-1 py-0.5 rounded text-primary-light">key</code>, 
+            <code class="bg-bg-dark px-1 py-0.5 rounded text-primary-light">data</code>
+          </p>
+        </div>
+
+        <!-- Advanced Options -->
+        <div class="pt-4 border-t border-border/30">
+          <h4 class="text-sm font-semibold text-text mb-4">Advanced Configuration</h4>
+          <div class="grid grid-cols-3 gap-4">
+            <div class="space-y-2">
+              <label class="block text-xs font-medium text-text-muted uppercase">Queue</label>
+              <input type="text" name="queue" value="default"
+                     class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/50">
+            </div>
+            <div class="space-y-2">
+              <label class="block text-xs font-medium text-text-muted uppercase">Priority</label>
+              <input type="number" name="priority" value="0"
+                     class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/50">
+            </div>
+            <div class="space-y-2">
+              <label class="block text-xs font-medium text-text-muted uppercase">Retries</label>
+              <input type="number" name="max_retries" value="5" min="0" max="100"
+                     class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/50">
+            </div>
+          </div>
+        </div>
+
+        <!-- Enabled Toggle -->
+        <div class="flex items-center gap-3 p-3 bg-bg-dark/50 rounded-lg border border-border/30">
+          <div class="relative inline-block w-10 h-6 align-middle select-none">
+            <input type="checkbox" name="enabled" id="enabled-toggle" class="peer sr-only" checked>
+            <div class="w-10 h-6 bg-bg-dark border border-border/50 rounded-full cursor-pointer peer-checked:bg-success/20 peer-checked:border-success/50 transition-colors"></div>
+            <div class="absolute top-1 left-1 bg-text-muted w-4 h-4 rounded-full transition-transform peer-checked:translate-x-4 peer-checked:bg-success"></div>
+            <label for="enabled-toggle" class="absolute inset-0 cursor-pointer"></label>
+          </div>
+          <span class="text-sm font-medium text-text">Enable trigger immediately</span>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="flex items-center justify-end gap-3 pt-2">
+          <button type="button" onclick="closeModal()"
+                  class="px-5 py-2.5 text-text-muted hover:text-text hover:bg-white/5 rounded-lg transition-colors font-medium">
+            Cancel
+          </button>
+          <button type="submit"
+                  class="px-5 py-2.5 bg-primary hover:bg-primary-light text-white font-medium rounded-lg shadow-lg shadow-primary/20 transition-all hover:-translate-y-0.5 active:translate-y-0">
+            Create Trigger
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function updateEvents() {
+  var checkboxes = document.querySelectorAll('.event-checkbox:checked');
+  var events = Array.from(checkboxes).map(function(cb) { return cb.value; });
+  document.getElementById('events-input').value = events.join(',');
+}
+</script>

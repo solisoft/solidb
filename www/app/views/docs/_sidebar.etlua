@@ -18,6 +18,7 @@ local sections = {
         { slug = "api-cluster", label = "Cluster" },
         { slug = "api-auth", label = "Auth & RBAC" },
         { slug = "api-jobs", label = "Jobs & Queues" },
+        { slug = "api-triggers", label = "Triggers" },
         { slug = "api-monitoring", label = "Monitoring" },
       }},
       { slug = "driver", label = "Native Driver", icon = "fa-plug", color = "info" },
@@ -67,6 +68,7 @@ local sections = {
         { slug = "scripting-development", label = "Development" },
       }},
       { slug = "queues", label = "Queues & Jobs", icon = "fa-tasks", color = "primary" },
+      { slug = "triggers", label = "Triggers", icon = "fa-bolt", color = "warning" },
       { slug = "streams", label = "Stream Processing", icon = "fa-stream", color = "accent" },
 
     }

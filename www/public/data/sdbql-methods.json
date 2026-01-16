@@ -1462,6 +1462,12 @@
       "description": "True if zero elements satisfy the condition",
       "category": "array",
       "url": "/docs/sdbql-operators#op-none"
+    },
+    {
+      "name": "|>",
+      "description": "Pipeline operator - chains function calls, passing left value as first argument to right function",
+      "category": "pipeline",
+      "url": "/docs/sdbql-syntax#pipeline"
     }
   ],
   "keywords": [

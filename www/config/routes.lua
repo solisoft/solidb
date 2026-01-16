@@ -139,6 +139,16 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   router.post("/queues/cron", "dashboard/queue#create_cron")
   router.delete("/queues/cron/:cron_id", "dashboard/queue#delete_cron")
 
+  -- Triggers routes
+  router.get("/triggers", "dashboard/triggers#index")
+  router.get("/triggers/table", "dashboard/triggers#table")
+  router.get("/triggers/modal/create", "dashboard/triggers#modal_create")
+  router.get("/triggers/:id/modal/edit", "dashboard/triggers#modal_edit")
+  router.post("/triggers", "dashboard/triggers#create")
+  router.put("/triggers/:id", "dashboard/triggers#update")
+  router.delete("/triggers/:id", "dashboard/triggers#destroy")
+  router.post("/triggers/:id/toggle", "dashboard/triggers#toggle")
+
   -- Environment routes
   router.get("/env", "dashboard/admin#env")
   router.get("/env/table", "dashboard/admin#env_table")

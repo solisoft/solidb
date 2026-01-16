@@ -1,0 +1,47 @@
+<div class="max-w-6xl mx-auto space-y-6">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-bold text-text tracking-tight">Collection Triggers</h1>
+      <p class="text-text-muted mt-1">Automate workflows with event-based hooks in <span class="font-medium text-primary-light"><%= db %></span></p>
+    </div>
+
+    <button type="button"
+            hx-get="/database/<%= db %>/triggers/modal/create"
+            hx-target="#modal-container"
+            hx-swap="innerHTML"
+            class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary-light text-white font-medium rounded-lg shadow-lg shadow-primary/20 transition-all hover:-translate-y-0.5 active:translate-y-0">
+      <i class="fas fa-bolt"></i>
+      <span>Create Trigger</span>
+    </button>
+  </div>
+
+  <!-- Info Card -->
+  <div class="bg-gradient-to-r from-bg-card to-bg-card/50 border border-border/50 rounded-xl p-6 shadow-sm">
+    <div class="flex items-start gap-4">
+      <div class="p-3 bg-primary/10 rounded-lg">
+        <i class="fas fa-cogs text-primary text-xl"></i>
+      </div>
+      <div class="space-y-1">
+        <h3 class="font-medium text-text">How Triggers Work</h3>
+        <p class="text-sm text-text-muted leading-relaxed max-w-3xl">
+          Triggers monitor your collections for changes (inserts, updates, or deletions) and automatically spawn background jobs.
+          These jobs execute Lua scripts asynchronously via the queue worker system, allowing for decoupled event handling.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Triggers Table -->
+  <div class="bg-bg-card border border-border/50 rounded-xl shadow-sm overflow-hidden">
+    <div id="triggers-table"
+         hx-get="/database/<%= db %>/triggers/table"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="p-12 text-center">
+        <i class="fas fa-circle-notch fa-spin text-3xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading triggers...</p>
+      </div>
+    </div>
+  </div>
+</div>
