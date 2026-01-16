@@ -22,6 +22,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
   <!-- Monaco Editor -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+  <!-- Monaco Completions -->
+  <script src="<%- public_path('js/solidb-completions.js') %>"></script>
   <%- head_content or "" %>
 </head>
 <body class="min-h-screen bg-bg text-text">

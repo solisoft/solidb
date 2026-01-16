@@ -123,42 +123,50 @@
           <div class="p-8 space-y-8">
             <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Basic Aggregations</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-SUM" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-SUM" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">SUM(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Sum of all values in the array.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SUM([1, 2, 3, 4]) --10</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-AVG" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-AVG" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">AVG(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Average of all values.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN AVG([1, 2, 3, 4]) --2.5</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-MIN" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-MIN" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">MIN(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Smallest value in the array.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MIN([5, 1, 9]) --1</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-MAX" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-MAX" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">MAX(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Largest value in the array.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MAX([5, 1, 9]) --9</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-COUNT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-COUNT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">COUNT(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Number of elements in the array.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COUNT([1, 2, 3]) --3</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-COUNT_DISTINCT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-COUNT_DISTINCT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">COUNT_DISTINCT(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Number of unique elements.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COUNT_DISTINCT([1, 2, 2, 3]) --3</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-MEDIAN" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-MEDIAN" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">MEDIAN(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Median value of the array.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MEDIAN([1, 5, 10]) --5</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-PERCENTILE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-PERCENTILE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">PERCENTILE(arr, p)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns the p-th percentile (0-100).</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PERCENTILE([1..100], 95) --95</code></pre>
@@ -167,22 +175,26 @@
 
             <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Statistical Functions</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-VARIANCE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-VARIANCE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">VARIANCE(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Population variance.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VARIANCE([1, 2, 3, 4, 5]) --2</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-VARIANCE_SAMPLE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-VARIANCE_SAMPLE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">VARIANCE_SAMPLE(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Sample variance.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VARIANCE_SAMPLE([1, 2, 3, 4, 5]) --2.5</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-STDDEV" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-STDDEV" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Sample standard deviation.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV([1, 2, 3, 4, 5]) --1.581...</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-STDDEV_POPULATION" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-STDDEV_POPULATION" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV_POPULATION(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Population standard deviation.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV_POPULATION([1, 2, 3, 4, 5]) --1.414...</code></pre>

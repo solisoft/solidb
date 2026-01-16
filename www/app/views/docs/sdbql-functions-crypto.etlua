@@ -40,13 +40,15 @@
             </p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-ARGON2_HASH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-ARGON2_HASH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-red-500/20 px-2 py-1 rounded border border-red-500/30 w-fit mb-3">ARGON2_HASH(password)</code>
                 <p class="text-sm text-gray-400 mb-3">Securely hash a password using Argon2id with automatic salt generation.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ARGON2_HASH("mypassword123")
 -- "$argon2id$v=19$m=19456,t=2,p=1$..."</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-ARGON2_VERIFY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-ARGON2_VERIFY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-red-500/20 px-2 py-1 rounded border border-red-500/30 w-fit mb-3">ARGON2_VERIFY(hash, password)</code>
                 <p class="text-sm text-gray-400 mb-3">Verify a password against a stored Argon2 hash. Returns true/false.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ARGON2_VERIFY(@storedHash, "mypassword123")
@@ -109,13 +111,15 @@ FOR user IN users
             </p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-MD5" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-MD5" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">MD5(string)</code>
                 <p class="text-sm text-gray-400 mb-3">Computes MD5 hash (128-bit). Fast but not cryptographically secure - use for checksums only.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MD5("hello world")
 -- "5eb63bbbe01eeed093cb22bb8f5acdc3"</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-SHA256" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-SHA256" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">SHA256(string)</code>
                 <p class="text-sm text-gray-400 mb-3">Computes SHA-256 hash (256-bit). Cryptographically secure for data integrity.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SHA256("hello world")
@@ -193,13 +197,15 @@ FOR user IN users
             </p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-BASE64_ENCODE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-BASE64_ENCODE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-yellow-500/20 px-2 py-1 rounded border border-yellow-500/30 w-fit mb-3">BASE64_ENCODE(string)</code>
                 <p class="text-sm text-gray-400 mb-3">Encode string to Base64 format. Useful for binary data in JSON or URLs.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN BASE64_ENCODE("Hello World")
 -- "SGVsbG8gV29ybGQ="</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-BASE64_DECODE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-BASE64_DECODE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-yellow-500/20 px-2 py-1 rounded border border-yellow-500/30 w-fit mb-3">BASE64_DECODE(string)</code>
                 <p class="text-sm text-gray-400 mb-3">Decode Base64 string back to original. Returns error if invalid Base64.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN BASE64_DECODE("SGVsbG8gV29ybGQ=")

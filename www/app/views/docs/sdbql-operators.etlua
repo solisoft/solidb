@@ -45,7 +45,8 @@
                 </div>
                 <div class="p-5 space-y-5 flex-grow">
                   <!-- Equality -->
-                  <div>
+                  <div id="op-equality" class="group relative">
+                    <a href="#op-equality" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                     <div class="flex items-center gap-2 mb-2">
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">==</code>
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">!=</code>
@@ -57,7 +58,8 @@
                   </div>
 
                   <!-- Relational -->
-                  <div>
+                  <div id="op-relational" class="group relative">
+                    <a href="#op-relational" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                     <div class="flex items-center gap-2 mb-2">
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&lt;</code>
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&lt;=</code>
@@ -71,7 +73,8 @@
                   </div>
 
                   <!-- Inclusion -->
-                  <div>
+                  <div id="op-in" class="group relative">
+                    <a href="#op-in" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                     <div class="flex items-center gap-2 mb-2">
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">IN</code>
                        <span class="text-xs text-gray-400">Value in array</span>
@@ -82,7 +85,8 @@
                   </div>
 
                   <!-- Pattern Matching -->
-                  <div>
+                  <div id="op-like" class="group relative">
+                    <a href="#op-like" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                     <div class="flex items-center gap-2 mb-2">
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">LIKE</code>
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">=~</code>
@@ -100,7 +104,8 @@
                   </div>
 
                   <!-- Fuzzy Matching -->
-                  <div>
+                  <div id="op-fuzzy" class="group relative">
+                    <a href="#op-fuzzy" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                     <div class="flex items-center gap-2 mb-2">
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">~=</code>
                        <span class="text-xs text-gray-400">Fuzzy Match (edit distance &le; 2)</span>
@@ -126,7 +131,8 @@
                 </div>
                 <div class="p-5 space-y-5 flex-grow">
                   <!-- AND/OR -->
-                  <div>
+                  <div id="op-and-or" class="group relative">
+                    <a href="#op-and-or" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                     <div class="flex items-center gap-2 mb-2">
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">AND</code>
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">OR</code>
@@ -138,7 +144,8 @@
                   </div>
 
                   <!-- NOT -->
-                  <div>
+                  <div id="op-not" class="group relative">
+                    <a href="#op-not" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                     <div class="flex items-center gap-2 mb-2">
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">NOT</code>
                        <span class="text-xs text-gray-400">Negation</span>
@@ -146,6 +153,40 @@
                     <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
                       NOT is_deleted
                     </code>
+                  </div>
+
+                  <!-- Null Coalesce -->
+                  <div id="op-nullcoalesce" class="group relative">
+                    <a href="#op-nullcoalesce" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">??</code>
+                       <span class="text-xs text-gray-400">Null coalesce</span>
+                    </div>
+                    <div class="space-y-1">
+                      <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        name ?? "Unknown"
+                      </code>
+                      <code class="block text-xs text-gray-400 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        -- Returns left if NOT null
+                      </code>
+                    </div>
+                  </div>
+
+                  <!-- Logical OR -->
+                  <div id="op-logicalor" class="group relative">
+                    <a href="#op-logicalor" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">||</code>
+                       <span class="text-xs text-gray-400">Logical OR (falsy coalesce)</span>
+                    </div>
+                    <div class="space-y-1">
+                      <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        value || "default"
+                      </code>
+                      <code class="block text-xs text-gray-400 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        -- Returns left if truthy
+                      </code>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -159,7 +200,8 @@
                 </div>
                 <div class="p-5 space-y-5 flex-grow">
                    <!-- Basic Math -->
-                  <div>
+                  <div id="op-arithmetic" class="group relative">
+                    <a href="#op-arithmetic" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                     <div class="flex items-center gap-2 mb-2">
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">+</code>
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">-</code>
@@ -173,7 +215,8 @@
                   </div>
 
                    <!-- Modulo -->
-                  <div>
+                  <div id="op-modulo" class="group relative">
+                    <a href="#op-modulo" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                     <div class="flex items-center gap-2 mb-2">
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">%</code>
                        <span class="text-xs text-gray-400">Modulo (remainder)</span>
@@ -194,7 +237,8 @@
                 </div>
                 <div class="p-5 space-y-5 flex-grow">
                    <!-- Logic -->
-                  <div>
+                  <div id="op-bitwise" class="group relative">
+                    <a href="#op-bitwise" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                     <div class="flex items-center gap-2 mb-2">
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&amp;</code>
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">|</code>
@@ -213,7 +257,8 @@
                   </div>
 
                    <!-- Shift -->
-                  <div>
+                  <div id="op-shift" class="group relative">
+                    <a href="#op-shift" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                     <div class="flex items-center gap-2 mb-2">
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&lt;&lt;</code>
                        <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&gt;&gt;</code>
@@ -249,7 +294,8 @@
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <!-- ANY -->
-              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-cyan-500/30 transition-colors">
+              <div id="op-any" class="group relative bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-cyan-500/30 transition-colors">
+                <a href="#op-any" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <div class="flex items-center justify-between mb-4">
                   <code class="text-lg font-bold text-cyan-300">ANY</code>
                   <span class="text-xs text-gray-400">At least one match</span>
@@ -262,7 +308,8 @@ SATISFIES item.price > 100</code></pre>
               </div>
 
               <!-- ALL -->
-              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-cyan-500/30 transition-colors">
+              <div id="op-all" class="group relative bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-cyan-500/30 transition-colors">
+                <a href="#op-all" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <div class="flex items-center justify-between mb-4">
                   <code class="text-lg font-bold text-cyan-300">ALL</code>
                   <span class="text-xs text-gray-400">Every element matches</span>
@@ -275,7 +322,8 @@ SATISFIES tag != "deprecated"</code></pre>
               </div>
 
               <!-- NONE -->
-              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-cyan-500/30 transition-colors">
+              <div id="op-none" class="group relative bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-cyan-500/30 transition-colors">
+                <a href="#op-none" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <div class="flex items-center justify-between mb-4">
                   <code class="text-lg font-bold text-cyan-300">NONE</code>
                   <span class="text-xs text-gray-400">No matches</span>

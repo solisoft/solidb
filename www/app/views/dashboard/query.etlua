@@ -626,6 +626,24 @@ require(['vs/editor/editor.main'], function () {
     }
   });
 
+  // Register SDBQL code completions
+  if (window.SoliDBCompletions) {
+    SoliDBCompletions.registerSDBQLCompletions(monaco, async function() {
+      try {
+        var response = await fetch('/database/' + currentDb + '/api/collections');
+        if (!response.ok) return [];
+        var data = await response.json();
+        // Return collection names, filtering out system collections
+        return (data.collections || data || [])
+          .filter(function(c) { return c.name && c.name[0] !== '_'; })
+          .map(function(c) { return c.name; });
+      } catch (e) {
+        console.warn('Failed to fetch collections for autocomplete:', e);
+        return [];
+      }
+    });
+  }
+
   // Load initial query from history
   var initialQuery = defaultQueries.sdbql;
   var history = getHistory();
@@ -671,9 +689,29 @@ require(['vs/editor/editor.main'], function () {
     domReadOnly: true
   });
 
-  // Keyboard shortcut: Ctrl+Enter to execute
-  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, function () {
-    executeQuery();
+  // Keyboard shortcut: Ctrl+Enter to execute (Monaco action)
+  editor.addAction({
+    id: 'execute-query',
+    label: 'Execute Query',
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+    run: function() {
+      if (typeof executeQuery === 'function') {
+        executeQuery();
+      }
+    }
+  });
+
+  // Global Ctrl+Enter listener (works even when editor is focused)
+  document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      // Only trigger if we're on the query page and editor exists
+      if (editor && document.getElementById('monaco-editor')) {
+        e.preventDefault();
+        if (typeof executeQuery === 'function') {
+          executeQuery();
+        }
+      }
+    }
   });
 
   // Listen for changes

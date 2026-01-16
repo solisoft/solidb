@@ -547,4 +547,23 @@ function QueryController:live_query()
   })
 end
 
+-- API: Get collections list for autocomplete
+function QueryController:api_collections()
+  local db = self:get_db()
+  local status, _, body = self:fetch_api("/_api/database/" .. db .. "/collection")
+
+  if status == 200 then
+    local ok, data = pcall(DecodeJson, body)
+    if ok and data then
+      local collections = data.collections or data or {}
+      SetHeader("Content-Type", "application/json")
+      self:html(EncodeJson({ collections = collections }))
+      return
+    end
+  end
+
+  SetHeader("Content-Type", "application/json")
+  self:html(EncodeJson({ collections = {} }))
+end
+
 return QueryController

@@ -26,149 +26,178 @@
       <!-- String Functions -->
       <section id="string-functions" class="scroll-mt-24">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-STARTS_WITH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-STARTS_WITH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">STARTS_WITH(str, prefix)</code>
             <p class="text-sm text-gray-400 mb-3">Check if string starts with prefix.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STARTS_WITH("hello", "he") --true</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-ENDS_WITH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-ENDS_WITH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">ENDS_WITH(str, suffix)</code>
             <p class="text-sm text-gray-400 mb-3">Check if string ends with suffix.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ENDS_WITH("file.txt", ".txt") --true</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-PAD_LEFT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-PAD_LEFT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">PAD_LEFT(str, len, char?)</code>
             <p class="text-sm text-gray-400 mb-3">Pad string from left. Alias: LPAD.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PAD_LEFT("42", 5, "0") --"00042"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-PAD_RIGHT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-PAD_RIGHT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">PAD_RIGHT(str, len, char?)</code>
             <p class="text-sm text-gray-400 mb-3">Pad string from right. Alias: RPAD.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PAD_RIGHT("hi", 5) --"hi   "</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-REPEAT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-REPEAT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">REPEAT(str, count)</code>
             <p class="text-sm text-gray-400 mb-3">Repeat string n times.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REPEAT("ab", 3) --"ababab"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-CAPITALIZE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-CAPITALIZE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CAPITALIZE(str)</code>
             <p class="text-sm text-gray-400 mb-3">Capitalize first letter of string.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CAPITALIZE("hello") --"Hello"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-TITLE_CASE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-TITLE_CASE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TITLE_CASE(str)</code>
             <p class="text-sm text-gray-400 mb-3">Title case all words. Alias: INITCAP.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TITLE_CASE("hello world") --"Hello World"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-ENCODE_URI" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-ENCODE_URI" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">ENCODE_URI(str)</code>
             <p class="text-sm text-gray-400 mb-3">URL encode string. Alias: URL_ENCODE.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ENCODE_URI("hello world") --"hello%20world"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-DECODE_URI" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-DECODE_URI" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">DECODE_URI(str)</code>
             <p class="text-sm text-gray-400 mb-3">URL decode string. Alias: URL_DECODE.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DECODE_URI("hello%20world") --"hello world"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-WORD_COUNT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-WORD_COUNT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">WORD_COUNT(str)</code>
             <p class="text-sm text-gray-400 mb-3">Count words in string.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN WORD_COUNT("hello world") --2</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-TRUNCATE_TEXT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-TRUNCATE_TEXT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TRUNCATE_TEXT(str, len, suffix?)</code>
             <p class="text-sm text-gray-400 mb-3">Truncate with ellipsis. Alias: ELLIPSIS.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TRUNCATE_TEXT("Hello World", 8) --"Hello..."</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-MASK" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-MASK" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">MASK(str, start?, end?, char?)</code>
             <p class="text-sm text-gray-400 mb-3">Mask string for PII protection.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MASK("4111111111111111", 0, -4) --"************1111"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-CONCAT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-CONCAT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CONCAT(str1, ...)</code>
             <p class="text-sm text-gray-400 mb-3">Concatenates strings.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONCAT("A", "B") --"AB"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-CONCAT_SEPARATOR" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-CONCAT_SEPARATOR" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CONCAT_SEPARATOR(sep, arr)</code>
             <p class="text-sm text-gray-400 mb-3">Joins array with separator.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONCAT_SEPARATOR(",", ["A","B"])</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-LENGTH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-LENGTH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LENGTH(str)</code>
             <p class="text-sm text-gray-400 mb-3">Returns string length.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LENGTH("Hello") --5</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-SUBSTRING" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-SUBSTRING" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">SUBSTRING(str, start, len?)</code>
             <p class="text-sm text-gray-400 mb-3">Extracts substring.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SUBSTRING("Hello", 0, 2) --"He"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-LOWER" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-LOWER" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LOWER(str) / UPPER(str)</code>
             <p class="text-sm text-gray-400 mb-3">Case conversion.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LOWER("Hi") --"hi"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-LEFT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-LEFT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LEFT(str, n) / RIGHT(str, n)</code>
             <p class="text-sm text-gray-400 mb-3">Extracts n characters from start or end.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LEFT("Hello", 2) --"He"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-CHAR_LENGTH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-CHAR_LENGTH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CHAR_LENGTH(str)</code>
             <p class="text-sm text-gray-400 mb-3">Returns number of characters (Unicode aware).</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CHAR_LENGTH("hello") --5</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-TRIM" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-TRIM" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TRIM(val, type?/chars?)</code>
             <p class="text-sm text-gray-400 mb-3">Trims whitespace or chars. type: 0=both, 1=left, 2=right.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TRIM(" foo ") --"foo"
 RETURN TRIM("--foo--", "-") --"foo"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-LTRIM" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-LTRIM" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LTRIM(val, chars?) / RTRIM(val, chars?)</code>
             <p class="text-sm text-gray-400 mb-3">Trims from start/end.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LTRIM(" foo ") --"foo "</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-SPLIT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-SPLIT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">SPLIT(val, sep, limit?)</code>
             <p class="text-sm text-gray-400 mb-3">Splits string into array.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SPLIT("foo-bar-baz", "-") --["foo", "bar", "baz"]</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-SUBSTITUTE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-SUBSTITUTE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">SUBSTITUTE(val, search, replace, limit?)</code>
             <p class="text-sm text-gray-400 mb-3">Replaces occurrences of search with replace.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SUBSTITUTE("foobar", "foo", "baz") --"bazbar"</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-CONTAINS" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-CONTAINS" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CONTAINS(text, search, returnIndex?)</code>
             <p class="text-sm text-gray-400 mb-3">Checks if search string is in text. Returns boolean or index.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONTAINS("foobar", "bar") --true
 RETURN CONTAINS("foobar", "bar", true) --3</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-FIND_FIRST" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-FIND_FIRST" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">FIND_FIRST(str, search) / FIND_LAST</code>
             <p class="text-sm text-gray-400 mb-3">Returns index of first/last occurrence.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FIND_FIRST("hello", "l") --2</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-REGEX_TEST" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-REGEX_TEST" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">REGEX_TEST(str, pattern)</code>
             <p class="text-sm text-gray-400 mb-3">Tests if string matches regex. Alias: REGEX_MATCH.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REGEX_TEST("abc", "a.*") --true</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-REGEX_REPLACE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-REGEX_REPLACE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">REGEX_REPLACE(text, pattern, replacement)</code>
             <p class="text-sm text-gray-400 mb-3">Replace occurrences of a pattern in a string.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REGEX_REPLACE("the quick brown fox", "the (.*) fox", "a $1 dog")</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-JSON_PARSE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-JSON_PARSE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">JSON_PARSE(text)</code>
             <p class="text-sm text-gray-400 mb-3">Parses JSON string to value. Returns NULL on error.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN JSON_PARSE("{\"a\":1}") --{a: 1}</code></pre>
           </div>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+          <div id="fn-JSON_STRINGIFY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-JSON_STRINGIFY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">JSON_STRINGIFY(value)</code>
             <p class="text-sm text-gray-400 mb-3">Serializes value to JSON string.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN JSON_STRINGIFY({a: 1}) --"{\"a\":1}"</code></pre>
@@ -184,18 +213,21 @@ RETURN CONTAINS("foobar", "bar", true) --3</code></pre>
           </div>
           <div class="p-8">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-LEVENSHTEIN" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-LEVENSHTEIN" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LEVENSHTEIN(s1, s2)</code>
                 <p class="text-sm text-gray-400 mb-3">Calculates edit distance between strings.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LEVENSHTEIN("foo", "bar") --3</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-SIMILARITY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-SIMILARITY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">SIMILARITY(s1, s2)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns trigram similarity score (0.0 to 1.0).</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SIMILARITY("hello", "hello") --1.0
 RETURN SIMILARITY("hello", "hallo") --~0.6</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
+              <div id="fn-FUZZY_MATCH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
+                <a href="#fn-FUZZY_MATCH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">FUZZY_MATCH(text, pattern, max_distance?)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns true if text matches pattern within edit distance. Default max_distance is 2.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FUZZY_MATCH("hello", "hello", 0) --true
@@ -219,7 +251,8 @@ FOR doc IN users
           </div>
           <div class="p-8">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
+              <div id="fn-SOUNDEX" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
+                <a href="#fn-SOUNDEX" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">SOUNDEX(str, locale?)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns phonetic code for name matching. Supports locales: en, de, fr, es, it, pt, nl, el, ja.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- English (default)
@@ -231,28 +264,33 @@ RETURN SOUNDEX("Mueller", "de") == SOUNDEX("Muller", "de") --true
 -- French (fr)
 RETURN SOUNDEX("Dupont", "fr") == SOUNDEX("Dupon", "fr") --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-METAPHONE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-METAPHONE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">METAPHONE(str)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns phonetic encoding using Metaphone algorithm.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN METAPHONE("Katherine") --"K0RN"
 RETURN METAPHONE("Wright") == METAPHONE("Right") --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-DOUBLE_METAPHONE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-DOUBLE_METAPHONE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">DOUBLE_METAPHONE(str)</code>
                 <p class="text-sm text-gray-400 mb-3">Returns array with [primary, secondary] phonetic codes.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DOUBLE_METAPHONE("Schmidt") --["SMT", "SMT"]</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-COLOGNE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-COLOGNE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">COLOGNE(str)</code>
                 <p class="text-sm text-gray-400 mb-3">Cologne Phonetic algorithm for German names.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COLOGNE("Mueller") == COLOGNE("Muller") --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-CAVERPHONE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-CAVERPHONE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CAVERPHONE(str)</code>
                 <p class="text-sm text-gray-400 mb-3">Caverphone algorithm for European surnames.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CAVERPHONE("Lee") == CAVERPHONE("Leigh") --true</code></pre>
               </div>
-              <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <div id="fn-NYSIIS" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-NYSIIS" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">NYSIIS(str)</code>
                 <p class="text-sm text-gray-400 mb-3">New York State algorithm. Accurate for various ethnic origins.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN NYSIIS("MacDonald") == NYSIIS("McDonald") --true</code></pre>
@@ -279,7 +317,8 @@ RETURN METAPHONE("Wright") == METAPHONE("Right") --true</code></pre>
             </p>
 
             <!-- SLUGIFY -->
-            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+            <div id="fn-SLUGIFY" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-SLUGIFY" class="absolute top-5 right-5 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-emerald-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
               <div class="p-5 border-b border-white/5 bg-white/5">
                 <h3 class="text-lg font-bold text-emerald-300 flex items-center">
                   <span class="bg-emerald-500/20 text-emerald-400 text-xs font-mono px-2 py-1 rounded mr-3">SLUGIFY</span>
@@ -323,7 +362,8 @@ RETURN SLUGIFY("Product #42: 50% Off!")
             </div>
 
             <!-- SANITIZE -->
-            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+            <div id="fn-SANITIZE" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-SANITIZE" class="absolute top-5 right-5 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-emerald-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
               <div class="p-5 border-b border-white/5 bg-white/5">
                 <h3 class="text-lg font-bold text-emerald-300 flex items-center">
                   <span class="bg-emerald-500/20 text-emerald-400 text-xs font-mono px-2 py-1 rounded mr-3">SANITIZE</span>

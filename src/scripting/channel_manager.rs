@@ -483,13 +483,11 @@ mod tests {
             .unwrap();
 
         // conn_id2 should receive presence event
-        if let Ok(ChannelEvent::Presence(event)) =
+        if let Ok(Some(ChannelEvent::Presence(event))) =
             tokio::time::timeout(std::time::Duration::from_millis(100), event_rx2.recv()).await
         {
-            if let Some(event) = event {
-                assert!(matches!(event.event_type, PresenceEventType::Join));
-                assert_eq!(event.channel, "room-1");
-            }
+            assert!(matches!(event.event_type, PresenceEventType::Join));
+            assert_eq!(event.channel, "room-1");
         }
 
         // Check presence list
@@ -501,12 +499,10 @@ mod tests {
         manager.presence_leave(&conn_id, "room-1");
 
         // conn_id should receive leave event
-        if let Ok(ChannelEvent::Presence(event)) =
+        if let Ok(Some(ChannelEvent::Presence(event))) =
             tokio::time::timeout(std::time::Duration::from_millis(100), event_rx.recv()).await
         {
-            if let Some(event) = event {
-                assert!(matches!(event.event_type, PresenceEventType::Leave));
-            }
+            assert!(matches!(event.event_type, PresenceEventType::Leave));
         }
 
         let users = manager.presence_list("room-1");

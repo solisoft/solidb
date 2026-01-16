@@ -27,6 +27,7 @@ router.get("/auth/logout", "auth#logout")
 
 -- SoliDB Documentation
 router.get("/docs", "docs#index")
+router.get("/docs/search", "docs/search#search")
 router.get("/docs/:page", "docs#show")
 router.get("/slides", "docs#slides")
 
@@ -92,6 +93,9 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   router.post("/query/translate", "dashboard/query#translate")
   router.post("/query/nl", "dashboard/query#nl")
   router.post("/query/nl/feedback", "dashboard/query#nl_feedback")
+
+  -- API routes for editor features
+  router.get("/api/collections", "dashboard/query#api_collections")
 
   -- REPL routes
   router.get("/repl", "dashboard/query#repl")
