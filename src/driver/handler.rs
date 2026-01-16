@@ -848,10 +848,9 @@ impl DriverHandler {
                 database,
                 collection,
             } => match self.get_collection(&database, &collection) {
-                Ok(coll) => match coll.prune() {
-                    Ok(count) => Response::ok_count(count),
-                    Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-                },
+                Ok(_) => Response::error(DriverError::InvalidCommand(
+                    "Prune not supported".to_string(),
+                )),
                 Err(e) => Response::error(e),
             },
 
