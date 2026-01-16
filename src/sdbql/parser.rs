@@ -1879,6 +1879,62 @@ impl Parser {
                 }
             }
 
+            // Handle LEFT as a function call (also used as JOIN keyword)
+            Token::Left => {
+                self.advance();
+                let name = "LEFT".to_string();
+
+                // Must be followed by LeftParen for function call
+                if matches!(self.current_token(), Token::LeftParen) {
+                    self.advance(); // consume '('
+                    let mut args = Vec::new();
+
+                    // Parse arguments
+                    while !matches!(self.current_token(), Token::RightParen | Token::Eof) {
+                        args.push(self.parse_expression()?);
+
+                        if matches!(self.current_token(), Token::Comma) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+
+                    self.expect(Token::RightParen)?;
+                    Ok(Expression::FunctionCall { name, args })
+                } else {
+                    Err(DbError::ParseError("Unexpected token in expression: Left".to_string()))
+                }
+            }
+
+            // Handle RIGHT as a function call (also used as JOIN keyword)
+            Token::Right => {
+                self.advance();
+                let name = "RIGHT".to_string();
+
+                // Must be followed by LeftParen for function call
+                if matches!(self.current_token(), Token::LeftParen) {
+                    self.advance(); // consume '('
+                    let mut args = Vec::new();
+
+                    // Parse arguments
+                    while !matches!(self.current_token(), Token::RightParen | Token::Eof) {
+                        args.push(self.parse_expression()?);
+
+                        if matches!(self.current_token(), Token::Comma) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+
+                    self.expect(Token::RightParen)?;
+                    Ok(Expression::FunctionCall { name, args })
+                } else {
+                    Err(DbError::ParseError("Unexpected token in expression: Right".to_string()))
+                }
+            }
+
             Token::Integer(n) => {
                 let num = *n;
                 self.advance();
