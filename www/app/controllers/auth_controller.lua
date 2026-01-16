@@ -53,7 +53,9 @@ function AuthController:do_login()
   end
 
   -- Verify password
-  local valid = argon2.verify(user.password_hash, password)
+  P("Login attempt", { email = user.email, hash = user.password_hash:sub(1, 40), password_len = #password })
+  local valid, err = argon2.verify(user.password_hash, password)
+  P("Argon2 result", { valid = valid, err = err })
   if not valid then
     if self:is_htmx_request() then
       return self:html('<div class="text-red-400 text-sm mt-2">Invalid email or password</div>')

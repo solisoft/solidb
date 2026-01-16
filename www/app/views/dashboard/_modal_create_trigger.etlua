@@ -19,6 +19,7 @@
       <form hx-post="/database/<%= db %>/triggers"
             hx-target="#triggers-table"
             hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) closeModal()"
             class="p-6 space-y-6">
 
         <!-- Name & Collection -->
@@ -52,22 +53,22 @@
           <label class="block text-sm font-medium text-text">Trigger Events</label>
           <input type="hidden" name="events" id="events-input" value="">
           <div class="grid grid-cols-3 gap-3">
-            <label class="cursor-pointer group">
-              <input type="checkbox" value="insert" onchange="updateEvents()" class="peer sr-only event-checkbox">
-              <div class="flex flex-col items-center justify-center p-3 rounded-lg border border-border/50 bg-bg-dark peer-checked:border-emerald-500/50 peer-checked:bg-emerald-500/10 transition-all group-hover:border-border">
-                <span class="text-sm font-medium text-text-muted peer-checked:text-emerald-500">Insert</span>
+            <label class="cursor-pointer block">
+              <input type="checkbox" value="insert" onchange="updateEvents()" class="sr-only peer event-checkbox">
+              <div class="flex flex-col items-center justify-center p-3 rounded-lg border border-border/50 bg-bg-dark text-text-muted peer-checked:border-green-500/50 peer-checked:bg-green-500/20 peer-checked:text-green-300 transition-all hover:border-border">
+                <span class="text-sm font-medium">Insert</span>
               </div>
             </label>
-            <label class="cursor-pointer group">
-              <input type="checkbox" value="update" onchange="updateEvents()" class="peer sr-only event-checkbox">
-              <div class="flex flex-col items-center justify-center p-3 rounded-lg border border-border/50 bg-bg-dark peer-checked:border-amber-500/50 peer-checked:bg-amber-500/10 transition-all group-hover:border-border">
-                <span class="text-sm font-medium text-text-muted peer-checked:text-amber-500">Update</span>
+            <label class="cursor-pointer block">
+              <input type="checkbox" value="update" onchange="updateEvents()" class="sr-only peer event-checkbox">
+              <div class="flex flex-col items-center justify-center p-3 rounded-lg border border-border/50 bg-bg-dark text-text-muted peer-checked:border-yellow-500/50 peer-checked:bg-yellow-500/20 peer-checked:text-yellow-300 transition-all hover:border-border">
+                <span class="text-sm font-medium">Update</span>
               </div>
             </label>
-            <label class="cursor-pointer group">
-              <input type="checkbox" value="delete" onchange="updateEvents()" class="peer sr-only event-checkbox">
-              <div class="flex flex-col items-center justify-center p-3 rounded-lg border border-border/50 bg-bg-dark peer-checked:border-rose-500/50 peer-checked:bg-rose-500/10 transition-all group-hover:border-border">
-                <span class="text-sm font-medium text-text-muted peer-checked:text-rose-500">Delete</span>
+            <label class="cursor-pointer block">
+              <input type="checkbox" value="delete" onchange="updateEvents()" class="sr-only peer event-checkbox">
+              <div class="flex flex-col items-center justify-center p-3 rounded-lg border border-border/50 bg-bg-dark text-text-muted peer-checked:border-red-500/50 peer-checked:bg-red-500/20 peer-checked:text-red-300 transition-all hover:border-border">
+                <span class="text-sm font-medium">Delete</span>
               </div>
             </label>
           </div>

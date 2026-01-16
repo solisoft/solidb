@@ -122,6 +122,9 @@ function SoliDB:Raw_sdbql(stm)
 end
 
 function SoliDB:Sdbql(str, bindvars, options)
+  -- Auto-refresh token if stale
+  self:RefreshToken()
+
   bindvars = bindvars or {}
   options = options or { fullCount = true }
   -- SolidDB expects { query: "...", bindVars: {...}, ... } similar to Arango
@@ -307,9 +310,9 @@ function SoliDB:CancelJob(jobId)
 end
 
 function SoliDB:RefreshToken()
-  if GetTime() - self._lastDBConnect > 600 then
+  -- Token expires in 24h, refresh if last auth was more than 1 hour ago
+  if GetTime() - self._lastDBConnect > 3600 then
     self:Auth()
-    self._lastDBConnect = GetTime()
   end
 end
 
