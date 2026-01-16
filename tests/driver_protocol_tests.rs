@@ -20,7 +20,7 @@ fn test_command_query() {
     let cmd = Command::Query {
         database: "_system".to_string(),
         sdbql: "FOR doc IN users RETURN doc".to_string(),
-        bind_vars: HashMap::new(),
+        bind_vars: Some(HashMap::new()),
     };
 
     let encoded = encode_command(&cmd);
@@ -37,7 +37,7 @@ fn test_command_query_with_bind_vars() {
     let cmd = Command::Query {
         database: "mydb".to_string(),
         sdbql: "FOR doc IN users FILTER doc.name == @name RETURN doc".to_string(),
-        bind_vars,
+        bind_vars: Some(bind_vars),
     };
 
     let encoded = encode_command(&cmd);
@@ -512,7 +512,7 @@ fn test_roundtrip_query_command() {
     let original = Command::Query {
         database: "testdb".to_string(),
         sdbql: "RETURN 1+1".to_string(),
-        bind_vars: HashMap::new(),
+        bind_vars: Some(HashMap::new()),
     };
 
     let encoded = encode_command(&original).unwrap();
@@ -528,7 +528,7 @@ fn test_roundtrip_query_command() {
         } => {
             assert_eq!(database, "testdb");
             assert_eq!(sdbql, "RETURN 1+1");
-            assert!(bind_vars.is_empty());
+            assert!(bind_vars.unwrap().is_empty());
         }
         _ => panic!("Wrong command type"),
     }
@@ -573,7 +573,7 @@ fn test_command_with_special_characters() {
         database: "db-with-dashes".to_string(),
         sdbql: "FOR doc IN `collection with spaces` FILTER doc.name == 'O\\'Brien' RETURN doc"
             .to_string(),
-        bind_vars: HashMap::new(),
+        bind_vars: Some(HashMap::new()),
     };
 
     let encoded = encode_command(&cmd);

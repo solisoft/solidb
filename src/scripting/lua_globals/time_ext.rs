@@ -97,6 +97,22 @@ pub fn setup_time_ext_globals(lua: &Lua) -> Result<(), DbError> {
         .map_err(|e| DbError::InternalError(format!("Failed to create time.subtract function: {}", e)))?;
     time.set("subtract", sub_fn).map_err(|e| DbError::InternalError(format!("Failed to set time.subtract: {}", e)))?;
 
+    // time.iso(timestamp?) -> ISO 8601 string
+    let iso_fn = lua
+        .create_function(|_, timestamp: Option<f64>| {
+            let dt = if let Some(ts) = timestamp {
+                let secs = ts.trunc() as i64;
+                let nsecs = (ts.fract() * 1_000_000_000.0) as u32;
+                chrono::DateTime::from_timestamp(secs, nsecs)
+                    .ok_or(mlua::Error::RuntimeError("Invalid timestamp".into()))?
+            } else {
+                chrono::Utc::now()
+            };
+            Ok(dt.to_rfc3339())
+        })
+        .map_err(|e| DbError::InternalError(format!("Failed to create time.iso function: {}", e)))?;
+    time.set("iso", iso_fn).map_err(|e| DbError::InternalError(format!("Failed to set time.iso: {}", e)))?;
+
     globals.set("time", time).map_err(|e| DbError::InternalError(format!("Failed to set time global: {}", e)))?;
 
     Ok(())

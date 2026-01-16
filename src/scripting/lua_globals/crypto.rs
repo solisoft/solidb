@@ -9,6 +9,7 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::Engine;
 use hmac::Mac;
 use sha2::Digest;
+use x25519_dalek::{PublicKey, StaticSecret};
 
 /// Setup the crypto namespace with all cryptography functions
 pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
@@ -209,6 +210,44 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
         })
         .map_err(|e| DbError::InternalError(format!("Failed to create jwt_decode function: {}", e)))?;
     crypto.set("jwt_decode", jwt_decode_fn).map_err(|e| DbError::InternalError(format!("Failed to set jwt_decode: {}", e)))?;
+
+    // curve25519(secret, peer_public) - X25519 key agreement
+    // If peer_public is empty, returns the public key for the given secret
+    // Otherwise, performs ECDH and returns the shared secret
+    let curve25519_fn = lua
+        .create_function(|lua, (secret, peer_public): (mlua::String, mlua::String)| {
+            let secret_bytes = secret.as_bytes();
+            if secret_bytes.len() != 32 {
+                return Err(mlua::Error::RuntimeError(
+                    "Secret key must be exactly 32 bytes".to_string(),
+                ));
+            }
+
+            let mut secret_arr = [0u8; 32];
+            secret_arr.copy_from_slice(&secret_bytes);
+            let static_secret = StaticSecret::from(secret_arr);
+
+            let peer_bytes = peer_public.as_bytes();
+            if peer_bytes.is_empty() {
+                // Generate public key from secret
+                let public = PublicKey::from(&static_secret);
+                lua.create_string(public.as_bytes())
+            } else {
+                // Perform key exchange
+                if peer_bytes.len() != 32 {
+                    return Err(mlua::Error::RuntimeError(
+                        "Peer public key must be exactly 32 bytes".to_string(),
+                    ));
+                }
+                let mut peer_arr = [0u8; 32];
+                peer_arr.copy_from_slice(&peer_bytes);
+                let peer_public_key = PublicKey::from(peer_arr);
+                let shared = static_secret.diffie_hellman(&peer_public_key);
+                lua.create_string(shared.as_bytes())
+            }
+        })
+        .map_err(|e| DbError::InternalError(format!("Failed to create curve25519 function: {}", e)))?;
+    crypto.set("curve25519", curve25519_fn).map_err(|e| DbError::InternalError(format!("Failed to set curve25519: {}", e)))?;
 
     globals.set("crypto", crypto).map_err(|e| DbError::InternalError(format!("Failed to set crypto global: {}", e)))?;
 
