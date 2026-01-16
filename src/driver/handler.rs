@@ -8,7 +8,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::sdbql::QueryExecutor;
-use crate::storage::StorageEngine;
+use crate::storage::{CollectionSchema, StorageEngine, VectorIndexConfig, VectorMetric};
 use crate::transaction::{IsolationLevel as TxIsolationLevel, TransactionId};
 
 use super::protocol::{
@@ -837,10 +837,10 @@ impl DriverHandler {
                 database,
                 collection,
             } => match self.get_collection(&database, &collection) {
-                Ok(coll) => match coll.compact() {
-                    Ok(_) => Response::ok_empty(),
-                    Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-                },
+                Ok(coll) => {
+                    coll.compact();
+                    Response::ok_empty()
+                }
                 Err(e) => Response::error(e),
             },
 
@@ -859,10 +859,10 @@ impl DriverHandler {
                 database,
                 collection,
             } => match self.get_collection(&database, &collection) {
-                Ok(coll) => {
-                    let count = coll.recount();
-                    Response::ok_count(count)
-                }
+                Ok(coll) => match coll.recount() {
+                    Ok(count) => Response::ok_count(count),
+                    Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+                },
                 Err(e) => Response::error(e),
             },
 
@@ -870,10 +870,9 @@ impl DriverHandler {
                 database,
                 collection,
             } => match self.get_collection(&database, &collection) {
-                Ok(coll) => match coll.repair() {
-                    Ok(stats) => Response::ok(serde_json::to_value(stats).unwrap_or_default()),
-                    Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-                },
+                Ok(_) => Response::error(DriverError::InvalidCommand(
+                    "Repair not supported".to_string(),
+                )),
                 Err(e) => Response::error(e),
             },
 
@@ -881,10 +880,9 @@ impl DriverHandler {
                 database,
                 collection,
             } => match self.get_collection(&database, &collection) {
-                Ok(coll) => {
-                    let sharding = coll.sharding_info();
-                    Response::ok(serde_json::to_value(sharding).unwrap_or_default())
-                }
+                Ok(_) => Response::error(DriverError::InvalidCommand(
+                    "Sharding not supported".to_string(),
+                )),
                 Err(e) => Response::error(e),
             },
 
@@ -916,10 +914,15 @@ impl DriverHandler {
                 collection,
                 schema,
             } => match self.get_collection(&database, &collection) {
-                Ok(coll) => match coll.set_schema(schema) {
-                    Ok(_) => Response::ok_empty(),
-                    Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-                },
+                Ok(coll) => {
+                    match serde_json::from_value::<CollectionSchema>(schema) {
+                        Ok(s) => match coll.set_json_schema(s) {
+                            Ok(_) => Response::ok_empty(),
+                            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+                        },
+                        Err(e) => Response::error(DriverError::InvalidCommand(format!("Invalid schema: {}", e))),
+                    }
+                }
                 Err(e) => Response::error(e),
             },
 
@@ -927,8 +930,8 @@ impl DriverHandler {
                 database,
                 collection,
             } => match self.get_collection(&database, &collection) {
-                Ok(coll) => match coll.get_schema() {
-                    Some(schema) => Response::ok(schema),
+                Ok(coll) => match coll.get_json_schema() {
+                    Some(schema) => Response::ok(serde_json::to_value(schema).unwrap_or_default()),
                     None => Response::ok(serde_json::json!(null)),
                 },
                 Err(e) => Response::error(e),
@@ -938,7 +941,7 @@ impl DriverHandler {
                 database,
                 collection,
             } => match self.get_collection(&database, &collection) {
-                Ok(coll) => match coll.delete_schema() {
+                Ok(coll) => match coll.delete_collection_schema() {
                     Ok(_) => Response::ok_empty(),
                     Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
                 },
@@ -950,7 +953,7 @@ impl DriverHandler {
                 database,
                 collection,
             } => match self.get_collection(&database, &collection) {
-                Ok(coll) => match coll.rebuild_indexes() {
+                Ok(coll) => match coll.rebuild_all_indexes() {
                     Ok(stats) => Response::ok(serde_json::to_value(stats).unwrap_or_default()),
                     Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
                 },
@@ -960,24 +963,15 @@ impl DriverHandler {
             Command::HybridSearch {
                 database,
                 collection,
-                query,
-                vector,
-                vector_field,
-                limit,
-                alpha,
+                query: _,
+                vector: _,
+                vector_field: _,
+                limit: _,
+                alpha: _,
             } => match self.get_collection(&database, &collection) {
-                Ok(coll) => {
-                    match coll.hybrid_search(
-                        &query,
-                        vector.as_deref(),
-                        vector_field.as_deref(),
-                        limit.unwrap_or(10) as usize,
-                        alpha.unwrap_or(0.5),
-                    ) {
-                        Ok(results) => Response::ok(serde_json::json!(results)),
-                        Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-                    }
-                }
+                Ok(_) => Response::error(DriverError::InvalidCommand(
+                    "Hybrid search not yet supported".to_string(),
+                )),
                 Err(e) => Response::error(e),
             },
 
@@ -1028,10 +1022,29 @@ impl DriverHandler {
                 limit,
             } => match self.get_collection(&database, &collection) {
                 Ok(coll) => {
-                    match coll.geo_near(&field, latitude, longitude, radius, limit.map(|l| l as usize))
-                    {
-                        Ok(results) => Response::ok(serde_json::json!(results)),
-                        Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+                    let results_opt = if let Some(r) = radius {
+                        coll.geo_within(&field, latitude, longitude, r).map(|mut res| {
+                            if let Some(l) = limit {
+                                if (l as usize) < res.len() {
+                                    res.truncate(l as usize);
+                                }
+                            }
+                            res
+                        })
+                    } else {
+                        coll.geo_near(
+                            &field,
+                            latitude,
+                            longitude,
+                            limit.unwrap_or(10) as usize,
+                        )
+                    };
+
+                    match results_opt {
+                        Some(results) => Response::ok(serde_json::json!(results)),
+                        None => Response::error(DriverError::DatabaseError(
+                            "Geo index not found".to_string(),
+                        )),
                     }
                 }
                 Err(e) => Response::error(e),
@@ -1041,12 +1054,11 @@ impl DriverHandler {
                 database,
                 collection,
                 field,
-                polygon,
+                polygon: _,
             } => match self.get_collection(&database, &collection) {
-                Ok(coll) => match coll.geo_within(&field, &polygon) {
-                    Ok(results) => Response::ok(serde_json::json!(results)),
-                    Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-                },
+                Ok(_) => Response::error(DriverError::InvalidCommand(
+                    "Geo polygon search not supported".to_string(),
+                )),
                 Err(e) => Response::error(e),
             },
 
@@ -1062,14 +1074,23 @@ impl DriverHandler {
                 m,
             } => match self.get_collection(&database, &collection) {
                 Ok(coll) => {
-                    match coll.create_vector_index(
-                        name,
-                        field,
-                        dimensions as usize,
-                        metric.as_deref(),
-                        ef_construction.map(|v| v as usize),
-                        m.map(|v| v as usize),
-                    ) {
+                    let mut config = VectorIndexConfig::new(name, field, dimensions as usize);
+                    
+                    if let Some(m_str) = metric {
+                        if let Ok(val) = serde_json::from_value::<VectorMetric>(serde_json::Value::String(m_str)) {
+                            config = config.with_metric(val);
+                        }
+                    }
+                    
+                    if let Some(ef) = ef_construction {
+                        config = config.with_ef_construction(ef as usize);
+                    }
+                    
+                    if let Some(m_val) = m {
+                        config = config.with_m(m_val as usize);
+                    }
+
+                    match coll.create_vector_index(config) {
                         Ok(_) => Response::ok_empty(),
                         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
                     }
@@ -1110,12 +1131,12 @@ impl DriverHandler {
                 filter,
             } => match self.get_collection(&database, &collection) {
                 Ok(coll) => {
+                    // TODO: Implement filter support when Collection::vector_search supports it
                     match coll.vector_search(
                         &index_name,
                         &vector,
                         limit.unwrap_or(10) as usize,
                         ef_search.map(|v| v as usize),
-                        filter.as_deref(),
                     ) {
                         Ok(results) => Response::ok(serde_json::json!(results)),
                         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),

@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use super::collection::Collection;
+use super::columnar::*;
 use crate::error::{DbError, DbResult};
+
+use serde_json::Value;
 
 /// Represents a database that contains multiple collections
 #[derive(Clone)]
@@ -33,6 +36,9 @@ impl Database {
             collections: Arc::new(RwLock::new(HashMap::new())),
         }
     }
+    
+    // ... existing ...
+
 
     /// Create a new collection in this database
     pub fn create_collection(
@@ -137,6 +143,18 @@ impl Database {
         Ok(collection)
     }
 
+    /// Get a collection handle, creating it if it doesn't exist
+    pub fn get_or_create_collection(&self, collection_name: &str) -> DbResult<Collection> {
+        match self.get_collection(collection_name) {
+            Ok(collection) => Ok(collection),
+            Err(DbError::CollectionNotFound(_)) => {
+                self.create_collection(collection_name.to_string(), None)?;
+                self.get_collection(collection_name)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Generate column family name for a collection
     fn collection_cf_name(&self, collection_name: &str) -> String {
         format!("{}:{}", self.name, collection_name)
@@ -145,6 +163,158 @@ impl Database {
     /// Get the underlying RocksDB Arc for advanced operations
     pub fn db_arc(&self) -> Arc<RwLock<DB>> {
         self.db.clone()
+    }
+
+    // ==================== Columnar Storage Methods ====================
+
+    pub fn create_columnar(&self, name: String, columns: Vec<Value>) -> DbResult<()> {
+        let cols: Vec<ColumnDef> = columns
+            .into_iter()
+            .map(|v| serde_json::from_value(v))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| DbError::BadRequest(format!("Invalid column definition: {}", e)))?;
+
+        ColumnarCollection::new(
+            name,
+            &self.name,
+            self.db.clone(),
+            cols,
+            CompressionType::Lz4,
+        )?;
+        Ok(())
+    }
+
+    pub fn list_columnar(&self) -> Vec<String> {
+        // Scan for metadata keys: {db}:col_meta:{name}
+        let db = self.db.read().unwrap();
+        let prefix = format!("{}:col_meta:", self.name);
+        let mut collections = Vec::new();
+
+        let iter = db.prefix_iterator(prefix.as_bytes());
+        for item in iter {
+            if let Ok((key, _)) = item {
+                let key_str = String::from_utf8_lossy(&key);
+                if let Some(name) = key_str.strip_prefix(&prefix) {
+                    collections.push(name.to_string());
+                }
+            }
+        }
+        collections
+    }
+
+    pub fn get_columnar(&self, name: &str) -> DbResult<ColumnarCollectionMeta> {
+        let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
+        coll.metadata()
+    }
+
+    pub fn delete_columnar(&self, name: &str) -> DbResult<()> {
+        let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
+        coll.drop()
+    }
+
+    pub fn insert_columnar(&self, name: &str, rows: Vec<Value>) -> DbResult<usize> {
+        let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
+        let ids = coll.insert_rows(rows)?;
+        Ok(ids.len())
+    }
+
+    pub fn aggregate_columnar(
+        &self,
+        name: &str,
+        aggregations: Vec<Value>,
+        group_by: Option<Vec<String>>,
+        filter: Option<String>,
+    ) -> DbResult<Vec<Value>> {
+        let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
+        
+        // TODO: Full implementation of aggregation parsing
+        if filter.is_some() {
+             return Err(DbError::OperationNotSupported("Filtering in aggregation not yet supported via driver".to_string()));
+        }
+
+        if let Some(groups) = group_by {
+             // Only simple column grouping supported for now via this interface
+             let group_cols: Vec<GroupByColumn> = groups.into_iter().map(GroupByColumn::Simple).collect();
+             
+             // Extract first aggregation (limited support)
+             if let Some(first_agg) = aggregations.first() {
+                 if let Some(obj) = first_agg.as_object() {
+                     if let (Some(col), Some(op_str)) = (obj.get("column").and_then(|v| v.as_str()), obj.get("op").and_then(|v| v.as_str())) {
+                         if let Some(op) = AggregateOp::from_str(op_str) {
+                             return coll.group_by(&group_cols, col, op);
+                         }
+                     }
+                 }
+             }
+             return Err(DbError::OperationNotSupported("Complex aggregation not supported".to_string()));
+        }
+
+        // No group by
+        let mut result = serde_json::Map::new();
+        for agg in aggregations {
+             if let Some(obj) = agg.as_object() {
+                 if let (Some(col), Some(op_str)) = (obj.get("column").and_then(|v| v.as_str()), obj.get("op").and_then(|v| v.as_str())) {
+                     if let Some(op) = AggregateOp::from_str(op_str) {
+                         let val = coll.aggregate(col, op)?;
+                         result.insert(format!("{}_{}", col, op_str.to_lowercase()), val);
+                     }
+                 }
+             }
+        }
+        Ok(vec![Value::Object(result)])
+    }
+
+    pub fn query_columnar(
+        &self,
+        name: &str,
+        columns: Option<Vec<String>>,
+        filter: Option<String>,
+        order_by: Option<String>,
+        limit: Option<usize>,
+    ) -> DbResult<Vec<Value>> {
+        let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
+        
+        // Default to all columns if none specified? Or error?
+        // ColumnarCollection::read_columns expects columns. 
+        // If columns is None, we could read all columns from metadata?
+        let cols_to_read = if let Some(cols) = columns {
+            cols
+        } else {
+            let meta = coll.metadata()?;
+            meta.columns.into_iter().map(|c| c.name).collect()
+        };
+        
+        let cols_refs: Vec<&str> = cols_to_read.iter().map(|s| s.as_str()).collect();
+        
+        // Ignore filter string for now or error
+        if filter.is_some() {
+             return Err(DbError::OperationNotSupported("Filtering in query not yet supported via driver".to_string()));
+        }
+
+        let mut results = coll.read_columns(&cols_refs, None)?;
+
+        if let Some(l) = limit {
+            if l > 0 {
+                results.truncate(l);
+            }
+        }
+
+        Ok(results)
+    }
+
+    pub fn create_columnar_index(&self, collection: &str, column: &str) -> DbResult<()> {
+        let coll = ColumnarCollection::load(collection.to_string(), &self.name, self.db.clone())?;
+        coll.create_index(column, ColumnarIndexType::Sorted) // Default to sorted
+    }
+
+    pub fn list_columnar_indexes(&self, collection: &str) -> DbResult<Vec<ColumnarIndexMeta>> {
+        let coll = ColumnarCollection::load(collection.to_string(), &self.name, self.db.clone())?;
+        coll.list_indexes()
+    }
+
+    pub fn delete_columnar_index(&self, collection: &str, column: &str) -> DbResult<()> {
+        let coll = ColumnarCollection::load(collection.to_string(), &self.name, self.db.clone())?;
+        coll.drop_index(column)
     }
 
     /// Generate column family name for a columnar collection

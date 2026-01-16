@@ -245,6 +245,37 @@ impl Collection {
         Ok(())
     }
 
+    /// Recount documents in the collection
+    pub fn recount(&self) -> DbResult<usize> {
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
+        
+        let prefix = DOC_PREFIX.as_bytes();
+        let count = db
+            .prefix_iterator_cf(cf, prefix)
+            .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
+            .count();
+        
+        self.doc_count.store(count, Ordering::Relaxed);
+        self.count_dirty.store(true, Ordering::Relaxed);
+        Ok(count)
+    }
+
+    /// Delete collection schema
+    pub fn delete_collection_schema(&self) -> DbResult<()> {
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
+            
+        db.delete_cf(cf, SCHEMA_KEY.as_bytes())
+            .map_err(|e| DbError::InternalError(format!("Failed to delete schema: {}", e)))?;
+            
+        Ok(())
+    }
+
     /// Validate edge document has required _from and _to fields
     fn validate_edge_document(&self, data: &Value) -> DbResult<()> {
         let obj = data.as_object().ok_or_else(|| {
