@@ -22,7 +22,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt; // for oneshot
 
-fn create_test_app() -> (axum::Router, TempDir, String) {
+fn create_test_app() -> (TempDir, axum::Router, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
@@ -48,7 +48,7 @@ fn create_test_app() -> (axum::Router, TempDir, String) {
     )
     .expect("Failed to create test token");
 
-    (router, tmp_dir, token)
+    (tmp_dir, router, token)
 }
 
 fn auth_header(token: &str) -> String {
@@ -105,7 +105,7 @@ async fn setup_db_and_collection(
 
 #[tokio::test]
 async fn test_create_database() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -127,7 +127,7 @@ async fn test_create_database() {
 
 #[tokio::test]
 async fn test_create_duplicate_database() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     // Create first
     let _ = app
@@ -164,7 +164,7 @@ async fn test_create_duplicate_database() {
 
 #[tokio::test]
 async fn test_list_databases() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     // Create some DBs
     for name in ["db1", "db2", "db3"] {
@@ -203,7 +203,7 @@ async fn test_list_databases() {
 
 #[tokio::test]
 async fn test_delete_database() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     // Create DB
     let _ = app
@@ -260,7 +260,7 @@ async fn test_delete_database() {
 
 #[tokio::test]
 async fn test_delete_nonexistent_database() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -283,7 +283,7 @@ async fn test_delete_nonexistent_database() {
 
 #[tokio::test]
 async fn test_create_collection() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     // Create DB first
     let _ = app
@@ -320,7 +320,7 @@ async fn test_create_collection() {
 
 #[tokio::test]
 async fn test_create_edge_collection() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     let _ = app
         .clone()
@@ -357,7 +357,7 @@ async fn test_create_edge_collection() {
 
 #[tokio::test]
 async fn test_list_collections() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "mydb", "col1").await;
 
@@ -397,7 +397,7 @@ async fn test_list_collections() {
 
 #[tokio::test]
 async fn test_delete_collection() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "deldb", "todel").await;
 
@@ -418,7 +418,7 @@ async fn test_delete_collection() {
 
 #[tokio::test]
 async fn test_collection_in_nonexistent_db() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -438,7 +438,7 @@ async fn test_collection_in_nonexistent_db() {
 
 #[tokio::test]
 async fn test_truncate_collection() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "truncdb", "data").await;
 
@@ -500,7 +500,7 @@ async fn test_truncate_collection() {
 
 #[tokio::test]
 async fn test_insert_document() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "docdb", "items").await;
 
@@ -526,7 +526,7 @@ async fn test_insert_document() {
 
 #[tokio::test]
 async fn test_insert_document_with_key() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "docdb", "items").await;
 
@@ -552,7 +552,7 @@ async fn test_insert_document_with_key() {
 
 #[tokio::test]
 async fn test_get_document() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "getdb", "items").await;
 
@@ -593,7 +593,7 @@ async fn test_get_document() {
 
 #[tokio::test]
 async fn test_get_nonexistent_document() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "getdb", "items").await;
 
@@ -614,7 +614,7 @@ async fn test_get_nonexistent_document() {
 
 #[tokio::test]
 async fn test_update_document() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "updb", "items").await;
 
@@ -672,7 +672,7 @@ async fn test_update_document() {
 
 #[tokio::test]
 async fn test_delete_document() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "deldb", "items").await;
 
@@ -730,7 +730,7 @@ async fn test_delete_document() {
 
 #[tokio::test]
 async fn test_simple_return_query() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     let _ = app
         .clone()
@@ -768,7 +768,7 @@ async fn test_simple_return_query() {
 
 #[tokio::test]
 async fn test_query_with_collection() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "qdb", "users").await;
 
@@ -812,7 +812,7 @@ async fn test_query_with_collection() {
 
 #[tokio::test]
 async fn test_query_with_bind_vars() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "qdb", "users").await;
 
@@ -858,7 +858,7 @@ async fn test_query_with_bind_vars() {
 
 #[tokio::test]
 async fn test_query_parse_error() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     let _ = app
         .clone()
@@ -894,7 +894,7 @@ async fn test_query_parse_error() {
 
 #[tokio::test]
 async fn test_explain_query() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "edb", "users").await;
 
@@ -925,7 +925,7 @@ async fn test_explain_query() {
 
 #[tokio::test]
 async fn test_create_index() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "idb", "users").await;
 
@@ -957,7 +957,7 @@ async fn test_create_index() {
 
 #[tokio::test]
 async fn test_list_indexes() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "idb", "users").await;
 
@@ -1007,7 +1007,7 @@ async fn test_list_indexes() {
 
 #[tokio::test]
 async fn test_invalid_json_body() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -1031,7 +1031,7 @@ async fn test_invalid_json_body() {
 
 #[tokio::test]
 async fn test_missing_required_field() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -1055,7 +1055,7 @@ async fn test_missing_required_field() {
 
 #[tokio::test]
 async fn test_health_check() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     let response = app
         .oneshot(
@@ -1076,7 +1076,7 @@ async fn test_health_check() {
 
 #[tokio::test]
 async fn test_unicode_in_documents() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "unidb", "data").await;
 
@@ -1124,7 +1124,7 @@ async fn test_unicode_in_documents() {
 
 #[tokio::test]
 async fn test_large_document() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "largedb", "data").await;
 
@@ -1172,7 +1172,7 @@ async fn test_large_document() {
 
 #[tokio::test]
 async fn test_batch_query_response_metadata() {
-    let (app, _tmp, token) = create_test_app();
+    let (_tmp, app, token) = create_test_app();
 
     setup_db_and_collection(&app, &token, "metadb", "items").await;
 

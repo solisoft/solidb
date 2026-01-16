@@ -110,6 +110,7 @@ fn test_execute_basic_inner_join() -> DbResult<()> {
     let bob = results.iter().find(|r| r["user_name"] == "Bob").unwrap();
     assert_eq!(bob["orders"].as_array().unwrap().len(), 1);
     
+    drop(storage);
     Ok(())
 }
 
@@ -138,6 +139,7 @@ fn test_execute_left_join() -> DbResult<()> {
     let charlie = results.iter().find(|r| r["user_name"] == "Charlie").unwrap();
     assert_eq!(charlie["profiles"].as_array().unwrap().len(), 0);
     
+    drop(storage);
     Ok(())
 }
 
@@ -173,6 +175,7 @@ fn test_multiple_joins() -> DbResult<()> {
     assert_eq!(bob["order_count"], 1);
     assert_eq!(bob["has_profile"], true);
     
+    drop(storage);
     Ok(())
 }
 
@@ -196,6 +199,7 @@ fn test_join_with_filter() -> DbResult<()> {
     assert_eq!(results[0]["user_name"], "Alice");
     assert_eq!(results[0]["order_count"], 2);
     
+    drop(storage);
     Ok(())
 }
 
@@ -222,6 +226,7 @@ fn test_join_with_complex_condition() -> DbResult<()> {
     assert_eq!(alice_orders.len(), 1);
     assert_eq!(alice_orders[0]["total"], 200);
     
+    drop(storage);
     Ok(())
 }
 
@@ -249,6 +254,7 @@ fn test_join_with_aggregation() -> DbResult<()> {
     let bob = results.iter().find(|r| r["user_name"] == "Bob").unwrap();
     assert_eq!(bob["total_spent"].as_f64().unwrap(), 150.0);
     
+    drop(storage);
     Ok(())
 }
 
@@ -264,7 +270,7 @@ fn test_join_empty_collection() -> DbResult<()> {
     
     storage.create_database(db_name.clone())?;
     storage.create_collection(format!("{}:users", db_name), None)?;
-    storage.create_collection(format!("{}:orders", db_name), None)?;;
+    storage.create_collection(format!("{}:orders", db_name), None)?;
     
     // Insert only users, no orders
     let users_coll = storage.get_collection(&format!("{}:users", db_name))?;
@@ -279,6 +285,7 @@ fn test_join_empty_collection() -> DbResult<()> {
     // No results because INNER JOIN with empty orders collection
     assert_eq!(results.len(), 0);
     
+    drop(storage);
     Ok(())
 }
 
@@ -341,6 +348,7 @@ fn test_execute_right_join() -> DbResult<()> {
         assert!(result.get("order_key").is_some());
     }
     
+    drop(storage);
     Ok(())
 }
 
@@ -374,6 +382,7 @@ fn test_execute_full_outer_join() -> DbResult<()> {
     let charlie_orders = charlie.unwrap().get("orders").unwrap().as_array().unwrap();
     assert_eq!(charlie_orders.len(), 0);
     
+    drop(storage);
     Ok(())
 }
 
@@ -405,6 +414,7 @@ fn test_right_join_with_no_left_matches() -> DbResult<()> {
     // Should have 2 results (all orders, even without matching users)
     assert_eq!(results.len(), 2);
     
+    drop(storage);
     Ok(())
 }
 
@@ -467,5 +477,6 @@ fn test_full_outer_join_comprehensive() -> DbResult<()> {
     }).count();
     assert_eq!(orphan_orders, 1); // Orphan order o3
     
+    drop(storage);
     Ok(())
 }
