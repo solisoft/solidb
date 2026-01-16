@@ -7,13 +7,81 @@ module SoliDB
     MAGIC_HEADER = "solidb-drv-v1\0"
     MAX_MESSAGE_SIZE = 16 * 1024 * 1024
 
-    attr_reader :host, :port
+    attr_reader :host, :port, :database
 
     def initialize(host = '127.0.0.1', port = 6745)
       @host = host
       @port = port
       @socket = nil
       @connected = false
+      @database = nil
+    end
+
+    # Database context
+    def use_database(name)
+      @database = name
+      self
+    end
+
+    # Sub-client accessors
+    def scripts
+      @scripts ||= ScriptsClient.new(self)
+    end
+
+    def jobs
+      @jobs ||= JobsClient.new(self)
+    end
+
+    def cron
+      @cron ||= CronClient.new(self)
+    end
+
+    def triggers
+      @triggers ||= TriggersClient.new(self)
+    end
+
+    def env
+      @env ||= EnvClient.new(self)
+    end
+
+    def roles
+      @roles ||= RolesClient.new(self)
+    end
+
+    def users
+      @users ||= UsersClient.new(self)
+    end
+
+    def api_keys
+      @api_keys ||= ApiKeysClient.new(self)
+    end
+
+    def cluster
+      @cluster ||= ClusterClient.new(self)
+    end
+
+    def collections_ops
+      @collections_ops ||= CollectionsOpsClient.new(self)
+    end
+
+    def indexes_ops
+      @indexes_ops ||= IndexesOpsClient.new(self)
+    end
+
+    def geo
+      @geo ||= GeoClient.new(self)
+    end
+
+    def vector
+      @vector ||= VectorClient.new(self)
+    end
+
+    def ttl
+      @ttl ||= TTLClient.new(self)
+    end
+
+    def columnar
+      @columnar ||= ColumnarClient.new(self)
     end
 
     def connect
@@ -213,8 +281,7 @@ module SoliDB
     end
 
 
-    private
-
+    # Exposed for sub-clients
     def send_command(cmd_name, params = {})
       connect unless @connected
       
@@ -241,6 +308,8 @@ module SoliDB
       @connected = false
       raise ConnectionError, "Connection lost: #{e.message}"
     end
+
+    private
 
     def receive_response
       header = @socket.read(4)

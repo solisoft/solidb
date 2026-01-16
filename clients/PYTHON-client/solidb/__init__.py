@@ -1,4 +1,21 @@
-from .client import Client
+from .client import (
+    Client,
+    ScriptsClient,
+    JobsClient,
+    CronClient,
+    TriggersClient,
+    EnvClient,
+    RolesClient,
+    UsersClient,
+    ApiKeysClient,
+    ClusterClient,
+    CollectionsClient,
+    IndexesClient,
+    GeoClient,
+    VectorClient,
+    TtlClient,
+    ColumnarClient,
+)
 from .exceptions import SoliDBError, ConnectionError, AuthError, ServerError
 from .ai import (
     AIClient,
@@ -16,6 +33,22 @@ from .ai import (
 __all__ = [
     # Wire protocol client
     "Client",
+    # Sub-clients for management APIs
+    "ScriptsClient",
+    "JobsClient",
+    "CronClient",
+    "TriggersClient",
+    "EnvClient",
+    "RolesClient",
+    "UsersClient",
+    "ApiKeysClient",
+    "ClusterClient",
+    "CollectionsClient",
+    "IndexesClient",
+    "GeoClient",
+    "VectorClient",
+    "TtlClient",
+    "ColumnarClient",
     # Exceptions
     "SoliDBError",
     "ConnectionError",

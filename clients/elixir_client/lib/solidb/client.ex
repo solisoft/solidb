@@ -6,7 +6,19 @@ defmodule SoliDB.Client do
   @magic_header "solidb-drv-v1\0"
   @max_message_size 16 * 1024 * 1024
 
-  defstruct [:host, :port, :socket]
+  defstruct [:host, :port, :socket, :database]
+
+  @doc """
+  Sets the database context for the client.
+  """
+  def use_database(%__MODULE__{} = client, database) do
+    %{client | database: database}
+  end
+
+  @doc """
+  Gets the current database from the client.
+  """
+  def get_database(%__MODULE__{database: database}), do: database
 
   def connect(host \\ "127.0.0.1", port \\ 6745) do
     case :gen_tcp.connect(String.to_charlist(host), port, [:binary, active: false, packet: 0]) do
@@ -86,9 +98,12 @@ defmodule SoliDB.Client do
     send_command(client, "rollback_transaction", %{tx_id: tx_id})
   end
 
-  # --- Internal ---
+  # --- Command Interface (public for sub-client modules) ---
 
-  defp send_command(client, cmd, args) do
+  @doc """
+  Sends a command to the server. Used internally and by sub-client modules.
+  """
+  def send_command(client, cmd, args) do
     payload = Map.put(args, :cmd, cmd)
     {:ok, data} = Msgpax.pack(payload)
     

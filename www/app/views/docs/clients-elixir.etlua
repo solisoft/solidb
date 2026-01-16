@@ -1,0 +1,1172 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs/clients" class="inline-flex items-center text-purple-400 hover:text-purple-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Clients Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header Section -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg blur opacity-25"></div>
+      <div class="relative flex items-center">
+        <div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-purple-600 text-white shadow-[0_0_30px_rgba(147,51,234,0.5)] mr-6">
+          <i class="fab fa-phoenix-framework text-3xl"></i>
+        </div>
+        <div>
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 mb-2 tracking-tight">
+            Elixir Client
+          </h1>
+          <div class="flex items-center gap-4">
+            <span class="px-3 py-1 bg-purple-500/10 text-purple-400 text-xs font-bold uppercase tracking-wider rounded-full border border-purple-500/20">Official SDK</span>
+            <span class="text-sm text-gray-400">v0.1.0</span>
+            <span class="text-sm text-gray-500">Elixir 1.14+ / OTP 25+</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <nav class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+      <h2 class="text-lg font-bold text-white mb-4">Table of Contents</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <h3 class="text-purple-400 font-semibold mb-2">Getting Started</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#installation" class="hover:text-white transition-colors">Installation</a></li>
+            <li><a href="#quickstart" class="hover:text-white transition-colors">Quick Start</a></li>
+            <li><a href="#connection" class="hover:text-white transition-colors">Connection</a></li>
+            <li><a href="#authentication" class="hover:text-white transition-colors">Authentication</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-purple-400 font-semibold mb-2">Core Operations</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#databases" class="hover:text-white transition-colors">Databases</a></li>
+            <li><a href="#collections" class="hover:text-white transition-colors">Collections</a></li>
+            <li><a href="#documents" class="hover:text-white transition-colors">Documents</a></li>
+            <li><a href="#queries" class="hover:text-white transition-colors">Queries</a></li>
+            <li><a href="#transactions" class="hover:text-white transition-colors">Transactions</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-purple-400 font-semibold mb-2">Management APIs</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#scripts" class="hover:text-white transition-colors">Scripts</a></li>
+            <li><a href="#jobs" class="hover:text-white transition-colors">Jobs & Cron</a></li>
+            <li><a href="#triggers" class="hover:text-white transition-colors">Triggers</a></li>
+            <li><a href="#rbac" class="hover:text-white transition-colors">Roles & Users</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-purple-400 font-semibold mb-2">Advanced Features</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#vector" class="hover:text-white transition-colors">Vector Search</a></li>
+            <li><a href="#geo" class="hover:text-white transition-colors">Geospatial</a></li>
+            <li><a href="#ttl" class="hover:text-white transition-colors">TTL Indexes</a></li>
+            <li><a href="#columnar" class="hover:text-white transition-colors">Columnar Storage</a></li>
+            <li><a href="#cluster" class="hover:text-white transition-colors">Cluster</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- GETTING STARTED -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 mr-4">
+          <i class="fas fa-rocket text-lg"></i>
+        </span>
+        Getting Started
+      </h2>
+
+      <!-- Installation -->
+      <section id="installation" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Installation</h3>
+        <p class="text-gray-400 text-sm mb-4">Add to your <code class="text-purple-400 bg-gray-800 px-1 rounded">mix.exs</code> dependencies:</p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir">defp deps do
+  [
+    {:solidb, "~> 0.1.0"}
+  ]
+end</code></pre>
+        </div>
+        <p class="text-gray-400 text-sm mb-2">Then run:</p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre class="text-purple-400">mix deps.get</pre>
+        </div>
+        <div class="mt-4 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+          <div class="flex items-start">
+            <i class="fas fa-info-circle text-amber-400 mt-0.5 mr-3"></i>
+            <p class="text-sm text-amber-200">
+              <strong>Requirements:</strong> Elixir 1.14+ and OTP 25+. The client uses <code class="bg-gray-800 px-1 rounded">msgpax</code> for MessagePack serialization.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Start -->
+      <section id="quickstart" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Quick Start</h3>
+        <div class="bg-gray-950 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <pre class="relative z-10"><code class="language-elixir"># Create and connect
+{:ok, client} = SoliDB.Client.connect("127.0.0.1", 6745)
+
+# Authenticate
+:ok = SoliDB.Client.auth(client, "_system", "admin", "password")
+
+# Set database context (required for management modules)
+client = SoliDB.Client.use_database(client, "mydb")
+
+# Basic CRUD operations
+{:ok, doc} = SoliDB.Client.insert(client, "mydb", "users", %{name: "Alice", age: 30})
+IO.puts("Created: #{doc["_key"]}")
+
+{:ok, user} = SoliDB.Client.get(client, "mydb", "users", doc["_key"])
+IO.puts("Retrieved: #{user["name"]}")
+
+:ok = SoliDB.Client.update(client, "mydb", "users", doc["_key"], %{age: 31})
+
+# Query with SDBQL
+{:ok, results} = SoliDB.Client.query(client, "mydb", "FOR u IN users FILTER u.age > @min RETURN u", %{min: 25})
+IO.puts("Found #{length(results)} users")
+
+# Use management modules (functional style)
+{:ok, scripts} = SoliDB.Scripts.list(client)
+{:ok, triggers} = SoliDB.Triggers.list(client)
+
+# Clean up
+SoliDB.Client.close(client)</code></pre>
+        </div>
+      </section>
+
+      <!-- Connection -->
+      <section id="connection" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Connection Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir"># Connect to SoliDB server
+{:ok, client} = SoliDB.Client.connect("127.0.0.1", 6745)
+
+# Check connection latency (returns ms)
+{:ok, latency} = SoliDB.Client.ping(client)
+IO.puts("Latency: #{Float.round(latency, 2)}ms")
+
+# Close connection when done
+SoliDB.Client.close(client)</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Function</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-purple-400">connect(host, port)</code></td><td class="px-4 py-3 text-gray-500">{:ok, client}</td><td class="px-4 py-3 text-gray-400">Establish TCP connection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">ping(client)</code></td><td class="px-4 py-3 text-gray-500">{:ok, float}</td><td class="px-4 py-3 text-gray-400">Latency in milliseconds</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">close(client)</code></td><td class="px-4 py-3 text-gray-500">:ok</td><td class="px-4 py-3 text-gray-400">Close connection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">use_database(client, name)</code></td><td class="px-4 py-3 text-gray-500">client</td><td class="px-4 py-3 text-gray-400">Set database context for modules</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Authentication -->
+      <section id="authentication" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Authentication</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-elixir"># Authenticate with database, username, and password
+:ok = SoliDB.Client.auth(client, "_system", "admin", "password")
+
+# Authentication is required for most operations
+# The session remains authenticated until disconnected</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- CORE OPERATIONS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 mr-4">
+          <i class="fas fa-database text-lg"></i>
+        </span>
+        Core Operations
+      </h2>
+
+      <!-- Databases -->
+      <section id="databases" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Database Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir"># List all databases
+{:ok, databases} = SoliDB.Client.list_databases(client)
+# => ["_system", "mydb", "testdb"]
+
+# Create a new database
+:ok = SoliDB.Client.create_database(client, "analytics")
+
+# Delete a database
+:ok = SoliDB.Client.delete_database(client, "old_db")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Function</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">list_databases(client)</code></td><td class="px-4 py-3 text-gray-500">{:ok, list}</td><td class="px-4 py-3 text-gray-400">List all database names</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">create_database(client, name)</code></td><td class="px-4 py-3 text-gray-500">:ok</td><td class="px-4 py-3 text-gray-400">Create new database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">delete_database(client, name)</code></td><td class="px-4 py-3 text-gray-500">:ok</td><td class="px-4 py-3 text-gray-400">Delete database</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Collections -->
+      <section id="collections" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Collection Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir"># List collections in a database
+{:ok, collections} = SoliDB.Client.list_collections(client, "mydb")
+# => [%{"name" => "users", "type" => "document"}, ...]
+
+# Create a document collection
+:ok = SoliDB.Client.create_collection(client, "mydb", "products")
+
+# Create an edge collection (for graphs)
+:ok = SoliDB.Client.create_collection(client, "mydb", "relationships", "edge")
+
+# Get collection statistics
+{:ok, stats} = SoliDB.Client.collection_stats(client, "mydb", "users")
+# => %{"count" => 1523, "size" => 245760, ...}
+
+# Delete a collection
+:ok = SoliDB.Client.delete_collection(client, "mydb", "old_collection")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Function</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">list_collections(client, db)</code></td><td class="px-4 py-3 text-gray-500">{:ok, list}</td><td class="px-4 py-3 text-gray-400">List collections in database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">create_collection(client, db, name, type \\\\ nil)</code></td><td class="px-4 py-3 text-gray-500">:ok</td><td class="px-4 py-3 text-gray-400">Create collection (type: document/edge)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">collection_stats(client, db, name)</code></td><td class="px-4 py-3 text-gray-500">{:ok, map}</td><td class="px-4 py-3 text-gray-400">Get collection statistics</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">delete_collection(client, db, name)</code></td><td class="px-4 py-3 text-gray-500">:ok</td><td class="px-4 py-3 text-gray-400">Delete collection</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section id="documents" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Document Operations (CRUD)</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir"># INSERT - Create a new document
+{:ok, doc} = SoliDB.Client.insert(client, "mydb", "users", %{
+  name: "Alice",
+  email: "alice@example.com",
+  age: 30
+})
+IO.puts(doc["_key"])  # Auto-generated key
+
+# INSERT with custom key
+{:ok, doc} = SoliDB.Client.insert(client, "mydb", "users", %{name: "Bob"}, "custom-key-123")
+
+# GET - Retrieve a document by key
+{:ok, user} = SoliDB.Client.get(client, "mydb", "users", "custom-key-123")
+# => %{"_key" => "custom-key-123", "name" => "Bob", ...}
+
+# UPDATE - Modify a document (merge by default)
+:ok = SoliDB.Client.update(client, "mydb", "users", "custom-key-123", %{age: 25})
+
+# UPDATE - Replace entire document (merge: false)
+:ok = SoliDB.Client.update(client, "mydb", "users", "custom-key-123", %{name: "Robert"}, false)
+
+# DELETE - Remove a document
+:ok = SoliDB.Client.delete(client, "mydb", "users", "custom-key-123")
+
+# LIST - Paginated document listing
+{:ok, docs} = SoliDB.Client.list(client, "mydb", "users", 50, 0)  # limit: 50, offset: 0</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Function</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">insert(client, db, col, doc, key \\\\ nil)</code></td><td class="px-4 py-3 text-gray-500">{:ok, map}</td><td class="px-4 py-3 text-gray-400">Insert document, returns doc with _key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">get(client, db, col, key)</code></td><td class="px-4 py-3 text-gray-500">{:ok, map}</td><td class="px-4 py-3 text-gray-400">Get document by key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">update(client, db, col, key, doc, merge \\\\ true)</code></td><td class="px-4 py-3 text-gray-500">:ok</td><td class="px-4 py-3 text-gray-400">Update document (merge or replace)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">delete(client, db, col, key)</code></td><td class="px-4 py-3 text-gray-500">:ok</td><td class="px-4 py-3 text-gray-400">Delete document</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">list(client, db, col, limit \\\\ 50, offset \\\\ 0)</code></td><td class="px-4 py-3 text-gray-500">{:ok, list}</td><td class="px-4 py-3 text-gray-400">List documents with pagination</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Queries -->
+      <section id="queries" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SDBQL Queries</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir"># Simple query
+{:ok, users} = SoliDB.Client.query(client, "mydb", "FOR u IN users RETURN u")
+
+# Query with bind variables (recommended for security)
+{:ok, results} = SoliDB.Client.query(client, "mydb", """
+  FOR u IN users
+  FILTER u.age >= @min_age AND u.status == @status
+  SORT u.created_at DESC
+  LIMIT @limit
+  RETURN {name: u.name, email: u.email}
+""", %{
+  min_age: 18,
+  status: "active",
+  limit: 100
+})
+
+# Aggregation query
+{:ok, stats} = SoliDB.Client.query(client, "mydb", """
+  FOR u IN users
+  COLLECT status = u.status WITH COUNT INTO count
+  RETURN {status, count}
+""")
+
+# Join query
+{:ok, orders} = SoliDB.Client.query(client, "mydb", """
+  FOR o IN orders
+  FOR u IN users FILTER u._key == o.user_id
+  RETURN {order: o, user: u.name}
+""")
+
+# Explain query plan (for optimization)
+{:ok, plan} = SoliDB.Client.explain(client, "mydb", "FOR u IN users FILTER u.age > 25 RETURN u")</code></pre>
+        </div>
+      </section>
+
+      <!-- Transactions -->
+      <section id="transactions" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">ACID Transactions</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir"># Begin a transaction
+{:ok, tx_id} = SoliDB.Client.begin_transaction(client, "mydb", "read_committed")
+# Isolation levels: read_uncommitted, read_committed, repeatable_read, serializable
+
+try do
+  # Perform operations within transaction
+  {:ok, _} = SoliDB.Client.insert(client, "mydb", "accounts", %{id: 1, balance: 1000})
+  {:ok, _} = SoliDB.Client.insert(client, "mydb", "accounts", %{id: 2, balance: 500})
+
+  # Commit if all operations succeed
+  :ok = SoliDB.Client.commit_transaction(client, tx_id)
+  IO.puts("Transaction committed")
+rescue
+  error ->
+    # Rollback on any error
+    SoliDB.Client.rollback_transaction(client, tx_id)
+    IO.puts("Transaction rolled back: #{inspect(error)}")
+end</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Function</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">begin_transaction(client, db, isolation \\\\ nil)</code></td><td class="px-4 py-3 text-gray-500">{:ok, string}</td><td class="px-4 py-3 text-gray-400">Start transaction, returns tx_id</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">commit_transaction(client, tx_id)</code></td><td class="px-4 py-3 text-gray-500">:ok</td><td class="px-4 py-3 text-gray-400">Commit transaction</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">rollback_transaction(client, tx_id)</code></td><td class="px-4 py-3 text-gray-500">:ok</td><td class="px-4 py-3 text-gray-400">Rollback transaction</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Indexes -->
+      <section id="indexes" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Index Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir"># Create an index
+:ok = SoliDB.Client.create_index(client, "mydb", "users", "idx_email", ["email"], true, false)
+#                                 client   db      col       name        fields   unique sparse
+
+# List indexes on a collection
+{:ok, indexes} = SoliDB.Client.list_indexes(client, "mydb", "users")
+
+# Delete an index
+:ok = SoliDB.Client.delete_index(client, "mydb", "users", "idx_email")</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MANAGEMENT MODULES -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-4 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-pink-500/20 text-pink-400 mr-4">
+          <i class="fas fa-cubes text-lg"></i>
+        </span>
+        Management Modules
+      </h2>
+      <p class="text-gray-400 mb-8">
+        Elixir uses a functional approach with separate modules instead of sub-clients.
+        <strong class="text-white">Important:</strong> Call <code class="text-purple-400">use_database(client, name)</code> first to set the database context.
+      </p>
+
+      <!-- Scripts -->
+      <section id="scripts" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 mr-3">
+            <i class="fas fa-scroll text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">SoliDB.Scripts</h3>
+          <span class="ml-3 px-2 py-1 bg-purple-500/10 text-purple-400 text-xs rounded">Lua Script Endpoints</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir">client = SoliDB.Client.use_database(client, "mydb")
+
+# Create a Lua script endpoint
+{:ok, script} = SoliDB.Scripts.create(client,
+  name: "hello",
+  path: "/api/hello",
+  methods: ["GET", "POST"],
+  code: ~s(return {message = "Hello, " .. (req.params.name or "World")}),
+  description: "Greeting endpoint",   # optional
+  collection: "users"                 # optional: restrict to collection
+)
+IO.puts("Created script: #{script["_key"]}")
+
+# List all scripts
+{:ok, scripts} = SoliDB.Scripts.list(client)
+Enum.each(scripts, fn s -> IO.puts("#{s["name"]} -> #{s["path"]}") end)
+
+# Get a specific script
+{:ok, script} = SoliDB.Scripts.get(client, "script_key")
+
+# Update script code
+:ok = SoliDB.Scripts.update(client, "script_key", %{
+  code: ~s(return {message = "Updated!"}),
+  methods: ["GET"]
+})
+
+# Delete a script
+:ok = SoliDB.Scripts.delete(client, "script_key")
+
+# Get execution statistics
+{:ok, stats} = SoliDB.Scripts.get_stats(client)
+IO.puts("Total calls: #{stats["total_calls"]}")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Function</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Parameters</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-purple-400">create(client, opts)</code></td><td class="px-4 py-3 text-gray-500">name:, path:, methods:, code:, description:, collection:</td><td class="px-4 py-3 text-gray-400">Create Lua endpoint</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">list(client)</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">List all scripts</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">get(client, script_id)</code></td><td class="px-4 py-3 text-gray-500">script_id</td><td class="px-4 py-3 text-gray-400">Get script details</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">update(client, script_id, updates)</code></td><td class="px-4 py-3 text-gray-500">script_id, map</td><td class="px-4 py-3 text-gray-400">Update script properties</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">delete(client, script_id)</code></td><td class="px-4 py-3 text-gray-500">script_id</td><td class="px-4 py-3 text-gray-400">Delete script</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">get_stats(client)</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">Execution statistics</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Jobs & Cron -->
+      <section id="jobs" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 mr-3">
+            <i class="fas fa-tasks text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">SoliDB.Jobs & SoliDB.Cron</h3>
+          <span class="ml-3 px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded">Background Processing</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir">client = SoliDB.Client.use_database(client, "mydb")
+
+# === JOBS ===
+
+# List all queues
+{:ok, queues} = SoliDB.Jobs.list_queues(client)
+# => [%{"name" => "default", "pending" => 5, "running" => 2}, ...]
+
+# List jobs in a queue with filters
+{:ok, jobs} = SoliDB.Jobs.list_jobs(client, "default",
+  status: "pending",  # pending, running, completed, failed
+  limit: 50,
+  offset: 0
+)
+
+# Enqueue a new job
+{:ok, job} = SoliDB.Jobs.enqueue(client, "default",
+  script_path: "/scripts/process-order",
+  params: %{order_id: 12345},
+  priority: 10,       # optional: higher = more urgent
+  run_at: nil         # optional: ISO8601 datetime for delayed execution
+)
+IO.puts("Job ID: #{job["_key"]}")
+
+# Get job details
+{:ok, job} = SoliDB.Jobs.get(client, "job_id")
+IO.puts("Status: #{job["status"]}")
+
+# Cancel a pending job
+:ok = SoliDB.Jobs.cancel(client, "job_id")
+
+# === CRON ===
+
+# List scheduled jobs
+{:ok, crons} = SoliDB.Cron.list(client)
+
+# Create a cron job
+{:ok, cron} = SoliDB.Cron.create(client,
+  name: "daily-cleanup",
+  schedule: "0 2 * * *",              # Every day at 2 AM
+  script_path: "/scripts/cleanup",
+  params: %{days_old: 30},            # optional
+  enabled: true,                      # optional
+  description: "Remove old records"   # optional
+)
+
+# Get cron job details
+{:ok, cron} = SoliDB.Cron.get(client, "cron_id")
+
+# Update cron schedule
+:ok = SoliDB.Cron.update(client, "cron_id", %{schedule: "0 3 * * *"})
+
+# Toggle cron job on/off
+:ok = SoliDB.Cron.toggle(client, "cron_id", false)  # disable
+:ok = SoliDB.Cron.toggle(client, "cron_id", true)   # enable
+
+# Delete cron job
+:ok = SoliDB.Cron.delete(client, "cron_id")</code></pre>
+        </div>
+      </section>
+
+      <!-- Triggers -->
+      <section id="triggers" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 mr-3">
+            <i class="fas fa-bolt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">SoliDB.Triggers</h3>
+          <span class="ml-3 px-2 py-1 bg-orange-500/10 text-orange-400 text-xs rounded">Database Triggers</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir">client = SoliDB.Client.use_database(client, "mydb")
+
+# List all triggers
+{:ok, triggers} = SoliDB.Triggers.list(client)
+
+# List triggers for a specific collection
+{:ok, triggers} = SoliDB.Triggers.list_by_collection(client, "users")
+
+# Create a trigger
+{:ok, trigger} = SoliDB.Triggers.create(client,
+  name: "on_user_created",
+  collection: "users",
+  event: "insert",                    # insert, update, delete
+  timing: "after",                    # before, after
+  script_path: "/scripts/on-user-create",
+  enabled: true                       # optional
+)
+
+# Get trigger details
+{:ok, trigger} = SoliDB.Triggers.get(client, "trigger_id")
+
+# Update trigger
+:ok = SoliDB.Triggers.update(client, "trigger_id", %{
+  script_path: "/scripts/new-handler",
+  enabled: false
+})
+
+# Toggle trigger on/off
+:ok = SoliDB.Triggers.toggle(client, "trigger_id", true)   # enable
+:ok = SoliDB.Triggers.toggle(client, "trigger_id", false)  # disable
+
+# Delete trigger
+:ok = SoliDB.Triggers.delete(client, "trigger_id")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Event</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Timing</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-orange-400">insert</code></td><td class="px-4 py-3 text-gray-500">before / after</td><td class="px-4 py-3 text-gray-400">Fires on document creation</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-orange-400">update</code></td><td class="px-4 py-3 text-gray-500">before / after</td><td class="px-4 py-3 text-gray-400">Fires on document modification</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-orange-400">delete</code></td><td class="px-4 py-3 text-gray-500">before / after</td><td class="px-4 py-3 text-gray-400">Fires on document removal</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- RBAC: Roles & Users -->
+      <section id="rbac" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/20 text-red-400 mr-3">
+            <i class="fas fa-user-shield text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">SoliDB.Roles & SoliDB.Users</h3>
+          <span class="ml-3 px-2 py-1 bg-red-500/10 text-red-400 text-xs rounded">Role-Based Access Control</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir"># === ROLES ===
+
+# List all roles
+{:ok, roles} = SoliDB.Roles.list(client)
+
+# Create a role with permissions
+{:ok, role} = SoliDB.Roles.create(client,
+  name: "editor",
+  permissions: [
+    %{action: "read", scope: "database", database: "mydb"},
+    %{action: "write", scope: "collection", database: "mydb", collection: "articles"},
+    %{action: "execute", scope: "script", database: "mydb"}
+  ],
+  description: "Content editor role"
+)
+
+# Get role details
+{:ok, role} = SoliDB.Roles.get(client, "editor")
+
+# Update role permissions
+:ok = SoliDB.Roles.update(client, "editor", %{
+  permissions: [
+    %{action: "read", scope: "database", database: "mydb"},
+    %{action: "write", scope: "database", database: "mydb"}
+  ]
+})
+
+# Delete role
+:ok = SoliDB.Roles.delete(client, "editor")
+
+# === USERS ===
+
+# List all users
+{:ok, users} = SoliDB.Users.list(client)
+
+# Create a user
+{:ok, user} = SoliDB.Users.create(client,
+  username: "john",
+  password: "secure_password",
+  roles: ["editor", "viewer"]  # optional
+)
+
+# Get user details
+{:ok, user} = SoliDB.Users.get(client, "john")
+
+# Get user's assigned roles
+{:ok, roles} = SoliDB.Users.get_roles(client, "john")
+
+# Assign a role to user
+:ok = SoliDB.Users.assign_role(client, "john", "admin", database: "mydb")
+
+# Revoke a role from user
+:ok = SoliDB.Users.revoke_role(client, "john", "admin", database: "mydb")
+
+# Get current authenticated user
+{:ok, me} = SoliDB.Users.me(client)
+
+# Get current user's permissions
+{:ok, permissions} = SoliDB.Users.my_permissions(client)
+
+# Change password
+:ok = SoliDB.Users.change_password(client, "john", "old_password", "new_password")
+
+# Delete user
+:ok = SoliDB.Users.delete(client, "john")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Action</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Scopes</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-red-400">read</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Read documents and query</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">write</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Create, update, delete documents</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">admin</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Manage indexes, schema, etc.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">execute</code></td><td class="px-4 py-3 text-gray-500">script</td><td class="px-4 py-3 text-gray-400">Execute Lua scripts</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ADVANCED FEATURES -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-indigo-500/20 text-indigo-400 mr-4">
+          <i class="fas fa-brain text-lg"></i>
+        </span>
+        Advanced Features
+      </h2>
+
+      <!-- Vector Search -->
+      <section id="vector" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-pink-500/20 text-pink-400 mr-3">
+            <i class="fas fa-brain text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">SoliDB.Vector</h3>
+          <span class="ml-3 px-2 py-1 bg-pink-500/10 text-pink-400 text-xs rounded">Vector Search & AI</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir">client = SoliDB.Client.use_database(client, "mydb")
+
+# Create a vector index
+{:ok, index} = SoliDB.Vector.create_index(client, "products",
+  name: "product_embeddings",
+  field: "embedding",
+  dimensions: 1536,
+  metric: "cosine"  # cosine, euclidean, dot_product
+)
+
+# Search by vector (semantic search)
+embedding = get_embedding("wireless headphones")  # Your embedding function
+{:ok, results} = SoliDB.Vector.search(client, "products",
+  vector: embedding,
+  limit: 10,
+  filter: ~s(doc.category == "electronics")  # optional SDBQL filter
+)
+
+Enum.each(results, fn result ->
+  IO.puts("#{result["doc"]["name"]} - Score: #{result["score"]}")
+end)
+
+# Search by existing document (find similar)
+{:ok, similar} = SoliDB.Vector.search_by_document(client, "products",
+  doc_key: "product-123",
+  field: "embedding",
+  limit: 5
+)
+
+# Quantize index (reduce memory usage)
+:ok = SoliDB.Vector.quantize(client, "products", "product_embeddings", "binary")
+
+# Dequantize (restore full precision)
+:ok = SoliDB.Vector.dequantize(client, "products", "product_embeddings")
+
+# Get index info
+{:ok, info} = SoliDB.Vector.get_index_info(client, "products", "product_embeddings")
+
+# List vector indexes
+{:ok, indexes} = SoliDB.Vector.list_indexes(client, "products")
+
+# Delete index
+:ok = SoliDB.Vector.delete_index(client, "products", "product_embeddings")</code></pre>
+        </div>
+      </section>
+
+      <!-- Geo -->
+      <section id="geo" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 mr-3">
+            <i class="fas fa-map-marker-alt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">SoliDB.Geo</h3>
+          <span class="ml-3 px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded">Geospatial Queries</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir">client = SoliDB.Client.use_database(client, "mydb")
+
+# Create a geo index
+:ok = SoliDB.Geo.create_index(client, "stores",
+  name: "location_idx",
+  fields: ["location"],     # Field containing [lat, lon] or GeoJSON
+  geo_json: true            # optional: true if using GeoJSON format
+)
+
+# Find nearby locations (radius search)
+{:ok, nearby} = SoliDB.Geo.near(client, "stores",
+  latitude: 48.8566,
+  longitude: 2.3522,
+  radius: 5000,      # meters
+  limit: 20          # optional
+)
+
+Enum.each(nearby, fn result ->
+  IO.puts("#{result["doc"]["name"]} - #{result["distance"]}m away")
+end)
+
+# Find within polygon
+polygon = %{
+  type: "Polygon",
+  coordinates: [[[2.3, 48.8], [2.4, 48.8], [2.4, 48.9], [2.3, 48.9], [2.3, 48.8]]]
+}
+{:ok, within} = SoliDB.Geo.within(client, "stores", geometry: polygon)
+
+# Find intersecting geometries
+{:ok, intersects} = SoliDB.Geo.intersects(client, "zones", geometry: polygon)
+
+# Calculate distance between two points
+{:ok, distance} = SoliDB.Geo.distance(client,
+  lat1: 48.8566, lon1: 2.3522,
+  lat2: 51.5074, lon2: -0.1278
+)
+IO.puts("Paris to London: #{distance / 1000}km")
+
+# List geo indexes
+{:ok, indexes} = SoliDB.Geo.list_indexes(client, "stores")
+
+# Delete index
+:ok = SoliDB.Geo.delete_index(client, "stores", "location_idx")</code></pre>
+        </div>
+      </section>
+
+      <!-- TTL -->
+      <section id="ttl" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 mr-3">
+            <i class="fas fa-hourglass-half text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">SoliDB.TTL</h3>
+          <span class="ml-3 px-2 py-1 bg-rose-500/10 text-rose-400 text-xs rounded">Time-To-Live Indexes</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir">client = SoliDB.Client.use_database(client, "mydb")
+
+# Create TTL index (auto-expire documents)
+:ok = SoliDB.TTL.create_index(client, "sessions",
+  name: "session_ttl",
+  field: "created_at",            # DateTime field to check
+  expire_after_seconds: 3600      # Expire after 1 hour
+)
+
+# Update expiration time
+:ok = SoliDB.TTL.update_expiration(client, "sessions", "session_ttl", 7200)  # 2 hours
+
+# Get index info
+{:ok, info} = SoliDB.TTL.get_index_info(client, "sessions", "session_ttl")
+IO.puts("Expires after: #{info["expire_after_seconds"]}s")
+
+# Manually trigger cleanup (normally runs automatically)
+{:ok, result} = SoliDB.TTL.run_cleanup(client, "sessions")
+IO.puts("Deleted #{result["deleted"]} expired documents")
+
+# List TTL indexes
+{:ok, indexes} = SoliDB.TTL.list_indexes(client, "sessions")
+
+# Delete TTL index
+:ok = SoliDB.TTL.delete_index(client, "sessions", "session_ttl")</code></pre>
+        </div>
+      </section>
+
+      <!-- Columnar -->
+      <section id="columnar" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-violet-500/20 text-violet-400 mr-3">
+            <i class="fas fa-chart-bar text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">SoliDB.Columnar</h3>
+          <span class="ml-3 px-2 py-1 bg-violet-500/10 text-violet-400 text-xs rounded">Columnar/Analytics Storage</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir">client = SoliDB.Client.use_database(client, "mydb")
+
+# Create a columnar table (optimized for analytics)
+{:ok, table} = SoliDB.Columnar.create(client, "metrics", [
+  %{name: "timestamp", type: "datetime"},
+  %{name: "metric_name", type: "string"},
+  %{name: "value", type: "float"},
+  %{name: "tags", type: "string"}
+])
+
+# Insert rows (batch insert is efficient)
+:ok = SoliDB.Columnar.insert(client, "metrics", [
+  %{timestamp: "2024-01-15T10:00:00Z", metric_name: "cpu_usage", value: 45.2, tags: "server1"},
+  %{timestamp: "2024-01-15T10:01:00Z", metric_name: "cpu_usage", value: 47.8, tags: "server1"},
+  %{timestamp: "2024-01-15T10:00:00Z", metric_name: "memory", value: 72.1, tags: "server1"}
+])
+
+# Query with SQL-like syntax
+{:ok, results} = SoliDB.Columnar.query(client, "metrics",
+  "SELECT * FROM metrics WHERE value > @min ORDER BY timestamp DESC LIMIT 100",
+  params: %{min: 40.0}
+)
+
+# Aggregation
+{:ok, agg} = SoliDB.Columnar.aggregate(client, "metrics", %{
+  group_by: ["metric_name", "tags"],
+  metrics: [
+    %{column: "value", function: "avg"},
+    %{column: "value", function: "max"},
+    %{column: "value", function: "min"},
+    %{column: "value", function: "count"}
+  ],
+  filters: %{metric_name: "cpu_usage"}  # optional
+})
+
+# Get table statistics
+{:ok, stats} = SoliDB.Columnar.stats(client, "metrics")
+IO.puts("Row count: #{stats["row_count"]}, Size: #{stats["size_bytes"]}")
+
+# Add a column
+:ok = SoliDB.Columnar.add_column(client, "metrics",
+  column_name: "host",
+  column_type: "string",
+  default_value: "unknown"  # optional
+)
+
+# Drop a column
+:ok = SoliDB.Columnar.drop_column(client, "metrics", "host")
+
+# Create index on columnar table
+:ok = SoliDB.Columnar.create_index(client, "metrics",
+  index_name: "idx_timestamp",
+  column: "timestamp",
+  index_type: "btree"  # optional
+)
+
+# List indexes
+{:ok, indexes} = SoliDB.Columnar.list_indexes(client, "metrics")
+
+# Delete index
+:ok = SoliDB.Columnar.delete_index(client, "metrics", "idx_timestamp")
+
+# List all columnar tables
+{:ok, tables} = SoliDB.Columnar.list(client)
+
+# Get table info
+{:ok, table} = SoliDB.Columnar.get(client, "metrics")
+
+# Delete table
+:ok = SoliDB.Columnar.delete(client, "metrics")</code></pre>
+        </div>
+      </section>
+
+      <!-- Cluster -->
+      <section id="cluster" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 mr-3">
+            <i class="fas fa-network-wired text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">SoliDB.Cluster</h3>
+          <span class="ml-3 px-2 py-1 bg-indigo-500/10 text-indigo-400 text-xs rounded">Cluster Management</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir"># Get cluster status
+{:ok, status} = SoliDB.Cluster.status(client)
+IO.puts("Mode: #{status["mode"]}")  # standalone, cluster
+IO.puts("Nodes: #{status["node_count"]}")
+
+# Get detailed cluster info
+{:ok, info} = SoliDB.Cluster.info(client)
+
+# Get all nodes
+{:ok, nodes} = SoliDB.Cluster.get_nodes(client)
+Enum.each(nodes, fn node ->
+  IO.puts("#{node["id"]}: #{node["address"]} (#{node["status"]})")
+end)
+
+# Get shard distribution
+{:ok, shards} = SoliDB.Cluster.get_shards(client)
+
+# Remove a node from cluster
+:ok = SoliDB.Cluster.remove_node(client, "node-id-to-remove")
+
+# Trigger data rebalancing
+:ok = SoliDB.Cluster.rebalance(client)
+
+# Cleanup orphaned data
+:ok = SoliDB.Cluster.cleanup(client)
+
+# Reshard cluster
+:ok = SoliDB.Cluster.reshard(client, 16)  # new number of shards</code></pre>
+        </div>
+      </section>
+
+      <!-- Collection Operations -->
+      <section id="collection-ops" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 mr-3">
+            <i class="fas fa-database text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">SoliDB.CollectionsOps</h3>
+          <span class="ml-3 px-2 py-1 bg-sky-500/10 text-sky-400 text-xs rounded">Advanced Collection Operations</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-elixir">client = SoliDB.Client.use_database(client, "mydb")
+
+# Truncate collection (delete all documents)
+:ok = SoliDB.CollectionsOps.truncate(client, "logs")
+
+# Compact collection (reclaim disk space)
+:ok = SoliDB.CollectionsOps.compact(client, "users")
+
+# Repair collection (fix inconsistencies)
+:ok = SoliDB.CollectionsOps.repair(client, "orders")
+
+# Get collection statistics
+{:ok, stats} = SoliDB.CollectionsOps.stats(client, "users")
+
+# Prune old documents
+:ok = SoliDB.CollectionsOps.prune(client, "logs",
+  older_than: "2024-01-01T00:00:00Z",
+  field: "created_at"
+)
+
+# Recount documents
+:ok = SoliDB.CollectionsOps.recount(client, "users")
+
+# Set JSON schema validation
+:ok = SoliDB.CollectionsOps.set_schema(client, "users", %{
+  type: "object",
+  required: ["name", "email"],
+  properties: %{
+    name: %{type: "string", minLength: 1},
+    email: %{type: "string", format: "email"},
+    age: %{type: "integer", minimum: 0}
+  }
+})
+
+# Get current schema
+{:ok, schema} = SoliDB.CollectionsOps.get_schema(client, "users")
+
+# Remove schema validation
+:ok = SoliDB.CollectionsOps.delete_schema(client, "users")
+
+# Export collection
+{:ok, data} = SoliDB.CollectionsOps.export(client, "users", "json")  # json, csv, msgpack
+
+# Import data
+:ok = SoliDB.CollectionsOps.import(client, "users_backup", data, "json")
+
+# Get sharding configuration
+{:ok, sharding} = SoliDB.CollectionsOps.get_sharding(client, "orders")
+
+# Configure sharding
+:ok = SoliDB.CollectionsOps.set_sharding(client, "orders", %{
+  num_shards: 8,
+  shard_key: "user_id"
+})</code></pre>
+        </div>
+      </section>
+
+      <!-- Environment Variables -->
+      <section id="env" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-teal-500/20 text-teal-400 mr-3">
+            <i class="fas fa-cog text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">SoliDB.Env</h3>
+          <span class="ml-3 px-2 py-1 bg-teal-500/10 text-teal-400 text-xs rounded">Environment Variables</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-elixir">client = SoliDB.Client.use_database(client, "mydb")
+
+# List environment variables (for Lua scripts)
+{:ok, vars} = SoliDB.Env.list(client)
+
+# Set an environment variable
+:ok = SoliDB.Env.set(client, "API_KEY", "sk-xxx-your-api-key")
+:ok = SoliDB.Env.set(client, "WEBHOOK_URL", "https://example.com/webhook")
+
+# Delete an environment variable
+:ok = SoliDB.Env.delete(client, "OLD_VAR")</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ERROR HANDLING -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 mr-4">
+          <i class="fas fa-exclamation-triangle text-lg"></i>
+        </span>
+        Error Handling
+      </h2>
+
+      <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-6">
+        <pre><code class="language-elixir"># All functions return {:ok, result} or {:error, reason}
+case SoliDB.Client.connect("127.0.0.1", 6745) do
+  {:ok, client} ->
+    case SoliDB.Client.auth(client, "mydb", "user", "password") do
+      :ok ->
+        case SoliDB.Client.get(client, "mydb", "users", "nonexistent-key") do
+          {:ok, doc} ->
+            IO.inspect(doc)
+
+          {:error, %SoliDB.Error{type: :not_found}} ->
+            IO.puts("Document not found")
+
+          {:error, %SoliDB.Error{type: :permission_denied, message: msg}} ->
+            IO.puts("Access denied: #{msg}")
+
+          {:error, error} ->
+            IO.puts("Server error: #{inspect(error)}")
+        end
+
+      {:error, reason} ->
+        IO.puts("Authentication failed: #{inspect(reason)}")
+    end
+    SoliDB.Client.close(client)
+
+  {:error, %SoliDB.Error{type: :connection_refused}} ->
+    IO.puts("Cannot connect to server")
+
+  {:error, %SoliDB.Error{type: :timeout}} ->
+    IO.puts("Connection timeout")
+end</code></pre>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4">
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-red-400 font-semibold mb-2">Connection Errors</h4>
+          <p class="text-sm text-gray-400">:connection_refused, :timeout, :closed - Network failures and disconnections</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-orange-400 font-semibold mb-2">Server Errors</h4>
+          <p class="text-sm text-gray-400">:not_found, :permission_denied, :validation_error - Server-side issues</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-yellow-400 font-semibold mb-2">Protocol Errors</h4>
+          <p class="text-sm text-gray-400">:decode_error, :invalid_response - Serialization issues</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>

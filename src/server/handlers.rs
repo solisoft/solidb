@@ -6369,7 +6369,12 @@ pub async fn ws_changefeed_handler(
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
 
-        !cluster_secret.is_empty() && cluster_secret == provided_secret
+        // Use constant-time comparison to prevent timing attacks
+        !cluster_secret.is_empty()
+            && crate::server::auth::constant_time_eq(
+                cluster_secret.as_bytes(),
+                provided_secret.as_bytes(),
+            )
     };
 
     // If not cluster-internal, validate the JWT token

@@ -1,0 +1,1137 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs/clients" class="inline-flex items-center text-yellow-400 hover:text-yellow-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Clients Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header Section -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-lg blur opacity-25"></div>
+      <div class="relative flex items-center">
+        <div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-yellow-500 text-white shadow-[0_0_30px_rgba(234,179,8,0.5)] mr-6">
+          <i class="fab fa-python text-4xl"></i>
+        </div>
+        <div>
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-orange-400 to-red-400 mb-2 tracking-tight">
+            Python Client
+          </h1>
+          <div class="flex items-center gap-4">
+            <span class="px-3 py-1 bg-yellow-500/10 text-yellow-400 text-xs font-bold uppercase tracking-wider rounded-full border border-yellow-500/20">Official SDK</span>
+            <span class="text-sm text-gray-400">v0.1.0</span>
+            <span class="text-sm text-gray-500">Python 3.8+</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <nav class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+      <h2 class="text-lg font-bold text-white mb-4">Table of Contents</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <h3 class="text-yellow-400 font-semibold mb-2">Getting Started</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#installation" class="hover:text-white transition-colors">Installation</a></li>
+            <li><a href="#quickstart" class="hover:text-white transition-colors">Quick Start</a></li>
+            <li><a href="#connection" class="hover:text-white transition-colors">Connection</a></li>
+            <li><a href="#authentication" class="hover:text-white transition-colors">Authentication</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-yellow-400 font-semibold mb-2">Core Operations</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#databases" class="hover:text-white transition-colors">Databases</a></li>
+            <li><a href="#collections" class="hover:text-white transition-colors">Collections</a></li>
+            <li><a href="#documents" class="hover:text-white transition-colors">Documents</a></li>
+            <li><a href="#queries" class="hover:text-white transition-colors">Queries</a></li>
+            <li><a href="#transactions" class="hover:text-white transition-colors">Transactions</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-yellow-400 font-semibold mb-2">Management APIs</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#scripts" class="hover:text-white transition-colors">Scripts</a></li>
+            <li><a href="#jobs" class="hover:text-white transition-colors">Jobs & Cron</a></li>
+            <li><a href="#triggers" class="hover:text-white transition-colors">Triggers</a></li>
+            <li><a href="#rbac" class="hover:text-white transition-colors">Roles & Users</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-yellow-400 font-semibold mb-2">Advanced Features</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#vector" class="hover:text-white transition-colors">Vector Search</a></li>
+            <li><a href="#geo" class="hover:text-white transition-colors">Geospatial</a></li>
+            <li><a href="#ttl" class="hover:text-white transition-colors">TTL Indexes</a></li>
+            <li><a href="#columnar" class="hover:text-white transition-colors">Columnar Storage</a></li>
+            <li><a href="#cluster" class="hover:text-white transition-colors">Cluster</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- GETTING STARTED -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-yellow-500/20 text-yellow-400 mr-4">
+          <i class="fas fa-rocket text-lg"></i>
+        </span>
+        Getting Started
+      </h2>
+
+      <!-- Installation -->
+      <section id="installation" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Installation</h3>
+        <div class="grid md:grid-cols-2 gap-4">
+          <div>
+            <p class="text-gray-400 text-sm mb-2">Using pip:</p>
+            <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+              <pre class="text-yellow-400">pip install solidb</pre>
+            </div>
+          </div>
+          <div>
+            <p class="text-gray-400 text-sm mb-2">Using Poetry:</p>
+            <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+              <pre class="text-yellow-400">poetry add solidb</pre>
+            </div>
+          </div>
+        </div>
+        <div class="mt-4 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+          <div class="flex items-start">
+            <i class="fas fa-info-circle text-amber-400 mt-0.5 mr-3"></i>
+            <p class="text-sm text-amber-200">
+              <strong>Requirements:</strong> Python 3.8 or higher. The client uses <code class="bg-gray-800 px-1 rounded">msgpack</code> for binary serialization.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Start -->
+      <section id="quickstart" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Quick Start</h3>
+        <div class="bg-gray-950 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <pre class="relative z-10"><code class="language-python">from solidb import Client
+
+# Create client instance
+client = Client("127.0.0.1", 6745)
+
+# Establish connection
+client.connect()
+
+# Authenticate
+client.auth("_system", "admin", "password")
+
+# Set database context (required for sub-clients)
+client.use_database("mydb")
+
+# Basic CRUD operations
+doc = client.insert("mydb", "users", {"name": "Alice", "age": 30})
+print(f"Created: {doc['_key']}")
+
+user = client.get("mydb", "users", doc["_key"])
+print(f"Retrieved: {user['name']}")
+
+client.update("mydb", "users", doc["_key"], {"age": 31})
+
+# Query with SDBQL
+results = client.query("mydb", """
+    FOR u IN users
+    FILTER u.age > @min
+    RETURN u
+""", {"min": 25})
+print(f"Found {len(results)} users")
+
+# Use management sub-clients
+scripts = client.scripts.list()
+triggers = client.triggers.list()
+
+# Clean up
+client.close()</code></pre>
+        </div>
+      </section>
+
+      <!-- Connection -->
+      <section id="connection" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Connection Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python"># Initialize with host and port
+client = Client("127.0.0.1", 6745)
+
+# Connect (establishes TCP socket)
+client.connect()
+
+# Check connection health (returns latency in ms)
+latency = client.ping()
+print(f"Latency: {latency:.2f}ms")
+
+# Close connection when done
+client.close()
+
+# Context manager support
+with Client("127.0.0.1", 6745) as client:
+    client.auth("_system", "admin", "password")
+    # ... operations
+# Auto-closes on exit</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-yellow-400">Client(host, port)</code></td><td class="px-4 py-3 text-gray-500">Client</td><td class="px-4 py-3 text-gray-400">Create client instance</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-yellow-400">connect()</code></td><td class="px-4 py-3 text-gray-500">None</td><td class="px-4 py-3 text-gray-400">Establish TCP connection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-yellow-400">ping()</code></td><td class="px-4 py-3 text-gray-500">float</td><td class="px-4 py-3 text-gray-400">Latency in milliseconds</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-yellow-400">close()</code></td><td class="px-4 py-3 text-gray-500">None</td><td class="px-4 py-3 text-gray-400">Close connection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-yellow-400">use_database(name)</code></td><td class="px-4 py-3 text-gray-500">Client</td><td class="px-4 py-3 text-gray-400">Set database context for sub-clients</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Authentication -->
+      <section id="authentication" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Authentication</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-python"># Authenticate with database, username, and password
+client.auth("_system", "admin", "password")
+
+# Authentication is required for most operations
+# The session remains authenticated until disconnected</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- CORE OPERATIONS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 mr-4">
+          <i class="fas fa-database text-lg"></i>
+        </span>
+        Core Operations
+      </h2>
+
+      <!-- Databases -->
+      <section id="databases" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Database Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python"># List all databases
+databases = client.list_databases()
+# => ["_system", "mydb", "testdb"]
+
+# Create a new database
+client.create_database("analytics")
+
+# Delete a database
+client.delete_database("old_db")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">list_databases()</code></td><td class="px-4 py-3 text-gray-500">List[str]</td><td class="px-4 py-3 text-gray-400">List all database names</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">create_database(name)</code></td><td class="px-4 py-3 text-gray-500">None</td><td class="px-4 py-3 text-gray-400">Create new database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">delete_database(name)</code></td><td class="px-4 py-3 text-gray-500">None</td><td class="px-4 py-3 text-gray-400">Delete database</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Collections -->
+      <section id="collections" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Collection Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python"># List collections in a database
+collections = client.list_collections("mydb")
+# => [{"name": "users", "type": "document"}, ...]
+
+# Create a document collection
+client.create_collection("mydb", "products")
+
+# Create an edge collection (for graphs)
+client.create_collection("mydb", "relationships", col_type="edge")
+
+# Delete a collection
+client.delete_collection("mydb", "old_collection")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">list_collections(db)</code></td><td class="px-4 py-3 text-gray-500">List[Dict]</td><td class="px-4 py-3 text-gray-400">List collections in database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">create_collection(db, name, col_type=None)</code></td><td class="px-4 py-3 text-gray-500">None</td><td class="px-4 py-3 text-gray-400">Create collection (type: None/edge)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">delete_collection(db, name)</code></td><td class="px-4 py-3 text-gray-500">None</td><td class="px-4 py-3 text-gray-400">Delete collection</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section id="documents" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Document Operations (CRUD)</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python"># INSERT - Create a new document
+doc = client.insert("mydb", "users", {
+    "name": "Alice",
+    "email": "alice@example.com",
+    "age": 30
+})
+print(doc["_key"])  # Auto-generated key
+
+# INSERT with custom key
+doc = client.insert("mydb", "users", {"name": "Bob"}, key="custom-key-123")
+
+# GET - Retrieve a document by key
+user = client.get("mydb", "users", "custom-key-123")
+# => {"_key": "custom-key-123", "name": "Bob", ...}
+
+# UPDATE - Modify a document (merge by default)
+client.update("mydb", "users", "custom-key-123", {"age": 25})
+
+# UPDATE - Replace entire document (merge=False)
+client.update("mydb", "users", "custom-key-123", {"name": "Robert"}, merge=False)
+
+# DELETE - Remove a document
+client.delete("mydb", "users", "custom-key-123")
+
+# LIST - Paginated document listing
+docs = client.list("mydb", "users", limit=50, offset=0)</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">insert(db, col, doc, key=None)</code></td><td class="px-4 py-3 text-gray-500">Dict</td><td class="px-4 py-3 text-gray-400">Insert document, returns doc with _key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">get(db, col, key)</code></td><td class="px-4 py-3 text-gray-500">Dict</td><td class="px-4 py-3 text-gray-400">Get document by key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">update(db, col, key, doc, merge=True)</code></td><td class="px-4 py-3 text-gray-500">None</td><td class="px-4 py-3 text-gray-400">Update document (merge or replace)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">delete(db, col, key)</code></td><td class="px-4 py-3 text-gray-500">None</td><td class="px-4 py-3 text-gray-400">Delete document</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">list(db, col, limit=50, offset=0)</code></td><td class="px-4 py-3 text-gray-500">List[Dict]</td><td class="px-4 py-3 text-gray-400">List documents with pagination</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Queries -->
+      <section id="queries" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SDBQL Queries</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python"># Simple query
+users = client.query("mydb", "FOR u IN users RETURN u")
+
+# Query with bind variables (recommended for security)
+results = client.query("mydb", """
+    FOR u IN users
+    FILTER u.age >= @min_age AND u.status == @status
+    SORT u.created_at DESC
+    LIMIT @limit
+    RETURN { name: u.name, email: u.email }
+""", {
+    "min_age": 18,
+    "status": "active",
+    "limit": 100
+})
+
+# Aggregation query
+stats = client.query("mydb", """
+    FOR u IN users
+    COLLECT status = u.status WITH COUNT INTO count
+    RETURN { status, count }
+""")
+
+# Join query
+orders = client.query("mydb", """
+    FOR o IN orders
+    FOR u IN users FILTER u._key == o.user_id
+    RETURN { order: o, user: u.name }
+""")
+
+# Explain query plan (for optimization)
+plan = client.explain("mydb", "FOR u IN users FILTER u.age > 25 RETURN u")</code></pre>
+        </div>
+      </section>
+
+      <!-- Transactions -->
+      <section id="transactions" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">ACID Transactions</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python"># Begin a transaction
+tx_id = client.begin_transaction("mydb", isolation="read_committed")
+# Isolation levels: read_uncommitted, read_committed, repeatable_read, serializable
+
+try:
+    # Perform operations within transaction
+    client.insert("mydb", "accounts", {"id": 1, "balance": 1000})
+    client.insert("mydb", "accounts", {"id": 2, "balance": 500})
+
+    # Commit if all operations succeed
+    client.commit_transaction(tx_id)
+    print("Transaction committed")
+except Exception as e:
+    # Rollback on any error
+    client.rollback_transaction(tx_id)
+    print(f"Transaction rolled back: {e}")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">begin_transaction(db, isolation=None)</code></td><td class="px-4 py-3 text-gray-500">str</td><td class="px-4 py-3 text-gray-400">Start transaction, returns tx_id</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">commit_transaction(tx_id)</code></td><td class="px-4 py-3 text-gray-500">None</td><td class="px-4 py-3 text-gray-400">Commit transaction</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">rollback_transaction(tx_id)</code></td><td class="px-4 py-3 text-gray-500">None</td><td class="px-4 py-3 text-gray-400">Rollback transaction</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Indexes -->
+      <section id="indexes" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Index Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python"># Create an index
+client.create_index("mydb", "users", "idx_email", ["email"], unique=True, sparse=False)
+
+# List indexes on a collection
+indexes = client.list_indexes("mydb", "users")
+
+# Delete an index
+client.delete_index("mydb", "users", "idx_email")</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MANAGEMENT SUB-CLIENTS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-4 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 mr-4">
+          <i class="fas fa-cubes text-lg"></i>
+        </span>
+        Management Sub-Clients
+      </h2>
+      <p class="text-gray-400 mb-8">
+        Sub-clients provide namespaced access to management APIs.
+        <strong class="text-white">Important:</strong> Call <code class="text-yellow-400">use_database(name)</code> first to set the database context.
+      </p>
+
+      <!-- Scripts -->
+      <section id="scripts" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 mr-3">
+            <i class="fas fa-scroll text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.scripts</h3>
+          <span class="ml-3 px-2 py-1 bg-purple-500/10 text-purple-400 text-xs rounded">Lua Script Endpoints</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python">client.use_database("mydb")
+
+# Create a Lua script endpoint
+script = client.scripts.create(
+    name="hello",
+    path="/api/hello",
+    methods=["GET", "POST"],
+    code='return { message = "Hello, " .. (req.params.name or "World") }',
+    description="Greeting endpoint",  # optional
+    collection="users"                 # optional: restrict to collection
+)
+print(f"Created script: {script['_key']}")
+
+# List all scripts
+scripts = client.scripts.list()
+for s in scripts:
+    print(f"{s['name']} -> {s['path']}")
+
+# Get a specific script
+script = client.scripts.get("script_key")
+
+# Update script code
+client.scripts.update("script_key", {
+    "code": 'return { message = "Updated!" }',
+    "methods": ["GET"]
+})
+
+# Delete a script
+client.scripts.delete("script_key")
+
+# Get execution statistics
+stats = client.scripts.get_stats()
+print(f"Total calls: {stats['total_calls']}")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Parameters</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-purple-400">create</code></td><td class="px-4 py-3 text-gray-500">name, path, methods, code, description=, collection=</td><td class="px-4 py-3 text-gray-400">Create Lua endpoint</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">list()</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">List all scripts</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">get(script_id)</code></td><td class="px-4 py-3 text-gray-500">script_id</td><td class="px-4 py-3 text-gray-400">Get script details</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">update(script_id, updates)</code></td><td class="px-4 py-3 text-gray-500">script_id, dict</td><td class="px-4 py-3 text-gray-400">Update script properties</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">delete(script_id)</code></td><td class="px-4 py-3 text-gray-500">script_id</td><td class="px-4 py-3 text-gray-400">Delete script</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">get_stats()</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">Execution statistics</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Jobs & Cron -->
+      <section id="jobs" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-green-500/20 text-green-400 mr-3">
+            <i class="fas fa-tasks text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.jobs & client.cron</h3>
+          <span class="ml-3 px-2 py-1 bg-green-500/10 text-green-400 text-xs rounded">Background Processing</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python">client.use_database("mydb")
+
+# === JOBS ===
+
+# List all queues
+queues = client.jobs.list_queues()
+# => [{"name": "default", "pending": 5, "running": 2}, ...]
+
+# List jobs in a queue with filters
+jobs = client.jobs.list_jobs("default",
+    status="pending",  # pending, running, completed, failed
+    limit=50,
+    offset=0
+)
+
+# Enqueue a new job
+job = client.jobs.enqueue("default",
+    script_path="/scripts/process-order",
+    params={"order_id": 12345},
+    priority=10,        # optional: higher = more urgent
+    run_at=None         # optional: ISO8601 datetime for delayed execution
+)
+print(f"Job ID: {job['_key']}")
+
+# Get job details
+job = client.jobs.get_job("job_id")
+print(f"Status: {job['status']}")
+
+# Cancel a pending job
+client.jobs.cancel("job_id")
+
+# === CRON ===
+
+# List scheduled jobs
+crons = client.cron.list()
+
+# Create a cron job
+cron = client.cron.create(
+    name="daily-cleanup",
+    schedule="0 2 * * *",              # Every day at 2 AM
+    script_path="/scripts/cleanup",
+    params={"days_old": 30},           # optional
+    description="Remove old records"   # optional
+)
+
+# Get cron job details
+cron = client.cron.get("cron_id")
+
+# Update cron schedule
+client.cron.update("cron_id", {"schedule": "0 3 * * *"})
+
+# Delete cron job
+client.cron.delete("cron_id")</code></pre>
+        </div>
+      </section>
+
+      <!-- Triggers -->
+      <section id="triggers" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 mr-3">
+            <i class="fas fa-bolt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.triggers</h3>
+          <span class="ml-3 px-2 py-1 bg-orange-500/10 text-orange-400 text-xs rounded">Database Triggers</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python">client.use_database("mydb")
+
+# List all triggers
+triggers = client.triggers.list()
+
+# List triggers for a specific collection
+triggers = client.triggers.list_by_collection("users")
+
+# Create a trigger
+trigger = client.triggers.create(
+    name="on_user_created",
+    collection="users",
+    operation="insert",                  # insert, update, delete
+    script_path="/scripts/on-user-create",
+    description="Handle new user"        # optional
+)
+
+# Get trigger details
+trigger = client.triggers.get("trigger_id")
+
+# Update trigger
+client.triggers.update("trigger_id", {
+    "script_path": "/scripts/new-handler",
+    "enabled": False
+})
+
+# Toggle trigger on/off
+client.triggers.toggle("trigger_id")
+
+# Delete trigger
+client.triggers.delete("trigger_id")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Event</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-orange-400">insert</code></td><td class="px-4 py-3 text-gray-400">Fires on document creation</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-orange-400">update</code></td><td class="px-4 py-3 text-gray-400">Fires on document modification</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-orange-400">delete</code></td><td class="px-4 py-3 text-gray-400">Fires on document removal</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- RBAC: Roles & Users -->
+      <section id="rbac" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/20 text-red-400 mr-3">
+            <i class="fas fa-user-shield text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.roles & client.users</h3>
+          <span class="ml-3 px-2 py-1 bg-red-500/10 text-red-400 text-xs rounded">Role-Based Access Control</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python"># === ROLES ===
+
+# List all roles
+roles = client.roles.list()
+
+# Create a role with permissions
+role = client.roles.create(
+    name="editor",
+    permissions=[
+        {"action": "read", "scope": "database", "database": "mydb"},
+        {"action": "write", "scope": "collection", "database": "mydb", "collection": "articles"},
+        {"action": "execute", "scope": "script", "database": "mydb"}
+    ],
+    description="Content editor role"
+)
+
+# Get role details
+role = client.roles.get("editor")
+
+# Update role permissions
+client.roles.update("editor", permissions=[
+    {"action": "read", "scope": "database", "database": "mydb"},
+    {"action": "write", "scope": "database", "database": "mydb"}
+])
+
+# Delete role
+client.roles.delete("editor")
+
+# === USERS ===
+
+# List all users
+users = client.users.list()
+
+# Create a user
+user = client.users.create(
+    username="john",
+    password="secure_password",
+    roles=["editor", "viewer"]  # optional
+)
+
+# Get user's assigned roles
+roles = client.users.get_roles("john")
+
+# Assign a role to user
+client.users.assign_role("john", "admin")
+
+# Revoke a role from user
+client.users.revoke_role("john", "admin")
+
+# Get current authenticated user
+me = client.users.me()
+
+# Get current user's permissions
+permissions = client.users.my_permissions()
+
+# Delete user
+client.users.delete("john")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Action</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Scopes</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-red-400">read</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Read documents and query</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">write</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Create, update, delete documents</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">admin</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Manage indexes, schema, etc.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">execute</code></td><td class="px-4 py-3 text-gray-500">script</td><td class="px-4 py-3 text-gray-400">Execute Lua scripts</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- API Keys -->
+      <section id="apikeys" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 mr-3">
+            <i class="fas fa-key text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.api_keys</h3>
+          <span class="ml-3 px-2 py-1 bg-amber-500/10 text-amber-400 text-xs rounded">API Key Management</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python"># Create API key
+key = client.api_keys.create(
+    name="my-api-key",
+    databases=["mydb"],
+    expiration=None  # optional: ISO8601 datetime
+)
+print(f"API Key: {key['key']}")  # Save this! Only shown once
+
+# List all API keys
+keys = client.api_keys.list()
+
+# Delete API key
+client.api_keys.delete("key_id")</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ADVANCED FEATURES -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-pink-500/20 text-pink-400 mr-4">
+          <i class="fas fa-brain text-lg"></i>
+        </span>
+        Advanced Features
+      </h2>
+
+      <!-- Vector Search -->
+      <section id="vector" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-pink-500/20 text-pink-400 mr-3">
+            <i class="fas fa-brain text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.vector</h3>
+          <span class="ml-3 px-2 py-1 bg-pink-500/10 text-pink-400 text-xs rounded">Vector Search & AI</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python">client.use_database("mydb")
+
+# Create a vector index
+index = client.vector.create_index(
+    collection="products",
+    name="product_embeddings",
+    field="embedding",
+    dimensions=1536,
+    metric="cosine"  # cosine, euclidean, dot_product
+)
+
+# Search by vector (semantic search)
+embedding = get_embedding("wireless headphones")  # Your embedding function
+results = client.vector.search(
+    collection="products",
+    vector=embedding,
+    limit=10,
+    filter='doc.category == "electronics"'  # optional SDBQL filter
+)
+
+for result in results:
+    print(f"{result['doc']['name']} - Score: {result['score']}")
+
+# Search by existing document (find similar)
+similar = client.vector.search_by_document(
+    collection="products",
+    doc_key="product-123",
+    field="embedding",
+    limit=5
+)
+
+# Quantize index (reduce memory usage)
+client.vector.quantize("products", "product_embeddings", "binary")
+
+# Dequantize (restore full precision)
+client.vector.dequantize("products", "product_embeddings")
+
+# Get index info
+info = client.vector.get_index_info("products", "product_embeddings")
+
+# List vector indexes
+indexes = client.vector.list_indexes("products")
+
+# Delete index
+client.vector.delete_index("products", "product_embeddings")</code></pre>
+        </div>
+      </section>
+
+      <!-- Geo -->
+      <section id="geo" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 mr-3">
+            <i class="fas fa-map-marker-alt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.geo</h3>
+          <span class="ml-3 px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded">Geospatial Queries</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python">client.use_database("mydb")
+
+# Create a geo index
+client.geo.create_index(
+    collection="stores",
+    name="location_idx",
+    field="location",
+    geo_json=True  # optional: true if using GeoJSON format
+)
+
+# Find nearby locations (radius search)
+nearby = client.geo.near(
+    collection="stores",
+    latitude=48.8566,
+    longitude=2.3522,
+    radius=5000,  # meters
+    limit=20
+)
+
+for result in nearby:
+    print(f"{result['doc']['name']} - {result['distance']}m away")
+
+# Find within polygon
+polygon = {
+    "type": "Polygon",
+    "coordinates": [[[2.3, 48.8], [2.4, 48.8], [2.4, 48.9], [2.3, 48.9], [2.3, 48.8]]]
+}
+within = client.geo.within("stores", geometry=polygon)
+
+# List geo indexes
+indexes = client.geo.list_indexes("stores")
+
+# Delete index
+client.geo.delete_index("stores", "location_idx")</code></pre>
+        </div>
+      </section>
+
+      <!-- TTL -->
+      <section id="ttl" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 mr-3">
+            <i class="fas fa-hourglass-half text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.ttl</h3>
+          <span class="ml-3 px-2 py-1 bg-rose-500/10 text-rose-400 text-xs rounded">Time-To-Live Indexes</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python">client.use_database("mydb")
+
+# Create TTL index (auto-expire documents)
+client.ttl.create_index(
+    collection="sessions",
+    name="session_ttl",
+    field="created_at",           # DateTime field to check
+    expire_after_seconds=3600     # Expire after 1 hour
+)
+
+# Update expiration time
+client.ttl.update_expiration("sessions", "session_ttl", 7200)  # 2 hours
+
+# Get index info
+info = client.ttl.get_index_info("sessions", "session_ttl")
+print(f"Expires after: {info['expire_after_seconds']}s")
+
+# Manually trigger cleanup (normally runs automatically)
+result = client.ttl.run_cleanup("sessions")
+print(f"Deleted {result['deleted']} expired documents")
+
+# List TTL indexes
+indexes = client.ttl.list_indexes("sessions")
+
+# Delete TTL index
+client.ttl.delete_index("sessions", "session_ttl")</code></pre>
+        </div>
+      </section>
+
+      <!-- Columnar -->
+      <section id="columnar" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-violet-500/20 text-violet-400 mr-3">
+            <i class="fas fa-chart-bar text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.columnar</h3>
+          <span class="ml-3 px-2 py-1 bg-violet-500/10 text-violet-400 text-xs rounded">Columnar/Analytics Storage</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python">client.use_database("mydb")
+
+# Create a columnar table (optimized for analytics)
+table = client.columnar.create("metrics", [
+    {"name": "timestamp", "type": "datetime"},
+    {"name": "metric_name", "type": "string"},
+    {"name": "value", "type": "float"},
+    {"name": "tags", "type": "string"}
+])
+
+# Insert rows (batch insert is efficient)
+client.columnar.insert("metrics", [
+    {"timestamp": "2024-01-15T10:00:00Z", "metric_name": "cpu_usage", "value": 45.2, "tags": "server1"},
+    {"timestamp": "2024-01-15T10:01:00Z", "metric_name": "cpu_usage", "value": 47.8, "tags": "server1"},
+    {"timestamp": "2024-01-15T10:00:00Z", "metric_name": "memory", "value": 72.1, "tags": "server1"}
+])
+
+# Query with SQL-like syntax
+results = client.columnar.query("metrics",
+    "SELECT * FROM metrics WHERE value > @min ORDER BY timestamp DESC LIMIT 100",
+    params={"min": 40.0}
+)
+
+# Aggregation
+agg = client.columnar.aggregate("metrics", {
+    "group_by": ["metric_name", "tags"],
+    "metrics": [
+        {"column": "value", "function": "avg"},
+        {"column": "value", "function": "max"},
+        {"column": "value", "function": "min"},
+        {"column": "value", "function": "count"}
+    ],
+    "filters": {"metric_name": "cpu_usage"}  # optional
+})
+
+# Get table statistics
+stats = client.columnar.stats("metrics")
+print(f"Row count: {stats['row_count']}, Size: {stats['size_bytes']}")
+
+# Add a column
+client.columnar.add_column("metrics", "host", "string", default_value="unknown")
+
+# Drop a column
+client.columnar.drop_column("metrics", "host")
+
+# List all columnar tables
+tables = client.columnar.list()
+
+# Delete table
+client.columnar.delete("metrics")</code></pre>
+        </div>
+      </section>
+
+      <!-- Cluster -->
+      <section id="cluster" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 mr-3">
+            <i class="fas fa-network-wired text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.cluster</h3>
+          <span class="ml-3 px-2 py-1 bg-indigo-500/10 text-indigo-400 text-xs rounded">Cluster Management</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python"># Get cluster status
+status = client.cluster.status()
+print(f"Mode: {status['mode']}")  # standalone, cluster
+print(f"Nodes: {status['node_count']}")
+
+# Get detailed cluster info
+info = client.cluster.info()
+
+# Remove a node from cluster
+client.cluster.remove_node("node-id-to-remove")
+
+# Trigger data rebalancing
+client.cluster.rebalance()
+
+# Cleanup orphaned data
+client.cluster.cleanup()
+
+# Reshard cluster
+client.cluster.reshard(num_shards=16)  # new number of shards</code></pre>
+        </div>
+      </section>
+
+      <!-- Collection Operations -->
+      <section id="collection-ops" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 mr-3">
+            <i class="fas fa-database text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.collections_mgmt</h3>
+          <span class="ml-3 px-2 py-1 bg-sky-500/10 text-sky-400 text-xs rounded">Advanced Collection Operations</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-python">client.use_database("mydb")
+
+# Truncate collection (delete all documents)
+client.collections_mgmt.truncate("logs")
+
+# Compact collection (reclaim disk space)
+client.collections_mgmt.compact("users")
+
+# Repair collection (fix inconsistencies)
+client.collections_mgmt.repair("orders")
+
+# Get collection statistics
+stats = client.collections_mgmt.stats("users")
+
+# Set JSON schema validation
+client.collections_mgmt.set_schema("users", {
+    "type": "object",
+    "required": ["name", "email"],
+    "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "email": {"type": "string", "format": "email"},
+        "age": {"type": "integer", "minimum": 0}
+    }
+})
+
+# Get current schema
+schema = client.collections_mgmt.get_schema("users")
+
+# Remove schema validation
+client.collections_mgmt.delete_schema("users")
+
+# Export collection
+data = client.collections_mgmt.export("users", format="json")
+
+# Import data
+client.collections_mgmt.import_data("users_backup", data, format="json")</code></pre>
+        </div>
+      </section>
+
+      <!-- Environment Variables -->
+      <section id="env" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-teal-500/20 text-teal-400 mr-3">
+            <i class="fas fa-cog text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.env</h3>
+          <span class="ml-3 px-2 py-1 bg-teal-500/10 text-teal-400 text-xs rounded">Environment Variables</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-python">client.use_database("mydb")
+
+# List environment variables (for Lua scripts)
+vars = client.env.list()
+
+# Set an environment variable
+client.env.set("API_KEY", "sk-xxx-your-api-key")
+client.env.set("WEBHOOK_URL", "https://example.com/webhook")
+
+# Delete an environment variable
+client.env.delete("OLD_VAR")</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ERROR HANDLING -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 mr-4">
+          <i class="fas fa-exclamation-triangle text-lg"></i>
+        </span>
+        Error Handling
+      </h2>
+
+      <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-6">
+        <pre><code class="language-python">from solidb import Client
+from solidb.exceptions import ConnectionError, ServerError, ProtocolError
+
+try:
+    client = Client("127.0.0.1", 6745)
+    client.connect()
+    client.auth("mydb", "user", "password")
+
+    doc = client.get("mydb", "users", "nonexistent-key")
+
+except ConnectionError as e:
+    # Network/connection issues
+    print(f"Connection failed: {e}")
+
+except ServerError as e:
+    # Server-side errors (not found, validation, etc.)
+    print(f"Server error: {e}")
+
+except ProtocolError as e:
+    # Protocol/serialization errors
+    print(f"Protocol error: {e}")
+
+finally:
+    client.close()</code></pre>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4">
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-red-400 font-semibold mb-2">ConnectionError</h4>
+          <p class="text-sm text-gray-400">Network failures, connection refused, timeouts, disconnections</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-orange-400 font-semibold mb-2">ServerError</h4>
+          <p class="text-sm text-gray-400">Document not found, permission denied, validation errors</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-yellow-400 font-semibold mb-2">ProtocolError</h4>
+          <p class="text-sm text-gray-400">Invalid response format, message too large, serialization issues</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>

@@ -14,6 +14,28 @@ use crate::error::DbError;
 use crate::sdbql::{parse, QueryExecutor};
 use crate::storage::StorageEngine;
 use crate::stream::StreamManager;
+
+/// Maximum allowed regex pattern length to prevent DoS attacks
+const MAX_REGEX_PATTERN_LEN: usize = 1024;
+
+/// Maximum regex compiled size (1MB) to prevent memory exhaustion
+const MAX_REGEX_SIZE: usize = 1 << 20;
+
+/// Create a regex with safety limits to prevent ReDoS attacks.
+fn safe_regex(pattern: &str) -> Result<regex::Regex, String> {
+    if pattern.len() > MAX_REGEX_PATTERN_LEN {
+        return Err(format!(
+            "Regex pattern too long: {} bytes (max {})",
+            pattern.len(),
+            MAX_REGEX_PATTERN_LEN
+        ));
+    }
+
+    regex::RegexBuilder::new(pattern)
+        .size_limit(MAX_REGEX_SIZE)
+        .build()
+        .map_err(|e| e.to_string())
+}
 use futures::{SinkExt, StreamExt};
 
 // Import modules
@@ -1254,10 +1276,11 @@ impl ScriptEngine {
 
         // Extend string library with regex
         if let Ok(string_table) = globals.get::<mlua::Table>("string") {
+            // string.regex(subject, pattern) - Use safe_regex to prevent DoS
             let regex_fn = lua
                 .create_function(|_, (s, pattern): (String, String)| {
-                    let re = regex::Regex::new(&pattern)
-                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                    let re = safe_regex(&pattern)
+                        .map_err(|e| mlua::Error::RuntimeError(e))?;
                     Ok(re.is_match(&s))
                 })
                 .map_err(|e| {
@@ -1268,11 +1291,11 @@ impl ScriptEngine {
                 DbError::InternalError(format!("Failed to set string.regex: {}", e))
             })?;
 
-            // string.regex_replace(subject, pattern, replacement)
+            // string.regex_replace(subject, pattern, replacement) - Use safe_regex to prevent DoS
             let regex_replace_fn = lua
                 .create_function(|_, (s, pattern, replacement): (String, String, String)| {
-                    let re = regex::Regex::new(&pattern)
-                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                    let re = safe_regex(&pattern)
+                        .map_err(|e| mlua::Error::RuntimeError(e))?;
                     Ok(re.replace_all(&s, replacement.as_str()).to_string())
                 })
                 .map_err(|e| {

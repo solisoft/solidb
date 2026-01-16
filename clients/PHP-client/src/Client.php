@@ -10,6 +10,7 @@ class Client
     private $host;
     private $port;
     private $isConnected = false;
+    private ?string $database = null;
 
     // Magic header: "solidb-drv-v1" + null byte
     private const MAGIC_HEADER = "solidb-drv-v1\x00";
@@ -19,6 +20,23 @@ class Client
 
     private $packer = null;
     private $unpacker = null;
+
+    // Sub-clients
+    private ?ScriptsClient $scriptsClient = null;
+    private ?JobsClient $jobsClient = null;
+    private ?CronClient $cronClient = null;
+    private ?TriggersClient $triggersClient = null;
+    private ?EnvClient $envClient = null;
+    private ?RolesClient $rolesClient = null;
+    private ?UsersClient $usersClient = null;
+    private ?ApiKeysClient $apiKeysClient = null;
+    private ?ClusterClient $clusterClient = null;
+    private ?CollectionsOpsClient $collectionsOpsClient = null;
+    private ?IndexesOpsClient $indexesOpsClient = null;
+    private ?GeoClient $geoClient = null;
+    private ?VectorClient $vectorClient = null;
+    private ?TTLClient $ttlClient = null;
+    private ?ColumnarClient $columnarClient = null;
 
     public function __construct(string $host = '127.0.0.1', int $port = 6745)
     {
@@ -34,6 +52,139 @@ class Client
                 throw new \RuntimeException("The 'msgpack' PHP extension or 'rybakit/msgpack' library is required.");
             }
         }
+    }
+
+    // Database context
+    public function useDatabase(string $name): self
+    {
+        $this->database = $name;
+        return $this;
+    }
+
+    public function getDatabase(): ?string
+    {
+        return $this->database;
+    }
+
+    // Sub-client accessors
+    public function scripts(): ScriptsClient
+    {
+        if (!$this->scriptsClient) {
+            $this->scriptsClient = new ScriptsClient($this);
+        }
+        return $this->scriptsClient;
+    }
+
+    public function jobs(): JobsClient
+    {
+        if (!$this->jobsClient) {
+            $this->jobsClient = new JobsClient($this);
+        }
+        return $this->jobsClient;
+    }
+
+    public function cron(): CronClient
+    {
+        if (!$this->cronClient) {
+            $this->cronClient = new CronClient($this);
+        }
+        return $this->cronClient;
+    }
+
+    public function triggers(): TriggersClient
+    {
+        if (!$this->triggersClient) {
+            $this->triggersClient = new TriggersClient($this);
+        }
+        return $this->triggersClient;
+    }
+
+    public function env(): EnvClient
+    {
+        if (!$this->envClient) {
+            $this->envClient = new EnvClient($this);
+        }
+        return $this->envClient;
+    }
+
+    public function roles(): RolesClient
+    {
+        if (!$this->rolesClient) {
+            $this->rolesClient = new RolesClient($this);
+        }
+        return $this->rolesClient;
+    }
+
+    public function users(): UsersClient
+    {
+        if (!$this->usersClient) {
+            $this->usersClient = new UsersClient($this);
+        }
+        return $this->usersClient;
+    }
+
+    public function apiKeys(): ApiKeysClient
+    {
+        if (!$this->apiKeysClient) {
+            $this->apiKeysClient = new ApiKeysClient($this);
+        }
+        return $this->apiKeysClient;
+    }
+
+    public function cluster(): ClusterClient
+    {
+        if (!$this->clusterClient) {
+            $this->clusterClient = new ClusterClient($this);
+        }
+        return $this->clusterClient;
+    }
+
+    public function collectionsOps(): CollectionsOpsClient
+    {
+        if (!$this->collectionsOpsClient) {
+            $this->collectionsOpsClient = new CollectionsOpsClient($this);
+        }
+        return $this->collectionsOpsClient;
+    }
+
+    public function indexesOps(): IndexesOpsClient
+    {
+        if (!$this->indexesOpsClient) {
+            $this->indexesOpsClient = new IndexesOpsClient($this);
+        }
+        return $this->indexesOpsClient;
+    }
+
+    public function geo(): GeoClient
+    {
+        if (!$this->geoClient) {
+            $this->geoClient = new GeoClient($this);
+        }
+        return $this->geoClient;
+    }
+
+    public function vector(): VectorClient
+    {
+        if (!$this->vectorClient) {
+            $this->vectorClient = new VectorClient($this);
+        }
+        return $this->vectorClient;
+    }
+
+    public function ttl(): TTLClient
+    {
+        if (!$this->ttlClient) {
+            $this->ttlClient = new TTLClient($this);
+        }
+        return $this->ttlClient;
+    }
+
+    public function columnar(): ColumnarClient
+    {
+        if (!$this->columnarClient) {
+            $this->columnarClient = new ColumnarClient($this);
+        }
+        return $this->columnarClient;
     }
 
     public function connect(): void
@@ -97,7 +248,8 @@ class Client
         return msgpack_unpack($data);
     }
 
-    private function send(string $cmdName, array $params = []): array
+    // Public for sub-clients to use
+    public function sendCommand(string $cmdName, array $params = []): array
     {
         if (!$this->isConnected) {
             $this->connect();
@@ -217,13 +369,13 @@ class Client
     public function ping(): float
     {
         $start = microtime(true);
-        $this->send('ping');
+        $this->sendCommand('ping');
         return (microtime(true) - $start) * 1000;
     }
 
     public function auth(string $database, string $username, string $password): void
     {
-        $this->send('auth', [
+        $this->sendCommand('auth', [
             'database' => $database,
             'username' => $username,
             'password' => $password
@@ -234,25 +386,25 @@ class Client
 
     public function listDatabases(): array
     {
-        $res = $this->send('list_databases');
+        $res = $this->sendCommand('list_databases');
         return $res['data'] ?? [];
     }
 
     public function createDatabase(string $name): void
     {
-        $this->send('create_database', ['name' => $name]);
+        $this->sendCommand('create_database', ['name' => $name]);
     }
 
     public function deleteDatabase(string $name): void
     {
-        $this->send('delete_database', ['name' => $name]);
+        $this->sendCommand('delete_database', ['name' => $name]);
     }
 
     // --- Collection Operations ---
 
     public function listCollections(string $database): array
     {
-        $res = $this->send('list_collections', ['database' => $database]);
+        $res = $this->sendCommand('list_collections', ['database' => $database]);
         return $res['data'] ?? [];
     }
 
@@ -262,17 +414,17 @@ class Client
         if ($type) {
             $args['type'] = $type;
         }
-        $this->send('create_collection', $args);
+        $this->sendCommand('create_collection', $args);
     }
 
     public function deleteCollection(string $database, string $name): void
     {
-        $this->send('delete_collection', ['database' => $database, 'name' => $name]);
+        $this->sendCommand('delete_collection', ['database' => $database, 'name' => $name]);
     }
 
     public function collectionStats(string $database, string $name): array
     {
-        $res = $this->send('collection_stats', ['database' => $database, 'name' => $name]);
+        $res = $this->sendCommand('collection_stats', ['database' => $database, 'name' => $name]);
         return $res['data'] ?? [];
     }
 
@@ -280,7 +432,7 @@ class Client
 
     public function insert(string $database, string $collection, array $document, ?string $key = null): array
     {
-        $res = $this->send('insert', [
+        $res = $this->sendCommand('insert', [
             'database' => $database,
             'collection' => $collection,
             'document' => $document,
@@ -295,7 +447,7 @@ class Client
     public function get(string $database, string $collection, string $key): ?array
     {
         try {
-            $res = $this->send('get', [
+            $res = $this->sendCommand('get', [
                 'database' => $database,
                 'collection' => $collection,
                 'key' => $key
@@ -310,7 +462,7 @@ class Client
 
     public function update(string $database, string $collection, string $key, array $document, bool $merge = true): void
     {
-        $this->send('update', [
+        $this->sendCommand('update', [
             'database' => $database,
             'collection' => $collection,
             'key' => $key,
@@ -321,7 +473,7 @@ class Client
 
     public function delete(string $database, string $collection, string $key): void
     {
-        $this->send('delete', [
+        $this->sendCommand('delete', [
             'database' => $database,
             'collection' => $collection,
             'key' => $key
@@ -332,7 +484,7 @@ class Client
 
     public function query(string $database, string $sdbql, array $bindVars = []): array
     {
-        $res = $this->send('query', [
+        $res = $this->sendCommand('query', [
             'database' => $database,
             'sdbql' => $sdbql,
             'bind_vars' => (object) $bindVars // Ensure map
@@ -342,7 +494,7 @@ class Client
 
     public function explain(string $database, string $sdbql, array $bindVars = []): array
     {
-        $res = $this->send('explain', [
+        $res = $this->sendCommand('explain', [
             'database' => $database,
             'sdbql' => $sdbql,
             'bind_vars' => (object) $bindVars
@@ -354,7 +506,7 @@ class Client
 
     public function createIndex(string $database, string $collection, string $name, array $fields, bool $unique = false, bool $sparse = false): void
     {
-        $this->send('create_index', [
+        $this->sendCommand('create_index', [
             'database' => $database,
             'collection' => $collection,
             'name' => $name,
@@ -366,7 +518,7 @@ class Client
 
     public function listIndexes(string $database, string $collection): array
     {
-        $res = $this->send('list_indexes', [
+        $res = $this->sendCommand('list_indexes', [
             'database' => $database,
             'collection' => $collection
         ]);
@@ -375,7 +527,7 @@ class Client
 
     public function deleteIndex(string $database, string $collection, string $name): void
     {
-        $this->send('delete_index', [
+        $this->sendCommand('delete_index', [
             'database' => $database,
             'collection' => $collection,
             'name' => $name
@@ -386,7 +538,7 @@ class Client
 
     public function beginTransaction(string $database, string $isolationLevel = 'read_committed'): string
     {
-        $res = $this->send('begin_transaction', [
+        $res = $this->sendCommand('begin_transaction', [
             'database' => $database,
             'isolation_level' => $isolationLevel
         ]);
@@ -395,11 +547,11 @@ class Client
 
     public function commitTransaction(string $txId): void
     {
-        $this->send('commit_transaction', ['tx_id' => $txId]);
+        $this->sendCommand('commit_transaction', ['tx_id' => $txId]);
     }
 
     public function rollbackTransaction(string $txId): void
     {
-        $this->send('rollback_transaction', ['tx_id' => $txId]);
+        $this->sendCommand('rollback_transaction', ['tx_id' => $txId]);
     }
 }

@@ -14,6 +14,30 @@ use crate::sync::log::LogEntry;
 use crate::sync::log::SyncLog;
 use crate::sync::protocol::Operation;
 
+/// Maximum allowed regex pattern length to prevent DoS attacks
+const MAX_REGEX_PATTERN_LEN: usize = 1024;
+
+/// Maximum regex compiled size (1MB) to prevent memory exhaustion
+const MAX_REGEX_SIZE: usize = 1 << 20;
+
+/// Create a regex with safety limits to prevent ReDoS attacks.
+/// While the Rust regex crate is inherently ReDoS-resistant (uses Thompson NFA),
+/// we still limit pattern size and compiled size to prevent memory exhaustion.
+fn safe_regex(pattern: &str) -> Result<regex::Regex, DbError> {
+    if pattern.len() > MAX_REGEX_PATTERN_LEN {
+        return Err(DbError::ExecutionError(format!(
+            "Regex pattern too long: {} bytes (max {})",
+            pattern.len(),
+            MAX_REGEX_PATTERN_LEN
+        )));
+    }
+
+    regex::RegexBuilder::new(pattern)
+        .size_limit(MAX_REGEX_SIZE)
+        .build()
+        .map_err(|e| DbError::ExecutionError(format!("Invalid regex pattern: {}", e)))
+}
+
 /// Convert f64 to serde_json::Number, returning 0 for NaN/Infinity instead of panicking
 fn number_from_f64(f: f64) -> serde_json::Number {
     serde_json::Number::from_f64(f).unwrap_or_else(|| serde_json::Number::from(0))
@@ -5455,8 +5479,9 @@ impl<'a> QueryExecutor<'a> {
                     search_pattern.to_string()
                 };
 
-                let re = regex::Regex::new(&pattern).map_err(|e| {
-                    DbError::ExecutionError(format!("REGEX_REPLACE: invalid regex: {}", e))
+                // Use safe_regex to prevent DoS from malicious patterns
+                let re = safe_regex(&pattern).map_err(|e| {
+                    DbError::ExecutionError(format!("REGEX_REPLACE: {}", e))
                 })?;
 
                 let result = re.replace_all(text, replacement).to_string();
@@ -9774,7 +9799,8 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
             }
             regex_pattern.push('$');
 
-            match regex::Regex::new(&regex_pattern) {
+            // Use safe_regex for size limits (pattern is already escaped so ReDoS risk is low)
+            match safe_regex(&regex_pattern) {
                 Ok(re) => {
                     let is_match = re.is_match(s);
                     if matches!(op, BinaryOperator::NotLike) {
@@ -9791,7 +9817,8 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
             let s = left.as_str().unwrap_or("");
             let pattern = right.as_str().unwrap_or("");
 
-            match regex::Regex::new(pattern) {
+            // Use safe_regex to prevent DoS from malicious patterns
+            match safe_regex(pattern) {
                 Ok(re) => {
                     let is_match = re.is_match(s);
                     if matches!(op, BinaryOperator::NotRegEx) {
@@ -9800,7 +9827,7 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
                         Ok(Value::Bool(is_match))
                     }
                 }
-                Err(_) => Ok(Value::Bool(false)), // Invalid regex results in false
+                Err(_) => Ok(Value::Bool(false)), // Invalid or oversized regex results in false
             }
         }
 

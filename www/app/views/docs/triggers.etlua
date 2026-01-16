@@ -411,17 +411,33 @@ return { success = true }</code></pre>
           </div>
           <div class="p-8 text-gray-300">
             <p class="mb-6">
-              Manage your triggers visually using the <strong>Triggers</strong> section in the database dashboard:
+              Manage your triggers through the modern, intuitive **Triggers** dashboard:
             </p>
-            <ul class="list-disc list-inside space-y-2 ml-4">
-              <li>View all triggers with their collection, events, and status</li>
-              <li>Create new triggers with a form-based interface</li>
-              <li>Edit trigger configuration (name, events, script, queue settings)</li>
-              <li>Toggle triggers enabled/disabled with one click</li>
-              <li>Delete triggers you no longer need</li>
+            <ul class="list-disc list-inside space-y-3 ml-4">
+              <li><strong>Visual Monitoring</strong>: View all triggers with clear status indicators (Active/Paused) and event badges.</li>
+              <li><strong>Quick Actions</strong>: Toggle triggers, edit configuration, or delete them directly from the table view.</li>
+              <li><strong>Refined Creation</strong>: Use the enhanced creation modal with visual event selectors and advanced configuration options (queue, priority, retries).</li>
+              <li><strong>Status Tracking</strong>: Instantly see which collections and scripts are linked to each automation.</li>
             </ul>
 
-            <div class="mt-6 bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4">
+            <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-950/50 p-4 rounded-xl border border-white/5">
+                <div class="flex items-center gap-2 mb-2 text-emerald-400">
+                  <i class="fas fa-plus-circle text-xs"></i>
+                  <span class="text-xs font-bold uppercase">Creation</span>
+                </div>
+                <p class="text-xs text-gray-400">The new creation flow features a multi-column layout and improved field validation.</p>
+              </div>
+              <div class="bg-gray-950/50 p-4 rounded-xl border border-white/5">
+                <div class="flex items-center gap-2 mb-2 text-blue-400">
+                  <i class="fas fa-toggle-on text-xs"></i>
+                  <span class="text-xs font-bold uppercase">Control</span>
+                </div>
+                <p class="text-xs text-gray-400">One-click toggling allows you to pause automations without deleting their configuration.</p>
+              </div>
+            </div>
+
+            <div class="mt-8 bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4">
               <div class="flex items-start">
                 <svg class="w-5 h-5 text-indigo-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 <div>

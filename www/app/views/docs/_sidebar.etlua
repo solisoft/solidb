@@ -102,7 +102,14 @@ local sections = {
       { slug = "architecture", label = "Architecture", icon = "fa-layer-group", color = "info" },
       { slug = "security", label = "Security", icon = "fa-shield-alt", color = "error" },
       { slug = "tooling", label = "CLI Tools", icon = "fa-wrench", color = "warning" },
-      { slug = "clients", label = "Official Clients", icon = "fa-laptop-code", color = "primary" },
+      { slug = "clients", label = "Official Clients", icon = "fa-laptop-code", color = "primary", subitems = {
+        { slug = "clients-go", label = "Go" },
+        { slug = "clients-python", label = "Python" },
+        { slug = "clients-nodejs", label = "Node.js / Bun" },
+        { slug = "clients-php", label = "PHP" },
+        { slug = "clients-ruby", label = "Ruby" },
+        { slug = "clients-elixir", label = "Elixir" },
+      }},
       { slug = "comparison", label = "DB Comparison", icon = "fa-balance-scale", color = "warning" },
     }
   },

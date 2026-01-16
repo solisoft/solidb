@@ -6,11 +6,29 @@ const MAGIC_HEADER = Buffer.from('solidb-drv-v1\0');
 // 16MB limit
 const MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
+// Import sub-clients
+import { ScriptsClient } from './sub-clients/ScriptsClient';
+import { JobsClient } from './sub-clients/JobsClient';
+import { CronClient } from './sub-clients/CronClient';
+import { TriggersClient } from './sub-clients/TriggersClient';
+import { EnvClient } from './sub-clients/EnvClient';
+import { RolesClient } from './sub-clients/RolesClient';
+import { UsersClient } from './sub-clients/UsersClient';
+import { ApiKeysClient } from './sub-clients/ApiKeysClient';
+import { ClusterClient } from './sub-clients/ClusterClient';
+import { CollectionsClient } from './sub-clients/CollectionsClient';
+import { IndexesClient } from './sub-clients/IndexesClient';
+import { GeoClient } from './sub-clients/GeoClient';
+import { VectorClient } from './sub-clients/VectorClient';
+import { TTLClient } from './sub-clients/TTLClient';
+import { ColumnarClient } from './sub-clients/ColumnarClient';
+
 export class Client {
     private socket: net.Socket | null = null;
     private connected: boolean = false;
     private buffer: Buffer = Buffer.alloc(0);
     private nextMessageLength: number | null = null;
+    private _database: string = '';
 
     // Request queue to handle responses in order
     private requestQueue: Array<{
@@ -18,10 +36,44 @@ export class Client {
         reject: (err: any) => void;
     }> = [];
 
+    // Sub-clients
+    public readonly scripts: ScriptsClient;
+    public readonly jobs: JobsClient;
+    public readonly cron: CronClient;
+    public readonly triggers: TriggersClient;
+    public readonly env: EnvClient;
+    public readonly roles: RolesClient;
+    public readonly users: UsersClient;
+    public readonly apiKeys: ApiKeysClient;
+    public readonly cluster: ClusterClient;
+    public readonly collections: CollectionsClient;
+    public readonly indexes: IndexesClient;
+    public readonly geo: GeoClient;
+    public readonly vector: VectorClient;
+    public readonly ttl: TTLClient;
+    public readonly columnar: ColumnarClient;
+
     constructor(
         private host: string = '127.0.0.1',
         private port: number = 6745
-    ) { }
+    ) {
+        // Initialize sub-clients
+        this.scripts = new ScriptsClient(this);
+        this.jobs = new JobsClient(this);
+        this.cron = new CronClient(this);
+        this.triggers = new TriggersClient(this);
+        this.env = new EnvClient(this);
+        this.roles = new RolesClient(this);
+        this.users = new UsersClient(this);
+        this.apiKeys = new ApiKeysClient(this);
+        this.cluster = new ClusterClient(this);
+        this.collections = new CollectionsClient(this);
+        this.indexes = new IndexesClient(this);
+        this.geo = new GeoClient(this);
+        this.vector = new VectorClient(this);
+        this.ttl = new TTLClient(this);
+        this.columnar = new ColumnarClient(this);
+    }
 
     public async connect(): Promise<void> {
         if (this.connected) return;
@@ -149,7 +201,20 @@ export class Client {
         }
     }
 
-    private async sendCommand(cmd: string, args: Record<string, any> = {}): Promise<any> {
+    // --- Database Context ---
+
+    public useDatabase(name: string): this {
+        this._database = name;
+        return this;
+    }
+
+    public get database(): string {
+        return this._database;
+    }
+
+    // --- Internal Command Method (exposed for sub-clients) ---
+
+    public async sendCommand(cmd: string, args: Record<string, any> = {}): Promise<any> {
         if (!this.connected) await this.connect();
 
         return new Promise((resolve, reject) => {

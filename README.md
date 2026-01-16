@@ -41,6 +41,17 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 - 💳 **Transactions** — ACID transactions via X-Transaction-ID header
 - 🖥️ **Web Dashboard** — Built-in admin UI for managing the database
 
+## 📦 Official Clients
+
+SoliDB provides native client libraries for multiple languages. See [**Client Documentation**](docs/CLIENTS.md) for installation and usage details.
+
+- **Node.js** (`solidb-client`)
+- **Python** (`solidb`)
+- **Go** (`solidb-go-client`)
+- **PHP** (`solidb/php-client`)
+- **Ruby** (`solidb`)
+- **Elixir** (`solidb`)
+
 ## 🚀 Quick Start
 
 ```bash

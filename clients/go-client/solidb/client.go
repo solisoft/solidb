@@ -18,11 +18,12 @@ const (
 )
 
 type Client struct {
-	addr string
-	conn net.Conn
-	mu   sync.Mutex
-	br   *bufio.Reader
-	bw   *bufio.Writer
+	addr     string
+	conn     net.Conn
+	mu       sync.Mutex
+	br       *bufio.Reader
+	bw       *bufio.Writer
+	database string
 }
 
 func NewClient(host string, port int) *Client {
@@ -335,4 +336,82 @@ func (c *Client) CommitTransaction(txID interface{}) error {
 func (c *Client) RollbackTransaction(txID interface{}) error {
 	_, err := c.sendCommand("rollback_transaction", map[string]interface{}{"tx_id": txID})
 	return err
+}
+
+// --- Database Context for Management APIs ---
+
+func (c *Client) UseDatabase(name string) *Client {
+	c.database = name
+	return c
+}
+
+func (c *Client) GetDatabase() string {
+	return c.database
+}
+
+// SendCommand exposes the internal sendCommand for sub-clients
+func (c *Client) SendCommand(cmd string, args map[string]interface{}) (interface{}, error) {
+	return c.sendCommand(cmd, args)
+}
+
+// --- Sub-Client Accessors ---
+
+func (c *Client) Scripts() *ScriptsClient {
+	return &ScriptsClient{client: c}
+}
+
+func (c *Client) Jobs() *JobsClient {
+	return &JobsClient{client: c}
+}
+
+func (c *Client) Cron() *CronClient {
+	return &CronClient{client: c}
+}
+
+func (c *Client) Triggers() *TriggersClient {
+	return &TriggersClient{client: c}
+}
+
+func (c *Client) Env() *EnvClient {
+	return &EnvClient{client: c}
+}
+
+func (c *Client) Roles() *RolesClient {
+	return &RolesClient{client: c}
+}
+
+func (c *Client) Users() *UsersClient {
+	return &UsersClient{client: c}
+}
+
+func (c *Client) ApiKeys() *ApiKeysClient {
+	return &ApiKeysClient{client: c}
+}
+
+func (c *Client) Cluster() *ClusterClient {
+	return &ClusterClient{client: c}
+}
+
+func (c *Client) Collections() *CollectionsClient {
+	return &CollectionsClient{client: c}
+}
+
+func (c *Client) Indexes() *IndexesClient {
+	return &IndexesClient{client: c}
+}
+
+func (c *Client) Geo() *GeoClient {
+	return &GeoClient{client: c}
+}
+
+func (c *Client) Vector() *VectorClient {
+	return &VectorClient{client: c}
+}
+
+func (c *Client) TTL() *TTLClient {
+	return &TTLClient{client: c}
+}
+
+func (c *Client) Columnar() *ColumnarClient {
+	return &ColumnarClient{client: c}
 }

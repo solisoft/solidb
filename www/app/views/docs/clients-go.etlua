@@ -1,0 +1,1156 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs/clients" class="inline-flex items-center text-cyan-400 hover:text-cyan-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Clients Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header Section -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg blur opacity-25"></div>
+      <div class="relative flex items-center">
+        <div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-cyan-500 text-white shadow-[0_0_30px_rgba(6,182,212,0.5)] mr-6">
+          <i class="fab fa-golang text-4xl"></i>
+        </div>
+        <div>
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 mb-2 tracking-tight">
+            Go Client
+          </h1>
+          <div class="flex items-center gap-4">
+            <span class="px-3 py-1 bg-cyan-500/10 text-cyan-400 text-xs font-bold uppercase tracking-wider rounded-full border border-cyan-500/20">Official SDK</span>
+            <span class="text-sm text-gray-400">v0.1.0</span>
+            <span class="text-sm text-gray-500">Go 1.18+</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <nav class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+      <h2 class="text-lg font-bold text-white mb-4">Table of Contents</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <h3 class="text-cyan-400 font-semibold mb-2">Getting Started</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#installation" class="hover:text-white transition-colors">Installation</a></li>
+            <li><a href="#quickstart" class="hover:text-white transition-colors">Quick Start</a></li>
+            <li><a href="#connection" class="hover:text-white transition-colors">Connection</a></li>
+            <li><a href="#authentication" class="hover:text-white transition-colors">Authentication</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-cyan-400 font-semibold mb-2">Core Operations</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#databases" class="hover:text-white transition-colors">Databases</a></li>
+            <li><a href="#collections" class="hover:text-white transition-colors">Collections</a></li>
+            <li><a href="#documents" class="hover:text-white transition-colors">Documents</a></li>
+            <li><a href="#queries" class="hover:text-white transition-colors">Queries</a></li>
+            <li><a href="#transactions" class="hover:text-white transition-colors">Transactions</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-cyan-400 font-semibold mb-2">Management APIs</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#scripts" class="hover:text-white transition-colors">Scripts</a></li>
+            <li><a href="#jobs" class="hover:text-white transition-colors">Jobs & Cron</a></li>
+            <li><a href="#triggers" class="hover:text-white transition-colors">Triggers</a></li>
+            <li><a href="#rbac" class="hover:text-white transition-colors">Roles & Users</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-cyan-400 font-semibold mb-2">Advanced Features</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#vector" class="hover:text-white transition-colors">Vector Search</a></li>
+            <li><a href="#geo" class="hover:text-white transition-colors">Geospatial</a></li>
+            <li><a href="#ttl" class="hover:text-white transition-colors">TTL Indexes</a></li>
+            <li><a href="#columnar" class="hover:text-white transition-colors">Columnar Storage</a></li>
+            <li><a href="#cluster" class="hover:text-white transition-colors">Cluster</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- GETTING STARTED -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-500/20 text-cyan-400 mr-4">
+          <i class="fas fa-rocket text-lg"></i>
+        </span>
+        Getting Started
+      </h2>
+
+      <!-- Installation -->
+      <section id="installation" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Installation</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre class="text-cyan-400">go get github.com/solisoft/solidb-go-client</pre>
+        </div>
+        <div class="mt-4 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+          <div class="flex items-start">
+            <i class="fas fa-info-circle text-amber-400 mt-0.5 mr-3"></i>
+            <p class="text-sm text-amber-200">
+              <strong>Requirements:</strong> Go 1.18 or higher. The client uses <code class="bg-gray-800 px-1 rounded">msgpack/v5</code> for binary serialization.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Start -->
+      <section id="quickstart" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Quick Start</h3>
+        <div class="bg-gray-950 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <pre class="relative z-10"><code class="language-go">package main
+
+import (
+    "fmt"
+    "github.com/solisoft/solidb-go-client/solidb"
+)
+
+func main() {
+    // Create client instance
+    client := solidb.NewClient("127.0.0.1", 6745)
+
+    // Establish connection
+    if err := client.Connect(); err != nil {
+        panic(err)
+    }
+    defer client.Close()
+
+    // Authenticate
+    if err := client.Auth("_system", "admin", "password"); err != nil {
+        panic(err)
+    }
+
+    // Set database context (required for sub-clients)
+    client.UseDatabase("mydb")
+
+    // Basic CRUD operations
+    doc, _ := client.Insert("mydb", "users", map[string]interface{}{
+        "name": "Alice",
+        "age":  30,
+    }, nil)
+    fmt.Println("Created:", doc["_key"])
+
+    user, _ := client.Get("mydb", "users", doc["_key"].(string))
+    fmt.Println("Retrieved:", user["name"])
+
+    client.Update("mydb", "users", doc["_key"].(string), map[string]interface{}{
+        "age": 31,
+    }, true)
+
+    // Query with SDBQL
+    results, _ := client.Query("mydb", "FOR u IN users FILTER u.age > @min RETURN u",
+        map[string]interface{}{"min": 25})
+    fmt.Printf("Found %d users\n", len(results))
+
+    // Use management sub-clients
+    scripts, _ := client.Scripts().List()
+    triggers, _ := client.Triggers().List()
+    fmt.Printf("Scripts: %d, Triggers: %d\n", len(scripts), len(triggers))
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Connection -->
+      <section id="connection" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Connection Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">// Initialize with host and port
+client := solidb.NewClient("127.0.0.1", 6745)
+
+// Connect (establishes TCP socket with magic header handshake)
+err := client.Connect()
+if err != nil {
+    log.Fatal("Connection failed:", err)
+}
+
+// Check connection health
+err = client.Ping()
+if err != nil {
+    log.Println("Connection unhealthy:", err)
+}
+
+// Close connection when done
+client.Close()</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">NewClient(host, port)</code></td><td class="px-4 py-3 text-gray-500">*Client</td><td class="px-4 py-3 text-gray-400">Create client instance</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">Connect()</code></td><td class="px-4 py-3 text-gray-500">error</td><td class="px-4 py-3 text-gray-400">Establish TCP connection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">Ping()</code></td><td class="px-4 py-3 text-gray-500">error</td><td class="px-4 py-3 text-gray-400">Check connection health</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">Close()</code></td><td class="px-4 py-3 text-gray-500">error</td><td class="px-4 py-3 text-gray-400">Close connection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">UseDatabase(name)</code></td><td class="px-4 py-3 text-gray-500">*Client</td><td class="px-4 py-3 text-gray-400">Set database context for sub-clients</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Authentication -->
+      <section id="authentication" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Authentication</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-go">// Authenticate with database, username, and password
+err := client.Auth("_system", "admin", "password")
+if err != nil {
+    log.Fatal("Authentication failed:", err)
+}
+
+// Authentication is required for most operations
+// The session remains authenticated until disconnected</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- CORE OPERATIONS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 mr-4">
+          <i class="fas fa-database text-lg"></i>
+        </span>
+        Core Operations
+      </h2>
+
+      <!-- Databases -->
+      <section id="databases" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Database Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">// List all databases
+databases, err := client.ListDatabases()
+// => []string{"_system", "mydb", "testdb"}
+
+// Create a new database
+err = client.CreateDatabase("analytics")
+
+// Delete a database
+err = client.DeleteDatabase("old_db")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">ListDatabases()</code></td><td class="px-4 py-3 text-gray-500">[]string, error</td><td class="px-4 py-3 text-gray-400">List all database names</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">CreateDatabase(name)</code></td><td class="px-4 py-3 text-gray-500">error</td><td class="px-4 py-3 text-gray-400">Create new database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">DeleteDatabase(name)</code></td><td class="px-4 py-3 text-gray-500">error</td><td class="px-4 py-3 text-gray-400">Delete database</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Collections -->
+      <section id="collections" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Collection Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">// List collections in a database
+collections, err := client.ListCollections("mydb")
+// => []string{"users", "orders", "products"}
+
+// Create a document collection
+err = client.CreateCollection("mydb", "products", nil)
+
+// Create an edge collection (for graphs)
+edgeType := "edge"
+err = client.CreateCollection("mydb", "relationships", &edgeType)
+
+// Delete a collection
+err = client.DeleteCollection("mydb", "old_collection")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">ListCollections(db)</code></td><td class="px-4 py-3 text-gray-500">[]string, error</td><td class="px-4 py-3 text-gray-400">List collections in database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">CreateCollection(db, name, *type)</code></td><td class="px-4 py-3 text-gray-500">error</td><td class="px-4 py-3 text-gray-400">Create collection (type: nil/edge)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">DeleteCollection(db, name)</code></td><td class="px-4 py-3 text-gray-500">error</td><td class="px-4 py-3 text-gray-400">Delete collection</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section id="documents" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Document Operations (CRUD)</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">// INSERT - Create a new document
+doc, err := client.Insert("mydb", "users", map[string]interface{}{
+    "name":  "Alice",
+    "email": "alice@example.com",
+    "age":   30,
+}, nil)
+fmt.Println(doc["_key"])  // Auto-generated key
+
+// INSERT with custom key
+customKey := "custom-key-123"
+doc, err = client.Insert("mydb", "users", map[string]interface{}{
+    "name": "Bob",
+}, &customKey)
+
+// GET - Retrieve a document by key
+user, err := client.Get("mydb", "users", "custom-key-123")
+// => map[string]interface{}{"_key": "custom-key-123", "name": "Bob", ...}
+
+// UPDATE - Modify a document (merge = true for partial update)
+err = client.Update("mydb", "users", "custom-key-123", map[string]interface{}{
+    "age": 25,
+}, true)
+
+// UPDATE - Replace entire document (merge = false)
+err = client.Update("mydb", "users", "custom-key-123", map[string]interface{}{
+    "name": "Robert",
+}, false)
+
+// DELETE - Remove a document
+err = client.Delete("mydb", "users", "custom-key-123")
+
+// LIST - Paginated document listing
+docs, err := client.List("mydb", "users", 50, 0)  // limit: 50, offset: 0</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">Insert(db, col, doc, *key)</code></td><td class="px-4 py-3 text-gray-500">map, error</td><td class="px-4 py-3 text-gray-400">Insert document, returns doc with _key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">Get(db, col, key)</code></td><td class="px-4 py-3 text-gray-500">map, error</td><td class="px-4 py-3 text-gray-400">Get document by key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">Update(db, col, key, doc, merge)</code></td><td class="px-4 py-3 text-gray-500">error</td><td class="px-4 py-3 text-gray-400">Update document (merge or replace)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">Delete(db, col, key)</code></td><td class="px-4 py-3 text-gray-500">error</td><td class="px-4 py-3 text-gray-400">Delete document</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">List(db, col, limit, offset)</code></td><td class="px-4 py-3 text-gray-500">[]interface{}, error</td><td class="px-4 py-3 text-gray-400">List documents with pagination</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Queries -->
+      <section id="queries" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SDBQL Queries</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">// Simple query
+users, err := client.Query("mydb", "FOR u IN users RETURN u", nil)
+
+// Query with bind variables (recommended for security)
+results, err := client.Query("mydb", `
+    FOR u IN users
+    FILTER u.age >= @min_age AND u.status == @status
+    SORT u.created_at DESC
+    LIMIT @limit
+    RETURN { name: u.name, email: u.email }
+`, map[string]interface{}{
+    "min_age": 18,
+    "status":  "active",
+    "limit":   100,
+})
+
+// Aggregation query
+stats, err := client.Query("mydb", `
+    FOR u IN users
+    COLLECT status = u.status WITH COUNT INTO count
+    RETURN { status, count }
+`, nil)
+
+// Join query
+orders, err := client.Query("mydb", `
+    FOR o IN orders
+    FOR u IN users FILTER u._key == o.user_id
+    RETURN { order: o, user: u.name }
+`, nil)</code></pre>
+        </div>
+      </section>
+
+      <!-- Transactions -->
+      <section id="transactions" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">ACID Transactions</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">// Begin a transaction
+isolation := "read_committed"
+txID, err := client.BeginTransaction("mydb", &isolation)
+// Isolation levels: read_uncommitted, read_committed, repeatable_read, serializable
+
+if err != nil {
+    log.Fatal(err)
+}
+
+// Perform operations within transaction
+_, err = client.Insert("mydb", "accounts", map[string]interface{}{
+    "id": 1, "balance": 1000,
+}, nil)
+
+_, err = client.Insert("mydb", "accounts", map[string]interface{}{
+    "id": 2, "balance": 500,
+}, nil)
+
+if err != nil {
+    // Rollback on any error
+    client.RollbackTransaction(txID)
+    log.Println("Transaction rolled back:", err)
+} else {
+    // Commit if all operations succeed
+    err = client.CommitTransaction(txID)
+    if err != nil {
+        log.Println("Commit failed:", err)
+    } else {
+        log.Println("Transaction committed successfully")
+    }
+}</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">BeginTransaction(db, *isolation)</code></td><td class="px-4 py-3 text-gray-500">interface{}, error</td><td class="px-4 py-3 text-gray-400">Start transaction, returns tx_id</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">CommitTransaction(txID)</code></td><td class="px-4 py-3 text-gray-500">error</td><td class="px-4 py-3 text-gray-400">Commit transaction</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">RollbackTransaction(txID)</code></td><td class="px-4 py-3 text-gray-500">error</td><td class="px-4 py-3 text-gray-400">Rollback transaction</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MANAGEMENT SUB-CLIENTS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-4 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 mr-4">
+          <i class="fas fa-cubes text-lg"></i>
+        </span>
+        Management Sub-Clients
+      </h2>
+      <p class="text-gray-400 mb-8">
+        Sub-clients provide namespaced access to management APIs.
+        <strong class="text-white">Important:</strong> Call <code class="text-cyan-400">UseDatabase(name)</code> first to set the database context.
+      </p>
+
+      <!-- Scripts -->
+      <section id="scripts" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 mr-3">
+            <i class="fas fa-scroll text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.Scripts()</h3>
+          <span class="ml-3 px-2 py-1 bg-purple-500/10 text-purple-400 text-xs rounded">Lua Script Endpoints</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">client.UseDatabase("mydb")
+
+// Create a Lua script endpoint
+script, err := client.Scripts().Create(
+    "hello",                        // name
+    "/api/hello",                   // path
+    []string{"GET", "POST"},        // methods
+    `return { message = "Hello!" }`, // code
+    nil,                            // description (optional)
+    nil,                            // collection (optional)
+)
+fmt.Println("Created script:", script["_key"])
+
+// List all scripts
+scripts, err := client.Scripts().List()
+for _, s := range scripts {
+    sm := s.(map[string]interface{})
+    fmt.Printf("%s -> %s\n", sm["name"], sm["path"])
+}
+
+// Get a specific script
+script, err := client.Scripts().Get("script_key")
+
+// Update script
+err = client.Scripts().Update("script_key", map[string]interface{}{
+    "code":    `return { message = "Updated!" }`,
+    "methods": []string{"GET"},
+})
+
+// Delete a script
+err = client.Scripts().Delete("script_key")
+
+// Get execution statistics
+stats, err := client.Scripts().GetStats()</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Parameters</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-purple-400">Create</code></td><td class="px-4 py-3 text-gray-500">name, path, methods, code, *desc, *col</td><td class="px-4 py-3 text-gray-400">Create Lua endpoint</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">List()</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">List all scripts</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">Get(scriptID)</code></td><td class="px-4 py-3 text-gray-500">scriptID</td><td class="px-4 py-3 text-gray-400">Get script details</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">Update(scriptID, updates)</code></td><td class="px-4 py-3 text-gray-500">scriptID, map</td><td class="px-4 py-3 text-gray-400">Update script properties</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">Delete(scriptID)</code></td><td class="px-4 py-3 text-gray-500">scriptID</td><td class="px-4 py-3 text-gray-400">Delete script</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">GetStats()</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">Execution statistics</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Jobs & Cron -->
+      <section id="jobs" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-green-500/20 text-green-400 mr-3">
+            <i class="fas fa-tasks text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.Jobs() & client.Cron()</h3>
+          <span class="ml-3 px-2 py-1 bg-green-500/10 text-green-400 text-xs rounded">Background Processing</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">client.UseDatabase("mydb")
+
+// === JOBS ===
+
+// List all queues
+queues, _ := client.Jobs().ListQueues()
+// => [{"name": "default", "pending": 5, "running": 2}, ...]
+
+// List jobs in a queue with filters
+jobs, _ := client.Jobs().ListJobs(
+    "default",  // queue name
+    nil,        // status filter (pending, running, completed, failed)
+    nil,        // limit
+    nil,        // offset
+)
+
+// Enqueue a new job
+job, _ := client.Jobs().Enqueue(
+    "default",                              // queue name
+    "/scripts/process-order",               // script path
+    map[string]interface{}{"order_id": 123}, // params
+    nil,                                    // priority (higher = more urgent)
+    nil,                                    // run_at (ISO8601 for delayed)
+)
+fmt.Println("Job ID:", job["_key"])
+
+// Get job details
+job, _ = client.Jobs().GetJob("job_id")
+fmt.Println("Status:", job["status"])
+
+// Cancel a pending job
+client.Jobs().Cancel("job_id")
+
+// === CRON ===
+
+// List scheduled jobs
+crons, _ := client.Cron().List()
+
+// Create a cron job
+cron, _ := client.Cron().Create(
+    "daily-cleanup",            // name
+    "0 2 * * *",                // schedule (every day at 2 AM)
+    "/scripts/cleanup",         // script path
+    nil,                        // params
+    nil,                        // description
+)
+
+// Update cron schedule
+client.Cron().Update("cron_id", map[string]interface{}{
+    "schedule": "0 3 * * *",    // change to 3 AM
+})
+
+// Delete cron job
+client.Cron().Delete("cron_id")</code></pre>
+        </div>
+      </section>
+
+      <!-- Triggers -->
+      <section id="triggers" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 mr-3">
+            <i class="fas fa-bolt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.Triggers()</h3>
+          <span class="ml-3 px-2 py-1 bg-orange-500/10 text-orange-400 text-xs rounded">Database Triggers</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">client.UseDatabase("mydb")
+
+// List all triggers
+triggers, _ := client.Triggers().List()
+
+// List triggers for a specific collection
+triggers, _ = client.Triggers().ListByCollection("users")
+
+// Create a trigger
+trigger, _ := client.Triggers().Create(
+    "on_user_created",              // name
+    "users",                        // collection
+    "insert",                       // operation: insert, update, delete
+    "/scripts/on-user-create",      // script path
+    nil,                            // description
+)
+
+// Get trigger details
+trigger, _ = client.Triggers().Get("trigger_id")
+
+// Update trigger
+client.Triggers().Update("trigger_id", map[string]interface{}{
+    "script_path": "/scripts/new-handler",
+    "enabled":     false,
+})
+
+// Toggle trigger on/off
+client.Triggers().Toggle("trigger_id")
+
+// Delete trigger
+client.Triggers().Delete("trigger_id")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Event</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-orange-400">insert</code></td><td class="px-4 py-3 text-gray-400">Fires on document creation</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-orange-400">update</code></td><td class="px-4 py-3 text-gray-400">Fires on document modification</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-orange-400">delete</code></td><td class="px-4 py-3 text-gray-400">Fires on document removal</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- RBAC: Roles & Users -->
+      <section id="rbac" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/20 text-red-400 mr-3">
+            <i class="fas fa-user-shield text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.Roles() & client.Users()</h3>
+          <span class="ml-3 px-2 py-1 bg-red-500/10 text-red-400 text-xs rounded">Role-Based Access Control</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">// === ROLES ===
+
+// List all roles
+roles, _ := client.Roles().List()
+
+// Create a role with permissions
+role, _ := client.Roles().Create(
+    "editor",
+    []map[string]interface{}{
+        {"action": "read", "scope": "database", "database": "mydb"},
+        {"action": "write", "scope": "collection", "database": "mydb", "collection": "articles"},
+        {"action": "execute", "scope": "script", "database": "mydb"},
+    },
+    nil,  // description
+)
+
+// Get role details
+role, _ = client.Roles().Get("editor")
+
+// Update role permissions
+client.Roles().Update("editor", []map[string]interface{}{
+    {"action": "read", "scope": "database", "database": "mydb"},
+    {"action": "write", "scope": "database", "database": "mydb"},
+}, nil)
+
+// Delete role
+client.Roles().Delete("editor")
+
+// === USERS ===
+
+// List all users
+users, _ := client.Users().List()
+
+// Create a user
+user, _ := client.Users().Create("john", "secure_password", nil)
+
+// Get user's assigned roles
+roles, _ := client.Users().GetRoles("john")
+
+// Assign a role to user
+client.Users().AssignRole("john", "editor")
+
+// Revoke a role from user
+client.Users().RevokeRole("john", "editor")
+
+// Get current authenticated user
+me, _ := client.Users().Me()
+
+// Get current user's permissions
+permissions, _ := client.Users().MyPermissions()
+
+// Delete user
+client.Users().Delete("john")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Action</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Scopes</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-red-400">read</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Read documents and query</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">write</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Create, update, delete documents</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">admin</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Manage indexes, schema, etc.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">execute</code></td><td class="px-4 py-3 text-gray-500">script</td><td class="px-4 py-3 text-gray-400">Execute Lua scripts</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- API Keys -->
+      <section id="apikeys" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 mr-3">
+            <i class="fas fa-key text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.ApiKeys()</h3>
+          <span class="ml-3 px-2 py-1 bg-amber-500/10 text-amber-400 text-xs rounded">API Key Management</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">// Create API key
+key, _ := client.ApiKeys().Create(
+    "my-api-key",             // name
+    []string{"mydb"},         // databases
+    nil,                      // expiration
+)
+fmt.Println("API Key:", key["key"])  // Save this! Only shown once
+
+// List all API keys
+keys, _ := client.ApiKeys().List()
+
+// Delete API key
+client.ApiKeys().Delete("key_id")</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ADVANCED FEATURES -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-pink-500/20 text-pink-400 mr-4">
+          <i class="fas fa-brain text-lg"></i>
+        </span>
+        Advanced Features
+      </h2>
+
+      <!-- Vector Search -->
+      <section id="vector" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-pink-500/20 text-pink-400 mr-3">
+            <i class="fas fa-brain text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.Vector()</h3>
+          <span class="ml-3 px-2 py-1 bg-pink-500/10 text-pink-400 text-xs rounded">Vector Search & AI</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">client.UseDatabase("mydb")
+
+// Create a vector index
+metric := "cosine"  // cosine, euclidean, dot_product
+idx, _ := client.Vector().CreateIndex(
+    "products",             // collection
+    "product_embeddings",   // index name
+    "embedding",            // field
+    1536,                   // dimensions
+    &metric,
+)
+
+// Search by vector (semantic search)
+embedding := getEmbedding("wireless headphones")  // Your embedding function
+results, _ := client.Vector().Search(
+    "products",
+    embedding,
+    10,     // limit
+    nil,    // filter
+)
+
+for _, r := range results {
+    rm := r.(map[string]interface{})
+    doc := rm["doc"].(map[string]interface{})
+    fmt.Printf("%s - Score: %v\n", doc["name"], rm["score"])
+}
+
+// Search by existing document (find similar)
+similar, _ := client.Vector().SearchByDocument(
+    "products",
+    "product-123",      // doc key
+    "embedding",        // field
+    5,                  // limit
+    nil,                // filter
+)
+
+// Quantize index (reduce memory usage)
+client.Vector().Quantize("products", "product_embeddings", "binary")
+
+// Dequantize (restore full precision)
+client.Vector().Dequantize("products", "product_embeddings")
+
+// List vector indexes
+indexes, _ := client.Vector().ListIndexes("products")
+
+// Delete index
+client.Vector().DeleteIndex("products", "product_embeddings")</code></pre>
+        </div>
+      </section>
+
+      <!-- Geo -->
+      <section id="geo" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 mr-3">
+            <i class="fas fa-map-marker-alt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.Geo()</h3>
+          <span class="ml-3 px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded">Geospatial Queries</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">client.UseDatabase("mydb")
+
+// Create a geo index
+idx, _ := client.Geo().CreateIndex("stores", "location_idx", "location")
+
+// Find nearby locations (radius search)
+nearby, _ := client.Geo().Near(
+    "stores",
+    48.8566,    // latitude
+    2.3522,     // longitude
+    5000,       // radius in meters
+    20,         // limit
+)
+
+for _, r := range nearby {
+    rm := r.(map[string]interface{})
+    doc := rm["doc"].(map[string]interface{})
+    fmt.Printf("%s - %vm away\n", doc["name"], rm["distance"])
+}
+
+// Find within polygon
+polygon := [][]float64{
+    {48.8, 2.3}, {48.9, 2.4}, {48.85, 2.35}, {48.8, 2.3},
+}
+within, _ := client.Geo().Within("stores", polygon, nil)
+
+// List geo indexes
+indexes, _ := client.Geo().ListIndexes("stores")
+
+// Delete index
+client.Geo().DeleteIndex("stores", "location_idx")</code></pre>
+        </div>
+      </section>
+
+      <!-- TTL -->
+      <section id="ttl" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 mr-3">
+            <i class="fas fa-hourglass-half text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.TTL()</h3>
+          <span class="ml-3 px-2 py-1 bg-rose-500/10 text-rose-400 text-xs rounded">Time-To-Live Indexes</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">client.UseDatabase("mydb")
+
+// Create TTL index (auto-expire documents after 1 hour)
+idx, _ := client.TTL().CreateIndex(
+    "sessions",
+    "session_ttl",
+    "created_at",       // DateTime field to check
+    3600,               // expire after seconds
+)
+
+// Update expiration time
+client.TTL().UpdateExpiration("sessions", "session_ttl", 7200)  // 2 hours
+
+// Get index info
+info, _ := client.TTL().GetIndexInfo("sessions", "session_ttl")
+fmt.Printf("Expires after: %vs\n", info["expire_after_seconds"])
+
+// Manually trigger cleanup (normally runs automatically)
+client.TTL().RunCleanup("sessions")
+
+// List TTL indexes
+indexes, _ := client.TTL().ListIndexes("sessions")
+
+// Delete TTL index
+client.TTL().DeleteIndex("sessions", "session_ttl")</code></pre>
+        </div>
+      </section>
+
+      <!-- Columnar -->
+      <section id="columnar" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-violet-500/20 text-violet-400 mr-3">
+            <i class="fas fa-chart-bar text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.Columnar()</h3>
+          <span class="ml-3 px-2 py-1 bg-violet-500/10 text-violet-400 text-xs rounded">Columnar/Analytics Storage</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">client.UseDatabase("mydb")
+
+// Create a columnar table (optimized for analytics)
+table, _ := client.Columnar().Create("metrics", []map[string]interface{}{
+    {"name": "timestamp", "type": "datetime"},
+    {"name": "metric_name", "type": "string"},
+    {"name": "value", "type": "float"},
+    {"name": "tags", "type": "string"},
+})
+
+// Insert rows (batch insert is efficient)
+client.Columnar().Insert("metrics", []map[string]interface{}{
+    {"timestamp": "2024-01-15T10:00:00Z", "metric_name": "cpu_usage", "value": 45.2, "tags": "server1"},
+    {"timestamp": "2024-01-15T10:01:00Z", "metric_name": "cpu_usage", "value": 47.8, "tags": "server1"},
+})
+
+// Query with SQL-like syntax
+results, _ := client.Columnar().Query("metrics",
+    "SELECT * FROM metrics WHERE value > @min ORDER BY timestamp DESC LIMIT 100",
+    map[string]interface{}{"min": 40.0},
+)
+
+// Aggregation
+agg, _ := client.Columnar().Aggregate("metrics", map[string]interface{}{
+    "group_by": []string{"metric_name", "tags"},
+    "metrics": []map[string]interface{}{
+        {"column": "value", "function": "avg"},
+        {"column": "value", "function": "max"},
+        {"column": "value", "function": "count"},
+    },
+})
+
+// Get table statistics
+stats, _ := client.Columnar().Stats("metrics")
+fmt.Printf("Row count: %v\n", stats["row_count"])
+
+// Add a column
+client.Columnar().AddColumn("metrics", "host", "string", nil)
+
+// Drop a column
+client.Columnar().DropColumn("metrics", "host")
+
+// List all columnar tables
+tables, _ := client.Columnar().List()
+
+// Delete table
+client.Columnar().Delete("metrics")</code></pre>
+        </div>
+      </section>
+
+      <!-- Cluster -->
+      <section id="cluster" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 mr-3">
+            <i class="fas fa-network-wired text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.Cluster()</h3>
+          <span class="ml-3 px-2 py-1 bg-indigo-500/10 text-indigo-400 text-xs rounded">Cluster Management</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">// Get cluster status
+status, _ := client.Cluster().Status()
+fmt.Printf("Mode: %v\n", status["mode"])       // standalone, cluster
+fmt.Printf("Nodes: %v\n", status["node_count"])
+
+// Get detailed cluster info
+info, _ := client.Cluster().Info()
+
+// Remove a node from cluster
+client.Cluster().RemoveNode("node-id-to-remove")
+
+// Trigger data rebalancing
+client.Cluster().Rebalance()
+
+// Cleanup orphaned data
+client.Cluster().Cleanup()
+
+// Reshard cluster
+client.Cluster().Reshard(nil)  // or specify new shard count</code></pre>
+        </div>
+      </section>
+
+      <!-- Collection Operations -->
+      <section id="collection-ops" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 mr-3">
+            <i class="fas fa-database text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.Collections()</h3>
+          <span class="ml-3 px-2 py-1 bg-sky-500/10 text-sky-400 text-xs rounded">Advanced Collection Operations</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-go">client.UseDatabase("mydb")
+
+// Truncate collection (delete all documents)
+client.Collections().Truncate("logs")
+
+// Compact collection (reclaim disk space)
+client.Collections().Compact("users")
+
+// Repair collection (fix inconsistencies)
+client.Collections().Repair("orders")
+
+// Get collection statistics
+stats, _ := client.Collections().Stats("users")
+
+// Set JSON schema validation
+client.Collections().SetSchema("users", map[string]interface{}{
+    "type":     "object",
+    "required": []string{"name", "email"},
+    "properties": map[string]interface{}{
+        "name":  map[string]interface{}{"type": "string", "minLength": 1},
+        "email": map[string]interface{}{"type": "string", "format": "email"},
+    },
+})
+
+// Get current schema
+schema, _ := client.Collections().GetSchema("users")
+
+// Remove schema validation
+client.Collections().DeleteSchema("users")
+
+// Export collection
+data, _ := client.Collections().Export("users", nil)
+
+// Import data
+client.Collections().Import("users_backup", data, nil)</code></pre>
+        </div>
+      </section>
+
+      <!-- Environment Variables -->
+      <section id="env" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-teal-500/20 text-teal-400 mr-3">
+            <i class="fas fa-cog text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.Env()</h3>
+          <span class="ml-3 px-2 py-1 bg-teal-500/10 text-teal-400 text-xs rounded">Environment Variables</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-go">client.UseDatabase("mydb")
+
+// List environment variables (for Lua scripts)
+vars, _ := client.Env().List()
+
+// Set an environment variable
+client.Env().Set("API_KEY", "sk-xxx-your-api-key")
+client.Env().Set("WEBHOOK_URL", "https://example.com/webhook")
+
+// Delete an environment variable
+client.Env().Delete("OLD_VAR")</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ERROR HANDLING -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 mr-4">
+          <i class="fas fa-exclamation-triangle text-lg"></i>
+        </span>
+        Error Handling
+      </h2>
+
+      <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-6">
+        <pre><code class="language-go">package main
+
+import (
+    "errors"
+    "log"
+    "github.com/solisoft/solidb-go-client/solidb"
+)
+
+func main() {
+    client := solidb.NewClient("127.0.0.1", 6745)
+
+    err := client.Connect()
+    if err != nil {
+        var connErr *solidb.ConnectionError
+        if errors.As(err, &connErr) {
+            log.Fatal("Connection failed:", connErr.Message)
+        }
+    }
+    defer client.Close()
+
+    err = client.Auth("mydb", "user", "password")
+    if err != nil {
+        var serverErr *solidb.ServerError
+        if errors.As(err, &serverErr) {
+            log.Println("Server error:", serverErr.Message)
+        }
+    }
+
+    doc, err := client.Get("mydb", "users", "nonexistent-key")
+    if err != nil {
+        var serverErr *solidb.ServerError
+        var protoErr *solidb.ProtocolError
+
+        switch {
+        case errors.As(err, &serverErr):
+            log.Println("Document not found or other server error:", serverErr.Message)
+        case errors.As(err, &protoErr):
+            log.Println("Protocol error:", protoErr.Message)
+        default:
+            log.Println("Unknown error:", err)
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4">
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-red-400 font-semibold mb-2">ConnectionError</h4>
+          <p class="text-sm text-gray-400">Network failures, connection refused, timeouts, disconnections</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-orange-400 font-semibold mb-2">ServerError</h4>
+          <p class="text-sm text-gray-400">Document not found, permission denied, validation errors</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-yellow-400 font-semibold mb-2">ProtocolError</h4>
+          <p class="text-sm text-gray-400">Invalid response format, message too large, serialization issues</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>

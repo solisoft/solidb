@@ -1,0 +1,1299 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs/clients" class="inline-flex items-center text-purple-400 hover:text-purple-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Clients Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header Section -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-lg blur opacity-25"></div>
+      <div class="relative flex items-center">
+        <div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-purple-500 text-white shadow-[0_0_30px_rgba(168,85,247,0.5)] mr-6">
+          <i class="fab fa-php text-4xl"></i>
+        </div>
+        <div>
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-indigo-400 mb-2 tracking-tight">
+            PHP Client
+          </h1>
+          <div class="flex items-center gap-4">
+            <span class="px-3 py-1 bg-purple-500/10 text-purple-400 text-xs font-bold uppercase tracking-wider rounded-full border border-purple-500/20">Official SDK</span>
+            <span class="text-sm text-gray-400">v0.1.0</span>
+            <span class="text-sm text-gray-500">PHP 8.0+</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <nav class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+      <h2 class="text-lg font-bold text-white mb-4">Table of Contents</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <h3 class="text-purple-400 font-semibold mb-2">Getting Started</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#installation" class="hover:text-white transition-colors">Installation</a></li>
+            <li><a href="#quickstart" class="hover:text-white transition-colors">Quick Start</a></li>
+            <li><a href="#connection" class="hover:text-white transition-colors">Connection</a></li>
+            <li><a href="#authentication" class="hover:text-white transition-colors">Authentication</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-purple-400 font-semibold mb-2">Core Operations</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#databases" class="hover:text-white transition-colors">Databases</a></li>
+            <li><a href="#collections" class="hover:text-white transition-colors">Collections</a></li>
+            <li><a href="#documents" class="hover:text-white transition-colors">Documents</a></li>
+            <li><a href="#queries" class="hover:text-white transition-colors">Queries</a></li>
+            <li><a href="#transactions" class="hover:text-white transition-colors">Transactions</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-purple-400 font-semibold mb-2">Management APIs</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#scripts" class="hover:text-white transition-colors">Scripts</a></li>
+            <li><a href="#jobs" class="hover:text-white transition-colors">Jobs & Cron</a></li>
+            <li><a href="#triggers" class="hover:text-white transition-colors">Triggers</a></li>
+            <li><a href="#rbac" class="hover:text-white transition-colors">Roles & Users</a></li>
+            <li><a href="#api-keys" class="hover:text-white transition-colors">API Keys</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-purple-400 font-semibold mb-2">Advanced Features</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#vector" class="hover:text-white transition-colors">Vector Search</a></li>
+            <li><a href="#geo" class="hover:text-white transition-colors">Geospatial</a></li>
+            <li><a href="#ttl" class="hover:text-white transition-colors">TTL Indexes</a></li>
+            <li><a href="#columnar" class="hover:text-white transition-colors">Columnar Storage</a></li>
+            <li><a href="#cluster" class="hover:text-white transition-colors">Cluster</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- GETTING STARTED -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 mr-4">
+          <i class="fas fa-rocket text-lg"></i>
+        </span>
+        Getting Started
+      </h2>
+
+      <!-- Installation -->
+      <section id="installation" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Installation</h3>
+        <div class="grid md:grid-cols-2 gap-4">
+          <div>
+            <p class="text-gray-400 text-sm mb-2">Using Composer:</p>
+            <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+              <pre class="text-purple-400">composer require solidb/php-client</pre>
+            </div>
+          </div>
+          <div>
+            <p class="text-gray-400 text-sm mb-2">In composer.json:</p>
+            <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+              <pre class="text-purple-400">"require": {
+    "solidb/php-client": "^0.1.0"
+}</pre>
+            </div>
+          </div>
+        </div>
+        <div class="mt-4 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+          <div class="flex items-start">
+            <i class="fas fa-info-circle text-amber-400 mt-0.5 mr-3"></i>
+            <p class="text-sm text-amber-200">
+              <strong>Requirements:</strong> PHP 8.0 or higher. The client requires either the <code class="bg-gray-800 px-1 rounded">msgpack</code> PHP extension or the <code class="bg-gray-800 px-1 rounded">rybakit/msgpack</code> library for binary serialization.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Start -->
+      <section id="quickstart" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Quick Start</h3>
+        <div class="bg-gray-950 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <pre class="relative z-10"><code class="language-php">&lt;?php
+use SoliDB\Client;
+
+// Create client instance
+$client = new Client('127.0.0.1', 6745);
+
+// Connect to server (auto-connects if not called)
+$client->connect();
+
+// Authenticate
+$client->auth('_system', 'admin', 'password');
+
+// Set database context (required for sub-clients)
+$client->useDatabase('mydb');
+
+// Basic CRUD operations
+$doc = $client->insert('mydb', 'users', ['name' => 'Alice', 'age' => 30]);
+echo "Created: " . $doc['_key'] . "\n";
+
+$user = $client->get('mydb', 'users', $doc['_key']);
+echo "Retrieved: " . $user['name'] . "\n";
+
+$client->update('mydb', 'users', $doc['_key'], ['age' => 31]);
+
+// Query with SDBQL
+$results = $client->query('mydb', 'FOR u IN users FILTER u.age > @min RETURN u', ['min' => 25]);
+echo "Found " . count($results) . " users\n";
+
+// Use management sub-clients
+$scripts = $client->scripts()->list();
+$triggers = $client->triggers()->list();
+
+// Clean up
+$client->close();</code></pre>
+        </div>
+      </section>
+
+      <!-- Connection -->
+      <section id="connection" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Connection Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">// Initialize with host and port
+$client = new Client('127.0.0.1', 6745);
+
+// Connect (establishes TCP socket with binary protocol)
+$client->connect();
+
+// Check connection latency (returns ms)
+$latency = $client->ping();
+echo "Latency: " . round($latency, 2) . "ms\n";
+
+// Close connection when done
+$client->close();</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-purple-400">new Client($host, $port)</code></td><td class="px-4 py-3 text-gray-500">Client</td><td class="px-4 py-3 text-gray-400">Create client instance</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">connect()</code></td><td class="px-4 py-3 text-gray-500">void</td><td class="px-4 py-3 text-gray-400">Establish TCP connection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">ping()</code></td><td class="px-4 py-3 text-gray-500">float</td><td class="px-4 py-3 text-gray-400">Latency in milliseconds</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">close()</code></td><td class="px-4 py-3 text-gray-500">void</td><td class="px-4 py-3 text-gray-400">Close connection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">useDatabase($name)</code></td><td class="px-4 py-3 text-gray-500">self</td><td class="px-4 py-3 text-gray-400">Set database context for sub-clients</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">getDatabase()</code></td><td class="px-4 py-3 text-gray-500">?string</td><td class="px-4 py-3 text-gray-400">Get current database context</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Authentication -->
+      <section id="authentication" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Authentication</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-php">// Authenticate with database, username, and password
+$client->auth('_system', 'admin', 'password');
+
+// Authentication is required for most operations
+// The session remains authenticated until disconnected
+
+// Authenticate to a specific database
+$client->auth('mydb', 'myuser', 'userpassword');</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- CORE OPERATIONS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 mr-4">
+          <i class="fas fa-database text-lg"></i>
+        </span>
+        Core Operations
+      </h2>
+
+      <!-- Databases -->
+      <section id="databases" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Database Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">// List all databases
+$databases = $client->listDatabases();
+// => ["_system", "mydb", "testdb"]
+
+// Create a new database
+$client->createDatabase('analytics');
+
+// Delete a database
+$client->deleteDatabase('old_db');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">listDatabases()</code></td><td class="px-4 py-3 text-gray-500">array</td><td class="px-4 py-3 text-gray-400">List all database names</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">createDatabase($name)</code></td><td class="px-4 py-3 text-gray-500">void</td><td class="px-4 py-3 text-gray-400">Create new database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">deleteDatabase($name)</code></td><td class="px-4 py-3 text-gray-500">void</td><td class="px-4 py-3 text-gray-400">Delete database</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Collections -->
+      <section id="collections" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Collection Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">// List collections in a database
+$collections = $client->listCollections('mydb');
+// => [["name" => "users", "type" => "document"], ...]
+
+// Create a document collection
+$client->createCollection('mydb', 'products');
+
+// Create an edge collection (for graphs)
+$client->createCollection('mydb', 'relationships', 'edge');
+
+// Get collection statistics
+$stats = $client->collectionStats('mydb', 'users');
+// => ["count" => 1523, "size" => 245760, ...]
+
+// Delete a collection
+$client->deleteCollection('mydb', 'old_collection');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">listCollections($db)</code></td><td class="px-4 py-3 text-gray-500">array</td><td class="px-4 py-3 text-gray-400">List collections in database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">createCollection($db, $name, $type = null)</code></td><td class="px-4 py-3 text-gray-500">void</td><td class="px-4 py-3 text-gray-400">Create collection (type: document/edge)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">collectionStats($db, $name)</code></td><td class="px-4 py-3 text-gray-500">array</td><td class="px-4 py-3 text-gray-400">Get collection statistics</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">deleteCollection($db, $name)</code></td><td class="px-4 py-3 text-gray-500">void</td><td class="px-4 py-3 text-gray-400">Delete collection</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section id="documents" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Document Operations (CRUD)</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">// INSERT - Create a new document
+$doc = $client->insert('mydb', 'users', [
+    'name' => 'Alice',
+    'email' => 'alice@example.com',
+    'age' => 30
+]);
+echo $doc['_key'];  // Auto-generated key
+
+// INSERT with custom key
+$doc = $client->insert('mydb', 'users', ['name' => 'Bob'], 'custom-key-123');
+
+// GET - Retrieve a document by key
+$user = $client->get('mydb', 'users', 'custom-key-123');
+// => ["_key" => "custom-key-123", "name" => "Bob", ...]
+
+// UPDATE - Modify a document (merge by default)
+$client->update('mydb', 'users', 'custom-key-123', ['age' => 25]);
+
+// UPDATE - Replace entire document (merge = false)
+$client->update('mydb', 'users', 'custom-key-123', ['name' => 'Robert'], false);
+
+// DELETE - Remove a document
+$client->delete('mydb', 'users', 'custom-key-123');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">insert($db, $col, $doc, $key = null)</code></td><td class="px-4 py-3 text-gray-500">array</td><td class="px-4 py-3 text-gray-400">Insert document, returns doc with _key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">get($db, $col, $key)</code></td><td class="px-4 py-3 text-gray-500">?array</td><td class="px-4 py-3 text-gray-400">Get document by key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">update($db, $col, $key, $doc, $merge = true)</code></td><td class="px-4 py-3 text-gray-500">void</td><td class="px-4 py-3 text-gray-400">Update document (merge or replace)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">delete($db, $col, $key)</code></td><td class="px-4 py-3 text-gray-500">void</td><td class="px-4 py-3 text-gray-400">Delete document</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Queries -->
+      <section id="queries" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SDBQL Queries</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">// Simple query
+$users = $client->query('mydb', 'FOR u IN users RETURN u');
+
+// Query with bind variables (recommended for security)
+$results = $client->query('mydb', '
+    FOR u IN users
+    FILTER u.age >= @min_age AND u.status == @status
+    SORT u.created_at DESC
+    LIMIT @limit
+    RETURN { name: u.name, email: u.email }
+', [
+    'min_age' => 18,
+    'status' => 'active',
+    'limit' => 100
+]);
+
+// Aggregation query
+$stats = $client->query('mydb', '
+    FOR u IN users
+    COLLECT status = u.status WITH COUNT INTO count
+    RETURN { status, count }
+');
+
+// Join query
+$orders = $client->query('mydb', '
+    FOR o IN orders
+    FOR u IN users FILTER u._key == o.user_id
+    RETURN { order: o, user: u.name }
+');
+
+// Explain query plan (for optimization)
+$plan = $client->explain('mydb', 'FOR u IN users FILTER u.age > 25 RETURN u');</code></pre>
+        </div>
+      </section>
+
+      <!-- Transactions -->
+      <section id="transactions" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">ACID Transactions</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">// Begin a transaction
+$txId = $client->beginTransaction('mydb', 'read_committed');
+// Isolation levels: read_uncommitted, read_committed, repeatable_read, serializable
+
+try {
+    // Perform operations within transaction
+    $client->insert('mydb', 'accounts', ['id' => 1, 'balance' => 1000]);
+    $client->insert('mydb', 'accounts', ['id' => 2, 'balance' => 500]);
+
+    // Commit if all operations succeed
+    $client->commitTransaction($txId);
+    echo "Transaction committed\n";
+} catch (Exception $e) {
+    // Rollback on any error
+    $client->rollbackTransaction($txId);
+    echo "Transaction rolled back: " . $e->getMessage() . "\n";
+}</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">beginTransaction($db, $isolation)</code></td><td class="px-4 py-3 text-gray-500">string</td><td class="px-4 py-3 text-gray-400">Start transaction, returns tx_id</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">commitTransaction($txId)</code></td><td class="px-4 py-3 text-gray-500">void</td><td class="px-4 py-3 text-gray-400">Commit transaction</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">rollbackTransaction($txId)</code></td><td class="px-4 py-3 text-gray-500">void</td><td class="px-4 py-3 text-gray-400">Rollback transaction</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Indexes -->
+      <section id="indexes" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Index Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">// Create an index
+$client->createIndex('mydb', 'users', 'idx_email', ['email'], true, false);
+//                   $db    $col     $name       $fields   $unique $sparse
+
+// List indexes on a collection
+$indexes = $client->listIndexes('mydb', 'users');
+
+// Delete an index
+$client->deleteIndex('mydb', 'users', 'idx_email');</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MANAGEMENT SUB-CLIENTS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-4 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-indigo-500/20 text-indigo-400 mr-4">
+          <i class="fas fa-cubes text-lg"></i>
+        </span>
+        Management Sub-Clients
+      </h2>
+      <p class="text-gray-400 mb-8">
+        Sub-clients provide namespaced access to management APIs.
+        <strong class="text-white">Important:</strong> Call <code class="text-purple-400">useDatabase($name)</code> first to set the database context.
+      </p>
+
+      <!-- Sub-clients Overview -->
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
+        <% local subclients = {
+          { name = "scripts()", icon = "fa-scroll" },
+          { name = "jobs()", icon = "fa-tasks" },
+          { name = "cron()", icon = "fa-clock" },
+          { name = "triggers()", icon = "fa-bolt" },
+          { name = "env()", icon = "fa-cog" },
+          { name = "roles()", icon = "fa-user-shield" },
+          { name = "users()", icon = "fa-users" },
+          { name = "apiKeys()", icon = "fa-key" },
+          { name = "cluster()", icon = "fa-network-wired" },
+          { name = "collectionsOps()", icon = "fa-database" },
+          { name = "indexesOps()", icon = "fa-list-ol" },
+          { name = "geo()", icon = "fa-map-marker-alt" },
+          { name = "vector()", icon = "fa-brain" },
+          { name = "ttl()", icon = "fa-hourglass-half" },
+          { name = "columnar()", icon = "fa-chart-bar" }
+        } %>
+        <% for _, sc in ipairs(subclients) do %>
+        <div class="flex items-center gap-2 p-3 bg-gray-950/30 rounded-lg border border-white/5">
+          <i class="fas <%= sc.icon %> text-purple-400 text-xs"></i>
+          <span class="text-sm text-gray-300"><%= sc.name %></span>
+        </div>
+        <% end %>
+      </div>
+
+      <!-- Scripts -->
+      <section id="scripts" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 mr-3">
+            <i class="fas fa-scroll text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->scripts()</h3>
+          <span class="ml-3 px-2 py-1 bg-indigo-500/10 text-indigo-400 text-xs rounded">Lua Script Endpoints</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">$client->useDatabase('mydb');
+
+// Create a Lua script endpoint
+$script = $client->scripts()->create(
+    'hello',                    // name
+    '/api/hello',               // path
+    ['GET', 'POST'],            // methods
+    'return { message = "Hello, " .. (req.params.name or "World") }',  // code
+    'Greeting endpoint',        // description (optional)
+    null                        // collection (optional: restrict to collection)
+);
+echo "Created script: " . $script['_key'] . "\n";
+
+// List all scripts
+$scripts = $client->scripts()->list();
+foreach ($scripts as $s) {
+    echo $s['name'] . " -> " . $s['path'] . "\n";
+}
+
+// Get a specific script
+$script = $client->scripts()->get('script_key');
+
+// Update script code
+$client->scripts()->update('script_key', [
+    'code' => 'return { message = "Updated!" }',
+    'methods' => ['GET']
+]);
+
+// Delete a script
+$client->scripts()->delete('script_key');
+
+// Get execution statistics
+$stats = $client->scripts()->getStats();
+echo "Total calls: " . $stats['total_calls'] . "\n";</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Parameters</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-indigo-400">create()</code></td><td class="px-4 py-3 text-gray-500">$name, $path, $methods, $code, $description, $collection</td><td class="px-4 py-3 text-gray-400">Create Lua endpoint</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-indigo-400">list()</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">List all scripts</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-indigo-400">get($scriptId)</code></td><td class="px-4 py-3 text-gray-500">$scriptId</td><td class="px-4 py-3 text-gray-400">Get script details</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-indigo-400">update($scriptId, $updates)</code></td><td class="px-4 py-3 text-gray-500">$scriptId, array</td><td class="px-4 py-3 text-gray-400">Update script properties</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-indigo-400">delete($scriptId)</code></td><td class="px-4 py-3 text-gray-500">$scriptId</td><td class="px-4 py-3 text-gray-400">Delete script</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-indigo-400">getStats()</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">Execution statistics</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Jobs & Cron -->
+      <section id="jobs" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-green-500/20 text-green-400 mr-3">
+            <i class="fas fa-tasks text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->jobs() & $client->cron()</h3>
+          <span class="ml-3 px-2 py-1 bg-green-500/10 text-green-400 text-xs rounded">Background Processing</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">$client->useDatabase('mydb');
+
+// === JOBS ===
+
+// List all queues
+$queues = $client->jobs()->listQueues();
+// => [["name" => "default", "pending" => 5, "running" => 2], ...]
+
+// List jobs in a queue with filters
+$jobs = $client->jobs()->listJobs('default', 'pending', 50, 0);
+//                               $queueName, $status, $limit, $offset
+
+// Enqueue a new job
+$job = $client->jobs()->enqueue(
+    'default',                  // queue name
+    '/scripts/process-order',   // script path
+    ['order_id' => 12345],      // params (optional)
+    10,                         // priority (optional: higher = more urgent)
+    null                        // run_at (optional: ISO8601 for delayed execution)
+);
+echo "Job ID: " . $job['_key'] . "\n";
+
+// Get job details
+$job = $client->jobs()->get('job_id');
+echo "Status: " . $job['status'] . "\n";
+
+// Cancel a pending job
+$client->jobs()->cancel('job_id');
+
+// === CRON ===
+
+// List scheduled jobs
+$crons = $client->cron()->list();
+
+// Create a cron job
+$cron = $client->cron()->create(
+    'daily-cleanup',            // name
+    '0 2 * * *',                // schedule (cron expression)
+    '/scripts/cleanup',         // script path
+    ['days_old' => 30],         // params (optional)
+    true,                       // enabled (optional)
+    'Remove old records'        // description (optional)
+);
+
+// Get cron job details
+$cron = $client->cron()->get('cron_id');
+
+// Update cron schedule
+$client->cron()->update('cron_id', ['schedule' => '0 3 * * *']);
+
+// Toggle cron job on/off
+$client->cron()->toggle('cron_id', false);  // disable
+$client->cron()->toggle('cron_id', true);   // enable
+
+// Delete cron job
+$client->cron()->delete('cron_id');</code></pre>
+        </div>
+      </section>
+
+      <!-- Triggers -->
+      <section id="triggers" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 mr-3">
+            <i class="fas fa-bolt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->triggers()</h3>
+          <span class="ml-3 px-2 py-1 bg-orange-500/10 text-orange-400 text-xs rounded">Database Triggers</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">$client->useDatabase('mydb');
+
+// List all triggers
+$triggers = $client->triggers()->list();
+
+// List triggers for a specific collection
+$triggers = $client->triggers()->listByCollection('users');
+
+// Create a trigger
+$trigger = $client->triggers()->create(
+    'on_user_created',              // name
+    'users',                        // collection
+    'insert',                       // event: insert, update, delete
+    'after',                        // timing: before, after
+    '/scripts/on-user-create',      // script path
+    true                            // enabled (optional)
+);
+
+// Get trigger details
+$trigger = $client->triggers()->get('trigger_id');
+
+// Update trigger
+$client->triggers()->update('trigger_id', [
+    'script_path' => '/scripts/new-handler',
+    'enabled' => false
+]);
+
+// Toggle trigger on/off
+$client->triggers()->toggle('trigger_id', true);   // enable
+$client->triggers()->toggle('trigger_id', false);  // disable
+
+// Delete trigger
+$client->triggers()->delete('trigger_id');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Event</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Timing</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-orange-400">insert</code></td><td class="px-4 py-3 text-gray-500">before / after</td><td class="px-4 py-3 text-gray-400">Fires on document creation</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-orange-400">update</code></td><td class="px-4 py-3 text-gray-500">before / after</td><td class="px-4 py-3 text-gray-400">Fires on document modification</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-orange-400">delete</code></td><td class="px-4 py-3 text-gray-500">before / after</td><td class="px-4 py-3 text-gray-400">Fires on document removal</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- RBAC: Roles & Users -->
+      <section id="rbac" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/20 text-red-400 mr-3">
+            <i class="fas fa-user-shield text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->roles() & $client->users()</h3>
+          <span class="ml-3 px-2 py-1 bg-red-500/10 text-red-400 text-xs rounded">Role-Based Access Control</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">// === ROLES ===
+
+// List all roles
+$roles = $client->roles()->list();
+
+// Create a role with permissions
+$role = $client->roles()->create(
+    'editor',                               // name
+    [                                       // permissions
+        ['action' => 'read', 'scope' => 'database', 'database' => 'mydb'],
+        ['action' => 'write', 'scope' => 'collection', 'database' => 'mydb', 'collection' => 'articles'],
+        ['action' => 'execute', 'scope' => 'script', 'database' => 'mydb']
+    ],
+    'Content editor role'                   // description (optional)
+);
+
+// Get role details
+$role = $client->roles()->get('editor');
+
+// Update role permissions
+$client->roles()->update('editor', [
+    ['action' => 'read', 'scope' => 'database', 'database' => 'mydb'],
+    ['action' => 'write', 'scope' => 'database', 'database' => 'mydb']
+]);
+
+// Delete role
+$client->roles()->delete('editor');
+
+// === USERS ===
+
+// List all users
+$users = $client->users()->list();
+
+// Create a user
+$user = $client->users()->create(
+    'john',                     // username
+    'secure_password',          // password
+    ['editor', 'viewer']        // roles (optional)
+);
+
+// Get user details
+$user = $client->users()->get('john');
+
+// Get user's assigned roles
+$roles = $client->users()->getRoles('john');
+
+// Assign a role to user
+$client->users()->assignRole('john', 'admin', 'mydb');
+
+// Revoke a role from user
+$client->users()->revokeRole('john', 'admin', 'mydb');
+
+// Get current authenticated user
+$me = $client->users()->me();
+
+// Get current user's permissions
+$permissions = $client->users()->myPermissions();
+
+// Change password
+$client->users()->changePassword('john', 'old_password', 'new_password');
+
+// Delete user
+$client->users()->delete('john');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Action</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Scopes</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-red-400">read</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Read documents and query</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">write</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Create, update, delete documents</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">admin</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Manage indexes, schema, etc.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">execute</code></td><td class="px-4 py-3 text-gray-500">script</td><td class="px-4 py-3 text-gray-400">Execute Lua scripts</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- API Keys -->
+      <section id="api-keys" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 mr-3">
+            <i class="fas fa-key text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->apiKeys()</h3>
+          <span class="ml-3 px-2 py-1 bg-amber-500/10 text-amber-400 text-xs rounded">API Key Management</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-php">// List all API keys
+$apiKeys = $client->apiKeys()->list();
+
+// Create an API key
+$apiKey = $client->apiKeys()->create(
+    'my-app-key',                           // name
+    [                                       // permissions
+        ['action' => 'read', 'scope' => 'database', 'database' => 'mydb']
+    ],
+    '2025-12-31T23:59:59Z'                 // expires_at (optional)
+);
+echo "API Key: " . $apiKey['key'] . "\n";   // Store this securely!
+
+// Get API key details
+$key = $client->apiKeys()->get('key_id');
+
+// Regenerate an API key
+$newKey = $client->apiKeys()->regenerate('key_id');
+
+// Delete an API key
+$client->apiKeys()->delete('key_id');</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ADVANCED FEATURES -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-pink-500/20 text-pink-400 mr-4">
+          <i class="fas fa-brain text-lg"></i>
+        </span>
+        Advanced Features
+      </h2>
+
+      <!-- Vector Search -->
+      <section id="vector" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-pink-500/20 text-pink-400 mr-3">
+            <i class="fas fa-brain text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->vector()</h3>
+          <span class="ml-3 px-2 py-1 bg-pink-500/10 text-pink-400 text-xs rounded">Vector Search & AI</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">$client->useDatabase('mydb');
+
+// Create a vector index
+$index = $client->vector()->createIndex(
+    'products',                 // collection
+    'product_embeddings',       // name
+    'embedding',                // field
+    1536,                       // dimensions
+    'cosine',                   // metric: cosine, euclidean, dot_product
+    []                          // options (optional)
+);
+
+// Search by vector (semantic search)
+$embedding = getEmbedding("wireless headphones");  // Your embedding function
+$results = $client->vector()->search(
+    'products',                 // collection
+    $embedding,                 // vector
+    10,                         // limit
+    ['category' => 'electronics']  // filter (optional)
+);
+
+foreach ($results as $result) {
+    echo $result['doc']['name'] . " - Score: " . $result['score'] . "\n";
+}
+
+// Search by existing document (find similar)
+$similar = $client->vector()->searchByDocument(
+    'products',                 // collection
+    'product-123',              // doc_key
+    'embedding',                // field
+    5,                          // limit
+    null                        // filter (optional)
+);
+
+// Quantize index (reduce memory usage)
+$client->vector()->quantize('products', 'product_embeddings', 'binary');
+
+// Dequantize (restore full precision)
+$client->vector()->dequantize('products', 'product_embeddings');
+
+// Get index info
+$info = $client->vector()->getIndexInfo('products', 'product_embeddings');
+
+// List vector indexes
+$indexes = $client->vector()->listIndexes('products');
+
+// Delete index
+$client->vector()->deleteIndex('products', 'product_embeddings');</code></pre>
+        </div>
+      </section>
+
+      <!-- Geo -->
+      <section id="geo" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 mr-3">
+            <i class="fas fa-map-marker-alt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->geo()</h3>
+          <span class="ml-3 px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded">Geospatial Queries</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">$client->useDatabase('mydb');
+
+// Create a geo index
+$client->geo()->createIndex(
+    'stores',                   // collection
+    'location_idx',             // name
+    ['location'],               // fields containing [lat, lon] or GeoJSON
+    true                        // geoJson (optional: true if using GeoJSON format)
+);
+
+// Find nearby locations (radius search)
+$nearby = $client->geo()->near(
+    'stores',                   // collection
+    48.8566,                    // latitude
+    2.3522,                     // longitude
+    5000,                       // radius (meters)
+    20                          // limit (optional)
+);
+
+foreach ($nearby as $result) {
+    echo $result['doc']['name'] . " - " . $result['distance'] . "m away\n";
+}
+
+// Find within polygon
+$polygon = [
+    'type' => 'Polygon',
+    'coordinates' => [[[2.3, 48.8], [2.4, 48.8], [2.4, 48.9], [2.3, 48.9], [2.3, 48.8]]]
+];
+$within = $client->geo()->within('stores', $polygon);
+
+// Find intersecting geometries
+$intersects = $client->geo()->intersects('zones', $polygon);
+
+// Calculate distance between two points
+$distance = $client->geo()->distance(48.8566, 2.3522, 51.5074, -0.1278);
+echo "Paris to London: " . ($distance / 1000) . "km\n";
+
+// List geo indexes
+$indexes = $client->geo()->listIndexes('stores');
+
+// Delete index
+$client->geo()->deleteIndex('stores', 'location_idx');</code></pre>
+        </div>
+      </section>
+
+      <!-- TTL -->
+      <section id="ttl" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 mr-3">
+            <i class="fas fa-hourglass-half text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->ttl()</h3>
+          <span class="ml-3 px-2 py-1 bg-rose-500/10 text-rose-400 text-xs rounded">Time-To-Live Indexes</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">$client->useDatabase('mydb');
+
+// Create TTL index (auto-expire documents)
+$client->ttl()->createIndex(
+    'sessions',                 // collection
+    'session_ttl',              // name
+    'created_at',               // field (DateTime field to check)
+    3600                        // expire_after_seconds (1 hour)
+);
+
+// Update expiration time
+$client->ttl()->updateExpiration('sessions', 'session_ttl', 7200);  // 2 hours
+
+// Get index info
+$info = $client->ttl()->getIndexInfo('sessions', 'session_ttl');
+echo "Expires after: " . $info['expire_after_seconds'] . "s\n";
+
+// Manually trigger cleanup (normally runs automatically)
+$result = $client->ttl()->runCleanup('sessions');
+echo "Deleted " . $result['deleted'] . " expired documents\n";
+
+// List TTL indexes
+$indexes = $client->ttl()->listIndexes('sessions');
+
+// Delete TTL index
+$client->ttl()->deleteIndex('sessions', 'session_ttl');</code></pre>
+        </div>
+      </section>
+
+      <!-- Columnar -->
+      <section id="columnar" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-violet-500/20 text-violet-400 mr-3">
+            <i class="fas fa-chart-bar text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->columnar()</h3>
+          <span class="ml-3 px-2 py-1 bg-violet-500/10 text-violet-400 text-xs rounded">Columnar/Analytics Storage</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">$client->useDatabase('mydb');
+
+// Create a columnar table (optimized for analytics)
+$table = $client->columnar()->create('metrics', [
+    ['name' => 'timestamp', 'type' => 'datetime'],
+    ['name' => 'metric_name', 'type' => 'string'],
+    ['name' => 'value', 'type' => 'float'],
+    ['name' => 'tags', 'type' => 'string']
+]);
+
+// Insert rows (batch insert is efficient)
+$client->columnar()->insert('metrics', [
+    ['timestamp' => '2024-01-15T10:00:00Z', 'metric_name' => 'cpu_usage', 'value' => 45.2, 'tags' => 'server1'],
+    ['timestamp' => '2024-01-15T10:01:00Z', 'metric_name' => 'cpu_usage', 'value' => 47.8, 'tags' => 'server1'],
+    ['timestamp' => '2024-01-15T10:00:00Z', 'metric_name' => 'memory', 'value' => 72.1, 'tags' => 'server1']
+]);
+
+// Query with SQL-like syntax
+$results = $client->columnar()->query(
+    'metrics',
+    'SELECT * FROM metrics WHERE value > @min ORDER BY timestamp DESC LIMIT 100',
+    ['min' => 40.0]
+);
+
+// Aggregation
+$agg = $client->columnar()->aggregate('metrics', [
+    'group_by' => ['metric_name', 'tags'],
+    'metrics' => [
+        ['column' => 'value', 'function' => 'avg'],
+        ['column' => 'value', 'function' => 'max'],
+        ['column' => 'value', 'function' => 'min'],
+        ['column' => 'value', 'function' => 'count']
+    ],
+    'filters' => ['metric_name' => 'cpu_usage']  // optional
+]);
+
+// Get table statistics
+$stats = $client->columnar()->stats('metrics');
+echo "Row count: " . $stats['row_count'] . ", Size: " . $stats['size_bytes'] . "\n";
+
+// Add a column
+$client->columnar()->addColumn('metrics', 'host', 'string', 'unknown');
+
+// Drop a column
+$client->columnar()->dropColumn('metrics', 'host');
+
+// Create index on columnar table
+$client->columnar()->createIndex('metrics', 'idx_timestamp', 'timestamp', 'btree');
+
+// List indexes
+$indexes = $client->columnar()->listIndexes('metrics');
+
+// Delete index
+$client->columnar()->deleteIndex('metrics', 'idx_timestamp');
+
+// List all columnar tables
+$tables = $client->columnar()->list();
+
+// Get table info
+$table = $client->columnar()->get('metrics');
+
+// Delete table
+$client->columnar()->delete('metrics');</code></pre>
+        </div>
+      </section>
+
+      <!-- Cluster -->
+      <section id="cluster" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 mr-3">
+            <i class="fas fa-network-wired text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->cluster()</h3>
+          <span class="ml-3 px-2 py-1 bg-sky-500/10 text-sky-400 text-xs rounded">Cluster Management</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">// Get cluster status
+$status = $client->cluster()->status();
+echo "Mode: " . $status['mode'] . "\n";    // standalone, cluster
+echo "Nodes: " . $status['node_count'] . "\n";
+
+// Get detailed cluster info
+$info = $client->cluster()->info();
+
+// Get all nodes
+$nodes = $client->cluster()->getNodes();
+foreach ($nodes as $node) {
+    echo $node['id'] . ": " . $node['address'] . " (" . $node['status'] . ")\n";
+}
+
+// Get shard distribution
+$shards = $client->cluster()->getShards();
+
+// Remove a node from cluster
+$client->cluster()->removeNode('node-id-to-remove');
+
+// Trigger data rebalancing
+$client->cluster()->rebalance();
+
+// Cleanup orphaned data
+$client->cluster()->cleanup();
+
+// Reshard cluster
+$client->cluster()->reshard(16);  // new number of shards</code></pre>
+        </div>
+      </section>
+
+      <!-- Collection Operations -->
+      <section id="collection-ops" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 mr-3">
+            <i class="fas fa-database text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->collectionsOps()</h3>
+          <span class="ml-3 px-2 py-1 bg-cyan-500/10 text-cyan-400 text-xs rounded">Advanced Collection Operations</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">$client->useDatabase('mydb');
+
+// Truncate collection (delete all documents)
+$client->collectionsOps()->truncate('logs');
+
+// Compact collection (reclaim disk space)
+$client->collectionsOps()->compact('users');
+
+// Repair collection (fix inconsistencies)
+$result = $client->collectionsOps()->repair('orders');
+
+// Get collection statistics
+$stats = $client->collectionsOps()->stats('users');
+
+// Prune old documents
+$result = $client->collectionsOps()->prune('logs', '2024-01-01T00:00:00Z', 'created_at');
+
+// Recount documents
+$result = $client->collectionsOps()->recount('users');
+
+// Set JSON schema validation
+$client->collectionsOps()->setSchema('users', [
+    'type' => 'object',
+    'required' => ['name', 'email'],
+    'properties' => [
+        'name' => ['type' => 'string', 'minLength' => 1],
+        'email' => ['type' => 'string', 'format' => 'email'],
+        'age' => ['type' => 'integer', 'minimum' => 0]
+    ]
+]);
+
+// Get current schema
+$schema = $client->collectionsOps()->getSchema('users');
+
+// Remove schema validation
+$client->collectionsOps()->deleteSchema('users');
+
+// Export collection
+$data = $client->collectionsOps()->export('users', 'json');  // json, csv, msgpack
+
+// Import data
+$client->collectionsOps()->import('users_backup', $data, 'json');
+
+// Get sharding configuration
+$sharding = $client->collectionsOps()->getSharding('orders');
+
+// Configure sharding
+$client->collectionsOps()->setSharding('orders', [
+    'num_shards' => 8,
+    'shard_key' => 'user_id'
+]);</code></pre>
+        </div>
+      </section>
+
+      <!-- Index Operations -->
+      <section id="index-ops" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-fuchsia-500/20 text-fuchsia-400 mr-3">
+            <i class="fas fa-list-ol text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->indexesOps()</h3>
+          <span class="ml-3 px-2 py-1 bg-fuchsia-500/10 text-fuchsia-400 text-xs rounded">Advanced Index Operations</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">$client->useDatabase('mydb');
+
+// Rebuild a specific index
+$client->indexesOps()->rebuild('users', 'idx_email');
+
+// Rebuild all indexes on a collection
+$client->indexesOps()->rebuildAll('users');
+
+// Hybrid search (combine vector + keyword search)
+$results = $client->indexesOps()->hybridSearch('products', [
+    'vector' => $embedding,
+    'text' => 'wireless headphones',
+    'vector_field' => 'embedding',
+    'text_field' => 'description',
+    'limit' => 10
+]);
+
+// Analyze index performance
+$analysis = $client->indexesOps()->analyze('users', 'idx_email');
+
+// Get index usage statistics
+$stats = $client->indexesOps()->getUsageStats('users');</code></pre>
+        </div>
+      </section>
+
+      <!-- Environment Variables -->
+      <section id="env" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-teal-500/20 text-teal-400 mr-3">
+            <i class="fas fa-cog text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">$client->env()</h3>
+          <span class="ml-3 px-2 py-1 bg-teal-500/10 text-teal-400 text-xs rounded">Environment Variables</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-php">$client->useDatabase('mydb');
+
+// List environment variables (for Lua scripts)
+$vars = $client->env()->list();
+
+// Get a specific variable
+$value = $client->env()->get('API_KEY');
+
+// Set an environment variable
+$client->env()->set('API_KEY', 'sk-xxx-your-api-key');
+$client->env()->set('WEBHOOK_URL', 'https://example.com/webhook');
+
+// Set multiple variables at once
+$client->env()->setBulk([
+    'API_KEY' => 'sk-xxx-key',
+    'API_SECRET' => 'secret123',
+    'DEBUG' => 'false'
+]);
+
+// Delete an environment variable
+$client->env()->delete('OLD_VAR');</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ERROR HANDLING -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 mr-4">
+          <i class="fas fa-exclamation-triangle text-lg"></i>
+        </span>
+        Error Handling
+      </h2>
+
+      <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-6">
+        <pre><code class="language-php">&lt;?php
+use SoliDB\Client;
+use SoliDB\Exception\DriverException;
+
+try {
+    $client = new Client('127.0.0.1', 6745);
+    $client->connect();
+    $client->auth('mydb', 'user', 'password');
+
+    $doc = $client->get('mydb', 'users', 'nonexistent-key');
+
+} catch (DriverException $e) {
+    // All SoliDB errors extend DriverException
+    echo "Error: " . $e->getMessage() . "\n";
+    echo "Error Type: " . $e->getErrorType() . "\n";
+
+    switch ($e->getErrorType()) {
+        case 'connection_error':
+            // Network/connection issues
+            echo "Connection failed - check server availability\n";
+            break;
+        case 'server_error':
+            // Server-side errors (not found, validation, permissions)
+            echo "Server error - check request parameters\n";
+            break;
+        case 'serialization_error':
+            // Protocol/serialization errors
+            echo "Protocol error - possible version mismatch\n";
+            break;
+        case 'protocol_error':
+            // Response too large, invalid format
+            echo "Protocol error - response format issue\n";
+            break;
+    }
+
+} finally {
+    if (isset($client)) {
+        $client->close();
+    }
+}</code></pre>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-red-400 font-semibold mb-2">connection_error</h4>
+          <p class="text-sm text-gray-400">Network failures, connection refused, timeouts, disconnections</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-orange-400 font-semibold mb-2">server_error</h4>
+          <p class="text-sm text-gray-400">Document not found, permission denied, validation errors</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-yellow-400 font-semibold mb-2">serialization_error</h4>
+          <p class="text-sm text-gray-400">MessagePack encoding/decoding failures</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-purple-400 font-semibold mb-2">protocol_error</h4>
+          <p class="text-sm text-gray-400">Response too large, invalid message format</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>

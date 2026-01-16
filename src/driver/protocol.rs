@@ -206,6 +206,532 @@ pub enum Command {
         collection: String,
         documents: Vec<Value>,
     },
+
+    // ==================== Script Management ====================
+    /// Create a Lua script
+    CreateScript {
+        database: String,
+        name: String,
+        path: String,
+        methods: Vec<String>,
+        code: String,
+        #[serde(default)]
+        description: Option<String>,
+        #[serde(default)]
+        collection: Option<String>,
+    },
+
+    /// List all scripts
+    ListScripts { database: String },
+
+    /// Get a script by ID
+    GetScript { database: String, script_id: String },
+
+    /// Update a script
+    UpdateScript {
+        database: String,
+        script_id: String,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        path: Option<String>,
+        #[serde(default)]
+        methods: Option<Vec<String>>,
+        #[serde(default)]
+        code: Option<String>,
+        #[serde(default)]
+        description: Option<String>,
+    },
+
+    /// Delete a script
+    DeleteScript { database: String, script_id: String },
+
+    /// Get script execution statistics
+    GetScriptStats,
+
+    // ==================== Job/Queue Management ====================
+    /// List all queues
+    ListQueues { database: String },
+
+    /// List jobs in a queue
+    ListJobs {
+        database: String,
+        queue_name: String,
+        #[serde(default)]
+        status: Option<String>,
+        #[serde(default)]
+        limit: Option<usize>,
+        #[serde(default)]
+        offset: Option<usize>,
+    },
+
+    /// Enqueue a new job
+    EnqueueJob {
+        database: String,
+        queue_name: String,
+        script_path: String,
+        #[serde(default)]
+        params: HashMap<String, Value>,
+        #[serde(default)]
+        priority: Option<i32>,
+        #[serde(default)]
+        run_at: Option<String>,
+        #[serde(default)]
+        max_retries: Option<i32>,
+    },
+
+    /// Cancel a job
+    CancelJob { database: String, job_id: String },
+
+    // ==================== Cron Job Management ====================
+    /// List all cron jobs
+    ListCronJobs { database: String },
+
+    /// Create a cron job
+    CreateCronJob {
+        database: String,
+        name: String,
+        cron_expression: String,
+        script_path: String,
+        #[serde(default)]
+        params: HashMap<String, Value>,
+        #[serde(default)]
+        queue: Option<String>,
+        #[serde(default)]
+        priority: Option<i32>,
+        #[serde(default)]
+        max_retries: Option<i32>,
+    },
+
+    /// Update a cron job
+    UpdateCronJob {
+        database: String,
+        cron_id: String,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        cron_expression: Option<String>,
+        #[serde(default)]
+        script_path: Option<String>,
+        #[serde(default)]
+        params: Option<HashMap<String, Value>>,
+        #[serde(default)]
+        queue: Option<String>,
+        #[serde(default)]
+        priority: Option<i32>,
+        #[serde(default)]
+        max_retries: Option<i32>,
+    },
+
+    /// Delete a cron job
+    DeleteCronJob { database: String, cron_id: String },
+
+    // ==================== Trigger Management ====================
+    /// List all triggers
+    ListTriggers { database: String },
+
+    /// List triggers for a collection
+    ListCollectionTriggers { database: String, collection: String },
+
+    /// Create a trigger
+    CreateTrigger {
+        database: String,
+        name: String,
+        collection: String,
+        events: Vec<String>,
+        script_path: String,
+        #[serde(default)]
+        filter: Option<String>,
+        #[serde(default)]
+        queue: Option<String>,
+        #[serde(default)]
+        priority: Option<i32>,
+        #[serde(default)]
+        max_retries: Option<i32>,
+        #[serde(default)]
+        enabled: Option<bool>,
+    },
+
+    /// Get a trigger
+    GetTrigger { database: String, trigger_id: String },
+
+    /// Update a trigger
+    UpdateTrigger {
+        database: String,
+        trigger_id: String,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        events: Option<Vec<String>>,
+        #[serde(default)]
+        script_path: Option<String>,
+        #[serde(default)]
+        filter: Option<String>,
+        #[serde(default)]
+        queue: Option<String>,
+        #[serde(default)]
+        priority: Option<i32>,
+        #[serde(default)]
+        max_retries: Option<i32>,
+        #[serde(default)]
+        enabled: Option<bool>,
+    },
+
+    /// Delete a trigger
+    DeleteTrigger { database: String, trigger_id: String },
+
+    /// Toggle a trigger's enabled state
+    ToggleTrigger { database: String, trigger_id: String },
+
+    // ==================== Environment Variables ====================
+    /// List environment variables
+    ListEnvVars { database: String },
+
+    /// Set an environment variable
+    SetEnvVar {
+        database: String,
+        key: String,
+        value: String,
+    },
+
+    /// Delete an environment variable
+    DeleteEnvVar { database: String, key: String },
+
+    // ==================== Role Management ====================
+    /// List all roles
+    ListRoles,
+
+    /// Create a role
+    CreateRole {
+        name: String,
+        permissions: Vec<Value>,
+    },
+
+    /// Get a role
+    GetRole { name: String },
+
+    /// Update a role
+    UpdateRole {
+        name: String,
+        permissions: Vec<Value>,
+    },
+
+    /// Delete a role
+    DeleteRole { name: String },
+
+    // ==================== User Management ====================
+    /// List all users
+    ListUsers,
+
+    /// Create a user
+    CreateUser {
+        username: String,
+        password: String,
+        #[serde(default)]
+        roles: Option<Vec<String>>,
+    },
+
+    /// Delete a user
+    DeleteUser { username: String },
+
+    /// Get user roles
+    GetUserRoles { username: String },
+
+    /// Assign a role to a user
+    AssignRole {
+        username: String,
+        role: String,
+        #[serde(default)]
+        database: Option<String>,
+    },
+
+    /// Revoke a role from a user
+    RevokeRole { username: String, role: String },
+
+    /// Get current user info
+    GetCurrentUser,
+
+    /// Get current user permissions
+    GetCurrentUserPermissions,
+
+    // ==================== API Key Management ====================
+    /// List API keys
+    ListApiKeys,
+
+    /// Create an API key
+    CreateApiKey {
+        name: String,
+        #[serde(default)]
+        permissions: Option<Vec<Value>>,
+        #[serde(default)]
+        expires_at: Option<String>,
+    },
+
+    /// Delete an API key
+    DeleteApiKey { key_id: String },
+
+    // ==================== Cluster Management ====================
+    /// Get cluster status
+    ClusterStatus,
+
+    /// Get cluster info
+    ClusterInfo,
+
+    /// Remove a node from the cluster
+    ClusterRemoveNode { node_id: String },
+
+    /// Rebalance the cluster
+    ClusterRebalance,
+
+    /// Cleanup the cluster
+    ClusterCleanup,
+
+    /// Reshard the cluster
+    ClusterReshard {
+        #[serde(default)]
+        num_shards: Option<i32>,
+    },
+
+    // ==================== Advanced Collection Operations ====================
+    /// Truncate a collection
+    TruncateCollection { database: String, collection: String },
+
+    /// Compact a collection
+    CompactCollection { database: String, collection: String },
+
+    /// Prune a collection
+    PruneCollection { database: String, collection: String },
+
+    /// Recount documents in a collection
+    RecountCollection { database: String, collection: String },
+
+    /// Repair a collection
+    RepairCollection { database: String, collection: String },
+
+    /// Get collection sharding details
+    GetCollectionSharding { database: String, collection: String },
+
+    /// Export collection data
+    ExportCollection { database: String, collection: String },
+
+    /// Import documents into a collection
+    ImportCollection {
+        database: String,
+        collection: String,
+        documents: Vec<Value>,
+    },
+
+    /// Set collection schema
+    SetCollectionSchema {
+        database: String,
+        collection: String,
+        schema: Value,
+    },
+
+    /// Get collection schema
+    GetCollectionSchema { database: String, collection: String },
+
+    /// Delete collection schema
+    DeleteCollectionSchema { database: String, collection: String },
+
+    // ==================== Advanced Index Operations ====================
+    /// Rebuild all indexes on a collection
+    RebuildIndexes { database: String, collection: String },
+
+    /// Hybrid search
+    HybridSearch {
+        database: String,
+        collection: String,
+        query: String,
+        #[serde(default)]
+        vector: Option<Vec<f32>>,
+        #[serde(default)]
+        vector_field: Option<String>,
+        #[serde(default)]
+        limit: Option<i32>,
+        #[serde(default)]
+        alpha: Option<f32>,
+    },
+
+    // ==================== Geo Index Operations ====================
+    /// Create a geo index
+    CreateGeoIndex {
+        database: String,
+        collection: String,
+        name: String,
+        field: String,
+    },
+
+    /// List geo indexes
+    ListGeoIndexes { database: String, collection: String },
+
+    /// Delete a geo index
+    DeleteGeoIndex {
+        database: String,
+        collection: String,
+        name: String,
+    },
+
+    /// Geo near query
+    GeoNear {
+        database: String,
+        collection: String,
+        field: String,
+        latitude: f64,
+        longitude: f64,
+        #[serde(default)]
+        radius: Option<f64>,
+        #[serde(default)]
+        limit: Option<i32>,
+    },
+
+    /// Geo within query
+    GeoWithin {
+        database: String,
+        collection: String,
+        field: String,
+        polygon: Vec<Vec<f64>>,
+    },
+
+    // ==================== Vector Index Operations ====================
+    /// Create a vector index
+    CreateVectorIndex {
+        database: String,
+        collection: String,
+        name: String,
+        field: String,
+        dimensions: i32,
+        #[serde(default)]
+        metric: Option<String>,
+        #[serde(default)]
+        ef_construction: Option<i32>,
+        #[serde(default)]
+        m: Option<i32>,
+    },
+
+    /// List vector indexes
+    ListVectorIndexes { database: String, collection: String },
+
+    /// Delete a vector index
+    DeleteVectorIndex {
+        database: String,
+        collection: String,
+        name: String,
+    },
+
+    /// Vector search
+    VectorSearch {
+        database: String,
+        collection: String,
+        index_name: String,
+        vector: Vec<f32>,
+        #[serde(default)]
+        limit: Option<i32>,
+        #[serde(default)]
+        ef_search: Option<i32>,
+        #[serde(default)]
+        filter: Option<String>,
+    },
+
+    /// Quantize a vector index
+    QuantizeVectorIndex {
+        database: String,
+        collection: String,
+        index_name: String,
+    },
+
+    /// Dequantize a vector index
+    DequantizeVectorIndex {
+        database: String,
+        collection: String,
+        index_name: String,
+    },
+
+    // ==================== TTL Index Operations ====================
+    /// Create a TTL index
+    CreateTtlIndex {
+        database: String,
+        collection: String,
+        name: String,
+        field: String,
+        expire_after_seconds: i64,
+    },
+
+    /// List TTL indexes
+    ListTtlIndexes { database: String, collection: String },
+
+    /// Delete a TTL index
+    DeleteTtlIndex {
+        database: String,
+        collection: String,
+        name: String,
+    },
+
+    // ==================== Columnar Storage ====================
+    /// Create a columnar collection
+    CreateColumnar {
+        database: String,
+        name: String,
+        columns: Vec<Value>,
+    },
+
+    /// List columnar collections
+    ListColumnar { database: String },
+
+    /// Get columnar collection details
+    GetColumnar { database: String, collection: String },
+
+    /// Delete a columnar collection
+    DeleteColumnar { database: String, collection: String },
+
+    /// Insert rows into columnar collection
+    InsertColumnar {
+        database: String,
+        collection: String,
+        rows: Vec<Value>,
+    },
+
+    /// Aggregate columnar data
+    AggregateColumnar {
+        database: String,
+        collection: String,
+        aggregations: Vec<Value>,
+        #[serde(default)]
+        group_by: Option<Vec<String>>,
+        #[serde(default)]
+        filter: Option<String>,
+    },
+
+    /// Query columnar collection
+    QueryColumnar {
+        database: String,
+        collection: String,
+        #[serde(default)]
+        columns: Option<Vec<String>>,
+        #[serde(default)]
+        filter: Option<String>,
+        #[serde(default)]
+        order_by: Option<String>,
+        #[serde(default)]
+        limit: Option<i32>,
+    },
+
+    /// Create columnar index
+    CreateColumnarIndex {
+        database: String,
+        collection: String,
+        column: String,
+    },
+
+    /// List columnar indexes
+    ListColumnarIndexes { database: String, collection: String },
+
+    /// Delete columnar index
+    DeleteColumnarIndex {
+        database: String,
+        collection: String,
+        column: String,
+    },
 }
 
 /// Isolation level for transactions
