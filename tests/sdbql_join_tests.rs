@@ -6,13 +6,14 @@ use solidb::storage::StorageEngine;
 
 // Helper to create a test storage engine with sample data
 fn setup_test_data() -> DbResult<(StorageEngine, String)> {
-    let storage = StorageEngine::new("/tmp/test_join_db")?;
-    
-    // Use unique database name with timestamp to avoid conflicts
-    let db_name = format!("test_db_{}", std::time::SystemTime::now()
+    // Use unique paths and database names to avoid conflicts
+    let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_millis());
+        .as_nanos(); // Use nanos for higher resolution
+    let db_path = format!("/tmp/test_join_db_{}", timestamp);
+    let storage = StorageEngine::new(&db_path)?;
+    let db_name = format!("test_db_{}", timestamp);
     
     storage.create_database(db_name.clone())?;
     
@@ -253,12 +254,13 @@ fn test_join_with_aggregation() -> DbResult<()> {
 
 #[test] 
 fn test_join_empty_collection() -> DbResult<()> {
-    let storage = StorageEngine::new("/tmp/test_join_empty_db")?;
-    
-    let db_name = format!("empty_test_{}", std::time::SystemTime::now()
+    let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_millis());
+        .as_nanos();
+    let storage = StorageEngine::new(&format!("/tmp/test_join_empty_db_{}", timestamp))?;
+    
+    let db_name = format!("empty_test_{}", timestamp);
     
     storage.create_database(db_name.clone())?;
     storage.create_collection(format!("{}:users", db_name), None)?;
@@ -377,12 +379,13 @@ fn test_execute_full_outer_join() -> DbResult<()> {
 
 #[test]
 fn test_right_join_with_no_left_matches() -> DbResult<()> {
-    let storage = StorageEngine::new("/tmp/test_right_join_db")?;
-    
-    let db_name = format!("right_test_{}", std::time::SystemTime::now()
+    let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_millis());
+        .as_nanos();
+    let storage = StorageEngine::new(&format!("/tmp/test_right_join_db_{}", timestamp))?;
+    
+    let db_name = format!("right_test_{}", timestamp);
     
     storage.create_database(db_name.clone())?;
     storage.create_collection(format!("{}:users", db_name), None)?;
@@ -407,12 +410,13 @@ fn test_right_join_with_no_left_matches() -> DbResult<()> {
 
 #[test]
 fn test_full_outer_join_comprehensive() -> DbResult<()> {
-    let storage = StorageEngine::new("/tmp/test_full_outer_db")?;
-    
-    let db_name = format!("full_test_{}", std::time::SystemTime::now()
+    let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_millis());
+        .as_nanos();
+    let storage = StorageEngine::new(&format!("/tmp/test_full_outer_db_{}", timestamp))?;
+    
+    let db_name = format!("full_test_{}", timestamp);
     
     storage.create_database(db_name.clone())?;
     storage.create_collection(format!("{}:users", db_name), None)?;
@@ -436,7 +440,7 @@ fn test_full_outer_join_comprehensive() -> DbResult<()> {
         FOR user IN users
           FULL OUTER JOIN orders ON user._key == orders.user_key
           RETURN {
-            user_name: IS_NULL(user.name) ? null : user.name, 
+            user_name: IS_NULL(user) ? null : user.name, 
             has_orders: LENGTH(orders) > 0
           }
     "#;
