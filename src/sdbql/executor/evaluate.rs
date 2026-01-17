@@ -1,17 +1,18 @@
-//! Built-in function evaluation for SDBQL.
+//! Function evaluation for SDBQL executor.
 //!
-//! This module contains the implementation of all built-in functions available in SDBQL queries.
+//! This module contains the main evaluate_function method that handles
+//! context-aware built-in functions. Simple value-based functions are
+//! delegated to the builtins/ submodules.
 
 use serde_json::{json, Value};
 use chrono::Utc;
-use super::functions;
-use super::{compare_values, parse_datetime};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use super::builtins;
 use super::types::Context;
 use super::utils::number_from_f64;
-use super::{safe_regex, to_bool, values_equal, QueryExecutor};
+use super::{compare_values, parse_datetime, safe_regex, to_bool, values_equal, QueryExecutor};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::Expression;
 use crate::storage::{distance_meters, GeoPoint};
@@ -3682,7 +3683,13 @@ impl<'a> QueryExecutor<'a> {
         }
     }
     pub(super) fn evaluate_function_with_values(&self, name: &str, args: &[Value]) -> DbResult<Value> {
-        if let Some(val) = functions::evaluate(name, args)? {
+        // Try phonetic functions first
+        if let Some(val) = super::functions::evaluate(name, args)? {
+            return Ok(val);
+        }
+
+        // Try modular builtins
+        if let Some(val) = super::builtins::evaluate(name, args)? {
             return Ok(val);
         }
 

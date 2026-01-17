@@ -11,6 +11,7 @@ use crate::sync::log::SyncLog;
 
 mod aggregation;
 mod builtins;
+mod evaluate;
 mod data_source;
 mod execution;
 mod explain;
