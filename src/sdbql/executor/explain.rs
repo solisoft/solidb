@@ -10,8 +10,8 @@ use serde_json::Value;
 
 use super::types::{CollectionAccess, Context, ExecutionTiming, FilterInfo, LetBinding, LimitInfo, QueryExplain, SortInfo};
 use super::{compare_values, QueryExecutor};
-use super::{format_expression, get_field_value};
-use crate::error::{DbError, DbResult};
+use super::format_expression;
+use crate::error::DbResult;
 use crate::sdbql::ast::*;
 
 impl<'a> QueryExecutor<'a> {

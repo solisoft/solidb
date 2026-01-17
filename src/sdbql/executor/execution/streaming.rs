@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::super::types::Context;
 use super::super::QueryExecutor;
-use crate::error::{DbError, DbResult};
+use crate::error::DbResult;
 use crate::sdbql::ast::*;
 use crate::sync::log::LogEntry;
 use crate::sync::protocol::Operation;

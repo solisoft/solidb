@@ -4,7 +4,6 @@
 
 use std::collections::HashMap;
 
-use super::ast::*;
 use crate::sharding::ShardCoordinator;
 use crate::storage::StorageEngine;
 use crate::sync::log::SyncLog;
@@ -16,7 +15,7 @@ mod data_source;
 mod execution;
 mod explain;
 mod expression;
-pub mod functions;
+pub mod phonetic;
 mod helpers;
 mod index_opt;
 mod materialized_views;

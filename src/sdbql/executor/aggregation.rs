@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 
-use super::types::{Context, MutationStats, QueryExecutionResult};
+use super::types::Context;
 use super::QueryExecutor;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;

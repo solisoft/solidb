@@ -2,8 +2,6 @@
 //!
 //! This module contains execute_with_parent_context for correlated subqueries.
 
-use std::collections::HashMap;
-
 use serde_json::Value;
 
 use super::super::types::Context;

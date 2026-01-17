@@ -161,3 +161,25 @@ fn test_parse_create_stream() {
     assert_eq!(query.for_clauses.len(), 1);
     assert_eq!(query.for_clauses[0].collection, "transactions");
 }
+
+#[test]
+fn test_any_syntax() {
+    let query = parse("FOR doc IN collection FILTER ANY member IN doc.members RETURN doc");
+    assert!(
+        query.is_ok(),
+        "Failed to parse ANY syntax: {:?}",
+        query.err()
+    );
+}
+
+#[test]
+fn test_any_satisfies_syntax() {
+    let query = parse(
+        "FOR doc IN collection FILTER ANY member IN doc.members SATISFIES member.age > 10 RETURN doc",
+    );
+    assert!(
+        query.is_ok(),
+        "Failed to parse ANY ... SATISFIES syntax: {:?}",
+        query.err()
+    );
+}

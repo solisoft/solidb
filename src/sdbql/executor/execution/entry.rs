@@ -11,7 +11,7 @@ use serde_json::Value;
 use super::super::types::{Context, MutationStats, QueryExecutionResult};
 use super::super::window::contains_window_functions;
 use super::super::{compare_values, QueryExecutor};
-use crate::error::{DbError, DbResult};
+use crate::error::DbResult;
 use crate::sdbql::ast::*;
 
 impl<'a> QueryExecutor<'a> {

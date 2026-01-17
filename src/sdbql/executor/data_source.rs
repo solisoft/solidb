@@ -11,7 +11,6 @@ use super::types::Context;
 use super::QueryExecutor;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::ForClause;
-use crate::storage::Collection;
 
 impl<'a> QueryExecutor<'a> {
     pub(super) fn get_collection(&self, name: &str) -> DbResult<crate::storage::Collection> {

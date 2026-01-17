@@ -7,11 +7,11 @@
 
 use serde_json::Value;
 
-use super::types::{Context, IndexableCondition};
+use super::types::IndexableCondition;
 use super::QueryExecutor;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
-use crate::storage::{Collection, Document};
+use crate::storage::Collection;
 
 impl<'a> QueryExecutor<'a> {
     pub(super) fn extract_indexable_condition(

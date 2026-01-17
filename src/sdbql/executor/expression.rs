@@ -11,8 +11,7 @@ use super::window::generate_window_key;
 use serde_json::Value;
 
 use super::types::Context;
-use super::utils::number_from_f64;
-use super::{compare_values, evaluate_binary_op, evaluate_unary_op, get_field_value, to_bool, values_equal, QueryExecutor};
+use super::{evaluate_binary_op, evaluate_unary_op, get_field_value, to_bool, values_equal, QueryExecutor};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
 

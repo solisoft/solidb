@@ -9,7 +9,6 @@ use chrono::Utc;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use super::builtins;
 use super::types::Context;
 use super::utils::number_from_f64;
 use super::{compare_values, parse_datetime, safe_regex, to_bool, values_equal, QueryExecutor};
@@ -17,7 +16,7 @@ use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::Expression;
 use crate::storage::{distance_meters, GeoPoint};
 
-use super::functions::phonetic::{
+use super::phonetic::phonetic::{
     caverphone, cologne_phonetic, double_metaphone, metaphone, nysiis, soundex, soundex_el,
     soundex_es, soundex_fr, soundex_it, soundex_ja, soundex_nl, soundex_pt,
 };
@@ -3684,7 +3683,7 @@ impl<'a> QueryExecutor<'a> {
     }
     pub(super) fn evaluate_function_with_values(&self, name: &str, args: &[Value]) -> DbResult<Value> {
         // Try phonetic functions first
-        if let Some(val) = super::functions::evaluate(name, args)? {
+        if let Some(val) = super::phonetic::evaluate(name, args)? {
             return Ok(val);
         }
 

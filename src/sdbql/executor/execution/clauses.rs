@@ -10,12 +10,10 @@
 //! - Graph traversal and shortest path
 //! - Stream clauses
 
-use std::collections::HashMap;
-
 use serde_json::Value;
 
 use super::super::types::{Context, MutationStats};
-use super::super::{compare_values, to_bool, QueryExecutor};
+use super::super::QueryExecutor;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
 use crate::sync::protocol::Operation;
