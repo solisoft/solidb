@@ -6,20 +6,22 @@ use serde_json::json;
 use solidb::storage::index::IndexType;
 use solidb::storage::StorageEngine;
 use tempfile::TempDir;
+use uuid::Uuid;
 
 fn create_test_db() -> (StorageEngine, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
 
-    engine.create_database("testdb".to_string()).unwrap();
+    engine.create_database(format!("testdb_{}", Uuid::new_v4())).unwrap();
     (engine, tmp_dir)
 }
 
 #[test]
 fn test_truncate_preserves_indexes() {
     let (engine, _tmp) = create_test_db();
-    let db = engine.get_database("testdb").unwrap();
+    let db_names = engine.list_databases();
+    let db = engine.get_database(&db_names[0]).unwrap();
 
     // 1. Create collection
     db.create_collection("users".to_string(), None).unwrap();
@@ -70,7 +72,8 @@ fn test_truncate_preserves_indexes() {
 #[test]
 fn test_truncate_empty_collection() {
     let (engine, _tmp) = create_test_db();
-    let db = engine.get_database("testdb").unwrap();
+    let db_names = engine.list_databases();
+    let db = engine.get_database(&db_names[0]).unwrap();
     db.create_collection("empty".to_string(), None).unwrap();
     let col = db.get_collection("empty").unwrap();
 

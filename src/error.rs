@@ -1,4 +1,10 @@
+
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response, Json},
+};
 use thiserror::Error;
+
 
 #[derive(Error, Debug)]
 pub enum DbError {
@@ -83,6 +89,36 @@ impl serde::Serialize for DbError {
         S: serde::Serializer,
     {
         serializer.collect_str(self)
+    }
+}
+
+impl IntoResponse for DbError {
+    fn into_response(self) -> Response {
+        let (status, message) = match &self {
+            DbError::CollectionNotFound(msg) | DbError::DocumentNotFound(msg) | DbError::TransactionNotFound(msg) | DbError::RoleNotFound(msg) => {
+                (StatusCode::NOT_FOUND, msg.clone())
+            }
+            DbError::CollectionAlreadyExists(msg) | DbError::ConflictError(msg) | DbError::TransactionConflict(msg) => {
+                (StatusCode::CONFLICT, msg.clone())
+            }
+            DbError::InvalidDocument(msg) | DbError::ParseError(msg) | DbError::BadRequest(msg) | DbError::SchemaValidationError(msg) => {
+                (StatusCode::BAD_REQUEST, msg.clone())
+            }
+            DbError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
+            DbError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
+            DbError::OperationNotSupported(msg) => (StatusCode::NOT_IMPLEMENTED, msg.clone()),
+            DbError::TransactionTimeout(_) => (StatusCode::REQUEST_TIMEOUT, self.to_string()),
+            // Default to 500
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+        };
+
+        let body = serde_json::json!({
+            "error": message,
+            "code": status.as_u16(),
+            "type": format!("{:?}", self).split('(').next().unwrap_or("Error") // Basic type extraction
+        });
+
+        (status, Json(body)).into_response()
     }
 }
 

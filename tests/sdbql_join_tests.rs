@@ -3,17 +3,15 @@ use serde_json::json;
 use solidb::error::DbResult;
 use solidb::sdbql::{parse, QueryExecutor};
 use solidb::storage::StorageEngine;
+use uuid::Uuid;
 
 // Helper to create a test storage engine with sample data
 fn setup_test_data() -> DbResult<(StorageEngine, String)> {
     // Use unique paths and database names to avoid conflicts
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos(); // Use nanos for higher resolution
-    let db_path = format!("/tmp/test_join_db_{}", timestamp);
+    let uuid = Uuid::new_v4();
+    let db_path = format!("/tmp/test_join_db_{}", uuid);
     let storage = StorageEngine::new(&db_path)?;
-    let db_name = format!("test_db_{}", timestamp);
+    let db_name = format!("test_db_{}", uuid);
 
     storage.create_database(db_name.clone())?;
 
@@ -267,13 +265,10 @@ fn test_join_with_aggregation() -> DbResult<()> {
 
 #[test]
 fn test_join_empty_collection() -> DbResult<()> {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let storage = StorageEngine::new(&format!("/tmp/test_join_empty_db_{}", timestamp))?;
+    let uuid = Uuid::new_v4();
+    let storage = StorageEngine::new(&format!("/tmp/test_join_empty_db_{}", uuid))?;
 
-    let db_name = format!("empty_test_{}", timestamp);
+    let db_name = format!("empty_test_{}", uuid);
 
     storage.create_database(db_name.clone())?;
     storage.create_collection(format!("{}:users", db_name), None)?;
@@ -406,13 +401,10 @@ fn test_execute_full_outer_join() -> DbResult<()> {
 
 #[test]
 fn test_right_join_with_no_left_matches() -> DbResult<()> {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let storage = StorageEngine::new(&format!("/tmp/test_right_join_db_{}", timestamp))?;
+    let uuid = Uuid::new_v4();
+    let storage = StorageEngine::new(&format!("/tmp/test_right_join_db_{}", uuid))?;
 
-    let db_name = format!("right_test_{}", timestamp);
+    let db_name = format!("right_test_{}", uuid);
 
     storage.create_database(db_name.clone())?;
     storage.create_collection(format!("{}:users", db_name), None)?;
@@ -439,13 +431,10 @@ fn test_right_join_with_no_left_matches() -> DbResult<()> {
 #[test]
 #[ignore] // TODO: FULL OUTER JOIN doesn't properly handle orphan right-side rows (orders without matching users)
 fn test_full_outer_join_comprehensive() -> DbResult<()> {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let storage = StorageEngine::new(&format!("/tmp/test_full_outer_db_{}", timestamp))?;
+    let uuid = Uuid::new_v4();
+    let storage = StorageEngine::new(&format!("/tmp/test_full_outer_db_{}", uuid))?;
 
-    let db_name = format!("full_test_{}", timestamp);
+    let db_name = format!("full_test_{}", uuid);
 
     storage.create_database(db_name.clone())?;
     storage.create_collection(format!("{}:users", db_name), None)?;
