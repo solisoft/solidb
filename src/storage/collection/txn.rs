@@ -46,10 +46,13 @@ impl Collection {
         // nor this transaction's previous ops without extra logic. (Simplified)
         self.check_unique_constraints(&key, &doc.to_value())?;
 
+        // Parse database and collection from self.name (format: "db:coll")
+        let (db_name, coll_name) = self.name.split_once(':').unwrap_or(("", &self.name));
+
         // Add to transaction log
         tx.add_operation(Operation::Insert {
-            database: "default".to_string(), // Collection doesn't track DB name yet
-            collection: self.name.clone(),
+            database: db_name.to_string(),
+            collection: coll_name.to_string(),
             key: key.clone(),
             data: doc.to_value(),
         });
@@ -83,10 +86,13 @@ impl Collection {
             self.validate_edge_document(&doc.to_value())?;
         }
 
+        // Parse database and collection from self.name (format: "db:coll")
+        let (db_name, coll_name) = self.name.split_once(':').unwrap_or(("", &self.name));
+
         // Add to transaction log
         tx.add_operation(Operation::Update {
-            database: "default".to_string(),
-            collection: self.name.clone(),
+            database: db_name.to_string(),
+            collection: coll_name.to_string(),
             key: key.to_string(),
             old_data,
             new_data: doc.to_value(),
@@ -100,9 +106,12 @@ impl Collection {
         let doc = self.get(key)?;
         let old_data = doc.to_value();
 
+        // Parse database and collection from self.name (format: "db:coll")
+        let (db_name, coll_name) = self.name.split_once(':').unwrap_or(("", &self.name));
+
         tx.add_operation(Operation::Delete {
-            database: "default".to_string(),
-            collection: self.name.clone(),
+            database: db_name.to_string(),
+            collection: coll_name.to_string(),
             key: key.to_string(),
             old_data,
         });

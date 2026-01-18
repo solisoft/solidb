@@ -420,7 +420,7 @@ fn test_batch_delete() {
     // Delete half
     let keys: Vec<String> = (0..5).map(|i| format!("doc{}", i)).collect();
     let deleted = collection
-        .delete_batch(&keys)
+        .delete_batch(keys)
         .expect("Batch delete should succeed");
 
     assert_eq!(deleted, 5);
@@ -521,7 +521,7 @@ fn test_edge_collection_type() {
 #[test]
 fn test_blob_put_and_get() {
     let (engine, _tmp) = create_test_engine();
-    engine.create_collection("blobs".to_string(), None).unwrap();
+    engine.create_collection("blobs".to_string(), Some("blob".to_string())).unwrap();
     let collection = engine.get_collection("blobs").unwrap();
 
     // Store blob chunks
@@ -543,7 +543,7 @@ fn test_blob_put_and_get() {
 fn test_blob_multiple_chunks() {
     let (engine, _tmp) = create_test_engine();
     engine
-        .create_collection("multi_blobs".to_string(), None)
+        .create_collection("multi_blobs".to_string(), Some("blob".to_string()))
         .unwrap();
     let collection = engine.get_collection("multi_blobs").unwrap();
 
@@ -566,7 +566,7 @@ fn test_blob_multiple_chunks() {
 fn test_blob_delete() {
     let (engine, _tmp) = create_test_engine();
     engine
-        .create_collection("del_blobs".to_string(), None)
+        .create_collection("del_blobs".to_string(), Some("blob".to_string()))
         .unwrap();
     let collection = engine.get_collection("del_blobs").unwrap();
 

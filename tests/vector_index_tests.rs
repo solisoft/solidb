@@ -428,7 +428,7 @@ fn test_vector_index_persistence() {
 
         let config = collection.get_vector_index("embedding_idx");
         assert!(
-            config.is_some(),
+            config.is_ok(),
             "Vector index should persist across restarts"
         );
     }

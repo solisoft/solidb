@@ -682,11 +682,49 @@ impl Collection {
     }
 
     /// Prune documents older than timestamp (for timeseries)
-    pub fn prune_older_than(&self, _timestamp: u64) -> DbResult<usize> {
-        // TODO: Implement pruning logic based on collection type/structure
-        // For now, return 0 to allow compilation.
-        tracing::warn!("prune_older_than not fully implemented in refactor");
-        Ok(0)
+    /// The timestamp is in milliseconds since Unix epoch.
+    /// This extracts the timestamp from UUIDv7 keys and deletes matching documents.
+    pub fn prune_older_than(&self, timestamp_ms: u64) -> DbResult<usize> {
+        // Collect keys to delete
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        let prefix = DOC_PREFIX.as_bytes();
+        let iter = db.prefix_iterator_cf(cf, prefix);
+
+        let mut keys_to_delete = Vec::new();
+
+        for result in iter {
+            if let Ok((key_bytes, _value)) = result {
+                if !key_bytes.starts_with(prefix) {
+                    break;
+                }
+
+                // Extract the document key (without prefix)
+                let doc_key = String::from_utf8_lossy(&key_bytes[prefix.len()..]).to_string();
+
+                // Try to parse as UUID and extract timestamp
+                if let Ok(uuid) = uuid::Uuid::parse_str(&doc_key) {
+                    // UUIDv7: timestamp is in the upper 48 bits (milliseconds)
+                    // uuid.as_u128() returns: timestamp_ms (48 bits) | version (4 bits) | rand_a (12 bits) | variant (2 bits) | rand_b (62 bits)
+                    let uuid_int = uuid.as_u128();
+                    let uuid_timestamp_ms = (uuid_int >> 80) as u64;
+
+                    if uuid_timestamp_ms < timestamp_ms {
+                        keys_to_delete.push(doc_key);
+                    }
+                }
+            }
+        }
+
+        drop(db); // Release read lock before delete_batch
+
+        if keys_to_delete.is_empty() {
+            return Ok(0);
+        }
+
+        self.delete_batch(keys_to_delete)
     }
 
     // ==================== Validation ====================

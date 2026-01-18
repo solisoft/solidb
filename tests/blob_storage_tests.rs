@@ -14,7 +14,7 @@ fn create_test_engine() -> (StorageEngine, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
-    engine.create_collection("files".to_string(), None).unwrap();
+    engine.create_collection("files".to_string(), Some("blob".to_string())).unwrap();
     (engine, tmp_dir)
 }
 
@@ -365,7 +365,7 @@ fn test_blob_persistence() {
     // First session: create blob
     {
         let engine = StorageEngine::new(path).unwrap();
-        engine.create_collection("files".to_string(), None).unwrap();
+        engine.create_collection("files".to_string(), Some("blob".to_string())).unwrap();
         let files = engine.get_collection("files").unwrap();
 
         files

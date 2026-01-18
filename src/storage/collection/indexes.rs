@@ -1195,12 +1195,21 @@ impl Collection {
         Ok(())
     }
 
-    pub(crate) fn cuckoo_insert(&self, index_name: &str, item: &str) {
+    pub fn cuckoo_insert(&self, index_name: &str, item: &str) {
         // Ensure loaded
         self.preload_cuckoo_filter(index_name);
         let mut filters = self.cuckoo_filters.write().unwrap();
         if let Some(filter) = filters.get_mut(index_name) {
              let _ = filter.add(item);
+        }
+    }
+
+    pub fn cuckoo_delete(&self, index_name: &str, item: &str) {
+        // Ensure loaded
+        self.preload_cuckoo_filter(index_name);
+        let mut filters = self.cuckoo_filters.write().unwrap();
+        if let Some(filter) = filters.get_mut(index_name) {
+             let _ = filter.delete(item);
         }
     }
 

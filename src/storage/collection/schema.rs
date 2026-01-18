@@ -6,7 +6,15 @@ impl Collection {
     // ==================== Schema Management ====================
 
     /// Set JSON schema for collection validation
+    /// Set JSON schema for collection validation
     pub fn set_json_schema(&self, schema: CollectionSchema) -> DbResult<()> {
+        // Validate the schema itself if enabled
+        if schema.is_enabled() {
+            jsonschema::validator_for(&schema.schema).map_err(|e| {
+                DbError::InvalidDocument(format!("Invalid JSON Schema: {}", e))
+            })?;
+        }
+
         let db = self.db.write().unwrap();
         let cf = db
             .cf_handle(&self.name)
