@@ -8,9 +8,12 @@ use std::time::Instant;
 
 use serde_json::Value;
 
-use super::types::{CollectionAccess, Context, ExecutionTiming, FilterInfo, LetBinding, LimitInfo, QueryExplain, SortInfo};
-use super::{compare_values, QueryExecutor};
 use super::format_expression;
+use super::types::{
+    CollectionAccess, Context, ExecutionTiming, FilterInfo, LetBinding, LimitInfo, QueryExplain,
+    SortInfo,
+};
+use super::{compare_values, QueryExecutor};
 use crate::error::DbResult;
 use crate::sdbql::ast::*;
 
@@ -299,5 +302,4 @@ impl<'a> QueryExecutor<'a> {
             warnings,
         })
     }
-
 }

@@ -113,8 +113,8 @@ pub fn handle_recount_collection(
 ) -> Response {
     match handler.get_collection(&database, &collection) {
         Ok(coll) => {
-             let count = coll.recalculate_count();
-             Response::ok_count(count)
+            let count = coll.recalculate_count();
+            Response::ok_count(count)
         }
         Err(e) => Response::error(e),
     }

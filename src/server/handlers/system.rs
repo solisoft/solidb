@@ -1,5 +1,5 @@
-use crate::server::cursor_store::CursorStore;
 use crate::scripting::ScriptStats;
+use crate::server::cursor_store::CursorStore;
 use crate::storage::StorageEngine;
 use axum::response::Json;
 use serde_json::Value;
@@ -25,7 +25,6 @@ pub fn is_physical_shard_collection(name: &str) -> bool {
         false
     }
 }
-
 
 /// Sanitize a filename for use in Content-Disposition header to prevent header injection
 /// Removes/replaces: quotes, backslashes, newlines, carriage returns, and non-ASCII characters

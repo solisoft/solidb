@@ -1,13 +1,10 @@
+use super::system::{get_dir_size, AppState};
+use crate::{error::DbError, sync::NodeStats};
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
 };
 use serde::{Deserialize, Serialize};
-use crate::{
-    sync::NodeStats,
-    error::DbError,
-};
-use super::system::{AppState, get_dir_size};
 
 // ==================== Cluster Info ====================
 
@@ -103,7 +100,10 @@ pub struct PeerStatusResponse {
 }
 
 /// Generate cluster status data (shared between HTTP and WebSocket handlers)
-pub fn generate_cluster_status(state: &AppState, sys: &mut sysinfo::System) -> ClusterStatusResponse {
+pub fn generate_cluster_status(
+    state: &AppState,
+    sys: &mut sysinfo::System,
+) -> ClusterStatusResponse {
     use std::sync::atomic::Ordering;
 
     let node_id = state.storage.node_id().to_string();
@@ -206,7 +206,7 @@ pub fn generate_cluster_status(state: &AppState, sys: &mut sysinfo::System) -> C
                     - m.last_heartbeat)
                     / 1000,
                 replication_lag: 0, // TODO: track actual lag
-                stats: None, // NodeBasicStats conversion to NodeStats not implemented yet
+                stats: None,        // NodeBasicStats conversion to NodeStats not implemented yet
             })
             .collect();
 

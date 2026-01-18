@@ -44,18 +44,16 @@ pub fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> D
         BinaryOperator::Equal => Ok(Value::Bool(values_equal(left, right))),
         BinaryOperator::NotEqual => Ok(Value::Bool(!values_equal(left, right))),
 
-        BinaryOperator::LessThan => Ok(Value::Bool(
-            compare_values(left, right) == Ordering::Less,
-        )),
+        BinaryOperator::LessThan => Ok(Value::Bool(compare_values(left, right) == Ordering::Less)),
         BinaryOperator::LessThanOrEqual => Ok(Value::Bool(
             compare_values(left, right) != Ordering::Greater,
         )),
         BinaryOperator::GreaterThan => Ok(Value::Bool(
             compare_values(left, right) == Ordering::Greater,
         )),
-        BinaryOperator::GreaterThanOrEqual => Ok(Value::Bool(
-            compare_values(left, right) != Ordering::Less,
-        )),
+        BinaryOperator::GreaterThanOrEqual => {
+            Ok(Value::Bool(compare_values(left, right) != Ordering::Less))
+        }
         BinaryOperator::In => match right {
             Value::Array(arr) => {
                 let mut found = false;

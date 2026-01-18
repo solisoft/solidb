@@ -10,7 +10,9 @@
 //! configured threshold (default: 10,000).
 
 use crate::error::{DbError, DbResult};
-use crate::storage::index::{VectorIndexConfig, VectorIndexStats, VectorMetric, VectorQuantization};
+use crate::storage::index::{
+    VectorIndexConfig, VectorIndexStats, VectorMetric, VectorQuantization,
+};
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -1118,12 +1120,11 @@ impl VectorIndex {
 
     /// Get index statistics
     pub fn stats(&self) -> VectorIndexStats {
-        let (memory_bytes, compression_ratio) = 
-            if let Some(stats) = self.quantization_stats() {
-                (stats.memory_bytes, stats.compression_ratio)
-            } else {
-                (0, 1.0)
-            };
+        let (memory_bytes, compression_ratio) = if let Some(stats) = self.quantization_stats() {
+            (stats.memory_bytes, stats.compression_ratio)
+        } else {
+            (0, 1.0)
+        };
 
         VectorIndexStats {
             name: self.config.name.clone(),

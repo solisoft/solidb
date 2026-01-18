@@ -30,7 +30,11 @@ pub fn metaphone(s: &str) -> String {
     while i < chars.len() && result.len() < 6 {
         let c = chars[i];
         let next = chars.get(i + 1).copied();
-        let prev = if i > 0 { chars.get(i - 1).copied() } else { None };
+        let prev = if i > 0 {
+            chars.get(i - 1).copied()
+        } else {
+            None
+        };
 
         if c != 'C' && prev == Some(c) && !matches!(c, 'A' | 'E' | 'I' | 'O' | 'U') {
             i += 1;
@@ -84,9 +88,13 @@ pub fn metaphone(s: &str) -> String {
                 }
             }
             'H' => {
-                if !matches!(prev, Some('A') | Some('E') | Some('I') | Some('O') | Some('U'))
-                    && matches!(next, Some('A') | Some('E') | Some('I') | Some('O') | Some('U'))
-                {
+                if !matches!(
+                    prev,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                ) && matches!(
+                    next,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                ) {
                     result.push('H');
                 }
             }
@@ -126,7 +134,10 @@ pub fn metaphone(s: &str) -> String {
             }
             'V' => result.push('F'),
             'W' | 'Y' => {
-                if matches!(next, Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                if matches!(
+                    next,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                ) {
                     result.push(c);
                 }
             }

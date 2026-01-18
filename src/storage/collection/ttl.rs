@@ -2,7 +2,6 @@ use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::{extract_field_value, TtlIndex, TtlIndexStats};
 
-
 impl Collection {
     // ==================== TTL Index Operations ====================
 
@@ -64,11 +63,13 @@ impl Collection {
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
             db.put_cf(cf, Self::ttl_meta_key(&name), &index_bytes)
-                .map_err(|e| DbError::InternalError(format!("Failed to create TTL index: {}", e)))?;
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to create TTL index: {}", e))
+                })?;
         }
 
         // Trigger an initial cleanup?
-        // self.cleanup_expired_documents_for_ttl_index(&index)?; 
+        // self.cleanup_expired_documents_for_ttl_index(&index)?;
         // Better to let the user or background job trigger it.
 
         Ok(TtlIndexStats {
@@ -112,10 +113,10 @@ impl Collection {
 
     /// Cleanup expired documents for a specific TTL index
     pub fn cleanup_expired_documents_for_ttl_index(&self, index: &TtlIndex) -> DbResult<usize> {
-        // Naive implementation: scan all docs. 
-        // Optimized: Secondary index on timestamp? 
+        // Naive implementation: scan all docs.
+        // Optimized: Secondary index on timestamp?
         // Current architecture: Scan all.
-        
+
         let docs = self.all();
         let mut deleted_count = 0;
         let now = chrono::Utc::now().timestamp() as u64;
@@ -128,7 +129,7 @@ impl Collection {
             let expiry_time = if let Some(n) = field_value.as_u64() {
                 // Assuming timestamp in seconds? or milliseconds?
                 // Usually seconds for unix timestamp.
-                 Some(n)
+                Some(n)
             } else if let Some(s) = field_value.as_str() {
                 // Try parse ISO string
                 if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {

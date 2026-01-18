@@ -700,39 +700,22 @@ impl ShardCoordinator {
     /// Check if a node recently failed and came back online
     /// This helps avoid using stale data from nodes that just recovered
     fn was_recently_failed(&self, node_id: &str) -> bool {
-        const RECENT_FAILURE_WINDOW_SECS: u64 = 300; // 5 minutes
-
-        let recently_failed = self.recently_failed_nodes.read().unwrap();
-        if let Some(failure_time) = recently_failed.get(node_id) {
-            let elapsed = failure_time.elapsed();
-            elapsed.as_secs() < RECENT_FAILURE_WINDOW_SECS
-        } else {
-            false
-        }
+        crate::sharding::healing::was_recently_failed(&self.recently_failed_nodes, node_id)
     }
 
     /// Record that a node failed (called when failover occurs)
     pub fn record_node_failure(&self, node_id: &str) {
-        let mut recently_failed = self.recently_failed_nodes.write().unwrap();
-        recently_failed.insert(node_id.to_string(), std::time::Instant::now());
-        tracing::info!("Recorded node failure for {}", node_id);
+        crate::sharding::healing::record_node_failure(&self.recently_failed_nodes, node_id);
     }
 
     /// Clear failure record when node is confirmed healthy
     pub fn clear_node_failure(&self, node_id: &str) {
-        let mut recently_failed = self.recently_failed_nodes.write().unwrap();
-        recently_failed.remove(node_id);
-        tracing::info!("Cleared failure record for {}", node_id);
+        crate::sharding::healing::clear_node_failure(&self.recently_failed_nodes, node_id);
     }
 
     /// Clean up old failure records
     pub fn cleanup_old_failures(&self) {
-        const MAX_AGE_SECS: u64 = 3600; // 1 hour
-        let mut recently_failed = self.recently_failed_nodes.write().unwrap();
-        let now = std::time::Instant::now();
-
-        recently_failed
-            .retain(|_, failure_time| now.duration_since(*failure_time).as_secs() < MAX_AGE_SECS);
+        crate::sharding::healing::cleanup_old_failures(&self.recently_failed_nodes);
     }
 
     /// Broadcast reshard requests for removed shards to all nodes
@@ -743,158 +726,44 @@ impl ShardCoordinator {
         old_shards: u16,
         new_shards: u16,
     ) -> Result<(), crate::error::DbError> {
-        let mgr = match &self.cluster_manager {
-            Some(m) => m,
-            None => return Ok(()), // Single node, no broadcast needed
-        };
-
-        let _my_node_id = mgr.local_node_id();
-        let client = reqwest::Client::new();
-        let secret = self.cluster_secret();
-
-        // For each removed shard, broadcast reshard request to all nodes
-        for removed_shard_id in new_shards..old_shards {
-            tracing::info!(
-                "BROADCAST: Sending reshard requests for removed shard {}_s{} to all nodes",
-                coll_name,
-                removed_shard_id
-            );
-
-            for member in mgr.state().get_all_members() {
-                let node_id = &member.node.id;
-                let addr = &member.node.api_address;
-
-                let request = serde_json::json!({
-                    "database": db_name,
-                    "collection": coll_name,
-                    "old_shards": old_shards,
-                    "new_shards": new_shards,
-                    "removed_shard_id": removed_shard_id
-                });
-
-                let url = format!("http://{}/_api/cluster/reshard", addr);
-
-                match tokio::time::timeout(
-                    std::time::Duration::from_secs(30),
-                    client
-                        .post(&url)
-                        .header("X-Cluster-Secret", &secret)
-                        .json(&request)
-                        .send(),
-                )
-                .await
-                {
-                    Ok(Ok(response)) => {
-                        if response.status().is_success() {
-                            tracing::debug!(
-                                "BROADCAST: Successfully sent reshard request to {} for shard {}",
-                                node_id,
-                                removed_shard_id
-                            );
-                        } else {
-                            tracing::warn!(
-                                "BROADCAST: Failed to send reshard request to {}: status {}",
-                                node_id,
-                                response.status()
-                            );
-                        }
-                    }
-                    Ok(Err(e)) => {
-                        tracing::error!(
-                            "BROADCAST: Failed to send reshard request to {}: {}",
-                            node_id,
-                            e
-                        );
-                    }
-                    Err(_) => {
-                        tracing::error!(
-                            "BROADCAST: Timeout sending reshard request to {} for shard {}",
-                            node_id,
-                            removed_shard_id
-                        );
-                    }
-                }
-            }
-        }
-
-        Ok(())
+        crate::sharding::rebalance::broadcast_reshard_removed_shards(
+            &self.cluster_manager,
+            &self.cluster_secret(),
+            db_name,
+            coll_name,
+            old_shards,
+            new_shards,
+        )
+        .await
     }
 
     /// Check if we recently completed resharding (to avoid aggressive healing)
     fn check_recent_resharding(&self) -> bool {
-        // Check if we're currently rebalancing
-        if self.is_rebalancing() {
-            return true;
-        }
-
-        // Check if resharding completed within the last 10 seconds
-        // This gives the cluster time to stabilize before healing runs
-        if let Ok(last_time) = self.last_reshard_time.read() {
-            if let Some(instant) = *last_time {
-                let elapsed = instant.elapsed();
-                if elapsed.as_secs() < 10 {
-                    tracing::debug!("check_recent_resharding: resharding completed {}s ago, still in stabilization period", elapsed.as_secs());
-                    return true;
-                }
-            }
-        }
-
-        false
+        crate::sharding::rebalance::check_recent_resharding(
+            &self.is_rebalancing,
+            &self.last_reshard_time,
+        )
     }
 
     /// Record that resharding has completed - used to prevent aggressive healing
     pub fn mark_reshard_completed(&self) {
-        if let Ok(mut last_time) = self.last_reshard_time.write() {
-            *last_time = Some(std::time::Instant::now());
-            tracing::info!(
-                "RESHARD: Marked resharding as completed, delaying healing for 10 seconds"
-            );
-        }
+        crate::sharding::rebalance::mark_reshard_completed(&self.last_reshard_time);
     }
 
     /// Check if resharding should be paused due to cluster health issues
     fn should_pause_resharding(&self) -> bool {
-        if let Some(mgr) = &self.cluster_manager {
-            let healthy_nodes = mgr.get_healthy_nodes();
-            let total_nodes = mgr.state().get_all_members().len();
-
-            // Pause resharding if less than 50% of nodes are healthy
-            if healthy_nodes.len() < (total_nodes + 1) / 2 {
-                tracing::warn!(
-                    "RESHARD: Pausing resharding - only {}/{} nodes are healthy",
-                    healthy_nodes.len(),
-                    total_nodes
-                );
-                return true;
-            }
-
-            // Also check for recently failed nodes
-            let recently_failed = self.recently_failed_nodes.read().unwrap();
-            if recently_failed.len() > total_nodes / 2 {
-                tracing::warn!(
-                    "RESHARD: Pausing resharding - {}/{} nodes recently failed",
-                    recently_failed.len(),
-                    total_nodes
-                );
-                return true;
-            }
-        }
-        false
+        crate::sharding::healing::should_pause_resharding(
+            &self.cluster_manager,
+            &self.recently_failed_nodes,
+        )
     }
 
     /// Clear failure records for nodes that are currently healthy
     pub fn clear_failures_for_healthy_nodes(&self) {
-        if let Some(mgr) = &self.cluster_manager {
-            let healthy_nodes = mgr.get_healthy_nodes();
-            let mut recently_failed = self.recently_failed_nodes.write().unwrap();
-
-            for healthy_node in &healthy_nodes {
-                if recently_failed.contains_key(healthy_node) {
-                    recently_failed.remove(healthy_node);
-                    tracing::info!("Cleared failure record for healthy node {}", healthy_node);
-                }
-            }
-        }
+        crate::sharding::healing::clear_failures_for_healthy_nodes(
+            &self.recently_failed_nodes,
+            &self.cluster_manager,
+        );
     }
 
     /// Repair sharded collection by checking for misplaced documents and fixing them
@@ -1581,150 +1450,25 @@ impl ShardCoordinator {
     /// this function removes the local physical shard collections that are no longer
     /// assigned to this node (neither as primary nor replica).
     pub async fn cleanup_orphaned_shards(&self) -> Result<usize, crate::error::DbError> {
-        let my_node_id = self.my_node_id();
-        let mut cleaned_count = 0usize;
-
-        // Iterate all databases
-        for db_name in self.storage.list_databases() {
-            let db = match self.storage.get_database(&db_name) {
-                Ok(d) => d,
-                Err(_) => continue,
-            };
-
-            // Get all collections in this database
-            let collections = db.list_collections();
-
-            for coll_name in collections {
-                // Check if this looks like a physical shard collection (ends with _s<N>)
-                if let Some(base_name) = coll_name.strip_suffix(|c: char| c.is_ascii_digit()) {
-                    if let Some(base) = base_name.strip_suffix("_s") {
-                        // This is a physical shard collection
-                        // Extract shard ID
-                        let shard_suffix = &coll_name[base.len() + 2..];
-                        let shard_id: u16 = match shard_suffix.parse() {
-                            Ok(id) => id,
-                            Err(_) => continue,
-                        };
-
-                        // Check if we should have this shard
-                        let key = format!("{}.{}", db_name, base);
-                        let tables = self.shard_tables.read().map_err(|_| {
-                            crate::error::DbError::InternalError("Lock poisoned".to_string())
-                        })?;
-
-                        let is_assigned_to_us = if let Some(table) = tables.get(&key) {
-                            if let Some(assignment) = table.assignments.get(&shard_id) {
-                                assignment.primary_node == my_node_id
-                                    || assignment.replica_nodes.contains(&my_node_id)
-                            } else {
-                                false
-                            }
-                        } else {
-                            // No shard table means we can't determine - be safe and keep it
-                            true
-                        };
-
-                        if !is_assigned_to_us {
-                            // This shard is not assigned to us - clean it up
-                            tracing::warn!(
-                                "CLEANUP: Removing orphaned shard collection {}/{} (not assigned to node {})",
-                                db_name, coll_name, my_node_id
-                            );
-
-                            if let Err(e) = db.delete_collection(&coll_name) {
-                                tracing::error!(
-                                    "CLEANUP: Failed to delete orphaned shard {}/{}: {}",
-                                    db_name,
-                                    coll_name,
-                                    e
-                                );
-                            } else {
-                                cleaned_count += 1;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if cleaned_count > 0 {
-            tracing::info!(
-                "CLEANUP: Removed {} orphaned shard collections",
-                cleaned_count
-            );
-        }
-
-        Ok(cleaned_count)
+        crate::sharding::cleanup::cleanup_orphaned_shards(
+            &self.storage,
+            &self.shard_tables,
+            &self.my_node_id(),
+        )
+        .await
     }
 
     /// Broadcast cleanup to all cluster nodes
     /// This ensures all nodes remove their orphaned shard collections after contraction
     pub async fn broadcast_cleanup_orphaned_shards(&self) -> Result<(), crate::error::DbError> {
-        // First clean up locally
-        if let Err(e) = self.cleanup_orphaned_shards().await {
-            tracing::error!("CLEANUP: Local cleanup failed: {}", e);
-        }
-
-        // Then broadcast to all remote nodes
-        let mgr = match &self.cluster_manager {
-            Some(m) => m,
-            None => return Ok(()), // Single node, local cleanup is enough
-        };
-
-        let my_node_id = mgr.local_node_id();
-        let client = reqwest::Client::new();
-        let secret = self.cluster_secret();
-
-        // Collect all shard tables to broadcast
-        let tables: Vec<ShardTable> = {
-            let guard = self
-                .shard_tables
-                .read()
-                .map_err(|_| crate::error::DbError::InternalError("Lock poisoned".to_string()))?;
-            guard.values().cloned().collect()
-        };
-
-        for member in mgr.state().get_all_members() {
-            if member.node.id == my_node_id {
-                continue; // Skip self
-            }
-
-            let addr = &member.node.api_address;
-            let url = format!("http://{}/_api/cluster/cleanup", addr);
-
-            tracing::info!(
-                "CLEANUP: Broadcasting cleanup (with {} tables) to node {} at {}",
-                tables.len(),
-                member.node.id,
-                addr
-            );
-
-            match client
-                .post(&url)
-                .header("X-Cluster-Secret", &secret)
-                .json(&tables) // Send tables in body
-                .timeout(std::time::Duration::from_secs(30))
-                .send()
-                .await
-            {
-                Ok(res) => {
-                    if !res.status().is_success() {
-                        tracing::warn!(
-                            "CLEANUP: Cleanup broadcast to {} failed with status {}",
-                            addr,
-                            res.status()
-                        );
-                    } else {
-                        tracing::info!("CLEANUP: Cleanup broadcast to {} successful", addr);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("CLEANUP: Cleanup broadcast to {} failed: {}", addr, e);
-                }
-            }
-        }
-
-        Ok(())
+        crate::sharding::cleanup::broadcast_cleanup_orphaned_shards(
+            &self.storage,
+            &self.cluster_manager,
+            &self.shard_tables,
+            &self.my_node_id(),
+            &self.cluster_secret(),
+        )
+        .await
     }
 
     /// Copy shard data from a source node

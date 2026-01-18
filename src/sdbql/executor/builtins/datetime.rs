@@ -2,20 +2,20 @@
 //!
 //! NOW, DATE_*, TIME_BUCKET, etc.
 
-use serde_json::Value;
-use chrono::{Datelike, Timelike, Utc};
 use crate::error::{DbError, DbResult};
+use chrono::{Datelike, Timelike, Utc};
+use serde_json::Value;
 
 /// Evaluate datetime functions
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     match name {
         "NOW" | "DATE_NOW" => {
             let now = Utc::now();
-            Ok(Some(Value::Number(serde_json::Number::from(now.timestamp_millis()))))
+            Ok(Some(Value::Number(serde_json::Number::from(
+                now.timestamp_millis(),
+            ))))
         }
-        "NOW_ISO" | "DATE_NOW_ISO" => {
-            Ok(Some(Value::String(Utc::now().to_rfc3339())))
-        }
+        "NOW_ISO" | "DATE_NOW_ISO" => Ok(Some(Value::String(Utc::now().to_rfc3339()))),
         "DATE_YEAR" => {
             check_args(name, args, 1)?;
             let dt = parse_datetime(&args[0])?;
@@ -61,7 +61,9 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "DATE_WEEK" | "DATE_ISOWEEK" => {
             check_args(name, args, 1)?;
             let dt = parse_datetime(&args[0])?;
-            Ok(Some(Value::Number(serde_json::Number::from(dt.iso_week().week()))))
+            Ok(Some(Value::Number(serde_json::Number::from(
+                dt.iso_week().week(),
+            ))))
         }
         "DATE_ISO8601" | "DATE_FORMAT" => {
             check_args(name, args, 1)?;
@@ -71,12 +73,14 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "DATE_TIMESTAMP" => {
             check_args(name, args, 1)?;
             let dt = parse_datetime(&args[0])?;
-            Ok(Some(Value::Number(serde_json::Number::from(dt.timestamp_millis()))))
+            Ok(Some(Value::Number(serde_json::Number::from(
+                dt.timestamp_millis(),
+            ))))
         }
         "DATE_ADD" => {
             if args.len() < 3 {
                 return Err(DbError::ExecutionError(
-                    "DATE_ADD requires 3 arguments: date, amount, unit".to_string()
+                    "DATE_ADD requires 3 arguments: date, amount, unit".to_string(),
                 ));
             }
             let dt = parse_datetime(&args[0])?;
@@ -84,7 +88,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 DbError::ExecutionError("DATE_ADD: amount must be an integer".to_string())
             })?;
             let unit = args[2].as_str().unwrap_or("d").to_lowercase();
-            
+
             let new_dt = match unit.as_str() {
                 "y" | "year" | "years" => dt + chrono::Duration::days(amount * 365),
                 "m" | "month" | "months" => dt + chrono::Duration::days(amount * 30),
@@ -93,16 +97,19 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 "h" | "hour" | "hours" => dt + chrono::Duration::hours(amount),
                 "i" | "minute" | "minutes" => dt + chrono::Duration::minutes(amount),
                 "s" | "second" | "seconds" => dt + chrono::Duration::seconds(amount),
-                _ => return Err(DbError::ExecutionError(format!(
-                    "DATE_ADD: unknown unit '{}', use y/m/w/d/h/i/s", unit
-                ))),
+                _ => {
+                    return Err(DbError::ExecutionError(format!(
+                        "DATE_ADD: unknown unit '{}', use y/m/w/d/h/i/s",
+                        unit
+                    )))
+                }
             };
             Ok(Some(Value::String(new_dt.to_rfc3339())))
         }
         "DATE_SUBTRACT" | "DATE_SUB" => {
             if args.len() < 3 {
                 return Err(DbError::ExecutionError(
-                    "DATE_SUBTRACT requires 3 arguments: date, amount, unit".to_string()
+                    "DATE_SUBTRACT requires 3 arguments: date, amount, unit".to_string(),
                 ));
             }
             let dt = parse_datetime(&args[0])?;
@@ -110,7 +117,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 DbError::ExecutionError("DATE_SUBTRACT: amount must be an integer".to_string())
             })?;
             let unit = args[2].as_str().unwrap_or("d").to_lowercase();
-            
+
             let new_dt = match unit.as_str() {
                 "y" | "year" | "years" => dt - chrono::Duration::days(amount * 365),
                 "m" | "month" | "months" => dt - chrono::Duration::days(amount * 30),
@@ -119,22 +126,29 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 "h" | "hour" | "hours" => dt - chrono::Duration::hours(amount),
                 "i" | "minute" | "minutes" => dt - chrono::Duration::minutes(amount),
                 "s" | "second" | "seconds" => dt - chrono::Duration::seconds(amount),
-                _ => return Err(DbError::ExecutionError(format!(
-                    "DATE_SUBTRACT: unknown unit '{}', use y/m/w/d/h/i/s", unit
-                ))),
+                _ => {
+                    return Err(DbError::ExecutionError(format!(
+                        "DATE_SUBTRACT: unknown unit '{}', use y/m/w/d/h/i/s",
+                        unit
+                    )))
+                }
             };
             Ok(Some(Value::String(new_dt.to_rfc3339())))
         }
         "DATE_DIFF" => {
             if args.len() < 2 {
                 return Err(DbError::ExecutionError(
-                    "DATE_DIFF requires 2-3 arguments: date1, date2, [unit]".to_string()
+                    "DATE_DIFF requires 2-3 arguments: date1, date2, [unit]".to_string(),
                 ));
             }
             let dt1 = parse_datetime(&args[0])?;
             let dt2 = parse_datetime(&args[1])?;
-            let unit = args.get(2).and_then(|v| v.as_str()).unwrap_or("d").to_lowercase();
-            
+            let unit = args
+                .get(2)
+                .and_then(|v| v.as_str())
+                .unwrap_or("d")
+                .to_lowercase();
+
             let diff = dt1.signed_duration_since(dt2);
             let result = match unit.as_str() {
                 "y" | "year" | "years" => diff.num_days() / 365,
@@ -145,9 +159,12 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 "i" | "minute" | "minutes" => diff.num_minutes(),
                 "s" | "second" | "seconds" => diff.num_seconds(),
                 "ms" | "millisecond" | "milliseconds" => diff.num_milliseconds(),
-                _ => return Err(DbError::ExecutionError(format!(
-                    "DATE_DIFF: unknown unit '{}', use y/m/w/d/h/i/s/ms", unit
-                ))),
+                _ => {
+                    return Err(DbError::ExecutionError(format!(
+                        "DATE_DIFF: unknown unit '{}', use y/m/w/d/h/i/s/ms",
+                        unit
+                    )))
+                }
             };
             Ok(Some(Value::Number(serde_json::Number::from(result))))
         }
@@ -170,20 +187,18 @@ fn parse_datetime(v: &Value) -> DbResult<chrono::DateTime<Utc>> {
                     chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
                         .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
                 })
-                .map_err(|_| DbError::ExecutionError(
-                    format!("Cannot parse date string: {}", s)
-                ))
+                .map_err(|_| DbError::ExecutionError(format!("Cannot parse date string: {}", s)))
         }
         Value::Number(n) => {
             // Assume milliseconds timestamp
-            let ms = n.as_i64().ok_or_else(|| {
-                DbError::ExecutionError("Invalid timestamp number".to_string())
-            })?;
+            let ms = n
+                .as_i64()
+                .ok_or_else(|| DbError::ExecutionError("Invalid timestamp number".to_string()))?;
             chrono::DateTime::from_timestamp_millis(ms)
                 .ok_or_else(|| DbError::ExecutionError("Invalid timestamp".to_string()))
         }
         _ => Err(DbError::ExecutionError(
-            "Date must be a string or number".to_string()
+            "Date must be a string or number".to_string(),
         )),
     }
 }

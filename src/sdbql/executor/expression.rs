@@ -5,13 +5,15 @@
 //! - evaluate_filter_with_context: Filter expression evaluation
 //! - evaluate_hof_with_lambda: Higher-order function evaluation
 
-use std::collections::HashMap;
 use super::window::generate_window_key;
+use std::collections::HashMap;
 
 use serde_json::Value;
 
 use super::types::Context;
-use super::{evaluate_binary_op, evaluate_unary_op, get_field_value, to_bool, values_equal, QueryExecutor};
+use super::{
+    evaluate_binary_op, evaluate_unary_op, get_field_value, to_bool, values_equal, QueryExecutor,
+};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
 
@@ -626,5 +628,4 @@ impl<'a> QueryExecutor<'a> {
             ))),
         }
     }
-
 }

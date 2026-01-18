@@ -2,19 +2,15 @@
 //!
 //! UUID, SLEEP, TYPEOF, COALESCE, etc.
 
+use crate::error::{DbError, DbResult};
 use serde_json::Value;
 use uuid::Uuid;
-use crate::error::{DbError, DbResult};
 
 /// Evaluate misc functions
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     match name {
-        "UUID" | "UUID_V4" => {
-            Ok(Some(Value::String(Uuid::new_v4().to_string())))
-        }
-        "UUID_V7" => {
-            Ok(Some(Value::String(Uuid::now_v7().to_string())))
-        }
+        "UUID" | "UUID_V4" => Ok(Some(Value::String(Uuid::new_v4().to_string()))),
+        "UUID_V7" => Ok(Some(Value::String(Uuid::now_v7().to_string()))),
         "TYPEOF" | "TYPE_OF" => {
             check_args(name, args, 1)?;
             let type_name = match &args[0] {
@@ -38,7 +34,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "NULLIF" => {
             if args.len() != 2 {
                 return Err(DbError::ExecutionError(
-                    "NULLIF requires 2 arguments".to_string()
+                    "NULLIF requires 2 arguments".to_string(),
                 ));
             }
             if args[0] == args[1] {
@@ -50,7 +46,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "ASSERT" => {
             if args.is_empty() {
                 return Err(DbError::ExecutionError(
-                    "ASSERT requires at least 1 argument".to_string()
+                    "ASSERT requires at least 1 argument".to_string(),
                 ));
             }
             let condition = match &args[0] {
@@ -59,7 +55,8 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 _ => true,
             };
             if !condition {
-                let msg = args.get(1)
+                let msg = args
+                    .get(1)
                     .and_then(|v| v.as_str())
                     .unwrap_or("Assertion failed");
                 return Err(DbError::ExecutionError(format!("ASSERT: {}", msg)));
@@ -77,13 +74,17 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "RANGE" => {
             if args.len() < 1 || args.len() > 3 {
                 return Err(DbError::ExecutionError(
-                    "RANGE requires 1-3 arguments: end or start, end, [step]".to_string()
+                    "RANGE requires 1-3 arguments: end or start, end, [step]".to_string(),
                 ));
             }
             let (start, end, step) = if args.len() == 1 {
                 (0i64, args[0].as_i64().unwrap_or(0), 1i64)
             } else if args.len() == 2 {
-                (args[0].as_i64().unwrap_or(0), args[1].as_i64().unwrap_or(0), 1i64)
+                (
+                    args[0].as_i64().unwrap_or(0),
+                    args[1].as_i64().unwrap_or(0),
+                    1i64,
+                )
             } else {
                 (
                     args[0].as_i64().unwrap_or(0),
@@ -91,7 +92,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     args[2].as_i64().unwrap_or(1).max(1),
                 )
             };
-            
+
             let mut result = Vec::new();
             let mut i = start;
             while i < end {
@@ -104,11 +105,10 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             check_args(name, args, 1)?;
             let num = match &args[0] {
                 Value::Number(n) => n.clone(),
-                Value::String(s) => {
-                    s.parse::<f64>()
-                        .map(|f| serde_json::Number::from_f64(f).unwrap_or(serde_json::Number::from(0)))
-                        .unwrap_or(serde_json::Number::from(0))
-                }
+                Value::String(s) => s
+                    .parse::<f64>()
+                    .map(|f| serde_json::Number::from_f64(f).unwrap_or(serde_json::Number::from(0)))
+                    .unwrap_or(serde_json::Number::from(0)),
                 Value::Bool(true) => serde_json::Number::from(1),
                 Value::Bool(false) => serde_json::Number::from(0),
                 _ => serde_json::Number::from(0),

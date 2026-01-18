@@ -2,8 +2,8 @@ use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::{extract_field_value, generate_ngrams, tokenize};
 use rocksdb::{Direction, IteratorMode, WriteBatch};
-use serde_json::Value; 
- 
+use serde_json::Value;
+
 use hex;
 
 impl Collection {
@@ -567,7 +567,11 @@ impl Collection {
     }
 
     /// Check unique constraints before inserting/updating a document
-    pub(crate) fn check_unique_constraints(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
+    pub(crate) fn check_unique_constraints(
+        &self,
+        doc_key: &str,
+        doc_value: &Value,
+    ) -> DbResult<()> {
         let indexes = self.get_all_indexes();
         let db = self.db.read().unwrap();
         let cf = db
@@ -604,7 +608,7 @@ impl Collection {
                 if let Some(Ok((key, value))) = iter.next() {
                     if key.starts_with(prefix.as_bytes()) {
                         let existing_key = String::from_utf8_lossy(&value); // Value in index is doc_key
-                        // Allow update of the same document
+                                                                            // Allow update of the same document
                         if existing_key != doc_key {
                             return Err(DbError::InvalidDocument(format!(
                                 "Unique constraint violated: fields '{:?}' with value {:?} already exists in index '{}'",
@@ -619,7 +623,11 @@ impl Collection {
     }
 
     /// Update indexes on document insert
-    pub(crate) fn update_indexes_on_insert(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
+    pub(crate) fn update_indexes_on_insert(
+        &self,
+        doc_key: &str,
+        doc_value: &Value,
+    ) -> DbResult<()> {
         let indexes = self.get_all_indexes();
 
         // Preload bloom/cuckoo filters
@@ -754,7 +762,11 @@ impl Collection {
     }
 
     /// Update indexes on document delete
-    pub(crate) fn update_indexes_on_delete(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
+    pub(crate) fn update_indexes_on_delete(
+        &self,
+        doc_key: &str,
+        doc_value: &Value,
+    ) -> DbResult<()> {
         let indexes = self.get_all_indexes();
         let db = self.db.read().unwrap();
         let cf = db
@@ -850,58 +862,62 @@ impl Collection {
         let index_name = &index.name;
         let value_key = crate::storage::codec::encode_key(value);
         let value_str = hex::encode(value_key);
-        
+
         let db = self.db.read().unwrap();
         let cf = db.cf_handle(&self.name)?;
-        
+
         let prefix_base = format!("{}{}:", IDX_PREFIX, index_name);
         let seek_key = format!("{}{}:", prefix_base, value_str);
-        
+
         let mut doc_keys = Vec::new();
 
         if forward {
-             let mode = IteratorMode::From(seek_key.as_bytes(), Direction::Forward);
-             let iter = db.iterator_cf(cf, mode);
-             
-             for result in iter {
-                 if let Ok((k, v)) = result {
-                     if !k.starts_with(prefix_base.as_bytes()) {
-                         break;
-                     }
-                     // Check inclusion/exclusion
-                     // If key starts with seek_key, it matches the value exactly
-                     if !inclusive && k.starts_with(seek_key.as_bytes()) {
-                         continue;
-                     }
-                     
-                     let val_str = String::from_utf8_lossy(&v);
-                     doc_keys.push(Self::doc_key(&val_str));
-                 }
-                 if doc_keys.len() >= 1000 { break; } // Safety limit
-             }
-         } else {
-             // For reverse, we might land ON the key or BEFORE it.
-             // If we land on it, it matches value.
-             let mode = IteratorMode::From(seek_key.as_bytes(), Direction::Reverse);
-             let iter = db.iterator_cf(cf, mode);
-             
-             for result in iter {
-                 if let Ok((k, v)) = result {
-                     if !k.starts_with(prefix_base.as_bytes()) {
-                         break;
-                     }
-                     
-                     if !inclusive && k.starts_with(seek_key.as_bytes()) {
-                         continue;
-                     }
-                     
-                     let val_str = String::from_utf8_lossy(&v);
-                     doc_keys.push(Self::doc_key(&val_str));
-                 }
-                 if doc_keys.len() >= 1000 { break; }
-             }
-         }
-         
+            let mode = IteratorMode::From(seek_key.as_bytes(), Direction::Forward);
+            let iter = db.iterator_cf(cf, mode);
+
+            for result in iter {
+                if let Ok((k, v)) = result {
+                    if !k.starts_with(prefix_base.as_bytes()) {
+                        break;
+                    }
+                    // Check inclusion/exclusion
+                    // If key starts with seek_key, it matches the value exactly
+                    if !inclusive && k.starts_with(seek_key.as_bytes()) {
+                        continue;
+                    }
+
+                    let val_str = String::from_utf8_lossy(&v);
+                    doc_keys.push(Self::doc_key(&val_str));
+                }
+                if doc_keys.len() >= 1000 {
+                    break;
+                } // Safety limit
+            }
+        } else {
+            // For reverse, we might land ON the key or BEFORE it.
+            // If we land on it, it matches value.
+            let mode = IteratorMode::From(seek_key.as_bytes(), Direction::Reverse);
+            let iter = db.iterator_cf(cf, mode);
+
+            for result in iter {
+                if let Ok((k, v)) = result {
+                    if !k.starts_with(prefix_base.as_bytes()) {
+                        break;
+                    }
+
+                    if !inclusive && k.starts_with(seek_key.as_bytes()) {
+                        continue;
+                    }
+
+                    let val_str = String::from_utf8_lossy(&v);
+                    doc_keys.push(Self::doc_key(&val_str));
+                }
+                if doc_keys.len() >= 1000 {
+                    break;
+                }
+            }
+        }
+
         if doc_keys.is_empty() {
             return Some(Vec::new());
         }
@@ -1110,19 +1126,21 @@ impl Collection {
 
         // Try load from DB
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).ok_or(DbError::InternalError("CF not found".into()))?;
+        let cf = db
+            .cf_handle(&self.name)
+            .ok_or(DbError::InternalError("CF not found".into()))?;
         let key = format!("{}{}", BLO_IDX_PREFIX, index_name);
         if let Ok(Some(bytes)) = db.get_cf(cf, key.as_bytes()) {
-             // Deserialize bloom filter from bytes (assuming binary format serialization support)
-             // Check fastbloom serialization options.
-             // If not supported natively, we might need a wrapper.
-             // For now assuming serde support or simple byte reconstruction.
-             // Original file didn't show explicit deserialization logic, likely using serde?
-             // `fastbloom` supports serde.
-             if let Ok(filter) = serde_json::from_slice::<BloomFilter>(&bytes) {
-                 filters.insert(index_name.to_string(), filter.clone());
-                 return Ok(filter);
-             }
+            // Deserialize bloom filter from bytes (assuming binary format serialization support)
+            // Check fastbloom serialization options.
+            // If not supported natively, we might need a wrapper.
+            // For now assuming serde support or simple byte reconstruction.
+            // Original file didn't show explicit deserialization logic, likely using serde?
+            // `fastbloom` supports serde.
+            if let Ok(filter) = serde_json::from_slice::<BloomFilter>(&bytes) {
+                filters.insert(index_name.to_string(), filter.clone());
+                return Ok(filter);
+            }
         }
 
         // Create new
@@ -1133,10 +1151,13 @@ impl Collection {
 
     pub(crate) fn save_bloom_filter(&self, index_name: &str, filter: &BloomFilter) -> DbResult<()> {
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).ok_or(DbError::InternalError("CF not found".into()))?;
+        let cf = db
+            .cf_handle(&self.name)
+            .ok_or(DbError::InternalError("CF not found".into()))?;
         let key = format!("{}{}", BLO_IDX_PREFIX, index_name);
         let bytes = serde_json::to_vec(filter)?;
-        db.put_cf(cf, key.as_bytes(), &bytes).map_err(|e| DbError::InternalError(e.to_string()))?;
+        db.put_cf(cf, key.as_bytes(), &bytes)
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         Ok(())
     }
 
@@ -1150,15 +1171,15 @@ impl Collection {
     }
 
     pub fn bloom_check(&self, index_name: &str, item: &str) -> bool {
-         if let Ok(filter) = self.get_or_create_bloom_filter(index_name) {
-             filter.contains(item.as_bytes())
-         } else {
-             true // Fallback to true if filter issue
-         }
+        if let Ok(filter) = self.get_or_create_bloom_filter(index_name) {
+            filter.contains(item.as_bytes())
+        } else {
+            true // Fallback to true if filter issue
+        }
     }
-    
+
     // Cuckoo filter helpers
-    
+
     pub(crate) fn preload_cuckoo_filter(&self, index_name: &str) {
         let mut filters = self.cuckoo_filters.write().unwrap();
         if filters.contains_key(index_name) {
@@ -1167,23 +1188,29 @@ impl Collection {
 
         let db = self.db.read().unwrap();
         if let Some(cf) = db.cf_handle(&self.name) {
-             let key = format!("{}{}", CFO_IDX_PREFIX, index_name);
-             if let Ok(Some(_bytes)) = db.get_cf(cf, key.as_bytes()) {
-                 // FIXME: CuckooFilter deserialization failing due to DefaultHasher
-                 // if let Ok(filter) = serde_json::from_slice(&bytes) {
-                 //     filters.insert(index_name.to_string(), filter);
-                 // }
-             } else {
-                 filters.insert(index_name.to_string(), CuckooFilter::new());
-             }
+            let key = format!("{}{}", CFO_IDX_PREFIX, index_name);
+            if let Ok(Some(_bytes)) = db.get_cf(cf, key.as_bytes()) {
+                // FIXME: CuckooFilter deserialization failing due to DefaultHasher
+                // if let Ok(filter) = serde_json::from_slice(&bytes) {
+                //     filters.insert(index_name.to_string(), filter);
+                // }
+            } else {
+                filters.insert(index_name.to_string(), CuckooFilter::new());
+            }
         }
     }
 
-    pub(crate) fn save_cuckoo_filter(&self, index_name: &str, _filter: &CuckooFilter<DefaultHasher>) -> DbResult<()> {
+    pub(crate) fn save_cuckoo_filter(
+        &self,
+        index_name: &str,
+        _filter: &CuckooFilter<DefaultHasher>,
+    ) -> DbResult<()> {
         let db = self.db.read().unwrap();
-        let _cf = db.cf_handle(&self.name).ok_or(DbError::InternalError("CF not found".into()))?;
+        let _cf = db
+            .cf_handle(&self.name)
+            .ok_or(DbError::InternalError("CF not found".into()))?;
         let _key = format!("{}{}", CFO_IDX_PREFIX, index_name);
-        
+
         // Serialize cuckoo filter - checking if serde is supported
         // Assuming yes as implied by original file usage
         // Note: CuckooFilter struct might not implement Serialize directly depending on crate version.
@@ -1200,7 +1227,7 @@ impl Collection {
         self.preload_cuckoo_filter(index_name);
         let mut filters = self.cuckoo_filters.write().unwrap();
         if let Some(filter) = filters.get_mut(index_name) {
-             let _ = filter.add(item);
+            let _ = filter.add(item);
         }
     }
 
@@ -1209,7 +1236,7 @@ impl Collection {
         self.preload_cuckoo_filter(index_name);
         let mut filters = self.cuckoo_filters.write().unwrap();
         if let Some(filter) = filters.get_mut(index_name) {
-             let _ = filter.delete(item);
+            let _ = filter.delete(item);
         }
     }
 
@@ -1217,9 +1244,9 @@ impl Collection {
         self.preload_cuckoo_filter(index_name);
         let filters = self.cuckoo_filters.read().unwrap();
         if let Some(filter) = filters.get(index_name) {
-             filter.contains(item)
+            filter.contains(item)
         } else {
-             true
+            true
         }
     }
 }

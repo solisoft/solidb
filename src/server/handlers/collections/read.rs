@@ -1,3 +1,5 @@
+use super::super::system::{is_protected_collection, AppState};
+use crate::error::DbError;
 use axum::{
     extract::{Path, State},
     http::HeaderMap,
@@ -5,8 +7,6 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::Value;
-use crate::error::DbError;
-use super::super::system::{is_protected_collection, AppState};
 
 // ==================== Structs ====================
 
@@ -55,10 +55,13 @@ pub async fn list_collections(
 
     for name in names {
         // Skip internal physical shards (ending with _s{id})
-        let has_shard_suffix = name.rfind("_s").map(|i| {
-            // Check if what follows _s is a number
-            name[i + 2..].chars().all(|c| c.is_digit(10))
-        }).unwrap_or(false);
+        let has_shard_suffix = name
+            .rfind("_s")
+            .map(|i| {
+                // Check if what follows _s is a number
+                name[i + 2..].chars().all(|c| c.is_digit(10))
+            })
+            .unwrap_or(false);
 
         if !is_protected_collection(&db_name, &name) && !has_shard_suffix {
             let coll = database.get_collection(&name)?;

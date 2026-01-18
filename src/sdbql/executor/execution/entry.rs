@@ -267,5 +267,4 @@ impl<'a> QueryExecutor<'a> {
             mutations: mutation_stats,
         })
     }
-
 }

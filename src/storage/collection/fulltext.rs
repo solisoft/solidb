@@ -40,11 +40,13 @@ impl Collection {
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
     }
-    
+
     /// Get a fulltext index that covers a specific field
     pub fn get_fulltext_index_for_field(&self, field: &str) -> Option<FulltextIndex> {
         let indexes = self.get_all_fulltext_indexes();
-        indexes.into_iter().find(|idx| idx.fields.contains(&field.to_string()))
+        indexes
+            .into_iter()
+            .find(|idx| idx.fields.contains(&field.to_string()))
     }
 
     /// Create a fulltext index
@@ -149,9 +151,8 @@ impl Collection {
             .expect("Column family should exist");
 
         // Delete metadata
-        db.delete_cf(cf, Self::ft_meta_key(name)).map_err(|e| {
-            DbError::InternalError(format!("Failed to drop fulltext index: {}", e))
-        })?;
+        db.delete_cf(cf, Self::ft_meta_key(name))
+            .map_err(|e| DbError::InternalError(format!("Failed to drop fulltext index: {}", e)))?;
 
         let mut batch = WriteBatch::default();
         let mut count = 0;
@@ -189,7 +190,7 @@ impl Collection {
                     break; // Fixed from original loop which implied break
                 }
             }
-             if count > 1000 {
+            if count > 1000 {
                 db.write(batch).map_err(|e| {
                     DbError::InternalError(format!("Failed to drop fulltext entries: {}", e))
                 })?;
@@ -197,8 +198,8 @@ impl Collection {
                 count = 0;
             }
         }
-        
-         if count > 0 {
+
+        if count > 0 {
             db.write(batch).map_err(|e| {
                 DbError::InternalError(format!("Failed to drop fulltext entries: {}", e))
             })?;
@@ -208,7 +209,11 @@ impl Collection {
     }
 
     /// Update fulltext indexes on insert
-    pub(crate) fn update_fulltext_on_insert(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
+    pub(crate) fn update_fulltext_on_insert(
+        &self,
+        doc_key: &str,
+        doc_value: &Value,
+    ) -> DbResult<()> {
         let indexes = self.get_all_fulltext_indexes();
         if indexes.is_empty() {
             return Ok(());
@@ -246,7 +251,11 @@ impl Collection {
     }
 
     /// Update fulltext indexes on delete
-    pub(crate) fn update_fulltext_on_delete(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
+    pub(crate) fn update_fulltext_on_delete(
+        &self,
+        doc_key: &str,
+        doc_value: &Value,
+    ) -> DbResult<()> {
         let indexes = self.get_all_fulltext_indexes();
         if indexes.is_empty() {
             return Ok(());
@@ -282,7 +291,7 @@ impl Collection {
         db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update fulltext index: {}", e)))
     }
-    
+
     /// List fulltext indexes
     pub fn list_fulltext_indexes(&self) -> Vec<FulltextIndex> {
         self.get_all_fulltext_indexes()
@@ -331,27 +340,27 @@ impl Collection {
                     let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
 
                     for result in iter {
-                         if let Ok((key, _)) = result {
-                             if !key.starts_with(prefix.as_bytes()) {
-                                 break;
-                             }
-                             let key_str = String::from_utf8_lossy(&key);
-                             // Key is "ft_term:<algo>:<term>:<doc_key>"
-                             // Extract doc_key (last part)
-                             let parts: Vec<&str> = key_str.split(':').collect();
-                             if let Some(doc_key) = parts.last() {
-                                 *candidate_counts.entry(doc_key.to_string()).or_insert(0) += 1;
-                             }
-                         }
+                        if let Ok((key, _)) = result {
+                            if !key.starts_with(prefix.as_bytes()) {
+                                break;
+                            }
+                            let key_str = String::from_utf8_lossy(&key);
+                            // Key is "ft_term:<algo>:<term>:<doc_key>"
+                            // Extract doc_key (last part)
+                            let parts: Vec<&str> = key_str.split(':').collect();
+                            if let Some(doc_key) = parts.last() {
+                                *candidate_counts.entry(doc_key.to_string()).or_insert(0) += 1;
+                            }
+                        }
                     }
                 }
             }
-            
+
             // Fuzzy lookup (trigrams) if strict term matching yielded few results?
             // Or always? A proper implementation combines both.
             // For now, let's keep it simple: if strict terms found candidates, score them.
             // If not, maybe use ngrams?
-            // The original implementation might have been more complex. 
+            // The original implementation might have been more complex.
             // We'll proceed with term matching + Levenshtein re-scoring.
         }
 
@@ -361,60 +370,64 @@ impl Collection {
             // Retrieve document to calculate exact score
             // Optimization: Only load full document if count is promising?
             // Here we assume if it matches term, it's relevant.
-            
+
             if let Ok(doc) = self.get(&doc_key) {
                 let doc_value = doc.to_value();
                 let mut best_score = 0;
                 let mut valid = false;
 
                 for index in &indexes {
-                     for field in &index.fields {
-                         if let Some(fields_filter) = &fields {
-                             if !fields_filter.contains(field) {
-                                 continue;
-                             }
-                         }
-                         
-                         let field_value = extract_field_value(&doc_value, field);
-                         if let Some(text) = field_value.as_str() {
-                             // Basic scoring: (matches / total_terms) * 100
-                             // Minus Levenshtein penalty
-                             // This is a simplified version of likely original logic
-                             
-                             let doc_terms = tokenize(text);
-                             let mut field_score = 0;
-                             
-                             for q_term in &query_terms {
-                                 for d_term in &doc_terms {
-                                     let dist = levenshtein_distance(q_term, d_term);
-                                     if dist == 0 {
-                                         field_score += 10; // Exact match
-                                     } else if dist <= 2 {
-                                         field_score += 5; // Fuzzy match
-                                     }
-                                 }
-                             }
-                             
-                             if field_score > best_score {
-                                 best_score = field_score;
-                                 valid = true;
-                             }
-                         }
-                     }
+                    for field in &index.fields {
+                        if let Some(fields_filter) = &fields {
+                            if !fields_filter.contains(field) {
+                                continue;
+                            }
+                        }
+
+                        let field_value = extract_field_value(&doc_value, field);
+                        if let Some(text) = field_value.as_str() {
+                            // Basic scoring: (matches / total_terms) * 100
+                            // Minus Levenshtein penalty
+                            // This is a simplified version of likely original logic
+
+                            let doc_terms = tokenize(text);
+                            let mut field_score = 0;
+
+                            for q_term in &query_terms {
+                                for d_term in &doc_terms {
+                                    let dist = levenshtein_distance(q_term, d_term);
+                                    if dist == 0 {
+                                        field_score += 10; // Exact match
+                                    } else if dist <= 2 {
+                                        field_score += 5; // Fuzzy match
+                                    }
+                                }
+                            }
+
+                            if field_score > best_score {
+                                best_score = field_score;
+                                valid = true;
+                            }
+                        }
+                    }
                 }
-                
+
                 if valid {
-                     matches.push(FulltextMatch {
-                         doc_key: doc_key.to_string(),
-                         score: best_score as f64,
-                         matched_terms: Vec::new(), // Populate if needed or change logic to track terms
-                     });
+                    matches.push(FulltextMatch {
+                        doc_key: doc_key.to_string(),
+                        score: best_score as f64,
+                        matched_terms: Vec::new(), // Populate if needed or change logic to track terms
+                    });
                 }
             }
         }
 
         // 5. Sort and limit
-        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        matches.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         matches.truncate(limit);
 
         Ok(matches)

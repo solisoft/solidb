@@ -1,3 +1,8 @@
+use super::system::AppState;
+use crate::{
+    error::DbError,
+    storage::{GeoIndexStats, IndexStats, IndexType, TtlIndexStats, VectorIndexStats},
+};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -5,11 +10,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::{
-    error::DbError,
-    storage::{GeoIndexStats, IndexStats, IndexType, VectorIndexStats, TtlIndexStats},
-};
-use super::system::AppState;
 
 // ==================== Index Handlers ====================
 
@@ -514,7 +514,10 @@ pub async fn quantize_vector_index(
 
     // Get the index and quantize it
     // Default to Scalar quantization for this endpoint
-    let stats = collection.quantize_vector_index(&index_name, crate::storage::index::VectorQuantization::Scalar)?;
+    let stats = collection.quantize_vector_index(
+        &index_name,
+        crate::storage::index::VectorQuantization::Scalar,
+    )?;
 
     Ok(Json(QuantizeVectorIndexResponse {
         name: index_name,
@@ -585,7 +588,11 @@ pub async fn create_ttl_index(
 ) -> Result<Json<CreateTtlIndexResponse>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
-    collection.create_ttl_index(req.name.clone(), req.field.clone(), req.expire_after_seconds)?;
+    collection.create_ttl_index(
+        req.name.clone(),
+        req.field.clone(),
+        req.expire_after_seconds,
+    )?;
     Ok(Json(CreateTtlIndexResponse {
         name: req.name,
         field: req.field,

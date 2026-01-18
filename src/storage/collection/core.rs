@@ -1,9 +1,9 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use hex;
 use rocksdb::DB;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
-use hex;
 
 impl Collection {
     /// Create a new collection handle
@@ -324,7 +324,7 @@ impl Collection {
         // Actually, let's look at `index_sorted` (line 3069):
         // "Since we use binary-comparable encoding (wrapped in hex)..."
         // So `idx_entry_key` MUST use hex encoding of codec::encode_key.
-        
+
         let encoded_values: Vec<String> = values
             .iter()
             .map(|v| hex::encode(crate::storage::codec::encode_key(v)))
@@ -367,7 +367,7 @@ impl Collection {
     pub fn ttl_meta_key(name: &str) -> Vec<u8> {
         format!("{}{}", TTL_META_PREFIX, name).into_bytes()
     }
-    
+
     /// Create vector index metadata key: "vec_meta:<name>"
     pub fn vec_meta_key(name: &str) -> Vec<u8> {
         format!("{}{}", VEC_META_PREFIX, name).into_bytes()

@@ -19,8 +19,8 @@ pub mod misc;
 pub mod string;
 pub mod type_check;
 
-use serde_json::Value;
 use crate::error::DbResult;
+use serde_json::Value;
 
 /// Try to evaluate a function using the built-in modules.
 /// Returns Ok(Some(value)) if the function was handled,
@@ -29,7 +29,7 @@ use crate::error::DbResult;
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     let name_upper = name.to_uppercase();
     let name = name_upper.as_str();
-    
+
     // Try each module in order
     if let Some(v) = type_check::evaluate(name, args)? {
         return Ok(Some(v));
@@ -55,6 +55,6 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     if let Some(v) = misc::evaluate(name, args)? {
         return Ok(Some(v));
     }
-    
+
     Ok(None)
 }

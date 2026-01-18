@@ -114,9 +114,8 @@ impl Collection {
             .expect("Column family should exist");
 
         // Delete metadata
-        db.delete_cf(cf, Self::geo_meta_key(name)).map_err(|e| {
-            DbError::InternalError(format!("Failed to drop geo index: {}", e))
-        })?;
+        db.delete_cf(cf, Self::geo_meta_key(name))
+            .map_err(|e| DbError::InternalError(format!("Failed to drop geo index: {}", e)))?;
 
         // Delete entries
         let prefix = format!("{}{}:", GEO_PREFIX, name);
@@ -150,7 +149,10 @@ impl Collection {
                 let prefix = format!("{}{}:", GEO_PREFIX, idx.name);
                 let count = db
                     .prefix_iterator_cf(cf, prefix.as_bytes())
-                    .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix.as_bytes())))
+                    .take_while(|r| {
+                        r.as_ref()
+                            .map_or(false, |(k, _)| k.starts_with(prefix.as_bytes()))
+                    })
                     .count();
 
                 GeoIndexStats {
@@ -196,7 +198,7 @@ impl Collection {
                     if let Some(target) = GeoPoint::from_value(&point_val) {
                         let dist = haversine_distance(&GeoPoint::new(lat, lon), &target);
                         // No specific radius in request? Handler implies sorted nearest.
-                        // We store all then sort. 
+                        // We store all then sort.
                         // Key format: geo:<name>:<doc_key>
                         let key_str = String::from_utf8_lossy(&key);
                         let doc_key = key_str.strip_prefix(&prefix).unwrap_or("");
@@ -237,7 +239,7 @@ impl Collection {
         lon: f64,
         radius: f64,
     ) -> Option<Vec<(Document, f64)>> {
-         let indexes = self.get_all_geo_indexes();
+        let indexes = self.get_all_geo_indexes();
         let index = indexes.iter().find(|idx| idx.field == field)?;
 
         let db = self.db.read().unwrap();
@@ -251,21 +253,21 @@ impl Collection {
         let mut matches = Vec::new();
 
         for result in iter {
-             if let Ok((key, value)) = result {
+            if let Ok((key, value)) = result {
                 if !key.starts_with(prefix.as_bytes()) {
                     break;
                 }
 
                 if let Ok(point_val) = serde_json::from_slice::<Value>(&value) {
                     if let Some(target) = GeoPoint::from_value(&point_val) {
-                         let dist = haversine_distance(&GeoPoint::new(lat, lon), &target);
-                         if dist <= radius {
-                             let key_str = String::from_utf8_lossy(&key);
-                             let doc_key = key_str.strip_prefix(&prefix).unwrap_or("");
-                             if !doc_key.is_empty() {
-                                 matches.push((doc_key.to_string(), dist));
-                             }
-                         }
+                        let dist = haversine_distance(&GeoPoint::new(lat, lon), &target);
+                        if dist <= radius {
+                            let key_str = String::from_utf8_lossy(&key);
+                            let doc_key = key_str.strip_prefix(&prefix).unwrap_or("");
+                            if !doc_key.is_empty() {
+                                matches.push((doc_key.to_string(), dist));
+                            }
+                        }
                     }
                 }
             }

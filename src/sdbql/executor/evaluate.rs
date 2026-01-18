@@ -4,8 +4,8 @@
 //! context-aware built-in functions. Simple value-based functions are
 //! delegated to the builtins/ submodules.
 
-use serde_json::{json, Value};
 use chrono::Utc;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -23,7 +23,12 @@ use super::phonetic::phonetic::{
 
 impl<'a> QueryExecutor<'a> {
     /// Evaluate a function call
-    pub(super) fn evaluate_function(&self, name: &str, args: &[Expression], ctx: &Context) -> DbResult<Value> {
+    pub(super) fn evaluate_function(
+        &self,
+        name: &str,
+        args: &[Expression],
+        ctx: &Context,
+    ) -> DbResult<Value> {
         // Evaluate all arguments
         let evaluated_args: Vec<Value> = args
             .iter()
@@ -2977,7 +2982,7 @@ impl<'a> QueryExecutor<'a> {
 
                 let collection = self.get_collection(collection_name)?;
 
-                // Use a reasonable limit if max_distance is not intended as limit, 
+                // Use a reasonable limit if max_distance is not intended as limit,
                 // but since signature takes limit, we pass a default or the value if it makes sense.
                 // Assuming max_distance was intended for fuzzy, but fulltext_search doesn't take it?
                 // For now, pass 100 as limit to be safe, or just use max_distance as limit if that was the intent.
@@ -3687,7 +3692,11 @@ impl<'a> QueryExecutor<'a> {
             _ => self.evaluate_function_with_values(&name.to_uppercase(), &evaluated_args),
         }
     }
-    pub(super) fn evaluate_function_with_values(&self, name: &str, args: &[Value]) -> DbResult<Value> {
+    pub(super) fn evaluate_function_with_values(
+        &self,
+        name: &str,
+        args: &[Value],
+    ) -> DbResult<Value> {
         // Try phonetic functions first
         if let Some(val) = super::phonetic::evaluate(name, args)? {
             return Ok(val);
@@ -3971,5 +3980,4 @@ impl<'a> QueryExecutor<'a> {
             ))),
         }
     }
-
 }

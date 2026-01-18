@@ -2,8 +2,8 @@
 //!
 //! FLOOR, CEIL, ROUND, ABS, SQRT, POW, LOG, SIN, COS, TAN, etc.
 
-use serde_json::Value;
 use crate::error::{DbError, DbResult};
+use serde_json::Value;
 
 /// Evaluate math functions
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
@@ -21,7 +21,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "ROUND" => {
             if args.is_empty() {
                 return Err(DbError::ExecutionError(
-                    "ROUND requires 1-2 arguments".to_string()
+                    "ROUND requires 1-2 arguments".to_string(),
                 ));
             }
             let num = get_number(&args[0], name)?;
@@ -40,7 +40,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let num = get_number(&args[0], name)?;
             if num < 0.0 {
                 return Err(DbError::ExecutionError(
-                    "SQRT: argument must be non-negative".to_string()
+                    "SQRT: argument must be non-negative".to_string(),
                 ));
             }
             Ok(Some(Value::Number(num_from_f64(num.sqrt()))))
@@ -48,7 +48,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "POW" | "POWER" => {
             if args.len() != 2 {
                 return Err(DbError::ExecutionError(
-                    "POW requires 2 arguments: base, exponent".to_string()
+                    "POW requires 2 arguments: base, exponent".to_string(),
                 ));
             }
             let base = get_number(&args[0], name)?;
@@ -60,7 +60,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let num = get_number(&args[0], name)?;
             if num <= 0.0 {
                 return Err(DbError::ExecutionError(
-                    "LOG: argument must be positive".to_string()
+                    "LOG: argument must be positive".to_string(),
                 ));
             }
             Ok(Some(Value::Number(num_from_f64(num.ln()))))
@@ -70,7 +70,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let num = get_number(&args[0], name)?;
             if num <= 0.0 {
                 return Err(DbError::ExecutionError(
-                    "LOG10: argument must be positive".to_string()
+                    "LOG10: argument must be positive".to_string(),
                 ));
             }
             Ok(Some(Value::Number(num_from_f64(num.log10()))))
@@ -80,7 +80,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let num = get_number(&args[0], name)?;
             if num <= 0.0 {
                 return Err(DbError::ExecutionError(
-                    "LOG2: argument must be positive".to_string()
+                    "LOG2: argument must be positive".to_string(),
                 ));
             }
             Ok(Some(Value::Number(num_from_f64(num.log2()))))
@@ -110,7 +110,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let num = get_number(&args[0], name)?;
             if num < -1.0 || num > 1.0 {
                 return Err(DbError::ExecutionError(
-                    "ASIN: argument must be between -1 and 1".to_string()
+                    "ASIN: argument must be between -1 and 1".to_string(),
                 ));
             }
             Ok(Some(Value::Number(num_from_f64(num.asin()))))
@@ -120,7 +120,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let num = get_number(&args[0], name)?;
             if num < -1.0 || num > 1.0 {
                 return Err(DbError::ExecutionError(
-                    "ACOS: argument must be between -1 and 1".to_string()
+                    "ACOS: argument must be between -1 and 1".to_string(),
                 ));
             }
             Ok(Some(Value::Number(num_from_f64(num.acos()))))
@@ -133,7 +133,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "ATAN2" => {
             if args.len() != 2 {
                 return Err(DbError::ExecutionError(
-                    "ATAN2 requires 2 arguments: y, x".to_string()
+                    "ATAN2 requires 2 arguments: y, x".to_string(),
                 ));
             }
             let y = get_number(&args[0], name)?;
@@ -154,7 +154,8 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "E" => Ok(Some(Value::Number(num_from_f64(std::f64::consts::E)))),
         "MIN" if args.len() == 1 && args[0].is_array() => {
             let arr = args[0].as_array().unwrap();
-            let min = arr.iter()
+            let min = arr
+                .iter()
                 .filter_map(|v| v.as_f64())
                 .fold(f64::INFINITY, f64::min);
             if min.is_infinite() {
@@ -165,7 +166,8 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         }
         "MAX" if args.len() == 1 && args[0].is_array() => {
             let arr = args[0].as_array().unwrap();
-            let max = arr.iter()
+            let max = arr
+                .iter()
                 .filter_map(|v| v.as_f64())
                 .fold(f64::NEG_INFINITY, f64::max);
             if max.is_infinite() {
@@ -197,7 +199,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "RANDOM_INT" | "RAND_INT" => {
             if args.len() != 2 {
                 return Err(DbError::ExecutionError(
-                    "RANDOM_INT requires 2 arguments: min, max".to_string()
+                    "RANDOM_INT requires 2 arguments: min, max".to_string(),
                 ));
             }
             use rand::Rng;
@@ -211,9 +213,8 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
 }
 
 fn get_number(v: &Value, func_name: &str) -> DbResult<f64> {
-    v.as_f64().ok_or_else(|| {
-        DbError::ExecutionError(format!("{}: argument must be a number", func_name))
-    })
+    v.as_f64()
+        .ok_or_else(|| DbError::ExecutionError(format!("{}: argument must be a number", func_name)))
 }
 
 fn num_from_f64(f: f64) -> serde_json::Number {

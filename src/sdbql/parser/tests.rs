@@ -117,8 +117,7 @@ fn test_parse_sort_desc() {
 
 #[test]
 fn test_parse_multiple_filters() {
-    let query =
-        parse("FOR doc IN users FILTER doc.age > 18 FILTER doc.active RETURN doc").unwrap();
+    let query = parse("FOR doc IN users FILTER doc.age > 18 FILTER doc.active RETURN doc").unwrap();
     assert_eq!(query.filter_clauses.len(), 2);
 }
 

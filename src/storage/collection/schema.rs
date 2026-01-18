@@ -10,9 +10,8 @@ impl Collection {
     pub fn set_json_schema(&self, schema: CollectionSchema) -> DbResult<()> {
         // Validate the schema itself if enabled
         if schema.is_enabled() {
-            jsonschema::validator_for(&schema.schema).map_err(|e| {
-                DbError::InvalidDocument(format!("Invalid JSON Schema: {}", e))
-            })?;
+            jsonschema::validator_for(&schema.schema)
+                .map_err(|e| DbError::InvalidDocument(format!("Invalid JSON Schema: {}", e)))?;
         }
 
         let db = self.db.write().unwrap();

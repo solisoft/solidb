@@ -88,8 +88,14 @@ pub fn nysiis(s: &str) -> String {
                 }
             }
             'H' => {
-                let prev_vowel = matches!(prev, Some('A') | Some('E') | Some('I') | Some('O') | Some('U'));
-                let next_vowel = matches!(next, Some('A') | Some('E') | Some('I') | Some('O') | Some('U'));
+                let prev_vowel = matches!(
+                    prev,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                );
+                let next_vowel = matches!(
+                    next,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                );
                 if !prev_vowel || !next_vowel {
                     if let Some(p) = prev {
                         p
@@ -102,7 +108,10 @@ pub fn nysiis(s: &str) -> String {
                 }
             }
             'W' => {
-                let prev_vowel = matches!(prev, Some('A') | Some('E') | Some('I') | Some('O') | Some('U'));
+                let prev_vowel = matches!(
+                    prev,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                );
                 if prev_vowel {
                     prev.unwrap_or('W')
                 } else {

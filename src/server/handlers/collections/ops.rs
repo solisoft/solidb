@@ -1,3 +1,8 @@
+use super::super::system::{is_protected_collection, AppState};
+use crate::{
+    error::DbError,
+    sync::{LogEntry, Operation},
+};
 use axum::{
     extract::{Path, State},
     http::HeaderMap,
@@ -5,11 +10,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use crate::{
-    error::DbError,
-    sync::{LogEntry, Operation},
-};
-use super::super::system::{is_protected_collection, AppState};
 
 // ==================== Structs ====================
 
@@ -56,12 +56,12 @@ pub async fn truncate_collection(
                         .filter(|m| m.node.id != my_id)
                         .map(|m| (m.node.id.clone(), m.node.api_address.clone()))
                         .collect()
-                    } else {
-                        vec![]
-                    }
                 } else {
                     vec![]
-                };
+                }
+            } else {
+                vec![]
+            };
 
             // Truncate physical shards locally
             for shard_id in 0..shard_config.num_shards {

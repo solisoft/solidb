@@ -521,7 +521,9 @@ fn test_edge_collection_type() {
 #[test]
 fn test_blob_put_and_get() {
     let (engine, _tmp) = create_test_engine();
-    engine.create_collection("blobs".to_string(), Some("blob".to_string())).unwrap();
+    engine
+        .create_collection("blobs".to_string(), Some("blob".to_string()))
+        .unwrap();
     let collection = engine.get_collection("blobs").unwrap();
 
     // Store blob chunks

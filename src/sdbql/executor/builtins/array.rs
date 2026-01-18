@@ -2,9 +2,9 @@
 //!
 //! FIRST, LAST, LENGTH, REVERSE, SORTED, UNIQUE, FLATTEN, etc.
 
-use serde_json::Value;
-use crate::error::{DbError, DbResult};
 use super::super::values_equal;
+use crate::error::{DbError, DbResult};
+use serde_json::Value;
 
 /// Evaluate array functions
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
@@ -36,15 +36,14 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 DbError::ExecutionError("SORTED: argument must be an array".to_string())
             })?;
             let mut sorted = arr.clone();
-            sorted.sort_by(|a, b| {
-                match (a, b) {
-                    (Value::Number(na), Value::Number(nb)) => {
-                        na.as_f64().unwrap_or(0.0).partial_cmp(&nb.as_f64().unwrap_or(0.0))
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    (Value::String(sa), Value::String(sb)) => sa.cmp(sb),
-                    _ => std::cmp::Ordering::Equal,
-                }
+            sorted.sort_by(|a, b| match (a, b) {
+                (Value::Number(na), Value::Number(nb)) => na
+                    .as_f64()
+                    .unwrap_or(0.0)
+                    .partial_cmp(&nb.as_f64().unwrap_or(0.0))
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                (Value::String(sa), Value::String(sb)) => sa.cmp(sb),
+                _ => std::cmp::Ordering::Equal,
             });
             Ok(Some(Value::Array(sorted)))
         }
@@ -54,15 +53,14 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 DbError::ExecutionError("SORTED_DESC: argument must be an array".to_string())
             })?;
             let mut sorted = arr.clone();
-            sorted.sort_by(|a, b| {
-                match (a, b) {
-                    (Value::Number(na), Value::Number(nb)) => {
-                        nb.as_f64().unwrap_or(0.0).partial_cmp(&na.as_f64().unwrap_or(0.0))
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    (Value::String(sa), Value::String(sb)) => sb.cmp(sa),
-                    _ => std::cmp::Ordering::Equal,
-                }
+            sorted.sort_by(|a, b| match (a, b) {
+                (Value::Number(na), Value::Number(nb)) => nb
+                    .as_f64()
+                    .unwrap_or(0.0)
+                    .partial_cmp(&na.as_f64().unwrap_or(0.0))
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                (Value::String(sa), Value::String(sb)) => sb.cmp(sa),
+                _ => std::cmp::Ordering::Equal,
             });
             Ok(Some(Value::Array(sorted)))
         }
@@ -72,7 +70,8 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 DbError::ExecutionError("UNIQUE: argument must be an array".to_string())
             })?;
             let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-            let unique: Vec<Value> = arr.iter()
+            let unique: Vec<Value> = arr
+                .iter()
                 .filter(|v| {
                     let key = serde_json::to_string(v).unwrap_or_default();
                     seen.insert(key)
@@ -84,7 +83,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "FLATTEN" => {
             if args.is_empty() {
                 return Err(DbError::ExecutionError(
-                    "FLATTEN requires at least 1 argument".to_string()
+                    "FLATTEN requires at least 1 argument".to_string(),
                 ));
             }
             let arr = args[0].as_array().ok_or_else(|| {
@@ -97,7 +96,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "PUSH" => {
             if args.len() < 2 {
                 return Err(DbError::ExecutionError(
-                    "PUSH requires 2 arguments: array, value".to_string()
+                    "PUSH requires 2 arguments: array, value".to_string(),
                 ));
             }
             let arr = args[0].as_array().ok_or_else(|| {
@@ -119,7 +118,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "SLICE" => {
             if args.len() < 2 {
                 return Err(DbError::ExecutionError(
-                    "SLICE requires 2-3 arguments: array, start, [length]".to_string()
+                    "SLICE requires 2-3 arguments: array, start, [length]".to_string(),
                 ));
             }
             let arr = args[0].as_array().ok_or_else(|| {
@@ -143,7 +142,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "POSITION" | "INDEX_OF" => {
             if args.len() < 2 {
                 return Err(DbError::ExecutionError(
-                    "POSITION requires 2 arguments: array, value".to_string()
+                    "POSITION requires 2 arguments: array, value".to_string(),
                 ));
             }
             let arr = args[0].as_array().ok_or_else(|| {
@@ -160,15 +159,16 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "NTH" => {
             if args.len() < 2 {
                 return Err(DbError::ExecutionError(
-                    "NTH requires 2 arguments: array, index".to_string()
+                    "NTH requires 2 arguments: array, index".to_string(),
                 ));
             }
             let arr = args[0].as_array().ok_or_else(|| {
                 DbError::ExecutionError("NTH: first argument must be an array".to_string())
             })?;
-            let idx = args[1].as_u64().ok_or_else(|| {
-                DbError::ExecutionError("NTH: index must be a number".to_string())
-            })? as usize;
+            let idx = args[1]
+                .as_u64()
+                .ok_or_else(|| DbError::ExecutionError("NTH: index must be a number".to_string()))?
+                as usize;
             Ok(Some(arr.get(idx).cloned().unwrap_or(Value::Null)))
         }
         "COUNT" => {

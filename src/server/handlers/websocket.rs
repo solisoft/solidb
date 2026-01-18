@@ -1,19 +1,19 @@
+use super::cluster::generate_cluster_status;
+use super::system::AppState;
+use crate::{server::handlers::auth::AuthParams, storage::StorageEngine};
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query as AxumQuery, State},
-    response::{IntoResponse, Response},
+    body::Body,
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Query as AxumQuery, State,
+    },
     http::HeaderMap,
     http::StatusCode,
-    body::Body,
+    response::{IntoResponse, Response},
 };
-use serde::{Deserialize};
-use crate::{
-    server::handlers::auth::AuthParams,
-    storage::StorageEngine,
-};
-use super::system::AppState;
-use super::cluster::generate_cluster_status;
-use std::sync::Arc;
 use futures::{SinkExt, StreamExt};
+use serde::Deserialize;
+use std::sync::Arc;
 
 // ==================== Cluster Status WebSocket ====================
 

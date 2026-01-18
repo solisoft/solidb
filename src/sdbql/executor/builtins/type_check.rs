@@ -2,8 +2,8 @@
 //!
 //! IS_ARRAY, IS_BOOL, IS_NUMBER, IS_STRING, IS_NULL, IS_OBJECT, etc.
 
-use serde_json::Value;
 use crate::error::{DbError, DbResult};
+use serde_json::Value;
 
 /// Evaluate type checking functions
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {

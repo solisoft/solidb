@@ -70,7 +70,13 @@ pub fn cologne_phonetic(s: &str) -> String {
                     Some('8')
                 } else if matches!(
                     next,
-                    Some('A') | Some('H') | Some('K') | Some('O') | Some('Q') | Some('U') | Some('X')
+                    Some('A')
+                        | Some('H')
+                        | Some('K')
+                        | Some('O')
+                        | Some('Q')
+                        | Some('U')
+                        | Some('X')
                 ) {
                     Some('4')
                 } else {

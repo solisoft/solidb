@@ -553,5 +553,4 @@ impl<'a> QueryExecutor<'a> {
 
         Ok(results)
     }
-
 }

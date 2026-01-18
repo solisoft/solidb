@@ -115,10 +115,7 @@ impl Parser {
                 args,
             })
         } else {
-            Err(DbError::ParseError(format!(
-                "Expected '(' after {}",
-                name
-            )))
+            Err(DbError::ParseError(format!("Expected '(' after {}", name)))
         }
     }
 

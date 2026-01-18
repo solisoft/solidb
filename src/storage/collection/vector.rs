@@ -56,7 +56,10 @@ impl Collection {
     }
 
     /// Load vector index from disk
-    pub(crate) fn load_vector_index(&self, name: &str) -> DbResult<Arc<super::vector::VectorIndex>> {
+    pub(crate) fn load_vector_index(
+        &self,
+        name: &str,
+    ) -> DbResult<Arc<super::vector::VectorIndex>> {
         let db = self.db.read().unwrap();
         let cf = db
             .cf_handle(&self.name)
@@ -85,12 +88,10 @@ impl Collection {
                     indexes.insert(name.to_string(), index_arc.clone());
                     Ok(index_arc)
                 }
-                Err(e) => {
-                    Err(DbError::InternalError(format!(
-                        "Failed to deserialize vector index: {}",
-                        e
-                    )))
-                }
+                Err(e) => Err(DbError::InternalError(format!(
+                    "Failed to deserialize vector index: {}",
+                    e
+                ))),
             }
         } else {
             Err(DbError::InternalError("Vector index data missing".into()))
@@ -98,10 +99,7 @@ impl Collection {
     }
 
     /// Create a vector index
-    pub fn create_vector_index(
-        &self,
-        config: VectorIndexConfig,
-    ) -> DbResult<VectorIndexStats> {
+    pub fn create_vector_index(&self, config: VectorIndexConfig) -> DbResult<VectorIndexStats> {
         let name = config.name.clone();
         if self.get_vector_index(&name).is_ok() {
             return Err(DbError::InvalidDocument(format!(
@@ -126,17 +124,17 @@ impl Collection {
         // Create in-memory index
         // Use default config for HNSW setup
         let index = VectorIndex::new(config.clone())?;
-        
+
         // Build index from existing documents
         let docs = self.all();
         // Insert docs into index
         for doc in docs {
             let doc_value = doc.to_value();
             if let Some(vector) = self.extract_vector(&doc_value, &config.field, config.dimension) {
-                 let _ = index.insert(&doc.key, &vector);
+                let _ = index.insert(&doc.key, &vector);
             }
         }
-        
+
         // Persist populated index
         self.persist_vector_indexes()?;
 
@@ -171,9 +169,8 @@ impl Collection {
         db.delete_cf(cf, Self::vec_meta_key(name)).map_err(|e| {
             DbError::InternalError(format!("Failed to delete vector config: {}", e))
         })?;
-        db.delete_cf(cf, Self::vec_data_key(name)).map_err(|e| {
-            DbError::InternalError(format!("Failed to delete vector data: {}", e))
-        })?;
+        db.delete_cf(cf, Self::vec_data_key(name))
+            .map_err(|e| DbError::InternalError(format!("Failed to delete vector data: {}", e)))?;
 
         Ok(())
     }
@@ -191,7 +188,7 @@ impl Collection {
                         0
                     }
                 };
-                
+
                 VectorIndexStats {
                     name: config.name,
                     field: config.field,
@@ -201,7 +198,7 @@ impl Collection {
                     ef_construction: config.ef_construction,
                     indexed_vectors: count,
                     quantization: config.quantization,
-                    memory_bytes: 0, 
+                    memory_bytes: 0,
                     compression_ratio: 1.0,
                 }
             })
@@ -217,18 +214,14 @@ impl Collection {
         ef_search: Option<usize>,
     ) -> DbResult<Vec<VectorSearchResult>> {
         let index = self.get_vector_index(name)?;
-        
+
         // Use provided ef_search or default from config (if available via accessor, or just pass None/default)
         // Assuming index.search supports ef_search
         index.search(query, k, ef_search.unwrap_or(100))
     }
-    
+
     /// Calculate similarity between a vector and documents
-    pub fn vector_similarity(
-        &self,
-        name: &str,
-        query: Vec<f32>,
-    ) -> DbResult<Vec<(String, f32)>> {
+    pub fn vector_similarity(&self, name: &str, query: Vec<f32>) -> DbResult<Vec<(String, f32)>> {
         let index = self.get_vector_index(name)?;
         let results = index.search(&query, 100, 100)?;
         Ok(results.into_iter().map(|r| (r.doc_key, r.score)).collect())
@@ -241,27 +234,27 @@ impl Collection {
         quantization: VectorQuantization,
     ) -> DbResult<QuantizationStats> {
         let _index = self.get_vector_index(name)?;
-        
+
         // index.quantize(quantization.clone())?; // Assuming method exists
-        
+
         // Update config
         let mut configs = self.get_all_vector_index_configs();
         if let Some(config) = configs.iter_mut().find(|c| c.name == name) {
             config.quantization = quantization.clone();
-            
+
             // Save config
             let db = self.db.read().unwrap();
             let cf = db.cf_handle(&self.name).unwrap();
             let config_bytes = serde_json::to_vec(config)?;
             db.put_cf(cf, Self::vec_meta_key(name), &config_bytes)
-                 .map_err(|e| DbError::InternalError(e.to_string()))?;
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
-        
+
         self.persist_vector_indexes()?;
 
         Ok(QuantizationStats {
             type_: quantization,
-            original_size: 0, 
+            original_size: 0,
             compressed_size: 0,
             compression_ratio: 0.0,
         })
@@ -269,7 +262,7 @@ impl Collection {
 
     /// Dequantize a vector index
     pub fn dequantize_vector_index(&self, _name: &str) -> DbResult<()> {
-         Ok(())
+        Ok(())
     }
 
     /// Persist all in-memory vector indexes to disk
@@ -283,13 +276,18 @@ impl Collection {
         for (name, index_arc) in indexes.iter() {
             // IndexArc is Arc<VectorIndex>.
             // serde_json::to_vec guarantees handling &T.
-            // But VectorIndex handles locks. 
+            // But VectorIndex handles locks.
             // If Serialize implementation locks internally, it's fine.
             // IndexArc is Arc<VectorIndex>.
             // Use manual serialize method
             let bytes = index_arc.serialize()?;
             db.put_cf(cf, Self::vec_data_key(name), &bytes)
-                .map_err(|e| DbError::InternalError(format!("Failed to persist vector index {}: {}", name, e)))?;
+                .map_err(|e| {
+                    DbError::InternalError(format!(
+                        "Failed to persist vector index {}: {}",
+                        name, e
+                    ))
+                })?;
         }
         Ok(())
     }
@@ -298,7 +296,7 @@ impl Collection {
     pub(crate) fn update_vector_indexes_on_upsert(&self, doc_key: &str, doc_value: &Value) {
         let configs = self.get_all_vector_index_configs();
         if configs.is_empty() {
-             return;
+            return;
         }
 
         // Ensure loaded
@@ -307,10 +305,12 @@ impl Collection {
         }
 
         let indexes = self.vector_indexes.read().unwrap();
-        
+
         for config in configs {
             if let Some(index) = indexes.get(&config.name) {
-                if let Some(vector) = self.extract_vector(doc_value, &config.field, config.dimension) {
+                if let Some(vector) =
+                    self.extract_vector(doc_value, &config.field, config.dimension)
+                {
                     let _ = index.insert(doc_key, &vector);
                 }
             }
@@ -326,13 +326,17 @@ impl Collection {
     }
 
     /// Helper to extract vector from document
-    pub(crate) fn extract_vector(&self, doc_value: &Value, field: &str, dim: usize) -> Option<Vec<f32>> {
+    pub(crate) fn extract_vector(
+        &self,
+        doc_value: &Value,
+        field: &str,
+        dim: usize,
+    ) -> Option<Vec<f32>> {
         let val = extract_field_value(doc_value, field);
         if let Some(arr) = val.as_array() {
             if arr.len() == dim {
-                let vec: Option<Vec<f32>> = arr.iter()
-                    .map(|v| v.as_f64().map(|f| f as f32))
-                    .collect();
+                let vec: Option<Vec<f32>> =
+                    arr.iter().map(|v| v.as_f64().map(|f| f as f32)).collect();
                 return vec;
             }
         }

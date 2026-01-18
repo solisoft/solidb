@@ -10,15 +10,16 @@ use crate::sync::log::SyncLog;
 
 mod aggregation;
 mod builtins;
-mod evaluate;
 mod data_source;
+mod evaluate;
 mod execution;
 mod explain;
 mod expression;
-pub mod phonetic;
 mod helpers;
 mod index_opt;
 mod materialized_views;
+pub mod phonetic;
+pub mod search;
 pub mod types;
 pub mod utils;
 mod window;

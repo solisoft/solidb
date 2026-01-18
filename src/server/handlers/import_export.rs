@@ -1,14 +1,14 @@
+use super::system::{sanitize_filename, AppState};
+use crate::error::DbError;
 use axum::{
     body::Body,
     extract::{Multipart, Path, State},
     http::HeaderMap,
     response::{Json, Response},
 };
+use base64::{engine::general_purpose, Engine as _};
 use futures::stream::StreamExt;
 use serde_json::Value;
-use crate::error::DbError;
-use super::system::{sanitize_filename, AppState};
-use base64::{engine::general_purpose, Engine as _};
 
 pub async fn export_collection(
     State(state): State<AppState>,
@@ -411,17 +411,16 @@ pub async fn import_collection(
 
                 // Process remaining documents
                 if !batch_docs.is_empty() {
-                     let batch_len = batch_docs.len();
-                     let result = collection.insert_batch(batch_docs);
-                     match result {
-                         Ok(_) => imported_count += batch_len,
-                         Err(e) => {
-                             tracing::error!("Batch import error: {}", e);
-                             failed_count += batch_len;
-                         }
-                     }
+                    let batch_len = batch_docs.len();
+                    let result = collection.insert_batch(batch_docs);
+                    match result {
+                        Ok(_) => imported_count += batch_len,
+                        Err(e) => {
+                            tracing::error!("Batch import error: {}", e);
+                            failed_count += batch_len;
+                        }
+                    }
                 }
-
             } else {
                 // Legacy Import Mode (Whole Array)
                 // This assumes the file is small enough to fit in memory
@@ -429,8 +428,8 @@ pub async fn import_collection(
                 // Reconstruct the full body
                 let mut full_body = buffer;
                 while let Some(chunk_res) = stream.next().await {
-                     let chunk = chunk_res.map_err(|e| DbError::BadRequest(e.to_string()))?;
-                     full_body.extend_from_slice(&chunk);
+                    let chunk = chunk_res.map_err(|e| DbError::BadRequest(e.to_string()))?;
+                    full_body.extend_from_slice(&chunk);
                 }
 
                 let json: Value = serde_json::from_slice(&full_body)
@@ -443,7 +442,7 @@ pub async fn import_collection(
                     match result {
                         Ok(_) => imported_count += batch_len,
                         Err(e) => {
-                             return Err(e);
+                            return Err(e);
                         }
                     }
                 } else if let Some(_obj) = json.as_object() {

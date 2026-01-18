@@ -1,10 +1,8 @@
-
 use axum::{
     http::StatusCode,
-    response::{IntoResponse, Response, Json},
+    response::{IntoResponse, Json, Response},
 };
 use thiserror::Error;
-
 
 #[derive(Error, Debug)]
 pub enum DbError {
@@ -101,15 +99,17 @@ impl From<rocksdb::Error> for DbError {
 impl IntoResponse for DbError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            DbError::CollectionNotFound(msg) | DbError::DocumentNotFound(msg) | DbError::TransactionNotFound(msg) | DbError::RoleNotFound(msg) => {
-                (StatusCode::NOT_FOUND, msg.clone())
-            }
-            DbError::CollectionAlreadyExists(msg) | DbError::ConflictError(msg) | DbError::TransactionConflict(msg) => {
-                (StatusCode::CONFLICT, msg.clone())
-            }
-            DbError::InvalidDocument(msg) | DbError::ParseError(msg) | DbError::BadRequest(msg) | DbError::SchemaValidationError(msg) => {
-                (StatusCode::BAD_REQUEST, msg.clone())
-            }
+            DbError::CollectionNotFound(msg)
+            | DbError::DocumentNotFound(msg)
+            | DbError::TransactionNotFound(msg)
+            | DbError::RoleNotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
+            DbError::CollectionAlreadyExists(msg)
+            | DbError::ConflictError(msg)
+            | DbError::TransactionConflict(msg) => (StatusCode::CONFLICT, msg.clone()),
+            DbError::InvalidDocument(msg)
+            | DbError::ParseError(msg)
+            | DbError::BadRequest(msg)
+            | DbError::SchemaValidationError(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             DbError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
             DbError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             DbError::OperationNotSupported(msg) => (StatusCode::NOT_IMPLEMENTED, msg.clone()),

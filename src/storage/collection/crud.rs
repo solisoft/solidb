@@ -40,7 +40,11 @@ impl Collection {
     }
 
     /// Internal insert implementation
-    pub(crate) fn insert_internal(&self, mut data: Value, update_indexes: bool) -> DbResult<Document> {
+    pub(crate) fn insert_internal(
+        &self,
+        mut data: Value,
+        update_indexes: bool,
+    ) -> DbResult<Document> {
         // Validate edge documents
         if *self.collection_type.read().unwrap() == "edge" {
             self.validate_edge_document(&data)?;
@@ -357,10 +361,8 @@ impl Collection {
 
         // Update document count (only for new inserts)
         if insert_count > 0 {
-            self.doc_count
-                .fetch_add(insert_count, Ordering::Relaxed);
-            self.count_dirty
-                .store(true, Ordering::Relaxed);
+            self.doc_count.fetch_add(insert_count, Ordering::Relaxed);
+            self.count_dirty.store(true, Ordering::Relaxed);
         }
 
         // Update vector indexes for all upserted documents
@@ -437,10 +439,8 @@ impl Collection {
             .map_err(|e| DbError::InternalError(format!("Failed to batch delete: {}", e)))?;
 
         // 3. Update count
-        self.doc_count
-            .fetch_sub(deleted_count, Ordering::Relaxed);
-        self.count_dirty
-            .store(true, Ordering::Relaxed);
+        self.doc_count.fetch_sub(deleted_count, Ordering::Relaxed);
+        self.count_dirty.store(true, Ordering::Relaxed);
 
         // 4. Send Change Events
         for (key, old_data) in deleted_docs {
@@ -623,10 +623,10 @@ impl Collection {
                 .store(count, std::sync::atomic::Ordering::Relaxed);
             self.count_dirty
                 .store(true, std::sync::atomic::Ordering::Relaxed);
-            
+
             count
         } else {
-             0
+            0
         }
     }
 
@@ -676,7 +676,7 @@ impl Collection {
         if count == 0 {
             return Ok(0);
         }
-        
+
         let keys: Vec<String> = docs.iter().map(|d| d.key.clone()).collect();
         self.delete_batch(keys)
     }

@@ -115,7 +115,11 @@ impl Parser {
                     break;
                 }
             }
-            if path.is_empty() { None } else { Some(path) }
+            if path.is_empty() {
+                None
+            } else {
+                Some(path)
+            }
         } else {
             None
         };
@@ -129,12 +133,14 @@ impl Parser {
             Token::Identifier(name) => self.parse_identifier_expression(name.clone()),
             Token::Any => self.parse_quantifier_expression("ANY"),
             Token::Count => self.parse_keyword_as_function("COUNT"),
-            Token::Left => {
-                self.parse_keyword_as_function_no_window("LEFT", "Unexpected token in expression: Left")
-            }
-            Token::Right => {
-                self.parse_keyword_as_function_no_window("RIGHT", "Unexpected token in expression: Right")
-            }
+            Token::Left => self.parse_keyword_as_function_no_window(
+                "LEFT",
+                "Unexpected token in expression: Left",
+            ),
+            Token::Right => self.parse_keyword_as_function_no_window(
+                "RIGHT",
+                "Unexpected token in expression: Right",
+            ),
             Token::Integer(n) => self.parse_integer(*n),
             Token::Float(f) => self.parse_float(*f),
             Token::String(s) => self.parse_string(s.clone()),

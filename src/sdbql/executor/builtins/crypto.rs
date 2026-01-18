@@ -2,8 +2,8 @@
 //!
 //! MD5, SHA256, BASE64, ARGON2, HMAC, etc.
 
-use serde_json::Value;
 use crate::error::{DbError, DbResult};
+use serde_json::Value;
 
 /// Evaluate crypto/encoding functions
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
@@ -17,7 +17,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "SHA256" => {
             check_args(name, args, 1)?;
             let input = get_string(&args[0], name)?;
-            use sha2::{Sha256, Digest};
+            use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
             hasher.update(input.as_bytes());
             Ok(Some(Value::String(hex::encode(hasher.finalize()))))
@@ -25,7 +25,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "SHA512" => {
             check_args(name, args, 1)?;
             let input = get_string(&args[0], name)?;
-            use sha2::{Sha512, Digest};
+            use sha2::{Digest, Sha512};
             let mut hasher = Sha512::new();
             hasher.update(input.as_bytes());
             Ok(Some(Value::String(hex::encode(hasher.finalize()))))
@@ -43,12 +43,14 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             match general_purpose::STANDARD.decode(input) {
                 Ok(bytes) => {
                     let s = String::from_utf8(bytes).map_err(|_| {
-                        DbError::ExecutionError("BASE64_DECODE: result is not valid utf8".to_string())
+                        DbError::ExecutionError(
+                            "BASE64_DECODE: result is not valid utf8".to_string(),
+                        )
                     })?;
                     Ok(Some(Value::String(s)))
                 }
                 Err(_) => Err(DbError::ExecutionError(
-                    "BASE64_DECODE: invalid base64".to_string()
+                    "BASE64_DECODE: invalid base64".to_string(),
                 )),
             }
         }
@@ -68,7 +70,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     Ok(Some(Value::String(s)))
                 }
                 Err(_) => Err(DbError::ExecutionError(
-                    "HEX_DECODE: invalid hex string".to_string()
+                    "HEX_DECODE: invalid hex string".to_string(),
                 )),
             }
         }
@@ -84,14 +86,15 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             match argon2.hash_password(password.as_bytes(), &salt) {
                 Ok(hash) => Ok(Some(Value::String(hash.to_string()))),
                 Err(e) => Err(DbError::ExecutionError(format!(
-                    "ARGON2_HASH: failed to hash: {}", e
+                    "ARGON2_HASH: failed to hash: {}",
+                    e
                 ))),
             }
         }
         "ARGON2_VERIFY" => {
             if args.len() != 2 {
                 return Err(DbError::ExecutionError(
-                    "ARGON2_VERIFY requires 2 arguments: hash, password".to_string()
+                    "ARGON2_VERIFY requires 2 arguments: hash, password".to_string(),
                 ));
             }
             let hash = get_string(&args[0], "ARGON2_VERIFY (hash)")?;
@@ -111,7 +114,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "HMAC_SHA256" => {
             if args.len() != 2 {
                 return Err(DbError::ExecutionError(
-                    "HMAC_SHA256 requires 2 arguments: key, message".to_string()
+                    "HMAC_SHA256 requires 2 arguments: key, message".to_string(),
                 ));
             }
             let key = get_string(&args[0], "HMAC_SHA256 (key)")?;

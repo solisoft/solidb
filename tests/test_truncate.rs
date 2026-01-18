@@ -13,7 +13,9 @@ fn create_test_db() -> (StorageEngine, TempDir) {
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
 
-    engine.create_database(format!("testdb_{}", Uuid::new_v4())).unwrap();
+    engine
+        .create_database(format!("testdb_{}", Uuid::new_v4()))
+        .unwrap();
     (engine, tmp_dir)
 }
 

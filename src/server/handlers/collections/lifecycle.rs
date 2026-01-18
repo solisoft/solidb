@@ -1,14 +1,14 @@
+use super::super::system::{is_protected_collection, AppState};
+use crate::{
+    error::DbError,
+    sync::{LogEntry, Operation},
+};
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::Json,
 };
 use serde::{Deserialize, Serialize};
-use crate::{
-    error::DbError,
-    sync::{LogEntry, Operation},
-};
-use super::super::system::{is_protected_collection, AppState};
 
 // ==================== Structs ====================
 

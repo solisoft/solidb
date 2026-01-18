@@ -19,10 +19,10 @@ impl Collection {
             .expect("Column family should exist");
 
         let chunk_key = Self::blo_chunk_key(key, chunk_index as usize);
-        
+
         // ... existence check ...
         let exists = db.get_cf(cf, &chunk_key).ok().flatten().is_some();
-        
+
         db.put_cf(cf, chunk_key, data)
             .map_err(|e| DbError::InternalError(format!("Failed to store blob chunk: {}", e)))?;
 
@@ -37,8 +37,10 @@ impl Collection {
     /// Get a blob chunk
     pub fn get_blob_chunk(&self, key: &str, chunk_index: u32) -> DbResult<Option<Vec<u8>>> {
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).ok_or(DbError::CollectionNotFound(self.name.clone()))?; 
-        
+        let cf = db
+            .cf_handle(&self.name)
+            .ok_or(DbError::CollectionNotFound(self.name.clone()))?;
+
         let chunk_key = Self::blo_chunk_key(key, chunk_index as usize);
         match db.get_cf(cf, chunk_key) {
             Ok(Some(data)) => Ok(Some(data)),
@@ -63,19 +65,20 @@ impl Collection {
         let mut count = 0;
 
         for result in iter {
-             if let Ok((k, _)) = result {
-                 if !k.starts_with(prefix.as_bytes()) {
-                     break;
-                 }
-                 batch.delete_cf(cf, k);
-                 count += 1;
-             }
+            if let Ok((k, _)) = result {
+                if !k.starts_with(prefix.as_bytes()) {
+                    break;
+                }
+                batch.delete_cf(cf, k);
+                count += 1;
+            }
         }
 
         if count > 0 {
-             db.write(batch).map_err(|e| DbError::InternalError(e.to_string()))?;
-             self.chunk_count.fetch_sub(count, Ordering::Relaxed);
-             self.count_dirty.store(true, Ordering::Relaxed);
+            db.write(batch)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+            self.chunk_count.fetch_sub(count, Ordering::Relaxed);
+            self.count_dirty.store(true, Ordering::Relaxed);
         }
 
         Ok(())
