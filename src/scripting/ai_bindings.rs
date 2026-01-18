@@ -717,6 +717,8 @@ fn create_learning_table(
                 contribution_id: opts.get::<String>("contribution_id").ok(),
                 agent_id: opts.get::<String>("agent_id").ok(),
                 processed: opts.get::<bool>("processed").ok(),
+                start_date: None,
+                end_date: None,
                 limit: opts.get::<usize>("limit").ok(),
             }
         } else {

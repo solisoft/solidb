@@ -75,7 +75,7 @@ impl std::fmt::Display for ContributionStatus {
 }
 
 /// Priority level for contributions
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Priority {
     Low,

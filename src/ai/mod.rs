@@ -6,6 +6,7 @@
 
 pub mod agent;
 pub mod contribution;
+pub mod feedback;
 pub mod learning;
 pub mod marketplace;
 pub mod orchestrator;
@@ -41,10 +42,13 @@ pub use marketplace::{
 };
 
 pub use learning::{
-    ActionType, FeedbackContext, FeedbackEvent, FeedbackOutcome, FeedbackQuery, FeedbackType,
-    LearningSystem, ListFeedbackResponse, ListPatternsResponse, Pattern, PatternMatch,
+    ActionType, LearningSystem, ListPatternsResponse, Pattern, PatternMatch,
     PatternQuery, PatternSignature, PatternType, ProcessingResult, Recommendation, SuggestedAction,
-    TestOutput,
+};
+
+pub use feedback::{
+    FeedbackContext, FeedbackEvent, FeedbackOutcome, FeedbackQuery, FeedbackType,
+    FeedbackSystem, ListFeedbackResponse, TestOutput, FEEDBACK_COLLECTION,
 };
 
 pub use recovery::{

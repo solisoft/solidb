@@ -6,8 +6,6 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::error::DbError;
@@ -15,130 +13,20 @@ use crate::storage::StorageEngine;
 
 use super::agent::ValidationResult;
 use super::contribution::ContributionStatus;
+use super::feedback;
 use super::task::{AITask, AITaskType};
 
-/// System collection for storing feedback events
-pub const FEEDBACK_COLLECTION: &str = "_ai_feedback";
+/// System collection for storing feedback events (re-exported from feedback module)
+pub use feedback::FEEDBACK_COLLECTION;
 
 /// System collection for storing learned patterns
 pub const PATTERNS_COLLECTION: &str = "_ai_patterns";
 
-// ============================================================================
-// Feedback Types
-// ============================================================================
-
-/// Type of feedback event captured
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum FeedbackType {
-    /// Feedback from human review (approve/reject)
-    HumanReview,
-    /// Validation pipeline failure
-    ValidationFailure,
-    /// Test execution failure
-    TestFailure,
-    /// Task was escalated or required intervention
-    TaskEscalation,
-    /// Successful contribution merged
-    Success,
-}
-
-impl std::fmt::Display for FeedbackType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FeedbackType::HumanReview => write!(f, "human_review"),
-            FeedbackType::ValidationFailure => write!(f, "validation_failure"),
-            FeedbackType::TestFailure => write!(f, "test_failure"),
-            FeedbackType::TaskEscalation => write!(f, "task_escalation"),
-            FeedbackType::Success => write!(f, "success"),
-        }
-    }
-}
-
-/// Outcome of the feedback event
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum FeedbackOutcome {
-    /// Positive outcome (approved, passed, succeeded)
-    Positive,
-    /// Negative outcome (rejected, failed)
-    Negative,
-    /// Neutral outcome (informational)
-    Neutral,
-}
-
-/// A feedback event captured from the pipeline
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FeedbackEvent {
-    /// Unique identifier
-    #[serde(rename = "_key")]
-    pub id: String,
-    /// Type of feedback
-    pub feedback_type: FeedbackType,
-    /// Associated contribution ID
-    pub contribution_id: String,
-    /// Associated task ID (if applicable)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub task_id: Option<String>,
-    /// Agent that was involved (if applicable)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_id: Option<String>,
-    /// Outcome of the event
-    pub outcome: FeedbackOutcome,
-    /// Context and details
-    pub context: FeedbackContext,
-    /// When the feedback was captured
-    pub captured_at: DateTime<Utc>,
-    /// Whether this feedback has been processed for patterns
-    #[serde(default)]
-    pub processed: bool,
-}
-
-/// Context for a feedback event
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct FeedbackContext {
-    /// Human-provided comments (from reviews)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub comments: Option<String>,
-    /// Validation result details
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub validation_result: Option<ValidationResult>,
-    /// Test output details
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub test_output: Option<TestOutput>,
-    /// Error messages
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error_messages: Option<Vec<String>>,
-    /// Task type that was being executed
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub task_type: Option<AITaskType>,
-    /// Contribution type
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub contribution_type: Option<String>,
-    /// Files involved
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub files_affected: Option<Vec<String>>,
-    /// Additional metadata
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub metadata: HashMap<String, Value>,
-}
-
-/// Test execution output captured for feedback
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TestOutput {
-    /// Total tests run
-    pub tests_run: u32,
-    /// Tests passed
-    pub tests_passed: u32,
-    /// Tests failed
-    pub tests_failed: u32,
-    /// Test names that failed
-    #[serde(default)]
-    pub failed_tests: Vec<String>,
-    /// Raw output (truncated)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub raw_output: Option<String>,
-}
+// Re-export feedback types for backwards compatibility
+pub use feedback::{
+    FeedbackContext, FeedbackEvent, FeedbackOutcome, FeedbackOutcome as FeedbackResult,
+    FeedbackQuery, FeedbackSystem, FeedbackType, ListFeedbackResponse, TestOutput,
+};
 
 // ============================================================================
 // Pattern Types
@@ -291,29 +179,11 @@ pub struct ProcessingResult {
     pub errors: Vec<String>,
 }
 
-/// Response for listing feedback events
-#[derive(Debug, Serialize)]
-pub struct ListFeedbackResponse {
-    pub feedback: Vec<FeedbackEvent>,
-    pub total: usize,
-}
-
 /// Response for listing patterns
 #[derive(Debug, Serialize)]
 pub struct ListPatternsResponse {
     pub patterns: Vec<Pattern>,
     pub total: usize,
-}
-
-/// Query for filtering feedback events
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct FeedbackQuery {
-    pub feedback_type: Option<FeedbackType>,
-    pub outcome: Option<FeedbackOutcome>,
-    pub contribution_id: Option<String>,
-    pub agent_id: Option<String>,
-    pub processed: Option<bool>,
-    pub limit: Option<usize>,
 }
 
 /// Query for filtering patterns
@@ -330,7 +200,7 @@ pub struct LearningSystem;
 
 impl LearningSystem {
     // ========================================================================
-    // Feedback Capture
+    // Feedback Capture (delegates to FeedbackSystem)
     // ========================================================================
 
     /// Capture feedback from a human review (approve/reject)
@@ -342,27 +212,14 @@ impl LearningSystem {
         comments: Option<String>,
         agent_id: Option<String>,
     ) -> Result<FeedbackEvent, DbError> {
-        let event = FeedbackEvent {
-            id: uuid::Uuid::new_v4().to_string(),
-            feedback_type: FeedbackType::HumanReview,
-            contribution_id: contribution_id.to_string(),
-            task_id: None,
+        FeedbackSystem::capture_review_feedback(
+            storage,
+            db_name,
+            contribution_id,
+            approved,
+            comments,
             agent_id,
-            outcome: if approved {
-                FeedbackOutcome::Positive
-            } else {
-                FeedbackOutcome::Negative
-            },
-            context: FeedbackContext {
-                comments,
-                ..Default::default()
-            },
-            captured_at: Utc::now(),
-            processed: false,
-        };
-
-        Self::save_feedback(storage, db_name, &event)?;
-        Ok(event)
+        )
     }
 
     /// Capture feedback from a validation result
@@ -372,44 +229,7 @@ impl LearningSystem {
         task: &AITask,
         validation_result: &ValidationResult,
     ) -> Result<FeedbackEvent, DbError> {
-        let outcome = if validation_result.passed {
-            FeedbackOutcome::Positive
-        } else {
-            FeedbackOutcome::Negative
-        };
-
-        // Extract error messages from failed stages
-        let error_messages: Vec<String> = validation_result
-            .stages
-            .iter()
-            .filter(|s| !s.passed)
-            .flat_map(|s| s.errors.iter())
-            .map(|m| m.message.clone())
-            .collect();
-
-        let event = FeedbackEvent {
-            id: uuid::Uuid::new_v4().to_string(),
-            feedback_type: FeedbackType::ValidationFailure,
-            contribution_id: task.contribution_id.clone(),
-            task_id: Some(task.id.clone()),
-            agent_id: task.agent_id.clone(),
-            outcome,
-            context: FeedbackContext {
-                validation_result: Some(validation_result.clone()),
-                error_messages: if error_messages.is_empty() {
-                    None
-                } else {
-                    Some(error_messages)
-                },
-                task_type: Some(task.task_type.clone()),
-                ..Default::default()
-            },
-            captured_at: Utc::now(),
-            processed: false,
-        };
-
-        Self::save_feedback(storage, db_name, &event)?;
-        Ok(event)
+        FeedbackSystem::capture_validation_feedback(storage, db_name, task, validation_result)
     }
 
     /// Capture feedback from test execution
@@ -419,30 +239,7 @@ impl LearningSystem {
         task: &AITask,
         test_output: TestOutput,
     ) -> Result<FeedbackEvent, DbError> {
-        let outcome = if test_output.tests_failed == 0 {
-            FeedbackOutcome::Positive
-        } else {
-            FeedbackOutcome::Negative
-        };
-
-        let event = FeedbackEvent {
-            id: uuid::Uuid::new_v4().to_string(),
-            feedback_type: FeedbackType::TestFailure,
-            contribution_id: task.contribution_id.clone(),
-            task_id: Some(task.id.clone()),
-            agent_id: task.agent_id.clone(),
-            outcome,
-            context: FeedbackContext {
-                test_output: Some(test_output),
-                task_type: Some(task.task_type.clone()),
-                ..Default::default()
-            },
-            captured_at: Utc::now(),
-            processed: false,
-        };
-
-        Self::save_feedback(storage, db_name, &event)?;
-        Ok(event)
+        FeedbackSystem::capture_test_feedback(storage, db_name, task, test_output)
     }
 
     /// Capture feedback when a contribution is successfully merged
@@ -454,24 +251,14 @@ impl LearningSystem {
         files_affected: Option<Vec<String>>,
         agent_id: Option<String>,
     ) -> Result<FeedbackEvent, DbError> {
-        let event = FeedbackEvent {
-            id: uuid::Uuid::new_v4().to_string(),
-            feedback_type: FeedbackType::Success,
-            contribution_id: contribution_id.to_string(),
-            task_id: None,
+        FeedbackSystem::capture_success_feedback(
+            storage,
+            db_name,
+            contribution_id,
+            contribution_type,
+            files_affected,
             agent_id,
-            outcome: FeedbackOutcome::Positive,
-            context: FeedbackContext {
-                contribution_type,
-                files_affected,
-                ..Default::default()
-            },
-            captured_at: Utc::now(),
-            processed: false,
-        };
-
-        Self::save_feedback(storage, db_name, &event)?;
-        Ok(event)
+        )
     }
 
     /// Capture feedback when a task is escalated
@@ -481,24 +268,25 @@ impl LearningSystem {
         task: &AITask,
         reason: String,
     ) -> Result<FeedbackEvent, DbError> {
-        let event = FeedbackEvent {
-            id: uuid::Uuid::new_v4().to_string(),
-            feedback_type: FeedbackType::TaskEscalation,
-            contribution_id: task.contribution_id.clone(),
-            task_id: Some(task.id.clone()),
-            agent_id: task.agent_id.clone(),
-            outcome: FeedbackOutcome::Neutral,
-            context: FeedbackContext {
-                comments: Some(reason),
-                task_type: Some(task.task_type.clone()),
-                ..Default::default()
-            },
-            captured_at: Utc::now(),
-            processed: false,
-        };
+        FeedbackSystem::capture_escalation_feedback(storage, db_name, task, reason)
+    }
 
-        Self::save_feedback(storage, db_name, &event)?;
-        Ok(event)
+    /// Save feedback event to storage (delegates to FeedbackSystem)
+    fn save_feedback(
+        storage: &Arc<StorageEngine>,
+        db_name: &str,
+        event: &FeedbackEvent,
+    ) -> Result<(), DbError> {
+        FeedbackSystem::save_feedback(storage, db_name, event)
+    }
+
+    /// List feedback events (delegates to FeedbackSystem)
+    pub fn list_feedback(
+        storage: &Arc<StorageEngine>,
+        db_name: &str,
+        query: &FeedbackQuery,
+    ) -> Result<ListFeedbackResponse, DbError> {
+        FeedbackSystem::list_feedback(storage, db_name, query.clone())
     }
 
     // ========================================================================
@@ -1030,92 +818,8 @@ impl LearningSystem {
     }
 
     // ========================================================================
-    // Storage Operations
+    // Storage Operations (delegated to FeedbackSystem)
     // ========================================================================
-
-    /// Save a feedback event to storage
-    fn save_feedback(
-        storage: &Arc<StorageEngine>,
-        db_name: &str,
-        event: &FeedbackEvent,
-    ) -> Result<(), DbError> {
-        let db = storage.get_database(db_name)?;
-
-        // Ensure collection exists
-        if db.get_collection(FEEDBACK_COLLECTION).is_err() {
-            db.create_collection(FEEDBACK_COLLECTION.to_string(), None)?;
-        }
-
-        let coll = db.get_collection(FEEDBACK_COLLECTION)?;
-        let json = serde_json::to_value(event)
-            .map_err(|e| DbError::InternalError(format!("Failed to serialize feedback: {}", e)))?;
-
-        // Try to update first, then insert if not found
-        if coll.get(&event.id).is_ok() {
-            coll.update(&event.id, json)?;
-        } else {
-            coll.insert(json)?;
-        }
-        Ok(())
-    }
-
-    /// List feedback events with optional filtering
-    pub fn list_feedback(
-        storage: &Arc<StorageEngine>,
-        db_name: &str,
-        query: &FeedbackQuery,
-    ) -> Result<ListFeedbackResponse, DbError> {
-        let db = storage.get_database(db_name)?;
-
-        if db.get_collection(FEEDBACK_COLLECTION).is_err() {
-            return Ok(ListFeedbackResponse {
-                feedback: Vec::new(),
-                total: 0,
-            });
-        }
-
-        let coll = db.get_collection(FEEDBACK_COLLECTION)?;
-        let limit = query.limit.unwrap_or(100);
-
-        let feedback: Vec<FeedbackEvent> = coll
-            .scan(None)
-            .into_iter()
-            .filter_map(|doc| serde_json::from_value::<FeedbackEvent>(doc.to_value()).ok())
-            .filter(|e: &FeedbackEvent| {
-                // Apply filters
-                if let Some(ft) = &query.feedback_type {
-                    if &e.feedback_type != ft {
-                        return false;
-                    }
-                }
-                if let Some(outcome) = &query.outcome {
-                    if &e.outcome != outcome {
-                        return false;
-                    }
-                }
-                if let Some(cid) = &query.contribution_id {
-                    if &e.contribution_id != cid {
-                        return false;
-                    }
-                }
-                if let Some(aid) = &query.agent_id {
-                    if e.agent_id.as_ref() != Some(aid) {
-                        return false;
-                    }
-                }
-                if let Some(processed) = query.processed {
-                    if e.processed != processed {
-                        return false;
-                    }
-                }
-                true
-            })
-            .take(limit)
-            .collect();
-
-        let total = feedback.len();
-        Ok(ListFeedbackResponse { feedback, total })
-    }
 
     /// Get a specific feedback event
     pub fn get_feedback(
@@ -1123,19 +827,8 @@ impl LearningSystem {
         db_name: &str,
         feedback_id: &str,
     ) -> Result<FeedbackEvent, DbError> {
-        let db = storage.get_database(db_name)?;
-
-        if db.get_collection(FEEDBACK_COLLECTION).is_err() {
-            return Err(DbError::DocumentNotFound(format!(
-                "Feedback {} not found",
-                feedback_id
-            )));
-        }
-
-        let coll = db.get_collection(FEEDBACK_COLLECTION)?;
-        let doc = coll.get(feedback_id)?;
-        serde_json::from_value(doc.to_value())
-            .map_err(|e| DbError::InternalError(format!("Failed to deserialize feedback: {}", e)))
+        FeedbackSystem::get_feedback(storage, db_name, feedback_id)?
+            .ok_or_else(|| DbError::DocumentNotFound(format!("Feedback {} not found", feedback_id)))
     }
 
     /// Save a pattern to storage

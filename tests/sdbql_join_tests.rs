@@ -429,7 +429,6 @@ fn test_right_join_with_no_left_matches() -> DbResult<()> {
 }
 
 #[test]
-#[ignore] // TODO: FULL OUTER JOIN doesn't properly handle orphan right-side rows (orders without matching users)
 fn test_full_outer_join_comprehensive() -> DbResult<()> {
     let uuid = Uuid::new_v4();
     let storage = StorageEngine::new(&format!("/tmp/test_full_outer_db_{}", uuid))?;
@@ -473,12 +472,12 @@ fn test_full_outer_join_comprehensive() -> DbResult<()> {
     // - Orphan order o3 (no user)
     assert_eq!(results.len(), 4);
 
-    // Count users with orders
+    // Count rows with orders (Alice + orphan order both have orders)
     let with_orders = results
         .iter()
         .filter(|r| r.get("has_orders").and_then(|v| v.as_bool()) == Some(true))
         .count();
-    assert_eq!(with_orders, 1); // Only Alice
+    assert_eq!(with_orders, 2); // Alice and orphan order both have orders
 
     // Count rows without user_name (orphan orders)
     let orphan_orders = results

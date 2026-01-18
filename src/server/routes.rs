@@ -562,36 +562,36 @@ pub fn create_router(
         // AI Contribution routes
         .route(
             "/_api/database/{db}/ai/contributions",
-            post(super::ai_handlers::submit_contribution_handler),
+            post(super::ai_handlers::ai_submit_contribution_handler),
         )
         .route(
             "/_api/database/{db}/ai/contributions",
-            get(super::ai_handlers::list_contributions_handler),
+            get(super::ai_handlers::ai_list_contributions_handler),
         )
         .route(
             "/_api/database/{db}/ai/contributions/{id}",
-            get(super::ai_handlers::get_contribution_handler),
+            get(super::ai_handlers::ai_get_contribution_handler),
         )
         .route(
             "/_api/database/{db}/ai/contributions/{id}/approve",
-            post(super::ai_handlers::approve_contribution_handler),
+            post(super::ai_handlers::ai_approve_contribution_handler),
         )
         .route(
             "/_api/database/{db}/ai/contributions/{id}/reject",
-            post(super::ai_handlers::reject_contribution_handler),
+            post(super::ai_handlers::ai_reject_contribution_handler),
         )
         .route(
             "/_api/database/{db}/ai/contributions/{id}/cancel",
-            post(super::ai_handlers::cancel_contribution_handler),
+            post(super::ai_handlers::ai_cancel_contribution_handler),
         )
         // AI Task routes
         .route(
             "/_api/database/{db}/ai/tasks",
-            get(super::ai_handlers::list_ai_tasks_handler),
+            get(super::ai_handlers::ai_list_ai_tasks_handler),
         )
         .route(
             "/_api/database/{db}/ai/tasks/{id}",
-            get(super::ai_handlers::get_ai_task_handler),
+            get(super::ai_handlers::ai_get_ai_task_handler),
         )
         .route(
             "/_api/database/{db}/ai/tasks/{id}/claim",
@@ -613,86 +613,86 @@ pub fn create_router(
         // AI Agent routes
         .route(
             "/_api/database/{db}/ai/agents",
-            get(super::ai_handlers::list_agents_handler),
+            get(super::ai_handlers::ai_list_agents_handler),
         )
         .route(
             "/_api/database/{db}/ai/agents",
-            post(super::ai_handlers::register_agent_handler),
+            post(super::ai_handlers::ai_register_agent_handler),
         )
         .route(
             "/_api/database/{db}/ai/agents/{id}",
-            get(super::ai_handlers::get_agent_handler),
+            get(super::ai_handlers::ai_get_agent_handler),
         )
         .route(
             "/_api/database/{db}/ai/agents/{id}",
-            put(super::ai_handlers::update_agent_handler),
+            put(super::ai_handlers::ai_update_agent_handler),
         )
         .route(
             "/_api/database/{db}/ai/agents/{id}",
-            delete(super::ai_handlers::unregister_agent_handler),
+            delete(super::ai_handlers::ai_unregister_agent_handler),
         )
         .route(
             "/_api/database/{db}/ai/agents/{id}/heartbeat",
-            post(super::ai_handlers::agent_heartbeat_handler),
+            post(super::ai_handlers::ai_agent_heartbeat_handler),
         )
         // AI Marketplace routes
         .route(
             "/_api/database/{db}/ai/marketplace/discover",
-            get(super::ai_handlers::discover_agents_handler),
+            get(super::ai_handlers::ai_discover_agents_handler),
         )
         .route(
             "/_api/database/{db}/ai/marketplace/agent/{id}/reputation",
-            get(super::ai_handlers::get_agent_reputation_handler),
+            get(super::ai_handlers::ai_get_agent_reputation_handler),
         )
         .route(
             "/_api/database/{db}/ai/marketplace/select",
-            post(super::ai_handlers::select_agent_handler),
+            post(super::ai_handlers::ai_select_agent_handler),
         )
         .route(
             "/_api/database/{db}/ai/marketplace/rankings",
-            get(super::ai_handlers::get_agent_rankings_handler),
+            get(super::ai_handlers::ai_get_agent_rankings_handler),
         )
         // AI Learning routes
         .route(
             "/_api/database/{db}/ai/learning/feedback",
-            get(super::ai_handlers::list_feedback_handler),
+            get(super::ai_handlers::ai_list_feedback_handler),
         )
         .route(
             "/_api/database/{db}/ai/learning/feedback/{id}",
-            get(super::ai_handlers::get_feedback_handler),
+            get(super::ai_handlers::ai_get_feedback_handler),
         )
         .route(
             "/_api/database/{db}/ai/learning/patterns",
-            get(super::ai_handlers::list_patterns_handler),
+            get(super::ai_handlers::ai_list_patterns_handler),
         )
         .route(
             "/_api/database/{db}/ai/learning/patterns/{id}",
-            get(super::ai_handlers::get_pattern_handler),
+            get(super::ai_handlers::ai_get_pattern_handler),
         )
         .route(
             "/_api/database/{db}/ai/learning/process",
-            post(super::ai_handlers::process_feedback_handler),
+            post(super::ai_handlers::ai_process_feedback_handler),
         )
         .route(
             "/_api/database/{db}/ai/learning/recommendations",
-            get(super::ai_handlers::get_recommendations_handler),
+            get(super::ai_handlers::ai_get_recommendations_handler),
         )
         // AI Recovery routes
         .route(
             "/_api/database/{db}/ai/recovery/status",
-            get(super::ai_handlers::get_recovery_status_handler),
+            get(super::ai_handlers::ai_get_recovery_status_handler),
         )
         .route(
             "/_api/database/{db}/ai/recovery/task/{id}/retry",
-            post(super::ai_handlers::retry_task_handler),
+            post(super::ai_handlers::ai_retry_task_handler),
         )
         .route(
             "/_api/database/{db}/ai/recovery/agent/{id}/reset",
-            post(super::ai_handlers::reset_circuit_breaker_handler),
+            post(super::ai_handlers::ai_reset_circuit_breaker_handler),
         )
         .route(
             "/_api/database/{db}/ai/recovery/events",
-            get(super::ai_handlers::list_recovery_events_handler),
+            get(super::ai_handlers::ai_list_recovery_events_handler),
         )
         // AI Validation routes
         .route(

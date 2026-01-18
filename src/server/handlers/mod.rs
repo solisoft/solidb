@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod auth;
 pub mod blobs;
 pub mod cluster;
@@ -13,6 +14,7 @@ pub mod system;
 pub mod websocket;
 
 // Re-export all handlers to maintain compatibility with routes.rs
+pub use ai::*;
 pub use auth::*;
 pub use blobs::*;
 pub use cluster::*;
