@@ -515,7 +515,7 @@ impl StorageEngine {
             // Apply operations for each collection
             for (coll_name, ops) in ops_by_collection {
                 if let Ok(collection) = self.get_collection(&coll_name) {
-                    collection.apply_transaction_operations(&ops)?;
+                    collection.apply_transaction_operations(ops)?;
                 } else {
                     tracing::warn!(
                         "Collection {} not found during WAL recovery, skipping",
@@ -563,7 +563,7 @@ impl StorageEngine {
         // Apply operations for each collection
         for (coll_name, ops) in ops_by_collection {
             let collection = self.get_collection(&coll_name)?;
-            collection.apply_transaction_operations(&ops)?;
+            collection.apply_transaction_operations(ops)?;
         }
 
         // Mark transaction as committed in manager

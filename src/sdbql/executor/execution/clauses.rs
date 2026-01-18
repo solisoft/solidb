@@ -576,7 +576,7 @@ impl<'a> QueryExecutor<'a> {
 
                         // Batch delete all documents at once (uses RocksDB WriteBatch)
                         let delete_start = std::time::Instant::now();
-                        let deleted_count = collection.delete_batch(&keys)?;
+                        let deleted_count = collection.delete_batch(keys.clone())?;
                         let delete_time = delete_start.elapsed();
                         stats.documents_removed += deleted_count;
                         tracing::debug!(

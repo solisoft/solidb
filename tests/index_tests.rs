@@ -286,9 +286,9 @@ fn test_fulltext_search() {
         )
         .unwrap();
 
-    // Search for "lazy" with max_distance 0 (exact match)
-    let results = articles.fulltext_search("content", "lazy", 0);
-    assert!(results.is_some());
+    // Search for "lazy"
+    let results = articles.fulltext_search("lazy", Some(vec!["content".to_string()]), 10);
+    assert!(results.is_ok());
     let matches = results.unwrap();
     assert_eq!(matches.len(), 2); // Both documents contain "lazy"
 }

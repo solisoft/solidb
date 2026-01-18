@@ -1018,7 +1018,7 @@ impl ShardCoordinator {
 
                 // 3. Batch Delete Redundant Docs
                 if !redundant_keys.is_empty() {
-                    match physical_coll.delete_batch(&redundant_keys) {
+                    match physical_coll.delete_batch(redundant_keys) {
                         Ok(_n) => {
                             // n duplicates deleted
                             // shard_fixed/shard_moved counts track logic, n tracks actual deletes

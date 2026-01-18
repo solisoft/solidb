@@ -7,7 +7,6 @@ use axum::{
 };
 use serde::{Deserialize};
 use crate::{
-    error::DbError,
     server::handlers::auth::AuthParams,
     storage::StorageEngine,
 };

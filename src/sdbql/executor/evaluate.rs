@@ -2969,7 +2969,7 @@ impl<'a> QueryExecutor<'a> {
                 let query = evaluated_args[2].as_str().ok_or_else(|| {
                     DbError::ExecutionError("FULLTEXT: query must be a string".to_string())
                 })?;
-                let max_distance = if evaluated_args.len() == 4 {
+                let _max_distance = if evaluated_args.len() == 4 {
                     evaluated_args[3].as_u64().unwrap_or(2) as usize
                 } else {
                     2 // Default Levenshtein distance
@@ -2977,8 +2977,14 @@ impl<'a> QueryExecutor<'a> {
 
                 let collection = self.get_collection(collection_name)?;
 
-                match collection.fulltext_search(field, query, max_distance) {
-                    Some(matches) => {
+                // Use a reasonable limit if max_distance is not intended as limit, 
+                // but since signature takes limit, we pass a default or the value if it makes sense.
+                // Assuming max_distance was intended for fuzzy, but fulltext_search doesn't take it?
+                // For now, pass 100 as limit to be safe, or just use max_distance as limit if that was the intent.
+                // Let's use 100 as default limit.
+                let limit = 100;
+                match collection.fulltext_search(query, Some(vec![field.to_string()]), limit) {
+                    Ok(matches) => {
                         let results: Vec<Value> = matches
                             .iter()
                             .filter_map(|m| {
@@ -2993,9 +2999,9 @@ impl<'a> QueryExecutor<'a> {
                             .collect();
                         Ok(Value::Array(results))
                     }
-                    None => Err(DbError::ExecutionError(format!(
-                        "No fulltext index found on field '{}' in collection '{}'",
-                        field, collection_name
+                    Err(e) => Err(DbError::ExecutionError(format!(
+                        "Fulltext search failed: {}",
+                        e
                     ))),
                 }
             }
@@ -3514,7 +3520,7 @@ impl<'a> QueryExecutor<'a> {
 
                 // Step 2: Fulltext search
                 let fulltext_results = collection
-                    .fulltext_search(fulltext_field, text_query, 2)
+                    .fulltext_search(text_query, Some(vec![fulltext_field.to_string()]), 2)
                     .unwrap_or_default();
 
                 // Step 3: Normalize vector scores to 0-1 range

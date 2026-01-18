@@ -274,7 +274,7 @@ pub fn handle_quantize_vector_index(
     index_name: String,
 ) -> Response {
     match handler.get_collection(&database, &collection) {
-        Ok(coll) => match coll.quantize_vector_index(&index_name) {
+        Ok(coll) => match coll.quantize_vector_index(&index_name, crate::storage::index::VectorQuantization::Scalar) {
             Ok(_) => Response::ok_empty(),
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },

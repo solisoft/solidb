@@ -599,7 +599,7 @@ impl SyncWorker {
                         }
 
                         if !keys_to_delete.is_empty() {
-                            let _ = coll.delete_batch(&keys_to_delete);
+                            let _ = coll.delete_batch(keys_to_delete);
                         }
                     }
                 }

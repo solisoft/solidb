@@ -528,7 +528,7 @@ pub async fn reshard_collection_with_journal<S: BatchSender>(
                     };
 
                     // Delete ONLY verified migrated documents from source
-                    if let Ok(deleted) = physical_coll.delete_batch(&keys_to_delete) {
+                    if let Ok(deleted) = physical_coll.delete_batch(keys_to_delete.clone()) {
                         moved_count += deleted;
 
                         // Check for partial failures

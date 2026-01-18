@@ -109,6 +109,29 @@ pub fn distance_meters(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     haversine_distance(&GeoPoint::new(lat1, lon1), &GeoPoint::new(lat2, lon2))
 }
 
+/// Check if a point is inside a polygon using ray casting algorithm
+/// Polygon is a list of (lat, lon) points
+pub fn point_in_polygon(lat: f64, lon: f64, polygon: &[(f64, f64)]) -> bool {
+    let mut inside = false;
+    let n = polygon.len();
+    let mut j = n - 1;
+
+    for i in 0..n {
+        let (lat_i, lon_i) = polygon[i];
+        let (lat_j, lon_j) = polygon[j];
+
+        let intersect = ((lon_i > lon) != (lon_j > lon))
+            && (lat < (lat_j - lat_i) * (lon - lon_i) / (lon_j - lon_i) + lat_i);
+
+        if intersect {
+            inside = !inside;
+        }
+        j = i;
+    }
+
+    inside
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

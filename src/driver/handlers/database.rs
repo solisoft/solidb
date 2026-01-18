@@ -112,10 +112,10 @@ pub fn handle_recount_collection(
     collection: String,
 ) -> Response {
     match handler.get_collection(&database, &collection) {
-        Ok(coll) => match coll.recount() {
-            Ok(count) => Response::ok_count(count),
-            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-        },
+        Ok(coll) => {
+             let count = coll.recalculate_count();
+             Response::ok_count(count)
+        }
         Err(e) => Response::error(e),
     }
 }
@@ -190,7 +190,7 @@ pub fn handle_delete_collection_schema(
     collection: String,
 ) -> Response {
     match handler.get_collection(&database, &collection) {
-        Ok(coll) => match coll.delete_collection_schema() {
+        Ok(coll) => match coll.remove_json_schema() {
             Ok(_) => Response::ok_empty(),
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },

@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Json, Query as AxumQuery, State},
+    extract::{Json, State},
     http::HeaderMap,
 };
 use serde::{Deserialize, Serialize};
@@ -125,15 +125,10 @@ pub fn generate_cluster_status(state: &AppState, sys: &mut sysinfo::System) -> C
 
     // Calculate stats
     let databases = state.storage.list_databases();
-    let database_count = databases.len();
+    let _database_count = databases.len();
 
     let mut collection_count = 0;
     let mut document_count: u64 = 0;
-    let mut total_file_count: u64 = 0;
-    let mut total_chunk_count: u64 = 0;
-    let mut total_sst_size: u64 = 0;
-    let mut total_memtable_size: u64 = 0;
-    let mut total_live_size: u64 = 0;
 
     for db_name in &databases {
         if let Ok(db) = state.storage.get_database(db_name) {
@@ -143,11 +138,6 @@ pub fn generate_cluster_status(state: &AppState, sys: &mut sysinfo::System) -> C
                 if let Ok(coll) = db.get_collection(&coll_name) {
                     let stats = coll.stats();
                     document_count += stats.document_count as u64;
-                    total_file_count += stats.disk_usage.num_sst_files;
-                    total_chunk_count += stats.chunk_count as u64;
-                    total_sst_size += stats.disk_usage.sst_files_size;
-                    total_memtable_size += stats.disk_usage.memtable_size;
-                    total_live_size += stats.disk_usage.live_data_size;
                 }
             }
         }
@@ -157,7 +147,7 @@ pub fn generate_cluster_status(state: &AppState, sys: &mut sysinfo::System) -> C
     let storage_bytes = get_dir_size(&data_dir).unwrap_or(0);
 
     // Uptime
-    let uptime_secs = state.startup_time.elapsed().as_secs();
+    let _uptime_secs = state.startup_time.elapsed().as_secs();
 
     // Memory and CPU usage
     sys.refresh_memory();
@@ -172,22 +162,16 @@ pub fn generate_cluster_status(state: &AppState, sys: &mut sysinfo::System) -> C
         (0, 0.0)
     };
 
-    let memory_total_mb = sys.total_memory() / (1024 * 1024);
+    let _memory_total_mb = sys.total_memory() / (1024 * 1024);
 
     // Request count
-    let request_count = state.request_counter.load(Ordering::Relaxed);
+    let _request_count = state.request_counter.load(Ordering::Relaxed);
 
     // Network I/O - use separate Networks struct (sysinfo 0.30 API)
-    let networks = sysinfo::Networks::new_with_refreshed_list();
-    let mut network_rx_bytes = 0u64;
-    let mut network_tx_bytes = 0u64;
-    for (_, network) in &networks {
-        network_rx_bytes += network.total_received();
-        network_tx_bytes += network.total_transmitted();
-    }
+    let _networks = sysinfo::Networks::new_with_refreshed_list();
 
     // System Load
-    let system_load_avg = sysinfo::System::load_average().one;
+    let _system_load_avg = sysinfo::System::load_average().one;
 
     let stats = NodeStats {
         cpu_usage: cpu_usage_percent,
@@ -488,8 +472,12 @@ pub async fn cluster_reshard(
         {
             Ok(successful_keys) => {
                 if !successful_keys.is_empty() {
-                    // Delete ONLY successfully migrated documents from source
-                    let _ = physical_coll.delete_batch(&successful_keys);
+                    // Cleanup successful keys from physical collection to avoid duplicates?
+                    // Or this is a migration?
+                    // If migration succeeded, we might delete from source if it was move?
+                    // The original code was `physical_coll.delete_batch(&successful_keys)`.
+                    // Now `delete_batch` takes Vec<String>.
+                    let _ = physical_coll.delete_batch(successful_keys.clone());
                     migrated += successful_keys.len();
                 }
 

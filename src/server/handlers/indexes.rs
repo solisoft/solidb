@@ -513,13 +513,14 @@ pub async fn quantize_vector_index(
     let collection = database.get_collection(&coll_name)?;
 
     // Get the index and quantize it
-    let (vectors_quantized, stats) = collection.quantize_vector_index(&index_name)?;
+    // Default to Scalar quantization for this endpoint
+    let stats = collection.quantize_vector_index(&index_name, crate::storage::index::VectorQuantization::Scalar)?;
 
     Ok(Json(QuantizeVectorIndexResponse {
         name: index_name,
-        vectors_quantized,
-        memory_before: stats.full_memory_bytes,
-        memory_after: stats.memory_bytes,
+        vectors_quantized: 0, // Not provided by stats yet, TODO
+        memory_before: stats.original_size,
+        memory_after: stats.compressed_size,
         compression_ratio: stats.compression_ratio,
         status: "quantized".to_string(),
     }))

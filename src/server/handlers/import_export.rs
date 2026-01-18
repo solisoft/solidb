@@ -2,14 +2,13 @@ use axum::{
     body::Body,
     extract::{Multipart, Path, State},
     http::HeaderMap,
-    response::{IntoResponse, Json, Response},
+    response::{Json, Response},
 };
 use futures::stream::StreamExt;
 use serde_json::Value;
 use crate::error::DbError;
 use super::system::{sanitize_filename, AppState};
 use base64::{engine::general_purpose, Engine as _};
-use std::collections::HashMap;
 
 pub async fn export_collection(
     State(state): State<AppState>,
@@ -245,7 +244,7 @@ pub async fn import_collection(
 
     // Check sharding config once
     let shard_config = collection.get_shard_config();
-    let is_sharded = shard_config
+    let _is_sharded = shard_config
         .as_ref()
         .map(|c| c.num_shards > 0)
         .unwrap_or(false);
@@ -438,7 +437,7 @@ pub async fn import_collection(
                     .map_err(|e| DbError::BadRequest(format!("Invalid JSON: {}", e)))?;
 
                 if let Some(arr) = json.as_array() {
-                    let mut batch_docs = arr.clone();
+                    let batch_docs = arr.clone();
                     let batch_len = batch_docs.len();
                     let result = collection.insert_batch(batch_docs);
                     match result {
@@ -447,7 +446,7 @@ pub async fn import_collection(
                              return Err(e);
                         }
                     }
-                } else if let Some(obj) = json.as_object() {
+                } else if let Some(_obj) = json.as_object() {
                     // Single document import
                     collection.insert(json)?;
                     imported_count += 1;
