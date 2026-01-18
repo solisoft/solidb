@@ -19,9 +19,10 @@ pub use document::Document;
 pub use engine::StorageEngine;
 pub use geo::{distance_meters, GeoIndex, GeoIndexStats, GeoPoint};
 pub use index::{
-    bm25_score, calculate_idf, generate_ngrams, levenshtein_distance, ngram_similarity, tokenize,
-    FulltextMatch, Index, IndexStats, IndexType, TtlIndex, TtlIndexStats, VectorIndexConfig,
-    VectorIndexStats, VectorMetric, NGRAM_SIZE,
+    bm25_score, calculate_idf, deserialize_fields, extract_field_value, generate_ngrams,
+    levenshtein_distance, ngram_similarity, normalize_text, tokenize, FulltextMatch, Index,
+    IndexStats, IndexType, TtlIndex, TtlIndexStats, VectorIndexConfig, VectorIndexStats,
+    VectorMetric, NGRAM_SIZE, BM25_B, BM25_K1,
 };
 pub use schema::{
     CollectionSchema, SchemaCompilationError, SchemaValidationError, SchemaValidationMode,
