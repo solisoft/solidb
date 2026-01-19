@@ -105,7 +105,7 @@ rustyline = "15.0"
 sysinfo = "0.30"
 
 # Prometheus metrics
-prometheus = "0.13"
+prometheus = "0.14"
 futures = { version = "0.3.31", features = ["std"] }
 
 # Embedded Lua scripting
