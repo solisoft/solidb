@@ -5,6 +5,7 @@
 
 pub mod assignment;
 pub mod batch;
+pub mod blob_rebalance;
 pub mod cleanup;
 pub mod coordinator;
 pub mod distribution;
@@ -14,4 +15,5 @@ pub mod rebalance;
 pub mod repro_issue;
 pub mod router;
 
+pub use blob_rebalance::{BlobRebalanceWorker, RebalanceConfig};
 pub use coordinator::{CollectionShardConfig, ShardAssignment, ShardCoordinator, ShardTable};

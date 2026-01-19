@@ -289,6 +289,21 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         }
     });
 
+    // Start Blob Rebalance Worker (if cluster mode with multiple nodes)
+    // The worker will check if rebalancing is needed based on node count
+    let blob_rebalance_config = Arc::new(solidb::sharding::RebalanceConfig::default());
+    let blob_worker = Arc::new(solidb::sharding::BlobRebalanceWorker::new(
+        storage_for_shutdown.clone(),
+        shared_coordinator.clone(),
+        Some(cluster_manager.clone()),
+        blob_rebalance_config,
+    ));
+    let blob_worker_start = blob_worker.clone();
+    tokio::spawn(async move {
+        blob_worker_start.start().await;
+    });
+    tracing::info!("BlobRebalanceWorker started");
+
     // Start Replication Worker
     let worker_log = replication_log.clone();
     let _worker_transport = transport.clone();

@@ -489,6 +489,7 @@ fn test_command_auth() {
         database: "_system".to_string(),
         username: "admin".to_string(),
         password: "secret".to_string(),
+        api_key: None,
     };
 
     let encoded = encode_command(&cmd);
