@@ -59,7 +59,7 @@ pub async fn list_collections(
             .rfind("_s")
             .map(|i| {
                 // Check if what follows _s is a number
-                name[i + 2..].chars().all(|c| c.is_digit(10))
+                name[i + 2..].chars().all(|c| c.is_ascii_digit())
             })
             .unwrap_or(false);
 

@@ -547,7 +547,7 @@ pub async fn dequantize_vector_index(
     let collection = database.get_collection(&coll_name)?;
 
     // Get the index and dequantize it
-    let _ = collection.dequantize_vector_index(&index_name)?;
+    collection.dequantize_vector_index(&index_name)?;
 
     Ok(Json(DequantizeVectorIndexResponse {
         name: index_name,

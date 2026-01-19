@@ -136,17 +136,14 @@ impl SchemaContext {
                     let value = doc.to_value();
                     if let Value::Object(obj) = value {
                         for (key, val) in obj {
-                            if !fields.contains_key(&key) {
-                                let type_name = match val {
-                                    Value::Null => "null",
-                                    Value::Bool(_) => "boolean",
-                                    Value::Number(_) => "number",
-                                    Value::String(_) => "string",
-                                    Value::Array(_) => "array",
-                                    Value::Object(_) => "object",
-                                };
-                                fields.insert(key, type_name.to_string());
-                            }
+                            fields.entry(key).or_insert_with(|| match val {
+                                Value::Null => "null".to_string(),
+                                Value::Bool(_) => "boolean".to_string(),
+                                Value::Number(_) => "number".to_string(),
+                                Value::String(_) => "string".to_string(),
+                                Value::Array(_) => "array".to_string(),
+                                Value::Object(_) => "object".to_string(),
+                            });
                         }
                     }
                 }
@@ -305,7 +302,7 @@ fn build_system_prompt(
     provider: Option<&str>,
     examples: &[(String, String)],
 ) -> String {
-    let reference = if provider.map_or(false, |p| p.eq_ignore_ascii_case("ollama")) {
+    let reference = if provider.is_some_and(|p| p.eq_ignore_ascii_case("ollama")) {
         // Use condensed reference for local models to improve speed
         r#"SDBQL Basic Syntax:
 - FOR doc IN collection FILTER doc.field == value RETURN doc

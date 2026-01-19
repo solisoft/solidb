@@ -31,10 +31,7 @@ fn translate_select(stmt: &SelectStatement) -> String {
     // Handle JOINs as nested FOR loops
     for (i, join) in stmt.joins.iter().enumerate() {
         // Generate unique variable name if no alias provided
-        let join_var = join.alias.as_deref().unwrap_or_else(|| {
-            // Use first letter + index as fallback, e.g. "j0", "j1"
-            ""
-        });
+        let join_var = join.alias.as_deref().unwrap_or("");
         let join_var = if join_var.is_empty() {
             format!("j{}", i)
         } else {
@@ -70,7 +67,7 @@ fn translate_select(stmt: &SelectStatement) -> String {
             .map(|col| {
                 if col.contains('.') {
                     // Qualified column: u.id -> id = u.id
-                    let col_name = col.split('.').last().unwrap_or(col);
+                    let col_name = col.split('.').next_back().unwrap_or(col);
                     format!("{} = {}", col_name, col)
                 } else {
                     format!("{} = {}.{}", col, doc_var, col)
@@ -335,7 +332,7 @@ fn translate_columns(
             .map(|col| {
                 if col.contains('.') {
                     // qualified column like table.field
-                    format!("{}: {}", col.split('.').last().unwrap(), col)
+                    format!("{}: {}", col.split('.').next_back().unwrap(), col)
                 } else {
                     format!("{}: {}.{}", col, doc_var, col)
                 }
@@ -421,7 +418,7 @@ fn translate_select_column(col: &SelectColumn, doc_var: &str, is_grouped: bool) 
         SelectColumn::Column { name, alias } => {
             // For qualified columns (table.column), extract just the column name for the key
             let (key_name, value) = if name.contains('.') {
-                let col_name = name.split('.').last().unwrap_or(name);
+                let col_name = name.split('.').next_back().unwrap_or(name);
                 (
                     alias.as_ref().map(|s| s.as_str()).unwrap_or(col_name),
                     name.clone(),
@@ -509,28 +506,32 @@ fn build_alias_map(
 
     for col in columns {
         match col {
-            SelectColumn::Function { name, args, alias } => {
-                if let Some(alias_name) = alias {
-                    // Map alias to the SDBQL expression
-                    let expr = translate_aggregate_function(name, args, doc_var, is_grouped);
-                    map.insert(alias_name.clone(), expr);
-                }
+            SelectColumn::Function {
+                name,
+                args,
+                alias: Some(alias_name),
+            } => {
+                // Map alias to the SDBQL expression
+                let expr = translate_aggregate_function(name, args, doc_var, is_grouped);
+                map.insert(alias_name.clone(), expr);
             }
-            SelectColumn::Column { name, alias } => {
-                if let Some(alias_name) = alias {
-                    let value = if name.contains('.') {
-                        name.clone()
-                    } else {
-                        format!("{}.{}", doc_var, name)
-                    };
-                    map.insert(alias_name.clone(), value);
-                }
+            SelectColumn::Column {
+                name,
+                alias: Some(alias_name),
+            } => {
+                let value = if name.contains('.') {
+                    name.clone()
+                } else {
+                    format!("{}.{}", doc_var, name)
+                };
+                map.insert(alias_name.clone(), value);
             }
-            SelectColumn::Expression { expr, alias } => {
-                if let Some(alias_name) = alias {
-                    let value = translate_expr(expr, doc_var);
-                    map.insert(alias_name.clone(), value);
-                }
+            SelectColumn::Expression {
+                expr,
+                alias: Some(alias_name),
+            } => {
+                let value = translate_expr(expr, doc_var);
+                map.insert(alias_name.clone(), value);
             }
             _ => {}
         }
@@ -648,7 +649,7 @@ fn translate_insert(stmt: &InsertStatement) -> String {
         } else {
             // No columns specified, assume positional values (less ideal)
             let values: Vec<String> = row.iter().map(|v| translate_expr(v, "doc")).collect();
-            format!("{{ {}: {} }}", "values", format!("[{}]", values.join(", ")))
+            format!("{{ {}: [{}] }}", "values", values.join(", "))
         };
 
         results.push(format!("INSERT {} INTO {}", doc, stmt.table));

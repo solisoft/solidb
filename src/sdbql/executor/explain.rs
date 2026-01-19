@@ -166,7 +166,7 @@ impl<'a> QueryExecutor<'a> {
                         },
                         index_used: index_name,
                         index_type,
-                        documents_count: if used_index { 0 } else { 0 }, // Simplified
+                        documents_count: 0, // Simplified
                     });
                 }
                 BodyClause::Filter(filter_clause) => {

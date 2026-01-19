@@ -9,21 +9,16 @@ use serde::{Deserialize, Serialize};
 pub const AGENT_HEALTH_COLLECTION: &str = "_ai_agent_health";
 
 /// Circuit breaker state
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum CircuitState {
     /// Circuit is closed - allowing requests
+    #[default]
     Closed,
     /// Circuit is open - blocking requests
     Open,
     /// Circuit is half-open - testing with limited requests
     HalfOpen,
-}
-
-impl Default for CircuitState {
-    fn default() -> Self {
-        CircuitState::Closed
-    }
 }
 
 impl std::fmt::Display for CircuitState {
@@ -218,7 +213,7 @@ impl AgentHealthMetrics {
 }
 
 /// Summary of recovery system health
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RecoverySystemStatus {
     /// Total agents monitored
     pub total_agents: usize,
@@ -234,20 +229,6 @@ pub struct RecoverySystemStatus {
     pub last_scan: Option<DateTime<Utc>>,
     /// Recovery events in last hour
     pub recent_events: usize,
-}
-
-impl Default for RecoverySystemStatus {
-    fn default() -> Self {
-        Self {
-            total_agents: 0,
-            agents_circuit_open: 0,
-            agents_unhealthy: 0,
-            stalled_tasks: 0,
-            stuck_contributions: 0,
-            last_scan: None,
-            recent_events: 0,
-        }
-    }
 }
 
 #[cfg(test)]

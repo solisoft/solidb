@@ -69,7 +69,7 @@ pub async fn update_collection_properties(
     // Get existing config or create new one if not sharded yet
     let mut config = collection
         .get_shard_config()
-        .unwrap_or_else(|| crate::sharding::coordinator::CollectionShardConfig::default());
+        .unwrap_or_else(crate::sharding::coordinator::CollectionShardConfig::default);
 
     tracing::info!("Current config before update: {:?}", config);
 

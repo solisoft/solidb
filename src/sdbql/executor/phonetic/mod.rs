@@ -1,9 +1,11 @@
 use crate::error::DbResult;
 use serde_json::Value;
 
+#[allow(clippy::module_name_repetitions)]
 pub mod date;
 pub mod id;
 pub mod math;
+#[allow(clippy::module_inception)]
 pub mod phonetic;
 pub mod string;
 

@@ -326,14 +326,10 @@ impl Collection {
 
             let doc = if exists {
                 // Update existing document
-                if let Ok(bytes) = db.get_cf(cf, Self::doc_key(&key)) {
-                    if let Some(bytes) = bytes {
-                        if let Ok(mut existing) = serde_json::from_slice::<Document>(&bytes) {
-                            existing.update(data);
-                            existing
-                        } else {
-                            Document::with_key(&self.name, key.clone(), data)
-                        }
+                if let Ok(Some(bytes)) = db.get_cf(cf, Self::doc_key(&key)) {
+                    if let Ok(mut existing) = serde_json::from_slice::<Document>(&bytes) {
+                        existing.update(data);
+                        existing
                     } else {
                         Document::with_key(&self.name, key.clone(), data)
                     }
@@ -616,7 +612,7 @@ impl Collection {
             let prefix = DOC_PREFIX.as_bytes();
             let count = db
                 .prefix_iterator_cf(cf, prefix)
-                .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
+                .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
                 .count();
 
             self.doc_count
@@ -642,7 +638,7 @@ impl Collection {
             let prefix = DOC_PREFIX.as_bytes();
             let actual_count = db_guard
                 .prefix_iterator_cf(cf, prefix)
-                .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
+                .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
                 .count();
 
             // Update the cached count to match reality
@@ -695,25 +691,24 @@ impl Collection {
 
         let mut keys_to_delete = Vec::new();
 
-        for result in iter {
-            if let Ok((key_bytes, _value)) = result {
-                if !key_bytes.starts_with(prefix) {
-                    break;
-                }
+        for result in iter.flatten() {
+            let (key_bytes, _value) = result;
+            if !key_bytes.starts_with(prefix) {
+                break;
+            }
 
-                // Extract the document key (without prefix)
-                let doc_key = String::from_utf8_lossy(&key_bytes[prefix.len()..]).to_string();
+            // Extract the document key (without prefix)
+            let doc_key = String::from_utf8_lossy(&key_bytes[prefix.len()..]).to_string();
 
-                // Try to parse as UUID and extract timestamp
-                if let Ok(uuid) = uuid::Uuid::parse_str(&doc_key) {
-                    // UUIDv7: timestamp is in the upper 48 bits (milliseconds)
-                    // uuid.as_u128() returns: timestamp_ms (48 bits) | version (4 bits) | rand_a (12 bits) | variant (2 bits) | rand_b (62 bits)
-                    let uuid_int = uuid.as_u128();
-                    let uuid_timestamp_ms = (uuid_int >> 80) as u64;
+            // Try to parse as UUID and extract timestamp
+            if let Ok(uuid) = uuid::Uuid::parse_str(&doc_key) {
+                // UUIDv7: timestamp is in the upper 48 bits (milliseconds)
+                // uuid.as_u128() returns: timestamp_ms (48 bits) | version (4 bits) | rand_a (12 bits) | variant (2 bits) | rand_b (62 bits)
+                let uuid_int = uuid.as_u128();
+                let uuid_timestamp_ms = (uuid_int >> 80) as u64;
 
-                    if uuid_timestamp_ms < timestamp_ms {
-                        keys_to_delete.push(doc_key);
-                    }
+                if uuid_timestamp_ms < timestamp_ms {
+                    keys_to_delete.push(doc_key);
                 }
             }
         }

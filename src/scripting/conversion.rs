@@ -110,6 +110,7 @@ pub fn matches_filter(doc: &JsonValue, filter: &JsonValue) -> bool {
 }
 
 /// Convert Lua value to JSON value (by value)
+#[allow(clippy::only_used_in_recursion)]
 pub fn lua_to_json_value(lua: &Lua, value: LuaValue) -> LuaResult<JsonValue> {
     match value {
         LuaValue::Nil => Ok(JsonValue::Null),

@@ -73,6 +73,7 @@ fn is_long_running_query(query: &Query) -> bool {
 }
 
 /// Log slow query to _slow_queries collection (async, non-blocking)
+#[allow(clippy::too_many_arguments)]
 fn log_slow_query(
     storage: Arc<StorageEngine>,
     db_name: String,

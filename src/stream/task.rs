@@ -118,7 +118,7 @@ impl StreamTask {
                         // For tumbling: start new window from now or previous end?
                         // Usually aligned.
                         while self.next_window_end <= Utc::now() {
-                            self.next_window_end = self.next_window_end + self.window_duration;
+                            self.next_window_end += self.window_duration;
                         }
 
                         // For sliding window, we might need different logic (keeping history)
@@ -203,28 +203,25 @@ impl StreamTask {
         let mut results = filtered_docs;
 
         for clause in &self.query.body_clauses {
-            match clause {
-                BodyClause::Collect(collect) => {
-                    // Simple implementation of single-group aggregation (COUNT/SUM)
-                    // or Group By
-                    // ... (omitted for brevity, assume simple COUNT or passthrough for now)
+            if let BodyClause::Collect(collect) = clause {
+                // Simple implementation of single-group aggregation (COUNT/SUM)
+                // or Group By
+                // ... (omitted for brevity, assume simple COUNT or passthrough for now)
 
-                    // If we have COUNT INTO var
-                    if let Some(count_var) = &collect.count_var {
-                        // This is "COLLECT WITH COUNT INTO var" - aggregation into single result (sort of, or per group)
-                        // If no group vars, it collapses everything.
-                        if collect.group_vars.is_empty() {
-                            let count = results.len();
-                            let mut new_ctx = std::collections::HashMap::new();
-                            new_ctx.insert(
-                                count_var.clone(),
-                                Value::Number(serde_json::Number::from(count)),
-                            );
-                            results = vec![new_ctx];
-                        }
+                // If we have COUNT INTO var
+                if let Some(count_var) = &collect.count_var {
+                    // This is "COLLECT WITH COUNT INTO var" - aggregation into single result (sort of, or per group)
+                    // If no group vars, it collapses everything.
+                    if collect.group_vars.is_empty() {
+                        let count = results.len();
+                        let mut new_ctx = std::collections::HashMap::new();
+                        new_ctx.insert(
+                            count_var.clone(),
+                            Value::Number(serde_json::Number::from(count)),
+                        );
+                        results = vec![new_ctx];
                     }
                 }
-                _ => {}
             }
         }
 
@@ -254,18 +251,18 @@ impl StreamTask {
 }
 
 fn parse_duration(s: &str) -> DbResult<Duration> {
-    if s.ends_with('m') {
-        let mins = s[..s.len() - 1]
+    if let Some(mins_str) = s.strip_suffix('m') {
+        let mins = mins_str
             .parse::<i64>()
             .map_err(|_| DbError::ParseError("Invalid duration".to_string()))?;
         Ok(Duration::minutes(mins))
-    } else if s.ends_with('s') {
-        let secs = s[..s.len() - 1]
+    } else if let Some(secs_str) = s.strip_suffix('s') {
+        let secs = secs_str
             .parse::<i64>()
             .map_err(|_| DbError::ParseError("Invalid duration".to_string()))?;
         Ok(Duration::seconds(secs))
-    } else if s.ends_with('h') {
-        let hours = s[..s.len() - 1]
+    } else if let Some(hours_str) = s.strip_suffix('h') {
+        let hours = hours_str
             .parse::<i64>()
             .map_err(|_| DbError::ParseError("Invalid duration".to_string()))?;
         Ok(Duration::hours(hours))

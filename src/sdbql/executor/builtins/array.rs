@@ -7,6 +7,7 @@ use crate::error::{DbError, DbResult};
 use serde_json::Value;
 
 /// Evaluate array functions
+#[allow(clippy::get_first)]
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     match name {
         "FIRST" => {

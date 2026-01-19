@@ -19,73 +19,71 @@ impl<'a> QueryExecutor<'a> {
         expr: &Expression,
         var_name: &str,
     ) -> Option<IndexableCondition> {
-        match expr {
-            Expression::BinaryOp { left, op, right } => {
-                match op {
-                    BinaryOperator::Equal
-                    | BinaryOperator::LessThan
-                    | BinaryOperator::LessThanOrEqual
-                    | BinaryOperator::GreaterThan
-                    | BinaryOperator::GreaterThanOrEqual => {
-                        // Try left = field access, right = literal OR bind param
-                        if let Some(field) = self.extract_field_path(left, var_name) {
-                            let value_opt = match right.as_ref() {
-                                Expression::Literal(v) => Some(v.clone()),
-                                Expression::BindVariable(name) => self.bind_vars.get(name).cloned(),
-                                _ => None,
-                            };
+        if let Expression::BinaryOp { left, op, right } = expr {
+            match op {
+                BinaryOperator::Equal
+                | BinaryOperator::LessThan
+                | BinaryOperator::LessThanOrEqual
+                | BinaryOperator::GreaterThan
+                | BinaryOperator::GreaterThanOrEqual => {
+                    // Try left = field access, right = literal OR bind param
+                    if let Some(field) = self.extract_field_path(left, var_name) {
+                        let value_opt = match right.as_ref() {
+                            Expression::Literal(v) => Some(v.clone()),
+                            Expression::BindVariable(name) => self.bind_vars.get(name).cloned(),
+                            _ => None,
+                        };
 
-                            if let Some(value) = value_opt {
-                                return Some(IndexableCondition {
-                                    field,
-                                    op: op.clone(),
-                                    value,
-                                });
-                            }
-                        }
-                        // Try right = field access, left = literal OR bind param
-                        if let Some(field) = self.extract_field_path(right, var_name) {
-                            let value_opt = match left.as_ref() {
-                                Expression::Literal(v) => Some(v.clone()),
-                                Expression::BindVariable(name) => self.bind_vars.get(name).cloned(),
-                                _ => None,
-                            };
-
-                            if let Some(value) = value_opt {
-                                let reversed_op = match op {
-                                    BinaryOperator::LessThan => BinaryOperator::GreaterThan,
-                                    BinaryOperator::LessThanOrEqual => {
-                                        BinaryOperator::GreaterThanOrEqual
-                                    }
-                                    BinaryOperator::GreaterThan => BinaryOperator::LessThan,
-                                    BinaryOperator::GreaterThanOrEqual => {
-                                        BinaryOperator::LessThanOrEqual
-                                    }
-                                    other => other.clone(),
-                                };
-                                return Some(IndexableCondition {
-                                    field,
-                                    op: reversed_op,
-                                    value,
-                                });
-                            }
+                        if let Some(value) = value_opt {
+                            return Some(IndexableCondition {
+                                field,
+                                op: op.clone(),
+                                value,
+                            });
                         }
                     }
-                    BinaryOperator::And => {
-                        if let Some(cond) = self.extract_indexable_condition(left, var_name) {
-                            return Some(cond);
+                    // Try right = field access, left = literal OR bind param
+                    if let Some(field) = self.extract_field_path(right, var_name) {
+                        let value_opt = match left.as_ref() {
+                            Expression::Literal(v) => Some(v.clone()),
+                            Expression::BindVariable(name) => self.bind_vars.get(name).cloned(),
+                            _ => None,
+                        };
+
+                        if let Some(value) = value_opt {
+                            let reversed_op = match op {
+                                BinaryOperator::LessThan => BinaryOperator::GreaterThan,
+                                BinaryOperator::LessThanOrEqual => {
+                                    BinaryOperator::GreaterThanOrEqual
+                                }
+                                BinaryOperator::GreaterThan => BinaryOperator::LessThan,
+                                BinaryOperator::GreaterThanOrEqual => {
+                                    BinaryOperator::LessThanOrEqual
+                                }
+                                other => other.clone(),
+                            };
+                            return Some(IndexableCondition {
+                                field,
+                                op: reversed_op,
+                                value,
+                            });
                         }
-                        return self.extract_indexable_condition(right, var_name);
                     }
-                    _ => {}
                 }
+                BinaryOperator::And => {
+                    if let Some(cond) = self.extract_indexable_condition(left, var_name) {
+                        return Some(cond);
+                    }
+                    return self.extract_indexable_condition(right, var_name);
+                }
+                _ => {}
             }
-            _ => {}
         }
         None
     }
 
     /// Extract field path from an expression
+    #[allow(clippy::only_used_in_recursion)]
     pub(super) fn extract_field_path(&self, expr: &Expression, var_name: &str) -> Option<String> {
         match expr {
             Expression::FieldAccess(base, field) => {

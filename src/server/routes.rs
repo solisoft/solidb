@@ -31,6 +31,7 @@ use crate::scripting::ScriptStats;
 use crate::server::cursor_store::CursorStore;
 use crate::storage::StorageEngine;
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_router(
     storage: StorageEngine,
     cluster_manager: Option<Arc<crate::cluster::manager::ClusterManager>>,

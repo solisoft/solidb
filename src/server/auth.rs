@@ -43,7 +43,7 @@ pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
         .unwrap_or_else(|e| e.into_inner());
 
     // Get or create entry for this IP
-    let attempts = limiter.entry(ip.to_string()).or_insert_with(Vec::new);
+    let attempts = limiter.entry(ip.to_string()).or_default();
 
     // Remove old attempts outside the window
     attempts.retain(|t| now.duration_since(*t) < window);
@@ -789,8 +789,7 @@ pub async fn auth_middleware(
 
     if let Some(header) = auth_header {
         // Support: Authorization: ApiKey <key>
-        if header.starts_with("ApiKey ") {
-            let api_key = &header[7..];
+        if let Some(api_key) = header.strip_prefix("ApiKey ") {
             match AuthService::validate_api_key(&state.storage, api_key) {
                 Ok(claims) => {
                     req.extensions_mut().insert(claims);
@@ -801,8 +800,7 @@ pub async fn auth_middleware(
         }
 
         // Support: Authorization: Bearer <jwt>
-        if header.starts_with("Bearer ") {
-            let token = &header[7..];
+        if let Some(token) = header.strip_prefix("Bearer ") {
             match AuthService::validate_token(token) {
                 Ok(claims) => {
                     req.extensions_mut().insert(claims);
@@ -813,8 +811,7 @@ pub async fn auth_middleware(
         }
 
         // Support: Authorization: Basic <base64(user:pass)>
-        if header.starts_with("Basic ") {
-            let encoded = &header[6..];
+        if let Some(encoded) = header.strip_prefix("Basic ") {
             if let Ok(decoded) =
                 base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
             {
@@ -900,8 +897,7 @@ pub async fn permissive_auth_middleware(
         // If Authorization header is present, it MUST be valid
 
         // Support: Authorization: ApiKey <key>
-        if header.starts_with("ApiKey ") {
-            let api_key = &header[7..];
+        if let Some(api_key) = header.strip_prefix("ApiKey ") {
             match AuthService::validate_api_key(&state.storage, api_key) {
                 Ok(claims) => {
                     req.extensions_mut().insert(claims);
@@ -912,8 +908,7 @@ pub async fn permissive_auth_middleware(
         }
 
         // Support: Authorization: Bearer <jwt>
-        if header.starts_with("Bearer ") {
-            let token = &header[7..];
+        if let Some(token) = header.strip_prefix("Bearer ") {
             match AuthService::validate_token(token) {
                 Ok(claims) => {
                     req.extensions_mut().insert(claims);
@@ -924,8 +919,7 @@ pub async fn permissive_auth_middleware(
         }
 
         // Support: Authorization: Basic <base64(user:pass)>
-        if header.starts_with("Basic ") {
-            let encoded = &header[6..];
+        if let Some(encoded) = header.strip_prefix("Basic ") {
             if let Ok(decoded) =
                 base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
             {

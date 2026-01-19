@@ -42,7 +42,7 @@ impl LogEntry {
             hlc_count: hlc.logical_counter,
             database: self.database.clone(),
             collection: self.collection.clone(),
-            operation: self.operation.clone(),
+            operation: self.operation,
             document_key: self.key.clone(),
             document_data: self.data.clone(),
             shard_id: None,
@@ -103,19 +103,17 @@ impl SyncLog {
             .iterator(IteratorMode::From(LOG_PREFIX, rocksdb::Direction::Forward));
         let mut count = 0;
 
-        for item in iter {
-            if let Ok((key, value)) = item {
-                if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
-                    continue;
-                }
+        for (key, value) in iter.flatten() {
+            if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
+                continue;
+            }
 
-                if let Ok(entry) = serde_json::from_slice::<LogEntry>(&value) {
-                    cache.push_back(entry);
-                    count += 1;
+            if let Ok(entry) = serde_json::from_slice::<LogEntry>(&value) {
+                cache.push_back(entry);
+                count += 1;
 
-                    if count >= self.max_cache_size {
-                        break;
-                    }
+                if count >= self.max_cache_size {
+                    break;
                 }
             }
         }
@@ -217,18 +215,16 @@ impl SyncLog {
         ));
 
         let mut entries = Vec::new();
-        for item in iter {
-            if let Ok((key, value)) = item {
-                if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
-                    continue;
-                }
+        for (key, value) in iter.flatten() {
+            if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
+                continue;
+            }
 
-                if let Ok(entry) = serde_json::from_slice::<LogEntry>(&value) {
-                    if entry.sequence > after_sequence {
-                        entries.push(entry);
-                        if entries.len() >= limit {
-                            break;
-                        }
+            if let Ok(entry) = serde_json::from_slice::<LogEntry>(&value) {
+                if entry.sequence > after_sequence {
+                    entries.push(entry);
+                    if entries.len() >= limit {
+                        break;
                     }
                 }
             }

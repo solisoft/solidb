@@ -84,7 +84,7 @@ pub fn evaluate_math_fn(name: &str, args: &[Value]) -> DbResult<Value> {
                 Value::Number(n) => n.as_f64().unwrap_or(0.0),
                 _ => 0.0,
             };
-            Ok(make_number(value.signum() as f64))
+            Ok(make_number(value.signum()))
         }
 
         "MOD" | "MODULO" => {
@@ -108,7 +108,7 @@ pub fn evaluate_math_fn(name: &str, args: &[Value]) -> DbResult<Value> {
         }
 
         "RANDOM_INT" | "RAND_INT" => {
-            let min = if args.len() > 0 {
+            let min = if !args.is_empty() {
                 match &args[0] {
                     Value::Number(n) => n.as_i64().unwrap_or(0),
                     _ => 0,
@@ -134,12 +134,13 @@ pub fn evaluate_math_fn(name: &str, args: &[Value]) -> DbResult<Value> {
         }
 
         "RANGE" => {
-            if args.len() < 1 || args.len() > 3 {
+            if args.is_empty() || args.len() > 3 {
                 return Err(DbError::ExecutionError(
                     "RANGE requires 1-3 arguments".to_string(),
                 ));
             }
-            let start = match args.get(0).and_then(|v| v.as_i64()) {
+            #[allow(clippy::get_first)]
+            let start = match args.first().and_then(|v| v.as_i64()) {
                 Some(n) => n,
                 None => {
                     return Err(DbError::ExecutionError(
@@ -151,10 +152,7 @@ pub fn evaluate_math_fn(name: &str, args: &[Value]) -> DbResult<Value> {
                 Some(n) => n,
                 None => start + 10,
             };
-            let step = match args.get(2).and_then(|v| v.as_i64()) {
-                Some(n) => n,
-                None => 1,
-            };
+            let step = args.get(2).and_then(|v| v.as_i64()).unwrap_or(1);
 
             if step == 0 {
                 return Err(DbError::ExecutionError(

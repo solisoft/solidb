@@ -111,12 +111,8 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
                             .zip(target_vec.iter())
                             .map(|(a, b)| a * b)
                             .sum();
-                        // For similarity, negate dot product so lower is closer
-                        if name.to_uppercase().as_str() == "VECTOR_SIMILARITY" {
-                            -dot
-                        } else {
-                            -dot
-                        }
+                        // Negate dot product so lower is closer (distance metric)
+                        -dot
                     }
                 };
 

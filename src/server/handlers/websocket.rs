@@ -40,7 +40,7 @@ async fn handle_cluster_ws(mut socket: WebSocket, state: AppState) {
                 // Generate status using shared logic and persistent sys
                 let status = {
                     let mut sys = state.system_monitor.lock().unwrap();
-                    generate_cluster_status(&state, &mut *sys)
+                    generate_cluster_status(&state, &mut sys)
                 };
 
                 let json = match serde_json::to_string(&status) {
@@ -75,7 +75,7 @@ pub async fn monitor_ws_handler(
     AxumQuery(params): AxumQuery<AuthParams>,
     State(state): State<AppState>,
 ) -> Response {
-    if let Err(_) = crate::server::auth::AuthService::validate_token(&params.token) {
+    if crate::server::auth::AuthService::validate_token(&params.token).is_err() {
         return Response::builder()
             .status(StatusCode::UNAUTHORIZED)
             .body(Body::empty())
@@ -181,14 +181,14 @@ pub async fn ws_changefeed_handler(
     };
 
     // If not cluster-internal, validate the JWT token
-    if !is_cluster_internal {
-        if let Err(_) = crate::server::auth::AuthService::validate_token(&params.token) {
-            return Response::builder()
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Body::empty())
-                .expect("Valid status code should not fail")
-                .into_response();
-        }
+    if !is_cluster_internal
+        && crate::server::auth::AuthService::validate_token(&params.token).is_err()
+    {
+        return Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body(Body::empty())
+            .expect("Valid status code should not fail")
+            .into_response();
     }
 
     // Check if HTMX mode is requested
@@ -469,7 +469,7 @@ async fn handle_subscribe_request(
 
                             tokio::spawn(async move {
                                 use crate::cluster::ClusterWebsocketClient;
-                                match ClusterWebsocketClient::connect(
+                                if let Ok(stream) = ClusterWebsocketClient::connect(
                                     &node_addr_clone,
                                     &db_name_remote,
                                     &coll_name_remote,
@@ -478,20 +478,17 @@ async fn handle_subscribe_request(
                                 )
                                 .await
                                 {
-                                    Ok(stream) => {
-                                        tokio::pin!(stream);
-                                        while let Some(result) = stream.next().await {
-                                            match result {
-                                                Ok(event) => {
-                                                    if sub_tx_remote.send(event).await.is_err() {
-                                                        break;
-                                                    }
+                                    tokio::pin!(stream);
+                                    while let Some(result) = stream.next().await {
+                                        match result {
+                                            Ok(event) => {
+                                                if sub_tx_remote.send(event).await.is_err() {
+                                                    break;
                                                 }
-                                                Err(_) => break,
                                             }
+                                            Err(_) => break,
                                         }
                                     }
-                                    Err(_) => {}
                                 }
                             });
                         }
@@ -503,67 +500,62 @@ async fn handle_subscribe_request(
             drop(sub_tx);
 
             // Forward aggregated events to the main socket channel
-            loop {
-                match sub_rx.recv().await {
-                    Some(event) => {
-                        // Double check filter (especially for remote events)
-                        if let Some(ref target_key) = req.key {
-                            if &event.key != target_key {
-                                continue;
-                            }
-                        }
-
-                        // Format message
-                        let msg_text = if use_htmx {
-                            use crate::storage::collection::ChangeType;
-                            let op_type = match event.type_ {
-                                ChangeType::Insert => "INSERT",
-                                ChangeType::Update => "UPDATE",
-                                ChangeType::Delete => "DELETE",
-                            };
-                            let status_class = match event.type_ {
-                                ChangeType::Insert => "bg-success/10 text-success",
-                                ChangeType::Update => "bg-warning/10 text-warning",
-                                ChangeType::Delete => "bg-error/10 text-error",
-                            };
-                            let data_str = event
-                                .data
-                                .as_ref()
-                                .map(|v| v.to_string())
-                                .unwrap_or_default();
-
-                            format!(
-                                r#"<div hx-swap-oob="afterbegin:#events-container">
-                                <div class="px-4 py-2 border-b border-border/10 last:border-0 font-mono text-sm hover:bg-white/5 transition-colors">
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <span class="px-1.5 py-0.5 rounded text-xs {}">{}</span>
-                                        <span class="text-text-dim text-xs">{}</span>
-                                        <span class="text-text-dim text-xs ml-auto">{}</span>
-                                    </div>
-                                    <pre class="text-text-muted text-xs overflow-x-auto">{}</pre>
-                                </div>
-                            </div>"#,
-                                status_class,
-                                op_type,
-                                coll_name,
-                                chrono::Local::now().format("%H:%M:%S"),
-                                data_str
-                            )
-                        } else {
-                            serde_json::json!({
-                                "operation": event.type_,
-                                "collection": coll_name,
-                                "key": event.key,
-                                "data": event.data
-                            })
-                            .to_string()
-                        };
-
-                        if tx.send(Message::Text(msg_text.into())).await.is_err() {
-                            break;
-                        }
+            while let Some(event) = sub_rx.recv().await {
+                // Double check filter (especially for remote events)
+                if let Some(ref target_key) = req.key {
+                    if &event.key != target_key {
+                        continue;
                     }
-                    None => break, // All producers gone
+                }
+
+                // Format message
+                let msg_text = if use_htmx {
+                    use crate::storage::collection::ChangeType;
+                    let op_type = match event.type_ {
+                        ChangeType::Insert => "INSERT",
+                        ChangeType::Update => "UPDATE",
+                        ChangeType::Delete => "DELETE",
+                    };
+                    let status_class = match event.type_ {
+                        ChangeType::Insert => "bg-success/10 text-success",
+                        ChangeType::Update => "bg-warning/10 text-warning",
+                        ChangeType::Delete => "bg-error/10 text-error",
+                    };
+                    let data_str = event
+                        .data
+                        .as_ref()
+                        .map(|v| v.to_string())
+                        .unwrap_or_default();
+
+                    format!(
+                        r#"<div hx-swap-oob="afterbegin:#events-container">
+                        <div class="px-4 py-2 border-b border-border/10 last:border-0 font-mono text-sm hover:bg-white/5 transition-colors">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="px-1.5 py-0.5 rounded text-xs {}">{}</span>
+                                <span class="text-text-dim text-xs">{}</span>
+                                <span class="text-text-dim text-xs ml-auto">{}</span>
+                            </div>
+                            <pre class="text-text-muted text-xs overflow-x-auto">{}</pre>
+                        </div>
+                    </div>"#,
+                        status_class,
+                        op_type,
+                        coll_name,
+                        chrono::Local::now().format("%H:%M:%S"),
+                        data_str
+                    )
+                } else {
+                    serde_json::json!({
+                        "operation": event.type_,
+                        "collection": coll_name,
+                        "key": event.key,
+                        "data": event.data
+                    })
+                    .to_string()
+                };
+
+                if tx.send(Message::Text(msg_text.into())).await.is_err() {
+                    break;
                 }
             }
         }
@@ -705,7 +697,7 @@ async fn handle_live_query_request(
 
                                         tokio::spawn(async move {
                                             use crate::cluster::ClusterWebsocketClient;
-                                            match ClusterWebsocketClient::connect(
+                                            if let Ok(stream) = ClusterWebsocketClient::connect(
                                                 &n_addr,
                                                 &db_remote,
                                                 &c_remote,
@@ -714,20 +706,17 @@ async fn handle_live_query_request(
                                             )
                                             .await
                                             {
-                                                Ok(stream) => {
-                                                    tokio::pin!(stream);
-                                                    while let Some(result) = stream.next().await {
-                                                        if let Ok(event) = result {
-                                                            if tx_remote.send(event).await.is_err()
-                                                            {
-                                                                break;
-                                                            }
-                                                        } else {
+                                                tokio::pin!(stream);
+                                                while let Some(result) = stream.next().await {
+                                                    if let Ok(event) = result {
+                                                        if tx_remote.send(event).await.is_err()
+                                                        {
                                                             break;
                                                         }
+                                                    } else {
+                                                        break;
                                                     }
                                                 }
-                                                Err(_) => {}
                                             }
                                         });
                                     }

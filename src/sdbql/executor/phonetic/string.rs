@@ -1,8 +1,11 @@
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
 
 use super::super::utils::safe_regex;
 use crate::error::{DbError, DbResult};
+
+static HTML_TAG_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[^>]*>").unwrap());
 
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     match name {
@@ -91,7 +94,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     .collect(),
                 Some(n) if n < 0 => {
                     let mut p: Vec<Value> = value
-                        .rsplitn(n.abs() as usize, separator)
+                        .rsplitn(n.unsigned_abs() as usize, separator)
                         .map(|s| Value::String(s.to_string()))
                         .collect();
                     p.reverse();
@@ -136,7 +139,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 }
 
                 // Sort terms by length descending to handle overlapping terms (longest first)
-                terms.sort_by(|a, b| b.len().cmp(&a.len()));
+                terms.sort_by_key(|b| std::cmp::Reverse(b.len()));
 
                 let mut result = String::new();
                 let mut i = 0;
@@ -307,8 +310,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                             }
                             "strip_html" => {
                                 // Remove HTML tags using regex
-                                let re = regex::Regex::new(r"<[^>]*>").unwrap();
-                                result = re.replace_all(&result, "").to_string();
+                                result = HTML_TAG_REGEX.replace_all(&result, "").to_string();
                             }
                             "normalize_whitespace" | "normalize" => {
                                 // Replace multiple whitespace with single space
@@ -401,6 +403,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 Ok(Some(Value::Bool(text.contains(search))))
             }
         }
+        #[allow(clippy::explicit_counter_loop)]
         "SUBSTITUTE" => {
             if args.len() < 2 || args.len() > 4 {
                 return Err(DbError::ExecutionError(

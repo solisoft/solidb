@@ -94,7 +94,7 @@ pub fn should_pause_resharding(
         let total_nodes = mgr.state().get_all_members().len();
 
         // Pause resharding if less than 50% of nodes are healthy
-        if healthy_nodes.len() < (total_nodes + 1) / 2 {
+        if healthy_nodes.len() < total_nodes.div_ceil(2) {
             tracing::warn!(
                 "RESHARD: Pausing resharding - only {}/{} nodes are healthy",
                 healthy_nodes.len(),
@@ -289,7 +289,7 @@ pub async fn copy_shard_from_source(
         // Flush Batch if full
         if batch_docs.len() >= 1000 {
             let count = batch_docs.len();
-            let batch_to_insert: Vec<(String, serde_json::Value)> = batch_docs.drain(..).collect();
+            let batch_to_insert: Vec<(String, serde_json::Value)> = std::mem::take(&mut batch_docs);
             if let Err(e) = coll.upsert_batch(batch_to_insert) {
                 tracing::error!("HEAL: Batch upsert failed: {}", e);
             } else {
@@ -444,7 +444,7 @@ pub async fn heal_shards(
                     assignment.primary_node.clone()
                 } else if let Some(replica) = healthy_replicas
                     .iter()
-                    .find(|r| !was_recently_failed(recently_failed_nodes, *r))
+                    .find(|r| !was_recently_failed(recently_failed_nodes, r))
                 {
                     (*replica).clone()
                 } else if primary_healthy {

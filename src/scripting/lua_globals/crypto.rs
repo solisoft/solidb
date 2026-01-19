@@ -22,7 +22,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
     // md5(data)
     let md5_fn = lua
         .create_function(|_, data: mlua::String| {
-            let digest = md5::compute(&data.as_bytes());
+            let digest = md5::compute(data.as_bytes());
             Ok(format!("{:x}", digest))
         })
         .map_err(|e| DbError::InternalError(format!("Failed to create md5 function: {}", e)))?;
@@ -34,7 +34,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
     let sha256_fn = lua
         .create_function(|_, data: mlua::String| {
             let mut hasher = sha2::Sha256::new();
-            hasher.update(&data.as_bytes());
+            hasher.update(data.as_bytes());
             Ok(hex::encode(hasher.finalize()))
         })
         .map_err(|e| DbError::InternalError(format!("Failed to create sha256 function: {}", e)))?;
@@ -46,7 +46,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
     let sha512_fn = lua
         .create_function(|_, data: mlua::String| {
             let mut hasher = sha2::Sha512::new();
-            hasher.update(&data.as_bytes());
+            hasher.update(data.as_bytes());
             Ok(hex::encode(hasher.finalize()))
         })
         .map_err(|e| DbError::InternalError(format!("Failed to create sha512 function: {}", e)))?;
@@ -89,7 +89,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
     // base64_encode(data)
     let base64_encode_fn = lua
         .create_function(|_, data: mlua::String| {
-            Ok(base64::engine::general_purpose::STANDARD.encode(&data.as_bytes()))
+            Ok(base64::engine::general_purpose::STANDARD.encode(data.as_bytes()))
         })
         .map_err(|e| {
             DbError::InternalError(format!("Failed to create base64_encode function: {}", e))

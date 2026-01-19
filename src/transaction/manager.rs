@@ -86,7 +86,7 @@ impl TransactionManager {
                 let key = format!("{}:{}:{}", op.database(), op.collection(), op.key());
                 seen_keys
                     .entry(key.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(op.clone());
             }
 

@@ -386,7 +386,7 @@ pub fn setup_lua_globals(
         .map_err(|e| DbError::InternalError(format!("Failed to create env table: {}", e)))?;
 
     // Populate env table from _env collection
-    if let Ok(db) = engine.storage.get_database(&db_name) {
+    if let Ok(db) = engine.storage.get_database(db_name) {
         if let Ok(collection) = db.get_collection("_env") {
             let collection: &crate::storage::Collection = &collection;
             let all_docs = collection.scan(None);
@@ -463,7 +463,7 @@ pub fn setup_lua_globals(
         .map_err(|e| DbError::InternalError(format!("Failed to set solidb.env: {}", e)))?;
 
     // Add AI bindings (solidb.ai.*)
-    let ai_table = ai_bindings::create_ai_table(&lua, engine.storage.clone(), db_name)
+    let ai_table = ai_bindings::create_ai_table(lua, engine.storage.clone(), db_name)
         .map_err(|e| DbError::InternalError(format!("Failed to create AI table: {}", e)))?;
     solidb
         .set("ai", ai_table)
@@ -1049,6 +1049,7 @@ pub fn setup_lua_globals(
     let storage_enqueue = engine.storage.clone();
     let notifier_enqueue = engine.queue_notifier.clone();
     let current_db_name = db_name.to_string();
+    #[allow(clippy::get_first)]
     let enqueue_fn = lua
         .create_function(move |lua, args: mlua::MultiValue| {
             // Detect if called with colon (db:enqueue) or dot (db.enqueue)
@@ -1193,7 +1194,7 @@ pub fn setup_lua_globals(
 
     // Body
     if let Some(body) = &context.body {
-        let body_lua = json_to_lua(&lua, body)
+        let body_lua = json_to_lua(lua, body)
             .map_err(|e| DbError::InternalError(format!("Failed to convert body: {}", e)))?;
         request
             .set("body", body_lua)

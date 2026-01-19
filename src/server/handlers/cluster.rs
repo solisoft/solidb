@@ -112,7 +112,7 @@ pub fn generate_cluster_status(
     let replication_port = if let Some(ref manager) = state.cluster_manager {
         let addr = manager.get_local_address();
         addr.split(':')
-            .last()
+            .next_back()
             .and_then(|p| p.parse::<u16>().ok())
             .unwrap_or(6746)
     } else {
@@ -434,11 +434,7 @@ pub async fn cluster_reshard(
 
     for doc in documents {
         let key = doc.key.clone();
-        let route_key = if config.shard_key == "_key" {
-            key.clone()
-        } else {
-            key.clone()
-        };
+        let route_key = key.clone();
 
         // Route to new shard
         let new_shard_id =

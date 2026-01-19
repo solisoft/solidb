@@ -121,15 +121,14 @@ impl Collection {
         let prefix = format!("{}{}:", GEO_PREFIX, name);
         let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
 
-        for result in iter {
-            if let Ok((key, _)) = result {
-                if key.starts_with(prefix.as_bytes()) {
-                    db.delete_cf(cf, &key).map_err(|e| {
-                        DbError::InternalError(format!("Failed to drop geo index entry: {}", e))
-                    })?;
-                } else {
-                    break;
-                }
+        for result in iter.flatten() {
+            let (key, _) = result;
+            if key.starts_with(prefix.as_bytes()) {
+                db.delete_cf(cf, &key).map_err(|e| {
+                    DbError::InternalError(format!("Failed to drop geo index entry: {}", e))
+                })?;
+            } else {
+                break;
             }
         }
 
@@ -151,7 +150,7 @@ impl Collection {
                     .prefix_iterator_cf(cf, prefix.as_bytes())
                     .take_while(|r| {
                         r.as_ref()
-                            .map_or(false, |(k, _)| k.starts_with(prefix.as_bytes()))
+                            .is_ok_and(|(k, _)| k.starts_with(prefix.as_bytes()))
                     })
                     .count();
 
@@ -188,23 +187,22 @@ impl Collection {
 
         let mut matches = Vec::new();
 
-        for result in iter {
-            if let Ok((key, value)) = result {
-                if !key.starts_with(prefix.as_bytes()) {
-                    break;
-                }
+        for result in iter.flatten() {
+            let (key, value) = result;
+            if !key.starts_with(prefix.as_bytes()) {
+                break;
+            }
 
-                if let Ok(point_val) = serde_json::from_slice::<Value>(&value) {
-                    if let Some(target) = GeoPoint::from_value(&point_val) {
-                        let dist = haversine_distance(&GeoPoint::new(lat, lon), &target);
-                        // No specific radius in request? Handler implies sorted nearest.
-                        // We store all then sort.
-                        // Key format: geo:<name>:<doc_key>
-                        let key_str = String::from_utf8_lossy(&key);
-                        let doc_key = key_str.strip_prefix(&prefix).unwrap_or("");
-                        if !doc_key.is_empty() {
-                            matches.push((doc_key.to_string(), dist));
-                        }
+            if let Ok(point_val) = serde_json::from_slice::<Value>(&value) {
+                if let Some(target) = GeoPoint::from_value(&point_val) {
+                    let dist = haversine_distance(&GeoPoint::new(lat, lon), &target);
+                    // No specific radius in request? Handler implies sorted nearest.
+                    // We store all then sort.
+                    // Key format: geo:<name>:<doc_key>
+                    let key_str = String::from_utf8_lossy(&key);
+                    let doc_key = key_str.strip_prefix(&prefix).unwrap_or("");
+                    if !doc_key.is_empty() {
+                        matches.push((doc_key.to_string(), dist));
                     }
                 }
             }
@@ -252,21 +250,20 @@ impl Collection {
 
         let mut matches = Vec::new();
 
-        for result in iter {
-            if let Ok((key, value)) = result {
-                if !key.starts_with(prefix.as_bytes()) {
-                    break;
-                }
+        for result in iter.flatten() {
+            let (key, value) = result;
+            if !key.starts_with(prefix.as_bytes()) {
+                break;
+            }
 
-                if let Ok(point_val) = serde_json::from_slice::<Value>(&value) {
-                    if let Some(target) = GeoPoint::from_value(&point_val) {
-                        let dist = haversine_distance(&GeoPoint::new(lat, lon), &target);
-                        if dist <= radius {
-                            let key_str = String::from_utf8_lossy(&key);
-                            let doc_key = key_str.strip_prefix(&prefix).unwrap_or("");
-                            if !doc_key.is_empty() {
-                                matches.push((doc_key.to_string(), dist));
-                            }
+            if let Ok(point_val) = serde_json::from_slice::<Value>(&value) {
+                if let Some(target) = GeoPoint::from_value(&point_val) {
+                    let dist = haversine_distance(&GeoPoint::new(lat, lon), &target);
+                    if dist <= radius {
+                        let key_str = String::from_utf8_lossy(&key);
+                        let doc_key = key_str.strip_prefix(&prefix).unwrap_or("");
+                        if !doc_key.is_empty() {
+                            matches.push((doc_key.to_string(), dist));
                         }
                     }
                 }

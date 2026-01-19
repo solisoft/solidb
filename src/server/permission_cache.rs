@@ -94,7 +94,7 @@ impl PermissionCache {
         entries.insert(subject, permissions);
 
         // Periodically clean up expired entries
-        if entries.len() % 100 == 0 {
+        if entries.len().is_multiple_of(100) {
             self.cleanup_expired_internal(&mut entries);
         }
     }

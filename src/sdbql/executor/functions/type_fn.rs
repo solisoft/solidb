@@ -93,7 +93,7 @@ pub fn evaluate_type_fn(name: &str, args: &[Value]) -> DbResult<Value> {
                 Value::String(s) => chrono::DateTime::parse_from_rfc3339(s).is_ok(),
                 Value::Number(n) => {
                     if let Some(ts) = n.as_i64() {
-                        ts >= 0 && ts < 32503680000000
+                        (0..32503680000000).contains(&ts)
                     } else {
                         false
                     }

@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Wait for all workers
-    while let Some(_) = set.join_next().await {}
+    while (set.join_next().await).is_some() {}
 
     let duration = start.elapsed();
     let ops_per_sec = total_inserts as f64 / duration.as_secs_f64();

@@ -565,7 +565,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                             tokio::spawn(async move {
                                  let mut buf = Vec::new();
                                  let mut stream = peeked_stream;
-                                 if let Ok(_) = stream.read_to_end(&mut buf).await {
+                                 if stream.read_to_end(&mut buf).await.is_ok() {
                                     if let Ok(msg) = serde_json::from_slice(&buf) {
                                         mgr.handle_message(msg).await;
                                     } else {

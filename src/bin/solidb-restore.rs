@@ -1,6 +1,5 @@
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
-use reqwest;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
@@ -274,12 +273,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             // Read (and discard) trailing newline of data
                             let mut newline_buf = [0u8; 1];
-                            if let Ok(_) = reader.read_exact(&mut newline_buf) {
-                                if newline_buf[0] != b'\n' {
-                                    // Put it back? verify logic.
-                                    // My export emits \n after data.
-                                    // So we consume it.
-                                }
+                            if reader.read_exact(&mut newline_buf).is_ok() && newline_buf[0] != b'\n' {
+                                // Put it back? verify logic.
+                                // My export emits \n after data.
+                                // So we consume it.
                             }
 
                             process_blob_chunk(
@@ -371,6 +368,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 use std::io::Read; // Needed for read_exact
 
+#[allow(clippy::too_many_arguments)]
 async fn process_blob_chunk(
     header_doc: Value,
     data: Vec<u8>,
@@ -473,6 +471,7 @@ async fn process_blob_chunk(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn process_doc(
     doc: Value,
     args: &Args,
@@ -574,6 +573,7 @@ async fn process_doc(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn flush_batch(
     batch: &mut Vec<Vec<u8>>,
     batch_size: &mut usize,

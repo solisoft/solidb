@@ -240,7 +240,7 @@ impl Collection {
         // Update config
         let mut configs = self.get_all_vector_index_configs();
         if let Some(config) = configs.iter_mut().find(|c| c.name == name) {
-            config.quantization = quantization.clone();
+            config.quantization = quantization;
 
             // Save config
             let db = self.db.read().unwrap();

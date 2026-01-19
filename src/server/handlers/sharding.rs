@@ -254,7 +254,7 @@ pub async fn get_sharding_details(
                                     .unwrap_or(0);
                                 let disk = body.get("disk_usage");
                                 let size = disk
-                                    .and_then(|d| {
+                                    .map(|d| {
                                         let sst = d
                                             .get("sst_files_size")
                                             .and_then(|v| v.as_u64())
@@ -263,7 +263,7 @@ pub async fn get_sharding_details(
                                             .get("memtable_size")
                                             .and_then(|v| v.as_u64())
                                             .unwrap_or(0);
-                                        Some(sst + mem)
+                                        sst + mem
                                     })
                                     .unwrap_or(0);
                                 stats_result = Some((count, chunk_count, size));

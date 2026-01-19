@@ -1,5 +1,4 @@
 use clap::Parser;
-use reqwest;
 use serde_json::Value;
 use std::fs::File;
 use std::io::{self, Write};

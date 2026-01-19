@@ -22,7 +22,7 @@ impl Collection {
                         db_guard
                             .prefix_iterator_cf(cf, prefix)
                             .take_while(|r| {
-                                r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix))
+                                r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix))
                             })
                             .count()
                     }
@@ -40,7 +40,7 @@ impl Collection {
                 let prefix = BLO_PREFIX.as_bytes();
                 db_guard
                     .prefix_iterator_cf(cf, prefix)
-                    .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
+                    .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
                     .count()
             } else {
                 0

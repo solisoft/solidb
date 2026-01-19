@@ -202,6 +202,7 @@ impl SyncMessage {
 
 impl SyncEntry {
     /// Create a new sync entry for a document operation
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         sequence: u64,
         origin_node: String,

@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Setup
     let mut client = SoliDBClient::connect(&addr).await?;
-    if let Err(_) = client.auth("_system", "admin", &password).await {
+    if client.auth("_system", "admin", &password).await.is_err() {
         println!("Auth warning: check server logs if this fails.");
     }
 

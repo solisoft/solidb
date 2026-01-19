@@ -50,8 +50,8 @@ pub fn handle_rollback_transaction(handler: &mut DriverHandler, tx_id: String) -
     }
 }
 
-pub async fn handle_transaction_command<'a>(
-    handler: &'a mut DriverHandler,
+pub async fn handle_transaction_command(
+    handler: &mut DriverHandler,
     tx_id: String,
     command: Box<Command>,
 ) -> Response {

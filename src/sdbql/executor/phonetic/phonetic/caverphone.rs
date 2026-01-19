@@ -4,6 +4,7 @@
 //! particularly those of New Zealand European settlers.
 
 /// Caverphone algorithm (version 2) - good for matching European surnames
+#[allow(clippy::collapsible_str_replace)]
 pub fn caverphone(s: &str) -> String {
     if s.is_empty() {
         return "1111111111".to_string();

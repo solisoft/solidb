@@ -508,7 +508,7 @@ impl StorageEngine {
                 let coll_name = format!("{}:{}", op.database(), op.collection());
                 ops_by_collection
                     .entry(coll_name)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(op);
             }
 
@@ -556,7 +556,7 @@ impl StorageEngine {
             let coll_name = format!("{}:{}", op.database(), op.collection());
             ops_by_collection
                 .entry(coll_name)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(op);
         }
 

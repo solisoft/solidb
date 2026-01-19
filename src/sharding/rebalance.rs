@@ -70,17 +70,14 @@ impl<'a> BatchSender for RebalanceBatchSender<'a> {
         batch: Vec<(String, serde_json::Value)>,
     ) -> Result<Vec<String>, String> {
         // Simple implementation that routes to correct shard and upserts
-        let table = {
-            let tables = self
-                .storage
-                .get_database(db_name)
-                .map_err(|e| e.to_string())?
-                .get_collection(coll_name)
-                .map_err(|e| e.to_string())?
-                .get_stored_shard_table()
-                .ok_or("Shard table not found".to_string())?;
-            tables
-        };
+        let table = self
+            .storage
+            .get_database(db_name)
+            .map_err(|e| e.to_string())?
+            .get_collection(coll_name)
+            .map_err(|e| e.to_string())?
+            .get_stored_shard_table()
+            .ok_or("Shard table not found".to_string())?;
 
         let local_id = if let Some(mgr) = &self.cluster_manager {
             mgr.local_node_id()

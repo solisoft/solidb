@@ -59,22 +59,17 @@ pub enum TransactionState {
 }
 
 /// Isolation level for transactions
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum IsolationLevel {
     /// Read uncommitted data (dirty reads possible)
     ReadUncommitted,
     /// Read only committed data (default)
+    #[default]
     ReadCommitted,
     /// Repeatable reads within transaction
     RepeatableRead,
     /// Fully serializable execution
     Serializable,
-}
-
-impl Default for IsolationLevel {
-    fn default() -> Self {
-        Self::ReadCommitted
-    }
 }
 
 /// Type of operation within a transaction

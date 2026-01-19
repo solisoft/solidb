@@ -142,7 +142,7 @@ impl<'a> QueryExecutor<'a> {
                         // Could be a Unix timestamp - check if it's a reasonable timestamp value
                         if let Some(ts) = n.as_i64() {
                             // Valid timestamp range: 1970-01-01 to 3000-01-01 approximately
-                            ts >= 0 && ts < 32503680000000 // Year 3000 in milliseconds
+                            (0..32503680000000).contains(&ts) // Year 3000 in milliseconds
                         } else {
                             false
                         }
@@ -819,7 +819,7 @@ impl<'a> QueryExecutor<'a> {
                 }
                 nums.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 let len = nums.len();
-                let median = if len % 2 == 0 {
+                let median = if len.is_multiple_of(2) {
                     (nums[len / 2 - 1] + nums[len / 2]) / 2.0
                 } else {
                     nums[len / 2]
@@ -971,7 +971,7 @@ impl<'a> QueryExecutor<'a> {
                 };
                 let mut result = arr.clone();
                 if unique {
-                    if !result.iter().any(|v| v.to_string() == element.to_string()) {
+                    if !result.contains(element) {
                         result.push(element.clone());
                     }
                 } else {
@@ -1826,7 +1826,7 @@ impl<'a> QueryExecutor<'a> {
                 let position = arr
                     .iter()
                     .skip(start)
-                    .position(|v| v.to_string() == search.to_string())
+                    .position(|v| *v == *search)
                     .map(|p| p + start);
                 Ok(match position {
                     Some(p) => Value::Number(serde_json::Number::from(p)),
@@ -1847,7 +1847,7 @@ impl<'a> QueryExecutor<'a> {
                     )
                 })?;
                 let search = &evaluated_args[1];
-                let contains = arr.iter().any(|v| v.to_string() == search.to_string());
+                let contains = arr.contains(search);
                 Ok(Value::Bool(contains))
             }
 
@@ -1921,7 +1921,7 @@ impl<'a> QueryExecutor<'a> {
                             Ok(Value::String(s.clone()))
                         } else {
                             let padding: String =
-                                std::iter::repeat(pad_char).take(len - s.len()).collect();
+                                std::iter::repeat_n(pad_char, len - s.len()).collect();
                             Ok(Value::String(format!("{}{}", padding, s)))
                         }
                     }
@@ -1958,7 +1958,7 @@ impl<'a> QueryExecutor<'a> {
                             Ok(Value::String(s.clone()))
                         } else {
                             let padding: String =
-                                std::iter::repeat(pad_char).take(len - s.len()).collect();
+                                std::iter::repeat_n(pad_char, len - s.len()).collect();
                             Ok(Value::String(format!("{}{}", s, padding)))
                         }
                     }
@@ -2590,7 +2590,7 @@ impl<'a> QueryExecutor<'a> {
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("ASIN: argument must be a number".to_string())
                 })?;
-                if num < -1.0 || num > 1.0 {
+                if !(-1.0..=1.0).contains(&num) {
                     return Err(DbError::ExecutionError(
                         "ASIN: argument must be between -1 and 1".to_string(),
                     ));
@@ -2608,7 +2608,7 @@ impl<'a> QueryExecutor<'a> {
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("ACOS: argument must be a number".to_string())
                 })?;
-                if num < -1.0 || num > 1.0 {
+                if !(-1.0..=1.0).contains(&num) {
                     return Err(DbError::ExecutionError(
                         "ACOS: argument must be between -1 and 1".to_string(),
                     ));
@@ -3573,6 +3573,7 @@ impl<'a> QueryExecutor<'a> {
                 }
 
                 // Step 5: Combine scores based on fusion method
+                #[allow(clippy::type_complexity)]
                 let mut combined_results: Vec<(
                     String,
                     f32,
@@ -3800,7 +3801,7 @@ impl<'a> QueryExecutor<'a> {
                     DbError::ExecutionError("SORTED: argument must be an array".to_string())
                 })?;
                 let mut sorted = arr.clone();
-                sorted.sort_by(|a, b| compare_values(a, b));
+                sorted.sort_by(compare_values);
                 Ok(Value::Array(sorted))
             }
             "UNIQUE" => {
@@ -3840,6 +3841,7 @@ impl<'a> QueryExecutor<'a> {
             // Numeric functions
 
             // Geo functions
+            #[allow(clippy::get_first)]
             "GEO_WITHIN" => {
                 let point = args.get(0);
                 let polygon = args.get(1);

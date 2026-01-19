@@ -112,6 +112,7 @@ pub enum AggregateOp {
 
 impl AggregateOp {
     /// Parse aggregate operation from string
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_uppercase().as_str() {
             "SUM" => Some(AggregateOp::Sum),
@@ -509,15 +510,14 @@ impl ColumnarCollection {
         let iter = db_guard.prefix_iterator_cf(cf, prefix);
 
         let mut uuids = Vec::new();
-        for item in iter {
-            if let Ok((key, _)) = item {
-                if !key.starts_with(prefix) {
-                    break;
-                }
-                let key_str = String::from_utf8_lossy(&key);
-                if let Some(uuid) = key_str.strip_prefix(COL_ROW_PREFIX) {
-                    uuids.push(uuid.to_string());
-                }
+        for item in iter.flatten() {
+            let (key, _) = item;
+            if !key.starts_with(prefix) {
+                break;
+            }
+            let key_str = String::from_utf8_lossy(&key);
+            if let Some(uuid) = key_str.strip_prefix(COL_ROW_PREFIX) {
+                uuids.push(uuid.to_string());
             }
         }
 
@@ -752,18 +752,16 @@ impl ColumnarCollection {
 
             AggregateOp::Sum => {
                 let mut sum = 0.0;
-                for item in iter {
-                    if let Ok((key, val_bytes)) = item {
-                        if !key.starts_with(prefix.as_bytes()) {
-                            break;
-                        }
-                        if let Ok(decompressed) =
-                            self.decompress_data(&val_bytes, &meta.compression)
-                        {
-                            if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-                                if let Some(n) = value.as_f64() {
-                                    sum += n;
-                                }
+                for (key, val_bytes) in iter.flatten() {
+                    if !key.starts_with(prefix.as_bytes()) {
+                        break;
+                    }
+                    if let Ok(decompressed) =
+                        self.decompress_data(&val_bytes, &meta.compression)
+                    {
+                        if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
+                            if let Some(n) = value.as_f64() {
+                                sum += n;
                             }
                         }
                     }
@@ -774,19 +772,17 @@ impl ColumnarCollection {
             AggregateOp::Avg => {
                 let mut sum = 0.0;
                 let mut count = 0;
-                for item in iter {
-                    if let Ok((key, val_bytes)) = item {
-                        if !key.starts_with(prefix.as_bytes()) {
-                            break;
-                        }
-                        if let Ok(decompressed) =
-                            self.decompress_data(&val_bytes, &meta.compression)
-                        {
-                            if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-                                if let Some(n) = value.as_f64() {
-                                    sum += n;
-                                    count += 1;
-                                }
+                for (key, val_bytes) in iter.flatten() {
+                    if !key.starts_with(prefix.as_bytes()) {
+                        break;
+                    }
+                    if let Ok(decompressed) =
+                        self.decompress_data(&val_bytes, &meta.compression)
+                    {
+                        if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
+                            if let Some(n) = value.as_f64() {
+                                sum += n;
+                                count += 1;
                             }
                         }
                     }
@@ -800,24 +796,22 @@ impl ColumnarCollection {
 
             AggregateOp::Min => {
                 let mut min_val: Option<f64> = None;
-                for item in iter {
-                    if let Ok((key, val_bytes)) = item {
-                        if !key.starts_with(prefix.as_bytes()) {
-                            break;
-                        }
-                        if let Ok(decompressed) =
-                            self.decompress_data(&val_bytes, &meta.compression)
-                        {
-                            if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-                                if let Some(n) = value.as_f64() {
-                                    match min_val {
-                                        Some(cur_min) => {
-                                            if n < cur_min {
-                                                min_val = Some(n);
-                                            }
+                for (key, val_bytes) in iter.flatten() {
+                    if !key.starts_with(prefix.as_bytes()) {
+                        break;
+                    }
+                    if let Ok(decompressed) =
+                        self.decompress_data(&val_bytes, &meta.compression)
+                    {
+                        if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
+                            if let Some(n) = value.as_f64() {
+                                match min_val {
+                                    Some(cur_min) => {
+                                        if n < cur_min {
+                                            min_val = Some(n);
                                         }
-                                        None => min_val = Some(n),
                                     }
+                                    None => min_val = Some(n),
                                 }
                             }
                         }
@@ -828,24 +822,22 @@ impl ColumnarCollection {
 
             AggregateOp::Max => {
                 let mut max_val: Option<f64> = None;
-                for item in iter {
-                    if let Ok((key, val_bytes)) = item {
-                        if !key.starts_with(prefix.as_bytes()) {
-                            break;
-                        }
-                        if let Ok(decompressed) =
-                            self.decompress_data(&val_bytes, &meta.compression)
-                        {
-                            if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-                                if let Some(n) = value.as_f64() {
-                                    match max_val {
-                                        Some(cur_max) => {
-                                            if n > cur_max {
-                                                max_val = Some(n);
-                                            }
+                for (key, val_bytes) in iter.flatten() {
+                    if !key.starts_with(prefix.as_bytes()) {
+                        break;
+                    }
+                    if let Ok(decompressed) =
+                        self.decompress_data(&val_bytes, &meta.compression)
+                    {
+                        if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
+                            if let Some(n) = value.as_f64() {
+                                match max_val {
+                                    Some(cur_max) => {
+                                        if n > cur_max {
+                                            max_val = Some(n);
                                         }
-                                        None => max_val = Some(n),
                                     }
+                                    None => max_val = Some(n),
                                 }
                             }
                         }
@@ -856,17 +848,15 @@ impl ColumnarCollection {
 
             AggregateOp::CountDistinct => {
                 let mut distinct = std::collections::HashSet::new();
-                for item in iter {
-                    if let Ok((key, val_bytes)) = item {
-                        if !key.starts_with(prefix.as_bytes()) {
-                            break;
-                        }
-                        if let Ok(decompressed) =
-                            self.decompress_data(&val_bytes, &meta.compression)
-                        {
-                            if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-                                distinct.insert(value.to_string());
-                            }
+                for (key, val_bytes) in iter.flatten() {
+                    if !key.starts_with(prefix.as_bytes()) {
+                        break;
+                    }
+                    if let Ok(decompressed) =
+                        self.decompress_data(&val_bytes, &meta.compression)
+                    {
+                        if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
+                            distinct.insert(value.to_string());
                         }
                     }
                 }
@@ -1023,12 +1013,10 @@ impl ColumnarCollection {
         let prefix = COL_DATA_PREFIX.as_bytes();
         let iter = db_guard.prefix_iterator_cf(cf, prefix);
 
-        for item in iter {
-            if let Ok((_, value)) = item {
-                compressed_size += value.len() as u64;
-                if let Ok(decompressed) = self.decompress_data(&value, &meta.compression) {
-                    uncompressed_size += decompressed.len() as u64;
-                }
+        for (_, value) in iter.flatten() {
+            compressed_size += value.len() as u64;
+            if let Ok(decompressed) = self.decompress_data(&value, &meta.compression) {
+                uncompressed_size += decompressed.len() as u64;
             }
         }
 
@@ -1074,34 +1062,28 @@ impl ColumnarCollection {
         // Delete all row data (col: prefix)
         let prefix = COL_DATA_PREFIX.as_bytes();
         let iter = db_guard.prefix_iterator_cf(cf, prefix);
-        for item in iter {
-            if let Ok((key, _)) = item {
-                db_guard
-                    .delete_cf(cf, &key)
-                    .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
-            }
+        for (key, _) in iter.flatten() {
+            db_guard
+                .delete_cf(cf, &key)
+                .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
         }
 
         // Delete all row entries (col_row: prefix)
         let row_prefix = COL_ROW_PREFIX.as_bytes();
         let iter = db_guard.prefix_iterator_cf(cf, row_prefix);
-        for item in iter {
-            if let Ok((key, _)) = item {
-                db_guard
-                    .delete_cf(cf, &key)
-                    .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
-            }
+        for (key, _) in iter.flatten() {
+            db_guard
+                .delete_cf(cf, &key)
+                .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
         }
 
         // Delete all index data (idx: prefix)
         let idx_prefix = b"idx:";
         let iter = db_guard.prefix_iterator_cf(cf, idx_prefix);
-        for item in iter {
-            if let Ok((key, _)) = item {
-                db_guard
-                    .delete_cf(cf, &key)
-                    .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
-            }
+        for (key, _) in iter.flatten() {
+            db_guard
+                .delete_cf(cf, &key)
+                .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
         }
 
         // Reset row count
@@ -1171,15 +1153,13 @@ impl ColumnarCollection {
         let iter = db_guard.prefix_iterator_cf(cf, row_prefix);
 
         let mut row_uuids = Vec::new();
-        for item in iter {
-            if let Ok((key, _)) = item {
-                if !key.starts_with(row_prefix) {
-                    break;
-                }
-                let key_str = String::from_utf8_lossy(&key);
-                if let Some(uuid) = key_str.strip_prefix(COL_ROW_PREFIX) {
-                    row_uuids.push(uuid.to_string());
-                }
+        for (key, _) in iter.flatten() {
+            if !key.starts_with(row_prefix) {
+                break;
+            }
+            let key_str = String::from_utf8_lossy(&key);
+            if let Some(uuid) = key_str.strip_prefix(COL_ROW_PREFIX) {
+                row_uuids.push(uuid.to_string());
             }
         }
 
@@ -1285,15 +1265,13 @@ impl ColumnarCollection {
         // Delete all index entries for this column
         let prefix = format!("{}{}:", COL_IDX_PREFIX, column);
         let iter = db_guard.prefix_iterator_cf(cf, prefix.as_bytes());
-        for item in iter {
-            if let Ok((key, _)) = item {
-                if !key.starts_with(prefix.as_bytes()) {
-                    break;
-                }
-                db_guard
-                    .delete_cf(cf, &key)
-                    .map_err(|e| DbError::InternalError(e.to_string()))?;
+        for (key, _) in iter.flatten() {
+            if !key.starts_with(prefix.as_bytes()) {
+                break;
             }
+            db_guard
+                .delete_cf(cf, &key)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 
         // Delete index metadata
@@ -1431,7 +1409,7 @@ impl ColumnarCollection {
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let row_count = meta.row_count;
-        let chunk_count = (row_count + MINMAX_CHUNK_SIZE - 1) / MINMAX_CHUNK_SIZE;
+        let chunk_count = row_count.div_ceil(MINMAX_CHUNK_SIZE);
 
         let mut candidate_ids = Vec::new();
 
@@ -1485,7 +1463,7 @@ impl ColumnarCollection {
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let row_count = meta.row_count;
-        let chunk_count = (row_count + MINMAX_CHUNK_SIZE - 1) / MINMAX_CHUNK_SIZE;
+        let chunk_count = row_count.div_ceil(MINMAX_CHUNK_SIZE);
 
         let mut candidate_ids = Vec::new();
         let val_str = value.to_string(); // Use consistent stringification
@@ -1547,37 +1525,35 @@ impl ColumnarCollection {
 
         let mut result = Vec::new();
 
-        for item in iter {
-            if let Ok((key, val_bytes)) = item {
-                if !key.starts_with(prefix.as_bytes()) {
-                    break;
-                }
+        for (key, val_bytes) in iter.flatten() {
+            if !key.starts_with(prefix.as_bytes()) {
+                break;
+            }
 
-                // Extract the encoded value from key
-                let key_str = String::from_utf8_lossy(&key);
-                if let Some(encoded_val) = key_str.strip_prefix(&prefix) {
-                    // Decode value for comparison
-                    if let Some(val) = self.decode_index_value(encoded_val) {
-                        let matches = match filter {
-                            ColumnFilter::Gt(_, threshold) => {
-                                compare_values(&val, threshold) == std::cmp::Ordering::Greater
-                            }
-                            ColumnFilter::Gte(_, threshold) => {
-                                compare_values(&val, threshold) != std::cmp::Ordering::Less
-                            }
-                            ColumnFilter::Lt(_, threshold) => {
-                                compare_values(&val, threshold) == std::cmp::Ordering::Less
-                            }
-                            ColumnFilter::Lte(_, threshold) => {
-                                compare_values(&val, threshold) != std::cmp::Ordering::Greater
-                            }
-                            _ => false,
-                        };
+            // Extract the encoded value from key
+            let key_str = String::from_utf8_lossy(&key);
+            if let Some(encoded_val) = key_str.strip_prefix(&prefix) {
+                // Decode value for comparison
+                if let Some(val) = self.decode_index_value(encoded_val) {
+                    let matches = match filter {
+                        ColumnFilter::Gt(_, threshold) => {
+                            compare_values(&val, threshold) == std::cmp::Ordering::Greater
+                        }
+                        ColumnFilter::Gte(_, threshold) => {
+                            compare_values(&val, threshold) != std::cmp::Ordering::Less
+                        }
+                        ColumnFilter::Lt(_, threshold) => {
+                            compare_values(&val, threshold) == std::cmp::Ordering::Less
+                        }
+                        ColumnFilter::Lte(_, threshold) => {
+                            compare_values(&val, threshold) != std::cmp::Ordering::Greater
+                        }
+                        _ => false,
+                    };
 
-                        if matches {
-                            if let Ok(row_ids) = serde_json::from_slice::<Vec<u64>>(&val_bytes) {
-                                result.extend(row_ids);
-                            }
+                    if matches {
+                        if let Ok(row_ids) = serde_json::from_slice::<Vec<u64>>(&val_bytes) {
+                            result.extend(row_ids);
                         }
                     }
                 }
@@ -1954,7 +1930,7 @@ impl ColumnarCollection {
                             let values = self.read_column_by_positions(col, &candidate_ids)?;
                             return Ok(candidate_ids
                                 .into_iter()
-                                .zip(values.into_iter())
+                                .zip(values)
                                 .filter(|(_, v)| v == val)
                                 .map(|(id, _)| id)
                                 .collect());
@@ -2014,7 +1990,7 @@ impl ColumnarCollection {
                     let threshold = val.as_f64().unwrap_or(f64::NEG_INFINITY);
                     Ok(cand_ids
                         .into_iter()
-                        .zip(values.into_iter())
+                        .zip(values)
                         .filter(|(_, v): &(_, Value)| {
                             v.as_f64().map(|n| n > threshold).unwrap_or(false)
                         })
@@ -2052,7 +2028,7 @@ impl ColumnarCollection {
                     let threshold = val.as_f64().unwrap_or(f64::NEG_INFINITY);
                     Ok(cand_ids
                         .into_iter()
-                        .zip(values.into_iter())
+                        .zip(values)
                         .filter(|(_, v): &(_, Value)| {
                             v.as_f64().map(|n| n >= threshold).unwrap_or(false)
                         })
@@ -2090,7 +2066,7 @@ impl ColumnarCollection {
                     let threshold = val.as_f64().unwrap_or(f64::INFINITY);
                     Ok(cand_ids
                         .into_iter()
-                        .zip(values.into_iter())
+                        .zip(values)
                         .filter(|(_, v): &(_, Value)| {
                             v.as_f64().map(|n| n < threshold).unwrap_or(false)
                         })
@@ -2128,7 +2104,7 @@ impl ColumnarCollection {
                     let threshold = val.as_f64().unwrap_or(f64::INFINITY);
                     Ok(cand_ids
                         .into_iter()
-                        .zip(values.into_iter())
+                        .zip(values)
                         .filter(|(_, v): &(_, Value)| {
                             v.as_f64().map(|n| n <= threshold).unwrap_or(false)
                         })
@@ -2181,7 +2157,7 @@ impl ColumnarCollection {
                             let values = self.read_column_by_positions(col, &candidates)?;
                             return Ok(candidates
                                 .into_iter()
-                                .zip(values.into_iter())
+                                .zip(values)
                                 .filter(|(_, v)| vals.contains(v)) // O(N*M) where M is vals len. vals usually small.
                                 .map(|(id, _)| id)
                                 .collect());

@@ -265,7 +265,7 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
                     ))
                 }
             };
-            arr.sort_by(|a, b| compare_values(a, b));
+            arr.sort_by(compare_values);
             Ok(Value::Array(arr))
         }
 

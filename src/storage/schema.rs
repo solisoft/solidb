@@ -8,21 +8,16 @@ use jsonschema::validator_for;
 use serde_json::Value;
 
 /// Validation mode for schema enforcement
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SchemaValidationMode {
     /// No validation (default)
+    #[default]
     Off,
     /// Strict validation - reject any document that doesn't match schema
     Strict,
     /// Lenient validation - accept document but log warnings for violations
     Lenient,
-}
-
-impl Default for SchemaValidationMode {
-    fn default() -> Self {
-        Self::Off
-    }
 }
 
 /// Schema metadata stored in RocksDB

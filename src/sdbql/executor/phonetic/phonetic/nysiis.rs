@@ -121,7 +121,7 @@ pub fn nysiis(s: &str) -> String {
             _ => c,
         };
 
-        if result.chars().last() != Some(replacement) {
+        if !result.ends_with(replacement) {
             result.push(replacement);
         }
 

@@ -18,6 +18,7 @@ pub enum LLMProvider {
 }
 
 impl LLMProvider {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self, DbError> {
         match s.to_lowercase().as_str() {
             "openai" => Ok(LLMProvider::OpenAI),

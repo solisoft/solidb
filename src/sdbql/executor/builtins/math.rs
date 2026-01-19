@@ -108,7 +108,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "ASIN" => {
             check_args(name, args, 1)?;
             let num = get_number(&args[0], name)?;
-            if num < -1.0 || num > 1.0 {
+            if !(-1.0..=1.0).contains(&num) {
                 return Err(DbError::ExecutionError(
                     "ASIN: argument must be between -1 and 1".to_string(),
                 ));
@@ -118,7 +118,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "ACOS" => {
             check_args(name, args, 1)?;
             let num = get_number(&args[0], name)?;
-            if num < -1.0 || num > 1.0 {
+            if !(-1.0..=1.0).contains(&num) {
                 return Err(DbError::ExecutionError(
                     "ACOS: argument must be between -1 and 1".to_string(),
                 ));

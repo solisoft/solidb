@@ -142,10 +142,8 @@ impl Collection {
             };
 
             if let Some(ts) = expiry_time {
-                if now > ts + index.expire_after_seconds {
-                    if let Ok(_) = self.delete(&doc.key) {
-                        deleted_count += 1;
-                    }
+                if now > ts + index.expire_after_seconds && self.delete(&doc.key).is_ok() {
+                    deleted_count += 1;
                 }
             }
         }

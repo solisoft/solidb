@@ -97,7 +97,7 @@ pub fn format_expression(expr: &Expression) -> String {
         Expression::FunctionCall { name, args } => {
             let args_str = args
                 .iter()
-                .map(|a| format_expression(a))
+                .map(format_expression)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{}({})", name, args_str)

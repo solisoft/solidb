@@ -146,15 +146,14 @@ impl Collection {
         let prefix = format!("{}{}:", IDX_PREFIX, name);
         let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
 
-        for result in iter {
-            if let Ok((key, _)) = result {
-                if key.starts_with(prefix.as_bytes()) {
-                    db.delete_cf(cf, &key).map_err(|e| {
-                        DbError::InternalError(format!("Failed to drop index entry: {}", e))
-                    })?;
-                } else {
-                    break;
-                }
+        for result in iter.flatten() {
+            let (key, _) = result;
+            if key.starts_with(prefix.as_bytes()) {
+                db.delete_cf(cf, &key).map_err(|e| {
+                    DbError::InternalError(format!("Failed to drop index entry: {}", e))
+                })?;
+            } else {
+                break;
             }
         }
 
@@ -218,13 +217,12 @@ impl Collection {
             for index in &indexes {
                 let prefix = format!("{}{}:", IDX_PREFIX, index.name);
                 let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
-                for result in iter {
-                    if let Ok((key, _)) = result {
-                        if key.starts_with(prefix.as_bytes()) {
-                            batch.delete_cf(cf, &key);
-                        } else {
-                            break;
-                        }
+                for result in iter.flatten() {
+                    let (key, _) = result;
+                    if key.starts_with(prefix.as_bytes()) {
+                        batch.delete_cf(cf, &key);
+                    } else {
+                        break;
                     }
                 }
             }
@@ -233,13 +231,12 @@ impl Collection {
             for geo_index in &geo_indexes {
                 let prefix = format!("{}{}:", GEO_PREFIX, geo_index.name);
                 let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
-                for result in iter {
-                    if let Ok((key, _)) = result {
-                        if key.starts_with(prefix.as_bytes()) {
-                            batch.delete_cf(cf, &key);
-                        } else {
-                            break;
-                        }
+                for result in iter.flatten() {
+                    let (key, _) = result;
+                    if key.starts_with(prefix.as_bytes()) {
+                        batch.delete_cf(cf, &key);
+                    } else {
+                        break;
                     }
                 }
             }
@@ -248,25 +245,23 @@ impl Collection {
             for ft_index in &ft_indexes {
                 let ngram_prefix = format!("{}{}:", FT_PREFIX, ft_index.name);
                 let iter = db.prefix_iterator_cf(cf, ngram_prefix.as_bytes());
-                for result in iter {
-                    if let Ok((key, _)) = result {
-                        if key.starts_with(ngram_prefix.as_bytes()) {
-                            batch.delete_cf(cf, &key);
-                        } else {
-                            break;
-                        }
+                for result in iter.flatten() {
+                    let (key, _) = result;
+                    if key.starts_with(ngram_prefix.as_bytes()) {
+                        batch.delete_cf(cf, &key);
+                    } else {
+                        break;
                     }
                 }
 
                 let term_prefix = format!("{}{}:", FT_TERM_PREFIX, ft_index.name);
                 let iter = db.prefix_iterator_cf(cf, term_prefix.as_bytes());
-                for result in iter {
-                    if let Ok((key, _)) = result {
-                        if key.starts_with(term_prefix.as_bytes()) {
-                            batch.delete_cf(cf, &key);
-                        } else {
-                            break;
-                        }
+                for result in iter.flatten() {
+                    let (key, _) = result;
+                    if key.starts_with(term_prefix.as_bytes()) {
+                        batch.delete_cf(cf, &key);
+                    } else {
+                        break;
                     }
                 }
             }
@@ -815,16 +810,15 @@ impl Collection {
         let prefix = IDX_META_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(cf, prefix);
 
-        for result in iter {
-            if let Ok((key, value)) = result {
-                if !key.starts_with(prefix) {
-                    break;
-                }
-                if let Ok(index) = serde_json::from_slice::<Index>(&value) {
-                    // Check if field is the first field in the index
-                    if index.fields.first().map(|s| s.as_str()) == Some(field) {
-                        return Some(index);
-                    }
+        for result in iter.flatten() {
+            let (key, value) = result;
+            if !key.starts_with(prefix) {
+                break;
+            }
+            if let Ok(index) = serde_json::from_slice::<Index>(&value) {
+                // Check if field is the first field in the index
+                if index.fields.first().map(|s| s.as_str()) == Some(field) {
+                    return Some(index);
                 }
             }
         }
@@ -926,7 +920,7 @@ impl Collection {
         let docs: Vec<Document> = results
             .into_iter()
             .filter_map(|r| r.ok())
-            .filter_map(|opt| opt)
+            .flatten()
             .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
             .collect();
 
@@ -938,14 +932,12 @@ impl Collection {
         let index = self.get_index_for_field(field)?;
 
         // Fast-path: Check Bloom/Cuckoo Filter if available
-        if index.index_type == IndexType::Bloom {
-            if !self.bloom_check(&index.name, &value.to_string()) {
-                return Some(Vec::new());
-            }
-        } else if index.index_type == IndexType::Cuckoo {
-            if !self.cuckoo_check(&index.name, &value.to_string()) {
-                return Some(Vec::new());
-            }
+        if (index.index_type == IndexType::Bloom
+            && !self.bloom_check(&index.name, &value.to_string()))
+            || (index.index_type == IndexType::Cuckoo
+                && !self.cuckoo_check(&index.name, &value.to_string()))
+        {
+            return Some(Vec::new());
         }
 
         let value_str = hex::encode(crate::storage::codec::encode_key(value));
@@ -983,7 +975,7 @@ impl Collection {
         let docs: Vec<Document> = results
             .into_iter()
             .filter_map(|r| r.ok())
-            .filter_map(|opt| opt)
+            .flatten()
             .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
             .collect();
 
@@ -1027,7 +1019,7 @@ impl Collection {
         let docs: Vec<Document> = results
             .into_iter()
             .filter_map(|r| r.ok())
-            .filter_map(|opt| opt)
+            .flatten()
             .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
             .collect();
 
@@ -1044,10 +1036,7 @@ impl Collection {
         // Optimization for Primary Key Sort
         if field == "_id" || field == "_key" {
             let db = self.db.read().unwrap();
-            let cf = match db.cf_handle(&self.name) {
-                Some(h) => h,
-                None => return None,
-            };
+            let cf = db.cf_handle(&self.name)?;
             let prefix = DOC_PREFIX.as_bytes();
 
             let iter = if ascending {

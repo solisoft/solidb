@@ -169,7 +169,7 @@ impl Database {
     pub fn create_columnar(&self, name: String, columns: Vec<Value>) -> DbResult<()> {
         let cols: Vec<ColumnDef> = columns
             .into_iter()
-            .map(|v| serde_json::from_value(v))
+            .map(serde_json::from_value)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| DbError::BadRequest(format!("Invalid column definition: {}", e)))?;
 
@@ -190,12 +190,10 @@ impl Database {
         let mut collections = Vec::new();
 
         let iter = db.prefix_iterator(prefix.as_bytes());
-        for item in iter {
-            if let Ok((key, _)) = item {
-                let key_str = String::from_utf8_lossy(&key);
-                if let Some(name) = key_str.strip_prefix(&prefix) {
-                    collections.push(name.to_string());
-                }
+        for (key, _) in iter.flatten() {
+            let key_str = String::from_utf8_lossy(&key);
+            if let Some(name) = key_str.strip_prefix(&prefix) {
+                collections.push(name.to_string());
             }
         }
         collections

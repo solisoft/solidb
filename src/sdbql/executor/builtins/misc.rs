@@ -72,7 +72,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             Ok(Some(Value::Null))
         }
         "RANGE" => {
-            if args.len() < 1 || args.len() > 3 {
+            if args.is_empty() || args.len() > 3 {
                 return Err(DbError::ExecutionError(
                     "RANGE requires 1-3 arguments: end or start, end, [step]".to_string(),
                 ));

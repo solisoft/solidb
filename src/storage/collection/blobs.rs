@@ -64,14 +64,13 @@ impl Collection {
         let mut batch = rocksdb::WriteBatch::default();
         let mut count = 0;
 
-        for result in iter {
-            if let Ok((k, _)) = result {
-                if !k.starts_with(prefix.as_bytes()) {
-                    break;
-                }
-                batch.delete_cf(cf, k);
-                count += 1;
+        for result in iter.flatten() {
+            let (k, _) = result;
+            if !k.starts_with(prefix.as_bytes()) {
+                break;
             }
+            batch.delete_cf(cf, k);
+            count += 1;
         }
 
         if count > 0 {

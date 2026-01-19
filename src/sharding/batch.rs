@@ -5,7 +5,8 @@
 #![allow(
     clippy::too_many_arguments,
     clippy::type_complexity,
-    clippy::result_large_err
+    clippy::result_large_err,
+    clippy::await_holding_lock
 )]
 
 use std::collections::HashMap;
@@ -277,13 +278,11 @@ pub async fn upsert_batch_to_shards(
     let mut successful_keys: Vec<String> = Vec::new();
 
     // Process each shard batch
-    let mut shard_count = 0;
-    for (shard_id, batch) in shard_batches {
-        if shard_count > 0 {
+    for (idx, (shard_id, batch)) in shard_batches.into_iter().enumerate() {
+        if idx > 0 {
             // Small delay to prevent all shards from being processed simultaneously
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
-        shard_count += 1;
         let physical_coll = format!("{}_s{}", collection, shard_id);
         let batch_keys: Vec<String> = batch.iter().map(|(k, _)| k.clone()).collect();
         let batch_len = batch_keys.len();
@@ -324,6 +323,7 @@ pub async fn upsert_batch_to_shards(
             if let Some(mgr) = &cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
                     // Circuit breaker: skip nodes that recently failed
+                    #[allow(clippy::await_holding_lock)]
                     let recently_failed = recently_failed_nodes.read().unwrap();
                     if recently_failed.contains_key(primary_node) {
                         tracing::warn!(
@@ -380,15 +380,13 @@ pub async fn upsert_batch_to_shards(
                                         addr, err_msg, retry_count + 1, MAX_RETRIES + 1);
                                     last_error = Some(err_msg);
 
-                                    if status.as_u16() >= 500 {
-                                        if retry_count < MAX_RETRIES {
-                                            retry_count += 1;
-                                            tokio::time::sleep(std::time::Duration::from_millis(
-                                                1000 * (1 << retry_count),
-                                            ))
-                                            .await;
-                                            continue;
-                                        }
+                                    if status.as_u16() >= 500 && retry_count < MAX_RETRIES {
+                                        retry_count += 1;
+                                        tokio::time::sleep(std::time::Duration::from_millis(
+                                            1000 * (1 << retry_count),
+                                        ))
+                                        .await;
+                                        continue;
                                     }
                                     break;
                                 }

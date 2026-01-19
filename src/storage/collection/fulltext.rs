@@ -339,18 +339,17 @@ impl Collection {
                     let prefix = format!("{}{}:{}:", FT_TERM_PREFIX, index.name, term);
                     let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
 
-                    for result in iter {
-                        if let Ok((key, _)) = result {
-                            if !key.starts_with(prefix.as_bytes()) {
-                                break;
-                            }
-                            let key_str = String::from_utf8_lossy(&key);
-                            // Key is "ft_term:<algo>:<term>:<doc_key>"
-                            // Extract doc_key (last part)
-                            let parts: Vec<&str> = key_str.split(':').collect();
-                            if let Some(doc_key) = parts.last() {
-                                *candidate_counts.entry(doc_key.to_string()).or_insert(0) += 1;
-                            }
+                    for result in iter.flatten() {
+                        let (key, _) = result;
+                        if !key.starts_with(prefix.as_bytes()) {
+                            break;
+                        }
+                        let key_str = String::from_utf8_lossy(&key);
+                        // Key is "ft_term:<algo>:<term>:<doc_key>"
+                        // Extract doc_key (last part)
+                        let parts: Vec<&str> = key_str.split(':').collect();
+                        if let Some(doc_key) = parts.last() {
+                            *candidate_counts.entry(doc_key.to_string()).or_insert(0) += 1;
                         }
                     }
                 }

@@ -331,7 +331,7 @@ impl AuthorizationService {
         database: Option<&str>,
     ) -> DbResult<()> {
         let permissions = Self::get_effective_permissions(claims, state).await?;
-        let scoped_databases = claims.scoped_databases.as_ref().map(|v| v.as_slice());
+        let scoped_databases = claims.scoped_databases.as_deref();
         Self::check_permission_raw(&permissions, required_action, database, scoped_databases)
     }
 

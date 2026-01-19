@@ -389,9 +389,7 @@ impl ShardCoordinator {
     /// Example: 10 nodes -> 5 replicas
     pub fn calculate_blob_replication_factor(&self) -> u16 {
         let healthy_count = self.get_healthy_node_count() as u16;
-        (healthy_count / 2)
-            .max(Self::MIN_BLOB_REPLICAS)
-            .min(Self::MAX_BLOB_REPLICAS)
+        (healthy_count / 2).clamp(Self::MIN_BLOB_REPLICAS, Self::MAX_BLOB_REPLICAS)
     }
 
     /// Get my node ID
@@ -820,11 +818,7 @@ impl ShardCoordinator {
                 // 1. Scan and Classify
                 for doc in documents {
                     let id_str = doc.key.clone();
-                    let route_key = if config.shard_key == "_key" {
-                        doc.key.clone()
-                    } else {
-                        doc.key.clone() // Default
-                    };
+                    let route_key = doc.key.clone();
 
                     let target_shard =
                         crate::sharding::router::ShardRouter::route(&route_key, config.num_shards);
@@ -1132,7 +1126,7 @@ impl ShardCoordinator {
                         assignment.primary_node.clone()
                     } else if let Some(replica) = healthy_replicas
                         .iter()
-                        .find(|r| !self.was_recently_failed(*r))
+                        .find(|r| !self.was_recently_failed(r))
                     {
                         (*replica).clone()
                     } else if primary_healthy {
@@ -1639,7 +1633,7 @@ impl ShardCoordinator {
             if batch_docs.len() >= 1000 {
                 let count = batch_docs.len();
                 let batch_to_insert: Vec<(String, serde_json::Value)> =
-                    batch_docs.drain(..).collect();
+                    std::mem::take(&mut batch_docs);
                 if let Err(e) = coll.upsert_batch(batch_to_insert) {
                     tracing::error!("HEAL: Batch upsert failed: {}", e);
                 } else {
@@ -1928,13 +1922,11 @@ impl ShardCoordinator {
 
         // Process each shard batch
         // Add small delays between shards to prevent overwhelming the network during resharding
-        let mut shard_count = 0;
-        for (shard_id, batch) in shard_batches {
-            if shard_count > 0 {
+        for (idx, (shard_id, batch)) in shard_batches.into_iter().enumerate() {
+            if idx > 0 {
                 // Small delay to prevent all shards from being processed simultaneously
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
-            shard_count += 1;
             let physical_coll = format!("{}_s{}", collection, shard_id);
             // Collect keys for this batch to mark as success if operation succeeds
             let batch_keys: Vec<String> = batch.iter().map(|(k, _)| k.clone()).collect();
@@ -2514,15 +2506,7 @@ impl ShardCoordinator {
             };
 
             let file_name = if let Ok(doc) = coll.get(key) {
-                if let Some(v) = doc.get("name") {
-                    if let Some(s) = v.as_str() {
-                        Some(s.to_string())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
+                doc.get("name").and_then(|v| v.as_str().map(|s| s.to_string()))
             } else {
                 None
             };
@@ -2539,7 +2523,7 @@ impl ShardCoordinator {
                         }
                         Ok(None) => break, // End of chunks
                         Err(e) => {
-                            yield Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+                            yield Err(std::io::Error::other(e.to_string()));
                             break;
                         }
                     }

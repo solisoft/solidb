@@ -403,8 +403,8 @@ fn main() {
                 let line = line.trim();
 
                 // Handle multiline input
-                if line.ends_with('\\') {
-                    multiline_buffer.push_str(&line[..line.len() - 1]);
+                if let Some(stripped) = line.strip_suffix('\\') {
+                    multiline_buffer.push_str(stripped);
                     multiline_buffer.push('\n');
                     in_multiline = true;
                     continue;

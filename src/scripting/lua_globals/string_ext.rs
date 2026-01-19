@@ -30,7 +30,7 @@ pub fn setup_string_extensions(lua: &Lua) -> Result<(), DbError> {
     // string.regex(subject, pattern) - Use safe_regex to prevent DoS
     let regex_fn = lua
         .create_function(|_, (s, pattern): (String, String)| {
-            let re = safe_regex(&pattern).map_err(|e| mlua::Error::RuntimeError(e))?;
+            let re = safe_regex(&pattern).map_err(mlua::Error::RuntimeError)?;
             Ok(re.is_match(&s))
         })
         .map_err(|e| DbError::InternalError(format!("Failed to create regex function: {}", e)))?;
@@ -41,7 +41,7 @@ pub fn setup_string_extensions(lua: &Lua) -> Result<(), DbError> {
     // string.regex_replace(subject, pattern, replacement) - Use safe_regex to prevent DoS
     let regex_replace_fn = lua
         .create_function(|_, (s, pattern, replacement): (String, String, String)| {
-            let re = safe_regex(&pattern).map_err(|e| mlua::Error::RuntimeError(e))?;
+            let re = safe_regex(&pattern).map_err(mlua::Error::RuntimeError)?;
             Ok(re.replace_all(&s, replacement.as_str()).to_string())
         })
         .map_err(|e| {

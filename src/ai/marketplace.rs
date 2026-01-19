@@ -126,7 +126,7 @@ impl AgentReputation {
         let stats = self
             .tasks_by_type
             .entry(task_type.to_string())
-            .or_insert_with(TaskTypeStats::default);
+            .or_default();
 
         if success {
             stats.completed += 1;
@@ -156,7 +156,7 @@ impl AgentReputation {
             .values()
             .map(|s| s.completed + s.failed)
             .sum();
-        if total_tasks % 10 == 0 {
+        if total_tasks.is_multiple_of(10) {
             self.history.push(ReputationSnapshot {
                 timestamp: Utc::now(),
                 trust_score: self.trust_score,

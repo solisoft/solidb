@@ -22,9 +22,10 @@ pub enum IndexType {
 }
 
 /// Distance metric for vector similarity search
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub enum VectorMetric {
     /// Cosine similarity (normalized dot product, range 0-1 for normalized vectors)
+    #[default]
     Cosine,
     /// Euclidean distance (L2 norm)
     Euclidean,
@@ -32,25 +33,14 @@ pub enum VectorMetric {
     DotProduct,
 }
 
-impl Default for VectorMetric {
-    fn default() -> Self {
-        VectorMetric::Cosine
-    }
-}
-
 /// Quantization method for vector compression
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub enum VectorQuantization {
     /// No quantization - full f32 precision (4 bytes/dim)
+    #[default]
     None,
     /// Scalar Quantization - u8 per dimension (1 byte/dim), 4x compression
     Scalar,
-}
-
-impl Default for VectorQuantization {
-    fn default() -> Self {
-        VectorQuantization::None
-    }
 }
 
 /// Configuration for vector index
@@ -196,11 +186,11 @@ pub fn levenshtein_distance(a: &str, b: &str) -> usize {
 
     let mut matrix = vec![vec![0usize; b_len + 1]; a_len + 1];
 
-    for i in 0..=a_len {
-        matrix[i][0] = i;
+    for (i, row) in matrix.iter_mut().enumerate().take(a_len + 1) {
+        row[0] = i;
     }
-    for j in 0..=b_len {
-        matrix[0][j] = j;
+    for (j, cell) in matrix[0].iter_mut().enumerate().take(b_len + 1) {
+        *cell = j;
     }
 
     for i in 1..=a_len {

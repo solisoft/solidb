@@ -551,7 +551,7 @@ fn bench_transactions(client: &Client) {
         let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
-        let _ = client.post(&format!("{}/_api/database/{}/transaction/{}/execute-sdbql", SERVER_URL, DATABASE, tx_id))
+        let _ = client.post(format!("{}/_api/database/{}/transaction/{}/execute-sdbql", SERVER_URL, DATABASE, tx_id))
             .header("x-transaction-id", tx_id)
             .json(&json!({"query": format!("INSERT {{_key: 'sdbql_user_{}', name: 'SDBQL User {}'}} INTO bench_http", i, i)}))
             .send()

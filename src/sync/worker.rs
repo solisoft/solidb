@@ -75,6 +75,7 @@ pub struct SyncWorker {
 }
 
 impl SyncWorker {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         storage: Arc<StorageEngine>,
         state: Arc<SyncState>,
@@ -512,7 +513,7 @@ impl SyncWorker {
         let first = &entries[0];
         let database = &first.database;
         let collection = &first.collection;
-        let operation = first.operation.clone();
+        let operation = first.operation;
 
         // Skip physical shard collections - sharded data is partitioned, NOT replicated cluster-wide
         // Physical shards have names like "users_s0", "users_s1" etc.
@@ -862,34 +863,28 @@ impl SyncWorker {
             }
             Operation::ColumnarDropCollection => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
-                    match crate::storage::columnar::ColumnarCollection::load(
+                    if let Ok(col) = crate::storage::columnar::ColumnarCollection::load(
                         entry.collection.clone(),
                         &entry.database,
                         db.db_arc(),
                     ) {
-                        Ok(col) => {
-                            let _ = col.drop();
-                        }
-                        Err(_) => {} // Collection doesn't exist, nothing to do
+                        let _ = col.drop();
                     }
                 }
             }
             Operation::ColumnarTruncate => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
-                    match crate::storage::columnar::ColumnarCollection::load(
+                    if let Ok(col) = crate::storage::columnar::ColumnarCollection::load(
                         entry.collection.clone(),
                         &entry.database,
                         db.db_arc(),
                     ) {
-                        Ok(col) => {
-                            if let Err(e) = col.truncate() {
-                                warn!(
-                                    "apply_entry: columnar truncate failed for {}: {}",
-                                    entry.collection, e
-                                );
-                            }
+                        if let Err(e) = col.truncate() {
+                            warn!(
+                                "apply_entry: columnar truncate failed for {}: {}",
+                                entry.collection, e
+                            );
                         }
-                        Err(_) => {} // Collection doesn't exist, nothing to do
                     }
                 }
             }

@@ -524,7 +524,7 @@ impl<'a> QueryExecutor<'a> {
                                     let res = coord.delete(&db, &coll, &conf, &k).await;
                                     let _ = tx.send(res);
                                 });
-                                let _ = rx.recv().map_err(|_| {
+                                rx.recv().map_err(|_| {
                                     DbError::InternalError("Sharded remove task failed".to_string())
                                 })??;
                                 stats.documents_removed += 1;

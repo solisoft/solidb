@@ -437,9 +437,7 @@ pub async fn execute_script_handler(
 
 /// Convert a URL path to a valid document key
 fn sanitize_path_to_key(path: &str) -> String {
-    path.replace('/', "_")
-        .replace(':', "_")
-        .replace('*', "_")
+    path.replace(['/', ':', '*'], "_")
         .trim_matches('_')
         .to_string()
 }

@@ -195,7 +195,7 @@ impl<'a> QueryExecutor<'a> {
         docs: &[crate::storage::Document],
     ) {
         // Clone the replication service if available
-        let repl_clone = self.replication.map(|r| r.clone());
+        let repl_clone = self.replication.cloned();
         let db_clone = self.database.clone();
 
         if let (Some(repl), Some(db)) = (repl_clone, db_clone) {
@@ -209,7 +209,7 @@ impl<'a> QueryExecutor<'a> {
                     node_id: "".to_string(),
                     database: db.clone(),
                     collection: collection.clone(),
-                    operation: operation.clone(), // Operation must be Clone (it's Copy usually?)
+                    operation, // Operation is Copy
                     key: doc.key.clone(),
                     data: serde_json::to_vec(&doc.to_value()).ok(),
                     timestamp: chrono::Utc::now().timestamp_millis() as u64,

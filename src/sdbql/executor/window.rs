@@ -33,13 +33,13 @@ pub fn contains_window_functions(expr: &Expression) -> bool {
         } => {
             operand
                 .as_ref()
-                .map_or(false, |o| contains_window_functions(o))
+                .is_some_and(|o| contains_window_functions(o))
                 || when_clauses
                     .iter()
                     .any(|(c, r)| contains_window_functions(c) || contains_window_functions(r))
                 || else_clause
                     .as_ref()
-                    .map_or(false, |e| contains_window_functions(e))
+                    .is_some_and(|e| contains_window_functions(e))
         }
         Expression::FunctionCall { args, .. } => args.iter().any(contains_window_functions),
         Expression::FieldAccess(base, _) | Expression::OptionalFieldAccess(base, _) => {
@@ -420,8 +420,7 @@ impl<'a> QueryExecutor<'a> {
                         let prev_idx = sorted_indices[i - offset];
                         let val = arguments
                             .first()
-                            .map(|arg| self.evaluate_expr_with_context(arg, &rows[prev_idx]).ok())
-                            .flatten()
+                            .and_then(|arg| self.evaluate_expr_with_context(arg, &rows[prev_idx]).ok())
                             .unwrap_or(Value::Null);
                         results.push(val);
                     } else {
@@ -450,8 +449,7 @@ impl<'a> QueryExecutor<'a> {
                         let next_idx = sorted_indices[i + offset];
                         let val = arguments
                             .first()
-                            .map(|arg| self.evaluate_expr_with_context(arg, &rows[next_idx]).ok())
-                            .flatten()
+                            .and_then(|arg| self.evaluate_expr_with_context(arg, &rows[next_idx]).ok())
                             .unwrap_or(Value::Null);
                         results.push(val);
                     } else {
@@ -464,8 +462,7 @@ impl<'a> QueryExecutor<'a> {
                 let first_idx = sorted_indices[0];
                 let first_val = arguments
                     .first()
-                    .map(|arg| self.evaluate_expr_with_context(arg, &rows[first_idx]).ok())
-                    .flatten()
+                    .and_then(|arg| self.evaluate_expr_with_context(arg, &rows[first_idx]).ok())
                     .unwrap_or(Value::Null);
 
                 for _ in 0..partition_size {
@@ -478,8 +475,7 @@ impl<'a> QueryExecutor<'a> {
                 let last_idx = sorted_indices[partition_size - 1];
                 let last_val = arguments
                     .first()
-                    .map(|arg| self.evaluate_expr_with_context(arg, &rows[last_idx]).ok())
-                    .flatten()
+                    .and_then(|arg| self.evaluate_expr_with_context(arg, &rows[last_idx]).ok())
                     .unwrap_or(Value::Null);
 
                 for _ in 0..partition_size {
@@ -497,8 +493,7 @@ impl<'a> QueryExecutor<'a> {
                             let idx = sorted_indices[i];
                             arguments
                                 .first()
-                                .map(|arg| self.evaluate_expr_with_context(arg, &rows[idx]).ok())
-                                .flatten()
+                                .and_then(|arg| self.evaluate_expr_with_context(arg, &rows[idx]).ok())
                                 .unwrap_or(Value::Null)
                         })
                         .collect();
@@ -529,12 +524,12 @@ impl<'a> QueryExecutor<'a> {
                         "MIN" => frame_values
                             .into_iter()
                             .filter(|v| !v.is_null())
-                            .min_by(|a, b| compare_values(a, b))
+                            .min_by(compare_values)
                             .unwrap_or(Value::Null),
                         "MAX" => frame_values
                             .into_iter()
                             .filter(|v| !v.is_null())
-                            .max_by(|a, b| compare_values(a, b))
+                            .max_by(compare_values)
                             .unwrap_or(Value::Null),
                         _ => Value::Null,
                     };
