@@ -30,7 +30,7 @@ jobs:
             libzstd-dev \
             libsnappy-dev \
             liblz4-dev \
-            libzlib1g-dev \
+            zlib1g-dev \
             libbz2-dev \
             cmake \
             protobuf-compiler
@@ -85,7 +85,7 @@ jobs:
             libzstd-dev \
             libsnappy-dev \
             liblz4-dev \
-            libzlib1g-dev \
+            zlib1g-dev \
             libbz2-dev \
             cmake \
             protobuf-compiler
@@ -143,7 +143,7 @@ jobs:
             libzstd-dev \
             libsnappy-dev \
             liblz4-dev \
-            libzlib1g-dev \
+            zlib1g-dev \
             libbz2-dev \
             cmake \
             protobuf-compiler
@@ -215,7 +215,7 @@ jobs:
             libzstd-dev \
             libsnappy-dev \
             liblz4-dev \
-            libzlib1g-dev \
+            zlib1g-dev \
             libbz2-dev \
             cmake \
             protobuf-compiler
