@@ -1,5 +1,5 @@
+use dashmap::DashMap;
 use rocksdb::DB;
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use super::collection::Collection;
@@ -15,8 +15,8 @@ pub struct Database {
     pub name: String,
     /// RocksDB instance
     db: Arc<RwLock<DB>>,
-    /// Cached collection handles
-    collections: Arc<RwLock<HashMap<String, Collection>>>,
+    /// Cached collection handles (DashMap for lock-free concurrent access)
+    collections: Arc<DashMap<String, Collection>>,
 }
 
 impl std::fmt::Debug for Database {
@@ -33,7 +33,7 @@ impl Database {
         Self {
             name,
             db,
-            collections: Arc::new(RwLock::new(HashMap::new())),
+            collections: Arc::new(DashMap::new()),
         }
     }
 
@@ -87,10 +87,7 @@ impl Database {
             .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {}", e)))?;
 
         // Remove from cache
-        {
-            let mut cache = self.collections.write().unwrap();
-            cache.remove(collection_name);
-        }
+        self.collections.remove(collection_name);
 
         Ok(())
     }
@@ -114,12 +111,9 @@ impl Database {
 
     /// Get a collection handle (cached for consistent atomic counters)
     pub fn get_collection(&self, collection_name: &str) -> DbResult<Collection> {
-        // Check cache first
-        {
-            let cache = self.collections.read().unwrap();
-            if let Some(collection) = cache.get(collection_name) {
-                return Ok(collection.clone());
-            }
+        // Check cache first (DashMap allows concurrent read without locking)
+        if let Some(collection) = self.collections.get(collection_name) {
+            return Ok(collection.clone());
         }
 
         let cf_name = self.collection_cf_name(collection_name);
@@ -134,10 +128,8 @@ impl Database {
 
         // Create and cache the collection
         let collection = Collection::new(cf_name, self.db.clone());
-        {
-            let mut cache = self.collections.write().unwrap();
-            cache.insert(collection_name.to_string(), collection.clone());
-        }
+        self.collections
+            .insert(collection_name.to_string(), collection.clone());
 
         Ok(collection)
     }

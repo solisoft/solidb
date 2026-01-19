@@ -486,9 +486,9 @@ fn test_update_nonexistent() {
     engine.create_collection("items".to_string(), None).unwrap();
 
     // Trying to update a non-existent document should fail or do nothing
-    let _result = std::panic::catch_unwind(|| {
+    let _result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         execute_query(&engine, "UPDATE 'nonexistent' WITH { \"x\": 1 } IN items");
-    });
+    }));
     // May panic or return empty - either is acceptable
 }
 
@@ -499,9 +499,9 @@ fn test_remove_nonexistent() {
     engine.create_collection("items".to_string(), None).unwrap();
 
     // Trying to remove a non-existent document
-    let _result = std::panic::catch_unwind(|| {
+    let _result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         execute_query(&engine, "REMOVE 'nonexistent' IN items");
-    });
+    }));
     // May panic or do nothing
 }
 
@@ -514,9 +514,9 @@ fn test_insert_duplicate_key() {
     items.insert(json!({"_key": "dup", "v": 1})).unwrap();
 
     // Inserting with same key should fail
-    let _result = std::panic::catch_unwind(|| {
+    let _result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         execute_query(&engine, "INSERT { \"_key\": 'dup', \"v\": 2 } INTO items");
-    });
+    }));
     // Should fail or be rejected
 }
 

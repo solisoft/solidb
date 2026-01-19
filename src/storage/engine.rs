@@ -1,3 +1,4 @@
+use dashmap::DashMap;
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::collections::HashMap;
 use std::path::Path;
@@ -18,10 +19,10 @@ pub struct StorageEngine {
     db: Arc<RwLock<DB>>,
     /// Database path for reopening
     path: std::path::PathBuf,
-    /// Cached collection handles
-    collections: Arc<RwLock<HashMap<String, Collection>>>,
-    /// Cached database handles
-    databases: Arc<RwLock<HashMap<String, Database>>>,
+    /// Cached collection handles (DashMap for lock-free concurrent access)
+    collections: Arc<DashMap<String, Collection>>,
+    /// Cached database handles (DashMap for lock-free concurrent access)
+    databases: Arc<DashMap<String, Database>>,
     /// Cluster configuration (if running in cluster mode)
     cluster_config: Option<ClusterConfig>,
     /// Transaction manager (optionally initialized, uses RwLock for interior mutability)
@@ -36,7 +37,9 @@ impl Clone for StorageEngine {
             collections: self.collections.clone(),
             databases: self.databases.clone(),
             cluster_config: self.cluster_config.clone(),
-            transaction_manager: RwLock::new(self.transaction_manager.read().unwrap().clone()),
+            transaction_manager: RwLock::new(
+                self.transaction_manager.read().ok().and_then(|t| t.clone()),
+            ),
         }
     }
 }
@@ -94,8 +97,8 @@ impl StorageEngine {
         Ok(Self {
             db: Arc::new(RwLock::new(db)),
             path,
-            collections: Arc::new(RwLock::new(HashMap::new())),
-            databases: Arc::new(RwLock::new(HashMap::new())),
+            collections: Arc::new(DashMap::new()),
+            databases: Arc::new(DashMap::new()),
             cluster_config: None,
             transaction_manager: RwLock::new(None),
         })
@@ -263,10 +266,7 @@ impl StorageEngine {
             .map_err(|e| DbError::InternalError(format!("Failed to delete database: {}", e)))?;
 
         // Remove from cache
-        {
-            let mut cache = self.databases.write().unwrap();
-            cache.remove(name);
-        }
+        self.databases.remove(name);
 
         Ok(())
     }
@@ -293,12 +293,9 @@ impl StorageEngine {
 
     /// Get a database handle (cached for consistent collection counters)
     pub fn get_database(&self, name: &str) -> DbResult<Database> {
-        // Check cache first
-        {
-            let cache = self.databases.read().unwrap();
-            if let Some(database) = cache.get(name) {
-                return Ok(database.clone());
-            }
+        // Check cache first (DashMap allows concurrent read without locking)
+        if let Some(database) = self.databases.get(name) {
+            return Ok(database.clone());
         }
 
         // Verify database exists
@@ -312,10 +309,7 @@ impl StorageEngine {
 
         // Create and cache the database
         let database = Database::new(name.to_string(), self.db.clone());
-        {
-            let mut cache = self.databases.write().unwrap();
-            cache.insert(name.to_string(), database.clone());
-        }
+        self.databases.insert(name.to_string(), database.clone());
 
         Ok(database)
     }
@@ -353,12 +347,9 @@ impl StorageEngine {
     /// Get a collection (legacy method - checks both database-prefixed and plain names)
     /// Uses cached collection handles for performance
     pub fn get_collection(&self, name: &str) -> DbResult<Collection> {
-        // Check cache first
-        {
-            let cache = self.collections.read().unwrap();
-            if let Some(collection) = cache.get(name) {
-                return Ok(collection.clone());
-            }
+        // Check cache first (DashMap allows concurrent read without locking)
+        if let Some(collection) = self.collections.get(name) {
+            return Ok(collection.clone());
         }
 
         let db = self.db.read().unwrap();
@@ -376,16 +367,13 @@ impl StorageEngine {
                 return Err(DbError::CollectionNotFound(name.to_string()));
             }
         };
-        drop(db);
 
         // Create and cache the collection
         let collection = Collection::new(actual_name.clone(), self.db.clone());
-        {
-            let mut cache = self.collections.write().unwrap();
-            cache.insert(name.to_string(), collection.clone());
-            if actual_name != name {
-                cache.insert(actual_name, collection.clone());
-            }
+        self.collections
+            .insert(name.to_string(), collection.clone());
+        if actual_name != name {
+            self.collections.insert(actual_name, collection.clone());
         }
 
         Ok(collection)
@@ -435,9 +423,10 @@ impl StorageEngine {
     pub fn initialize_transactions(&self) -> DbResult<()> {
         // Check if already initialized (read lock first)
         {
-            let tx_mgr = self.transaction_manager.read().unwrap();
-            if tx_mgr.is_some() {
-                return Ok(()); // Already initialized
+            if let Ok(tx_mgr) = self.transaction_manager.read() {
+                if tx_mgr.is_some() {
+                    return Ok(()); // Already initialized
+                }
             }
         }
 
@@ -451,8 +440,9 @@ impl StorageEngine {
 
         // Now acquire write lock to store manager
         {
-            let mut tx_mgr = self.transaction_manager.write().unwrap();
-            *tx_mgr = Some(Arc::new(manager));
+            if let Ok(mut tx_mgr) = self.transaction_manager.write() {
+                *tx_mgr = Some(Arc::new(manager));
+            }
         }
 
         tracing::info!("Transaction manager initialized");
@@ -463,9 +453,10 @@ impl StorageEngine {
     pub fn transaction_manager(&self) -> DbResult<Arc<TransactionManager>> {
         // Try to read first
         {
-            let tx_mgr = self.transaction_manager.read().unwrap();
-            if let Some(ref manager) = *tx_mgr {
-                return Ok(manager.clone());
+            if let Ok(tx_mgr) = self.transaction_manager.read() {
+                if let Some(ref manager) = *tx_mgr {
+                    return Ok(manager.clone());
+                }
             }
         }
 
@@ -473,8 +464,15 @@ impl StorageEngine {
         self.initialize_transactions()?;
 
         // Read again after initialization
-        let tx_mgr = self.transaction_manager.read().unwrap();
-        Ok(tx_mgr.as_ref().unwrap().clone())
+        if let Ok(tx_mgr) = self.transaction_manager.read() {
+            if let Some(manager) = tx_mgr.as_ref() {
+                return Ok(manager.clone());
+            }
+        }
+
+        Err(DbError::InternalError(
+            "Transaction manager not initialized".to_string(),
+        ))
     }
 
     /// Recover committed transactions from WAL (called on startup)
@@ -529,19 +527,25 @@ impl StorageEngine {
     /// Commit a transaction by applying all operations atomically
     pub fn commit_transaction(&self, tx_id: crate::transaction::TransactionId) -> DbResult<()> {
         let manager = {
-            let tx_mgr = self.transaction_manager.read().unwrap();
-            tx_mgr
-                .as_ref()
-                .ok_or_else(|| {
-                    DbError::InternalError("Transaction manager not initialized".to_string())
-                })?
-                .clone()
+            if let Ok(tx_mgr) = self.transaction_manager.read() {
+                if let Some(mgr) = tx_mgr.as_ref() {
+                    mgr.clone()
+                } else {
+                    return Err(DbError::InternalError(
+                        "Transaction manager not initialized".to_string(),
+                    ));
+                }
+            } else {
+                return Err(DbError::InternalError(
+                    "Transaction manager lock failed".to_string(),
+                ));
+            }
         };
 
         // Get transaction
         let tx_arc = manager.get(tx_id)?;
         let operations = {
-            let tx = tx_arc.read().unwrap();
+            let tx = tx_arc.read().expect("Transaction lock poisoned");
             tx.operations.clone()
         };
 
@@ -569,13 +573,19 @@ impl StorageEngine {
     /// Rollback a transaction (operations already in WAL as aborted)
     pub fn rollback_transaction(&self, tx_id: crate::transaction::TransactionId) -> DbResult<()> {
         let manager = {
-            let tx_mgr = self.transaction_manager.read().unwrap();
-            tx_mgr
-                .as_ref()
-                .ok_or_else(|| {
-                    DbError::InternalError("Transaction manager not initialized".to_string())
-                })?
-                .clone()
+            if let Ok(tx_mgr) = self.transaction_manager.read() {
+                if let Some(mgr) = tx_mgr.as_ref() {
+                    mgr.clone()
+                } else {
+                    return Err(DbError::InternalError(
+                        "Transaction manager not initialized".to_string(),
+                    ));
+                }
+            } else {
+                return Err(DbError::InternalError(
+                    "Transaction manager lock failed".to_string(),
+                ));
+            }
         };
 
         // Just mark as aborted - operations were never applied
@@ -589,12 +599,8 @@ impl Drop for StorageEngine {
     fn drop(&mut self) {
         // Clear collections and databases before RocksDB is dropped
         // This ensures proper cleanup order and avoids pthread mutex issues
-        if let Ok(mut collections) = self.collections.write() {
-            collections.clear();
-        }
-        if let Ok(mut databases) = self.databases.write() {
-            databases.clear();
-        }
+        self.collections.clear();
+        self.databases.clear();
         if let Ok(mut tm) = self.transaction_manager.write() {
             *tm = None;
         }

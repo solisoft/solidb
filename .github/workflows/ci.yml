@@ -28,8 +28,12 @@ jobs:
             pkg-config \
             libssl-dev \
             libzstd-dev \
-            protobuf-compiler \
-            cmake
+            libsnappy-dev \
+            liblz4-dev \
+            libzlib1g-dev \
+            libbz2-dev \
+            cmake \
+            protobuf-compiler
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -79,8 +83,12 @@ jobs:
             pkg-config \
             libssl-dev \
             libzstd-dev \
-            protobuf-compiler \
-            cmake
+            libsnappy-dev \
+            liblz4-dev \
+            libzlib1g-dev \
+            libbz2-dev \
+            cmake \
+            protobuf-compiler
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -133,8 +141,12 @@ jobs:
             pkg-config \
             libssl-dev \
             libzstd-dev \
-            protobuf-compiler \
-            cmake
+            libsnappy-dev \
+            liblz4-dev \
+            libzlib1g-dev \
+            libbz2-dev \
+            cmake \
+            protobuf-compiler
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
