@@ -1,0 +1,8 @@
+[build]
+# Use lld linker for faster and lower memory builds
+rustflags = ["-C", "linker=clang", "-C", "force-unwind-tables=no"]
+
+[profile.release]
+# Optimize for size
+opt-level = "z"
+lto = "thin"

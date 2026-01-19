@@ -24,6 +24,7 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             clang \
+            lld \
             libclang-dev \
             pkg-config \
             libssl-dev \
@@ -79,6 +80,7 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             clang \
+            lld \
             libclang-dev \
             pkg-config \
             libssl-dev \
@@ -137,6 +139,7 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             clang \
+            lld \
             libclang-dev \
             pkg-config \
             libssl-dev \
@@ -209,6 +212,7 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             clang \
+            lld \
             libclang-dev \
             pkg-config \
             libssl-dev \
