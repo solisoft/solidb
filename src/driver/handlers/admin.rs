@@ -1,5 +1,5 @@
-use super::DriverHandler;
-use solidb_client::protocol::{DriverError, Response};
+use crate::driver::protocol::{DriverError, Response};
+use crate::driver::DriverHandler;
 use std::collections::HashMap;
 
 // ==================== Environment Variable Handlers ====================

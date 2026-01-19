@@ -2,17 +2,15 @@
 //!
 //! Processes incoming commands and executes them against the storage engine.
 
+use crate::driver::protocol::{
+    decode_message, encode_response, Command, DriverError, Response, MAX_MESSAGE_SIZE,
+};
+use crate::storage::StorageEngine;
+use crate::transaction::TransactionId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-
-use crate::storage::StorageEngine;
-use crate::transaction::TransactionId;
-
-use solidb_client::protocol::{
-    decode_message, encode_response, Command, DriverError, Response, MAX_MESSAGE_SIZE,
-};
 
 pub mod admin;
 pub mod auth;

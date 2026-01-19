@@ -7,7 +7,7 @@
 //! - Error handling
 
 use serde_json::json;
-use solidb_client::protocol::{DriverError, Response};
+use solidb::driver::protocol::{DriverError, Response};
 use solidb_client::SoliDBClientBuilder;
 
 // ============================================================================
@@ -211,7 +211,7 @@ fn test_driver_error_display_invalid_command() {
 
 #[tokio::test]
 async fn test_connect_invalid_address() {
-    use solidb::driver::SoliDBClient;
+    use solidb_client::SoliDBClient;
 
     // Try to connect to an invalid address
     let result = SoliDBClient::connect("invalid-host:99999").await;
@@ -219,7 +219,7 @@ async fn test_connect_invalid_address() {
 
     if let Err(err) = result {
         match err {
-            DriverError::ConnectionError(msg) => {
+            solidb_client::DriverError::ConnectionError(msg) => {
                 assert!(msg.contains("Failed to connect"));
             }
             _ => panic!("Expected ConnectionError"),
@@ -229,7 +229,7 @@ async fn test_connect_invalid_address() {
 
 #[tokio::test]
 async fn test_connect_refused() {
-    use solidb::driver::SoliDBClient;
+    use solidb_client::SoliDBClient;
 
     // Try to connect to a port that's likely not listening
     let result = SoliDBClient::connect("127.0.0.1:59999").await;

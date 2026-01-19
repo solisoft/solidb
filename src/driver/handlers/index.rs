@@ -1,6 +1,6 @@
-use super::DriverHandler;
+use crate::driver::protocol::{DriverError, Response};
+use crate::driver::DriverHandler;
 use crate::storage::{VectorIndexConfig, VectorMetric};
-use solidb_client::protocol::{DriverError, Response};
 
 // ==================== Configuration Structs ====================
 

@@ -72,7 +72,7 @@ pub enum IsolationLevel {
     Serializable,
 }
 
-use solidb_client::protocol::IsolationLevel as ClientIsolationLevel;
+use crate::driver::protocol::IsolationLevel as ClientIsolationLevel;
 
 impl From<ClientIsolationLevel> for IsolationLevel {
     fn from(level: ClientIsolationLevel) -> Self {

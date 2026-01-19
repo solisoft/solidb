@@ -1,5 +1,5 @@
 use serde_json::json;
-use solidb::driver::SoliDBClient;
+use solidb_client::SoliDBClient;
 use std::env;
 use std::time::Instant;
 

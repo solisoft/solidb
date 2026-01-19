@@ -1,5 +1,5 @@
-use super::DriverHandler;
-use solidb_client::protocol::{DriverError, Response};
+use crate::driver::protocol::{DriverError, Response};
+use crate::driver::DriverHandler;
 
 /// Handle authentication (username/password or API key)
 pub async fn handle_auth(
