@@ -180,6 +180,317 @@
         </div>
       </section>
 
+      <!-- Rust Internals Section -->
+      <section id="rust-internals" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-orange-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(249,115,22,0.5)]">
+              <i class="fas fa-cog text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Rust Internals</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            SoliDB is written in <strong>Rust</strong> for memory safety, zero-cost abstractions, and fearless concurrency. This section explains how the Rust codebase is organized and how data flows through the system.
+          </p>
+
+          <!-- Query Execution Flow Diagram -->
+          <div class="bg-gray-950/50 rounded-xl p-6 border border-white/5 mb-8">
+            <h4 class="text-orange-400 font-bold mb-4 flex items-center">
+              <i class="fas fa-project-diagram mr-3"></i> Query Execution Flow
+            </h4>
+            <div class="flex flex-wrap items-center justify-center gap-2 md:gap-0">
+              <div class="bg-blue-500/20 border border-blue-500/30 rounded-lg px-4 py-3 text-center">
+                <i class="fas fa-globe text-blue-400 mb-1"></i>
+                <div class="text-white font-medium text-sm">HTTP Request</div>
+                <div class="text-xs text-gray-500">handlers.rs</div>
+              </div>
+              <div class="text-gray-600 mx-2">→</div>
+              <div class="bg-purple-500/20 border border-purple-500/30 rounded-lg px-4 py-3 text-center">
+                <i class="fas fa-code text-purple-400 mb-1"></i>
+                <div class="text-white font-medium text-sm">SDBQL Parser</div>
+                <div class="text-xs text-gray-500">lexer + parser</div>
+              </div>
+              <div class="text-gray-600 mx-2">→</div>
+              <div class="bg-cyan-500/20 border border-cyan-500/30 rounded-lg px-4 py-3 text-center">
+                <i class="fas fa-microchip text-cyan-400 mb-1"></i>
+                <div class="text-white font-medium text-sm">Executor</div>
+                <div class="text-xs text-gray-500">executor.rs:297KB</div>
+              </div>
+              <div class="text-gray-600 mx-2">→</div>
+              <div class="bg-green-500/20 border border-green-500/30 rounded-lg px-4 py-3 text-center">
+                <i class="fas fa-database text-green-400 mb-1"></i>
+                <div class="text-white font-medium text-sm">RocksDB</div>
+                <div class="text-xs text-gray-500">collection.rs</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Core Modules Grid -->
+          <h4 class="text-white font-bold mb-4 flex items-center">
+            <i class="fas fa-cubes text-orange-400 mr-3"></i> Core Modules
+          </h4>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center mr-3">
+                  <i class="fas fa-terminal text-purple-400 text-sm"></i>
+                </div>
+                <h5 class="text-white font-semibold">sdbql/</h5>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">Query language implementation with lexer, parser, AST, and executor (297KB core executor).</p>
+              <div class="text-xs text-gray-500 font-mono">
+                lexer.rs · parser.rs · ast.rs · executor.rs
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <div class="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center mr-3">
+                  <i class="fas fa-database text-yellow-400 text-sm"></i>
+                </div>
+                <h5 class="text-white font-semibold">storage/</h5>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">RocksDB-backed persistence with collections, indexes, and TTL management (125KB collection module).</p>
+              <div class="text-xs text-gray-500 font-mono">
+                engine.rs · collection.rs · indexes/
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <div class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center mr-3">
+                  <i class="fas fa-server text-red-400 text-sm"></i>
+                </div>
+                <h5 class="text-white font-semibold">server/</h5>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">Axum HTTP API and WebSocket handlers (241KB handlers module). Handles routing, auth, and real-time.</p>
+              <div class="text-xs text-gray-500 font-mono">
+                router.rs · handlers.rs · auth.rs
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <div class="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center mr-3">
+                  <i class="fas fa-network-wired text-pink-400 text-sm"></i>
+                </div>
+                <h5 class="text-white font-semibold">cluster/</h5>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">Node coordination with Hybrid Logical Clocks (HLC) for distributed timestamp ordering.</p>
+              <div class="text-xs text-gray-500 font-mono">
+                manager.rs · hlc.rs · health.rs
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center mr-3">
+                  <i class="fas fa-sync text-emerald-400 text-sm"></i>
+                </div>
+                <h5 class="text-white font-semibold">sync/</h5>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">Master-master replication worker. Handles change propagation, blob sync, and conflict resolution.</p>
+              <div class="text-xs text-gray-500 font-mono">
+                worker.rs · transport.rs · blob.rs
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mr-3">
+                  <i class="fas fa-th-large text-indigo-400 text-sm"></i>
+                </div>
+                <h5 class="text-white font-semibold">sharding/</h5>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">Horizontal partitioning with automatic rebalancing. Shard coordinator is 151KB.</p>
+              <div class="text-xs text-gray-500 font-mono">
+                coordinator.rs · router.rs · migrate.rs
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <div class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center mr-3">
+                  <i class="fas fa-file-contract text-amber-400 text-sm"></i>
+                </div>
+                <h5 class="text-white font-semibold">transaction/</h5>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">ACID transactions with configurable isolation levels and Write-Ahead Log (WAL) support.</p>
+              <div class="text-xs text-gray-500 font-mono">
+                mod.rs · wal.rs · isolation.rs
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <div class="w-8 h-8 rounded-lg bg-lime-500/20 flex items-center justify-center mr-3">
+                  <i class="fas fa-code text-lime-400 text-sm"></i>
+                </div>
+                <h5 class="text-white font-semibold">scripting/</h5>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">Embedded Lua 5.4 runtime for custom endpoints, triggers, and stored procedures with sandbox.</p>
+              <div class="text-xs text-gray-500 font-mono">
+                mod.rs · sandbox.rs · api.rs
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <div class="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center mr-3">
+                  <i class="fas fa-plug text-cyan-400 text-sm"></i>
+                </div>
+                <h5 class="text-white font-semibold">driver/</h5>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">MessagePack binary protocol for high-performance clients. Internal cluster communication.</p>
+              <div class="text-xs text-gray-500 font-mono">
+                mod.rs · protocol.rs · client.rs
+              </div>
+            </div>
+          </div>
+
+          <!-- Architectural Patterns -->
+          <h4 class="text-white font-bold mb-4 flex items-center">
+            <i class="fas fa-pencil-ruler text-orange-400 mr-3"></i> Architectural Patterns
+          </h4>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h5 class="text-orange-400 font-bold mb-3 flex items-center">
+                <i class="fas fa-tasks mr-2"></i> Multiplexed Port
+              </h5>
+              <p class="text-sm text-gray-400 mb-3">
+                SoliDB uses a single port for all protocols via protocol detection:
+              </p>
+              <ul class="text-xs text-gray-500 space-y-1 font-mono">
+                <li><span class="text-green-400">HTTP</span> — REST API, SDBQL queries</li>
+                <li><span class="text-blue-400">WebSocket</span> — Live queries, chat</li>
+                <li><span class="text-purple-400">Driver</span> — MessagePack binary</li>
+                <li><span class="text-pink-400">Cluster</span> — Inter-node sync</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h5 class="text-orange-400 font-bold mb-3 flex items-center">
+                <i class="fas fa-bolt mr-2"></i> Async Runtime
+              </h5>
+              <p class="text-sm text-gray-400 mb-3">
+                Tokio async runtime with work-stealing scheduler:
+              </p>
+              <ul class="text-xs text-gray-500 space-y-1 font-mono">
+                <li><code class="text-cyan-400">async/.await</code> — Non-blocking I/O</li>
+                <li><code class="text-cyan-400">spawn_blocking</code> — CPU-intensive ops</li>
+                <li><code class="text-cyan-400">Arc&lt;RwLock&lt;T&gt;&gt;</code> — Shared state</li>
+                <li><code class="text-cyan-400">tokio::sync</code> — Channels, semaphores</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h5 class="text-orange-400 font-bold mb-3 flex items-center">
+                <i class="fas fa-boxes mr-2"></i> Serialization
+              </h5>
+              <p class="text-sm text-gray-400 mb-3">
+                Serde-based serialization throughout:
+              </p>
+              <ul class="text-xs text-gray-500 space-y-1 font-mono">
+                <li><code class="text-green-400">JSON</code> — REST API, storage</li>
+                <li><code class="text-blue-400">MessagePack</code> — Driver protocol</li>
+                <li><code class="text-purple-400">Bincode</code> — Internal storage</li>
+                <li><code class="text-pink-400">Postcard</code> — Embedded scenarios</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h5 class="text-orange-400 font-bold mb-3 flex items-center">
+                <i class="fas fa-exclamation-triangle mr-2"></i> Error Handling
+              </h5>
+              <p class="text-sm text-gray-400 mb-3">
+                Unified error handling pattern:
+              </p>
+              <div class="bg-black/40 rounded-lg p-3 font-mono text-xs text-gray-300 border border-white/10">
+                <div class="text-purple-400">pub enum</div> <div class="text-white">DbError</div> { ... }<br>
+                <div class="text-purple-400">pub type</div> <div class="text-white">DbResult</div>&lt;T&gt; = <div class="text-teal-400">Result</div>&lt;T, DbError&gt;;
+              </div>
+            </div>
+          </div>
+
+          <!-- Entry Points -->
+          <h4 class="text-white font-bold mb-4 flex items-center">
+            <i class="fas fa-door-open text-orange-400 mr-3"></i> Entry Points
+          </h4>
+          <div class="bg-gray-900/50 rounded-xl border border-white/10 overflow-hidden font-mono text-sm">
+            <div class="flex items-center px-4 py-2 bg-white/5 border-b border-white/5 text-gray-500">
+              src/
+            </div>
+            <div class="p-4 space-y-2">
+              <div class="flex items-start">
+                <span class="text-white font-bold w-32">main.rs</span>
+                <div>
+                  <span class="text-gray-500">639 lines — Server startup, CLI argument parsing, daemon mode</span>
+                  <div class="text-xs text-gray-600 mt-1">
+                    ├── parse_args() → Config<br>
+                    ├── init_tokio() → Runtime<br>
+                    └── start_server(config) → Services
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-start">
+                <span class="text-white font-bold w-32">lib.rs</span>
+                <div>
+                  <span class="text-gray-500">Public API exports and re-exports</span>
+                  <div class="text-xs text-gray-600 mt-1">
+                    pub use sdbql::*;<br>
+                    pub use storage::*;
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-start">
+                <span class="text-white font-bold w-32">error.rs</span>
+                <div>
+                  <span class="text-gray-500">DbError enum with From implementations</span>
+                  <div class="text-xs text-gray-600 mt-1">
+                    20+ error variants, From&lt;RocksDbError&gt;, From&lt;JsonError&gt;
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Binaries -->
+          <div class="mt-6 bg-gray-900/50 rounded-xl border border-white/10 overflow-hidden font-mono text-sm">
+            <div class="flex items-center px-4 py-2 bg-white/5 border-b border-white/5 text-gray-500">
+              src/bin/
+            </div>
+            <div class="p-4 space-y-2">
+              <div class="flex items-start">
+                <span class="text-cyan-400 font-bold w-32">solidb-dump.rs</span>
+                <span class="text-gray-500">Database export utility — dump collections to JSON/MessagePack</span>
+              </div>
+              <div class="flex items-start">
+                <span class="text-blue-400 font-bold w-32">solidb-restore.rs</span>
+                <span class="text-gray-500">Database restore utility — import from dumps</span>
+              </div>
+              <div class="flex items-start">
+                <span class="text-purple-400 font-bold w-32">solidb-fuse.rs</span>
+                <span class="text-gray-500">FUSE filesystem mount (optional feature)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Code Quality -->
+          <div class="mt-6 bg-orange-900/10 rounded-xl p-5 border border-orange-500/20">
+            <div class="flex items-start">
+              <i class="fas fa-check-circle text-orange-400 mt-1 mr-3"></i>
+              <div>
+                <h4 class="text-orange-400 font-bold mb-1">Code Quality Standards</h4>
+                <p class="text-sm text-gray-300">
+                  All code passes <code class="text-orange-300">cargo fmt --check</code> and <code class="text-orange-300">cargo clippy -- -D warnings</code> before commits. The codebase has 592 tests across 54 test files ensuring reliability.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Technology Stack Section -->
       <section id="tech-stack" class="scroll-mt-24">
         <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
