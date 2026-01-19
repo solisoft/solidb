@@ -22,21 +22,27 @@ pub fn evaluate_string_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             let text = match &args[0] {
                 Value::String(s) => s.clone(),
                 Value::Null => return Ok(Value::Null),
-                _ => return Err(DbError::ExecutionError(
-                    "REGEX_REPLACE: first argument must be a string".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "REGEX_REPLACE: first argument must be a string".to_string(),
+                    ))
+                }
             };
             let pattern = match &args[1] {
                 Value::String(s) => s.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "REGEX_REPLACE: second argument must be a string (pattern)".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "REGEX_REPLACE: second argument must be a string (pattern)".to_string(),
+                    ))
+                }
             };
             let replacement = match &args[2] {
                 Value::String(s) => s.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "REGEX_REPLACE: third argument must be a string (replacement)".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "REGEX_REPLACE: third argument must be a string (replacement)".to_string(),
+                    ))
+                }
             };
 
             let re = regex::Regex::new(&pattern).map_err(|e| {
@@ -56,15 +62,19 @@ pub fn evaluate_string_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             let text = match &args[0] {
                 Value::String(s) => s.clone(),
                 Value::Null => return Ok(Value::Bool(false)),
-                _ => return Err(DbError::ExecutionError(
-                    "CONTAINS: first argument must be a string".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "CONTAINS: first argument must be a string".to_string(),
+                    ))
+                }
             };
             let search = match &args[1] {
                 Value::String(s) => s.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "CONTAINS: second argument must be a string".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "CONTAINS: second argument must be a string".to_string(),
+                    ))
+                }
             };
             let case_insensitive = args.get(2).and_then(|v| v.as_bool()).unwrap_or(false);
 
@@ -93,7 +103,9 @@ pub fn evaluate_string_fn(name: &str, args: &[Value]) -> DbResult<Value> {
 
         "UPPER" => {
             if args.len() != 1 {
-                return Err(DbError::ExecutionError("UPPER requires 1 argument".to_string()));
+                return Err(DbError::ExecutionError(
+                    "UPPER requires 1 argument".to_string(),
+                ));
             }
             match &args[0] {
                 Value::String(s) => Ok(Value::String(s.to_uppercase())),
@@ -106,7 +118,9 @@ pub fn evaluate_string_fn(name: &str, args: &[Value]) -> DbResult<Value> {
 
         "LOWER" => {
             if args.len() != 1 {
-                return Err(DbError::ExecutionError("LOWER requires 1 argument".to_string()));
+                return Err(DbError::ExecutionError(
+                    "LOWER requires 1 argument".to_string(),
+                ));
             }
             match &args[0] {
                 Value::String(s) => Ok(Value::String(s.to_lowercase())),
@@ -126,15 +140,19 @@ pub fn evaluate_string_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             let text = match &args[0] {
                 Value::String(s) => s.clone(),
                 Value::Null => return Ok(Value::Null),
-                _ => return Err(DbError::ExecutionError(
-                    "TRIM: first argument must be a string".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "TRIM: first argument must be a string".to_string(),
+                    ))
+                }
             };
             let chars = match args.get(1) {
                 Some(Value::String(s)) => s.chars().collect::<Vec<_>>(),
-                Some(_) => return Err(DbError::ExecutionError(
-                    "TRIM: second argument must be a string".to_string(),
-                )),
+                Some(_) => {
+                    return Err(DbError::ExecutionError(
+                        "TRIM: second argument must be a string".to_string(),
+                    ))
+                }
                 None => vec![' '],
             };
 
@@ -156,9 +174,11 @@ pub fn evaluate_string_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             let text = match &args[0] {
                 Value::String(s) => s.clone(),
                 Value::Null => return Ok(Value::Null),
-                _ => return Err(DbError::ExecutionError(
-                    "SUBSTRING: first argument must be a string".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "SUBSTRING: first argument must be a string".to_string(),
+                    ))
+                }
             };
             let start = match &args[1] {
                 Value::Number(n) => {
@@ -169,9 +189,11 @@ pub fn evaluate_string_fn(name: &str, args: &[Value]) -> DbResult<Value> {
                         idx
                     }
                 }
-                _ => return Err(DbError::ExecutionError(
-                    "SUBSTRING: second argument must be a number".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "SUBSTRING: second argument must be a number".to_string(),
+                    ))
+                }
             };
             let length = args.get(2).and_then(|v| v.as_u64()).map(|l| l as usize);
 
@@ -199,28 +221,36 @@ pub fn evaluate_string_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             let text = match &args[0] {
                 Value::String(s) => s.clone(),
                 Value::Null => return Ok(Value::Null),
-                _ => return Err(DbError::ExecutionError(
-                    "REPLACE: first argument must be a string".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "REPLACE: first argument must be a string".to_string(),
+                    ))
+                }
             };
             let search = match &args[1] {
                 Value::String(s) => s.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "REPLACE: second argument must be a string".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "REPLACE: second argument must be a string".to_string(),
+                    ))
+                }
             };
             let replacement = match &args[2] {
                 Value::String(s) => s.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "REPLACE: third argument must be a string".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "REPLACE: third argument must be a string".to_string(),
+                    ))
+                }
             };
             Ok(Value::String(text.replace(&search, &replacement)))
         }
 
         "REVERSE" => {
             if args.len() != 1 {
-                return Err(DbError::ExecutionError("REVERSE requires 1 argument".to_string()));
+                return Err(DbError::ExecutionError(
+                    "REVERSE requires 1 argument".to_string(),
+                ));
             }
             match &args[0] {
                 Value::String(s) => {
@@ -243,22 +273,30 @@ pub fn evaluate_string_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             let text = match &args[0] {
                 Value::String(s) => s.clone(),
                 Value::Null => return Ok(Value::Array(vec![])),
-                _ => return Err(DbError::ExecutionError(
-                    "SPLIT: first argument must be a string".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "SPLIT: first argument must be a string".to_string(),
+                    ))
+                }
             };
             let separator = match &args[1] {
                 Value::String(s) => s.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "SPLIT: second argument must be a string".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "SPLIT: second argument must be a string".to_string(),
+                    ))
+                }
             };
             let max_parts = args.get(2).and_then(|v| v.as_u64()).map(|v| v as usize);
 
             let parts: Vec<Value> = if let Some(max) = max_parts {
-                text.splitn(max, &separator).map(|s| Value::String(s.to_string())).collect()
+                text.splitn(max, &separator)
+                    .map(|s| Value::String(s.to_string()))
+                    .collect()
             } else {
-                text.split(&separator).map(|s| Value::String(s.to_string())).collect()
+                text.split(&separator)
+                    .map(|s| Value::String(s.to_string()))
+                    .collect()
             };
             Ok(Value::Array(parts))
         }

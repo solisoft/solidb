@@ -9,13 +9,13 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::server::auth::Claims;
-use crate::server::handlers::AppState;
 use crate::ai::{
     AITask, Contribution, ContributionStatus, ListContributionsResponse, Priority,
     ReviewContributionRequest, SubmitContributionRequest, SubmitContributionResponse,
 };
 use crate::error::DbError;
+use crate::server::auth::Claims;
+use crate::server::handlers::AppState;
 
 /// Query parameters for listing contributions
 #[derive(Debug, Deserialize)]
@@ -148,9 +148,13 @@ pub async fn list_contributions_handler(
     // Apply pagination
     let offset = query.offset.unwrap_or(0);
     let limit = query.limit.unwrap_or(100);
-    let contributions: Vec<Contribution> = contributions.into_iter().skip(offset).take(limit).collect();
+    let contributions: Vec<Contribution> =
+        contributions.into_iter().skip(offset).take(limit).collect();
 
-    Ok(Json(ListContributionsResponse { contributions, total }))
+    Ok(Json(ListContributionsResponse {
+        contributions,
+        total,
+    }))
 }
 
 /// GET /_api/ai/contributions/:id - Get a specific contribution
@@ -188,7 +192,9 @@ pub async fn approve_contribution_handler(
 
     // Allow approval from Submitted, Analyzing, or Review status
     match contribution.status {
-        ContributionStatus::Submitted | ContributionStatus::Analyzing | ContributionStatus::Review => {}
+        ContributionStatus::Submitted
+        | ContributionStatus::Analyzing
+        | ContributionStatus::Review => {}
         _ => {
             return Err(DbError::BadRequest(format!(
                 "Cannot approve contribution in status {}",
@@ -227,7 +233,9 @@ pub async fn reject_contribution_handler(
 
     // Allow rejection from Submitted, Analyzing, or Review status
     match contribution.status {
-        ContributionStatus::Submitted | ContributionStatus::Analyzing | ContributionStatus::Review => {}
+        ContributionStatus::Submitted
+        | ContributionStatus::Analyzing
+        | ContributionStatus::Review => {}
         _ => {
             return Err(DbError::BadRequest(format!(
                 "Cannot reject contribution in status {}",
@@ -272,7 +280,9 @@ pub async fn cancel_contribution_handler(
     }
 
     match contribution.status {
-        ContributionStatus::Submitted | ContributionStatus::Analyzing | ContributionStatus::Generating => {}
+        ContributionStatus::Submitted
+        | ContributionStatus::Analyzing
+        | ContributionStatus::Generating => {}
         _ => {
             return Err(DbError::BadRequest(format!(
                 "Cannot cancel contribution in status {}",

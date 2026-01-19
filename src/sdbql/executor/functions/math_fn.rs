@@ -41,7 +41,9 @@ pub fn evaluate_math_fn(name: &str, args: &[Value]) -> DbResult<Value> {
 
         "ABS" | "ABSOLUTE" => {
             if args.len() != 1 {
-                return Err(DbError::ExecutionError("ABS requires 1 argument".to_string()));
+                return Err(DbError::ExecutionError(
+                    "ABS requires 1 argument".to_string(),
+                ));
             }
             let value = match &args[0] {
                 Value::Number(n) => n.as_f64().unwrap_or(0.0),
@@ -74,7 +76,9 @@ pub fn evaluate_math_fn(name: &str, args: &[Value]) -> DbResult<Value> {
 
         "SIGN" | "SIGNUM" => {
             if args.len() != 1 {
-                return Err(DbError::ExecutionError("SIGN requires 1 argument".to_string()));
+                return Err(DbError::ExecutionError(
+                    "SIGN requires 1 argument".to_string(),
+                ));
             }
             let value = match &args[0] {
                 Value::Number(n) => n.as_f64().unwrap_or(0.0),
@@ -159,9 +163,15 @@ pub fn evaluate_math_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             }
 
             let values: Vec<Value> = if step > 0 {
-                (start..end).step_by(step as usize).map(|n| make_number(n as f64)).collect()
+                (start..end)
+                    .step_by(step as usize)
+                    .map(|n| make_number(n as f64))
+                    .collect()
             } else {
-                (start..end).step_by((-step) as usize).map(|n| make_number(n as f64)).collect()
+                (start..end)
+                    .step_by((-step) as usize)
+                    .map(|n| make_number(n as f64))
+                    .collect()
             };
             Ok(Value::Array(values))
         }

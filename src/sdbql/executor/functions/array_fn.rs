@@ -37,7 +37,9 @@ fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
         (Value::Number(a), Value::Number(b)) => {
             let a_num = a.as_f64();
             let b_num = b.as_f64();
-            a_num.partial_cmp(&b_num).unwrap_or(std::cmp::Ordering::Equal)
+            a_num
+                .partial_cmp(&b_num)
+                .unwrap_or(std::cmp::Ordering::Equal)
         }
         (Value::String(a), Value::String(b)) => a.cmp(b),
         (Value::Array(a), Value::Array(b)) => a.len().cmp(&b.len()),
@@ -51,7 +53,9 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
     match name {
         "LENGTH" => {
             if args.len() != 1 {
-                return Err(DbError::ExecutionError("LENGTH requires 1 argument".to_string()));
+                return Err(DbError::ExecutionError(
+                    "LENGTH requires 1 argument".to_string(),
+                ));
             }
             match &args[0] {
                 Value::Array(arr) => Ok(make_number(arr.len() as f64)),
@@ -70,9 +74,11 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             }
             let mut arr = match &args[0] {
                 Value::Array(a) => a.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "APPEND: first argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "APPEND: first argument must be an array".to_string(),
+                    ));
+                }
             };
             for item in &args[1..] {
                 arr.push(item.clone());
@@ -88,9 +94,11 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             }
             let mut arr = match &args[0] {
                 Value::Array(a) => a.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "PUSH: first argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "PUSH: first argument must be an array".to_string(),
+                    ));
+                }
             };
             for item in &args[1..] {
                 arr.push(item.clone());
@@ -100,13 +108,17 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
 
         "POP" => {
             if args.len() != 1 {
-                return Err(DbError::ExecutionError("POP requires 1 argument".to_string()));
+                return Err(DbError::ExecutionError(
+                    "POP requires 1 argument".to_string(),
+                ));
             }
             let mut arr = match &args[0] {
                 Value::Array(a) => a.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "POP: argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "POP: argument must be an array".to_string(),
+                    ));
+                }
             };
             arr.pop();
             Ok(Value::Array(arr))
@@ -114,13 +126,17 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
 
         "SHIFT" => {
             if args.len() != 1 {
-                return Err(DbError::ExecutionError("SHIFT requires 1 argument".to_string()));
+                return Err(DbError::ExecutionError(
+                    "SHIFT requires 1 argument".to_string(),
+                ));
             }
             let mut arr = match &args[0] {
                 Value::Array(a) => a.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "SHIFT: argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "SHIFT: argument must be an array".to_string(),
+                    ));
+                }
             };
             arr.remove(0);
             Ok(Value::Array(arr))
@@ -134,9 +150,11 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             }
             let mut arr = match &args[0] {
                 Value::Array(a) => a.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "UNSHIFT: first argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "UNSHIFT: first argument must be an array".to_string(),
+                    ))
+                }
             };
             let mut items = args[1..].to_vec();
             items.append(&mut arr);
@@ -152,12 +170,15 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             let arr = match &args[0] {
                 Value::Array(a) => a.clone(),
                 Value::String(s) => {
-                    let chars: Vec<Value> = s.chars().map(|c| Value::String(c.to_string())).collect();
+                    let chars: Vec<Value> =
+                        s.chars().map(|c| Value::String(c.to_string())).collect();
                     chars
                 }
-                _ => return Err(DbError::ExecutionError(
-                    "SLICE: first argument must be an array or string".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "SLICE: first argument must be an array or string".to_string(),
+                    ))
+                }
             };
             let start = match &args[1] {
                 Value::Number(n) => {
@@ -168,9 +189,11 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
                         idx
                     }
                 }
-                _ => return Err(DbError::ExecutionError(
-                    "SLICE: second argument must be a number".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "SLICE: second argument must be a number".to_string(),
+                    ))
+                }
             };
             let length = args.get(2).and_then(|v| v.as_u64()).map(|l| l as usize);
 
@@ -191,9 +214,11 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             }
             let arr = match &args[0] {
                 Value::Array(a) => a.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "FLATTEN: first argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "FLATTEN: first argument must be an array".to_string(),
+                    ))
+                }
             };
             let depth = if args.len() > 1 {
                 args[1].as_u64().unwrap_or(1) as usize
@@ -205,13 +230,17 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
 
         "UNIQUE" => {
             if args.len() != 1 {
-                return Err(DbError::ExecutionError("UNIQUE requires 1 argument".to_string()));
+                return Err(DbError::ExecutionError(
+                    "UNIQUE requires 1 argument".to_string(),
+                ));
             }
             let arr = match &args[0] {
                 Value::Array(a) => a.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "UNIQUE: argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "UNIQUE: argument must be an array".to_string(),
+                    ))
+                }
             };
             let mut seen = std::collections::HashSet::new();
             let unique: Vec<Value> = arr
@@ -224,13 +253,17 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
 
         "SORTED" => {
             if args.len() != 1 {
-                return Err(DbError::ExecutionError("SORTED requires 1 argument".to_string()));
+                return Err(DbError::ExecutionError(
+                    "SORTED requires 1 argument".to_string(),
+                ));
             }
             let mut arr = match &args[0] {
                 Value::Array(a) => a.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "SORTED: argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "SORTED: argument must be an array".to_string(),
+                    ))
+                }
             };
             arr.sort_by(|a, b| compare_values(a, b));
             Ok(Value::Array(arr))
@@ -247,9 +280,11 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
                             }
                         }
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        "UNION: all arguments must be arrays".to_string(),
-                    )),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "UNION: all arguments must be arrays".to_string(),
+                        ))
+                    }
                 }
             }
             Ok(Value::Array(result))
@@ -263,16 +298,20 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             }
             let mut result = match &args[0] {
                 Value::Array(a) => a.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "INTERSECTION: first argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "INTERSECTION: first argument must be an array".to_string(),
+                    ))
+                }
             };
             for arg in &args[1..] {
                 let arr = match arg {
                     Value::Array(a) => a,
-                    _ => return Err(DbError::ExecutionError(
-                        "INTERSECTION: all arguments must be arrays".to_string(),
-                    )),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "INTERSECTION: all arguments must be arrays".to_string(),
+                        ))
+                    }
                 };
                 result.retain(|item| arr.contains(item));
             }
@@ -287,35 +326,48 @@ pub fn evaluate_array_fn(name: &str, args: &[Value]) -> DbResult<Value> {
             }
             let arr1 = match &args[0] {
                 Value::Array(a) => a.clone(),
-                _ => return Err(DbError::ExecutionError(
-                    "DIFFERENCE: first argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "DIFFERENCE: first argument must be an array".to_string(),
+                    ))
+                }
             };
             let arr2 = match &args[1] {
                 Value::Array(a) => a,
-                _ => return Err(DbError::ExecutionError(
-                    "DIFFERENCE: second argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "DIFFERENCE: second argument must be an array".to_string(),
+                    ))
+                }
             };
-            let result: Vec<Value> = arr1.into_iter().filter(|item| !arr2.contains(item)).collect();
+            let result: Vec<Value> = arr1
+                .into_iter()
+                .filter(|item| !arr2.contains(item))
+                .collect();
             Ok(Value::Array(result))
         }
 
         "NTH" => {
             if args.len() != 2 {
-                return Err(DbError::ExecutionError("NTH requires 2 arguments".to_string()));
+                return Err(DbError::ExecutionError(
+                    "NTH requires 2 arguments".to_string(),
+                ));
             }
             let arr = match &args[0] {
                 Value::Array(a) => a,
-                _ => return Err(DbError::ExecutionError(
-                    "NTH: first argument must be an array".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "NTH: first argument must be an array".to_string(),
+                    ))
+                }
             };
             let index = match &args[1] {
                 Value::Number(n) => n.as_i64().unwrap_or(0),
-                _ => return Err(DbError::ExecutionError(
-                    "NTH: second argument must be a number".to_string(),
-                )),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "NTH: second argument must be a number".to_string(),
+                    ))
+                }
             };
             let index = if index < 0 {
                 arr.len() as i64 + index

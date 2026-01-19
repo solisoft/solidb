@@ -8,9 +8,9 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::server::handlers::AppState;
 use crate::ai::{Agent, AgentStatus, AgentType, ListAgentsResponse};
 use crate::error::DbError;
+use crate::server::handlers::AppState;
 
 /// Query parameters for listing agents
 #[derive(Debug, Deserialize)]

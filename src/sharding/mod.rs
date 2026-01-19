@@ -14,4 +14,4 @@ pub mod rebalance;
 pub mod repro_issue;
 pub mod router;
 
-pub use coordinator::{CollectionShardConfig, ShardAssignment, ShardTable, ShardCoordinator};
+pub use coordinator::{CollectionShardConfig, ShardAssignment, ShardCoordinator, ShardTable};

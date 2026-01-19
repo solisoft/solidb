@@ -13,36 +13,38 @@ pub mod validation;
 
 // Re-export handlers for convenient access
 pub use agents::{
-    list_agents_handler, register_agent_handler, get_agent_handler, agent_heartbeat_handler,
+    agent_heartbeat_handler, get_agent_handler, list_agents_handler, register_agent_handler,
     unregister_agent_handler, update_agent_handler,
 };
 pub use contributions::{
-    submit_contribution_handler, list_contributions_handler, get_contribution_handler,
-    approve_contribution_handler, reject_contribution_handler, cancel_contribution_handler,
+    approve_contribution_handler, cancel_contribution_handler, get_contribution_handler,
+    list_contributions_handler, reject_contribution_handler, submit_contribution_handler,
 };
 pub use learning::{
-    list_feedback_handler, get_feedback_handler, list_patterns_handler,
-    process_feedback_handler, get_recommendations_handler,
+    get_feedback_handler, get_recommendations_handler, list_feedback_handler,
+    list_patterns_handler, process_feedback_handler,
 };
 pub use marketplace::{
-    discover_agents_handler, get_agent_reputation_handler, get_agent_rankings_handler,
+    discover_agents_handler, get_agent_rankings_handler, get_agent_reputation_handler,
     select_agent_handler, verify_capability_handler,
 };
 pub use recovery::{
-    get_recovery_status_handler, retry_task_handler, reset_circuit_breaker_handler,
-    list_recovery_events_handler,
+    get_recovery_status_handler, list_recovery_events_handler, reset_circuit_breaker_handler,
+    retry_task_handler,
 };
 pub use tasks::{
-    list_ai_tasks_handler, get_ai_task_handler, claim_task_handler, complete_task_handler,
-    fail_task_handler,
+    claim_task_handler, complete_task_handler, fail_task_handler, get_ai_task_handler,
+    list_ai_tasks_handler,
 };
-pub use validation::{run_validation_handler, run_quick_validation_handler};
+pub use validation::{run_quick_validation_handler, run_validation_handler};
 
 // Backwards compatibility aliases for old handler names (with ai_ prefix)
 pub use agents::{
-    agent_heartbeat_handler as ai_agent_heartbeat_handler, get_agent_handler as ai_get_agent_handler,
-    list_agents_handler as ai_list_agents_handler, register_agent_handler as ai_register_agent_handler,
-    unregister_agent_handler as ai_unregister_agent_handler, update_agent_handler as ai_update_agent_handler,
+    agent_heartbeat_handler as ai_agent_heartbeat_handler,
+    get_agent_handler as ai_get_agent_handler, list_agents_handler as ai_list_agents_handler,
+    register_agent_handler as ai_register_agent_handler,
+    unregister_agent_handler as ai_unregister_agent_handler,
+    update_agent_handler as ai_update_agent_handler,
 };
 pub use contributions::{
     approve_contribution_handler as ai_approve_contribution_handler,
@@ -53,8 +55,7 @@ pub use contributions::{
     submit_contribution_handler as ai_submit_contribution_handler,
 };
 pub use learning::{
-    get_feedback_handler as ai_get_feedback_handler,
-    get_pattern_handler as ai_get_pattern_handler,
+    get_feedback_handler as ai_get_feedback_handler, get_pattern_handler as ai_get_pattern_handler,
     get_recommendations_handler as ai_get_recommendations_handler,
     list_feedback_handler as ai_list_feedback_handler,
     list_patterns_handler as ai_list_patterns_handler,
@@ -74,19 +75,17 @@ pub use recovery::{
     retry_task_handler as ai_retry_task_handler,
 };
 pub use tasks::{
-    claim_task_handler as claim_ai_task_handler,
-    complete_task_handler as complete_ai_task_handler,
-    fail_task_handler as fail_ai_task_handler,
-    get_ai_task_handler as ai_get_ai_task_handler,
+    claim_task_handler as claim_ai_task_handler, complete_task_handler as complete_ai_task_handler,
+    fail_task_handler as fail_ai_task_handler, get_ai_task_handler as ai_get_ai_task_handler,
     list_ai_tasks_handler as ai_list_ai_tasks_handler,
 };
 
 use axum::{extract::Path, extract::State, response::Json, Extension};
 use serde::Deserialize;
 
+use crate::error::DbError;
 use crate::server::auth::Claims;
 use crate::server::handlers::AppState;
-use crate::error::DbError;
 
 /// Request for generic content generation
 #[derive(Debug, Deserialize)]

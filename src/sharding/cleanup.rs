@@ -3,7 +3,11 @@
 //! This module handles cleanup of orphaned shard collections when nodes
 //leave the cluster or shards are reassigned.
 
-#![allow(clippy::too_many_arguments, clippy::type_complexity, clippy::result_large_err)]
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::result_large_err
+)]
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

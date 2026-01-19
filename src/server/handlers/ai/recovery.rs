@@ -8,9 +8,9 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::server::handlers::AppState;
 use crate::ai::{ListRecoveryEventsResponse, RecoveryConfig, RecoverySystemStatus, RecoveryWorker};
 use crate::error::DbError;
+use crate::server::handlers::AppState;
 
 /// GET /_api/database/{db}/ai/recovery/status - Get recovery system status
 ///

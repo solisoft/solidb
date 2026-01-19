@@ -414,100 +414,97 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
             }
 
             // DOCUMENT(id) or DOCUMENT(collection, key) or DOCUMENT(collection, [keys])
-            "DOCUMENT" => {
-                match evaluated_args.len() {
-                    1 => {
-                        match &evaluated_args[0] {
-                            Value::String(id) => {
+            "DOCUMENT" => match evaluated_args.len() {
+                1 => match &evaluated_args[0] {
+                    Value::String(id) => {
+                        if let Some((collection_name, key)) = id.split_once('/') {
+                            let collection = if collection_name.contains(':') {
+                                self.storage.get_collection(collection_name)
+                            } else {
+                                self.get_collection(collection_name)
+                            }?;
+
+                            match collection.get(key) {
+                                Ok(doc) => Ok(doc.to_value()),
+                                Err(_) => Ok(Value::Null),
+                            }
+                        } else {
+                            Err(DbError::ExecutionError(
+                                "DOCUMENT: id must be in format 'collection/key'".to_string(),
+                            ))
+                        }
+                    }
+                    Value::Array(ids) => {
+                        let mut results = Vec::new();
+                        for id_val in ids {
+                            if let Some(id) = id_val.as_str() {
                                 if let Some((collection_name, key)) = id.split_once('/') {
-                                    let collection = if collection_name.contains(':') {
+                                    let collection_result = if collection_name.contains(':') {
                                         self.storage.get_collection(collection_name)
                                     } else {
                                         self.get_collection(collection_name)
-                                    }?;
+                                    };
 
-                                    match collection.get(key) {
-                                        Ok(doc) => Ok(doc.to_value()),
-                                        Err(_) => Ok(Value::Null),
-                                    }
-                                } else {
-                                    Err(DbError::ExecutionError(
-                                        "DOCUMENT: id must be in format 'collection/key'".to_string(),
-                                    ))
-                                }
-                            }
-                            Value::Array(ids) => {
-                                let mut results = Vec::new();
-                                for id_val in ids {
-                                    if let Some(id) = id_val.as_str() {
-                                        if let Some((collection_name, key)) = id.split_once('/') {
-                                            let collection_result = if collection_name.contains(':') {
-                                                self.storage.get_collection(collection_name)
-                                            } else {
-                                                self.get_collection(collection_name)
-                                            };
-
-                                            if let Ok(collection) = collection_result {
-                                                if let Ok(doc) = collection.get(key) {
-                                                    results.push(doc.to_value());
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                Ok(Value::Array(results))
-                            }
-                            Value::Null => Ok(Value::Null),
-                            _ => Err(DbError::ExecutionError(
-                                "DOCUMENT: first argument must be a string or array".to_string(),
-                            )),
-                        }
-                    }
-                    2 => {
-                        let collection_name = evaluated_args[0].as_str().ok_or_else(|| {
-                            DbError::ExecutionError(
-                                "DOCUMENT: collection name must be a string".to_string(),
-                            )
-                        })?;
-                        let collection = if collection_name.contains(':') {
-                            self.storage.get_collection(collection_name)?
-                        } else {
-                            self.get_collection(collection_name)?
-                        };
-
-                        match &evaluated_args[1] {
-                            Value::String(key) => match collection.get(key) {
-                                Ok(doc) => Ok(doc.to_value()),
-                                Err(_) => Ok(Value::Null),
-                            },
-                            Value::Array(keys) => {
-                                let mut results = Vec::new();
-                                for key_val in keys {
-                                    if let Some(key) = key_val.as_str() {
+                                    if let Ok(collection) = collection_result {
                                         if let Ok(doc) = collection.get(key) {
                                             results.push(doc.to_value());
                                         }
                                     }
                                 }
-                                Ok(Value::Array(results))
                             }
-                            _ => Err(DbError::ExecutionError(
-                                "DOCUMENT: second argument must be a string or array of keys"
-                                    .to_string(),
-                            )),
                         }
+                        Ok(Value::Array(results))
                     }
+                    Value::Null => Ok(Value::Null),
                     _ => Err(DbError::ExecutionError(
-                        "DOCUMENT requires 1 or 2 arguments".to_string(),
+                        "DOCUMENT: first argument must be a string or array".to_string(),
                     )),
+                },
+                2 => {
+                    let collection_name = evaluated_args[0].as_str().ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "DOCUMENT: collection name must be a string".to_string(),
+                        )
+                    })?;
+                    let collection = if collection_name.contains(':') {
+                        self.storage.get_collection(collection_name)?
+                    } else {
+                        self.get_collection(collection_name)?
+                    };
+
+                    match &evaluated_args[1] {
+                        Value::String(key) => match collection.get(key) {
+                            Ok(doc) => Ok(doc.to_value()),
+                            Err(_) => Ok(Value::Null),
+                        },
+                        Value::Array(keys) => {
+                            let mut results = Vec::new();
+                            for key_val in keys {
+                                if let Some(key) = key_val.as_str() {
+                                    if let Ok(doc) = collection.get(key) {
+                                        results.push(doc.to_value());
+                                    }
+                                }
+                            }
+                            Ok(Value::Array(results))
+                        }
+                        _ => Err(DbError::ExecutionError(
+                            "DOCUMENT: second argument must be a string or array of keys"
+                                .to_string(),
+                        )),
+                    }
                 }
-            }
+                _ => Err(DbError::ExecutionError(
+                    "DOCUMENT requires 1 or 2 arguments".to_string(),
+                )),
+            },
 
             // VECTOR_INDEX_STATS(collection, index_name) - get vector index statistics
             "VECTOR_INDEX_STATS" => {
                 if evaluated_args.len() != 2 {
                     return Err(DbError::ExecutionError(
-                        "VECTOR_INDEX_STATS requires 2 arguments: collection, index_name".to_string(),
+                        "VECTOR_INDEX_STATS requires 2 arguments: collection, index_name"
+                            .to_string(),
                     ));
                 }
 
@@ -541,14 +538,38 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
                 let mut result = serde_json::Map::new();
                 result.insert("name".to_string(), Value::String(stats.name));
                 result.insert("field".to_string(), Value::String(stats.field));
-                result.insert("dimension".to_string(), Value::Number(serde_json::Number::from(stats.dimension)));
-                result.insert("vectors".to_string(), Value::Number(serde_json::Number::from(stats.indexed_vectors)));
-                result.insert("metric".to_string(), Value::String(format!("{:?}", stats.metric).to_lowercase()));
-                result.insert("quantization".to_string(), Value::String(format!("{:?}", stats.quantization).to_lowercase()));
-                result.insert("memory_bytes".to_string(), Value::Number(serde_json::Number::from(stats.memory_bytes)));
-                result.insert("compression_ratio".to_string(), Value::Number(number_from_f64(stats.compression_ratio as f64)));
-                result.insert("m".to_string(), Value::Number(serde_json::Number::from(stats.m)));
-                result.insert("ef_construction".to_string(), Value::Number(serde_json::Number::from(stats.ef_construction)));
+                result.insert(
+                    "dimension".to_string(),
+                    Value::Number(serde_json::Number::from(stats.dimension)),
+                );
+                result.insert(
+                    "vectors".to_string(),
+                    Value::Number(serde_json::Number::from(stats.indexed_vectors)),
+                );
+                result.insert(
+                    "metric".to_string(),
+                    Value::String(format!("{:?}", stats.metric).to_lowercase()),
+                );
+                result.insert(
+                    "quantization".to_string(),
+                    Value::String(format!("{:?}", stats.quantization).to_lowercase()),
+                );
+                result.insert(
+                    "memory_bytes".to_string(),
+                    Value::Number(serde_json::Number::from(stats.memory_bytes)),
+                );
+                result.insert(
+                    "compression_ratio".to_string(),
+                    Value::Number(number_from_f64(stats.compression_ratio as f64)),
+                );
+                result.insert(
+                    "m".to_string(),
+                    Value::Number(serde_json::Number::from(stats.m)),
+                );
+                result.insert(
+                    "ef_construction".to_string(),
+                    Value::Number(serde_json::Number::from(stats.ef_construction)),
+                );
 
                 Ok(Value::Object(result))
             }

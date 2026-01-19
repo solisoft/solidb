@@ -1,8 +1,8 @@
 //! Shard assignment and routing logic
 
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
 
 /// Route a key to a shard ID using consistent hashing
 pub fn route_key(key: &str, num_shards: u16) -> u16 {

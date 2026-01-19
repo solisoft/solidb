@@ -2,7 +2,11 @@
 //!
 //! This module handles shard healing when nodes fail or become unhealthy.
 
-#![allow(clippy::too_many_arguments, clippy::type_complexity, clippy::result_large_err)]
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::result_large_err
+)]
 
 use std::collections::HashMap;
 use std::sync::{

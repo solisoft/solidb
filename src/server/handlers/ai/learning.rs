@@ -8,13 +8,13 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::server::handlers::AppState;
 use crate::ai::{
     FeedbackEvent, FeedbackOutcome, FeedbackQuery, FeedbackSystem, FeedbackType, LearningSystem,
     ListFeedbackResponse, ListPatternsResponse, Pattern, PatternQuery, ProcessingResult,
     Recommendation,
 };
 use crate::error::DbError;
+use crate::server::handlers::AppState;
 
 /// Query parameters for listing feedback
 #[derive(Debug, Deserialize)]
@@ -86,7 +86,10 @@ pub async fn get_feedback_handler(
     let event = FeedbackSystem::get_feedback(&state.storage, &db_name, &feedback_id)?;
     match event {
         Some(e) => Ok(Json(e)),
-        None => Err(DbError::DocumentNotFound(format!("Feedback {}", feedback_id))),
+        None => Err(DbError::DocumentNotFound(format!(
+            "Feedback {}",
+            feedback_id
+        ))),
     }
 }
 
@@ -115,8 +118,10 @@ impl ListPatternsQueryParams {
                     _ => None,
                 }
             }),
-            task_type: self.task_type.as_ref().and_then(|t| {
-                match t.to_lowercase().as_str() {
+            task_type: self
+                .task_type
+                .as_ref()
+                .and_then(|t| match t.to_lowercase().as_str() {
                     "analyze_contribution" => Some(crate::ai::AITaskType::AnalyzeContribution),
                     "generate_code" => Some(crate::ai::AITaskType::GenerateCode),
                     "validate_code" => Some(crate::ai::AITaskType::ValidateCode),
@@ -124,8 +129,7 @@ impl ListPatternsQueryParams {
                     "prepare_review" => Some(crate::ai::AITaskType::PrepareReview),
                     "merge_changes" => Some(crate::ai::AITaskType::MergeChanges),
                     _ => None,
-                }
-            }),
+                }),
             min_confidence: self.min_confidence,
             limit: self.limit,
         }

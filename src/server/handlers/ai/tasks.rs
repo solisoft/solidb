@@ -8,9 +8,9 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::server::handlers::AppState;
 use crate::ai::{orchestrator::TaskOrchestrator, AITask, AITaskStatus, ListAITasksResponse};
 use crate::error::DbError;
+use crate::server::handlers::AppState;
 
 /// Query parameters for listing AI tasks
 #[derive(Debug, Deserialize)]
@@ -126,8 +126,7 @@ pub async fn claim_task_handler(
     if task.status != AITaskStatus::Pending {
         return Err(DbError::BadRequest(format!(
             "Task {} is not pending (current status: {})",
-            task_id,
-            task.status
+            task_id, task.status
         )));
     }
 
@@ -203,8 +202,7 @@ pub async fn complete_task_handler(
     if task.status != AITaskStatus::Running {
         return Err(DbError::BadRequest(format!(
             "Task {} is not in progress (current status: {})",
-            task_id,
-            task.status
+            task_id, task.status
         )));
     }
 
@@ -288,7 +286,8 @@ pub async fn complete_task_handler(
     }
 
     // Run orchestration to determine next steps
-    let orchestration_result = TaskOrchestrator::on_task_complete(&task, &contribution, Some(&output));
+    let orchestration_result =
+        TaskOrchestrator::on_task_complete(&task, &contribution, Some(&output));
 
     // Create next tasks
     let mut next_stage = None;
@@ -339,8 +338,7 @@ pub async fn fail_task_handler(
     if task.status != AITaskStatus::Running {
         return Err(DbError::BadRequest(format!(
             "Task {} is not in progress (current status: {})",
-            task_id,
-            task.status
+            task_id, task.status
         )));
     }
 

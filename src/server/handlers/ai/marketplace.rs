@@ -8,12 +8,12 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::server::handlers::AppState;
 use crate::ai::{
     AgentDiscoveryQuery, AgentDiscoveryResponse, AgentMarketplace, AgentRankingsResponse,
     AgentReputation,
 };
 use crate::error::DbError;
+use crate::server::handlers::AppState;
 
 /// Query parameters for marketplace discovery
 #[derive(Debug, Deserialize)]
@@ -42,14 +42,16 @@ pub async fn discover_agents_handler(
         required_capabilities: params
             .capabilities
             .map(|c| c.split(',').map(|s| s.trim().to_string()).collect()),
-        agent_type: params.agent_type.and_then(|s| match s.to_lowercase().as_str() {
-            "analyzer" => Some(crate::ai::AgentType::Analyzer),
-            "coder" => Some(crate::ai::AgentType::Coder),
-            "tester" => Some(crate::ai::AgentType::Tester),
-            "reviewer" => Some(crate::ai::AgentType::Reviewer),
-            "integrator" => Some(crate::ai::AgentType::Integrator),
-            _ => None,
-        }),
+        agent_type: params
+            .agent_type
+            .and_then(|s| match s.to_lowercase().as_str() {
+                "analyzer" => Some(crate::ai::AgentType::Analyzer),
+                "coder" => Some(crate::ai::AgentType::Coder),
+                "tester" => Some(crate::ai::AgentType::Tester),
+                "reviewer" => Some(crate::ai::AgentType::Reviewer),
+                "integrator" => Some(crate::ai::AgentType::Integrator),
+                _ => None,
+            }),
         min_trust_score: params.min_trust_score,
         task_type: params.task_type,
         limit: None,

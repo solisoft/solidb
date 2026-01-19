@@ -2,7 +2,11 @@
 //!
 //! This module handles shard rebalancing across cluster nodes.
 
-#![allow(clippy::too_many_arguments, clippy::type_complexity, clippy::result_large_err)]
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::result_large_err
+)]
 
 use std::collections::HashMap;
 use std::sync::{
