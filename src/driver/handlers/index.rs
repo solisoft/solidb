@@ -2,6 +2,29 @@ use super::DriverHandler;
 use crate::driver::protocol::{DriverError, Response};
 use crate::storage::{VectorIndexConfig, VectorMetric};
 
+// ==================== Configuration Structs ====================
+
+/// Configuration for geo_near query
+pub struct GeoNearConfig {
+    pub collection: String,
+    pub field: String,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub radius: Option<f64>,
+    pub limit: Option<i32>,
+}
+
+/// Configuration for creating a vector index
+pub struct VectorIndexCreateConfig {
+    pub collection: String,
+    pub name: String,
+    pub field: String,
+    pub dimensions: i32,
+    pub metric: Option<String>,
+    pub ef_construction: Option<i32>,
+    pub m: Option<i32>,
+}
+
 // ==================== Standard Index Operations ====================
 
 pub fn handle_create_index(
@@ -136,19 +159,14 @@ pub fn handle_delete_geo_index(
 pub fn handle_geo_near(
     handler: &DriverHandler,
     database: String,
-    collection: String,
-    field: String,
-    latitude: f64,
-    longitude: f64,
-    radius: Option<f64>,
-    limit: Option<i32>,
+    config: GeoNearConfig,
 ) -> Response {
-    match handler.get_collection(&database, &collection) {
+    match handler.get_collection(&database, &config.collection) {
         Ok(coll) => {
-            let limit_val = limit.map(|l| l.max(0) as usize).unwrap_or(10);
+            let limit_val = config.limit.map(|l| l.max(0) as usize).unwrap_or(10);
 
-            let results_opt = if let Some(r) = radius {
-                coll.geo_within(&field, latitude, longitude, r)
+            let results_opt = if let Some(r) = config.radius {
+                coll.geo_within(&config.field, config.latitude, config.longitude, r)
                     .map(|mut res| {
                         if limit_val < res.len() {
                             res.truncate(limit_val);
@@ -156,7 +174,7 @@ pub fn handle_geo_near(
                         res
                     })
             } else {
-                coll.geo_near(&field, latitude, longitude, limit_val)
+                coll.geo_near(&config.field, config.latitude, config.longitude, limit_val)
             };
 
             match results_opt {
@@ -175,35 +193,30 @@ pub fn handle_geo_near(
 pub fn handle_create_vector_index(
     handler: &DriverHandler,
     database: String,
-    collection: String,
-    name: String,
-    field: String,
-    dimensions: i32,
-    metric: Option<String>,
-    ef_construction: Option<i32>,
-    m: Option<i32>,
+    config: VectorIndexCreateConfig,
 ) -> Response {
-    match handler.get_collection(&database, &collection) {
+    match handler.get_collection(&database, &config.collection) {
         Ok(coll) => {
-            let mut config = VectorIndexConfig::new(name, field, dimensions as usize);
+            let mut idx_config =
+                VectorIndexConfig::new(config.name, config.field, config.dimensions as usize);
 
-            if let Some(m_str) = metric {
+            if let Some(m_str) = config.metric {
                 if let Ok(val) =
                     serde_json::from_value::<VectorMetric>(serde_json::Value::String(m_str))
                 {
-                    config = config.with_metric(val);
+                    idx_config = idx_config.with_metric(val);
                 }
             }
 
-            if let Some(ef) = ef_construction {
-                config = config.with_ef_construction(ef as usize);
+            if let Some(ef) = config.ef_construction {
+                idx_config = idx_config.with_ef_construction(ef as usize);
             }
 
-            if let Some(m_val) = m {
-                config = config.with_m(m_val as usize);
+            if let Some(m_val) = config.m {
+                idx_config = idx_config.with_m(m_val as usize);
             }
 
-            match coll.create_vector_index(config) {
+            match coll.create_vector_index(idx_config) {
                 Ok(_) => Response::ok_empty(),
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
             }

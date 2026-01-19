@@ -283,12 +283,14 @@ impl DriverHandler {
                 scheduler::handle_script_create(
                     self,
                     database,
-                    name,
-                    path,
-                    methods,
-                    code,
-                    description,
-                    collection,
+                    scheduler::ScriptCreateConfig {
+                        name,
+                        path,
+                        methods,
+                        code,
+                        description,
+                        collection,
+                    },
                 )
                 .await
             }
@@ -315,11 +317,13 @@ impl DriverHandler {
                     self,
                     database,
                     script_id,
-                    name,
-                    path,
-                    methods,
-                    code,
-                    description,
+                    scheduler::ScriptUpdateConfig {
+                        name,
+                        path,
+                        methods,
+                        code,
+                        description,
+                    },
                 )
                 .await
             }
@@ -343,7 +347,17 @@ impl DriverHandler {
                 limit,
                 offset,
             } => {
-                scheduler::handle_list_jobs(self, database, queue_name, status, limit, offset).await
+                scheduler::handle_list_jobs(
+                    self,
+                    database,
+                    scheduler::ListJobsConfig {
+                        queue_name,
+                        status,
+                        limit,
+                        offset,
+                    },
+                )
+                .await
             }
 
             Command::EnqueueJob {
@@ -358,12 +372,14 @@ impl DriverHandler {
                 scheduler::handle_enqueue_job(
                     self,
                     database,
-                    queue_name,
-                    script_path,
-                    params,
-                    priority,
-                    run_at,
-                    max_retries,
+                    scheduler::EnqueueJobConfig {
+                        queue_name,
+                        script_path,
+                        params,
+                        priority,
+                        run_at,
+                        max_retries,
+                    },
                 )
                 .await
             }
@@ -390,13 +406,15 @@ impl DriverHandler {
                 scheduler::handle_create_cron_job(
                     self,
                     database,
-                    name,
-                    cron_expression,
-                    script_path,
-                    params,
-                    queue,
-                    priority,
-                    max_retries,
+                    scheduler::CronJobCreateConfig {
+                        name,
+                        cron_expression,
+                        script_path,
+                        params,
+                        queue,
+                        priority,
+                        max_retries,
+                    },
                 )
                 .await
             }
@@ -416,13 +434,15 @@ impl DriverHandler {
                     self,
                     database,
                     cron_id,
-                    name,
-                    cron_expression,
-                    script_path,
-                    params,
-                    queue,
-                    priority,
-                    max_retries,
+                    scheduler::CronJobUpdateConfig {
+                        name,
+                        cron_expression,
+                        script_path,
+                        params,
+                        queue,
+                        priority,
+                        max_retries,
+                    },
                 )
                 .await
             }
@@ -456,15 +476,17 @@ impl DriverHandler {
                 scheduler::handle_create_trigger(
                     self,
                     database,
-                    name,
-                    collection,
-                    events,
-                    script_path,
-                    filter,
-                    queue,
-                    priority,
-                    max_retries,
-                    enabled,
+                    scheduler::TriggerCreateConfig {
+                        name,
+                        collection,
+                        events,
+                        script_path,
+                        filter,
+                        queue,
+                        priority,
+                        max_retries,
+                        enabled,
+                    },
                 )
                 .await
             }
@@ -490,14 +512,16 @@ impl DriverHandler {
                     self,
                     database,
                     trigger_id,
-                    name,
-                    events,
-                    script_path,
-                    filter,
-                    queue,
-                    priority,
-                    max_retries,
-                    enabled,
+                    scheduler::TriggerUpdateConfig {
+                        name,
+                        events,
+                        script_path,
+                        filter,
+                        queue,
+                        priority,
+                        max_retries,
+                        enabled,
+                    },
                 )
                 .await
             }
@@ -694,7 +718,16 @@ impl DriverHandler {
                 radius,
                 limit,
             } => index::handle_geo_near(
-                self, database, collection, field, latitude, longitude, radius, limit,
+                self,
+                database,
+                index::GeoNearConfig {
+                    collection,
+                    field,
+                    latitude,
+                    longitude,
+                    radius,
+                    limit,
+                },
             ),
 
             Command::GeoWithin { .. } => Response::error(DriverError::InvalidCommand(
@@ -714,13 +747,15 @@ impl DriverHandler {
             } => index::handle_create_vector_index(
                 self,
                 database,
-                collection,
-                name,
-                field,
-                dimensions,
-                metric,
-                ef_construction,
-                m,
+                index::VectorIndexCreateConfig {
+                    collection,
+                    name,
+                    field,
+                    dimensions,
+                    metric,
+                    ef_construction,
+                    m,
+                },
             ),
 
             Command::ListVectorIndexes {

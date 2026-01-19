@@ -1159,7 +1159,10 @@ impl<'a> QueryExecutor<'a> {
                                     // Include left-side variable with null (no match)
                                     new_ctx.insert(left_variable_name.clone(), Value::Null);
                                     // Wrap right doc in array for consistency with Phase 1
-                                    new_ctx.insert(join_clause.variable.clone(), Value::Array(vec![right_doc.clone()]));
+                                    new_ctx.insert(
+                                        join_clause.variable.clone(),
+                                        Value::Array(vec![right_doc.clone()]),
+                                    );
                                     new_rows.push(new_ctx);
                                 }
                             }

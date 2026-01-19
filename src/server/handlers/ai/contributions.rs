@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::server::auth::Claims;
 use crate::server::handlers::AppState;
 use crate::ai::{
-    Contribution, ContributionStatus, ListContributionsResponse,
+    AITask, Contribution, ContributionStatus, ListContributionsResponse, Priority,
     ReviewContributionRequest, SubmitContributionRequest, SubmitContributionResponse,
 };
 use crate::error::DbError;
@@ -55,9 +55,9 @@ pub async fn submit_contribution_handler(
     // Create the contribution using the constructor
     let contribution = Contribution::new(
         request.contribution_type,
-        request.description,
+        request.description.clone(),
         username,
-        request.context,
+        request.context.clone(),
     );
 
     let contribution_id = contribution.id.clone();
@@ -68,10 +68,28 @@ pub async fn submit_contribution_handler(
         .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
     coll.insert(doc_value)?;
 
+    // Create initial AI analysis task
+    let priority = request
+        .context
+        .as_ref()
+        .map(|c| match c.priority {
+            Priority::Critical => 100,
+            Priority::High => 75,
+            Priority::Medium => 50,
+            Priority::Low => 25,
+        })
+        .unwrap_or(50);
+
+    let task = AITask::analyze(contribution_id.clone(), priority);
+    let tasks_coll = db.get_collection("_ai_tasks")?;
+    let task_value = serde_json::to_value(&task)
+        .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+    tasks_coll.insert(task_value)?;
+
     Ok(Json(SubmitContributionResponse {
         id: contribution_id,
-        status: ContributionStatus::Submitted.to_string(),
-        message: "Contribution submitted successfully".to_string(),
+        status: "success".to_string(),
+        message: "Contribution submitted successfully. AI analysis task queued.".to_string(),
     }))
 }
 
@@ -168,12 +186,15 @@ pub async fn approve_contribution_handler(
     let mut contribution: Contribution = serde_json::from_value(doc.to_value())
         .map_err(|e| DbError::InternalError(format!("Corrupted contribution data: {}", e)))?;
 
-    if contribution.status != ContributionStatus::Review {
-        return Err(DbError::BadRequest(format!(
-            "Contribution {} is not in review status (current status: {})",
-            contribution_id,
-            contribution.status
-        )));
+    // Allow approval from Submitted, Analyzing, or Review status
+    match contribution.status {
+        ContributionStatus::Submitted | ContributionStatus::Analyzing | ContributionStatus::Review => {}
+        _ => {
+            return Err(DbError::BadRequest(format!(
+                "Cannot approve contribution in status {}",
+                contribution.status
+            )));
+        }
     }
 
     contribution.status = ContributionStatus::Approved;
@@ -204,12 +225,15 @@ pub async fn reject_contribution_handler(
     let mut contribution: Contribution = serde_json::from_value(doc.to_value())
         .map_err(|e| DbError::InternalError(format!("Corrupted contribution data: {}", e)))?;
 
-    if contribution.status != ContributionStatus::Review {
-        return Err(DbError::BadRequest(format!(
-            "Contribution {} is not in review status (current status: {})",
-            contribution_id,
-            contribution.status
-        )));
+    // Allow rejection from Submitted, Analyzing, or Review status
+    match contribution.status {
+        ContributionStatus::Submitted | ContributionStatus::Analyzing | ContributionStatus::Review => {}
+        _ => {
+            return Err(DbError::BadRequest(format!(
+                "Cannot reject contribution in status {}",
+                contribution.status
+            )));
+        }
     }
 
     contribution.status = ContributionStatus::Rejected;

@@ -42,13 +42,13 @@ pub use marketplace::{
 };
 
 pub use learning::{
-    ActionType, LearningSystem, ListPatternsResponse, Pattern, PatternMatch,
-    PatternQuery, PatternSignature, PatternType, ProcessingResult, Recommendation, SuggestedAction,
+    ActionType, LearningSystem, ListPatternsResponse, Pattern, PatternMatch, PatternQuery,
+    PatternSignature, PatternType, ProcessingResult, Recommendation, SuggestedAction,
 };
 
 pub use feedback::{
-    FeedbackContext, FeedbackEvent, FeedbackOutcome, FeedbackQuery, FeedbackType,
-    FeedbackSystem, ListFeedbackResponse, TestOutput, FEEDBACK_COLLECTION,
+    FeedbackContext, FeedbackEvent, FeedbackOutcome, FeedbackQuery, FeedbackSystem, FeedbackType,
+    ListFeedbackResponse, TestOutput, FEEDBACK_COLLECTION,
 };
 
 pub use recovery::{

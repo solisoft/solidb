@@ -3,6 +3,7 @@
 //! This module provides backwards-compatible types for sharding
 //! that map to the new sync module's ShardConfig.
 
+pub mod assignment;
 pub mod batch;
 pub mod cleanup;
 pub mod coordinator;
@@ -13,4 +14,4 @@ pub mod rebalance;
 pub mod repro_issue;
 pub mod router;
 
-pub use coordinator::{CollectionShardConfig, ShardCoordinator};
+pub use coordinator::{CollectionShardConfig, ShardAssignment, ShardTable, ShardCoordinator};

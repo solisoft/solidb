@@ -1,18 +1,100 @@
 use super::DriverHandler;
 use crate::driver::protocol::{DriverError, Response};
+use serde_json::Value;
 use std::collections::HashSet;
+
+// ==================== Configuration Structs ====================
+
+/// Configuration for creating a script
+pub struct ScriptCreateConfig {
+    pub name: String,
+    pub path: String,
+    pub methods: Vec<String>,
+    pub code: String,
+    pub description: Option<String>,
+    pub collection: Option<String>,
+}
+
+/// Configuration for updating a script
+pub struct ScriptUpdateConfig {
+    pub name: Option<String>,
+    pub path: Option<String>,
+    pub methods: Option<Vec<String>>,
+    pub code: Option<String>,
+    pub description: Option<String>,
+}
+
+/// Configuration for listing jobs
+pub struct ListJobsConfig {
+    pub queue_name: String,
+    pub status: Option<String>,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
+/// Configuration for enqueuing a job
+pub struct EnqueueJobConfig {
+    pub queue_name: String,
+    pub script_path: String,
+    pub params: Option<Value>,
+    pub priority: Option<i32>,
+    pub run_at: Option<i64>,
+    pub max_retries: Option<u32>,
+}
+
+/// Configuration for creating a cron job
+pub struct CronJobCreateConfig {
+    pub name: String,
+    pub cron_expression: String,
+    pub script_path: String,
+    pub params: Option<Value>,
+    pub queue: Option<String>,
+    pub priority: Option<i32>,
+    pub max_retries: Option<u32>,
+}
+
+/// Configuration for updating a cron job
+pub struct CronJobUpdateConfig {
+    pub name: Option<String>,
+    pub cron_expression: Option<String>,
+    pub script_path: Option<String>,
+    pub params: Option<Value>,
+    pub queue: Option<String>,
+    pub priority: Option<i32>,
+    pub max_retries: Option<u32>,
+}
+
+/// Configuration for creating a trigger
+pub struct TriggerCreateConfig {
+    pub name: String,
+    pub collection: String,
+    pub events: Vec<String>,
+    pub script_path: String,
+    pub filter: Option<String>,
+    pub queue: Option<String>,
+    pub priority: Option<i32>,
+    pub max_retries: Option<u32>,
+    pub enabled: bool,
+}
+
+/// Configuration for updating a trigger
+pub struct TriggerUpdateConfig {
+    pub name: Option<String>,
+    pub events: Option<Vec<String>>,
+    pub script_path: Option<String>,
+    pub filter: Option<String>,
+    pub queue: Option<String>,
+    pub priority: Option<i32>,
+    pub max_retries: Option<u32>,
+    pub enabled: Option<bool>,
+}
 
 // ==================== Script Management ====================
 
 pub async fn handle_script_create(
     handler: &DriverHandler,
     database: String,
-    name: String,
-    path: String,
-    methods: Vec<String>,
-    code: String,
-    description: Option<String>,
-    collection: Option<String>,
+    config: ScriptCreateConfig,
 ) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => {
@@ -22,12 +104,12 @@ pub async fn handle_script_create(
             };
 
             let script_doc = serde_json::json!({
-                "name": name,
-                "path": path,
-                "methods": methods,
-                "code": code,
-                "description": description,
-                "collection": collection,
+                "name": config.name,
+                "path": config.path,
+                "methods": config.methods,
+                "code": config.code,
+                "description": config.description,
+                "collection": config.collection,
                 "created_at": chrono::Utc::now().to_rfc3339(),
                 "updated_at": chrono::Utc::now().to_rfc3339(),
             });
@@ -75,29 +157,25 @@ pub async fn handle_script_update(
     handler: &DriverHandler,
     database: String,
     script_id: String,
-    name: Option<String>,
-    path: Option<String>,
-    methods: Option<Vec<String>>,
-    code: Option<String>,
-    description: Option<String>,
+    config: ScriptUpdateConfig,
 ) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => match db.get_collection("_scripts") {
             Ok(coll) => {
                 let mut update = serde_json::Map::new();
-                if let Some(v) = name {
+                if let Some(v) = config.name {
                     update.insert("name".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = path {
+                if let Some(v) = config.path {
                     update.insert("path".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = methods {
+                if let Some(v) = config.methods {
                     update.insert("methods".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = code {
+                if let Some(v) = config.code {
                     update.insert("code".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = description {
+                if let Some(v) = config.description {
                     update.insert("description".to_string(), serde_json::json!(v));
                 }
                 update.insert(
@@ -169,10 +247,7 @@ pub async fn handle_list_queues(handler: &DriverHandler, database: String) -> Re
 pub async fn handle_list_jobs(
     handler: &DriverHandler,
     database: String,
-    queue_name: String,
-    status: Option<String>,
-    limit: Option<usize>,
-    offset: Option<usize>,
+    config: ListJobsConfig,
 ) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => match db.get_collection("_jobs") {
@@ -185,9 +260,9 @@ pub async fn handle_list_jobs(
                             .data
                             .get("queue")
                             .and_then(|v| v.as_str())
-                            .map(|q| q == queue_name)
+                            .map(|q| q == config.queue_name)
                             .unwrap_or(false);
-                        let status_match = status.as_ref().map_or(true, |s| {
+                        let status_match = config.status.as_ref().is_none_or(|s| {
                             job.data
                                 .get("status")
                                 .and_then(|v| v.as_str())
@@ -196,8 +271,8 @@ pub async fn handle_list_jobs(
                         });
                         queue_match && status_match
                     })
-                    .skip(offset.unwrap_or(0))
-                    .take(limit.unwrap_or(50))
+                    .skip(config.offset.unwrap_or(0))
+                    .take(config.limit.unwrap_or(50))
                     .map(|d| d.to_value())
                     .collect();
                 Response::ok(serde_json::json!({"jobs": jobs}))
@@ -211,12 +286,7 @@ pub async fn handle_list_jobs(
 pub async fn handle_enqueue_job(
     handler: &DriverHandler,
     database: String,
-    queue_name: String,
-    script_path: String,
-    params: Option<serde_json::Value>,
-    priority: Option<i32>,
-    run_at: Option<i64>,
-    max_retries: Option<u32>,
+    config: EnqueueJobConfig,
 ) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => {
@@ -226,12 +296,12 @@ pub async fn handle_enqueue_job(
             };
 
             let job_doc = serde_json::json!({
-                "queue": queue_name,
-                "script_path": script_path,
-                "params": params.unwrap_or(serde_json::json!({})),
-                "priority": priority.unwrap_or(0),
-                "run_at": run_at,
-                "max_retries": max_retries.unwrap_or(3),
+                "queue": config.queue_name,
+                "script_path": config.script_path,
+                "params": config.params.unwrap_or(serde_json::json!({})),
+                "priority": config.priority.unwrap_or(0),
+                "run_at": config.run_at,
+                "max_retries": config.max_retries.unwrap_or(3),
                 "retry_count": 0,
                 "status": "pending",
                 "created_at": chrono::Utc::now().to_rfc3339(),
@@ -281,13 +351,7 @@ pub async fn handle_list_cron_jobs(handler: &DriverHandler, database: String) ->
 pub async fn handle_create_cron_job(
     handler: &DriverHandler,
     database: String,
-    name: String,
-    cron_expression: String,
-    script_path: String,
-    params: Option<serde_json::Value>,
-    queue: Option<String>,
-    priority: Option<i32>,
-    max_retries: Option<u32>,
+    config: CronJobCreateConfig,
 ) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => {
@@ -297,13 +361,13 @@ pub async fn handle_create_cron_job(
             };
 
             let cron_doc = serde_json::json!({
-                "name": name,
-                "cron_expression": cron_expression,
-                "script_path": script_path,
-                "params": params.unwrap_or(serde_json::json!({})),
-                "queue": queue.unwrap_or_else(|| "default".to_string()),
-                "priority": priority.unwrap_or(0),
-                "max_retries": max_retries.unwrap_or(3),
+                "name": config.name,
+                "cron_expression": config.cron_expression,
+                "script_path": config.script_path,
+                "params": config.params.unwrap_or(serde_json::json!({})),
+                "queue": config.queue.unwrap_or_else(|| "default".to_string()),
+                "priority": config.priority.unwrap_or(0),
+                "max_retries": config.max_retries.unwrap_or(3),
                 "created_at": chrono::Utc::now().to_rfc3339(),
                 "updated_at": chrono::Utc::now().to_rfc3339(),
             });
@@ -321,37 +385,31 @@ pub async fn handle_update_cron_job(
     handler: &DriverHandler,
     database: String,
     cron_id: String,
-    name: Option<String>,
-    cron_expression: Option<String>,
-    script_path: Option<String>,
-    params: Option<serde_json::Value>,
-    queue: Option<String>,
-    priority: Option<i32>,
-    max_retries: Option<u32>,
+    config: CronJobUpdateConfig,
 ) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => match db.get_collection("_cron_jobs") {
             Ok(coll) => {
                 let mut update = serde_json::Map::new();
-                if let Some(v) = name {
+                if let Some(v) = config.name {
                     update.insert("name".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = cron_expression {
+                if let Some(v) = config.cron_expression {
                     update.insert("cron_expression".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = script_path {
+                if let Some(v) = config.script_path {
                     update.insert("script_path".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = params {
+                if let Some(v) = config.params {
                     update.insert("params".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = queue {
+                if let Some(v) = config.queue {
                     update.insert("queue".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = priority {
+                if let Some(v) = config.priority {
                     update.insert("priority".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = max_retries {
+                if let Some(v) = config.max_retries {
                     update.insert("max_retries".to_string(), serde_json::json!(v));
                 }
                 update.insert(
@@ -444,15 +502,7 @@ pub async fn handle_list_collection_triggers(
 pub async fn handle_create_trigger(
     handler: &DriverHandler,
     database: String,
-    name: String,
-    collection: String,
-    events: Vec<String>,
-    script_path: String,
-    filter: Option<String>,
-    queue: Option<String>,
-    priority: Option<i32>,
-    max_retries: Option<u32>,
-    enabled: bool,
+    config: TriggerCreateConfig,
 ) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => {
@@ -462,15 +512,15 @@ pub async fn handle_create_trigger(
             };
 
             let trigger_doc = serde_json::json!({
-                "name": name,
-                "collection": collection,
-                "events": events,
-                "script_path": script_path,
-                "filter": filter,
-                "queue": queue.unwrap_or_else(|| "default".to_string()),
-                "priority": priority.unwrap_or(0),
-                "max_retries": max_retries.unwrap_or(3),
-                "enabled": enabled,
+                "name": config.name,
+                "collection": config.collection,
+                "events": config.events,
+                "script_path": config.script_path,
+                "filter": config.filter,
+                "queue": config.queue.unwrap_or_else(|| "default".to_string()),
+                "priority": config.priority.unwrap_or(0),
+                "max_retries": config.max_retries.unwrap_or(3),
+                "enabled": config.enabled,
                 "created_at": chrono::Utc::now().to_rfc3339(),
                 "updated_at": chrono::Utc::now().to_rfc3339(),
             });
@@ -505,41 +555,34 @@ pub async fn handle_update_trigger(
     handler: &DriverHandler,
     database: String,
     trigger_id: String,
-    name: Option<String>,
-    events: Option<Vec<String>>,
-    script_path: Option<String>,
-    filter: Option<String>,
-    queue: Option<String>,
-    priority: Option<i32>,
-    max_retries: Option<u32>,
-    enabled: Option<bool>,
+    config: TriggerUpdateConfig,
 ) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => match db.get_collection("_triggers") {
             Ok(coll) => {
                 let mut update = serde_json::Map::new();
-                if let Some(v) = name {
+                if let Some(v) = config.name {
                     update.insert("name".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = events {
+                if let Some(v) = config.events {
                     update.insert("events".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = script_path {
+                if let Some(v) = config.script_path {
                     update.insert("script_path".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = filter {
+                if let Some(v) = config.filter {
                     update.insert("filter".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = queue {
+                if let Some(v) = config.queue {
                     update.insert("queue".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = priority {
+                if let Some(v) = config.priority {
                     update.insert("priority".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = max_retries {
+                if let Some(v) = config.max_retries {
                     update.insert("max_retries".to_string(), serde_json::json!(v));
                 }
-                if let Some(v) = enabled {
+                if let Some(v) = config.enabled {
                     update.insert("enabled".to_string(), serde_json::json!(v));
                 }
                 update.insert(

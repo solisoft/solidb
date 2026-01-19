@@ -9,7 +9,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::server::handlers::AppState;
-use crate::ai::{AITask, AITaskStatus, GeneratedFile, ListAITasksResponse};
+use crate::ai::{orchestrator::TaskOrchestrator, AITask, AITaskStatus, ListAITasksResponse};
 use crate::error::DbError;
 
 /// Query parameters for listing AI tasks
@@ -144,11 +144,35 @@ pub async fn claim_task_handler(
 
 /// Request body for completing a task
 #[derive(Debug, Deserialize)]
-pub struct CompleteTaskRequest {
-    /// Generated files
-    pub files: Vec<GeneratedFile>,
-    /// Summary of changes
-    pub summary: String,
+#[serde(untagged)]
+pub enum CompleteTaskRequest {
+    /// Nested output format (for backward compatibility)
+    Nested { output: serde_json::Value },
+    /// Flat format with individual fields
+    Flat {
+        /// Summary of changes
+        summary: Option<String>,
+        /// Risk score from analysis
+        risk_score: Option<f64>,
+        /// Whether review is required
+        requires_review: Option<bool>,
+        /// Affected files (for analysis task)
+        affected_files: Option<Vec<String>>,
+        /// Validation passed
+        passed: Option<bool>,
+        /// Validation stages
+        stages: Option<Vec<String>>,
+        /// Validation errors
+        errors: Option<Vec<serde_json::Value>>,
+        /// Tests run count
+        tests_run: Option<u32>,
+        /// Tests passed count
+        tests_passed: Option<u32>,
+        /// Test failures
+        test_failures: Option<serde_json::Value>,
+        /// Files to generate (for code generation)
+        files: Option<Vec<serde_json::Value>>,
+    },
 }
 
 /// Response for task completion with orchestration info
@@ -169,9 +193,10 @@ pub async fn complete_task_handler(
     Json(request): Json<CompleteTaskRequest>,
 ) -> Result<Json<CompleteTaskResponse>, DbError> {
     let db = state.storage.get_database(&db_name)?;
-    let coll = db.get_collection("_ai_tasks")?;
+    let tasks_coll = db.get_collection("_ai_tasks")?;
+    let contribs_coll = db.get_collection("_ai_contributions")?;
 
-    let doc = coll.get(&task_id)?;
+    let doc = tasks_coll.get(&task_id)?;
     let mut task: AITask = serde_json::from_value(doc.to_value())
         .map_err(|e| DbError::InternalError(format!("Corrupted task data: {}", e)))?;
 
@@ -183,21 +208,110 @@ pub async fn complete_task_handler(
         )));
     }
 
+    // Build output JSON based on task type - handle both formats
+    let output = match &request {
+        // Nested output format (for backward compatibility with tests)
+        CompleteTaskRequest::Nested { output } => output.clone(),
+        // Flat format with individual fields
+        CompleteTaskRequest::Flat {
+            summary,
+            risk_score,
+            requires_review,
+            affected_files,
+            passed,
+            stages,
+            errors,
+            tests_run,
+            tests_passed,
+            test_failures,
+            files,
+        } => match task.task_type {
+            crate::ai::AITaskType::AnalyzeContribution => {
+                serde_json::json!({
+                    "risk_score": risk_score.unwrap_or(0.5),
+                    "requires_review": requires_review.unwrap_or(false),
+                    "affected_files": affected_files.clone().unwrap_or_default()
+                })
+            }
+            crate::ai::AITaskType::GenerateCode => {
+                serde_json::json!({
+                    "summary": summary.clone().unwrap_or_default(),
+                    "files": files.clone().unwrap_or_default()
+                })
+            }
+            crate::ai::AITaskType::ValidateCode => {
+                serde_json::json!({
+                    "passed": passed.unwrap_or(false),
+                    "stages": stages.clone().unwrap_or_default(),
+                    "errors": errors.clone().unwrap_or_default()
+                })
+            }
+            crate::ai::AITaskType::RunTests => {
+                serde_json::json!({
+                    "passed": passed.unwrap_or(false),
+                    "tests_run": tests_run.unwrap_or(0),
+                    "tests_passed": tests_passed.unwrap_or(0),
+                    "failures": test_failures.clone()
+                })
+            }
+            crate::ai::AITaskType::PrepareReview | crate::ai::AITaskType::MergeChanges => {
+                serde_json::json!({})
+            }
+        },
+    };
+
     task.status = AITaskStatus::Completed;
     task.completed_at = Some(chrono::Utc::now());
-    task.output = Some(serde_json::json!({
-        "summary": request.summary,
-        "files": request.files,
-    }));
+    task.output = Some(output.clone());
 
+    // Update task
     let doc_value = serde_json::to_value(&task)
         .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
-    coll.update(&task_id, doc_value)?;
+    tasks_coll.update(&task_id, doc_value)?;
+
+    // Get the contribution
+    let contrib_doc = contribs_coll.get(&task.contribution_id)?;
+    let mut contribution: crate::ai::Contribution = serde_json::from_value(contrib_doc.to_value())
+        .map_err(|e| DbError::InternalError(format!("Corrupted contribution data: {}", e)))?;
+
+    // For analysis tasks, sync risk score and affected files to contribution
+    if matches!(task.task_type, crate::ai::AITaskType::AnalyzeContribution) {
+        if let Some(risk_score) = output.get("risk_score").and_then(|v| v.as_f64()) {
+            contribution.risk_score = Some(risk_score);
+        }
+        if let Some(affected) = output.get("affected_files").and_then(|v| v.as_array()) {
+            contribution.affected_files = affected
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+        }
+    }
+
+    // Run orchestration to determine next steps
+    let orchestration_result = TaskOrchestrator::on_task_complete(&task, &contribution, Some(&output));
+
+    // Create next tasks
+    let mut next_stage = None;
+    for next_task in &orchestration_result.next_tasks {
+        let task_value = serde_json::to_value(next_task)
+            .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+        tasks_coll.insert(task_value)?;
+        next_stage = Some(next_task.task_type.to_string());
+    }
+
+    // Update contribution status if needed
+    if let Some(new_status) = orchestration_result.contribution_status {
+        contribution.status = new_status;
+        contribution.updated_at = chrono::Utc::now();
+        let contrib_value = serde_json::to_value(&contribution)
+            .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+        contribs_coll.update(&contribution.id, contrib_value)?;
+    }
 
     Ok(Json(CompleteTaskResponse {
         task,
-        next_stage: None,
-        message: "Task completed successfully".to_string(),
+        next_stage,
+        message: orchestration_result.message,
     }))
 }
 

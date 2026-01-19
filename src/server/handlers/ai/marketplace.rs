@@ -84,8 +84,8 @@ pub struct SelectAgentRequest {
 ///
 /// Uses marketplace intelligence to select the optimal agent
 pub async fn select_agent_handler(
-    State(state): State<AppState>,
-    Path(db_name): Path<String>,
+    State(_state): State<AppState>,
+    Path(_db_name): Path<String>,
     Json(_request): Json<SelectAgentRequest>,
 ) -> Result<Json<serde_json::Value>, DbError> {
     // For now, return a placeholder response
@@ -111,7 +111,7 @@ pub async fn verify_capability_handler(
     Path((db_name, agent_id)): Path<(String, String)>,
     Json(_request): Json<VerifyCapabilityRequest>,
 ) -> Result<Json<serde_json::Value>, DbError> {
-    let db = state.storage.get_database(&db_name)?;
+    let _db = state.storage.get_database(&db_name)?;
 
     // For now, just acknowledge the request
     // In a full implementation, this would trigger verification

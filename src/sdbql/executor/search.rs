@@ -64,20 +64,17 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
                     )
                 })?;
 
-                let query_vec = Self::extract_vector_arg(
-                    &evaluated_args[2],
-                    "VECTOR_DISTANCE: query_vector",
-                )?;
-                let target_vec = Self::extract_vector_arg(
-                    &evaluated_args[3],
-                    "VECTOR_DISTANCE: target_vector",
-                )?;
+                let query_vec =
+                    Self::extract_vector_arg(&evaluated_args[2], "VECTOR_DISTANCE: query_vector")?;
+                let target_vec =
+                    Self::extract_vector_arg(&evaluated_args[3], "VECTOR_DISTANCE: target_vector")?;
 
                 let collection = self.get_collection(collection_name)?;
                 let indexes = collection.list_vector_indexes();
 
                 // Find the index
-                let Some(index_info) = indexes.into_iter().find(|idx| idx.name == index_name) else {
+                let Some(index_info) = indexes.into_iter().find(|idx| idx.name == index_name)
+                else {
                     return Err(DbError::ExecutionError(format!(
                         "VECTOR_DISTANCE: index '{}' not found in collection '{}'",
                         index_name, collection_name
@@ -151,10 +148,7 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
                 let query_vec =
                     Self::extract_vector_arg(&evaluated_args[2], "VECTOR_SEARCH: query_vector")?;
 
-                let limit = evaluated_args
-                    .get(3)
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(10) as usize;
+                let limit = evaluated_args.get(3).and_then(|v| v.as_u64()).unwrap_or(10) as usize;
 
                 let options = evaluated_args.get(4).and_then(|v| v.as_object()).cloned();
 
@@ -173,7 +167,8 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
                 let collection = self.get_collection(collection_name)?;
 
                 // Perform vector search
-                let results = collection.vector_search(index_name, &query_vec, limit * 2, Some(ef_search))?;
+                let results =
+                    collection.vector_search(index_name, &query_vec, limit * 2, Some(ef_search))?;
 
                 // Format results
                 let search_results: Vec<Value> = results
@@ -220,12 +215,15 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
 
                 let text_field = evaluated_args[2].as_str().ok_or_else(|| {
                     DbError::ExecutionError(
-                        "VECTOR_HYBRID_SEARCH: third argument must be a string (text field)".to_string(),
+                        "VECTOR_HYBRID_SEARCH: third argument must be a string (text field)"
+                            .to_string(),
                     )
                 })?;
 
-                let query_vector =
-                    Self::extract_vector_arg(&evaluated_args[3], "VECTOR_HYBRID_SEARCH: query_vector")?;
+                let query_vector = Self::extract_vector_arg(
+                    &evaluated_args[3],
+                    "VECTOR_HYBRID_SEARCH: query_vector",
+                )?;
 
                 let text_query = evaluated_args[4].as_str().ok_or_else(|| {
                     DbError::ExecutionError(
@@ -234,10 +232,7 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
                     )
                 })?;
 
-                let limit = evaluated_args
-                    .get(5)
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(10) as usize;
+                let limit = evaluated_args.get(5).and_then(|v| v.as_u64()).unwrap_or(10) as usize;
 
                 let options = evaluated_args.get(6).and_then(|v| v.as_object()).cloned();
 
@@ -263,7 +258,8 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
                 }
 
                 // Step 1: Vector search
-                let vector_results = collection.vector_search(vector_index, &query_vector, limit * 3, None)?;
+                let vector_results =
+                    collection.vector_search(vector_index, &query_vector, limit * 3, None)?;
 
                 // Step 2: Fulltext search
                 let fulltext_results = collection
@@ -275,8 +271,14 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
                 // Step 3: Normalize scores
                 let mut vector_scores: HashMap<String, f32> = HashMap::new();
                 if !vector_results.is_empty() {
-                    let max_vec = vector_results.iter().map(|r| r.score).fold(f32::NEG_INFINITY, f32::max);
-                    let min_vec = vector_results.iter().map(|r| r.score).fold(f32::INFINITY, f32::min);
+                    let max_vec = vector_results
+                        .iter()
+                        .map(|r| r.score)
+                        .fold(f32::NEG_INFINITY, f32::max);
+                    let min_vec = vector_results
+                        .iter()
+                        .map(|r| r.score)
+                        .fold(f32::INFINITY, f32::min);
                     let range = max_vec - min_vec;
                     for result in &vector_results {
                         let normalized = if range > 0.0 {
@@ -290,8 +292,14 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
 
                 let mut text_scores: HashMap<String, f32> = HashMap::new();
                 if !fulltext_results.is_empty() {
-                    let max_text = fulltext_results.iter().map(|r| r.score).fold(f64::NEG_INFINITY, f64::max);
-                    let min_text = fulltext_results.iter().map(|r| r.score).fold(f64::INFINITY, f64::min);
+                    let max_text = fulltext_results
+                        .iter()
+                        .map(|r| r.score)
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    let min_text = fulltext_results
+                        .iter()
+                        .map(|r| r.score)
+                        .fold(f64::INFINITY, f64::min);
                     let range = max_text - min_text;
                     for result in &fulltext_results {
                         let normalized = if range > 0.0 {
@@ -312,17 +320,31 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
                 // Process vector results
                 for (rank, result) in vector_results.iter().enumerate() {
                     let rrf_score = 1.0 / (60.0 + rank as f32 + 1.0);
-                    *combined_scores.entry(result.doc_key.clone()).or_insert(0.0) += rrf_score * vector_weight;
-                    doc_sources.entry(result.doc_key.clone()).or_default().push("vector".to_string());
-                    doc_vector_scores.insert(result.doc_key.clone(), vector_scores.get(&result.doc_key).copied().unwrap_or(0.0));
+                    *combined_scores.entry(result.doc_key.clone()).or_insert(0.0) +=
+                        rrf_score * vector_weight;
+                    doc_sources
+                        .entry(result.doc_key.clone())
+                        .or_default()
+                        .push("vector".to_string());
+                    doc_vector_scores.insert(
+                        result.doc_key.clone(),
+                        vector_scores.get(&result.doc_key).copied().unwrap_or(0.0),
+                    );
                 }
 
                 // Process text results
                 for (rank, result) in fulltext_results.iter().enumerate() {
                     let rrf_score = 1.0 / (60.0 + rank as f32 + 1.0);
-                    *combined_scores.entry(result.doc_key.clone()).or_insert(0.0) += rrf_score * text_weight;
-                    doc_sources.entry(result.doc_key.clone()).or_default().push("text".to_string());
-                    doc_text_scores.insert(result.doc_key.clone(), text_scores.get(&result.doc_key).copied().unwrap_or(0.0));
+                    *combined_scores.entry(result.doc_key.clone()).or_insert(0.0) +=
+                        rrf_score * text_weight;
+                    doc_sources
+                        .entry(result.doc_key.clone())
+                        .or_default()
+                        .push("text".to_string());
+                    doc_text_scores.insert(
+                        result.doc_key.clone(),
+                        text_scores.get(&result.doc_key).copied().unwrap_or(0.0),
+                    );
                 }
 
                 // Sort by combined score
@@ -337,9 +359,18 @@ impl<'a> SearchOperations<'a> for QueryExecutor<'a> {
                         let mut obj = serde_json::Map::new();
                         obj.insert("_key".to_string(), json!(doc_key));
                         obj.insert("score".to_string(), json!(score));
-                        obj.insert("vectorScore".to_string(), json!(doc_vector_scores.get(&doc_key).copied().unwrap_or(0.0)));
-                        obj.insert("textScore".to_string(), json!(doc_text_scores.get(&doc_key).copied().unwrap_or(0.0)));
-                        obj.insert("sources".to_string(), json!(doc_sources.get(&doc_key).cloned().unwrap_or_default()));
+                        obj.insert(
+                            "vectorScore".to_string(),
+                            json!(doc_vector_scores.get(&doc_key).copied().unwrap_or(0.0)),
+                        );
+                        obj.insert(
+                            "textScore".to_string(),
+                            json!(doc_text_scores.get(&doc_key).copied().unwrap_or(0.0)),
+                        );
+                        obj.insert(
+                            "sources".to_string(),
+                            json!(doc_sources.get(&doc_key).cloned().unwrap_or_default()),
+                        );
 
                         if let Ok(doc) = collection.get(&doc_key) {
                             obj.insert("document".to_string(), doc.to_value());
