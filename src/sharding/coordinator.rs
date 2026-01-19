@@ -2506,7 +2506,8 @@ impl ShardCoordinator {
             };
 
             let file_name = if let Ok(doc) = coll.get(key) {
-                doc.get("name").and_then(|v| v.as_str().map(|s| s.to_string()))
+                doc.get("name")
+                    .and_then(|v| v.as_str().map(|s| s.to_string()))
             } else {
                 None
             };

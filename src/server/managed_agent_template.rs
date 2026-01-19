@@ -40,7 +40,7 @@ function ask_llm(user_prompt)
     end
 
     local data = solidb.json_decode(response.body)
-    
+
     -- Attempt to parse response from common formats
     if data.choices and data.choices[1] and data.choices[1].message then
         return data.choices[1].message.content -- OpenAI format
@@ -56,7 +56,7 @@ end
 -- Main Loop
 function run_agent_loop()
     print("🚀 Starting Managed Agent: " .. AGENT_NAME)
-    
+
     -- Ensure agent is registered/active
     -- We assume the agent is already registered via the UI, but we can re-register to ensure caps
     local agent = solidb.ai.register_agent(AGENT_NAME, AGENT_TYPE, AGENT_CAPS)
@@ -68,9 +68,9 @@ function run_agent_loop()
     for i = 1, MAX_ITERATIONS do
         solidb.ai.heartbeat(agent_id)
 
-        local tasks = solidb.ai.get_pending_tasks({ 
-            limit = 1, 
-            agent_type = AGENT_TYPE 
+        local tasks = solidb.ai.get_pending_tasks({
+            limit = 1,
+            agent_type = AGENT_TYPE
         })
 
         if #tasks > 0 then
@@ -79,7 +79,7 @@ function run_agent_loop()
 
             if solidb.ai.claim_task(task._key, agent_id) then
                 local prompt = "Please fulfill this request:\n\n" .. (task.data.description or "No description")
-                
+
                 local result, err = ask_llm(prompt)
 
                 if result then
@@ -101,7 +101,7 @@ function run_agent_loop()
             break
         end
     end
-    
+
     return "Agent " .. AGENT_NAME .. " processed " .. processed .. " tasks."
 end
 "#;

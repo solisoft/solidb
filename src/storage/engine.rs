@@ -506,10 +506,7 @@ impl StorageEngine {
 
             for op in tx.operations {
                 let coll_name = format!("{}:{}", op.database(), op.collection());
-                ops_by_collection
-                    .entry(coll_name)
-                    .or_default()
-                    .push(op);
+                ops_by_collection.entry(coll_name).or_default().push(op);
             }
 
             // Apply operations for each collection
@@ -554,10 +551,7 @@ impl StorageEngine {
 
         for op in operations {
             let coll_name = format!("{}:{}", op.database(), op.collection());
-            ops_by_collection
-                .entry(coll_name)
-                .or_default()
-                .push(op);
+            ops_by_collection.entry(coll_name).or_default().push(op);
         }
 
         // Apply operations for each collection

@@ -44,11 +44,8 @@ impl Collection {
     /// Get vector index (loading it if necessary)
     pub fn get_vector_index(&self, name: &str) -> DbResult<Arc<super::vector::VectorIndex>> {
         // Try memory first
-        {
-            let indexes = self.vector_indexes.read().unwrap();
-            if let Some(index) = indexes.get(name) {
-                return Ok(index.clone());
-            }
+        if let Some(index) = self.vector_indexes.get(name) {
+            return Ok(index.clone());
         }
 
         // Try load from disk
@@ -77,15 +74,11 @@ impl Collection {
         // Load data
         let data_key = Self::vec_data_key(name);
         if let Some(bytes) = db.get_cf(cf, &data_key)? {
-            // Need to deserialize VectorIndex.
-            // Assuming serde support.
-            // Need to deserialize VectorIndex.
-            // Using manual deserialize method.
             match super::vector::VectorIndex::deserialize(&bytes) {
                 Ok(index) => {
                     let index_arc = Arc::new(index);
-                    let mut indexes = self.vector_indexes.write().unwrap();
-                    indexes.insert(name.to_string(), index_arc.clone());
+                    self.vector_indexes
+                        .insert(name.to_string(), index_arc.clone());
                     Ok(index_arc)
                 }
                 Err(e) => Err(DbError::InternalError(format!(
@@ -142,8 +135,6 @@ impl Collection {
 
         // Store in memory
         self.vector_indexes
-            .write()
-            .unwrap()
             .insert(config.name.clone(), Arc::new(index));
 
         // Persist populated index
@@ -160,10 +151,7 @@ impl Collection {
             .expect("Column family should exist");
 
         // Remove from memory
-        {
-            let mut indexes = self.vector_indexes.write().unwrap();
-            indexes.remove(name);
-        }
+        self.vector_indexes.remove(name);
 
         // Remove from disk
         db.delete_cf(cf, Self::vec_meta_key(name)).map_err(|e| {
@@ -180,13 +168,10 @@ impl Collection {
         self.get_all_vector_index_configs()
             .into_iter()
             .map(|config| {
-                let count = {
-                    let indexes = self.vector_indexes.read().unwrap();
-                    if let Some(idx) = indexes.get(&config.name) {
-                        idx.len()
-                    } else {
-                        0
-                    }
+                let count = if let Some(idx) = self.vector_indexes.get(&config.name) {
+                    idx.len()
+                } else {
+                    0
                 };
 
                 VectorIndexStats {
@@ -267,19 +252,14 @@ impl Collection {
 
     /// Persist all in-memory vector indexes to disk
     pub fn persist_vector_indexes(&self) -> DbResult<()> {
-        let indexes = self.vector_indexes.read().unwrap();
         let db = self.db.read().unwrap();
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
 
-        for (name, index_arc) in indexes.iter() {
-            // IndexArc is Arc<VectorIndex>.
-            // serde_json::to_vec guarantees handling &T.
-            // But VectorIndex handles locks.
-            // If Serialize implementation locks internally, it's fine.
-            // IndexArc is Arc<VectorIndex>.
-            // Use manual serialize method
+        for entry in self.vector_indexes.iter() {
+            let name = entry.key();
+            let index_arc = entry.value();
             let bytes = index_arc.serialize()?;
             db.put_cf(cf, Self::vec_data_key(name), &bytes)
                 .map_err(|e| {
@@ -304,10 +284,8 @@ impl Collection {
             let _ = self.get_vector_index(&config.name);
         }
 
-        let indexes = self.vector_indexes.read().unwrap();
-
         for config in configs {
-            if let Some(index) = indexes.get(&config.name) {
+            if let Some(index) = self.vector_indexes.get(&config.name) {
                 if let Some(vector) =
                     self.extract_vector(doc_value, &config.field, config.dimension)
                 {
@@ -319,9 +297,8 @@ impl Collection {
 
     /// Update vector indexes on doc delete
     pub(crate) fn update_vector_indexes_on_delete(&self, doc_key: &str) {
-        let indexes = self.vector_indexes.read().unwrap();
-        for index in indexes.values() {
-            let _ = index.remove(doc_key);
+        for entry in self.vector_indexes.iter() {
+            let _ = entry.remove(doc_key);
         }
     }
 

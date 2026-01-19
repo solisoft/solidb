@@ -60,7 +60,7 @@ fn test_reproduce_user_overload_issue() {
 
     // If 6746 is primary for S0 (promoted) and S1 (preserved), it has count 2.
     // While 6748 has count 0.
-    assert!(primary_counts.get("6748").copied().unwrap_or(0) > 0, 
-        "Node 6748 should be recruited as primary for one of the shards to balance load. 6748 count: {:?}", 
+    assert!(primary_counts.get("6748").copied().unwrap_or(0) > 0,
+        "Node 6748 should be recruited as primary for one of the shards to balance load. 6748 count: {:?}",
         primary_counts.get("6748"));
 }

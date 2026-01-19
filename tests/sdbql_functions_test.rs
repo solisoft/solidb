@@ -80,7 +80,7 @@ async fn test_geo_within() {
     // Square: (0,0) -> (10,0) -> (10,10) -> (0,10)
     let query_inside = r#"
         RETURN GEO_WITHIN(
-            {lat: 5, lon: 5}, 
+            {lat: 5, lon: 5},
             [[0,0], [10,0], [10,10], [0,10]]
         )
     "#;
@@ -91,7 +91,7 @@ async fn test_geo_within() {
     // Test point outside
     let query_outside = r#"
         RETURN GEO_WITHIN(
-            {lat: 15, lon: 5}, 
+            {lat: 15, lon: 5},
             [[0,0], [10,0], [10,10], [0,10]]
         )
     "#;

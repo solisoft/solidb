@@ -37,10 +37,10 @@ async fn test_lua_regex_match() {
             -- Validate email pattern
             local email = "test@example.com"
             local is_match = string.regex(email, "^[\\w\\.-]+@[\\w\\.-]+\\.[a-zA-Z]+$")
-            
+
             -- Validate non-match
             local is_not_match = string.regex("invalid-email", "@")
-            
+
             return { match = is_match, not_match = is_not_match }
         "#
         .to_string(),
@@ -89,11 +89,11 @@ async fn test_lua_regex_replace() {
             local text = "The year is 2023"
             -- Replace year with 2024 using regex \d+
             local new_text = string.regex_replace(text, "\\d+", "2024")
-            
+
             -- Mask sensitive data
             local secret = "My secret is 12345"
             local masked = string.regex_replace(secret, "\\d+", "*****")
-            
+
             return { text = new_text, masked = masked }
         "#
         .to_string(),
@@ -141,7 +141,7 @@ async fn test_lua_regex_capture_groups() {
             local text = "John Doe"
             -- Swap names: (\w+) (\w+) -> $2 $1
             local swapped = string.regex_replace(text, "(\\w+) (\\w+)", "$2 $1")
-            
+
             return { swapped = swapped }
         "#
         .to_string(),

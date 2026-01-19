@@ -84,10 +84,7 @@ impl TransactionManager {
 
             for op in &tx.operations {
                 let key = format!("{}:{}:{}", op.database(), op.collection(), op.key());
-                seen_keys
-                    .entry(key.clone())
-                    .or_default()
-                    .push(op.clone());
+                seen_keys.entry(key.clone()).or_default().push(op.clone());
             }
 
             // Check for duplicate inserts within transaction

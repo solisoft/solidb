@@ -756,9 +756,7 @@ impl ColumnarCollection {
                     if !key.starts_with(prefix.as_bytes()) {
                         break;
                     }
-                    if let Ok(decompressed) =
-                        self.decompress_data(&val_bytes, &meta.compression)
-                    {
+                    if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
                         if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
                             if let Some(n) = value.as_f64() {
                                 sum += n;
@@ -776,9 +774,7 @@ impl ColumnarCollection {
                     if !key.starts_with(prefix.as_bytes()) {
                         break;
                     }
-                    if let Ok(decompressed) =
-                        self.decompress_data(&val_bytes, &meta.compression)
-                    {
+                    if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
                         if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
                             if let Some(n) = value.as_f64() {
                                 sum += n;
@@ -800,9 +796,7 @@ impl ColumnarCollection {
                     if !key.starts_with(prefix.as_bytes()) {
                         break;
                     }
-                    if let Ok(decompressed) =
-                        self.decompress_data(&val_bytes, &meta.compression)
-                    {
+                    if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
                         if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
                             if let Some(n) = value.as_f64() {
                                 match min_val {
@@ -826,9 +820,7 @@ impl ColumnarCollection {
                     if !key.starts_with(prefix.as_bytes()) {
                         break;
                     }
-                    if let Ok(decompressed) =
-                        self.decompress_data(&val_bytes, &meta.compression)
-                    {
+                    if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
                         if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
                             if let Some(n) = value.as_f64() {
                                 match max_val {
@@ -852,9 +844,7 @@ impl ColumnarCollection {
                     if !key.starts_with(prefix.as_bytes()) {
                         break;
                     }
-                    if let Ok(decompressed) =
-                        self.decompress_data(&val_bytes, &meta.compression)
-                    {
+                    if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
                         if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
                             distinct.insert(value.to_string());
                         }

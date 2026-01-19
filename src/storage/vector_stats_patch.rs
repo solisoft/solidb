@@ -1,7 +1,7 @@
 
     /// Get index statistics
     pub fn stats(&self) -> VectorIndexStats {
-        let (quantization, compression_ratio, memory_bytes) = 
+        let (quantization, compression_ratio, memory_bytes) =
             if let Some(stats) = self.quantization_stats() {
                 (stats.type_str(), stats.compression_ratio, stats.memory_bytes)
             } else {

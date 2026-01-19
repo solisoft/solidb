@@ -90,9 +90,9 @@ async fn test_cookie_setting() {
             secure = true,
             httpOnly = true
         }
-        
+
         solidb.set_cookie("session_id", "abc123", options)
-        
+
         return { success = true }
     "#;
 
@@ -119,10 +119,10 @@ async fn test_cache_operations() {
             name = "Alice",
             permissions = {"read", "write"}
         }
-        
+
         local cache_result = solidb.cache("user:123", data, 3600)  -- 1 hour TTL
-        
-        return { 
+
+        return {
             cached = cache_result,
             user_data = data
         }
@@ -153,9 +153,9 @@ async fn test_cors_headers() {
             credentials = true,
             max_age = 86400
         }
-        
+
         response.cors(cors_options)
-        
+
         return { message = "CORS headers set" }
     "#;
 
@@ -182,11 +182,11 @@ async fn test_response_helpers() {
         -- Test HTML response
         local html_content = "<html><body><h1>Hello World</h1></body></html>"
         local html_result = response.html(html_content)
-        
+
         -- Test JSON response (already exists)
         local json_data = { message = "Hello from API", status = "success" }
         local json_result = response.json(json_data)
-        
+
         return {
             html_content = html_content,
             json_result = json_result
@@ -217,7 +217,7 @@ async fn test_file_download_response() {
         -- Test file download response
         local file_path = "/tmp/test_file.txt"
         local download_result = response.file(file_path)
-        
+
         return {
             file_path = file_path,
             success = download_result ~= nil
@@ -251,9 +251,9 @@ async fn test_streaming_response() {
             "chunk2",
             "chunk3"
         }
-        
+
         local stream_result = response.stream(stream_data)
-        
+
         return {
             chunks_count = #stream_data,
             success = stream_result ~= nil
@@ -293,14 +293,14 @@ async fn test_cookie_options_validation() {
             {
                 name = "secure_cookie",
                 value = "secret",
-                options = { 
+                options = {
                     secure = true,
                     httpOnly = true,
                     sameSite = "Strict"
                 }
             }
         }
-        
+
         local results = {}
         for i, test_case in ipairs(test_cases) do
             if test_case.options then
@@ -310,7 +310,7 @@ async fn test_cookie_options_validation() {
             end
             results[i] = { name = test_case.name, success = true }
         end
-        
+
         return { results = results }
     "#;
 
@@ -344,21 +344,21 @@ async fn test_cache_with_ttl_expiration() {
             { key = "long_ttl", ttl = 86400 },    -- 1 day
             { key = "no_ttl", ttl = nil }         -- no TTL (default)
         }
-        
+
         local results = {}
         for i, test_case in ipairs(test_cases) do
-            local data = { 
+            local data = {
                 key = test_case.key,
                 cached_at = solidb.now()
             }
-            
+
             local success = solidb.cache(test_case.key, data, test_case.ttl)
-            results[i] = { 
+            results[i] = {
                 key = test_case.key,
                 cached = success
             }
         end
-        
+
         return { results = results }
     "#;
 

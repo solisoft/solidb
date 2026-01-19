@@ -91,10 +91,10 @@ async fn test_lua_db_insert_get() {
     let code = r#"
         local users = db:collection("users")
         local doc = users:insert({ name = "Alice", age = 30 })
-        
+
         local fetched = users:get(doc._key)
-        
-        return { 
+
+        return {
             inserted_key = doc._key,
             fetched_name = fetched.name
         }
@@ -171,7 +171,7 @@ async fn test_lua_security() {
 
     // Check that dangerous globals are not available
     let code = r#"
-        return { 
+        return {
             has_os = (os ~= nil),
             has_io = (io ~= nil),
             has_debug = (debug ~= nil),
@@ -204,8 +204,8 @@ async fn test_lua_regex_replace() {
         local text = "The quick brown fox"
         local replaced = string.regex_replace(text, "brown", "red")
         local is_match = string.regex(text, "^The .* fox$")
-        
-        return { 
+
+        return {
             replaced = replaced,
             match_result = is_match
         }

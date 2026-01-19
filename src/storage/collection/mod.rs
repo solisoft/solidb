@@ -1,6 +1,7 @@
+use dashmap::DashMap;
 use rocksdb::DB;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, RwLock};
 
@@ -13,7 +14,6 @@ pub use super::index::{
 pub use super::vector::{VectorIndex, VectorSearchResult};
 use cuckoofilter::CuckooFilter;
 use fastbloom::BloomFilter;
-use std::collections::hash_map::DefaultHasher;
 
 pub mod blobs;
 pub mod core;
@@ -128,12 +128,12 @@ pub struct Collection {
     pub change_sender: Arc<tokio::sync::broadcast::Sender<ChangeEvent>>,
     /// Collection type (document, edge, blob)
     pub(crate) collection_type: Arc<RwLock<String>>,
-    /// In-memory Bloom filters for indexes
-    pub(crate) bloom_filters: Arc<RwLock<HashMap<String, BloomFilter>>>,
-    /// In-memory Cuckoo filters for indexes
-    pub(crate) cuckoo_filters: Arc<RwLock<HashMap<String, CuckooFilter<DefaultHasher>>>>,
-    /// In-memory vector indexes
-    pub(crate) vector_indexes: Arc<RwLock<HashMap<String, Arc<VectorIndex>>>>,
+    /// In-memory Bloom filters for indexes (DashMap for lock-free concurrent access)
+    pub(crate) bloom_filters: Arc<DashMap<String, BloomFilter>>,
+    /// In-memory Cuckoo filters for indexes (DashMap for lock-free concurrent access)
+    pub(crate) cuckoo_filters: Arc<DashMap<String, CuckooFilter<DefaultHasher>>>,
+    /// In-memory vector indexes (DashMap for lock-free concurrent access)
+    pub(crate) vector_indexes: Arc<DashMap<String, Arc<VectorIndex>>>,
 }
 
 impl Clone for Collection {

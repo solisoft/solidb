@@ -64,7 +64,7 @@ async fn test_lua_crypto_hashing() {
     let (_engine, script_engine, _tmp) = create_test_env();
 
     let code = r#"
-        return { 
+        return {
             md5 = crypto.md5("hello"),
             sha256 = crypto.sha256("hello"),
             sha512 = crypto.sha512("hello")
@@ -98,8 +98,8 @@ async fn test_lua_crypto_encoding() {
         local original = "Hello World"
         local b64 = crypto.base64_encode(original)
         local hex = crypto.hex_encode(original)
-        
-        return { 
+
+        return {
             b64 = b64,
             decoded_b64 = crypto.base64_decode(b64),
             hex = hex,
@@ -139,8 +139,8 @@ async fn test_lua_crypto_password() {
         local hash = crypto.hash_password(password)
         local valid = crypto.verify_password(hash, password)
         local invalid = crypto.verify_password(hash, "wrong_password")
-        
-        return { 
+
+        return {
             hash = hash,
             valid = valid,
             invalid = invalid
@@ -173,12 +173,12 @@ async fn test_lua_crypto_jwt() {
     let code = r#"
         local claims = { sub = "123", name = "John Doe", admin = true }
         local secret = "my_jwt_secret"
-        
+
         local token = crypto.jwt_encode(claims, secret)
         local decoded = crypto.jwt_decode(token, secret)
-        
+
         -- Default alg is HS256
-        return { 
+        return {
             token = token,
             decoded_sub = decoded.sub,
             decoded_admin = decoded.admin
@@ -208,21 +208,21 @@ async fn test_lua_crypto_curve25519() {
 
     // We keep logic entirely within Lua to avoid utf8 issues with JSON serialization of raw bytes
     let code = r#"
-        -- We'll use mocked bytes to ensure we can return them for debug, 
+        -- We'll use mocked bytes to ensure we can return them for debug,
         -- but normally we use crypto.random_bytes(32)
         -- Since JSON requires UTF-8, we'll encode logic in Lua entirely or use base64
-        
+
         local alice_secret = crypto.random_bytes(32)
         local bob_secret = crypto.random_bytes(32)
-        
+
         -- 2. Generate public keys
         local alice_pub = crypto.curve25519(alice_secret, "")
         local bob_pub = crypto.curve25519(bob_secret, "")
-        
+
         -- 3. Calculate shared secrets
         local alice_shared = crypto.curve25519(alice_secret, bob_pub)
         local bob_shared = crypto.curve25519(bob_secret, alice_pub)
-        
+
         return {
              match = (alice_shared == bob_shared),
              len = #alice_shared

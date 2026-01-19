@@ -27,7 +27,9 @@ jobs:
             libclang-dev \
             pkg-config \
             libssl-dev \
-            libzstd-dev
+            libzstd-dev \
+            protobuf-compiler \
+            cmake
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -76,7 +78,9 @@ jobs:
             libclang-dev \
             pkg-config \
             libssl-dev \
-            libzstd-dev
+            libzstd-dev \
+            protobuf-compiler \
+            cmake
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -128,7 +132,9 @@ jobs:
             libclang-dev \
             pkg-config \
             libssl-dev \
-            libzstd-dev
+            libzstd-dev \
+            protobuf-compiler \
+            cmake
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

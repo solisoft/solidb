@@ -2,7 +2,7 @@
 //!
 //! Comprehensive tests for graph operations including:
 //! - Outbound traversals
-//! - Inbound traversals  
+//! - Inbound traversals
 //! - Any direction traversals
 //! - Multi-hop traversals
 //! - Graph path queries
@@ -321,7 +321,7 @@ fn test_traversal_return_edge() {
 fn test_traversal_return_both() {
     let (engine, _tmp) = create_social_graph();
 
-    let results = execute_query(&engine, 
+    let results = execute_query(&engine,
         "FOR v, e IN 1..1 OUTBOUND 'people/alice' follows RETURN { person: v.name, since: e.since }");
 
     assert_eq!(results.len(), 2);
@@ -362,7 +362,7 @@ fn test_traversal_count() {
     let (engine, _tmp) = create_social_graph();
 
     // Count followers
-    let results = execute_query(&engine, 
+    let results = execute_query(&engine,
         "LET followers = (FOR v IN 1..1 INBOUND 'people/charlie' follows RETURN v) RETURN LENGTH(followers)");
 
     assert_eq!(results[0], json!(2));

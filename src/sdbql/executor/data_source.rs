@@ -200,7 +200,7 @@ impl<'a> QueryExecutor<'a> {
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::warn!("[SCATTER-GATHER] Failed to query shard {} from {}: {}, trying next", 
+                                    tracing::warn!("[SCATTER-GATHER] Failed to query shard {} from {}: {}, trying next",
                                         shard_id, node_id, e);
                                 }
                             }

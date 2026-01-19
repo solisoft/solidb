@@ -273,7 +273,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             // Read (and discard) trailing newline of data
                             let mut newline_buf = [0u8; 1];
-                            if reader.read_exact(&mut newline_buf).is_ok() && newline_buf[0] != b'\n' {
+                            if reader.read_exact(&mut newline_buf).is_ok()
+                                && newline_buf[0] != b'\n'
+                            {
                                 // Put it back? verify logic.
                                 // My export emits \n after data.
                                 // So we consume it.

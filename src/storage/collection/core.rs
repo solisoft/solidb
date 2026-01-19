@@ -1,5 +1,6 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use dashmap::DashMap;
 use hex;
 use rocksdb::DB;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -21,9 +22,7 @@ impl Collection {
                         let prefix = DOC_PREFIX.as_bytes();
                         db_guard
                             .prefix_iterator_cf(cf, prefix)
-                            .take_while(|r| {
-                                r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix))
-                            })
+                            .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
                             .count()
                     }
                 }
@@ -71,9 +70,9 @@ impl Collection {
             last_flush_time: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             change_sender: Arc::new(change_sender),
             collection_type: Arc::new(RwLock::new(collection_type)),
-            bloom_filters: Arc::new(RwLock::new(HashMap::new())),
-            cuckoo_filters: Arc::new(RwLock::new(HashMap::new())),
-            vector_indexes: Arc::new(RwLock::new(HashMap::new())),
+            bloom_filters: Arc::new(DashMap::new()),
+            cuckoo_filters: Arc::new(DashMap::new()),
+            vector_indexes: Arc::new(DashMap::new()),
         }
     }
 

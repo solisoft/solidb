@@ -123,10 +123,7 @@ impl AgentReputation {
     /// Record a task completion
     pub fn record_task(&mut self, task_type: &str, success: bool, duration_ms: u64) {
         // Update tasks_by_type
-        let stats = self
-            .tasks_by_type
-            .entry(task_type.to_string())
-            .or_default();
+        let stats = self.tasks_by_type.entry(task_type.to_string()).or_default();
 
         if success {
             stats.completed += 1;

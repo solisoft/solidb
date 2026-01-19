@@ -261,7 +261,7 @@ fn test_sort_descending() {
 fn test_sort_multiple_fields() {
     let (engine, _tmp) = create_seeded_engine();
 
-    let results = execute_query(&engine, 
+    let results = execute_query(&engine,
         "FOR doc IN users SORT doc.city ASC, doc.age DESC RETURN { city: doc.city, name: doc.name }");
     assert_eq!(results.len(), 5);
 

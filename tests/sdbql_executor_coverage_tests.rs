@@ -177,7 +177,7 @@ fn test_multiple_bind_vars() {
     binds.insert("maxAge".to_string(), json!(32));
     binds.insert("dept".to_string(), json!("eng"));
 
-    let results = execute_with_binds(&engine, 
+    let results = execute_with_binds(&engine,
         "FOR u IN users FILTER u.age >= @minAge AND u.age <= @maxAge AND u.dept == @dept RETURN u.name", binds);
     assert!(results.contains(&json!("Alice"))); // age 30, eng
     assert!(results.contains(&json!("Bob"))); // age 25, eng
@@ -287,7 +287,7 @@ fn test_remove_operation() {
 fn test_sort_multiple_fields_asc_desc() {
     let (engine, _tmp) = create_seeded_engine();
 
-    let results = execute_query(&engine, 
+    let results = execute_query(&engine,
         "FOR u IN users SORT u.dept ASC, u.age DESC RETURN { dept: u.dept, name: u.name, age: u.age }");
 
     // Should be: eng (Eve 32, Alice 30, Bob 25), sales (Charlie 35, Diana 28)

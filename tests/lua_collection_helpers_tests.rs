@@ -130,7 +130,7 @@ async fn test_find_one_single_document() {
         local laptop = products:find_one({ name = "Laptop" })
         local out_of_stock = products:find_one({ in_stock = false })
         local not_found = products:find_one({ name = "Tablet" })
-        
+
         return {
             laptop_found = laptop ~= nil,
             laptop_name = laptop and laptop.name,
@@ -172,13 +172,13 @@ async fn test_upsert_operation() {
 
     let code = r#"
         local counters = db:collection("counters")
-        
+
         -- First upsert - should insert
         local result1 = counters:upsert("page_views", { count = 1, last_updated = solidb.now() })
-        
+
         -- Second upsert - should update
         local result2 = counters:upsert("page_views", { count = 2, last_updated = solidb.now() })
-        
+
         return {
             first_operation = result1._key,
             first_count = result1.count,
@@ -212,16 +212,16 @@ async fn test_bulk_insert_operation() {
 
     let code = r#"
         local logs = db:collection("logs")
-        
+
         local new_logs = {
             { level = "info", message = "User login", timestamp = solidb.now() },
             { level = "warn", message = "High memory usage", timestamp = solidb.now() },
             { level = "error", message = "Database connection failed", timestamp = solidb.now() },
             { level = "info", message = "User logout", timestamp = solidb.now() }
         }
-        
+
         local inserted = logs:bulk_insert(new_logs)
-        
+
         local results = {}
         for i, log in ipairs(inserted) do
             results[i] = {
@@ -230,8 +230,8 @@ async fn test_bulk_insert_operation() {
                 has_key = log._key ~= nil
             }
         end
-        
-        return { 
+
+        return {
             inserted_count = #inserted,
             logs = results
         }

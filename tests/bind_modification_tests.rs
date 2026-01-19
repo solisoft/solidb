@@ -318,7 +318,7 @@ fn test_update_filtered() {
         .insert(json!({"_key": "p2", "status": "inactive", "views": 50}))
         .unwrap();
 
-    execute_query(&engine, 
+    execute_query(&engine,
         "FOR p IN products FILTER p.status == 'active' UPDATE p WITH { \"views\": p.views + 10 } IN products");
 
     let p1 = products.get("p1").unwrap();

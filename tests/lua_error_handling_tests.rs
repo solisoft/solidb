@@ -106,7 +106,7 @@ async fn test_assertion_success() {
         local valid_data = { name = "Alice", age = 30 }
         solidb.assert(valid_data.name ~= nil, "Name is required")
         solidb.assert(valid_data.age > 0, "Age must be positive")
-        
+
         return { success = true, message = "All assertions passed" }
     "#;
 
@@ -134,7 +134,7 @@ async fn test_assertion_failure() {
         local invalid_data = { name = nil, age = -5 }
         solidb.assert(invalid_data.name ~= nil, "Name cannot be nil")
         solidb.assert(invalid_data.age > 0, "Age must be positive")
-        
+
         return { should_not_reach = "here" }
     "#;
 
@@ -158,11 +158,11 @@ async fn test_try_catch_success_pattern() {
         local function risky_operation()
             return { success = true, data = "operation completed" }
         end
-        
+
         local result = solidb.try(risky_operation, function(error)
             return { success = false, error = error }
         end)
-        
+
         return result
     "#;
 
@@ -190,15 +190,15 @@ async fn test_try_catch_failure_pattern() {
         local function risky_operation()
             solidb.error("Something went wrong!", 500)
         end
-        
+
         local result = solidb.try(risky_operation, function(error)
-            return { 
-                success = false, 
+            return {
+                success = false,
                 error_message = error,
-                handled = true 
+                handled = true
             }
         end)
-        
+
         return result
     "#;
 
@@ -224,10 +224,10 @@ async fn test_try_without_catch() {
         local function risky_operation()
             solidb.error("Unhandled error", 400)
         end
-        
+
         -- No catch function provided
         local result = solidb.try(risky_operation)
-        
+
         return result
     "#;
 
@@ -254,7 +254,7 @@ async fn test_nested_error_handling() {
             solidb.assert(user.age >= 18, "User must be 18 or older")
             return { valid = true }
         end
-        
+
         local function process_user(user)
             return solidb.try(function()
                 return solidb.try(function()
@@ -266,14 +266,14 @@ async fn test_nested_error_handling() {
                 solidb.error("Processing failed: " .. error, 500)
             end)
         end
-        
+
         local valid_user = { name = "Alice", email = "alice@example.com", age = 25 }
         local invalid_user = { name = "", email = "invalid", age = 16 }
-        
+
         local result1 = process_user(valid_user)
         local result2 = process_user(invalid_user)
-        
-        return { 
+
+        return {
             valid_result = result1,
             invalid_result = result2
         }
@@ -302,27 +302,27 @@ async fn test_error_with_context() {
             if not order.customer_id then
                 solidb.error("Customer ID is required for order validation", 400)
             end
-            
+
             if not order.items or #order.items == 0 then
                 solidb.error("Order must contain at least one item", 400)
             end
-            
+
             if order.total <= 0 then
                 solidb.error("Order total must be positive", 400)
             end
-            
+
             return { valid = true }
         end
-        
+
         local order = {
             customer_id = nil,
             items = {},
             total = -50
         }
-        
+
         -- This will fail on the first validation
         validate_order(order)
-        
+
         return { success = true }
     "#;
 
@@ -347,13 +347,13 @@ async fn test_async_error_handling() {
             time.sleep(100)  -- Wait 100ms
             solidb.error("Async operation failed", 503)
         end, function(error)
-            return { 
-                error_caught = true, 
+            return {
+                error_caught = true,
                 message = error,
                 async_handled = true
             }
         end)
-        
+
         return async_operation
     "#;
 
@@ -384,7 +384,7 @@ async fn test_error_codes_and_messages() {
             { code = 500, message = "Internal Server Error" },
             { code = 503, message = "Service Unavailable" }
         }
-        
+
         local errors = {}
         for i, test_case in ipairs(test_cases) do
             solidb.try(function()
@@ -397,8 +397,8 @@ async fn test_error_codes_and_messages() {
                 }
             end)
         end
-        
-        return { 
+
+        return {
             errors_tested = #errors,
             first_error = errors[1].error,
             last_error = errors[#errors].error

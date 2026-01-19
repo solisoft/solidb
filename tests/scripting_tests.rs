@@ -63,7 +63,7 @@ async fn test_request_method_and_path() {
     };
 
     let code = r#"
-        return { 
+        return {
             method = request.method,
             path = request.path
         }
@@ -100,9 +100,9 @@ async fn test_request_query_params() {
     };
 
     let code = r#"
-        return { 
+        return {
             page = request.query.page,
-            limit = request.query_params.limit 
+            limit = request.query_params.limit
         }
     "#;
 
@@ -137,7 +137,7 @@ async fn test_request_url_params() {
     };
 
     let code = r#"
-        return { 
+        return {
             id = request.params.id,
             action = request.params.action
         }
@@ -174,7 +174,7 @@ async fn test_request_headers() {
     };
 
     let code = r#"
-        return { 
+        return {
             auth = request.headers["Authorization"],
             custom = request.headers["X-Custom-Header"]
         }
@@ -211,7 +211,7 @@ async fn test_request_body() {
     };
 
     let code = r#"
-        return { 
+        return {
             name = request.body.name,
             email = request.body.email,
             age = request.body.age
@@ -278,7 +278,7 @@ async fn test_time_now_and_now_ms() {
     let code = r#"
         local now_sec = time.now()
         local now_ms = time.now_ms()
-        return { 
+        return {
             now_type = type(now_sec),
             now_ms_type = type(now_ms),
             ms_greater_than_sec = (now_ms > now_sec)
@@ -314,7 +314,7 @@ async fn test_time_iso() {
 
     let code = r#"
         local iso = time.iso()
-        return { 
+        return {
             iso = iso,
             has_t = string.find(iso, "T") ~= nil,
             has_z = string.find(iso, "+") ~= nil or string.find(iso, "Z") ~= nil
@@ -354,8 +354,8 @@ async fn test_time_add_subtract() {
         local plus_1h = time.add(base, 1, "h")
         local plus_1d = time.add(base, 1, "d")
         local minus_1s = time.subtract(base, 1, "s")
-        
-        return { 
+
+        return {
             plus_1s = plus_1s,
             plus_1m = plus_1m,
             plus_1h = plus_1h,
@@ -463,11 +463,11 @@ async fn test_collection_update() {
     let code = r#"
         local users = db:collection("users")
         local doc = users:insert({ _key = "alice", name = "Alice", age = 25 })
-        
+
         local updated = users:update("alice", { name = "Alice Updated", age = 26 })
         local fetched = users:get("alice")
-        
-        return { 
+
+        return {
             updated_name = fetched.name,
             updated_age = fetched.age
         }
@@ -505,13 +505,13 @@ async fn test_collection_delete() {
         local items = db:collection("items")
         items:insert({ _key = "item1", name = "Item 1" })
         items:insert({ _key = "item2", name = "Item 2" })
-        
+
         local count_before = items:count()
         local deleted = items:delete("item1")
         local count_after = items:count()
         local fetched = items:get("item1")
-        
-        return { 
+
+        return {
             count_before = count_before,
             count_after = count_after,
             deleted_result = deleted,
@@ -555,8 +555,8 @@ async fn test_crypto_uuid() {
         local uuid1 = crypto.uuid()
         local uuid2 = crypto.uuid()
         local uuidv7 = crypto.uuid_v7()
-        
-        return { 
+
+        return {
             uuid1 = uuid1,
             uuid2 = uuid2,
             uuidv7 = uuidv7,
@@ -596,8 +596,8 @@ async fn test_crypto_random_bytes() {
     let code = r#"
         local bytes16 = crypto.random_bytes(16)
         local bytes32 = crypto.random_bytes(32)
-        
-        return { 
+
+        return {
             len16 = #bytes16,
             len32 = #bytes32
         }
@@ -634,8 +634,8 @@ async fn test_crypto_hmac() {
         local data = "hello world"
         local hmac256 = crypto.hmac_sha256(key, data)
         local hmac512 = crypto.hmac_sha512(key, data)
-        
-        return { 
+
+        return {
             hmac256_len = #hmac256,
             hmac512_len = #hmac512,
             hmac256 = hmac256
@@ -672,8 +672,8 @@ async fn test_crypto_base32() {
         local original = "Hello"
         local encoded = crypto.base32_encode(original)
         local decoded = crypto.base32_decode(encoded)
-        
-        return { 
+
+        return {
             encoded = encoded,
             decoded = decoded,
             match = (original == decoded)
@@ -713,7 +713,7 @@ async fn test_solidb_stats() {
 
     let code = r#"
         local stats = solidb.stats()
-        return { 
+        return {
             has_active = (stats.active_scripts ~= nil),
             has_ws = (stats.active_ws ~= nil),
             has_total = (stats.total_scripts_executed ~= nil)
@@ -788,7 +788,7 @@ async fn test_db_enqueue_job() {
 
     let code = r#"
         local job_id = db:enqueue("emails", "send_email", { to = "test@example.com" })
-        return { 
+        return {
             job_id = job_id,
             has_id = (job_id ~= nil and #job_id > 0)
         }
@@ -1011,7 +1011,7 @@ async fn test_context_alias() {
 
     // 'context' should be an alias for 'request'
     let code = r#"
-        return { 
+        return {
             method = context.method,
             body_data = context.body.data
         }
@@ -1158,7 +1158,7 @@ async fn test_json_arrays() {
         for _, v in ipairs(request.body.items) do
             sum = sum + v
         end
-        return { 
+        return {
             sum = sum,
             first_name = request.body.names[1],
             items_count = #request.body.items
@@ -1295,7 +1295,7 @@ async fn test_lua_return_mixed_table() {
     };
 
     let code = r#"
-        return { 
+        return {
             string_val = "hello",
             number_val = 42,
             float_val = 3.14,
@@ -1563,7 +1563,7 @@ async fn test_crypto_empty_string_hash() {
     };
 
     let code = r#"
-        return { 
+        return {
             md5 = crypto.md5(""),
             sha256 = crypto.sha256("")
         }
@@ -1603,7 +1603,7 @@ async fn test_security_load_removed() {
     };
 
     let code = r#"
-        return { 
+        return {
             has_load = (load ~= nil),
             has_loadfile = (loadfile ~= nil),
             has_require = (require ~= nil)
@@ -1677,23 +1677,23 @@ async fn test_multiple_collection_operations() {
 
     let code = r#"
         local col = db:collection("multi")
-        
+
         -- Insert multiple
         for i = 1, 5 do
             col:insert({ _key = "item" .. i, value = i * 10 })
         end
-        
+
         -- Update one
         col:update("item3", { value = 999 })
-        
+
         -- Delete one
         col:delete("item1")
-        
+
         -- Get results
         local item3 = col:get("item3")
         local item1 = col:get("item1")
         local count = col:count()
-        
+
         return {
             item3_value = item3.value,
             item1_exists = (item1 ~= nil),
@@ -1734,7 +1734,7 @@ async fn test_large_string_handling() {
     let code = r#"
         local str = string.rep("a", 10000)
         local hash = crypto.sha256(str)
-        return { 
+        return {
             len = #str,
             hash_len = #hash
         }
@@ -1771,7 +1771,7 @@ async fn test_solidb_now() {
 
     let code = r#"
         local ts = solidb.now()
-        return { 
+        return {
             ts_type = type(ts),
             is_reasonable = (ts > 1700000000) -- After 2023
         }
@@ -1807,7 +1807,7 @@ async fn test_numeric_precision() {
     };
 
     let code = r#"
-        return { 
+        return {
             int = 123456789,
             float = 123.456789,
             neg = -42,

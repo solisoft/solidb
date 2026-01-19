@@ -104,12 +104,12 @@ impl Collection {
 
         // Save bloom/cuckoo filter if applicable
         if index_type == IndexType::Bloom {
-            if let Some(filter) = self.bloom_filters.read().unwrap().get(&name) {
-                self.save_bloom_filter(&name, filter)?;
+            if let Some(filter) = self.bloom_filters.get(&name) {
+                self.save_bloom_filter(&name, &filter)?;
             }
         } else if index_type == IndexType::Cuckoo {
-            if let Some(filter) = self.cuckoo_filters.read().unwrap().get(&name) {
-                self.save_cuckoo_filter(&name, filter)?;
+            if let Some(filter) = self.cuckoo_filters.get(&name) {
+                self.save_cuckoo_filter(&name, &filter)?;
             }
         }
 
@@ -391,11 +391,8 @@ impl Collection {
             let vec_start = std::time::Instant::now();
 
             // Clear all vector indexes
-            {
-                let indexes = self.vector_indexes.read().unwrap();
-                for index in indexes.values() {
-                    index.clear();
-                }
+            for entry in self.vector_indexes.iter() {
+                entry.clear();
             }
 
             // Re-index all documents
@@ -1108,8 +1105,7 @@ impl Collection {
     // ==================== Bloom/Cuckoo Filter Support ====================
 
     pub(crate) fn get_or_create_bloom_filter(&self, index_name: &str) -> DbResult<BloomFilter> {
-        let mut filters = self.bloom_filters.write().unwrap();
-        if let Some(filter) = filters.get(index_name) {
+        if let Some(filter) = self.bloom_filters.get(index_name) {
             return Ok(filter.clone());
         }
 
@@ -1119,23 +1115,21 @@ impl Collection {
             .cf_handle(&self.name)
             .ok_or(DbError::InternalError("CF not found".into()))?;
         let key = format!("{}{}", BLO_IDX_PREFIX, index_name);
-        if let Ok(Some(bytes)) = db.get_cf(cf, key.as_bytes()) {
-            // Deserialize bloom filter from bytes (assuming binary format serialization support)
-            // Check fastbloom serialization options.
-            // If not supported natively, we might need a wrapper.
-            // For now assuming serde support or simple byte reconstruction.
-            // Original file didn't show explicit deserialization logic, likely using serde?
-            // `fastbloom` supports serde.
+        let new_filter = if let Ok(Some(bytes)) = db.get_cf(cf, key.as_bytes()) {
+            // Deserialize bloom filter from bytes
             if let Ok(filter) = serde_json::from_slice::<BloomFilter>(&bytes) {
-                filters.insert(index_name.to_string(), filter.clone());
-                return Ok(filter);
+                filter
+            } else {
+                BloomFilter::with_num_bits(1024 * 8).expected_items(1000)
             }
-        }
+        } else {
+            BloomFilter::with_num_bits(1024 * 8).expected_items(1000)
+        };
 
-        // Create new
-        let filter = BloomFilter::with_num_bits(1024 * 8).expected_items(1000); // Default size?
-        filters.insert(index_name.to_string(), filter.clone());
-        Ok(filter)
+        // Insert into cache and return
+        self.bloom_filters
+            .insert(index_name.to_string(), new_filter.clone());
+        Ok(new_filter)
     }
 
     pub(crate) fn save_bloom_filter(&self, index_name: &str, filter: &BloomFilter) -> DbResult<()> {
@@ -1151,11 +1145,11 @@ impl Collection {
     }
 
     pub(crate) fn bloom_insert(&self, index_name: &str, item: &str) {
-        if let Ok(mut filter) = self.get_or_create_bloom_filter(index_name) {
+        if let Ok(filter) = self.get_or_create_bloom_filter(index_name) {
+            let mut filter = filter;
             filter.insert(item.as_bytes());
             // Update cache
-            let mut filters = self.bloom_filters.write().unwrap();
-            filters.insert(index_name.to_string(), filter);
+            self.bloom_filters.insert(index_name.to_string(), filter);
         }
     }
 
@@ -1170,8 +1164,7 @@ impl Collection {
     // Cuckoo filter helpers
 
     pub(crate) fn preload_cuckoo_filter(&self, index_name: &str) {
-        let mut filters = self.cuckoo_filters.write().unwrap();
-        if filters.contains_key(index_name) {
+        if self.cuckoo_filters.contains_key(index_name) {
             return;
         }
 
@@ -1181,10 +1174,11 @@ impl Collection {
             if let Ok(Some(_bytes)) = db.get_cf(cf, key.as_bytes()) {
                 // FIXME: CuckooFilter deserialization failing due to DefaultHasher
                 // if let Ok(filter) = serde_json::from_slice(&bytes) {
-                //     filters.insert(index_name.to_string(), filter);
+                //     self.cuckoo_filters.insert(index_name.to_string(), filter);
                 // }
             } else {
-                filters.insert(index_name.to_string(), CuckooFilter::new());
+                self.cuckoo_filters
+                    .insert(index_name.to_string(), CuckooFilter::new());
             }
         }
     }
@@ -1200,39 +1194,26 @@ impl Collection {
             .ok_or(DbError::InternalError("CF not found".into()))?;
         let _key = format!("{}{}", CFO_IDX_PREFIX, index_name);
 
-        // Serialize cuckoo filter - checking if serde is supported
-        // Assuming yes as implied by original file usage
-        // Note: CuckooFilter struct might not implement Serialize directly depending on crate version.
-        // But original file code seemed to load/save it.
-        // Let's assume serde integration is active.
-        // FIXME: CuckooFilter serialization failing
-        // let bytes = serde_json::to_vec(filter).map_err(|e| DbError::InternalError(e.to_string()))?;
-        // db.put_cf(cf, key.as_bytes(), &bytes).map_err(|e| DbError::InternalError(e.to_string()))?;
         Ok(())
     }
 
     pub fn cuckoo_insert(&self, index_name: &str, item: &str) {
-        // Ensure loaded
         self.preload_cuckoo_filter(index_name);
-        let mut filters = self.cuckoo_filters.write().unwrap();
-        if let Some(filter) = filters.get_mut(index_name) {
+        if let Some(mut filter) = self.cuckoo_filters.get_mut(index_name) {
             let _ = filter.add(item);
         }
     }
 
     pub fn cuckoo_delete(&self, index_name: &str, item: &str) {
-        // Ensure loaded
         self.preload_cuckoo_filter(index_name);
-        let mut filters = self.cuckoo_filters.write().unwrap();
-        if let Some(filter) = filters.get_mut(index_name) {
+        if let Some(mut filter) = self.cuckoo_filters.get_mut(index_name) {
             let _ = filter.delete(item);
         }
     }
 
     pub fn cuckoo_check(&self, index_name: &str, item: &str) -> bool {
         self.preload_cuckoo_filter(index_name);
-        let filters = self.cuckoo_filters.read().unwrap();
-        if let Some(filter) = filters.get(index_name) {
+        if let Some(filter) = self.cuckoo_filters.get(index_name) {
             filter.contains(item)
         } else {
             true

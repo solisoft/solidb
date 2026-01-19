@@ -140,7 +140,6 @@ pub async fn generate_content_handler(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::ai::{ContributionType, Priority, SubmitContributionRequest};
 
     #[test]

@@ -188,7 +188,7 @@ fn test_subquery_count() {
 fn test_subquery_with_filter() {
     let (engine, _tmp) = create_sales_data();
 
-    let result = execute_single(&engine, 
+    let result = execute_single(&engine,
         "LET widgets = (FOR s IN sales FILTER s.product == 'Widget' RETURN s.amount) RETURN SUM(widgets)");
 
     // Widget amounts: 100 + 150 + 50 = 300
@@ -382,7 +382,7 @@ fn test_filter_or() {
 fn test_filter_multiple_conditions() {
     let (engine, _tmp) = create_sales_data();
 
-    let results = execute_query(&engine, 
+    let results = execute_query(&engine,
         "FOR s IN sales FILTER s.category == 'A' AND s.amount >= 100 AND s.amount <= 200 RETURN s._key");
 
     // Category A, amount 100-200: s1 (100), s2 (200), s3 (150)
@@ -393,7 +393,7 @@ fn test_filter_multiple_conditions() {
 fn test_filter_with_parentheses() {
     let (engine, _tmp) = create_sales_data();
 
-    let results = execute_query(&engine, 
+    let results = execute_query(&engine,
         "FOR s IN sales FILTER (s.category == 'A' OR s.category == 'B') AND s.amount > 100 RETURN s");
 
     // Both categories, amount > 100

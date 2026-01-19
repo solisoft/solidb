@@ -709,8 +709,7 @@ async fn handle_live_query_request(
                                                 tokio::pin!(stream);
                                                 while let Some(result) = stream.next().await {
                                                     if let Ok(event) = result {
-                                                        if tx_remote.send(event).await.is_err()
-                                                        {
+                                                        if tx_remote.send(event).await.is_err() {
                                                             break;
                                                         }
                                                     } else {

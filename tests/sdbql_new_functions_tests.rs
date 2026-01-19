@@ -484,7 +484,7 @@ fn test_date_extraction_chain() {
 
     let result = execute_single(
         &engine,
-        "LET d = \"2024-12-30T10:30:45.000Z\" 
+        "LET d = \"2024-12-30T10:30:45.000Z\"
          RETURN { year: DATE_YEAR(d), month: DATE_MONTH(d), day: DATE_DAY(d) }",
     );
 

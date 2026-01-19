@@ -2,7 +2,7 @@
 //!
 //! Tests for index functionality including:
 //! - Hash indexes
-//! - Persistent indexes  
+//! - Persistent indexes
 //! - Fulltext indexes
 //! - Geo indexes
 //! - Compound indexes

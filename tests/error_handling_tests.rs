@@ -2,7 +2,7 @@
 //!
 //! Tests for comprehensive error handling across the codebase including:
 //! - Storage errors
-//! - Collection errors  
+//! - Collection errors
 //! - Document errors
 //! - Query errors
 //! - Index errors

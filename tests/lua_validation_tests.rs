@@ -70,10 +70,10 @@ async fn test_validate_basic_schema() {
             },
             required = {"name"}
         }
-        
+
         local valid_data = { name = "Alice", age = 30 }
         local invalid_data = { age = 30 }  -- missing required name
-        
+
         return {
             valid = solidb.validate(valid_data, schema),
             invalid = solidb.validate(invalid_data, schema)
@@ -106,14 +106,14 @@ async fn test_validate_detailed_errors() {
             },
             required = {"email", "age"}
         }
-        
+
         local invalid_data = {
             email = "not-an-email",
             age = 15
         }
-        
+
         local result = solidb.validate_detailed(invalid_data, schema)
-        
+
         return {
             valid = result.valid,
             error_count = #result.errors,
@@ -144,14 +144,14 @@ async fn test_sanitize_input() {
             email = "ALICE@EXAMPLE.COM",
             message = "  Hello   World  "
         }
-        
+
         local operations = {
             trim = true,
             lowercase = {"email"}
         }
-        
+
         local clean_data = solidb.sanitize(dirty_data, operations)
-        
+
         return {
             name = clean_data.name,
             email = clean_data.email,
@@ -236,14 +236,14 @@ async fn test_schema_storage_and_retrieval() {
             },
             required = {"username", "email"}
         }
-        
+
         local schemas = db:collection("_schemas")
         local stored = schemas:insert({
             name = "user_schema",
             version = "1.0",
             schema = user_schema
         })
-        
+
         -- Retrieve and validate
         local retrieved = schemas:get(stored._key)
         local test_data = {
@@ -251,7 +251,7 @@ async fn test_schema_storage_and_retrieval() {
             email = "alice@example.com",
             created_at = "2024-01-01T00:00:00Z"
         }
-        
+
         return {
             stored_key = stored._key,
             schema_valid = solidb.validate(test_data, retrieved.schema),
@@ -308,7 +308,7 @@ async fn test_validation_with_nested_objects() {
             },
             required = {"user"}
         }
-        
+
         local valid_data = {
             user = {
                 profile = {
@@ -320,7 +320,7 @@ async fn test_validation_with_nested_objects() {
                 }
             }
         }
-        
+
         local invalid_data = {
             user = {
                 profile = {
@@ -331,7 +331,7 @@ async fn test_validation_with_nested_objects() {
                 }
             }
         }
-        
+
         return {
             valid = solidb.validate(valid_data, schema),
             invalid = solidb.validate(invalid_data, schema)
@@ -372,17 +372,17 @@ async fn test_array_validation() {
             },
             required = {"tags"}
         }
-        
+
         local valid_data = {
             tags = {"urgent", "important"},
             scores = {85, 92, 78}
         }
-        
+
         local invalid_data = {
             tags = {},  -- empty array, violates minItems
             scores = {85, 105}  -- 105 exceeds maximum
         }
-        
+
         return {
             valid = solidb.validate(valid_data, schema),
             invalid = solidb.validate(invalid_data, schema)

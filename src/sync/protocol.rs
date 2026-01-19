@@ -41,7 +41,7 @@ pub struct SyncEntry {
     pub hlc_count: u32,
     /// Database name
     pub database: String,
-    /// Collection name  
+    /// Collection name
     pub collection: String,
     /// Type of operation
     pub operation: Operation,
@@ -109,7 +109,7 @@ pub enum SyncMessage {
     IncrementalSyncRequest {
         from_node: String,
         after_sequence: u64,
-        /// Max batch size in bytes (default 1MB)  
+        /// Max batch size in bytes (default 1MB)
         max_batch_bytes: u32,
     },
 

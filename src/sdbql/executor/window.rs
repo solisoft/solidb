@@ -420,7 +420,9 @@ impl<'a> QueryExecutor<'a> {
                         let prev_idx = sorted_indices[i - offset];
                         let val = arguments
                             .first()
-                            .and_then(|arg| self.evaluate_expr_with_context(arg, &rows[prev_idx]).ok())
+                            .and_then(|arg| {
+                                self.evaluate_expr_with_context(arg, &rows[prev_idx]).ok()
+                            })
                             .unwrap_or(Value::Null);
                         results.push(val);
                     } else {
@@ -449,7 +451,9 @@ impl<'a> QueryExecutor<'a> {
                         let next_idx = sorted_indices[i + offset];
                         let val = arguments
                             .first()
-                            .and_then(|arg| self.evaluate_expr_with_context(arg, &rows[next_idx]).ok())
+                            .and_then(|arg| {
+                                self.evaluate_expr_with_context(arg, &rows[next_idx]).ok()
+                            })
                             .unwrap_or(Value::Null);
                         results.push(val);
                     } else {
@@ -493,7 +497,9 @@ impl<'a> QueryExecutor<'a> {
                             let idx = sorted_indices[i];
                             arguments
                                 .first()
-                                .and_then(|arg| self.evaluate_expr_with_context(arg, &rows[idx]).ok())
+                                .and_then(|arg| {
+                                    self.evaluate_expr_with_context(arg, &rows[idx]).ok()
+                                })
                                 .unwrap_or(Value::Null)
                         })
                         .collect();
