@@ -374,13 +374,17 @@ impl BlobRebalanceWorker {
         overloaded.sort_by(|a, b| {
             let dev_a = a.chunk_count as f64 / metrics.mean_chunks;
             let dev_b = b.chunk_count as f64 / metrics.mean_chunks;
-            dev_b.partial_cmp(&dev_a).unwrap_or(std::cmp::Ordering::Equal)
+            dev_b
+                .partial_cmp(&dev_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         underloaded.sort_by(|a, b| {
             let dev_a = a.chunk_count as f64 / metrics.mean_chunks;
             let dev_b = b.chunk_count as f64 / metrics.mean_chunks;
-            dev_a.partial_cmp(&dev_b).unwrap_or(std::cmp::Ordering::Equal)
+            dev_a
+                .partial_cmp(&dev_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Plan migrations from overloaded to underloaded nodes
@@ -393,7 +397,9 @@ impl BlobRebalanceWorker {
                 // Calculate how many chunks to move
                 let target_diff = (metrics.mean_chunks - under.chunk_count as f64) as usize;
                 let source_diff = (over.chunk_count as f64 - metrics.mean_chunks) as usize;
-                let to_move = target_diff.min(source_diff).min(self.config.batch_size - migrations.len());
+                let to_move = target_diff
+                    .min(source_diff)
+                    .min(self.config.batch_size - migrations.len());
 
                 if to_move == 0 {
                     continue;
