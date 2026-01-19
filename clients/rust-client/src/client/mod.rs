@@ -1,8 +1,3 @@
-//! SoliDB native driver client library
-//!
-//! Provides a high-performance client for connecting to SoliDB using the
-//! native binary protocol instead of HTTP REST.
-
 mod builder;
 mod bulk;
 mod collection;
@@ -22,18 +17,12 @@ use super::protocol::{
     decode_message, encode_command, Command, DriverError, Response, DRIVER_MAGIC, MAX_MESSAGE_SIZE,
 };
 
-/// SoliDB native driver client
 pub struct SoliDBClient {
     pub(crate) stream: TcpStream,
-    /// Current transaction ID (if any)
     pub(crate) current_tx: Option<String>,
 }
 
 impl SoliDBClient {
-    /// Connect to a SoliDB server
-    ///
-    /// # Arguments
-    /// * `addr` - Server address (e.g., "localhost:6745" or "192.168.1.100:6745")
     pub async fn connect(addr: &str) -> Result<Self, DriverError> {
         let stream = TcpStream::connect(addr).await.map_err(|e| {
             DriverError::ConnectionError(format!("Failed to connect to {}: {}", addr, e))
@@ -44,7 +33,6 @@ impl SoliDBClient {
             current_tx: None,
         };
 
-        // Send magic header
         client.stream.write_all(DRIVER_MAGIC).await.map_err(|e| {
             DriverError::ConnectionError(format!("Failed to send magic header: {}", e))
         })?;
@@ -57,7 +45,6 @@ impl SoliDBClient {
         Ok(client)
     }
 
-    /// Send a command and receive the response
     pub(crate) async fn send_command(&mut self, command: Command) -> Result<Response, DriverError> {
         let data = encode_command(&command)?;
         self.stream
@@ -89,7 +76,6 @@ impl SoliDBClient {
         decode_message(&payload)
     }
 
-    /// Extract data from a response
     pub(crate) fn extract_data(response: Response) -> Result<Option<Value>, DriverError> {
         match response {
             Response::Ok { data, .. } => Ok(data),
@@ -99,7 +85,6 @@ impl SoliDBClient {
         }
     }
 
-    /// Extract the transaction ID from a response
     pub(crate) fn extract_tx_id(response: Response) -> Result<String, DriverError> {
         match response {
             Response::Ok {
@@ -115,7 +100,6 @@ impl SoliDBClient {
         }
     }
 
-    /// Ping the server
     pub async fn ping(&mut self) -> Result<i64, DriverError> {
         let response = self.send_command(Command::Ping).await?;
         match response {
@@ -127,7 +111,6 @@ impl SoliDBClient {
         }
     }
 
-    /// Authenticate with the server
     pub async fn auth(
         &mut self,
         database: &str,
@@ -139,6 +122,30 @@ impl SoliDBClient {
                 database: database.to_string(),
                 username: username.to_string(),
                 password: password.to_string(),
+                api_key: None,
+            })
+            .await?;
+
+        match response {
+            Response::Ok { .. } => Ok(()),
+            Response::Error { error } => Err(error),
+            _ => Err(DriverError::ProtocolError(
+                "Unexpected response".to_string(),
+            )),
+        }
+    }
+
+    pub async fn auth_with_api_key(
+        &mut self,
+        database: &str,
+        api_key: &str,
+    ) -> Result<(), DriverError> {
+        let response = self
+            .send_command(Command::Auth {
+                database: database.to_string(),
+                username: String::new(),
+                password: String::new(),
+                api_key: Some(api_key.to_string()),
             })
             .await?;
 

@@ -178,6 +178,16 @@ func (c *Client) Auth(database, username, password string) error {
 	return err
 }
 
+func (c *Client) AuthWithApiKey(database, apiKey string) error {
+	_, err := c.sendCommand("auth", map[string]interface{}{
+		"database": database,
+		"username": "",
+		"password": "",
+		"api_key":  apiKey,
+	})
+	return err
+}
+
 func (c *Client) ListDatabases() ([]string, error) {
 	res, err := c.sendCommand("list_databases", nil)
 	if err != nil {

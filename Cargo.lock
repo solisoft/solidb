@@ -3036,7 +3036,7 @@ dependencies = [
 
 [[package]]
 name = "solidb"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -3092,6 +3092,7 @@ dependencies = [
  "serde_urlencoded",
  "sha2",
  "slug",
+ "solidb-client",
  "sysinfo",
  "tempfile",
  "thiserror 2.0.17",
@@ -3108,6 +3109,19 @@ dependencies = [
  "uuid",
  "uuid7",
  "x25519-dalek",
+]
+
+[[package]]
+name = "solidb-client"
+version = "0.5.0"
+dependencies = [
+ "chrono",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-test",
 ]
 
 [[package]]

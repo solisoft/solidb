@@ -1,9 +1,8 @@
 use super::SoliDBClient;
-use crate::driver::protocol::{Command, DriverError, Response};
+use crate::protocol::{Command, DriverError, Response};
 use serde_json::Value;
 
 impl SoliDBClient {
-    /// Get a document by key
     pub async fn get(
         &mut self,
         database: &str,
@@ -21,7 +20,6 @@ impl SoliDBClient {
             .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
     }
 
-    /// Insert a new document
     pub async fn insert(
         &mut self,
         database: &str,
@@ -41,7 +39,6 @@ impl SoliDBClient {
             .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
     }
 
-    /// Update an existing document
     pub async fn update(
         &mut self,
         database: &str,
@@ -63,7 +60,6 @@ impl SoliDBClient {
             .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
     }
 
-    /// Delete a document
     pub async fn delete(
         &mut self,
         database: &str,
@@ -81,7 +77,6 @@ impl SoliDBClient {
         Ok(())
     }
 
-    /// List documents in a collection with pagination
     pub async fn list(
         &mut self,
         database: &str,

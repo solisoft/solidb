@@ -120,6 +120,11 @@ module SoliDB
       nil
     end
 
+    def auth_with_api_key(database, api_key)
+      send_command("auth", database: database, username: "", password: "", api_key: api_key)
+      nil
+    end
+
     # --- Database Operations ---
 
     def list_databases

@@ -6,7 +6,7 @@
 //! - Error handling
 
 use serde_json::json;
-use solidb::driver::protocol::{
+use solidb_client::protocol::{
     decode_message, encode_command, encode_response, Command, DriverError, IsolationLevel, Response,
 };
 use std::collections::HashMap;

@@ -1,6 +1,6 @@
 use super::DriverHandler;
-use crate::driver::protocol::{DriverError, Response};
 use crate::sdbql::QueryExecutor;
+use solidb_client::protocol::{DriverError, Response};
 use std::collections::HashMap;
 
 pub fn handle_query(

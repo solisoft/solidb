@@ -10,7 +10,7 @@ use tokio::net::TcpStream;
 use crate::storage::StorageEngine;
 use crate::transaction::TransactionId;
 
-use super::protocol::{
+use solidb_client::protocol::{
     decode_message, encode_response, Command, DriverError, Response, MAX_MESSAGE_SIZE,
 };
 
@@ -139,7 +139,8 @@ impl DriverHandler {
                 database,
                 username,
                 password,
-            } => auth::handle_auth(self, database, username, password).await,
+                api_key,
+            } => auth::handle_auth(self, database, username, password, api_key).await,
 
             // ==================== Database Operations ====================
             Command::ListDatabases => database::handle_list_databases(self),

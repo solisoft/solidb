@@ -382,6 +382,16 @@ class Client
         ]);
     }
 
+    public function authWithApiKey(string $database, string $apiKey): void
+    {
+        $this->sendCommand('auth', [
+            'database' => $database,
+            'username' => '',
+            'password' => '',
+            'api_key' => $apiKey
+        ]);
+    }
+
     // --- Database Operations ---
 
     public function listDatabases(): array

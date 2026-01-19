@@ -1,6 +1,6 @@
 use super::DriverHandler;
-use crate::driver::protocol::{DriverError, Response};
 use serde_json::Value;
+use solidb_client::protocol::{DriverError, Response};
 use std::collections::HashSet;
 
 // ==================== Configuration Structs ====================

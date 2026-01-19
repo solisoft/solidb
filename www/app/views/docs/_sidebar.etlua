@@ -109,6 +109,7 @@ local sections = {
         { slug = "clients-php", label = "PHP" },
         { slug = "clients-ruby", label = "Ruby" },
         { slug = "clients-elixir", label = "Elixir" },
+        { slug = "clients-rust", label = "Rust" },
       }},
       { slug = "comparison", label = "DB Comparison", icon = "fa-balance-scale", color = "warning" },
     }

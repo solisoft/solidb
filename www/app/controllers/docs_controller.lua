@@ -43,6 +43,7 @@ local PAGE_TITLES = {
   ["clients-php"] = "PHP Client",
   ["clients-ruby"] = "Ruby Client",
   ["clients-elixir"] = "Elixir Client",
+  ["clients-rust"] = "Rust Client",
   ["comparison"] = "Database Comparison",
   ["security"] = "Security",
   ["tooling"] = "Command-Line Tools"

@@ -7,8 +7,8 @@
 //! - Error handling
 
 use serde_json::json;
-use solidb::driver::client::SoliDBClientBuilder;
-use solidb::driver::protocol::{DriverError, Response};
+use solidb_client::protocol::{DriverError, Response};
+use solidb_client::SoliDBClientBuilder;
 
 // ============================================================================
 // SoliDBClientBuilder Tests

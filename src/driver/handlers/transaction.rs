@@ -1,11 +1,11 @@
 use super::DriverHandler;
-use crate::driver::protocol::{Command, DriverError, Response};
 use crate::transaction::IsolationLevel as TxIsolationLevel;
+use solidb_client::protocol::{Command, DriverError, IsolationLevel, Response};
 
 pub fn handle_begin_transaction(
     handler: &mut DriverHandler,
     database: String,
-    isolation_level: crate::driver::protocol::IsolationLevel,
+    isolation_level: IsolationLevel,
 ) -> Response {
     match handler.storage.get_database(&database) {
         Ok(_) => {

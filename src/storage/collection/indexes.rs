@@ -1,6 +1,7 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::{extract_field_value, generate_ngrams, tokenize};
+use crate::storage::serializer::deserialize_doc;
 use rocksdb::{Direction, IteratorMode, WriteBatch};
 use serde_json::Value;
 
@@ -918,7 +919,7 @@ impl Collection {
             .into_iter()
             .filter_map(|r| r.ok())
             .flatten()
-            .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
+            .filter_map(|bytes| deserialize_doc(&bytes).ok())
             .collect();
 
         Some(docs)
@@ -973,7 +974,7 @@ impl Collection {
             .into_iter()
             .filter_map(|r| r.ok())
             .flatten()
-            .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
+            .filter_map(|bytes| deserialize_doc(&bytes).ok())
             .collect();
 
         Some(docs)
@@ -1017,7 +1018,7 @@ impl Collection {
             .into_iter()
             .filter_map(|r| r.ok())
             .flatten()
-            .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
+            .filter_map(|bytes| deserialize_doc(&bytes).ok())
             .collect();
 
         Some(docs)

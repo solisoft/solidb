@@ -1,0 +1,1172 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs/clients" class="inline-flex items-center text-orange-400 hover:text-orange-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Clients Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header Section -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-orange-500 to-amber-500 rounded-lg blur opacity-25"></div>
+      <div class="relative flex items-center">
+        <div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-orange-500 text-white shadow-[0_0_30px_rgba(249,115,22,0.5)] mr-6">
+          <i class="fab fa-rust text-4xl"></i>
+        </div>
+        <div>
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 mb-2 tracking-tight">
+            Rust Client
+          </h1>
+          <div class="flex items-center gap-4">
+            <span class="px-3 py-1 bg-orange-500/10 text-orange-400 text-xs font-bold uppercase tracking-wider rounded-full border border-orange-500/20">Official SDK</span>
+            <span class="text-sm text-gray-400">v0.5.0</span>
+            <span class="text-sm text-gray-500">Rust 1.56+</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <nav class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+      <h2 class="text-lg font-bold text-white mb-4">Table of Contents</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <h3 class="text-orange-400 font-semibold mb-2">Getting Started</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#installation" class="hover:text-white transition-colors">Installation</a></li>
+            <li><a href="#quickstart" class="hover:text-white transition-colors">Quick Start</a></li>
+            <li><a href="#connection" class="hover:text-white transition-colors">Connection</a></li>
+            <li><a href="#authentication" class="hover:text-white transition-colors">Authentication</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-orange-400 font-semibold mb-2">Core Operations</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#databases" class="hover:text-white transition-colors">Databases</a></li>
+            <li><a href="#collections" class="hover:text-white transition-colors">Collections</a></li>
+            <li><a href="#documents" class="hover:text-white transition-colors">Documents</a></li>
+            <li><a href="#queries" class="hover:text-white transition-colors">Queries</a></li>
+            <li><a href="#transactions" class="hover:text-white transition-colors">Transactions</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-orange-400 font-semibold mb-2">Management APIs</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#scripts" class="hover:text-white transition-colors">Scripts</a></li>
+            <li><a href="#jobs" class="hover:text-white transition-colors">Jobs & Cron</a></li>
+            <li><a href="#triggers" class="hover:text-white transition-colors">Triggers</a></li>
+            <li><a href="#rbac" class="hover:text-white transition-colors">Roles & Users</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-orange-400 font-semibold mb-2">Advanced Features</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#vector" class="hover:text-white transition-colors">Vector Search</a></li>
+            <li><a href="#geo" class="hover:text-white transition-colors">Geospatial</a></li>
+            <li><a href="#ttl" class="hover:text-white transition-colors">TTL Indexes</a></li>
+            <li><a href="#columnar" class="hover:text-white transition-colors">Columnar Storage</a></li>
+            <li><a href="#cluster" class="hover:text-white transition-colors">Cluster</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- GETTING STARTED -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-orange-500/20 text-orange-400 mr-4">
+          <i class="fas fa-rocket text-lg"></i>
+        </span>
+        Getting Started
+      </h2>
+
+      <!-- Installation -->
+      <section id="installation" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Installation</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre class="text-orange-400">cargo add solidb-client</pre>
+        </div>
+        <div class="mt-4 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+          <div class="flex items-start">
+            <i class="fas fa-info-circle text-amber-400 mt-0.5 mr-3"></i>
+            <p class="text-sm text-amber-200">
+              <strong>Requirements:</strong> Rust 1.56 or higher. The client uses <code class="bg-gray-800 px-1 rounded">tokio</code> for async runtime and <code class="bg-gray-800 px-1 rounded">rmp-serde</code> for MessagePack serialization.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Start -->
+      <section id="quickstart" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Quick Start</h3>
+        <div class="bg-gray-950 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-orange-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <pre class="relative z-10"><code class="language-rust">use solidb_client::{SoliDBClient, SoliDBClientBuilder};
+use serde_json::json;
+
+#[tokio::main]
+async fn main() -> Result<(), solidb_client::DriverError> {
+    // Create client using builder for automatic auth
+    let mut client = SoliDBClientBuilder::new("localhost:6745")
+        .auth("mydb", "admin", "password")
+        .timeout_ms(5000)
+        .build()
+        .await?;
+
+    // Or connect manually
+    // let mut client = SoliDBClient::connect("localhost:6745").await?;
+    // client.auth("mydb", "admin", "password").await?;
+
+    // Basic CRUD operations
+    let doc = client.insert("mydb", "users", None, json!({
+        "name": "Alice",
+        "age": 30,
+    })).await?;
+    println!("Created: {}", doc["_key"]);
+
+    let user = client.get("mydb", "users", doc["_key"].as_str().unwrap()).await?;
+    println!("Retrieved: {}", user["name"]);
+
+    client.update("mydb", "users", doc["_key"].as_str().unwrap(), json!({
+        "age": 31,
+    }), true).await?;
+
+    // Query with SDBQL
+    let results = client.query(
+        "mydb",
+        "FOR u IN users FILTER u.age > @min RETURN u",
+        Some(vec![("min", json!(25))].into_iter().collect())
+    ).await?;
+    println!("Found {} users", results.len());
+
+    // Ping for health check
+    let version = client.ping().await?;
+    println!("Server version: {}", version);
+
+    Ok(())
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Connection -->
+      <section id="connection" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Connection Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Connect with address string (host:port)
+let mut client = SoliDBClient::connect("localhost:6745").await?;
+
+// Check connection health
+let timestamp = client.ping().await?;
+println!("Server active at: {}", timestamp);
+
+// Connection is automatically closed when client is dropped
+// or use explicit cleanup
+drop(client);</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-orange-400">connect(addr)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Self&gt;</td><td class="px-4 py-3 text-gray-400">Create and connect client</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-orange-400">ping()</code></td><td class="px-4 py-3 text-gray-500">Result&lt;i64&gt;</td><td class="px-4 py-3 text-gray-400">Check connection health</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Authentication -->
+      <section id="authentication" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Authentication</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-rust">// Authenticate with database, username, and password
+client.auth("mydb", "admin", "password").await?;
+
+// Or use builder for automatic authentication
+let mut client = SoliDBClientBuilder::new("localhost:6745")
+    .auth("mydb", "admin", "password")
+    .build()
+    .await?;
+
+// Authentication is required for most operations
+// The session remains authenticated until disconnected</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- CORE OPERATIONS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 mr-4">
+          <i class="fas fa-database text-lg"></i>
+        </span>
+        Core Operations
+      </h2>
+
+      <!-- Databases -->
+      <section id="databases" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Database Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Note: Database operations are handled at connection/auth time
+// The client uses the database specified during auth()
+
+// List databases (requires _system access)
+let databases = client.list_databases().await?;
+// => vec!["_system", "mydb", "testdb"]
+
+// Create a new database
+client.create_database("analytics").await?;
+
+// Delete a database
+client.delete_database("old_db").await?;</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-amber-400">list_databases()</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Vec&lt;String&gt;&gt;</td><td class="px-4 py-3 text-gray-400">List all database names</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">create_database(name)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Create new database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">delete_database(name)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Delete database</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Collections -->
+      <section id="collections" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Collection Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// List collections in a database
+let collections = client.list_collections("mydb").await?;
+// => vec!["users", "orders", "products"]
+
+// Create a document collection
+client.create_collection("mydb", "products", None).await?;
+
+// Create an edge collection (for graphs)
+client.create_collection("mydb", "relationships", Some("edge")).await?;
+
+// Delete a collection
+client.delete_collection("mydb", "old_collection").await?;
+
+// Get collection statistics
+let stats = client.collection_stats("mydb", "users").await?;
+println!("Collection count: {}", stats["document_count"]);</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-amber-400">list_collections(db)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Vec&lt;String&gt;&gt;</td><td class="px-4 py-3 text-gray-400">List collections in database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">create_collection(db, name, *type)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Create collection (type: None/"edge")</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">delete_collection(db, name)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Delete collection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">collection_stats(db, name)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Value&gt;</td><td class="px-4 py-3 text-gray-400">Get collection statistics</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section id="documents" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Document Operations (CRUD)</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">use serde_json::json;
+
+// INSERT - Create a new document (auto-generated key)
+let doc = client.insert("mydb", "users", None, json!({
+    "name": "Alice",
+    "email": "alice@example.com",
+    "age": 30,
+})).await?;
+println!("{}", doc["_key"]); // Auto-generated key
+
+// INSERT with custom key
+let doc = client.insert("mydb", "users", Some("custom-key-123"), json!({
+    "name": "Bob",
+})).await?;
+
+// GET - Retrieve a document by key
+let user = client.get("mydb", "users", "custom-key-123").await?;
+// => json!({"_key": "custom-key-123", "name": "Bob", ...})
+
+// UPDATE - Modify a document (merge = true for partial update)
+client.update("mydb", "users", "custom-key-123", json!({
+    "age": 25,
+}), true).await?;
+
+// UPDATE - Replace entire document (merge = false)
+client.update("mydb", "users", "custom-key-123", json!({
+    "name": "Robert",
+    "email": "robert@example.com",
+    "age": 30,
+}), false).await?;
+
+// DELETE - Remove a document
+client.delete("mydb", "users", "custom-key-123").await?;
+
+// LIST - Paginated document listing
+let (docs, total) = client.list("mydb", "users", Some(50), Some(0)).await?;
+// limit: 50, offset: 0, returns (documents, total_count)</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-amber-400">insert(db, col, key, doc)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Value&gt;</td><td class="px-4 py-3 text-gray-400">Insert document, returns doc with _key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">get(db, col, key)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Value&gt;</td><td class="px-4 py-3 text-gray-400">Get document by key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">update(db, col, key, doc, merge)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Value&gt;</td><td class="px-4 py-3 text-gray-400">Update document (merge or replace)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">delete(db, col, key)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Delete document</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">list(db, col, limit, offset)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;(Vec&lt;Value&gt;, usize)&gt;</td><td class="px-4 py-3 text-gray-400">List documents with pagination</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Queries -->
+      <section id="queries" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SDBQL Queries</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">use std::collections::HashMap;
+use serde_json::json;
+
+// Simple query
+let users = client.query("mydb", "FOR u IN users RETURN u", None).await?;
+
+// Query with bind variables (recommended for security)
+let mut bind_vars = HashMap::new();
+bind_vars.insert("min_age".to_string(), json!(18));
+bind_vars.insert("status".to_string(), json!("active"));
+bind_vars.insert("limit".to_string(), json!(100));
+
+let results = client.query("mydb", r#"
+    FOR u IN users
+    FILTER u.age >= @min_age AND u.status == @status
+    SORT u.created_at DESC
+    LIMIT @limit
+    RETURN { name: u.name, email: u.email }
+"#,
+    Some(bind_vars)
+).await?;
+
+// Aggregation query
+let stats = client.query("mydb", r#"
+    FOR u IN users
+    COLLECT status = u.status WITH COUNT INTO count
+    RETURN { status, count }
+"#, None).await?;
+
+// Join query
+let orders = client.query("mydb", r#"
+    FOR o IN orders
+    FOR u IN users FILTER u._key == o.user_id
+    RETURN { order: o, user: u.name }
+"#, None).await?;
+
+// Explain query plan
+let plan = client.explain("mydb", "FOR u IN users RETURN u", None).await?;</code></pre>
+        </div>
+      </section>
+
+      <!-- Transactions -->
+      <section id="transactions" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">ACID Transactions</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">use solidb_client::IsolationLevel;
+
+// Begin a transaction
+let tx_id = client.begin_transaction("mydb", None).await?;
+let tx_id = client.begin_transaction("mydb", Some(IsolationLevel::ReadCommitted)).await?;
+// Isolation levels: ReadUncommitted, ReadCommitted, RepeatableRead, Serializable
+
+// Perform operations within transaction
+let _ = client.insert("mydb", "accounts", None, json!({
+    "id": 1, "balance": 1000,
+})).await?;
+
+let _ = client.insert("mydb", "accounts", None, json!({
+    "id": 2, "balance": 500,
+})).await?;
+
+// Check transaction state
+println!("In transaction: {}", client.in_transaction());
+println!("Transaction ID: {:?}", client.transaction_id());
+
+// Commit if all operations succeed
+client.commit().await?;
+println!("Transaction committed successfully");
+
+// Or rollback on error
+// client.rollback().await?;</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-amber-400">begin_transaction(db, *isolation)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;String&gt;</td><td class="px-4 py-3 text-gray-400">Start transaction, returns tx_id</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">commit()</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Commit transaction</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">rollback()</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Rollback transaction</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">in_transaction()</code></td><td class="px-4 py-3 text-gray-500">bool</td><td class="px-4 py-3 text-gray-400">Check if in transaction</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-amber-400">transaction_id()</code></td><td class="px-4 py-3 text-gray-500">Option&lt;&str&gt;</td><td class="px-4 py-3 text-gray-400">Get current transaction ID</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MANAGEMENT SUB-CLIENTS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-4 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-yellow-500/20 text-yellow-400 mr-4">
+          <i class="fas fa-cubes text-lg"></i>
+        </span>
+        Management Sub-Clients
+      </h2>
+      <p class="text-gray-400 mb-8">
+        Sub-clients provide namespaced access to management APIs.
+        <strong class="text-white">Important:</strong> All management operations require database context.
+      </p>
+
+      <!-- Scripts -->
+      <section id="scripts" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-yellow-500/20 text-yellow-400 mr-3">
+            <i class="fas fa-scroll text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.scripts()</h3>
+          <span class="ml-3 px-2 py-1 bg-yellow-500/10 text-yellow-400 text-xs rounded">Lua Script Endpoints</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Create a Lua script endpoint
+let script = client.scripts().create(
+    "hello",                        // name
+    "/api/hello",                   // path
+    vec!["GET", "POST"],            // methods
+    r#"return { message = "Hello!" }"#, // code
+    None,                           // description (optional)
+    None,                           // collection (optional)
+).await?;
+println!("Created script: {}", script["_key"]);
+
+// List all scripts
+let scripts = client.scripts().list().await?;
+for s in &scripts {
+    println!("{} -> {}", s["name"], s["path"]);
+}
+
+// Get a specific script
+let script = client.scripts().get("script_key").await?;
+
+// Update script
+client.scripts().update("script_key", json!({
+    "code": r#"return { message: "Updated!" }"#,
+    "methods": vec!["GET"],
+})).await?;
+
+// Delete a script
+client.scripts().delete("script_key").await?;
+
+// Get execution statistics
+let stats = client.scripts().get_stats().await?;</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Parameters</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-yellow-400">create</code></td><td class="px-4 py-3 text-gray-500">name, path, methods, code, *desc, *col</td><td class="px-4 py-3 text-gray-400">Create Lua endpoint</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-yellow-400">list()</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">List all scripts</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-yellow-400">get(scriptID)</code></td><td class="px-4 py-3 text-gray-500">scriptID</td><td class="px-4 py-3 text-gray-400">Get script details</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-yellow-400">update(scriptID, updates)</code></td><td class="px-4 py-3 text-gray-500">scriptID, Value</td><td class="px-4 py-3 text-gray-400">Update script properties</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-yellow-400">delete(scriptID)</code></td><td class="px-4 py-3 text-gray-500">scriptID</td><td class="px-4 py-3 text-gray-400">Delete script</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-yellow-400">get_stats()</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">Execution statistics</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Jobs & Cron -->
+      <section id="jobs" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-lime-500/20 text-lime-400 mr-3">
+            <i class="fas fa-tasks text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.jobs() & client.cron()</h3>
+          <span class="ml-3 px-2 py-1 bg-lime-500/10 text-lime-400 text-xs rounded">Background Processing</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// === JOBS ===
+
+// List all queues
+let queues = client.jobs().list_queues().await?;
+// => vec![QueueInfo { name: "default", pending: 5, running: 2 }, ...]
+
+// List jobs in a queue with filters
+let jobs = client.jobs().list_jobs(
+    "default",      // queue name
+    None,           // status filter (pending, running, completed, failed)
+    None,           // limit
+    None,           // offset
+).await?;
+
+// Enqueue a new job
+let job = client.jobs().enqueue(
+    "default",                              // queue name
+    "/scripts/process-order",               // script path
+    json!({"order_id": 123}),               // params
+    Some(10),                               // priority (higher = more urgent)
+    None,                                   // run_at (ISO8601 for delayed)
+).await?;
+println!("Job ID: {}", job["_key"]);
+
+// Get job details
+let job = client.jobs().get_job("job_id").await?;
+println!("Status: {}", job["status"]);
+
+// Cancel a pending job
+client.jobs().cancel("job_id").await?;
+
+// === CRON ===
+
+// List scheduled jobs
+let crons = client.cron().list().await?;
+
+// Create a cron job
+let cron = client.cron().create(
+    "daily-cleanup",            // name
+    "0 2 * * *",                // schedule (every day at 2 AM)
+    "/scripts/cleanup",         // script path
+    None,                       // params
+    None,                       // description
+).await?;
+
+// Update cron schedule
+client.cron().update("cron_id", json!({
+    "schedule": "0 3 * * *",    // change to 3 AM
+})).await?;
+
+// Delete cron job
+client.cron().delete("cron_id").await?;</code></pre>
+        </div>
+      </section>
+
+      <!-- Triggers -->
+      <section id="triggers" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/20 text-red-400 mr-3">
+            <i class="fas fa-bolt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.triggers()</h3>
+          <span class="ml-3 px-2 py-1 bg-red-500/10 text-red-400 text-xs rounded">Database Triggers</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// List all triggers
+let triggers = client.triggers().list().await?;
+
+// List triggers for a specific collection
+let triggers = client.triggers().list_by_collection("users").await?;
+
+// Create a trigger
+let trigger = client.triggers().create(
+    "on_user_created",              // name
+    "users",                        // collection
+    "insert",                       // operation: insert, update, delete
+    "/scripts/on-user-create",      // script path
+    None,                           // description
+).await?;
+
+// Get trigger details
+let trigger = client.triggers().get("trigger_id").await?;
+
+// Update trigger
+client.triggers().update("trigger_id", json!({
+    "script_path": "/scripts/new-handler",
+    "enabled": false,
+})).await?;
+
+// Toggle trigger on/off
+client.triggers().toggle("trigger_id").await?;
+
+// Delete trigger
+client.triggers().delete("trigger_id").await?;</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Event</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-red-400">insert</code></td><td class="px-4 py-3 text-gray-400">Fires on document creation</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">update</code></td><td class="px-4 py-3 text-gray-400">Fires on document modification</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">delete</code></td><td class="px-4 py-3 text-gray-400">Fires on document removal</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- RBAC: Roles & Users -->
+      <section id="rbac" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 mr-3">
+            <i class="fas fa-user-shield text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.roles() & client.users()</h3>
+          <span class="ml-3 px-2 py-1 bg-rose-500/10 text-rose-400 text-xs rounded">Role-Based Access Control</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// === ROLES ===
+
+// List all roles
+let roles = client.roles().list().await?;
+
+// Create a role with permissions
+let role = client.roles().create(
+    "editor",
+    vec![
+        json!({"action": "read", "scope": "database", "database": "mydb"}),
+        json!({"action": "write", "scope": "collection", "database": "mydb", "collection": "articles"}),
+        json!({"action": "execute", "scope": "script", "database": "mydb"}),
+    ],
+    None,  // description
+).await?;
+
+// Get role details
+let role = client.roles().get("editor").await?;
+
+// Update role permissions
+client.roles().update("editor", vec![
+    json!({"action": "read", "scope": "database", "database": "mydb"}),
+    json!({"action": "write", "scope": "database", "database": "mydb"}),
+], None).await?;
+
+// Delete role
+client.roles().delete("editor").await?;
+
+// === USERS ===
+
+// List all users
+let users = client.users().list().await?;
+
+// Create a user
+let user = client.users().create("john", "secure_password", None).await?;
+
+// Get user's assigned roles
+let roles = client.users().get_roles("john").await?;
+
+// Assign a role to user
+client.users().assign_role("john", "editor").await?;
+
+// Revoke a role from user
+client.users().revoke_role("john", "editor").await?;
+
+// Get current authenticated user
+let me = client.users().me().await?;
+
+// Get current user's permissions
+let permissions = client.users().my_permissions().await?;
+
+// Delete user
+client.users().delete("john").await?;</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Action</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Scopes</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-rose-400">read</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Read documents and query</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-rose-400">write</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Create, update, delete documents</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-rose-400">admin</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Manage indexes, schema, etc.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-rose-400">execute</code></td><td class="px-4 py-3 text-gray-500">script</td><td class="px-4 py-3 text-gray-400">Execute Lua scripts</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- API Keys -->
+      <section id="apikeys" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 mr-3">
+            <i class="fas fa-key text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.api_keys()</h3>
+          <span class="ml-3 px-2 py-1 bg-amber-500/10 text-amber-400 text-xs rounded">API Key Management</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Create API key
+let key = client.api_keys().create(
+    "my-api-key",             // name
+    vec!["mydb"],             // databases
+    None,                     // expiration
+).await?;
+println!("API Key: {}", key["key"]); // Save this! Only shown once
+
+// List all API keys
+let keys = client.api_keys().list().await?;
+
+// Delete API key
+client.api_keys().delete("key_id").await?;</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ADVANCED FEATURES -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-orange-500/20 text-orange-400 mr-4">
+          <i class="fas fa-brain text-lg"></i>
+        </span>
+        Advanced Features
+      </h2>
+
+      <!-- Vector Search -->
+      <section id="vector" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 mr-3">
+            <i class="fas fa-brain text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.vector()</h3>
+          <span class="ml-3 px-2 py-1 bg-orange-500/10 text-orange-400 text-xs rounded">Vector Search & AI</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Create a vector index
+let metric = "cosine".to_string();  // cosine, euclidean, dot_product
+let idx = client.vector().create_index(
+    "products",             // collection
+    "product_embeddings",   // index name
+    "embedding",            // field
+    1536,                   // dimensions
+    Some(&metric),
+).await?;
+
+// Search by vector (semantic search)
+let embedding = get_embedding("wireless headphones").await; // Your embedding function
+let results = client.vector().search(
+    "products",
+    &embedding,
+    10,     // limit
+    None,   // filter
+).await?;
+
+for r in &results {
+    let doc = &r["doc"];
+    println!("{} - Score: {}", doc["name"], r["score"]);
+}
+
+// Search by existing document (find similar)
+let similar = client.vector().search_by_document(
+    "products",
+    "product-123",      // doc key
+    "embedding",        // field
+    5,                  // limit
+    None,               // filter
+).await?;
+
+// Quantize index (reduce memory usage)
+client.vector().quantize("products", "product_embeddings", "binary").await?;
+
+// Dequantize (restore full precision)
+client.vector().dequantize("products", "product_embeddings").await?;
+
+// List vector indexes
+let indexes = client.vector().list_indexes("products").await?;
+
+// Delete index
+client.vector().delete_index("products", "product_embeddings").await?;</code></pre>
+        </div>
+      </section>
+
+      <!-- Geo -->
+      <section id="geo" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 mr-3">
+            <i class="fas fa-map-marker-alt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.geo()</h3>
+          <span class="ml-3 px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded">Geospatial Queries</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Create a geo index
+let idx = client.geo().create_index("stores", "location_idx", "location").await?;
+
+// Find nearby locations (radius search)
+let nearby = client.geo().near(
+    "stores",
+    48.8566,    // latitude
+    2.3522,     // longitude
+    5000,       // radius in meters
+    20,         // limit
+).await?;
+
+for r in &nearby {
+    let doc = &r["doc"];
+    println!("{} - {}m away", doc["name"], r["distance"]);
+}
+
+// Find within polygon
+let polygon = vec![
+    vec![48.8, 2.3],
+    vec![48.9, 2.4],
+    vec![48.85, 2.35],
+    vec![48.8, 2.3],
+];
+let within = client.geo().within("stores", &polygon, None).await?;
+
+// List geo indexes
+let indexes = client.geo().list_indexes("stores").await?;
+
+// Delete index
+client.geo().delete_index("stores", "location_idx").await?;</code></pre>
+        </div>
+      </section>
+
+      <!-- TTL -->
+      <section id="ttl" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 mr-3">
+            <i class="fas fa-hourglass-half text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.ttl()</h3>
+          <span class="ml-3 px-2 py-1 bg-rose-500/10 text-rose-400 text-xs rounded">Time-To-Live Indexes</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Create TTL index (auto-expire documents after 1 hour)
+let idx = client.ttl().create_index(
+    "sessions",         // collection
+    "session_ttl",      // index name
+    "created_at",       // DateTime field to check
+    3600,               // expire after seconds
+).await?;
+
+// Update expiration time
+client.ttl().update_expiration("sessions", "session_ttl", 7200).await?; // 2 hours
+
+// Get index info
+let info = client.ttl().get_index_info("sessions", "session_ttl").await?;
+println!("Expires after: {}s", info["expire_after_seconds"]);
+
+// Manually trigger cleanup (normally runs automatically)
+client.ttl().run_cleanup("sessions").await?;
+
+// List TTL indexes
+let indexes = client.ttl().list_indexes("sessions").await?;
+
+// Delete TTL index
+client.ttl().delete_index("sessions", "session_ttl").await?;</code></pre>
+        </div>
+      </section>
+
+      <!-- Columnar -->
+      <section id="columnar" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-violet-500/20 text-violet-400 mr-3">
+            <i class="fas fa-chart-bar text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.columnar()</h3>
+          <span class="ml-3 px-2 py-1 bg-violet-500/10 text-violet-400 text-xs rounded">Columnar/Analytics Storage</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Create a columnar table (optimized for analytics)
+let table = client.columnar().create("metrics", vec![
+    json!({"name": "timestamp", "type": "datetime"}),
+    json!({"name": "metric_name", "type": "string"}),
+    json!({"name": "value", "type": "float"}),
+    json!({"name": "tags", "type": "string"}),
+]).await?;
+
+// Insert rows (batch insert is efficient)
+client.columnar().insert("metrics", vec![
+    json!({"timestamp": "2024-01-15T10:00:00Z", "metric_name": "cpu_usage", "value": 45.2, "tags": "server1"}),
+    json!({"timestamp": "2024-01-15T10:01:00Z", "metric_name": "cpu_usage", "value": 47.8, "tags": "server1"}),
+]).await?;
+
+// Query with SQL-like syntax
+let results = client.columnar().query("metrics",
+    "SELECT * FROM metrics WHERE value > @min ORDER BY timestamp DESC LIMIT 100",
+    Some(vec![("min", json!(40.0))].into_iter().collect()),
+).await?;
+
+// Aggregation
+let agg = client.columnar().aggregate("metrics", json!({
+    "group_by": vec!["metric_name", "tags"],
+    "metrics": vec![
+        json!({"column": "value", "function": "avg"}),
+        json!({"column": "value", "function": "max"}),
+        json!({"column": "value", "function": "count"}),
+    ],
+})).await?;
+
+// Get table statistics
+let stats = client.columnar().stats("metrics").await?;
+println!("Row count: {}", stats["row_count"]);
+
+// Add a column
+client.columnar().add_column("metrics", "host", "string", None).await?;
+
+// Drop a column
+client.columnar().drop_column("metrics", "host").await?;
+
+// List all columnar tables
+let tables = client.columnar().list().await?;
+
+// Delete table
+client.columnar().delete("metrics").await?;</code></pre>
+        </div>
+      </section>
+
+      <!-- Cluster -->
+      <section id="cluster" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 mr-3">
+            <i class="fas fa-network-wired text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.cluster()</h3>
+          <span class="ml-3 px-2 py-1 bg-indigo-500/10 text-indigo-400 text-xs rounded">Cluster Management</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Get cluster status
+let status = client.cluster().status().await?;
+println!("Mode: {}", status["mode"]);       // standalone, cluster
+println!("Nodes: {}", status["node_count"]);
+
+// Get detailed cluster info
+let info = client.cluster().info().await?;
+
+// Remove a node from cluster
+client.cluster().remove_node("node-id-to-remove").await?;
+
+// Trigger data rebalancing
+client.cluster().rebalance().await?;
+
+// Cleanup orphaned data
+client.cluster().cleanup().await?;
+
+// Reshard cluster
+client.cluster().reshard(None).await?;  // or specify new shard count</code></pre>
+        </div>
+      </section>
+
+      <!-- Collection Operations -->
+      <section id="collection-ops" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 mr-3">
+            <i class="fas fa-database text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.collections()</h3>
+          <span class="ml-3 px-2 py-1 bg-cyan-500/10 text-cyan-400 text-xs rounded">Advanced Collection Operations</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Truncate collection (delete all documents)
+client.collections().truncate("logs").await?;
+
+// Compact collection (reclaim disk space)
+client.collections().compact("users").await?;
+
+// Repair collection (fix inconsistencies)
+client.collections().repair("orders").await?;
+
+// Get collection statistics
+let stats = client.collections().stats("users").await?;
+
+// Set JSON schema validation
+client.collections().set_schema("users", json!({
+    "type": "object",
+    "required": vec!["name", "email"],
+    "properties": json!({
+        "name": json!({"type": "string", "minLength": 1}),
+        "email": json!({"type": "string", "format": "email"}),
+    }),
+})).await?;
+
+// Get current schema
+let schema = client.collections().get_schema("users").await?;
+
+// Remove schema validation
+client.collections().delete_schema("users").await?;
+
+// Export collection
+let data = client.collections().export("users", None).await?;
+
+// Import data
+client.collections().import("users_backup", &data, None).await?;</code></pre>
+        </div>
+      </section>
+
+      <!-- Environment Variables -->
+      <section id="env" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-teal-500/20 text-teal-400 mr-3">
+            <i class="fas fa-cog text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.env()</h3>
+          <span class="ml-3 px-2 py-1 bg-teal-500/10 text-teal-400 text-xs rounded">Environment Variables</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-rust">// List environment variables (for Lua scripts)
+let vars = client.env().list().await?;
+
+// Set an environment variable
+client.env().set("API_KEY", "sk-xxx-your-api-key").await?;
+client.env().set("WEBHOOK_URL", "https://example.com/webhook").await?;
+
+// Delete an environment variable
+client.env().delete("OLD_VAR").await?;</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ERROR HANDLING -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-red-500/20 text-red-400 mr-4">
+          <i class="fas fa-exclamation-triangle text-lg"></i>
+        </span>
+        Error Handling
+      </h2>
+
+      <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-6">
+        <pre><code class="language-rust">use solidb_client::{SoliDBClient, DriverError};
+
+#[tokio::main]
+async fn main() {
+    let result = run_operations().await;
+
+    match result {
+        Ok(_) => println!("All operations completed successfully"),
+        Err(e) => {
+            match e {
+                DriverError::ConnectionError(msg) => {
+                    println!("Connection failed: {}", msg);
+                }
+                DriverError::ProtocolError(msg) => {
+                    println!("Protocol error: {}", msg);
+                }
+                DriverError::DatabaseError(msg) => {
+                    println!("Database error: {}", msg);
+                }
+                DriverError::AuthError(msg) => {
+                    println!("Authentication failed: {}", msg);
+                }
+                DriverError::TransactionError(msg) => {
+                    println!("Transaction error: {}", msg);
+                }
+                DriverError::MessageTooLarge => {
+                    println!("Message exceeds maximum size limit");
+                }
+                DriverError::InvalidCommand(msg) => {
+                    println!("Invalid command: {}", msg);
+                }
+            }
+        }
+    }
+}
+
+async fn run_operations() -> Result<(), DriverError> {
+    let mut client = SoliDBClient::connect("localhost:6745").await?;
+
+    // Connection errors
+    if let Err(e) = client.ping().await {
+        return Err(e);
+    }
+
+    // Authenticate
+    if let Err(e) = client.auth("mydb", "user", "password").await {
+        return Err(e);
+    }
+
+    // Document not found or other server errors
+    match client.get("mydb", "users", "nonexistent-key").await {
+        Ok(doc) => println!("Found: {:?}", doc),
+        Err(DriverError::DatabaseError(msg)) => {
+            println!("Document not found: {}", msg);
+        }
+        Err(e) => return Err(e),
+    }
+
+    Ok(())
+}</code></pre>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4">
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-red-400 font-semibold mb-2">ConnectionError</h4>
+          <p class="text-sm text-gray-400">Network failures, connection refused, timeouts, disconnections</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-orange-400 font-semibold mb-2">ProtocolError</h4>
+          <p class="text-sm text-gray-400">Invalid response format, message too large, serialization issues</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-amber-400 font-semibold mb-2">DatabaseError</h4>
+          <p class="text-sm text-gray-400">Document not found, permission denied, validation errors</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-yellow-400 font-semibold mb-2">AuthError</h4>
+          <p class="text-sm text-gray-400">Invalid credentials, expired session, insufficient permissions</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-lime-400 font-semibold mb-2">TransactionError</h4>
+          <p class="text-sm text-gray-400">No active transaction, commit/rollback failures</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-rose-400 font-semibold mb-2">InvalidCommand</h4>
+          <p class="text-sm text-gray-400">Unsupported operation, malformed request</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>

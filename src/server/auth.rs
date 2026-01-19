@@ -626,7 +626,7 @@ impl AuthService {
     }
 
     /// Hash an API key using SHA-256 (fast for verification)
-    fn hash_api_key(key: &str) -> String {
+    pub fn hash_api_key(key: &str) -> String {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(key.as_bytes());

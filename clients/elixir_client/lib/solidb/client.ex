@@ -43,19 +43,32 @@ defmodule SoliDB.Client do
     send_command(client, "auth", %{database: database, username: username, password: password})
   end
 
+  def auth_with_api_key(client, database, api_key) do
+    send_command(client, "auth", %{
+      database: database,
+      username: "",
+      password: "",
+      api_key: api_key
+    })
+  end
+
   # Database
   def list_databases(client), do: send_command(client, "list_databases", %{})
   def create_database(client, name), do: send_command(client, "create_database", %{name: name})
   def delete_database(client, name), do: send_command(client, "delete_database", %{name: name})
 
   # Collection
-  def list_collections(client, database), do: send_command(client, "list_collections", %{database: database})
+  def list_collections(client, database),
+    do: send_command(client, "list_collections", %{database: database})
+
   def create_collection(client, database, name, type \\ nil) do
     args = %{database: database, name: name}
     args = if type, do: Map.put(args, :type, type), else: args
     send_command(client, "create_collection", args)
   end
-  def delete_collection(client, database, name), do: send_command(client, "delete_collection", %{database: database, name: name})
+
+  def delete_collection(client, database, name),
+    do: send_command(client, "delete_collection", %{database: database, name: name})
 
   # Document
   def insert(client, database, collection, document, key \\ nil) do
@@ -69,7 +82,13 @@ defmodule SoliDB.Client do
   end
 
   def update(client, database, collection, key, document, merge \\ true) do
-    send_command(client, "update", %{database: database, collection: collection, key: key, document: document, merge: merge})
+    send_command(client, "update", %{
+      database: database,
+      collection: collection,
+      key: key,
+      document: document,
+      merge: merge
+    })
   end
 
   def delete(client, database, collection, key) do
@@ -77,7 +96,12 @@ defmodule SoliDB.Client do
   end
 
   def list_documents(client, database, collection, limit \\ 50, offset \\ 0) do
-    send_command(client, "list", %{database: database, collection: collection, limit: limit, offset: offset})
+    send_command(client, "list", %{
+      database: database,
+      collection: collection,
+      limit: limit,
+      offset: offset
+    })
   end
 
   # Query
@@ -87,7 +111,10 @@ defmodule SoliDB.Client do
 
   # Transactions
   def begin_transaction(client, database, isolation_level \\ "read_committed") do
-    send_command(client, "begin_transaction", %{database: database, isolation_level: isolation_level})
+    send_command(client, "begin_transaction", %{
+      database: database,
+      isolation_level: isolation_level
+    })
   end
 
   def commit_transaction(client, tx_id) do
@@ -106,10 +133,11 @@ defmodule SoliDB.Client do
   def send_command(client, cmd, args) do
     payload = Map.put(args, :cmd, cmd)
     {:ok, data} = Msgpax.pack(payload)
-    
+
     # Prefix with 4-byte big-endian length
     len = byte_size(data)
-    :ok = :gen_tcp.send(client.socket, <<len::inline, 32, data::binary>>) # wait, actually <<len::32>>
+    # wait, actually <<len::32>>
+    :ok = :gen_tcp.send(client.socket, <<len::inline(), 32, data::binary>>)
     # Correct bitstring for big-endian 32-bit:
     :ok = :gen_tcp.send(client.socket, <<len::big-integer-size(32), data::binary>>)
 
@@ -128,24 +156,36 @@ defmodule SoliDB.Client do
                 {:ok, response} -> normalize_response(response)
                 error -> error
               end
-            {:error, reason} -> {:error, "Recv body failed: #{inspect(reason)}"}
+
+            {:error, reason} ->
+              {:error, "Recv body failed: #{inspect(reason)}"}
           end
         end
-      {:error, reason} -> {:error, "Recv header failed: #{inspect(reason)}"}
+
+      {:error, reason} ->
+        {:error, "Recv header failed: #{inspect(reason)}"}
     end
   end
 
   defp normalize_response(response) do
     case response do
-      ["ok", body] -> {:ok, body}
-      ["pong", body] -> {:ok, body}
+      ["ok", body] ->
+        {:ok, body}
+
+      ["pong", body] ->
+        {:ok, body}
+
       ["error", body] ->
-        msg = case body do
-          m when is_map(m) -> List.first(Map.values(m)) || "Unknown error"
-          m -> m
-        end
+        msg =
+          case body do
+            m when is_map(m) -> List.first(Map.values(m)) || "Unknown error"
+            m -> m
+          end
+
         {:error, msg}
-      other -> {:ok, other}
+
+      other ->
+        {:ok, other}
     end
   end
 end

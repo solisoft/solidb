@@ -1,7 +1,7 @@
 use super::DriverHandler;
-use crate::driver::protocol::{DriverError, Response};
 use crate::storage::CollectionSchema;
 use serde_json::Value;
+use solidb_client::protocol::{DriverError, Response};
 
 pub fn handle_list_databases(handler: &DriverHandler) -> Response {
     let dbs = handler.storage.list_databases();

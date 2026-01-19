@@ -11,11 +11,13 @@
 //! - **Request Frame**: `[length: 4 bytes BE][msgpack payload]`
 //! - **Response Frame**: `[length: 4 bytes BE][msgpack payload]`
 
-pub mod client;
-pub mod handlers;
-pub mod protocol;
+pub use solidb_client::protocol::{
+    decode_message, encode_command, encode_response, Command, DriverError, Response,
+    MAX_MESSAGE_SIZE,
+};
+pub use solidb_client::SoliDBClient;
 
-pub use client::SoliDBClient;
+pub mod handlers;
+
 pub use handlers::spawn_driver_handler;
 pub use handlers::DriverHandler;
-pub use protocol::{Command, DriverError, Response};

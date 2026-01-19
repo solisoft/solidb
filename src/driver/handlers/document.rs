@@ -1,5 +1,5 @@
 use super::DriverHandler;
-use crate::driver::protocol::{DriverError, Response};
+use solidb_client::protocol::{DriverError, Response};
 
 pub fn handle_get(
     handler: &DriverHandler,

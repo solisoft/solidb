@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+/// Current binary format version for document serialization
+pub const BINARY_FORMAT_VERSION: u8 = 1;
+
 /// Represents a JSON document in the database
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {

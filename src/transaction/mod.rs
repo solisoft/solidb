@@ -72,6 +72,18 @@ pub enum IsolationLevel {
     Serializable,
 }
 
+use solidb_client::protocol::IsolationLevel as ClientIsolationLevel;
+
+impl From<ClientIsolationLevel> for IsolationLevel {
+    fn from(level: ClientIsolationLevel) -> Self {
+        match level {
+            ClientIsolationLevel::ReadCommitted => IsolationLevel::ReadCommitted,
+            ClientIsolationLevel::RepeatableRead => IsolationLevel::RepeatableRead,
+            ClientIsolationLevel::Serializable => IsolationLevel::Serializable,
+        }
+    }
+}
+
 /// Type of operation within a transaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Operation {

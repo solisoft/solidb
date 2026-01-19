@@ -1,10 +1,9 @@
 use super::SoliDBClient;
-use crate::driver::protocol::{Command, DriverError};
+use crate::protocol::{Command, DriverError};
 use serde_json::Value;
 use std::collections::HashMap;
 
 impl SoliDBClient {
-    /// Execute an SDBQL query
     pub async fn query(
         &mut self,
         database: &str,
@@ -26,7 +25,6 @@ impl SoliDBClient {
             .map_err(|e| DriverError::ProtocolError(format!("Invalid response: {}", e)))
     }
 
-    /// Explain an SDBQL query without executing it
     pub async fn explain(
         &mut self,
         database: &str,

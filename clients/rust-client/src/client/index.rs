@@ -1,9 +1,8 @@
 use super::SoliDBClient;
-use crate::driver::protocol::{Command, DriverError};
+use crate::protocol::{Command, DriverError};
 use serde_json::Value;
 
 impl SoliDBClient {
-    /// Create an index on a collection
     pub async fn create_index(
         &mut self,
         database: &str,
@@ -27,7 +26,6 @@ impl SoliDBClient {
         Ok(())
     }
 
-    /// Delete an index
     pub async fn delete_index(
         &mut self,
         database: &str,
@@ -45,7 +43,6 @@ impl SoliDBClient {
         Ok(())
     }
 
-    /// List indexes on a collection
     pub async fn list_indexes(
         &mut self,
         database: &str,

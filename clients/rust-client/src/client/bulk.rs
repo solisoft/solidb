@@ -1,9 +1,8 @@
 use super::SoliDBClient;
-use crate::driver::protocol::{Command, DriverError, Response};
+use crate::protocol::{Command, DriverError, Response};
 use serde_json::Value;
 
 impl SoliDBClient {
-    /// Execute multiple commands in a batch
     pub async fn batch(&mut self, commands: Vec<Command>) -> Result<Vec<Response>, DriverError> {
         let response = self.send_command(Command::Batch { commands }).await?;
         match response {
@@ -15,7 +14,6 @@ impl SoliDBClient {
         }
     }
 
-    /// Bulk insert documents
     pub async fn bulk_insert(
         &mut self,
         database: &str,

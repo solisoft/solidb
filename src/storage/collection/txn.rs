@@ -1,5 +1,6 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use crate::storage::serializer::serialize_doc;
 use crate::transaction::wal::WalWriter;
 use crate::transaction::{Operation, Transaction};
 use rocksdb::WriteBatch;
@@ -138,12 +139,12 @@ impl Collection {
             match op {
                 Operation::Insert { key, data, .. } => {
                     let document = Document::with_key(&self.name, key.clone(), data.clone());
-                    let doc_bytes = serde_json::to_vec(&document)?;
+                    let doc_bytes = serialize_doc(&document)?;
                     batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
                 }
                 Operation::Update { key, new_data, .. } => {
                     let document = Document::with_key(&self.name, key.clone(), new_data.clone());
-                    let doc_bytes = serde_json::to_vec(&document)?;
+                    let doc_bytes = serialize_doc(&document)?;
                     batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
                 }
                 Operation::Delete { key, .. } => {

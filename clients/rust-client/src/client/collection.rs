@@ -1,9 +1,8 @@
 use super::SoliDBClient;
-use crate::driver::protocol::{Command, DriverError};
+use crate::protocol::{Command, DriverError};
 use serde_json::Value;
 
 impl SoliDBClient {
-    /// List collections in a database
     pub async fn list_collections(&mut self, database: &str) -> Result<Vec<String>, DriverError> {
         let response = self
             .send_command(Command::ListCollections {
@@ -17,7 +16,6 @@ impl SoliDBClient {
             .map_err(|e| DriverError::ProtocolError(format!("Invalid response: {}", e)))
     }
 
-    /// Create a new collection
     pub async fn create_collection(
         &mut self,
         database: &str,
@@ -35,7 +33,6 @@ impl SoliDBClient {
         Ok(())
     }
 
-    /// Delete a collection
     pub async fn delete_collection(
         &mut self,
         database: &str,
@@ -51,7 +48,6 @@ impl SoliDBClient {
         Ok(())
     }
 
-    /// Get collection statistics
     pub async fn collection_stats(
         &mut self,
         database: &str,

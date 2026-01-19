@@ -242,6 +242,10 @@ export class Client {
         await this.sendCommand('auth', { database, username, password });
     }
 
+    public async authWithApiKey(database: string, apiKey: string): Promise<void> {
+        await this.sendCommand('auth', { database, username: '', password: '', api_key: apiKey });
+    }
+
     // Database
     public async listDatabases(): Promise<string[]> {
         return (await this.sendCommand('list_databases')) || [];

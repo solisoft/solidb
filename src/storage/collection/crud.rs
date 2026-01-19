@@ -1,6 +1,7 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::schema::SchemaValidator;
+use crate::storage::serializer::{deserialize_doc, serialize_doc};
 use rocksdb::WriteBatch;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
@@ -20,7 +21,7 @@ impl Collection {
             .map_err(|e| DbError::InternalError(format!("Failed to get document: {}", e)))?
             .ok_or_else(|| DbError::DocumentNotFound(key.to_string()))?;
 
-        let doc: Document = serde_json::from_slice(&bytes)?;
+        let doc = deserialize_doc(&bytes)?;
         Ok(doc)
     }
 
@@ -80,13 +81,11 @@ impl Collection {
         let doc = Document::with_key(&self.name, key.clone(), data);
         let doc_value = doc.to_value();
 
-        // Check unique constraints BEFORE saving the document (only if indexes are enabled)
         if update_indexes {
             self.check_unique_constraints(&key, &doc_value)?;
         }
 
-        // Store document
-        let doc_bytes = serde_json::to_vec(&doc)?;
+        let doc_bytes = serialize_doc(&doc)?;
         {
             let db = self.db.read().unwrap();
             let cf = db
@@ -149,7 +148,7 @@ impl Collection {
             })?;
         }
 
-        let doc_bytes = serde_json::to_vec(&doc)?;
+        let doc_bytes = serialize_doc(&doc)?;
 
         // Store updated document
         {
@@ -214,7 +213,7 @@ impl Collection {
         let mut doc = old_doc;
         doc.update(data);
         let new_value = doc.to_value();
-        let doc_bytes = serde_json::to_vec(&doc)?;
+        let doc_bytes = serialize_doc(&doc)?;
 
         // Store updated document
         {
@@ -325,9 +324,8 @@ impl Collection {
             let exists = db.get_cf(cf, Self::doc_key(&key)).ok().flatten().is_some();
 
             let doc = if exists {
-                // Update existing document
                 if let Ok(Some(bytes)) = db.get_cf(cf, Self::doc_key(&key)) {
-                    if let Ok(mut existing) = serde_json::from_slice::<Document>(&bytes) {
+                    if let Ok(mut existing) = deserialize_doc(&bytes) {
                         existing.update(data);
                         existing
                     } else {
@@ -340,7 +338,7 @@ impl Collection {
                 Document::with_key(&self.name, key.clone(), data)
             };
 
-            if let Ok(doc_bytes) = serde_json::to_vec(&doc) {
+            if let Ok(doc_bytes) = serialize_doc(&doc) {
                 batch.put_cf(cf, Self::doc_key(&key), &doc_bytes);
                 upserted_docs.push((key.clone(), doc.to_value()));
                 if !exists {
@@ -394,7 +392,7 @@ impl Collection {
         for key in &keys {
             // Get document first (needed for index cleanup and change events)
             if let Ok(Some(bytes)) = db.get_cf(cf, Self::doc_key(key)) {
-                if let Ok(doc) = serde_json::from_slice::<Document>(&bytes) {
+                if let Ok(doc) = deserialize_doc(&bytes) {
                     let doc_value = doc.to_value();
 
                     // Add to batch for deletion
@@ -503,7 +501,7 @@ impl Collection {
                 }
 
                 // Serialize document
-                if let Ok(doc_bytes) = serde_json::to_vec(&doc) {
+                if let Ok(doc_bytes) = serialize_doc(&doc) {
                     // Add to batch
                     batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
 
@@ -587,9 +585,8 @@ impl Collection {
 
         let iter = iter.filter_map(|result| {
             result.ok().and_then(|(key, value)| {
-                // Check if key starts with doc prefix
                 if key.starts_with(prefix) {
-                    serde_json::from_slice(&value).ok()
+                    deserialize_doc(&value).ok()
                 } else {
                     None
                 }

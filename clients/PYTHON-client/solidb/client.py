@@ -143,6 +143,9 @@ class Client:
     def auth(self, database, username, password):
         self._send_command("auth", database=database, username=username, password=password)
 
+    def auth_with_api_key(self, database, api_key):
+        self._send_command("auth", database=database, username="", password="", api_key=api_key)
+
     # Database
     def list_databases(self):
         return self._send_command("list_databases") or []

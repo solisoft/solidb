@@ -7,6 +7,7 @@ pub mod engine;
 pub mod geo;
 pub mod index;
 pub mod schema;
+pub mod serializer;
 pub mod vector;
 
 pub use collection::{Collection, CollectionStats, DiskUsage};

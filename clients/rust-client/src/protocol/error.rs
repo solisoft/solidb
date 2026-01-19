@@ -1,21 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-/// Driver protocol error types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DriverError {
-    /// Connection or I/O error
     ConnectionError(String),
-    /// Protocol violation
     ProtocolError(String),
-    /// Database operation error
     DatabaseError(String),
-    /// Authentication error
     AuthError(String),
-    /// Transaction error
     TransactionError(String),
-    /// Message too large
     MessageTooLarge,
-    /// Invalid command
     InvalidCommand(String),
 }
 
