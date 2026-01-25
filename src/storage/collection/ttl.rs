@@ -1,6 +1,8 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::{extract_field_value, TtlIndex, TtlIndexStats};
+use crate::storage::serializer::deserialize_doc;
+use rocksdb::WriteBatch;
 
 impl Collection {
     // ==================== TTL Index Operations ====================
@@ -111,41 +113,76 @@ impl Collection {
             .collect()
     }
 
-    /// Cleanup expired documents for a specific TTL index
-    pub fn cleanup_expired_documents_for_ttl_index(&self, index: &TtlIndex) -> DbResult<usize> {
-        // Naive implementation: scan all docs.
-        // Optimized: Secondary index on timestamp?
-        // Current architecture: Scan all.
+    /// Extract expiry timestamp from document field
+    fn extract_expiry_time(doc_value: &Value, field: &str) -> Option<u64> {
+        let field_value = extract_field_value(doc_value, field);
 
-        let docs = self.all();
-        let mut deleted_count = 0;
-        let now = chrono::Utc::now().timestamp() as u64;
-
-        for doc in docs {
-            let doc_value = doc.to_value();
-            let field_value = extract_field_value(&doc_value, &index.field);
-
-            // Check format (number vs ISO string)
-            let expiry_time = if let Some(n) = field_value.as_u64() {
-                // Assuming timestamp in seconds? or milliseconds?
-                // Usually seconds for unix timestamp.
-                Some(n)
-            } else if let Some(s) = field_value.as_str() {
-                // Try parse ISO string
-                if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-                    Some(dt.timestamp() as u64)
-                } else {
-                    None
-                }
+        if let Some(n) = field_value.as_u64() {
+            Some(n)
+        } else if let Some(s) = field_value.as_str() {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+                Some(dt.timestamp() as u64)
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        }
+    }
 
-            if let Some(ts) = expiry_time {
-                if now > ts + index.expire_after_seconds && self.delete(&doc.key).is_ok() {
-                    deleted_count += 1;
+    /// Cleanup expired documents for a specific TTL index
+    pub fn cleanup_expired_documents_for_ttl_index(&self, index: &TtlIndex) -> DbResult<usize> {
+        const BATCH_SIZE: usize = 1000;
+
+        let prefix = DOC_PREFIX.as_bytes();
+        let now = chrono::Utc::now().timestamp() as u64;
+
+        let expired_keys: Vec<String> = {
+            let db = self.db.read().unwrap();
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
+            let iter = db.prefix_iterator_cf(cf, prefix);
+
+            let mut keys = Vec::new();
+            for result in iter.flatten() {
+                let (key_bytes, value) = result;
+                if !key_bytes.starts_with(prefix) {
+                    break;
+                }
+
+                if let Ok(doc) = deserialize_doc(&value) {
+                    if let Some(expiry_time) =
+                        Self::extract_expiry_time(&doc.to_value(), &index.field)
+                    {
+                        if now > expiry_time + index.expire_after_seconds {
+                            let doc_key =
+                                String::from_utf8_lossy(&key_bytes[prefix.len()..]).to_string();
+                            keys.push(doc_key);
+                        }
+                    }
                 }
             }
+            keys
+        };
+
+        if expired_keys.is_empty() {
+            return Ok(0);
+        }
+
+        let mut deleted_count = 0;
+        for chunk in expired_keys.chunks(BATCH_SIZE) {
+            let mut batch = WriteBatch::default();
+            for key in chunk {
+                let db = self.db.read().unwrap();
+                let cf = db
+                    .cf_handle(&self.name)
+                    .expect("Column family should exist");
+                batch.delete_cf(cf, Self::doc_key(key));
+                deleted_count += 1;
+            }
+            let db = self.db.read().unwrap();
+            db.write(batch)?;
         }
 
         Ok(deleted_count)

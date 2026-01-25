@@ -53,6 +53,7 @@ impl CollectionSchema {
 }
 
 /// Compiled schema validator
+#[derive(Clone)]
 pub struct SchemaValidator {
     schema: CollectionSchema,
     validator: Option<jsonschema::Validator>,

@@ -73,6 +73,8 @@ impl Collection {
             bloom_filters: Arc::new(DashMap::new()),
             cuckoo_filters: Arc::new(DashMap::new()),
             vector_indexes: Arc::new(DashMap::new()),
+            schema_validator: Arc::new(RwLock::new(None)),
+            schema_hash: Arc::new(RwLock::new(None)),
         }
     }
 

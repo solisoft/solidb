@@ -1,6 +1,5 @@
 use super::*;
 use crate::error::{DbError, DbResult};
-use crate::storage::schema::SchemaValidator;
 use crate::storage::serializer::{deserialize_doc, serialize_doc};
 use rocksdb::WriteBatch;
 use serde_json::Value;
@@ -52,10 +51,7 @@ impl Collection {
         }
 
         // Validate against JSON schema if defined
-        if let Some(schema) = self.get_json_schema() {
-            let validator = SchemaValidator::new(schema).map_err(|e| {
-                DbError::InvalidDocument(format!("Schema compilation error: {}", e))
-            })?;
+        if let Some(validator) = self.get_cached_schema_validator()? {
             validator.validate(&data).map_err(|e| {
                 DbError::InvalidDocument(format!("Schema validation failed: {}", e))
             })?;
@@ -139,10 +135,7 @@ impl Collection {
         }
 
         // Validate against JSON schema if defined
-        if let Some(schema) = self.get_json_schema() {
-            let validator = SchemaValidator::new(schema).map_err(|e| {
-                DbError::InvalidDocument(format!("Schema compilation error: {}", e))
-            })?;
+        if let Some(validator) = self.get_cached_schema_validator()? {
             validator.validate(&new_value).map_err(|e| {
                 DbError::InvalidDocument(format!("Schema validation failed: {}", e))
             })?;
@@ -491,12 +484,10 @@ impl Collection {
                 }
 
                 // Validate against JSON schema if defined
-                if let Some(schema) = self.get_json_schema() {
-                    if let Ok(validator) = SchemaValidator::new(schema) {
-                        if let Err(e) = validator.validate(&new_value) {
-                            tracing::warn!("Schema validation failed for {}: {}", key, e);
-                            continue;
-                        }
+                if let Some(validator) = self.get_cached_schema_validator()? {
+                    if let Err(e) = validator.validate(&new_value) {
+                        tracing::warn!("Schema validation failed for {}: {}", key, e);
+                        continue;
                     }
                 }
 

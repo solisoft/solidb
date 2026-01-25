@@ -11,6 +11,7 @@ pub use super::index::{
     FulltextMatch, Index, IndexStats, IndexType, TtlIndex, TtlIndexStats, VectorIndexConfig,
     VectorIndexStats, VectorQuantization,
 };
+pub use super::schema::SchemaValidator;
 pub use super::vector::{VectorIndex, VectorSearchResult};
 use cuckoofilter::CuckooFilter;
 use fastbloom::BloomFilter;
@@ -134,6 +135,10 @@ pub struct Collection {
     pub(crate) cuckoo_filters: Arc<DashMap<String, CuckooFilter<DefaultHasher>>>,
     /// In-memory vector indexes (DashMap for lock-free concurrent access)
     pub(crate) vector_indexes: Arc<DashMap<String, Arc<VectorIndex>>>,
+    /// Cached compiled schema validator
+    pub(crate) schema_validator: Arc<RwLock<Option<SchemaValidator>>>,
+    /// Hash of cached schema for invalidation detection
+    pub(crate) schema_hash: Arc<RwLock<Option<u64>>>,
 }
 
 impl Clone for Collection {
@@ -150,6 +155,8 @@ impl Clone for Collection {
             bloom_filters: self.bloom_filters.clone(),
             cuckoo_filters: self.cuckoo_filters.clone(),
             vector_indexes: self.vector_indexes.clone(),
+            schema_validator: self.schema_validator.clone(),
+            schema_hash: self.schema_hash.clone(),
         }
     }
 }
