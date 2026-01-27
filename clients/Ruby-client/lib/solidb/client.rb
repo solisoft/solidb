@@ -1,29 +1,32 @@
 require 'socket'
 require 'msgpack'
 require 'json'
+require 'thread'
 
 module SoliDB
   class Client
     MAGIC_HEADER = "solidb-drv-v1\0"
     MAX_MESSAGE_SIZE = 16 * 1024 * 1024
+    DEFAULT_POOL_SIZE = 4
 
     attr_reader :host, :port, :database
 
-    def initialize(host = '127.0.0.1', port = 6745)
+    def initialize(host = '127.0.0.1', port = 6745, pool_size = DEFAULT_POOL_SIZE)
       @host = host
       @port = port
-      @socket = nil
+      @pool_size = pool_size
+      @pool = []
+      @pool_index = 0
+      @pool_mutex = Mutex.new
       @connected = false
       @database = nil
     end
 
-    # Database context
     def use_database(name)
       @database = name
       self
     end
 
-    # Sub-client accessors
     def scripts
       @scripts ||= ScriptsClient.new(self)
     end
@@ -84,27 +87,37 @@ module SoliDB
       @columnar ||= ColumnarClient.new(self)
     end
 
+    private def create_connection
+      socket = TCPSocket.new(@host, @port)
+      socket.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
+      socket.write(MAGIC_HEADER)
+      socket
+    rescue => e
+      raise ConnectionError, "Failed to connect to #{@host}:#{@port} - #{e.message}"
+    end
+
     def connect
-      return if @connected
-      
-      begin
-        @socket = TCPSocket.new(@host, @port)
-        @socket.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
-        
-        # Set timeouts if possible (Ruby socket timeouts are tricky without IO.select context or timeout lib)
-        # For simplicity, blocking for now.
-        
-        @socket.write(MAGIC_HEADER)
-        @connected = true
-      rescue => e
-        raise ConnectionError, "Failed to connect to #{@host}:#{@port} - #{e.message}"
+      return if @connected && !@pool.empty?
+
+      @pool = []
+      @pool_size.times do
+        @pool << create_connection
       end
+      @connected = true
     end
 
     def close
-      @socket&.close
-      @socket = nil
+      @pool.each { |s| s.close rescue nil }
+      @pool = []
       @connected = false
+    end
+
+    private def get_next_connection
+      @pool_mutex.synchronize do
+        conn = @pool[@pool_index]
+        @pool_index = (@pool_index + 1) % @pool.size
+        conn
+      end
     end
 
     # Public API
@@ -286,29 +299,18 @@ module SoliDB
     end
 
 
-    # Exposed for sub-clients
     def send_command(cmd_name, params = {})
-      connect unless @connected
-      
+      connect unless @connected && !@pool.empty?
+
+      socket = get_next_connection
       command = params.merge("cmd" => cmd_name)
-      
-      # Transform keys to strings for serialization if needed (MessagePack handles symbols usually, but protocol expects strings?)
-      # Protocol: struct fields. `rmp_serde` usually matches exact names.
-      # But `Command` enum variants are snake_case tagged.
-      # The fields inside variants.
-      
-      # Ruby `MessagePack.pack({symbol: val})` packs keys as strings usually? No, depends on config.
-      # We should force keys to be strings to be safe match against Rust structs?
-      # Rust `rmp_serde` deserialization usually works with strings.
-      
-      # Let's ensure command map has string keys.
       command = command.transform_keys(&:to_s)
-      
+
       payload = MessagePack.pack(command)
       header = [payload.bytesize].pack("N")
-      
-      @socket.write(header + payload)
-      receive_response
+
+      socket.write(header + payload)
+      receive_response(socket)
     rescue Errno::EPIPE, IOError, Errno::ECONNRESET => e
       @connected = false
       raise ConnectionError, "Connection lost: #{e.message}"
@@ -316,35 +318,32 @@ module SoliDB
 
     private
 
-    def receive_response
-      header = @socket.read(4)
+    def receive_response(socket)
+      header = socket.read(4)
       unless header && header.bytesize == 4
         @connected = false
         raise ConnectionError, "Server closed connection"
       end
-      
+
       length = header.unpack1("N")
       raise ProtocolError, "Message too large: #{length} bytes" if length > MAX_MESSAGE_SIZE
-      
-      data = @socket.read(length)
+
+      data = socket.read(length)
       unless data && data.bytesize == length
         @connected = false
-        raise ConnectionError, "Incomplete response" 
+        raise ConnectionError, "Incomplete response"
       end
-      
+
       response = MessagePack.unpack(data)
-      
-      # Handle Tuple format [status, body]
-      # SoliDB Rust driver sends [status_string, body_value]
+
       if response.is_a?(Array) && response.size >= 1 && response[0].is_a?(String)
         status = response[0]
         body = response[1]
-        
+
         case status
         when "ok"
            return body
         when "error"
-           # body is likely {"ErrorType" => "Msg"} e.g., {"DatabaseError" => "..."}
            msg = body.inspect
            if body.is_a?(Hash) && body.size == 1
              msg = body.values.first
@@ -355,19 +354,17 @@ module SoliDB
         when "pong"
            return body
         else
-           # Unknown status, might be success?
            return body
         end
       end
-      
-      # Handle Map format (unlikely based on PHP experience but possible if changed)
+
       if response.is_a?(Hash)
          if response["status"] == "error"
             raise ServerError, response["error"].inspect
          end
          return response["data"]
       end
-      
+
       response
     end
   end

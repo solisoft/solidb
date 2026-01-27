@@ -5,37 +5,49 @@ defmodule SoliDB.Client do
 
   @magic_header "solidb-drv-v1\0"
   @max_message_size 16 * 1024 * 1024
+  @default_pool_size 4
 
-  defstruct [:host, :port, :socket, :database]
+  defstruct [:host, :port, :pool, :pool_index, :database]
 
-  @doc """
-  Sets the database context for the client.
-  """
+  def connect(host \\ "127.0.0.1", port \\ 6745, pool_size \\ @default_pool_size) do
+    connect_with_pool(host, port, pool_size)
+  end
+
+  defp connect_with_pool(host, port, pool_size) do
+    sockets =
+      Enum.map(1..pool_size, fn _ ->
+        case :gen_tcp.connect(String.to_charlist(host), port, [
+               :binary,
+               active: false,
+               packet: 0,
+               nodelay: true
+             ]) do
+          {:ok, socket} ->
+            :ok = :gen_tcp.send(socket, @magic_header)
+            socket
+
+          {:error, reason} ->
+            Enum.each(List.delete(sockets, nil), &:gen_tcp.close/1)
+            {:error, "Failed to connect: #{inspect(reason)}"}
+        end
+      end)
+
+    if Enum.all?(sockets, &is_port(&1)) do
+      {:ok, %__MODULE__{host: host, port: port, pool: sockets, pool_index: 0, database: nil}}
+    else
+      {:error, "Failed to establish all connections"}
+    end
+  end
+
+  def close(%__MODULE__{pool: pool}) do
+    Enum.each(pool, &:gen_tcp.close/1)
+  end
+
   def use_database(%__MODULE__{} = client, database) do
     %{client | database: database}
   end
 
-  @doc """
-  Gets the current database from the client.
-  """
   def get_database(%__MODULE__{database: database}), do: database
-
-  def connect(host \\ "127.0.0.1", port \\ 6745) do
-    case :gen_tcp.connect(String.to_charlist(host), port, [:binary, active: false, packet: 0]) do
-      {:ok, socket} ->
-        :ok = :gen_tcp.send(socket, @magic_header)
-        {:ok, %__MODULE__{host: host, port: port, socket: socket}}
-
-      {:error, reason} ->
-        {:error, "Failed to connect: #{inspect(reason)}"}
-    end
-  end
-
-  def close(%__MODULE__{socket: socket}) do
-    :gen_tcp.close(socket)
-  end
-
-  # --- API Methods ---
 
   def ping(client), do: send_command(client, "ping", %{})
 
@@ -52,12 +64,10 @@ defmodule SoliDB.Client do
     })
   end
 
-  # Database
   def list_databases(client), do: send_command(client, "list_databases", %{})
   def create_database(client, name), do: send_command(client, "create_database", %{name: name})
   def delete_database(client, name), do: send_command(client, "delete_database", %{name: name})
 
-  # Collection
   def list_collections(client, database),
     do: send_command(client, "list_collections", %{database: database})
 
@@ -70,7 +80,6 @@ defmodule SoliDB.Client do
   def delete_collection(client, database, name),
     do: send_command(client, "delete_collection", %{database: database, name: name})
 
-  # Document
   def insert(client, database, collection, document, key \\ nil) do
     args = %{database: database, collection: collection, document: document}
     args = if key, do: Map.put(args, :key, key), else: args
@@ -104,12 +113,10 @@ defmodule SoliDB.Client do
     })
   end
 
-  # Query
   def query(client, database, sdbql, bind_vars \\ %{}) do
     send_command(client, "query", %{database: database, sdbql: sdbql, bind_vars: bind_vars})
   end
 
-  # Transactions
   def begin_transaction(client, database, isolation_level \\ "read_committed") do
     send_command(client, "begin_transaction", %{
       database: database,
@@ -125,32 +132,38 @@ defmodule SoliDB.Client do
     send_command(client, "rollback_transaction", %{tx_id: tx_id})
   end
 
-  # --- Command Interface (public for sub-client modules) ---
+  defp get_next_socket(client) do
+    idx = client.pool_index
+    socket = Enum.at(client.pool, idx)
+    new_idx = rem(idx + 1, length(client.pool))
+    %{client | pool_index: new_idx}
+  end
 
-  @doc """
-  Sends a command to the server. Used internally and by sub-client modules.
-  """
   def send_command(client, cmd, args) do
+    client = get_next_socket(client)
     payload = Map.put(args, :cmd, cmd)
     {:ok, data} = Msgpax.pack(payload)
 
-    # Prefix with 4-byte big-endian length
     len = byte_size(data)
-    # wait, actually <<len::32>>
-    :ok = :gen_tcp.send(client.socket, <<len::inline(), 32, data::binary>>)
-    # Correct bitstring for big-endian 32-bit:
-    :ok = :gen_tcp.send(client.socket, <<len::big-integer-size(32), data::binary>>)
+
+    :ok =
+      :gen_tcp.send(
+        Enum.at(client.pool, client.pool_index - 1),
+        <<len::big-integer-size(32), data::binary>>
+      )
 
     receive_response(client)
   end
 
   defp receive_response(client) do
-    case :gen_tcp.recv(client.socket, 4) do
+    socket = Enum.at(client.pool, client.pool_index - 1)
+
+    case :gen_tcp.recv(socket, 4) do
       {:ok, <<len::big-integer-size(32)>>} ->
         if len > @max_message_size do
           {:error, "Message too large"}
         else
-          case :gen_tcp.recv(client.socket, len) do
+          case :gen_tcp.recv(socket, len) do
             {:ok, data} ->
               case Msgpax.unpack(data) do
                 {:ok, response} -> normalize_response(response)

@@ -167,6 +167,11 @@ function Controller:json(data, status)
   return self.response.body
 end
 
+-- Alias for json
+function Controller:render_json(data, status)
+  return self:json(data, status)
+end
+
 -- Render plain text
 function Controller:text(content, status)
   if self._rendered then

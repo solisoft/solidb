@@ -5,6 +5,7 @@ pub struct SoliDBClientBuilder {
     addr: String,
     auth: Option<AuthMethod>,
     timeout_ms: Option<u64>,
+    pool_size: Option<usize>,
 }
 
 pub enum AuthMethod {
@@ -25,6 +26,7 @@ impl SoliDBClientBuilder {
             addr: addr.to_string(),
             auth: None,
             timeout_ms: None,
+            pool_size: None,
         }
     }
 
@@ -50,8 +52,14 @@ impl SoliDBClientBuilder {
         self
     }
 
+    pub fn pool_size(mut self, size: usize) -> Self {
+        self.pool_size = Some(size);
+        self
+    }
+
     pub async fn build(self) -> Result<SoliDBClient, DriverError> {
-        let mut client = SoliDBClient::connect(&self.addr).await?;
+        let pool_size = self.pool_size.unwrap_or(4);
+        let mut client = SoliDBClient::connect_with_pool(&self.addr, pool_size).await?;
 
         if let Some(auth) = self.auth {
             match auth {

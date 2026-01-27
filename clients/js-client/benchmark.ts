@@ -5,8 +5,9 @@ async function runBenchmark() {
     const env = typeof Bun !== 'undefined' ? Bun.env : process.env;
     const port = parseInt(env.SOLIDB_PORT || '9998');
     const password = env.SOLIDB_PASSWORD || 'password';
+    const poolSize = parseInt(env.SOLIDB_POOL_SIZE || '4');
 
-    const client = new Client('127.0.0.1', port);
+    const client = new Client('127.0.0.1', port, poolSize);
     await client.connect();
     await client.auth('_system', 'admin', password);
 
@@ -22,7 +23,6 @@ async function runBenchmark() {
 
     const iterations = 1000;
 
-    // INSERT BENCHMARK
     const startTime = Date.now();
     for (let i = 0; i < iterations; i++) {
         const key = `bench_${i}`;
@@ -33,7 +33,6 @@ async function runBenchmark() {
     const insertOpsPerSec = iterations / insertDuration;
     console.log(`JS_BENCH_RESULT:${insertOpsPerSec.toFixed(2)}`);
 
-    // READ BENCHMARK
     const readStartTime = Date.now();
     for (let i = 0; i < iterations; i++) {
         const key = `bench_${i}`;

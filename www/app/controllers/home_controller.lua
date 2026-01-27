@@ -21,7 +21,7 @@ function HomeController:index()
 end
 
 function HomeController:up()
-  self:render_json({ status = "ok" })
+  self:text("UP")
 end
 
 function HomeController:about()

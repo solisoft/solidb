@@ -11,53 +11,80 @@ pub use builder::SoliDBClientBuilder;
 
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 
 use super::protocol::{
     decode_message, encode_command, Command, DriverError, Response, DRIVER_MAGIC, MAX_MESSAGE_SIZE,
 };
 
+const DEFAULT_POOL_SIZE: usize = 4;
+
+struct PooledConnection {
+    read: OwnedReadHalf,
+    write: OwnedWriteHalf,
+}
+
 pub struct SoliDBClient {
-    pub(crate) stream: TcpStream,
-    pub(crate) current_tx: Option<String>,
+    pool: Vec<PooledConnection>,
+    next_index: usize,
+    current_tx: Option<String>,
 }
 
 impl SoliDBClient {
     pub async fn connect(addr: &str) -> Result<Self, DriverError> {
-        let stream = TcpStream::connect(addr).await.map_err(|e| {
-            DriverError::ConnectionError(format!("Failed to connect to {}: {}", addr, e))
-        })?;
+        Self::connect_with_pool(addr, DEFAULT_POOL_SIZE).await
+    }
 
-        let mut client = Self {
-            stream,
+    pub async fn connect_with_pool(addr: &str, pool_size: usize) -> Result<Self, DriverError> {
+        let mut pool_connections: Vec<PooledConnection> = Vec::with_capacity(pool_size);
+
+        for _ in 0..pool_size {
+            let stream = TcpStream::connect(addr).await.map_err(|e| {
+                DriverError::ConnectionError(format!("Failed to connect to {}: {}", addr, e))
+            })?;
+
+            stream.set_nodelay(true).map_err(|e| {
+                DriverError::ConnectionError(format!("Failed to set TCP_NODELAY: {}", e))
+            })?;
+
+            let (read, mut write) = stream.into_split();
+
+            write.write_all(DRIVER_MAGIC).await.map_err(|e| {
+                DriverError::ConnectionError(format!("Failed to send magic header: {}", e))
+            })?;
+
+            pool_connections.push(PooledConnection { read, write });
+        }
+
+        Ok(Self {
+            pool: pool_connections,
+            next_index: 0,
             current_tx: None,
-        };
+        })
+    }
 
-        client.stream.write_all(DRIVER_MAGIC).await.map_err(|e| {
-            DriverError::ConnectionError(format!("Failed to send magic header: {}", e))
-        })?;
-        client
-            .stream
-            .flush()
-            .await
-            .map_err(|e| DriverError::ConnectionError(format!("Failed to flush: {}", e)))?;
-
-        Ok(client)
+    fn get_next_connection(&mut self) -> &mut PooledConnection {
+        let idx = self.next_index;
+        self.next_index = (self.next_index + 1) % self.pool.len();
+        &mut self.pool[idx]
     }
 
     pub(crate) async fn send_command(&mut self, command: Command) -> Result<Response, DriverError> {
+        let conn = self.get_next_connection();
+
         let data = encode_command(&command)?;
-        self.stream
+        conn.write
             .write_all(&data)
             .await
             .map_err(|e| DriverError::ConnectionError(format!("Write failed: {}", e)))?;
-        self.stream
+        conn.write
             .flush()
             .await
             .map_err(|e| DriverError::ConnectionError(format!("Flush failed: {}", e)))?;
 
         let mut len_buf = [0u8; 4];
-        self.stream
+        conn.read
             .read_exact(&mut len_buf)
             .await
             .map_err(|e| DriverError::ConnectionError(format!("Read length failed: {}", e)))?;
@@ -68,7 +95,7 @@ impl SoliDBClient {
         }
 
         let mut payload = vec![0u8; msg_len];
-        self.stream
+        conn.read
             .read_exact(&mut payload)
             .await
             .map_err(|e| DriverError::ConnectionError(format!("Read payload failed: {}", e)))?;

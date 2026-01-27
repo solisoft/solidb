@@ -1,6 +1,10 @@
 import socket
 import msgpack
 import struct
+import threading
+import json
+import urllib.request
+import urllib.error
 from typing import Optional, Dict, Any, List
 from .exceptions import ConnectionError, ServerError, ProtocolError, AuthError
 
@@ -8,19 +12,20 @@ from .exceptions import ConnectionError, ServerError, ProtocolError, AuthError
 class Client:
     MAGIC_HEADER = b"solidb-drv-v1\x00"
     MAX_MESSAGE_SIZE = 16 * 1024 * 1024
+    DEFAULT_POOL_SIZE = 4
 
-    def __init__(self, host='127.0.0.1', port=6745):
+    def __init__(self, host='127.0.0.1', port=6745, pool_size: int = DEFAULT_POOL_SIZE):
         self.host = host
         self.port = port
-        self.sock = None
+        self.pool_size = pool_size
+        self._pool: List[socket.socket] = []
+        self._pool_index = 0
+        self._pool_lock = threading.Lock()
         self.connected = False
-        # Use raw=False to decode strings as UTF-8 str instead of bytes
         self.packer = msgpack.Packer(use_bin_type=True)
 
-        # Database context for sub-clients
         self._database: Optional[str] = None
 
-        # Sub-clients (lazily initialized)
         self._scripts: Optional['ScriptsClient'] = None
         self._jobs: Optional['JobsClient'] = None
         self._cron: Optional['CronClient'] = None
@@ -35,53 +40,73 @@ class Client:
         self._geo: Optional['GeoClient'] = None
         self._vector: Optional['VectorClient'] = None
         self._ttl: Optional['TtlClient'] = None
-        self._columnar: Optional['ColumnarClient'] = None 
+        self._columnar: Optional['ColumnarClient'] = None
+
+    def _create_socket(self) -> socket.socket:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.connect((self.host, self.port))
+        sock.sendall(self.MAGIC_HEADER)
+        return sock
 
     def connect(self):
-        if self.connected:
+        if self.connected and self._pool:
             return
-        try:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            self.sock.connect((self.host, self.port))
-            self.sock.sendall(self.MAGIC_HEADER)
-            self.connected = True
-        except Exception as e:
-            self.connected = False
-            raise ConnectionError(f"Failed to connect to {self.host}:{self.port} - {str(e)}")
+
+        self._pool = []
+        for _ in range(self.pool_size):
+            try:
+                self._pool.append(self._create_socket())
+            except Exception as e:
+                for s in self._pool:
+                    try:
+                        s.close()
+                    except:
+                        pass
+                self._pool = []
+                raise ConnectionError(f"Failed to connect to {self.host}:{self.port} - {str(e)}")
+
+        self.connected = True
 
     def close(self):
-        if self.sock:
-            try:
-                self.sock.close()
-            except:
-                pass
-        self.sock = None
-        self.connected = False
+        with self._pool_lock:
+            for sock in self._pool:
+                try:
+                    sock.close()
+                except:
+                    pass
+            self._pool = []
+            self.connected = False
+
+    def _get_next_socket(self) -> socket.socket:
+        with self._pool_lock:
+            sock = self._pool[self._pool_index]
+            self._pool_index = (self._pool_index + 1) % len(self._pool)
+            return sock
 
     def _send_command(self, cmd_name, **kwargs):
-        if not self.connected:
+        if not self.connected or not self._pool:
             self.connect()
-        
+
+        sock = self._get_next_socket()
         command = {"cmd": cmd_name}
         command.update(kwargs)
-        
+
         try:
             payload = self.packer.pack(command)
-            # Big-endian 4-byte length
             header = struct.pack(">I", len(payload))
-            self.sock.sendall(header + payload)
-            
-            return self._receive_response()
-        except (socket.error, BrokenPipeError) as e:
+            sock.sendall(header + payload)
+
+            return self._receive_response(sock)
+        except (socket.error, BrokenPipeError, OSError) as e:
             self.connected = False
             raise ConnectionError(f"Connection lost: {str(e)}")
 
-    def _receive_response(self):
+    def _receive_response(self, sock: socket.socket):
         def recv_all(n):
             data = b''
             while len(data) < n:
-                packet = self.sock.recv(n - len(data))
+                packet = sock.recv(n - len(data))
                 if not packet:
                     return None
                 data += packet
@@ -91,46 +116,43 @@ class Client:
         if not header:
             self.connected = False
             raise ConnectionError("Server closed connection")
-        
+
         length = struct.unpack(">I", header)[0]
         if length > self.MAX_MESSAGE_SIZE:
-             raise ProtocolError(f"Message too large: {length} bytes")
+            raise ProtocolError(f"Message too large: {length} bytes")
 
         data = recv_all(length)
         if not data:
             self.connected = False
             raise ConnectionError("Incomplete response")
-            
+
         try:
-            # raw=False decodes strings automatically
             response = msgpack.unpackb(data, raw=False)
         except Exception as e:
             raise ProtocolError(f"Failed to deserialize response: {str(e)}")
 
-        # Handle Tuple format [status, body]
         if isinstance(response, list) and len(response) >= 1 and isinstance(response[0], str):
             status = response[0]
             body = response[1] if len(response) > 1 else None
-            
+
             if status == "ok":
                 return body
             elif status == "error":
                 msg = str(body)
                 if isinstance(body, dict) and len(body) == 1:
-                     msg = list(body.values())[0]
+                    msg = list(body.values())[0]
                 raise ServerError(msg)
             elif status == "pong":
                 return body
             else:
                 return body
 
-        # Handle Map format (Legacy or Future)
         if isinstance(response, dict):
-             if response.get("status") == "error":
-                 raise ServerError(str(response.get("error", "Unknown error")))
-             if response.get("status") == "ok":
-                 return response.get("data")
-             return response
+            if response.get("status") == "error":
+                raise ServerError(str(response.get("error", "Unknown error")))
+            if response.get("status") == "ok":
+                return response.get("data")
+            return response
 
         return response
 

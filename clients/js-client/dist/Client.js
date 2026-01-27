@@ -1,171 +1,161 @@
-import * as net from 'net';
-import { encode, decode } from '@msgpack/msgpack';
-import { ConnectionError, ServerError, ProtocolError } from './errors';
-
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Client = void 0;
+const net = __importStar(require("net"));
+const msgpack_1 = require("@msgpack/msgpack");
+const errors_1 = require("./errors");
 const MAGIC_HEADER = Buffer.from('solidb-drv-v1\0');
 const MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 const DEFAULT_POOL_SIZE = 4;
 const SOCKET_BUFFER_SIZE = 1024 * 1024;
-
-interface PooledConnection {
-    socket: net.Socket;
-    buffer: Buffer;
-    nextMessageLength: number | null;
-    requestQueue: Array<{
-        resolve: (val: any) => void;
-        reject: (err: any) => void;
-    }>;
-    inUse: boolean;
-}
-
-import { ScriptsClient } from './sub-clients/ScriptsClient';
-import { JobsClient } from './sub-clients/JobsClient';
-import { CronClient } from './sub-clients/CronClient';
-import { TriggersClient } from './sub-clients/TriggersClient';
-import { EnvClient } from './sub-clients/EnvClient';
-import { RolesClient } from './sub-clients/RolesClient';
-import { UsersClient } from './sub-clients/UsersClient';
-import { ApiKeysClient } from './sub-clients/ApiKeysClient';
-import { ClusterClient } from './sub-clients/ClusterClient';
-import { CollectionsClient } from './sub-clients/CollectionsClient';
-import { IndexesClient } from './sub-clients/IndexesClient';
-import { GeoClient } from './sub-clients/GeoClient';
-import { VectorClient } from './sub-clients/VectorClient';
-import { TTLClient } from './sub-clients/TTLClient';
-import { ColumnarClient } from './sub-clients/ColumnarClient';
-
-export class Client {
-    private pool: PooledConnection[] = [];
-    private poolSize: number = DEFAULT_POOL_SIZE;
-    private nextConnIndex: number = 0;
-    private connected: boolean = false;
-    private _database: string = '';
-
-    // Sub-clients
-    public readonly scripts: ScriptsClient;
-    public readonly jobs: JobsClient;
-    public readonly cron: CronClient;
-    public readonly triggers: TriggersClient;
-    public readonly env: EnvClient;
-    public readonly roles: RolesClient;
-    public readonly users: UsersClient;
-    public readonly apiKeys: ApiKeysClient;
-    public readonly cluster: ClusterClient;
-    public readonly collections: CollectionsClient;
-    public readonly indexes: IndexesClient;
-    public readonly geo: GeoClient;
-    public readonly vector: VectorClient;
-    public readonly ttl: TTLClient;
-    public readonly columnar: ColumnarClient;
-
-    constructor(
-        private host: string = '127.0.0.1',
-        private port: number = 6745,
-        poolSize: number = DEFAULT_POOL_SIZE
-    ) {
+const ScriptsClient_1 = require("./sub-clients/ScriptsClient");
+const JobsClient_1 = require("./sub-clients/JobsClient");
+const CronClient_1 = require("./sub-clients/CronClient");
+const TriggersClient_1 = require("./sub-clients/TriggersClient");
+const EnvClient_1 = require("./sub-clients/EnvClient");
+const RolesClient_1 = require("./sub-clients/RolesClient");
+const UsersClient_1 = require("./sub-clients/UsersClient");
+const ApiKeysClient_1 = require("./sub-clients/ApiKeysClient");
+const ClusterClient_1 = require("./sub-clients/ClusterClient");
+const CollectionsClient_1 = require("./sub-clients/CollectionsClient");
+const IndexesClient_1 = require("./sub-clients/IndexesClient");
+const GeoClient_1 = require("./sub-clients/GeoClient");
+const VectorClient_1 = require("./sub-clients/VectorClient");
+const TTLClient_1 = require("./sub-clients/TTLClient");
+const ColumnarClient_1 = require("./sub-clients/ColumnarClient");
+class Client {
+    constructor(host = '127.0.0.1', port = 6745, poolSize = DEFAULT_POOL_SIZE) {
+        this.host = host;
+        this.port = port;
+        this.pool = [];
+        this.poolSize = DEFAULT_POOL_SIZE;
+        this.nextConnIndex = 0;
+        this.connected = false;
+        this._database = '';
         this.poolSize = poolSize;
-        this.scripts = new ScriptsClient(this);
-        this.jobs = new JobsClient(this);
-        this.cron = new CronClient(this);
-        this.triggers = new TriggersClient(this);
-        this.env = new EnvClient(this);
-        this.roles = new RolesClient(this);
-        this.users = new UsersClient(this);
-        this.apiKeys = new ApiKeysClient(this);
-        this.cluster = new ClusterClient(this);
-        this.collections = new CollectionsClient(this);
-        this.indexes = new IndexesClient(this);
-        this.geo = new GeoClient(this);
-        this.vector = new VectorClient(this);
-        this.ttl = new TTLClient(this);
-        this.columnar = new ColumnarClient(this);
+        this.scripts = new ScriptsClient_1.ScriptsClient(this);
+        this.jobs = new JobsClient_1.JobsClient(this);
+        this.cron = new CronClient_1.CronClient(this);
+        this.triggers = new TriggersClient_1.TriggersClient(this);
+        this.env = new EnvClient_1.EnvClient(this);
+        this.roles = new RolesClient_1.RolesClient(this);
+        this.users = new UsersClient_1.UsersClient(this);
+        this.apiKeys = new ApiKeysClient_1.ApiKeysClient(this);
+        this.cluster = new ClusterClient_1.ClusterClient(this);
+        this.collections = new CollectionsClient_1.CollectionsClient(this);
+        this.indexes = new IndexesClient_1.IndexesClient(this);
+        this.geo = new GeoClient_1.GeoClient(this);
+        this.vector = new VectorClient_1.VectorClient(this);
+        this.ttl = new TTLClient_1.TTLClient(this);
+        this.columnar = new ColumnarClient_1.ColumnarClient(this);
     }
-
-    private createConnection(): Promise<PooledConnection> {
+    createConnection() {
         return new Promise((resolve, reject) => {
-            const socket = new net.Socket() as net.Socket;
-            (socket as any).setNoDelay(true);
-            (socket as any).setKeepAlive(true, 30000);
-
-            const conn: PooledConnection = {
+            const socket = new net.Socket();
+            socket.setNoDelay(true);
+            socket.setKeepAlive(true, 30000);
+            const conn = {
                 socket,
                 buffer: Buffer.alloc(0),
                 nextMessageLength: null,
                 requestQueue: [],
                 inUse: false
             };
-
             socket.on('connect', () => {
                 socket.write(MAGIC_HEADER);
                 resolve(conn);
             });
-
             socket.on('data', (data) => this.handleData(data, conn));
-
             socket.on('error', (err) => {
                 conn.inUse = false;
                 this.connected = false;
                 while (conn.requestQueue.length > 0) {
                     const req = conn.requestQueue.shift();
-                    req?.reject(new ConnectionError(err.message));
+                    req?.reject(new errors_1.ConnectionError(err.message));
                 }
             });
-
             socket.on('close', () => {
                 conn.inUse = false;
                 this.connected = false;
                 while (conn.requestQueue.length > 0) {
                     const req = conn.requestQueue.shift();
-                    req?.reject(new ConnectionError("Connection closed"));
+                    req?.reject(new errors_1.ConnectionError("Connection closed"));
                 }
             });
-
             socket.connect(this.port, this.host);
         });
     }
-
-    public async connect(): Promise<void> {
-        if (this.connected && this.pool.length > 0) return;
-
+    async connect() {
+        if (this.connected && this.pool.length > 0)
+            return;
         this.pool = [];
-        const connections = await Promise.all(
-            Array.from({ length: this.poolSize }, () => this.createConnection())
-        );
+        const connections = await Promise.all(Array.from({ length: this.poolSize }, () => this.createConnection()));
         this.pool = connections;
         this.connected = true;
     }
-
-    public close(): void {
+    close() {
         for (const conn of this.pool) {
             conn.socket.destroy();
         }
         this.pool = [];
         this.connected = false;
     }
-
-    private handleData(chunk: Buffer, conn: PooledConnection) {
+    handleData(chunk, conn) {
         const newLength = conn.buffer.length + chunk.length;
         if (conn.buffer.length === 0) {
             conn.buffer = Buffer.allocUnsafe(newLength);
             chunk.copy(conn.buffer);
-        } else if (conn.buffer.length >= chunk.length) {
+        }
+        else if (conn.buffer.length >= chunk.length) {
             chunk.copy(conn.buffer, conn.buffer.length);
-        } else {
+        }
+        else {
             const newBuffer = Buffer.allocUnsafe(newLength);
             conn.buffer.copy(newBuffer);
             chunk.copy(newBuffer, conn.buffer.length);
             conn.buffer = newBuffer;
         }
-
         let offset = 0;
         while (true) {
             if (conn.nextMessageLength === null) {
                 if (newLength - offset >= 4) {
                     conn.nextMessageLength = conn.buffer.readUInt32BE(offset);
                     offset += 4;
-
                     if (conn.nextMessageLength > MAX_MESSAGE_SIZE) {
-                        const err = new ProtocolError(`Message too large: ${conn.nextMessageLength}`);
+                        const err = new errors_1.ProtocolError(`Message too large: ${conn.nextMessageLength}`);
                         conn.socket.destroy();
                         while (conn.requestQueue.length > 0) {
                             const req = conn.requestQueue.shift();
@@ -173,87 +163,85 @@ export class Client {
                         }
                         return;
                     }
-                } else {
+                }
+                else {
                     break;
                 }
             }
-
             if (conn.nextMessageLength !== null) {
                 if (newLength - offset >= conn.nextMessageLength) {
                     const payload = conn.buffer.subarray(offset, offset + conn.nextMessageLength);
                     offset += conn.nextMessageLength;
                     conn.nextMessageLength = null;
-
                     this.processMessage(payload, conn);
-                } else {
+                }
+                else {
                     break;
                 }
             }
         }
-
         if (offset > 0 && offset < newLength) {
             conn.buffer = conn.buffer.subarray(offset);
-        } else if (offset === newLength) {
+        }
+        else if (offset === newLength) {
             conn.buffer = Buffer.alloc(0);
         }
     }
-
-    private processMessage(payload: Buffer, conn: PooledConnection) {
+    processMessage(payload, conn) {
         const req = conn.requestQueue.shift();
-        if (!req) return;
+        if (!req)
+            return;
         conn.inUse = false;
-
         try {
-            const response = decode(payload) as any;
-
+            const response = (0, msgpack_1.decode)(payload);
             if (Array.isArray(response) && response.length >= 1 && typeof response[0] === 'string') {
                 const status = response[0];
                 const body = response[1];
-
                 if (status === 'ok' || status === 'pong') {
                     req.resolve(body);
-                } else if (status === 'error') {
+                }
+                else if (status === 'error') {
                     let msg = "Unknown error";
-                    if (typeof body === 'string') msg = body;
+                    if (typeof body === 'string')
+                        msg = body;
                     else if (typeof body === 'object' && body) {
                         const vals = Object.values(body);
-                        if (vals.length > 0) msg = String(vals[0]);
-                        else msg = JSON.stringify(body);
+                        if (vals.length > 0)
+                            msg = String(vals[0]);
+                        else
+                            msg = JSON.stringify(body);
                     }
-                    req.reject(new ServerError(msg));
-                } else {
+                    req.reject(new errors_1.ServerError(msg));
+                }
+                else {
                     req.resolve(body);
                 }
                 return;
             }
             if (response && typeof response === 'object' && !Array.isArray(response)) {
                 if (response.status === 'error') {
-                    req.reject(new ServerError(response.error || "Unknown error"));
-                } else {
+                    req.reject(new errors_1.ServerError(response.error || "Unknown error"));
+                }
+                else {
                     req.resolve(response.data);
                 }
                 return;
             }
-
             req.resolve(response);
-
-        } catch (e: any) {
-            req.reject(new ProtocolError("Failed to deserialize: " + e.message));
+        }
+        catch (e) {
+            req.reject(new errors_1.ProtocolError("Failed to deserialize: " + e.message));
         }
     }
-
     // --- Database Context ---
-
-    public useDatabase(name: string): this {
+    useDatabase(name) {
         this._database = name;
         return this;
     }
-
-    public get database(): string {
+    get database() {
         return this._database;
     }
-
-    private getNextConnection(): PooledConnection {
+    getNextConnection() {
         const start = this.nextConnIndex;
         while (this.pool[this.nextConnIndex].inUse) {
             this.nextConnIndex = (this.nextConnIndex + 1) % this.pool.length;
@@ -266,111 +254,89 @@ export class Client {
         this.nextConnIndex = (this.nextConnIndex + 1) % this.pool.length;
         return conn;
     }
-
-    public async sendCommand(cmd: string, args: Record<string, any> = {}): Promise<any> {
+    async sendCommand(cmd, args = {}) {
         if (!this.connected || this.pool.length === 0) {
             await this.connect();
         }
-
         const conn = this.getNextConnection();
-
         return new Promise((resolve, reject) => {
             const command = { cmd, ...args };
             try {
-                const payload = encode(command);
+                const payload = (0, msgpack_1.encode)(command);
                 const header = Buffer.alloc(4);
                 header.writeUInt32BE(payload.length, 0);
-
                 conn.requestQueue.push({ resolve, reject });
                 conn.socket.write(header);
                 conn.socket.write(Buffer.from(payload));
-            } catch (e: any) {
+            }
+            catch (e) {
                 conn.inUse = false;
                 reject(e);
             }
         });
     }
-
     // --- Public API ---
-
-    public async ping(): Promise<void> {
+    async ping() {
         await this.sendCommand('ping');
     }
-
-    public async auth(database: string, username: string, password: string): Promise<void> {
+    async auth(database, username, password) {
         await this.sendCommand('auth', { database, username, password });
     }
-
-    public async authWithApiKey(database: string, apiKey: string): Promise<void> {
+    async authWithApiKey(database, apiKey) {
         await this.sendCommand('auth', { database, username: '', password: '', api_key: apiKey });
     }
-
     // Database
-    public async listDatabases(): Promise<string[]> {
+    async listDatabases() {
         return (await this.sendCommand('list_databases')) || [];
     }
-
-    public async createDatabase(name: string): Promise<void> {
+    async createDatabase(name) {
         await this.sendCommand('create_database', { name });
     }
-
-    public async deleteDatabase(name: string): Promise<void> {
+    async deleteDatabase(name) {
         await this.sendCommand('delete_database', { name });
     }
-
     // Collection
-    public async listCollections(database: string): Promise<string[]> {
+    async listCollections(database) {
         return (await this.sendCommand('list_collections', { database })) || [];
     }
-
-    public async createCollection(database: string, name: string, type?: string): Promise<void> {
+    async createCollection(database, name, type) {
         await this.sendCommand('create_collection', { database, name, type });
     }
-
-    public async deleteCollection(database: string, name: string): Promise<void> {
+    async deleteCollection(database, name) {
         await this.sendCommand('delete_collection', { database, name });
     }
-
     // Document
-    public async insert(database: string, collection: string, document: any, key?: string): Promise<any> {
+    async insert(database, collection, document, key) {
         return await this.sendCommand('insert', { database, collection, document, key });
     }
-
-    public async get(database: string, collection: string, key: string): Promise<any> {
+    async get(database, collection, key) {
         return await this.sendCommand('get', { database, collection, key });
     }
-
-    public async update(database: string, collection: string, key: string, document: any, merge: boolean = true): Promise<void> {
+    async update(database, collection, key, document, merge = true) {
         await this.sendCommand('update', { database, collection, key, document, merge });
     }
-
-    public async delete(database: string, collection: string, key: string): Promise<void> {
+    async delete(database, collection, key) {
         await this.sendCommand('delete', { database, collection, key });
     }
-
-    public async list(database: string, collection: string, limit: number = 50, offset: number = 0): Promise<any[]> {
+    async list(database, collection, limit = 50, offset = 0) {
         return (await this.sendCommand('list', { database, collection, limit, offset })) || [];
     }
-
     // Query
-    public async query(database: string, sdbql: string, bindVars: Record<string, any> = {}): Promise<any[]> {
+    async query(database, sdbql, bindVars = {}) {
         return (await this.sendCommand('query', { database, sdbql, bind_vars: bindVars })) || [];
     }
-
-    public async explain(database: string, sdbql: string, bindVars: Record<string, any> = {}): Promise<any> {
+    async explain(database, sdbql, bindVars = {}) {
         return (await this.sendCommand('explain', { database, sdbql, bind_vars: bindVars })) || {};
     }
-
     // Transactions
-    public async beginTransaction(database: string, isolationLevel: string = 'read_committed'): Promise<string> {
+    async beginTransaction(database, isolationLevel = 'read_committed') {
         return await this.sendCommand('begin_transaction', { database, isolation_level: isolationLevel });
     }
-
-    public async commitTransaction(txId: string): Promise<void> {
+    async commitTransaction(txId) {
         await this.sendCommand('commit_transaction', { tx_id: txId });
     }
-
-    public async rollbackTransaction(txId: string): Promise<void> {
+    async rollbackTransaction(txId) {
         await this.sendCommand('rollback_transaction', { tx_id: txId });
     }
 }
+exports.Client = Client;
