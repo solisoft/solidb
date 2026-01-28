@@ -9,6 +9,7 @@ pub enum DriverError {
     TransactionError(String),
     MessageTooLarge,
     InvalidCommand(String),
+    ServerError(String),
 }
 
 impl std::fmt::Display for DriverError {
@@ -21,6 +22,7 @@ impl std::fmt::Display for DriverError {
             DriverError::TransactionError(msg) => write!(f, "Transaction error: {}", msg),
             DriverError::MessageTooLarge => write!(f, "Message too large"),
             DriverError::InvalidCommand(msg) => write!(f, "Invalid command: {}", msg),
+            DriverError::ServerError(msg) => write!(f, "Server error: {}", msg),
         }
     }
 }

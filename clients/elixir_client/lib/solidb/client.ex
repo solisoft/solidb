@@ -14,22 +14,27 @@ defmodule SoliDB.Client do
   end
 
   defp connect_with_pool(host, port, pool_size) do
-    sockets =
-      Enum.map(1..pool_size, fn _ ->
-        case :gen_tcp.connect(String.to_charlist(host), port, [
-               :binary,
-               active: false,
-               packet: 0,
-               nodelay: true
-             ]) do
+    result =
+      Enum.reduce(1..pool_size, [], fn _, acc ->
+        case :gen_tcp.connect(String.to_charlist(host), port, [:binary, active: false, packet: 0, nodelay: true]) do
           {:ok, socket} ->
             :ok = :gen_tcp.send(socket, @magic_header)
-            socket
-
+            [socket | acc]
           {:error, reason} ->
-            Enum.each(List.delete(sockets, nil), &:gen_tcp.close/1)
+            Enum.each(acc, &:gen_tcp.close/1)
             {:error, "Failed to connect: #{inspect(reason)}"}
         end
+      end)
+
+    case result do
+      sockets when is_list(sockets) and length(sockets) == pool_size ->
+        {:ok, %__MODULE__{host: host, port: port, pool: Enum.reverse(sockets), pool_index: 0, database: nil}}
+      {:error, _} = error ->
+        error
+      _ ->
+        {:error, "Failed to establish all connections"}
+    end
+  end
       end)
 
     if Enum.all?(sockets, &is_port(&1)) do

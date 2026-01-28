@@ -3,11 +3,14 @@ mod bulk;
 mod collection;
 mod database;
 mod document;
+mod http_client;
 mod index;
 mod query;
 mod transaction;
 
 pub use builder::SoliDBClientBuilder;
+pub use builder::Transport;
+pub use http_client::HttpClient;
 
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
