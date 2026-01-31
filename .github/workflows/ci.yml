@@ -79,9 +79,17 @@ jobs:
       - name: Build (release)
         run: cargo build --release --verbose
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-target
+          path: target/
+          retention-days: 1
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    needs: check-and-build
 
     steps:
       - name: Checkout code
@@ -92,14 +100,11 @@ jobs:
         with:
           components: clippy
 
-      - name: Cache cargo build
-        uses: actions/cache@v4
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
         with:
-          path: target
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}-
-            ${{ runner.os }}-cargo-clippy-
+          name: cargo-target
+          path: target/
 
       - name: Run clippy
         run: cargo clippy -- -D warnings
@@ -107,6 +112,7 @@ jobs:
   security:
     name: Security Audit
     runs-on: ubuntu-latest
+    needs: check-and-build
 
     steps:
       - name: Checkout code
