@@ -8,9 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 0
-  SCCACHE_GHA_ENABLED: "true"
-  RUSTC_WRAPPER: "sccache"
+  CARGO_INCREMENTAL: 1
 
 jobs:
   check-and-build:
@@ -53,9 +51,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Check formatting
         run: cargo fmt -- --check
@@ -135,9 +130,6 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
