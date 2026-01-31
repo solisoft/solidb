@@ -108,8 +108,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dump_database_jsonl(&client, &base_url, &args.database, &mut output).await?;
     }
 
-    if args.output.is_some() {
-        eprintln!("✓ Dump written to {}", args.output.as_ref().unwrap());
+    if let Some(output) = &args.output {
+        eprintln!("✓ Dump written to {}", output);
     }
 
     Ok(())
