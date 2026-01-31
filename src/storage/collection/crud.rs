@@ -894,7 +894,7 @@ impl Collection {
             }
         }
 
-        drop(db); // Release read lock before delete_batch
+        let _ = db; // Keep reference alive until this point
 
         if keys_to_delete.is_empty() {
             return Ok(0);

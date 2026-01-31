@@ -666,7 +666,7 @@ impl Collection {
                 }
             }
         }
-        drop(db);
+        let _ = db;
 
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
@@ -732,7 +732,7 @@ impl Collection {
                     })?;
             }
         }
-        drop(db);
+        let _ = db;
 
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
@@ -787,7 +787,7 @@ impl Collection {
                 })?;
             }
         }
-        drop(db);
+        let _ = db;
 
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
@@ -1090,7 +1090,7 @@ impl Collection {
             .take(limit.unwrap_or(usize::MAX))
             .collect();
 
-        drop(db);
+        let _ = db;
 
         if doc_keys.is_empty() {
             return Some(Vec::new());

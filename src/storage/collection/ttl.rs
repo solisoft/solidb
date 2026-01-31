@@ -270,7 +270,7 @@ impl Collection {
             }
         }
 
-        drop(db);
+        let _ = db;
 
         if expired_doc_keys.is_empty() {
             return Ok(0);

@@ -365,10 +365,10 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn create_test_db() -> (Arc<RwLock<DB>>, TempDir) {
+    fn create_test_db() -> (Arc<DB>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db = DB::open_default(temp_dir.path()).unwrap();
-        (Arc::new(RwLock::new(db)), temp_dir)
+        (Arc::new(db), temp_dir)
     }
 
     #[test]
