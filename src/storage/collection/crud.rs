@@ -39,7 +39,7 @@ impl Collection {
         self.insert_internal(data, false)
     }
 
-    /// Internal insert implementation
+    /// Internal insert implementation with atomic document + index writes
     pub(crate) fn insert_internal(
         &self,
         mut data: Value,
@@ -82,20 +82,48 @@ impl Collection {
         }
 
         let doc_bytes = serialize_doc(&doc)?;
-        {
-            let db = self.db.read().unwrap();
-            let cf = db
-                .cf_handle(&self.name)
-                .expect("Column family should exist");
-            db.put_cf(cf, Self::doc_key(&key), &doc_bytes)
-                .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
+
+        // Build WriteBatch with document and all index entries atomically
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        let mut batch = WriteBatch::default();
+
+        // Add document to batch
+        batch.put_cf(cf, Self::doc_key(&key), &doc_bytes);
+
+        // Add index entries to batch (if enabled)
+        if update_indexes {
+            // Compute and add regular + geo index entries
+            let (regular_entries, geo_entries) =
+                self.compute_index_entries_for_insert(&key, &doc_value)?;
+            for (entry_key, entry_value) in regular_entries {
+                batch.put_cf(cf, entry_key, entry_value);
+            }
+            for (entry_key, entry_value) in geo_entries {
+                batch.put_cf(cf, entry_key, entry_value);
+            }
+
+            // Compute and add fulltext entries
+            let fulltext_entries = self.compute_fulltext_entries_for_insert(&key, &doc_value);
+            for (entry_key, entry_value) in fulltext_entries {
+                batch.put_cf(cf, entry_key, entry_value);
+            }
+
+            // Compute and add TTL expiry entries
+            let ttl_expiry_entries = self.compute_ttl_expiry_entries_for_insert(&key, &doc_value);
+            for (entry_key, _entry_value) in ttl_expiry_entries {
+                batch.put_cf(cf, entry_key, Vec::new());
+            }
         }
 
-        // Update indexes (if enabled)
+        // Atomic write: document + indexes together
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
+
+        // Update vector indexes in-memory (separate from WriteBatch)
         if update_indexes {
-            self.update_indexes_on_insert(&key, &doc_value)?;
-            self.update_fulltext_on_insert(&key, &doc_value)?;
-            // Update vector indexes
             self.update_vector_indexes_on_upsert(&key, &doc_value);
         }
 
@@ -113,7 +141,7 @@ impl Collection {
         Ok(doc)
     }
 
-    /// Update a document
+    /// Update a document with atomic document + index writes
     pub fn update(&self, key: &str, data: Value) -> DbResult<Document> {
         if *self.collection_type.read().unwrap() == "timeseries" {
             return Err(DbError::OperationNotSupported(
@@ -143,24 +171,62 @@ impl Collection {
 
         let doc_bytes = serialize_doc(&doc)?;
 
-        // Store updated document
-        {
-            let db = self.db.read().unwrap();
-            let cf = db
-                .cf_handle(&self.name)
-                .expect("Column family should exist");
-            db.put_cf(cf, Self::doc_key(key), &doc_bytes)
-                .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
+        // Build WriteBatch with document and all index updates atomically
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        let mut batch = WriteBatch::default();
+
+        // Update document in batch
+        batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
+
+        // Compute and apply index updates atomically
+        let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
+            self.compute_index_entries_for_update(key, &old_value, &new_value)?;
+
+        // Remove old index entries
+        for key_to_remove in keys_to_remove {
+            batch.delete_cf(cf, key_to_remove);
+        }
+        for geo_key in geo_keys_to_remove {
+            batch.delete_cf(cf, geo_key);
         }
 
-        // Update indexes
-        self.update_indexes_on_update(key, &old_value, &new_value)?;
+        // Add new index entries
+        for (entry_key, entry_value) in entries_to_add {
+            batch.put_cf(cf, entry_key, entry_value);
+        }
+        for (entry_key, entry_value) in geo_entries_to_add {
+            batch.put_cf(cf, entry_key, entry_value);
+        }
 
-        // Update fulltext indexes (delete old, insert new)
-        self.update_fulltext_on_delete(key, &old_value)?;
-        self.update_fulltext_on_insert(key, &new_value)?;
+        // Compute and apply fulltext updates
+        let fulltext_keys_to_remove = self.compute_fulltext_entries_for_delete(key, &old_value);
+        for key_to_remove in fulltext_keys_to_remove {
+            batch.delete_cf(cf, key_to_remove);
+        }
 
-        // Update vector indexes (remove old, add new)
+        let fulltext_entries_to_add = self.compute_fulltext_entries_for_insert(key, &new_value);
+        for (entry_key, entry_value) in fulltext_entries_to_add {
+            batch.put_cf(cf, entry_key, entry_value);
+        }
+
+        // Compute and apply TTL expiry updates
+        let (ttl_entries_to_add, ttl_keys_to_remove) =
+            self.compute_ttl_expiry_entries_for_update(key, &old_value, &new_value);
+        for key_to_remove in ttl_keys_to_remove {
+            batch.delete_cf(cf, key_to_remove);
+        }
+        for (entry_key, _entry_value) in ttl_entries_to_add {
+            batch.put_cf(cf, entry_key, Vec::new());
+        }
+
+        // Atomic write: document + all index updates together
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
+
+        // Update vector indexes in-memory (separate from WriteBatch)
         self.update_vector_indexes_on_delete(key);
         self.update_vector_indexes_on_upsert(key, &new_value);
 
@@ -208,24 +274,62 @@ impl Collection {
         let new_value = doc.to_value();
         let doc_bytes = serialize_doc(&doc)?;
 
-        // Store updated document
-        {
-            let db = self.db.read().unwrap();
-            let cf = db
-                .cf_handle(&self.name)
-                .expect("Column family should exist");
-            db.put_cf(cf, Self::doc_key(key), &doc_bytes)
-                .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
+        // Build WriteBatch with document and all index updates atomically
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        let mut batch = WriteBatch::default();
+
+        // Update document in batch
+        batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
+
+        // Compute and apply index updates atomically
+        let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
+            self.compute_index_entries_for_update(key, &old_value, &new_value)?;
+
+        // Remove old index entries
+        for key_to_remove in keys_to_remove {
+            batch.delete_cf(cf, key_to_remove);
+        }
+        for geo_key in geo_keys_to_remove {
+            batch.delete_cf(cf, geo_key);
         }
 
-        // Update indexes
-        self.update_indexes_on_update(key, &old_value, &new_value)?;
+        // Add new index entries
+        for (entry_key, entry_value) in entries_to_add {
+            batch.put_cf(cf, entry_key, entry_value);
+        }
+        for (entry_key, entry_value) in geo_entries_to_add {
+            batch.put_cf(cf, entry_key, entry_value);
+        }
 
-        // Update fulltext indexes (delete old, insert new)
-        self.update_fulltext_on_delete(key, &old_value)?;
-        self.update_fulltext_on_insert(key, &new_value)?;
+        // Compute and apply fulltext updates
+        let fulltext_keys_to_remove = self.compute_fulltext_entries_for_delete(key, &old_value);
+        for key_to_remove in fulltext_keys_to_remove {
+            batch.delete_cf(cf, key_to_remove);
+        }
 
-        // Update vector indexes (remove old, add new)
+        let fulltext_entries_to_add = self.compute_fulltext_entries_for_insert(key, &new_value);
+        for (entry_key, entry_value) in fulltext_entries_to_add {
+            batch.put_cf(cf, entry_key, entry_value);
+        }
+
+        // Compute and apply TTL expiry updates
+        let (ttl_entries_to_add, ttl_keys_to_remove) =
+            self.compute_ttl_expiry_entries_for_update(key, &old_value, &new_value);
+        for key_to_remove in ttl_keys_to_remove {
+            batch.delete_cf(cf, key_to_remove);
+        }
+        for (entry_key, _entry_value) in ttl_entries_to_add {
+            batch.put_cf(cf, entry_key, Vec::new());
+        }
+
+        // Atomic write: document + all index updates together
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
+
+        // Update vector indexes in-memory (separate from WriteBatch)
         self.update_vector_indexes_on_delete(key);
         self.update_vector_indexes_on_upsert(key, &new_value);
 
@@ -240,34 +344,53 @@ impl Collection {
         Ok(doc)
     }
 
-    /// Delete a document
+    /// Delete a document with atomic document + index removal
     pub fn delete(&self, key: &str) -> DbResult<()> {
         // Get document for index cleanup
         let doc = self.get(key)?;
         let doc_value = doc.to_value();
 
-        // Delete document
-        {
-            let db = self.db.read().unwrap();
-            let cf = db
-                .cf_handle(&self.name)
-                .expect("Column family should exist");
-            db.delete_cf(cf, Self::doc_key(key))
-                .map_err(|e| DbError::InternalError(format!("Failed to delete document: {}", e)))?;
+        // Build WriteBatch with document deletion and all index removals atomically
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        let mut batch = WriteBatch::default();
+
+        // Delete document from batch
+        batch.delete_cf(cf, Self::doc_key(key));
+
+        // Compute and remove regular + geo index entries
+        let (regular_keys, geo_keys) = self.compute_index_entries_for_delete(key, &doc_value)?;
+        for key_to_remove in regular_keys {
+            batch.delete_cf(cf, key_to_remove);
+        }
+        for key_to_remove in geo_keys {
+            batch.delete_cf(cf, key_to_remove);
         }
 
-        // If blob collection, delete chunks
+        // Compute and remove fulltext entries
+        let fulltext_keys = self.compute_fulltext_entries_for_delete(key, &doc_value);
+        for key_to_remove in fulltext_keys {
+            batch.delete_cf(cf, key_to_remove);
+        }
+
+        // Compute and remove TTL expiry entries
+        let ttl_keys = self.compute_ttl_expiry_entries_for_delete(key, &doc_value);
+        for key_to_remove in ttl_keys {
+            batch.delete_cf(cf, key_to_remove);
+        }
+
+        // Atomic write: document deletion + index removals together
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to delete document: {}", e)))?;
+
+        // If blob collection, delete chunks (separate from WriteBatch)
         if *self.collection_type.read().unwrap() == "blob" {
             self.delete_blob_data(key)?;
         }
 
-        // Update indexes
-        self.update_indexes_on_delete(key, &doc_value)?;
-
-        // Update fulltext indexes
-        self.update_fulltext_on_delete(key, &doc_value)?;
-
-        // Update vector indexes
+        // Update vector indexes in-memory (separate from WriteBatch)
         self.update_vector_indexes_on_delete(key);
 
         // Update document count
@@ -364,10 +487,8 @@ impl Collection {
         Ok(count)
     }
 
-    /// Batch delete documents
+    /// Batch delete documents with atomic document + index removal
     pub fn delete_batch(&self, keys: Vec<String>) -> DbResult<usize> {
-        use rocksdb::WriteBatch;
-
         if keys.is_empty() {
             return Ok(0);
         }
@@ -381,29 +502,50 @@ impl Collection {
         let mut deleted_count = 0;
         let mut deleted_docs = Vec::new(); // To store doc_value for change events
 
-        // 1. Prepare batch and handle auxiliary updates (indexes, blobs)
+        // Prepare batch with document deletions and index removals atomically
         for key in &keys {
             // Get document first (needed for index cleanup and change events)
             if let Ok(Some(bytes)) = db.get_cf(cf, Self::doc_key(key)) {
                 if let Ok(doc) = deserialize_doc(&bytes) {
                     let doc_value = doc.to_value();
 
-                    // Add to batch for deletion
+                    // Add document deletion to batch
                     batch.delete_cf(cf, Self::doc_key(key));
 
-                    // Handle blobs
+                    // Compute and add index key removals to batch
+                    let (regular_keys, geo_keys) =
+                        match self.compute_index_entries_for_delete(key, &doc_value) {
+                            Ok(keys) => keys,
+                            Err(e) => {
+                                tracing::warn!("Failed to compute index keys for {}: {}", key, e);
+                                (Vec::new(), Vec::new())
+                            }
+                        };
+                    for key_to_remove in regular_keys {
+                        batch.delete_cf(cf, key_to_remove);
+                    }
+                    for key_to_remove in geo_keys {
+                        batch.delete_cf(cf, key_to_remove);
+                    }
+
+                    // Compute and add fulltext key removals to batch
+                    let fulltext_keys = self.compute_fulltext_entries_for_delete(key, &doc_value);
+                    for key_to_remove in fulltext_keys {
+                        batch.delete_cf(cf, key_to_remove);
+                    }
+
+                    // Compute and add TTL expiry key removals to batch
+                    let ttl_keys = self.compute_ttl_expiry_entries_for_delete(key, &doc_value);
+                    for key_to_remove in ttl_keys {
+                        batch.delete_cf(cf, key_to_remove);
+                    }
+
+                    // Handle blobs (separate from WriteBatch)
                     if *self.collection_type.read().unwrap() == "blob" {
                         let _ = self.delete_blob_data(key);
                     }
 
-                    // Update indexes (Note: these are separate writes currently)
-                    if let Err(e) = self.update_indexes_on_delete(key, &doc_value) {
-                        tracing::warn!("Failed to clean indexes for {}: {}", key, e);
-                    }
-                    if let Err(e) = self.update_fulltext_on_delete(key, &doc_value) {
-                        tracing::warn!("Failed to clean fulltext for {}: {}", key, e);
-                    }
-                    // Update vector indexes
+                    // Update vector indexes in-memory (separate from WriteBatch)
                     self.update_vector_indexes_on_delete(key);
 
                     deleted_docs.push((key.clone(), doc_value));
@@ -421,15 +563,15 @@ impl Collection {
             tracing::warn!("Failed to persist vector indexes: {}", e);
         }
 
-        // 2. Commit storage batch
+        // Commit batch atomically: all document deletions + index removals together
         db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch delete: {}", e)))?;
 
-        // 3. Update count
+        // Update count
         self.doc_count.fetch_sub(deleted_count, Ordering::Relaxed);
         self.count_dirty.store(true, Ordering::Relaxed);
 
-        // 4. Send Change Events
+        // Send Change Events
         for (key, old_data) in deleted_docs {
             let _ = self.change_sender.send(ChangeEvent {
                 type_: ChangeType::Delete,
@@ -442,7 +584,7 @@ impl Collection {
         Ok(deleted_count)
     }
 
-    /// Batch update multiple documents
+    /// Batch update multiple documents with atomic document + index writes
     pub fn update_batch(&self, updates: &[(String, Value)]) -> DbResult<Vec<Document>> {
         if updates.is_empty() {
             return Ok(Vec::new());
@@ -464,7 +606,7 @@ impl Collection {
         let mut updated_docs = Vec::new();
         let mut change_events = Vec::new();
 
-        // 1. Prepare batch and handle auxiliary updates (indexes, validation)
+        // Prepare batch with document updates and index updates atomically
         for (key, changes) in updates {
             // Get old document
             if let Ok(old_doc) = self.get(key) {
@@ -493,23 +635,63 @@ impl Collection {
 
                 // Serialize document
                 if let Ok(doc_bytes) = serialize_doc(&doc) {
-                    // Add to batch
+                    // Add document to batch
                     batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
 
-                    // Update indexes (Note: these are separate writes currently)
-                    if let Err(e) = self.update_indexes_on_update(key, &old_value, &new_value) {
-                        tracing::warn!("Failed to update indexes for {}: {}", key, e);
+                    // Compute and add index updates to batch atomically
+                    let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
+                        match self.compute_index_entries_for_update(key, &old_value, &new_value) {
+                            Ok(result) => result,
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to compute index updates for {}: {}",
+                                    key,
+                                    e
+                                );
+                                (Vec::new(), Vec::new(), Vec::new(), Vec::new())
+                            }
+                        };
+
+                    // Remove old index entries
+                    for key_to_remove in keys_to_remove {
+                        batch.delete_cf(cf, key_to_remove);
+                    }
+                    for geo_key in geo_keys_to_remove {
+                        batch.delete_cf(cf, geo_key);
                     }
 
-                    // Update fulltext indexes (delete old, insert new)
-                    if let Err(e) = self.update_fulltext_on_delete(key, &old_value) {
-                        tracing::warn!("Failed to clean fulltext for {}: {}", key, e);
+                    // Add new index entries
+                    for (entry_key, entry_value) in entries_to_add {
+                        batch.put_cf(cf, entry_key, entry_value);
                     }
-                    if let Err(e) = self.update_fulltext_on_insert(key, &new_value) {
-                        tracing::warn!("Failed to update fulltext for {}: {}", key, e);
+                    for (entry_key, entry_value) in geo_entries_to_add {
+                        batch.put_cf(cf, entry_key, entry_value);
                     }
 
-                    // Update vector indexes (remove old, add new)
+                    // Compute and add fulltext updates to batch
+                    let fulltext_keys_to_remove =
+                        self.compute_fulltext_entries_for_delete(key, &old_value);
+                    for key_to_remove in fulltext_keys_to_remove {
+                        batch.delete_cf(cf, key_to_remove);
+                    }
+
+                    let fulltext_entries_to_add =
+                        self.compute_fulltext_entries_for_insert(key, &new_value);
+                    for (entry_key, entry_value) in fulltext_entries_to_add {
+                        batch.put_cf(cf, entry_key, entry_value);
+                    }
+
+                    // Compute and apply TTL expiry updates
+                    let (ttl_entries_to_add, ttl_keys_to_remove) =
+                        self.compute_ttl_expiry_entries_for_update(key, &old_value, &new_value);
+                    for key_to_remove in ttl_keys_to_remove {
+                        batch.delete_cf(cf, key_to_remove);
+                    }
+                    for (entry_key, _entry_value) in ttl_entries_to_add {
+                        batch.put_cf(cf, entry_key, Vec::new());
+                    }
+
+                    // Update vector indexes in-memory (separate from WriteBatch)
                     self.update_vector_indexes_on_delete(key);
                     self.update_vector_indexes_on_upsert(key, &new_value);
 
@@ -528,11 +710,11 @@ impl Collection {
             tracing::warn!("Failed to persist vector indexes: {}", e);
         }
 
-        // 2. Commit storage batch
+        // Commit batch atomically: all document updates + index updates together
         db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch update: {}", e)))?;
 
-        // 3. Send Change Events
+        // Send Change Events
         for (key, old_data, new_data) in change_events {
             let _ = self.change_sender.send(ChangeEvent {
                 type_: ChangeType::Update,

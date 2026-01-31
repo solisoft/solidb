@@ -7,6 +7,10 @@ use serde_json::Value;
 
 use hex;
 
+type IndexEntry = (Vec<u8>, Vec<u8>);
+type IndexEntries = Vec<IndexEntry>;
+type IndexKeys = Vec<Vec<u8>>;
+
 impl Collection {
     // ==================== Index Operations ====================
 
@@ -616,6 +620,7 @@ impl Collection {
     }
 
     /// Update indexes on document insert
+    #[allow(dead_code)]
     pub(crate) fn update_indexes_on_insert(
         &self,
         doc_key: &str,
@@ -685,6 +690,7 @@ impl Collection {
     }
 
     /// Update indexes on document update
+    #[allow(dead_code)]
     pub(crate) fn update_indexes_on_update(
         &self,
         doc_key: &str,
@@ -755,6 +761,7 @@ impl Collection {
     }
 
     /// Update indexes on document delete
+    #[allow(dead_code)]
     pub(crate) fn update_indexes_on_delete(
         &self,
         doc_key: &str,
@@ -1219,5 +1226,146 @@ impl Collection {
         } else {
             true
         }
+    }
+
+    // ==================== Index Entry Computation Helpers (for Atomic Batch Operations) ====================
+
+    /// Compute index entries to add for a document insert (without writing to DB)
+    /// Returns: (regular_index_entries, geo_index_entries)
+    /// Each entry is (key_bytes, value_bytes)
+    pub(crate) fn compute_index_entries_for_insert(
+        &self,
+        doc_key: &str,
+        doc_value: &Value,
+    ) -> DbResult<(IndexEntries, IndexEntries)> {
+        let indexes = self.get_all_indexes();
+        let mut regular_entries = Vec::new();
+
+        for index in indexes {
+            let field_values: Vec<Value> = index
+                .fields
+                .iter()
+                .map(|f| extract_field_value(doc_value, f))
+                .collect();
+
+            if !field_values.iter().all(|v| v.is_null()) {
+                let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
+                regular_entries.push((entry_key, doc_key.as_bytes().to_vec()));
+            }
+        }
+
+        // Compute geo index entries
+        let geo_indexes = self.get_all_geo_indexes();
+        let mut geo_entries = Vec::new();
+
+        for geo_index in &geo_indexes {
+            let field_value = extract_field_value(doc_value, &geo_index.field);
+            if !field_value.is_null() {
+                let entry_key = Self::geo_entry_key(&geo_index.name, doc_key);
+                let geo_data = serde_json::to_vec(&field_value)?;
+                geo_entries.push((entry_key, geo_data));
+            }
+        }
+
+        Ok((regular_entries, geo_entries))
+    }
+
+    /// Compute index entries for a document update (without writing to DB)
+    /// Returns: (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove)
+    pub(crate) fn compute_index_entries_for_update(
+        &self,
+        doc_key: &str,
+        old_value: &Value,
+        new_value: &Value,
+    ) -> DbResult<(IndexEntries, IndexKeys, IndexEntries, IndexKeys)> {
+        let indexes = self.get_all_indexes();
+        let mut entries_to_add = Vec::new();
+        let mut keys_to_remove = Vec::new();
+
+        for index in indexes {
+            let old_values: Vec<Value> = index
+                .fields
+                .iter()
+                .map(|f| extract_field_value(old_value, f))
+                .collect();
+            let new_values: Vec<Value> = index
+                .fields
+                .iter()
+                .map(|f| extract_field_value(new_value, f))
+                .collect();
+
+            // Remove old entry
+            if !old_values.iter().all(|v| v.is_null()) {
+                let old_entry_key = Self::idx_entry_key(&index.name, &old_values, doc_key);
+                keys_to_remove.push(old_entry_key);
+            }
+
+            // Add new entry
+            if !new_values.iter().all(|v| v.is_null()) {
+                let new_entry_key = Self::idx_entry_key(&index.name, &new_values, doc_key);
+                entries_to_add.push((new_entry_key, doc_key.as_bytes().to_vec()));
+            }
+        }
+
+        // Compute geo index entries
+        let geo_indexes = self.get_all_geo_indexes();
+        let mut geo_entries_to_add = Vec::new();
+        let mut geo_keys_to_remove = Vec::new();
+
+        for geo_index in &geo_indexes {
+            let entry_key = Self::geo_entry_key(&geo_index.name, doc_key);
+            let new_field = extract_field_value(new_value, &geo_index.field);
+
+            // Always remove old geo entry
+            geo_keys_to_remove.push(entry_key.clone());
+
+            // Add new if field exists
+            if !new_field.is_null() {
+                let geo_data = serde_json::to_vec(&new_field)?;
+                geo_entries_to_add.push((entry_key, geo_data));
+            }
+        }
+
+        Ok((
+            entries_to_add,
+            keys_to_remove,
+            geo_entries_to_add,
+            geo_keys_to_remove,
+        ))
+    }
+
+    /// Compute index entries to remove for a document delete (without writing to DB)
+    /// Returns: (regular_keys_to_remove, geo_keys_to_remove)
+    pub(crate) fn compute_index_entries_for_delete(
+        &self,
+        doc_key: &str,
+        doc_value: &Value,
+    ) -> DbResult<(IndexKeys, IndexKeys)> {
+        let indexes = self.get_all_indexes();
+        let mut keys_to_remove = Vec::new();
+
+        for index in indexes {
+            let field_values: Vec<Value> = index
+                .fields
+                .iter()
+                .map(|f| extract_field_value(doc_value, f))
+                .collect();
+
+            if !field_values.iter().all(|v| v.is_null()) {
+                let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
+                keys_to_remove.push(entry_key);
+            }
+        }
+
+        // Compute geo index keys to remove
+        let geo_indexes = self.get_all_geo_indexes();
+        let mut geo_keys_to_remove = Vec::new();
+
+        for geo_index in &geo_indexes {
+            let entry_key = Self::geo_entry_key(&geo_index.name, doc_key);
+            geo_keys_to_remove.push(entry_key);
+        }
+
+        Ok((keys_to_remove, geo_keys_to_remove))
     }
 }

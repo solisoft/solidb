@@ -369,6 +369,30 @@ impl Collection {
         format!("{}{}", TTL_META_PREFIX, name).into_bytes()
     }
 
+    /// Build a TTL expiry index key: "ttl_exp:<ttl_index_name>:<expiry_ts>:<doc_key>"
+    /// Sorted by (ttl_index_name, expiry_timestamp) for efficient range queries
+    pub fn ttl_expiry_key(ttl_index_name: &str, expiry_timestamp: u64, doc_key: &str) -> Vec<u8> {
+        format!(
+            "{}{}:{}:{}:{}",
+            DOC_PREFIX, TTL_EXPIRY_PREFIX, ttl_index_name, expiry_timestamp, doc_key
+        )
+        .into_bytes()
+    }
+
+    /// Build a TTL expiry index prefix for a specific index: "doc:ttl_exp:<ttl_index_name>:"
+    pub fn ttl_expiry_prefix(ttl_index_name: &str) -> Vec<u8> {
+        format!("{}{}:{}:", DOC_PREFIX, TTL_EXPIRY_PREFIX, ttl_index_name).into_bytes()
+    }
+
+    /// Build a TTL expiry index prefix for scanning up to a timestamp: "doc:ttl_exp:<ttl_index_name>:<max_ts>:"
+    pub fn ttl_expiry_prefix_until(ttl_index_name: &str, max_timestamp: u64) -> Vec<u8> {
+        format!(
+            "{}{}:{}:{}:",
+            DOC_PREFIX, TTL_EXPIRY_PREFIX, ttl_index_name, max_timestamp
+        )
+        .into_bytes()
+    }
+
     /// Create vector index metadata key: "vec_meta:<name>"
     pub fn vec_meta_key(name: &str) -> Vec<u8> {
         format!("{}{}", VEC_META_PREFIX, name).into_bytes()

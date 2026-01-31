@@ -1,4 +1,4 @@
-use solidb_client::{SoliDBClientBuilder, HttpClient};
+use solidb_client::{HttpClient, SoliDBClientBuilder};
 use std::time::Instant;
 
 #[tokio::main]
@@ -28,7 +28,9 @@ async fn main() -> Result<(), solidb_client::DriverError> {
             "data": format!("benchmark data {}", i),
             "timestamp": chrono::Utc::now().timestamp_millis()
         });
-        http_client.insert("bench_collection", doc, Some(&format!("http_{}", i))).await?;
+        http_client
+            .insert("bench_collection", doc, Some(&format!("http_{}", i)))
+            .await?;
     }
     let duration = start.elapsed();
     let ops = iterations as f64 / duration.as_secs_f64();
@@ -37,7 +39,9 @@ async fn main() -> Result<(), solidb_client::DriverError> {
     println!("Reading {} documents...", iterations);
     let start = Instant::now();
     for i in 0..iterations {
-        let _ = http_client.get("bench_collection", &format!("http_{}", i)).await?;
+        let _ = http_client
+            .get("bench_collection", &format!("http_{}", i))
+            .await?;
     }
     let duration = start.elapsed();
     let ops = iterations as f64 / duration.as_secs_f64();
@@ -59,7 +63,14 @@ async fn main() -> Result<(), solidb_client::DriverError> {
             "data": format!("benchmark data {}", i),
             "timestamp": chrono::Utc::now().timestamp_millis()
         });
-        tcp_client.insert("bench_db", "bench_collection", Some(&format!("tcp_{}", i)), doc).await?;
+        tcp_client
+            .insert(
+                "bench_db",
+                "bench_collection",
+                Some(&format!("tcp_{}", i)),
+                doc,
+            )
+            .await?;
     }
     let duration = start.elapsed();
     let ops = iterations as f64 / duration.as_secs_f64();
@@ -68,7 +79,9 @@ async fn main() -> Result<(), solidb_client::DriverError> {
     println!("Reading {} documents...", iterations);
     let start = Instant::now();
     for i in 0..iterations {
-        let _ = tcp_client.get("bench_db", "bench_collection", &format!("tcp_{}", i)).await?;
+        let _ = tcp_client
+            .get("bench_db", "bench_collection", &format!("tcp_{}", i))
+            .await?;
     }
     let duration = start.elapsed();
     let ops = iterations as f64 / duration.as_secs_f64();

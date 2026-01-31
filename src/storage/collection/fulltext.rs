@@ -209,6 +209,7 @@ impl Collection {
     }
 
     /// Update fulltext indexes on insert
+    #[allow(dead_code)]
     pub(crate) fn update_fulltext_on_insert(
         &self,
         doc_key: &str,
@@ -251,6 +252,7 @@ impl Collection {
     }
 
     /// Update fulltext indexes on delete
+    #[allow(dead_code)]
     pub(crate) fn update_fulltext_on_delete(
         &self,
         doc_key: &str,
@@ -430,5 +432,88 @@ impl Collection {
         matches.truncate(limit);
 
         Ok(matches)
+    }
+
+    // ==================== Fulltext Index Entry Computation Helpers ====================
+
+    /// Compute fulltext index entries to add for a document insert (without writing to DB)
+    /// Returns Vec<(key_bytes, value_bytes)> where value is typically doc_key
+    pub(crate) fn compute_fulltext_entries_for_insert(
+        &self,
+        doc_key: &str,
+        doc_value: &Value,
+    ) -> Vec<(Vec<u8>, Vec<u8>)> {
+        let indexes = self.get_all_fulltext_indexes();
+        if indexes.is_empty() {
+            return Vec::new();
+        }
+
+        let mut entries = Vec::new();
+        let doc_key_bytes = doc_key.as_bytes().to_vec();
+
+        for index in indexes {
+            for field in &index.fields {
+                let field_value = extract_field_value(doc_value, field);
+                if let Some(text) = field_value.as_str() {
+                    // Add term entries
+                    let terms = tokenize(text);
+                    for term in &terms {
+                        if term.len() >= index.min_length {
+                            let term_key = Self::ft_term_key(&index.name, term, doc_key);
+                            entries.push((term_key, doc_key_bytes.clone()));
+                        }
+                    }
+
+                    // Add ngram entries
+                    let ngrams = generate_ngrams(text, NGRAM_SIZE);
+                    for ngram in &ngrams {
+                        let ngram_key = Self::ft_ngram_key(&index.name, ngram, doc_key);
+                        entries.push((ngram_key, doc_key_bytes.clone()));
+                    }
+                }
+            }
+        }
+
+        entries
+    }
+
+    /// Compute fulltext index entries to remove for a document delete (without writing to DB)
+    /// Returns Vec<key_bytes> for entries to delete
+    pub(crate) fn compute_fulltext_entries_for_delete(
+        &self,
+        doc_key: &str,
+        doc_value: &Value,
+    ) -> Vec<Vec<u8>> {
+        let indexes = self.get_all_fulltext_indexes();
+        if indexes.is_empty() {
+            return Vec::new();
+        }
+
+        let mut keys_to_remove = Vec::new();
+
+        for index in indexes {
+            for field in &index.fields {
+                let field_value = extract_field_value(doc_value, field);
+                if let Some(text) = field_value.as_str() {
+                    // Remove term entries
+                    let terms = tokenize(text);
+                    for term in &terms {
+                        if term.len() >= index.min_length {
+                            let term_key = Self::ft_term_key(&index.name, term, doc_key);
+                            keys_to_remove.push(term_key);
+                        }
+                    }
+
+                    // Remove ngram entries
+                    let ngrams = generate_ngrams(text, NGRAM_SIZE);
+                    for ngram in &ngrams {
+                        let ngram_key = Self::ft_ngram_key(&index.name, ngram, doc_key);
+                        keys_to_remove.push(ngram_key);
+                    }
+                }
+            }
+        }
+
+        keys_to_remove
     }
 }

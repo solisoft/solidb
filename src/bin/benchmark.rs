@@ -1,5 +1,5 @@
 use serde_json::json;
-use solidb_client::{SoliDBClient, SoliDBClientBuilder, HttpClient};
+use solidb_client::{HttpClient, SoliDBClient, SoliDBClientBuilder};
 use std::env;
 use std::time::Instant;
 
@@ -63,7 +63,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "data": "benchmark data content"
         });
         let key = format!("tcp_{}", i);
-        tcp_client.insert("bench_db", "rust_bench", Some(&key), doc).await?;
+        tcp_client
+            .insert("bench_db", "rust_bench", Some(&key), doc)
+            .await?;
     }
     let insert_duration = start.elapsed();
     let insert_ops_per_sec = iterations as f64 / insert_duration.as_secs_f64();

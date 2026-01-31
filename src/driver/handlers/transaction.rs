@@ -1,5 +1,5 @@
-use crate::driver::protocol::{Command, DriverError, IsolationLevel, Response};
 use crate::driver::handlers::DriverHandler;
+use crate::driver::protocol::{Command, DriverError, IsolationLevel, Response};
 use crate::transaction::IsolationLevel as TxIsolationLevel;
 
 pub fn handle_begin_transaction(

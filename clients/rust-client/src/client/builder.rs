@@ -1,6 +1,6 @@
 use super::DriverError;
-use super::SoliDBClient;
 use super::HttpClient;
+use super::SoliDBClient;
 
 pub struct SoliDBClientBuilder {
     addr: String,
@@ -39,7 +39,11 @@ impl SoliDBClientBuilder {
             auth: None,
             timeout_ms: None,
             pool_size: None,
-            transport: if is_http { Transport::Http } else { Transport::Tcp },
+            transport: if is_http {
+                Transport::Http
+            } else {
+                Transport::Tcp
+            },
         }
     }
 
@@ -148,7 +152,8 @@ impl SoliDBClientBuilder {
             Transport::Http => {
                 let _ = self.build_http().await?;
                 Err(DriverError::ProtocolError(
-                    "HTTP transport selected but build() was called. Use build_http() instead.".to_string(),
+                    "HTTP transport selected but build() was called. Use build_http() instead."
+                        .to_string(),
                 ))
             }
             Transport::Tcp => self.build().await,

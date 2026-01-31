@@ -42,5 +42,5 @@
 pub mod client;
 pub mod protocol;
 
-pub use client::{SoliDBClient, SoliDBClientBuilder, HttpClient, Transport};
+pub use client::{HttpClient, SoliDBClient, SoliDBClientBuilder, Transport};
 pub use protocol::{Command, DriverError, Response};
