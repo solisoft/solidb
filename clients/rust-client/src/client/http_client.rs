@@ -44,7 +44,7 @@ impl HttpClient {
     ) -> Result<(), DriverError> {
         let response = self
             .client
-            .post(&format!("{}/auth/login", self.base_url))
+            .post(format!("{}/auth/login", self.base_url))
             .json(&serde_json::json!({
                 "database": database,
                 "username": username,
@@ -214,7 +214,7 @@ impl HttpClient {
         }
         let path = format!("/_api/database/{}/document/{}", db, collection);
         self.client
-            .post(&format!("{}{}", self.base_url, path))
+            .post(format!("{}{}", self.base_url, path))
             .headers(self.get_headers())
             .json(&doc)
             .send()
@@ -233,7 +233,7 @@ impl HttpClient {
         let path = format!("/_api/database/{}/document/{}/{}", db, collection, key);
         let response: Value = self
             .client
-            .get(&format!("{}{}", self.base_url, path))
+            .get(format!("{}{}", self.base_url, path))
             .headers(self.get_headers())
             .send()
             .await

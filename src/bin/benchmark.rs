@@ -1,5 +1,5 @@
 use serde_json::json;
-use solidb_client::{HttpClient, SoliDBClient, SoliDBClientBuilder};
+use solidb_client::{HttpClient, SoliDBClientBuilder};
 use std::env;
 use std::time::Instant;
 
@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let password = env::var("SOLIDB_PASSWORD").unwrap_or_else(|_| "admin".to_string());
 
     let http_url = format!("http://127.0.0.1:{}", http_port);
-    let tcp_addr = format!("127.0.0.1:6745");
+    let tcp_addr = "127.0.0.1:6745".to_string();
 
     let iterations = 1000;
 
