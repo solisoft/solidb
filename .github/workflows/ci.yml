@@ -12,7 +12,7 @@ env:
 
 jobs:
   check-and-build:
-    name: Check, Build & Test
+    name: Check & Build
     runs-on: ubuntu-latest
 
     steps:
@@ -55,11 +55,8 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
-      - name: Build (debug)
+      - name: Build
         run: cargo build -j2 --verbose
-
-      - name: Build (release)
-        run: cargo build --release -j2 --verbose
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -196,9 +193,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: check-and-build
 
-    env:
-      RUSTC_WRAPPER: ""
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -331,15 +325,11 @@ jobs:
         run: |
           cd clients/rust-client
           cargo release --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --no-confirm --execute
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Release solidb (main server)
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           cargo release --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --no-confirm --execute
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
