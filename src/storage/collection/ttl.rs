@@ -13,7 +13,7 @@ impl Collection {
 
     /// Get all TTL indexes
     pub fn get_all_ttl_indexes(&self) -> Vec<TtlIndex> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -34,7 +34,7 @@ impl Collection {
 
     /// Get a TTL index by name
     pub fn get_ttl_index(&self, name: &str) -> Option<TtlIndex> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
         db.get_cf(cf, Self::ttl_meta_key(name))
             .ok()
@@ -64,7 +64,7 @@ impl Collection {
         let index_bytes = serde_json::to_vec(&index)?;
 
         {
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
@@ -94,7 +94,7 @@ impl Collection {
             )));
         }
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -223,7 +223,7 @@ impl Collection {
             .unwrap()
             .as_secs();
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -279,7 +279,7 @@ impl Collection {
         // Delete documents and expiry entries in batches
         let mut deleted_count: usize = 0;
         for chunk in expired_doc_keys.chunks(BATCH_SIZE) {
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
@@ -299,7 +299,7 @@ impl Collection {
                 deleted_count += 1;
             }
 
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             db.write(batch)?;
         }
 

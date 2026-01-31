@@ -50,7 +50,7 @@ impl Collection {
         let value_key = crate::storage::codec::encode_key(value);
         let value_str = hex::encode(value_key);
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
 
         let prefix_base = format!("{}{}:", IDX_PREFIX, index_name);

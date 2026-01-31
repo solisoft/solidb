@@ -22,7 +22,7 @@ impl Collection {
 
     /// Get all vector index configurations
     pub fn get_all_vector_index_configs(&self) -> Vec<VectorIndexConfig> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -57,7 +57,7 @@ impl Collection {
         &self,
         name: &str,
     ) -> DbResult<Arc<super::vector::VectorIndex>> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .ok_or(DbError::InternalError("Column family not found".into()))?;
@@ -104,7 +104,7 @@ impl Collection {
         // Store metadata
         let config_bytes = serde_json::to_vec(&config)?;
         {
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
@@ -145,7 +145,7 @@ impl Collection {
 
     /// Drop a vector index
     pub fn drop_vector_index(&self, name: &str) -> DbResult<()> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -228,7 +228,7 @@ impl Collection {
             config.quantization = quantization;
 
             // Save config
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db.cf_handle(&self.name).unwrap();
             let config_bytes = serde_json::to_vec(config)?;
             db.put_cf(cf, Self::vec_meta_key(name), &config_bytes)
@@ -252,7 +252,7 @@ impl Collection {
 
     /// Persist all in-memory vector indexes to disk
     pub fn persist_vector_indexes(&self) -> DbResult<()> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");

@@ -13,8 +13,10 @@ use serde_json::Value;
 pub struct Database {
     /// Database name
     pub name: String,
-    /// RocksDB instance
-    db: Arc<RwLock<DB>>,
+    /// RocksDB instance - thread-safe for reads, internal locking for writes
+    db: Arc<DB>,
+    /// Lock for column family operations (create/delete)
+    cf_lock: Arc<RwLock<()>>,
     /// Cached collection handles (DashMap for lock-free concurrent access)
     collections: Arc<DashMap<String, Collection>>,
 }
@@ -29,10 +31,11 @@ impl std::fmt::Debug for Database {
 
 impl Database {
     /// Create a new database handle
-    pub fn new(name: String, db: Arc<RwLock<DB>>) -> Self {
+    pub fn new(name: String, db: Arc<DB>) -> Self {
         Self {
             name,
             db,
+            cf_lock: Arc::new(RwLock::new(())),
             collections: Arc::new(DashMap::new()),
         }
     }
@@ -50,20 +53,28 @@ impl Database {
         // Default to "document" if not specified
         let type_ = collection_type.unwrap_or_else(|| "document".to_string());
 
-        let mut db = self.db.write().unwrap();
-
-        // Check if collection already exists
-        if db.cf_handle(&cf_name).is_some() {
+        // Check if collection already exists (lock-free read)
+        if self.db.cf_handle(&cf_name).is_some() {
             return Err(DbError::CollectionAlreadyExists(collection_name));
         }
 
-        // Create column family
-        db.create_cf(&cf_name, &rocksdb::Options::default())
-            .map_err(|e| DbError::InternalError(format!("Failed to create collection: {}", e)))?;
+        // Create column family - requires exclusive lock
+        {
+            let _cf_guard = self.cf_lock.write().unwrap();
+            let db_ptr = Arc::as_ptr(&self.db) as *mut DB;
+            unsafe {
+                (*db_ptr)
+                    .create_cf(&cf_name, &rocksdb::Options::default())
+                    .map_err(|e| {
+                        DbError::InternalError(format!("Failed to create collection: {}", e))
+                    })?;
+            }
+        }
 
-        // Persist collection type
-        if let Some(cf) = db.cf_handle(&cf_name) {
-            db.put_cf(cf, "_stats:type".as_bytes(), type_.as_bytes())
+        // Persist collection type (lock-free, thread-safe)
+        if let Some(cf) = self.db.cf_handle(&cf_name) {
+            self.db
+                .put_cf(cf, "_stats:type".as_bytes(), type_.as_bytes())
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to set collection type: {}", e))
                 })?;
@@ -75,16 +86,22 @@ impl Database {
     /// Delete a collection from this database
     pub fn delete_collection(&self, collection_name: &str) -> DbResult<()> {
         let cf_name = self.collection_cf_name(collection_name);
-        let mut db = self.db.write().unwrap();
 
-        // Check if collection exists
-        if db.cf_handle(&cf_name).is_none() {
+        // Check if collection exists (lock-free read)
+        if self.db.cf_handle(&cf_name).is_none() {
             return Err(DbError::CollectionNotFound(collection_name.to_string()));
         }
 
-        // Drop column family
-        db.drop_cf(&cf_name)
-            .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {}", e)))?;
+        // Drop column family - requires exclusive lock
+        {
+            let _cf_guard = self.cf_lock.write().unwrap();
+            let db_ptr = Arc::as_ptr(&self.db) as *mut DB;
+            unsafe {
+                (*db_ptr).drop_cf(&cf_name).map_err(|e| {
+                    DbError::InternalError(format!("Failed to delete collection: {}", e))
+                })?;
+            }
+        }
 
         // Remove from cache
         self.collections.remove(collection_name);
@@ -94,12 +111,12 @@ impl Database {
 
     /// List all collections in this database
     pub fn list_collections(&self) -> Vec<String> {
-        let db = self.db.read().unwrap();
         let prefix = format!("{}:", self.name);
 
-        // Iterate through all column families
+        // Iterate through all column families (lock-free, DB::list_cf is thread-safe)
         let mut collections = Vec::new();
-        for cf_name in DB::list_cf(&rocksdb::Options::default(), db.path()).unwrap_or_default() {
+        for cf_name in DB::list_cf(&rocksdb::Options::default(), self.db.path()).unwrap_or_default()
+        {
             if cf_name.starts_with(&prefix) {
                 if let Some(name) = cf_name.strip_prefix(&prefix) {
                     collections.push(name.to_string());
@@ -118,12 +135,9 @@ impl Database {
 
         let cf_name = self.collection_cf_name(collection_name);
 
-        // Check if collection exists
-        {
-            let db = self.db.read().unwrap();
-            if db.cf_handle(&cf_name).is_none() {
-                return Err(DbError::CollectionNotFound(collection_name.to_string()));
-            }
+        // Check if collection exists (lock-free read)
+        if self.db.cf_handle(&cf_name).is_none() {
+            return Err(DbError::CollectionNotFound(collection_name.to_string()));
         }
 
         // Create and cache the collection
@@ -152,7 +166,7 @@ impl Database {
     }
 
     /// Get the underlying RocksDB Arc for advanced operations
-    pub fn db_arc(&self) -> Arc<RwLock<DB>> {
+    pub fn db_arc(&self) -> Arc<DB> {
         self.db.clone()
     }
 
@@ -176,12 +190,12 @@ impl Database {
     }
 
     pub fn list_columnar(&self) -> Vec<String> {
-        // Scan for metadata keys: {db}:col_meta:{name}
-        let db = self.db.read().unwrap();
+        // Scan for metadata keys: {db}:col_meta:{name} (lock-free read)
         let prefix = format!("{}:col_meta:", self.name);
         let mut collections = Vec::new();
 
-        let iter = db.prefix_iterator(prefix.as_bytes());
+        // Use default column family for metadata iteration
+        let iter = self.db.prefix_iterator(prefix.as_bytes());
         for (key, _) in iter.flatten() {
             let key_str = String::from_utf8_lossy(&key);
             if let Some(name) = key_str.strip_prefix(&prefix) {
@@ -327,8 +341,7 @@ impl Database {
     /// Check if a collection is a columnar collection
     pub fn is_columnar_collection(&self, collection_name: &str) -> bool {
         let cf_name = self.columnar_cf_name(collection_name);
-        let db = self.db.read().unwrap();
-        db.cf_handle(&cf_name).is_some()
+        self.db.cf_handle(&cf_name).is_some()
     }
 
     /// List all columnar collections in this database

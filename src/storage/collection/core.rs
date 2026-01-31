@@ -8,57 +8,45 @@ use std::sync::{Arc, RwLock};
 
 impl Collection {
     /// Create a new collection handle
-    pub fn new(name: String, db: Arc<RwLock<DB>>) -> Self {
+    pub fn new(name: String, db: Arc<DB>) -> Self {
         // Load cached count from disk, or calculate if not present
-        let count = {
-            let db_guard = db.read().unwrap();
-            if let Some(cf) = db_guard.cf_handle(&name) {
-                match db_guard.get_cf(cf, STATS_COUNT_KEY.as_bytes()) {
-                    Ok(Some(bytes)) => String::from_utf8_lossy(&bytes)
-                        .parse::<usize>()
-                        .unwrap_or(0),
-                    _ => {
-                        // No cached count - calculate from documents
-                        let prefix = DOC_PREFIX.as_bytes();
-                        db_guard
-                            .prefix_iterator_cf(cf, prefix)
-                            .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
-                            .count()
-                    }
+        let count = if let Some(cf) = db.cf_handle(&name) {
+            match db.get_cf(cf, STATS_COUNT_KEY.as_bytes()) {
+                Ok(Some(bytes)) => String::from_utf8_lossy(&bytes)
+                    .parse::<usize>()
+                    .unwrap_or(0),
+                _ => {
+                    // No cached count - calculate from documents
+                    let prefix = DOC_PREFIX.as_bytes();
+                    db.prefix_iterator_cf(cf, prefix)
+                        .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
+                        .count()
                 }
-            } else {
-                0
             }
+        } else {
+            0
         };
 
         // Determine initial chunk count (only relevant if it's a blob collection)
-        // We do this lazily or just scan if found? Scanning is safe for startup.
-        let chunk_count = {
-            let db_guard = db.read().unwrap();
-            if let Some(cf) = db_guard.cf_handle(&name) {
-                let prefix = BLO_PREFIX.as_bytes();
-                db_guard
-                    .prefix_iterator_cf(cf, prefix)
-                    .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
-                    .count()
-            } else {
-                0
-            }
+        let chunk_count = if let Some(cf) = db.cf_handle(&name) {
+            let prefix = BLO_PREFIX.as_bytes();
+            db.prefix_iterator_cf(cf, prefix)
+                .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
+                .count()
+        } else {
+            0
         };
 
         let (change_sender, _) = tokio::sync::broadcast::channel(100);
 
         // Load collection type
-        let collection_type = {
-            let db_guard = db.read().unwrap();
-            if let Some(cf) = db_guard.cf_handle(&name) {
-                match db_guard.get_cf(cf, COLLECTION_TYPE_KEY.as_bytes()) {
-                    Ok(Some(bytes)) => String::from_utf8_lossy(&bytes).to_string(),
-                    _ => "document".to_string(),
-                }
-            } else {
-                "document".to_string()
+        let collection_type = if let Some(cf) = db.cf_handle(&name) {
+            match db.get_cf(cf, COLLECTION_TYPE_KEY.as_bytes()) {
+                Ok(Some(bytes)) => String::from_utf8_lossy(&bytes).to_string(),
+                _ => "document".to_string(),
             }
+        } else {
+            "document".to_string()
         };
 
         Self {
@@ -85,12 +73,13 @@ impl Collection {
 
     /// Set collection type (persists to disk)
     pub fn set_type(&self, type_: &str) -> DbResult<()> {
-        let db = self.db.read().unwrap();
-        let cf = db
+        let cf = self
+            .db
             .cf_handle(&self.name)
             .expect("Column family should exist");
 
-        db.put_cf(cf, COLLECTION_TYPE_KEY.as_bytes(), type_.as_bytes())
+        self.db
+            .put_cf(cf, COLLECTION_TYPE_KEY.as_bytes(), type_.as_bytes())
             .map_err(|e| DbError::InternalError(format!("Failed to set collection type: {}", e)))?;
 
         // Update in-memory state
@@ -104,9 +93,10 @@ impl Collection {
     pub fn flush_stats(&self) {
         if self.count_dirty.swap(false, Ordering::Relaxed) {
             let count = self.doc_count.load(Ordering::Relaxed);
-            let db = self.db.read().unwrap();
-            if let Some(cf) = db.cf_handle(&self.name) {
-                let _ = db.put_cf(cf, STATS_COUNT_KEY.as_bytes(), count.to_string().as_bytes());
+            if let Some(cf) = self.db.cf_handle(&self.name) {
+                let _ =
+                    self.db
+                        .put_cf(cf, STATS_COUNT_KEY.as_bytes(), count.to_string().as_bytes());
             }
             // Update last flush time
             let now = std::time::SystemTime::now()
@@ -138,9 +128,8 @@ impl Collection {
 
     /// Compact the collection to remove tombstones and reclaim space
     pub fn compact(&self) {
-        let db = self.db.read().unwrap();
-        if let Some(cf) = db.cf_handle(&self.name) {
-            db.compact_range_cf(cf, None::<&[u8]>, None::<&[u8]>);
+        if let Some(cf) = self.db.cf_handle(&self.name) {
+            self.db.compact_range_cf(cf, None::<&[u8]>, None::<&[u8]>);
         }
     }
 
@@ -158,8 +147,7 @@ impl Collection {
 
     /// Get disk usage statistics for this collection
     pub fn disk_usage(&self) -> DiskUsage {
-        let db = self.db.read().unwrap();
-        let cf = match db.cf_handle(&self.name) {
+        let cf = match self.db.cf_handle(&self.name) {
             Some(cf) => cf,
             None => {
                 return DiskUsage {
@@ -172,14 +160,16 @@ impl Collection {
         };
 
         // Get SST files size
-        let sst_files_size = db
+        let sst_files_size = self
+            .db
             .property_int_value_cf(cf, "rocksdb.total-sst-files-size")
             .ok()
             .flatten()
             .unwrap_or(0);
 
         // Get estimated live data size
-        let live_data_size = db
+        let live_data_size = self
+            .db
             .property_int_value_cf(cf, "rocksdb.estimate-live-data-size")
             .ok()
             .flatten()
@@ -188,7 +178,8 @@ impl Collection {
         // Get number of SST files at all levels
         let mut num_sst_files = 0;
         for i in 0..7 {
-            num_sst_files += db
+            num_sst_files += self
+                .db
                 .property_int_value_cf(cf, &format!("rocksdb.num-files-at-level{}", i))
                 .ok()
                 .flatten()
@@ -196,7 +187,8 @@ impl Collection {
         }
 
         // Get memtable size
-        let memtable_size = db
+        let memtable_size = self
+            .db
             .property_int_value_cf(cf, "rocksdb.cur-size-all-mem-tables")
             .ok()
             .flatten()
@@ -217,13 +209,14 @@ impl Collection {
         &self,
         config: &crate::sharding::coordinator::CollectionShardConfig,
     ) -> DbResult<()> {
-        let db = self.db.write().unwrap(); // Need write lock for put_cf
-        let cf = db
+        let cf = self
+            .db
             .cf_handle(&self.name)
             .expect("Column family should exist");
 
         let config_bytes = serde_json::to_vec(config)?;
-        db.put_cf(cf, SHARD_CONFIG_KEY.as_bytes(), &config_bytes)
+        self.db
+            .put_cf(cf, SHARD_CONFIG_KEY.as_bytes(), &config_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to store shard config: {}", e)))?;
 
         tracing::info!(
@@ -237,10 +230,10 @@ impl Collection {
 
     /// Get sharding configuration for this collection (None if not sharded)
     pub fn get_shard_config(&self) -> Option<crate::sharding::coordinator::CollectionShardConfig> {
-        let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name)?;
+        let cf = self.db.cf_handle(&self.name)?;
 
-        db.get_cf(cf, SHARD_CONFIG_KEY.as_bytes())
+        self.db
+            .get_cf(cf, SHARD_CONFIG_KEY.as_bytes())
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -251,13 +244,14 @@ impl Collection {
         &self,
         table: &crate::sharding::coordinator::ShardTable,
     ) -> DbResult<()> {
-        let db = self.db.write().unwrap();
-        let cf = db
+        let cf = self
+            .db
             .cf_handle(&self.name)
             .expect("Column family should exist");
 
         let table_bytes = serde_json::to_vec(table)?;
-        db.put_cf(cf, SHARD_TABLE_KEY.as_bytes(), &table_bytes)
+        self.db
+            .put_cf(cf, SHARD_TABLE_KEY.as_bytes(), &table_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to store shard table: {}", e)))?;
 
         Ok(())
@@ -265,10 +259,10 @@ impl Collection {
 
     /// Load shard table from storage
     pub fn get_stored_shard_table(&self) -> Option<crate::sharding::coordinator::ShardTable> {
-        let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name)?;
+        let cf = self.db.cf_handle(&self.name)?;
 
-        db.get_cf(cf, SHARD_TABLE_KEY.as_bytes())
+        self.db
+            .get_cf(cf, SHARD_TABLE_KEY.as_bytes())
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())

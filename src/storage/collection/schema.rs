@@ -63,7 +63,7 @@ impl Collection {
                 .map_err(|e| DbError::InvalidDocument(format!("Invalid JSON Schema: {}", e)))?;
         }
 
-        let db = self.db.write().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -77,7 +77,7 @@ impl Collection {
 
     /// Get JSON schema
     pub fn get_json_schema(&self) -> Option<CollectionSchema> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
 
         db.get_cf(cf, SCHEMA_KEY.as_bytes())
@@ -90,7 +90,7 @@ impl Collection {
     pub fn remove_json_schema(&self) -> DbResult<()> {
         self.invalidate_schema_cache();
 
-        let db = self.db.write().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");

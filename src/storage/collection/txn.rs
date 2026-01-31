@@ -126,7 +126,7 @@ impl Collection {
 
     /// Apply operations from a committed transaction with atomic document + index writes
     pub fn apply_transaction_operations(&self, operations: Vec<Operation>) -> DbResult<()> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");

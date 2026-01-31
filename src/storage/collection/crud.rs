@@ -10,7 +10,8 @@ impl Collection {
 
     /// Get a document by key
     pub fn get(&self, key: &str) -> DbResult<Document> {
-        let db = self.db.read().unwrap();
+        // Lock-free: RocksDB is thread-safe for reads
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -84,7 +85,8 @@ impl Collection {
         let doc_bytes = serialize_doc(&doc)?;
 
         // Build WriteBatch with document and all index entries atomically
-        let db = self.db.read().unwrap();
+        // Lock-free: RocksDB is thread-safe for reads
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -172,7 +174,8 @@ impl Collection {
         let doc_bytes = serialize_doc(&doc)?;
 
         // Build WriteBatch with document and all index updates atomically
-        let db = self.db.read().unwrap();
+        // Lock-free: RocksDB is thread-safe for reads
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -275,7 +278,8 @@ impl Collection {
         let doc_bytes = serialize_doc(&doc)?;
 
         // Build WriteBatch with document and all index updates atomically
-        let db = self.db.read().unwrap();
+        // Lock-free: RocksDB is thread-safe for reads
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -351,7 +355,8 @@ impl Collection {
         let doc_value = doc.to_value();
 
         // Build WriteBatch with document deletion and all index removals atomically
-        let db = self.db.read().unwrap();
+        // Lock-free: RocksDB is thread-safe for reads
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -421,7 +426,8 @@ impl Collection {
             ));
         }
 
-        let db = self.db.read().unwrap();
+        // Lock-free: RocksDB is thread-safe for reads
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -493,7 +499,8 @@ impl Collection {
             return Ok(0);
         }
 
-        let db = self.db.read().unwrap();
+        // Lock-free: RocksDB is thread-safe for reads
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -597,7 +604,8 @@ impl Collection {
             ));
         }
 
-        let db = self.db.read().unwrap();
+        // Lock-free: RocksDB is thread-safe for reads
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -749,7 +757,8 @@ impl Collection {
 
     /// Scan documents with an optional limit
     pub fn scan(&self, limit: Option<usize>) -> Vec<Document> {
-        let db = self.db.read().unwrap();
+        // Lock-free: RocksDB is thread-safe for reads
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -777,7 +786,8 @@ impl Collection {
 
     /// Recalculate document count from storage
     pub fn recalculate_count(&self) -> usize {
-        let db = self.db.read().unwrap();
+        // Lock-free: RocksDB is thread-safe for reads
+        let db = &self.db;
         if let Some(cf) = db.cf_handle(&self.name) {
             let prefix = DOC_PREFIX.as_bytes();
             let count = db
@@ -803,10 +813,10 @@ impl Collection {
 
     /// Recount documents from actual RocksDB data (slow but accurate)
     pub fn recount_documents(&self) -> usize {
-        let db_guard = self.db.read().unwrap();
-        if let Some(cf) = db_guard.cf_handle(&self.name) {
+        if let Some(cf) = self.db.cf_handle(&self.name) {
             let prefix = DOC_PREFIX.as_bytes();
-            let actual_count = db_guard
+            let actual_count = self
+                .db
                 .prefix_iterator_cf(cf, prefix)
                 .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
                 .count();
@@ -852,7 +862,8 @@ impl Collection {
     /// This extracts the timestamp from UUIDv7 keys and deletes matching documents.
     pub fn prune_older_than(&self, timestamp_ms: u64) -> DbResult<usize> {
         // Collect keys to delete
-        let db = self.db.read().unwrap();
+        // Lock-free: RocksDB is thread-safe for reads
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");

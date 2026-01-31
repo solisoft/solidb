@@ -8,7 +8,7 @@ impl Collection {
 
     /// Get all geo index metadata
     pub fn get_all_geo_indexes(&self) -> Vec<GeoIndex> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -29,7 +29,7 @@ impl Collection {
 
     /// Get a geo index by name
     pub(crate) fn get_geo_index(&self, name: &str) -> Option<GeoIndex> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
         db.get_cf(cf, Self::geo_meta_key(name))
             .ok()
@@ -55,7 +55,7 @@ impl Collection {
 
         // Store metadata
         {
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
@@ -67,7 +67,7 @@ impl Collection {
 
         // Build index from existing documents
         let docs = self.all();
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -108,7 +108,7 @@ impl Collection {
             )));
         }
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -141,7 +141,7 @@ impl Collection {
             .iter()
             .map(|idx| {
                 // Count entries
-                let db = self.db.read().unwrap();
+                let db = &self.db;
                 let cf = db
                     .cf_handle(&self.name)
                     .expect("Column family should exist");
@@ -177,7 +177,7 @@ impl Collection {
         let indexes = self.get_all_geo_indexes();
         let index = indexes.iter().find(|idx| idx.field == field)?;
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -240,7 +240,7 @@ impl Collection {
         let indexes = self.get_all_geo_indexes();
         let index = indexes.iter().find(|idx| idx.field == field)?;
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");

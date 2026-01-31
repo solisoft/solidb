@@ -116,8 +116,8 @@ pub struct DiskUsage {
 pub struct Collection {
     /// Collection name (column family name)
     pub name: String,
-    /// RocksDB instance
-    pub(crate) db: Arc<RwLock<DB>>,
+    /// RocksDB instance - thread-safe for reads and writes
+    pub(crate) db: Arc<DB>,
     /// Cached document count (atomic for lock-free updates)
     pub(crate) doc_count: Arc<AtomicUsize>,
     /// Cached blob chunk count (atomic for lock-free updates)

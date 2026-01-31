@@ -13,7 +13,7 @@ impl Collection {
             ));
         }
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -36,7 +36,7 @@ impl Collection {
 
     /// Get a blob chunk
     pub fn get_blob_chunk(&self, key: &str, chunk_index: u32) -> DbResult<Option<Vec<u8>>> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .ok_or(DbError::CollectionNotFound(self.name.clone()))?;
@@ -54,7 +54,7 @@ impl Collection {
 
     /// Delete all blob chunks for a document
     pub fn delete_blob_data(&self, key: &str) -> DbResult<()> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");

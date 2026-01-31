@@ -12,7 +12,7 @@ impl Collection {
 
     /// Get all fulltext indexes
     pub fn get_all_fulltext_indexes(&self) -> Vec<FulltextIndex> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -33,7 +33,7 @@ impl Collection {
 
     /// Get a fulltext index by name
     pub(crate) fn get_fulltext_index(&self, name: &str) -> Option<FulltextIndex> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
         db.get_cf(cf, Self::ft_meta_key(name))
             .ok()
@@ -74,7 +74,7 @@ impl Collection {
 
         // Store metadata
         {
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
@@ -86,7 +86,7 @@ impl Collection {
 
         // Build index
         let docs = self.all();
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -145,7 +145,7 @@ impl Collection {
             )));
         }
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -220,7 +220,7 @@ impl Collection {
             return Ok(());
         }
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -263,7 +263,7 @@ impl Collection {
             return Ok(());
         }
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -329,7 +329,7 @@ impl Collection {
 
         // 3. Collect candidate documents (using term matching first)
         let mut candidate_counts: HashMap<String, usize> = HashMap::new();
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");

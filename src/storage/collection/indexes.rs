@@ -16,7 +16,7 @@ impl Collection {
 
     /// Get all index metadata
     pub fn get_all_indexes(&self) -> Vec<Index> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -37,7 +37,7 @@ impl Collection {
 
     /// Get an index by name
     pub(crate) fn get_index(&self, name: &str) -> Option<Index> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
         db.get_cf(cf, Self::idx_meta_key(name))
             .ok()
@@ -67,7 +67,7 @@ impl Collection {
 
         // Store index metadata and build index
         {
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
@@ -77,7 +77,7 @@ impl Collection {
 
         // Build index from existing documents
         let docs = self.all();
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -138,7 +138,7 @@ impl Collection {
             )));
         }
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -212,7 +212,7 @@ impl Collection {
         // Clear existing index entries using WriteBatch
         let clear_start = std::time::Instant::now();
         {
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
@@ -291,7 +291,7 @@ impl Collection {
         // Rebuild regular indexes
         if !indexes.is_empty() {
             let idx_start = std::time::Instant::now();
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
@@ -323,7 +323,7 @@ impl Collection {
         // Rebuild geo indexes
         if !geo_indexes.is_empty() {
             let geo_start = std::time::Instant::now();
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
@@ -352,7 +352,7 @@ impl Collection {
         // Rebuild fulltext indexes
         if !ft_indexes.is_empty() {
             let ft_start = std::time::Instant::now();
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
@@ -446,7 +446,7 @@ impl Collection {
             }
         }
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -538,7 +538,7 @@ impl Collection {
     pub fn get_index_stats(&self, name: &str) -> Option<IndexStats> {
         let index = self.get_index(name)?;
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
 
         // Count entries
@@ -570,7 +570,7 @@ impl Collection {
         doc_value: &Value,
     ) -> DbResult<()> {
         let indexes = self.get_all_indexes();
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -637,7 +637,7 @@ impl Collection {
             }
         }
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -670,7 +670,7 @@ impl Collection {
 
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -698,7 +698,7 @@ impl Collection {
         new_value: &Value,
     ) -> DbResult<()> {
         let indexes = self.get_all_indexes();
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -736,7 +736,7 @@ impl Collection {
 
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -768,7 +768,7 @@ impl Collection {
         doc_value: &Value,
     ) -> DbResult<()> {
         let indexes = self.get_all_indexes();
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -791,7 +791,7 @@ impl Collection {
 
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -808,7 +808,7 @@ impl Collection {
 
     /// Get an index for a field
     pub fn get_index_for_field(&self, field: &str) -> Option<Index> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
 
         // Try to find index by checking idx_meta entries
@@ -862,7 +862,7 @@ impl Collection {
         let value_key = crate::storage::codec::encode_key(value);
         let value_str = hex::encode(value_key);
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
 
         let prefix_base = format!("{}{}:", IDX_PREFIX, index_name);
@@ -947,7 +947,7 @@ impl Collection {
 
         let value_str = hex::encode(crate::storage::codec::encode_key(value));
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
 
         // Prefix for the lookup
@@ -1000,7 +1000,7 @@ impl Collection {
 
         let value_str = hex::encode(crate::storage::codec::encode_key(value));
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
 
         let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
@@ -1040,7 +1040,7 @@ impl Collection {
     ) -> Option<Vec<Document>> {
         // Optimization for Primary Key Sort
         if field == "_id" || field == "_key" {
-            let db = self.db.read().unwrap();
+            let db = &self.db;
             let cf = db.cf_handle(&self.name)?;
             let prefix = DOC_PREFIX.as_bytes();
 
@@ -1069,7 +1069,7 @@ impl Collection {
         let index_name = index.name.clone();
         let prefix = format!("{}{}:", IDX_PREFIX, index_name);
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
         let prefix_bytes = prefix.as_bytes();
 
@@ -1118,7 +1118,7 @@ impl Collection {
         }
 
         // Try load from DB
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .ok_or(DbError::InternalError("CF not found".into()))?;
@@ -1141,7 +1141,7 @@ impl Collection {
     }
 
     pub(crate) fn save_bloom_filter(&self, index_name: &str, filter: &BloomFilter) -> DbResult<()> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .ok_or(DbError::InternalError("CF not found".into()))?;
@@ -1176,7 +1176,7 @@ impl Collection {
             return;
         }
 
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         if let Some(cf) = db.cf_handle(&self.name) {
             let key = format!("{}{}", CFO_IDX_PREFIX, index_name);
             if let Ok(Some(_bytes)) = db.get_cf(cf, key.as_bytes()) {
@@ -1196,7 +1196,7 @@ impl Collection {
         index_name: &str,
         _filter: &CuckooFilter<DefaultHasher>,
     ) -> DbResult<()> {
-        let db = self.db.read().unwrap();
+        let db = &self.db;
         let _cf = db
             .cf_handle(&self.name)
             .ok_or(DbError::InternalError("CF not found".into()))?;
