@@ -56,7 +56,7 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Build
-        run: cargo build -j2 --verbose
+        run: cargo build --tests -j2 --verbose
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
