@@ -38,14 +38,17 @@ fn test_explain_columnar_query() {
         .unwrap();
 
     // Manually create the column family for the columnar collection
+    // Using unsafe pattern similar to Database::create_collection
     {
-        let mut db_write = db_arc.write().unwrap();
         let cf_name = "testdb:_columnar_metrics";
         // Check if exists first to be safe, though unexpected in fresh db
-        if db_write.cf_handle(cf_name).is_none() {
-            db_write
-                .create_cf(cf_name, &rocksdb::Options::default())
-                .unwrap();
+        if db_arc.cf_handle(cf_name).is_none() {
+            let db_ptr = Arc::as_ptr(&db_arc) as *mut DB;
+            unsafe {
+                (*db_ptr)
+                    .create_cf(cf_name, &rocksdb::Options::default())
+                    .unwrap();
+            }
         }
     }
 
