@@ -25,11 +25,14 @@ rusqlite = { version = "0.31", features = ["bundled", "chrono", "serde_json", "u
 uuid = { version = "1.7", features = ["v4", "serde"] }
 dirs = "5.0"
 tracing = "0.1"
+# Local query execution
+sdbql-core = { path = "../../sdbql-core" }
 # UniFFI for mobile bindings (optional)
 uniffi = { version = "0.28", features = ["cli", "tokio"], optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
+tempfile = "3.10"
 
 [lib]
 name = "solidb_client"

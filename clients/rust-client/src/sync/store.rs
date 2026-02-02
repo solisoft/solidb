@@ -281,6 +281,20 @@ impl LocalStore {
         rows.collect()
     }
 
+    /// List all collections that have documents
+    pub fn list_collections(&self) -> SqliteResult<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT collection FROM documents WHERE is_deleted = 0")?;
+
+        let rows = stmt.query_map([], |row| {
+            let collection: String = row.get(0)?;
+            Ok(collection)
+        })?;
+
+        rows.collect()
+    }
+
     // === Pending Changes ===
 
     /// Add a pending change to the queue

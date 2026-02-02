@@ -424,6 +424,38 @@ impl SyncManager {
 
         Ok(result)
     }
+
+    /// Execute an SDBQL query against the local store.
+    ///
+    /// This allows full query language support for offline queries,
+    /// including filtering, sorting, joining, and aggregations.
+    ///
+    /// # Arguments
+    /// * `query` - SDBQL query string
+    /// * `bind_vars` - Optional bind variables for parameterized queries
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let results = sync_manager.query(
+    ///     "FOR u IN users FILTER u.age > @min_age SORT u.name RETURN u",
+    ///     Some(HashMap::from([("min_age".to_string(), json!(18))])),
+    /// ).await?;
+    /// ```
+    pub async fn query(
+        &self,
+        query: &str,
+        bind_vars: Option<std::collections::HashMap<String, Value>>,
+    ) -> Result<Vec<Value>, Box<dyn std::error::Error + Send + Sync>> {
+        use super::local_data_source::SqliteDataSource;
+        use sdbql_core::LocalExecutor;
+
+        let store = self.local_store.lock().await;
+        let data_source = SqliteDataSource::new(&store);
+        let executor = LocalExecutor::new(data_source);
+
+        let results = executor.execute(query, bind_vars)?;
+        Ok(results)
+    }
 }
 
 #[cfg(test)]

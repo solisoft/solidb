@@ -1,0 +1,30 @@
+[package]
+name = "sdbql-core"
+version = "0.1.0"
+edition = "2021"
+description = "Storage-independent SDBQL query language parser and executor"
+license = "MIT"
+repository = "https://github.com/solisoft/solidb"
+keywords = ["database", "query-language", "parser", "executor"]
+categories = ["database", "parser-implementations"]
+
+[dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+
+# Regex for pattern matching
+regex = "1.10"
+
+# Date/time for builtin functions
+chrono = { version = "0.4", features = ["serde"] }
+
+[features]
+default = ["basic-builtins"]
+basic-builtins = []
+full-builtins = ["basic-builtins"]
+
+[dev-dependencies]

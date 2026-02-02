@@ -23,13 +23,13 @@
         end
       end
     end
-    -- Sort keys: _key first, then _id, then alphabetically
+    -- Sort keys: _key first, then _id, then _rev, then alphabetically
     table.sort(all_keys, function(a, b)
       if a == "_key" then return true end
       if b == "_key" then return false end
       if a == "_id" then return true end
       if b == "_id" then return false end
-      if a == "_rev" then return b ~= "_key" and b ~= "_id" end
+      if a == "_rev" then return b ~= "_rev" end
       if b == "_rev" then return false end
       return a < b
     end)
@@ -159,11 +159,16 @@
   </div>
 <% else %>
   <!-- Scalar Results -->
-  <div class="border-b border-border/30 px-4 py-2 bg-bg-dark/30">
+  <div class="border-b border-border/30 px-4 py-2 bg-bg-dark/30 flex items-center gap-4">
     <span class="text-success text-sm">
       <i class="fas fa-check-circle mr-1"></i>
       <%= count %> result<%= count ~= 1 and 's' or '' %>
     </span>
+    <% if stats.execution_time_ms then %>
+      <span class="text-xs text-text-muted">
+        <i class="fas fa-clock mr-1"></i><%= stats.execution_time_ms < 1 and string.format("%.0fµs", stats.execution_time_ms * 1000) or (stats.execution_time_ms < 1000 and string.format("%.2fms", stats.execution_time_ms) or string.format("%.2fs", stats.execution_time_ms / 1000)) %>
+      </span>
+    <% end %>
   </div>
   <div class="p-4 space-y-2 max-h-[400px] overflow-auto">
     <% for i, val in ipairs(results) do %>

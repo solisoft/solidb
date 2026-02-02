@@ -3202,6 +3202,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdbql-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "seahash"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3540,8 +3551,10 @@ dependencies = [
  "reqwest 0.11.27",
  "rmp-serde",
  "rusqlite",
+ "sdbql-core",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.17",
  "tokio",
  "tokio-test",

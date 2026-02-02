@@ -892,7 +892,8 @@ function executeQuery() {
   htmx.ajax('POST', '/database/' + currentDb + '/query/execute', {
     target: '#query-results',
     swap: 'innerHTML',
-    values: { query: finalQuery, type: currentQueryType }
+    values: { query: finalQuery, type: currentQueryType },
+    scroll: false
   }).then(function() {
     // Capture results and add to results history
     setTimeout(function() {

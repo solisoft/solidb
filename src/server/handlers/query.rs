@@ -47,7 +47,7 @@ pub struct ExecuteQueryResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub cached: bool,
-    #[serde(rename = "extra")]
+    #[serde(rename = "executionTimeMs")]
     pub execution_time_ms: f64,
     #[serde(rename = "inserted")]
     pub documents_inserted: usize,

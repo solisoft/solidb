@@ -44,8 +44,10 @@
 //! }
 //! ```
 
+pub mod local_data_source;
 pub mod manager;
 pub mod store;
 
+pub use local_data_source::SqliteDataSource;
 pub use manager::{SyncCommand, SyncConfig, SyncManager, SyncResult};
 pub use store::{LocalStore, PendingChange};

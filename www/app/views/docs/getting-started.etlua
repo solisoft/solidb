@@ -610,6 +610,68 @@ kubectl -n solidb get pods -w</pre>
         </div>
       </section>
 
+      <!-- Admin UI Section -->
+      <section id="admin-ui" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-purple-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"
+                ></path>
+              </svg>
+              Admin UI
+            </h2>
+          </div>
+
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB includes a web-based Admin UI for managing databases, collections, documents, and running queries.
+            </p>
+
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3
+                class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider"
+              >
+                Launch Admin UI
+              </h3>
+              <div
+                class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 mb-3"
+              >
+                <div class="flex">
+                  <span class="text-purple-400 mr-2">$</span
+                  ><span class="text-gray-300">cd www</span>
+                </div>
+                <div class="flex">
+                  <span class="text-purple-400 mr-2">$</span
+                  ><span class="text-gray-300">./luaonbeans -D .</span>
+                </div>
+              </div>
+              <p class="text-sm text-gray-400">
+                The Admin UI will be available at <code class="text-purple-400">http://localhost:8080</code>
+              </p>
+            </div>
+
+            <div class="bg-purple-900/10 border border-purple-500/20 rounded-lg p-4">
+              <p class="text-sm text-purple-200">
+                <strong>Note:</strong> The Admin UI requires SoliDB to be running on port 6745 (or accessible at a configured URL).
+                Configure the connection in the UI login screen.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Configuration Section -->
       <section id="configuration" class="scroll-mt-24">
         <div

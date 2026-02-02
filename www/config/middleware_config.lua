@@ -66,6 +66,21 @@ Middleware.register("dashboard_auth", function(ctx, next)
     local current_path = GetPath() or "/"
     return ctx:redirect("/dashboard/login?redirect=" .. current_path)
   end
+
+  -- Validate token by calling the API
+  local server_url = GetCookie("sdb_server") or "http://localhost:6745"
+  local status, headers, body = Fetch(server_url .. "/_api/auth/me", {
+    headers = {
+      ["Authorization"] = "Bearer " .. token,
+      ["Content-Type"] = "application/json"
+    }
+  })
+
+  if status ~= 200 then
+    local current_path = GetPath() or "/"
+    return ctx:redirect("/dashboard/login?redirect=" .. current_path)
+  end
+
   next()
 end)
 

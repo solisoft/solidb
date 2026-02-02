@@ -48,8 +48,17 @@ luaonbeans/
 ## Running the Server
 
 ```bash
-beans dev    # Development mode (watches for changes)
+cd www
+./luaonbeans -D .    # Development mode on http://localhost:8080
 ```
+
+## Building Frontend Assets
+
+```bash
+cd www
+npm run build:css    # Build TailwindCSS
+npm run watch:css    # Watch mode for CSS
+npm run build:riot   # Compile Riot.js components
 
 ## Defining Routes
 
