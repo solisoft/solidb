@@ -1,0 +1,1111 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs/clients" class="inline-flex items-center text-green-400 hover:text-green-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Clients Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header Section -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg blur opacity-25"></div>
+      <div class="relative flex items-center">
+        <div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-green-500 text-white shadow-[0_0_30px_rgba(34,197,94,0.5)] mr-6">
+          <i class="fab fa-android text-4xl"></i>
+        </div>
+        <div>
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-green-400 via-emerald-400 to-teal-400 mb-2 tracking-tight">
+            Android Client
+          </h1>
+          <div class="flex items-center gap-4">
+            <span class="px-3 py-1 bg-green-500/10 text-green-400 text-xs font-bold uppercase tracking-wider rounded-full border border-green-500/20">Official SDK</span>
+            <span class="text-sm text-gray-400">v0.5.0</span>
+            <span class="text-sm text-gray-500">API 26+ (Android 8.0)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <nav class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+      <h2 class="text-lg font-bold text-white mb-4">Table of Contents</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <h3 class="text-green-400 font-semibold mb-2">Getting Started</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#installation" class="hover:text-white transition-colors">Installation</a></li>
+            <li><a href="#quickstart" class="hover:text-white transition-colors">Quick Start</a></li>
+            <li><a href="#connection" class="hover:text-white transition-colors">Connection</a></li>
+            <li><a href="#authentication" class="hover:text-white transition-colors">Authentication</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-green-400 font-semibold mb-2">Core Operations</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#collections" class="hover:text-white transition-colors">Collections</a></li>
+            <li><a href="#documents" class="hover:text-white transition-colors">Documents</a></li>
+            <li><a href="#queries" class="hover:text-white transition-colors">Queries</a></li>
+            <li><a href="#sync" class="hover:text-white transition-colors">Sync</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-green-400 font-semibold mb-2">Offline Sync</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#offline-first" class="hover:text-white transition-colors">Offline-First</a></li>
+            <li><a href="#conflict-resolution" class="hover:text-white transition-colors">Conflict Resolution</a></li>
+            <li><a href="#delta-sync" class="hover:text-white transition-colors">Delta Sync</a></li>
+            <li><a href="#configuration" class="hover:text-white transition-colors">Configuration</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-green-400 font-semibold mb-2">Examples</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#todo-example" class="hover:text-white transition-colors">Todo App</a></li>
+            <li><a href="#coroutines" class="hover:text-white transition-colors">Coroutines & Flow</a></li>
+            <li><a href="#error-handling" class="hover:text-white transition-colors">Error Handling</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- GETTING STARTED -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-green-500/20 text-green-400 mr-4">
+          <i class="fas fa-rocket text-lg"></i>
+        </span>
+        Getting Started
+      </h2>
+
+      <!-- Installation -->
+      <section id="installation" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Installation</h3>
+        
+        <h4 class="text-lg font-semibold text-green-400 mb-3">Gradle (build.gradle.kts)</h4>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-6">
+          <pre class="text-green-400">dependencies {
+    implementation("com.solidb:solidb-android:0.5.0")
+    
+    // Optional: For Kotlin coroutines support
+    implementation("com.solidb:solidb-android-coroutines:0.5.0")
+}</pre>
+        </div>
+
+        <h4 class="text-lg font-semibold text-green-400 mb-3">Maven (pom.xml)</h4>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre class="text-green-400">&lt;dependency&gt;
+    &lt;groupId&gt;com.solidb&lt;/groupId&gt;
+    &lt;artifactId&gt;solidb-android&lt;/artifactId&gt;
+    &lt;version&gt;0.5.0&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+        </div>
+
+        <h4 class="text-lg font-semibold text-green-400 mb-3 mt-6">Android Manifest Permissions</h4>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre class="text-green-400">&lt;uses-permission android:name="android.permission.INTERNET" /&gt;
+&lt;uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" /&gt;
+
+&lt;!-- For background sync (optional) --&gt;
+&lt;uses-permission android:name="android.permission.FOREGROUND_SERVICE" /&gt;
+&lt;uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" /&gt;</pre>
+        </div>
+
+        <h4 class="text-lg font-semibold text-green-400 mb-3 mt-6">ProGuard Rules</h4>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre class="text-green-400"># SoliDB Android SDK
+-keep class com.solidb.android.** { *; }
+-keep class com.solidb.sdk.** { *; }
+-keepclassmembers class * {
+    @com.solidb.sdk.annotations.* &lt;fields&gt;;
+}
+
+# Kotlinx.serialization
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.AnnotationsKt
+-keepclassmembers class kotlinx.serialization.json.** { *; }
+-keepclassmembers class * extends kotlinx.serialization.Serializer { *; }</pre>
+        </div>
+
+        <div class="mt-4 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+          <div class="flex items-start">
+            <i class="fas fa-info-circle text-green-400 mt-0.5 mr-3"></i>
+            <p class="text-sm text-green-200">
+              <strong>Requirements:</strong> minSdk 26 (Android 8.0), Kotlin 1.8+. The SDK uses UniFFI for Rust bindings and supports both Java and Kotlin with full coroutines integration.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Start -->
+      <section id="quickstart" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Quick Start</h3>
+        <div class="bg-gray-950 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-green-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <pre class="relative z-10"><code class="language-kotlin">import com.solidb.android.SoliDBClient
+import com.solidb.android.SoliDBConfig
+import kotlinx.coroutines.launch
+
+class MainActivity : AppCompatActivity() {
+    private lateinit var client: SoliDBClient
+    
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        
+        lifecycleScope.launch {
+            setupDatabase()
+        }
+    }
+    
+    private suspend fun setupDatabase() {
+        try {
+            // Create client with configuration
+            val config = SoliDBConfig(
+                host = "localhost",
+                port = 6745,
+                database = "mydb",
+                username = "admin",
+                password = "password"
+            )
+            
+            client = SoliDBClient.create(config)
+            
+            // Basic CRUD operations
+            val doc = client.save(
+                collection = "users",
+                document = mapOf(
+                    "name" to "Alice",
+                    "age" to 30,
+                    "email" to "alice@example.com"
+                )
+            )
+            Log.d("SoliDB", "Created document with key: ${doc.key}")
+            
+            // Retrieve document
+            val user = client.get(
+                collection = "users",
+                key = doc.key
+            )
+            Log.d("SoliDB", "Retrieved: ${user["name"]}")
+            
+            // Query with SDBQL
+            val results = client.query(
+                query = "FOR u IN users FILTER u.age > @min RETURN u",
+                bindVars = mapOf("min" to 25)
+            )
+            Log.d("SoliDB", "Found ${results.size} users")
+            
+        } catch (e: Exception) {
+            Log.e("SoliDB", "Error: ${e.message}")
+        }
+    }
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Connection -->
+      <section id="connection" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Connection Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">// Configure connection
+val config = SoliDBConfig(
+    host = "localhost",
+    port = 6745,
+    database = "mydb",
+    username = "admin",
+    password = "password",
+    timeout = 30_000L,              // 30 seconds
+    enableCompression = true
+)
+
+// Create client
+val client = SoliDBClient.create(config)
+
+// Check connection health
+val isHealthy = client.ping()
+Log.d("SoliDB", "Connection healthy: $isHealthy")
+
+// Disconnect when done (in onDestroy)
+override fun onDestroy() {
+    super.onDestroy()
+    lifecycleScope.launch {
+        client.disconnect()
+    }
+}</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Property</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Type</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Default</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-green-400">host</code></td><td class="px-4 py-3 text-gray-500">String</td><td class="px-4 py-3 text-gray-400">localhost</td><td class="px-4 py-3 text-gray-400">Server hostname or IP</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-green-400">port</code></td><td class="px-4 py-3 text-gray-500">Int</td><td class="px-4 py-3 text-gray-400">6745</td><td class="px-4 py-3 text-gray-400">Server port</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-green-400">timeout</code></td><td class="px-4 py-3 text-gray-500">Long</td><td class="px-4 py-3 text-gray-400">30000</td><td class="px-4 py-3 text-gray-400">Connection timeout (ms)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-green-400">enableCompression</code></td><td class="px-4 py-3 text-gray-500">Boolean</td><td class="px-4 py-3 text-gray-400">true</td><td class="px-4 py-3 text-gray-400">Enable MessagePack compression</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Authentication -->
+      <section id="authentication" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Authentication</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-kotlin">// Authentication is handled during client initialization
+val config = SoliDBConfig(
+    host = "localhost",
+    port = 6745,
+    database = "mydb",      // Target database
+    username = "admin",     // Username
+    password = "password"   // Password
+)
+
+val client = SoliDBClient.create(config)
+
+// The session remains authenticated until disconnected
+// Token is automatically refreshed when needed</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- CORE OPERATIONS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 mr-4">
+          <i class="fas fa-database text-lg"></i>
+        </span>
+        Core Operations
+      </h2>
+
+      <!-- Collections -->
+      <section id="collections" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Collection Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">// List collections in a database
+val collections = client.listCollections()
+// => ["users", "orders", "products"]
+
+// Create a document collection
+client.createCollection(name = "products")
+
+// Create an edge collection (for graphs)
+client.createCollection(
+    name = "relationships",
+    type = CollectionType.EDGE
+)
+
+// Delete a collection
+client.deleteCollection(name = "old_collection")
+
+// Get collection statistics
+val stats = client.collectionStats(name = "users")
+Log.d("SoliDB", "Document count: ${stats["document_count"]}")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">listCollections()</code></td><td class="px-4 py-3 text-gray-500">List&lt;String&gt;</td><td class="px-4 py-3 text-gray-400">List collections in database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">createCollection(name:type)</code></td><td class="px-4 py-3 text-gray-500">Unit</td><td class="px-4 py-3 text-gray-400">Create collection (DOCUMENT or EDGE)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">deleteCollection(name)</code></td><td class="px-4 py-3 text-gray-500">Unit</td><td class="px-4 py-3 text-gray-400">Delete collection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">collectionStats(name)</code></td><td class="px-4 py-3 text-gray-500">Document</td><td class="px-4 py-3 text-gray-400">Get collection statistics</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section id="documents" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Document Operations (CRUD)</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">// SAVE - Create or update a document
+val doc = client.save(
+    collection = "users",
+    document = mapOf(
+        "name" to "Alice",
+        "email" to "alice@example.com",
+        "age" to 30,
+        "tags" to listOf("developer", "android")
+    )
+)
+Log.d("SoliDB", "Key: ${doc.key}")  // Auto-generated key
+
+// SAVE with custom key
+val docWithKey = client.save(
+    collection = "users",
+    key = "user-123",
+    document = mapOf(
+        "name" to "Bob",
+        "email" to "bob@example.com"
+    )
+)
+
+// GET - Retrieve a document by key
+val user = client.get(
+    collection = "users",
+    key = "user-123"
+)
+Log.d("SoliDB", "Name: ${user["name"]}")
+
+// DELETE - Remove a document
+client.delete(
+    collection = "users",
+    key = "user-123"
+)
+
+// LIST - Paginated document listing
+val (docs, total) = client.list(
+    collection = "users",
+    limit = 50,
+    offset = 0
+)
+Log.d("SoliDB", "Showing ${docs.size} of $total documents")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">save(collection, document)</code></td><td class="px-4 py-3 text-gray-500">Document</td><td class="px-4 py-3 text-gray-400">Insert document, returns with key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">save(collection, key, document)</code></td><td class="px-4 py-3 text-gray-500">Document</td><td class="px-4 py-3 text-gray-400">Insert with custom key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">get(collection, key)</code></td><td class="px-4 py-3 text-gray-500">Document</td><td class="px-4 py-3 text-gray-400">Get document by key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">delete(collection, key)</code></td><td class="px-4 py-3 text-gray-500">Unit</td><td class="px-4 py-3 text-gray-400">Delete document</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">list(collection, limit, offset)</code></td><td class="px-4 py-3 text-gray-500">Pair&lt;List&lt;Document&gt;, Int&gt;</td><td class="px-4 py-3 text-gray-400">List documents with pagination</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Queries -->
+      <section id="queries" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SDBQL Queries</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">// Simple query
+val users = client.query("FOR u IN users RETURN u")
+
+// Query with bind variables (recommended for security)
+val results = client.query(
+    query = """
+        FOR u IN users
+        FILTER u.age >= @min_age AND u.status == @status
+        SORT u.created_at DESC
+        LIMIT @limit
+        RETURN { name: u.name, email: u.email }
+    """,
+    bindVars = mapOf(
+        "min_age" to 18,
+        "status" to "active",
+        "limit" to 100
+    )
+)
+
+// Aggregation query
+val stats = client.query(
+    query = """
+        FOR u IN users
+        COLLECT status = u.status WITH COUNT INTO count
+        RETURN { status, count }
+    """
+)
+
+// Join query
+val orders = client.query(
+    query = """
+        FOR o IN orders
+        FOR u IN users FILTER u._key == o.user_id
+        RETURN { order: o, user: u.name }
+    """
+)</code></pre>
+        </div>
+      </section>
+
+      <!-- Sync -->
+      <section id="sync" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Live Sync & Subscriptions</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">// Subscribe to live query updates
+val subscription = client.sync.subscribe(
+    query = "FOR u IN users FILTER u.status == 'online' RETURN u"
+) { result ->
+    when (result) {
+        is SyncResult.Success -> {
+            val docs = result.documents
+            Log.d("SoliDB", "Received ${docs.size} updates")
+            // Update your UI
+        }
+        is SyncResult.Error -> {
+            Log.e("SoliDB", "Sync error: ${result.error}")
+        }
+    }
+}
+
+// Subscribe to collection changes
+val collectionSub = client.sync.subscribe(
+    collection = "users",
+    filter = mapOf("status" to "active")
+) { change ->
+    when (change.type) {
+        ChangeType.INSERT -> {
+            Log.d("SoliDB", "New document: ${change.document.key}")
+        }
+        ChangeType.UPDATE -> {
+            Log.d("SoliDB", "Updated: ${change.document.key}")
+        }
+        ChangeType.DELETE -> {
+            Log.d("SoliDB", "Deleted: ${change.key}")
+        }
+    }
+}
+
+// Cancel subscriptions when done
+subscription.cancel()
+collectionSub.cancel()
+
+// Manual sync (pull latest changes)
+client.sync.pull()
+
+// Push local changes immediately
+client.sync.push()</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">subscribe(query, handler)</code></td><td class="px-4 py-3 text-gray-400">Subscribe to query results</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">subscribe(collection, filter, handler)</code></td><td class="px-4 py-3 text-gray-400">Subscribe to collection changes</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">pull()</code></td><td class="px-4 py-3 text-gray-400">Pull latest changes from server</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-emerald-400">push()</code></td><td class="px-4 py-3 text-gray-400">Push local changes to server</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- OFFLINE SYNC -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-green-500/20 text-green-400 mr-4">
+          <i class="fas fa-wifi-slash text-lg"></i>
+        </span>
+        Offline-First Sync
+      </h2>
+
+      <!-- Offline-First -->
+      <section id="offline-first" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Offline-First Architecture</h3>
+        <p class="text-gray-400 mb-4">
+          SoliDB Android SDK provides automatic offline-first capabilities. All operations work seamlessly offline and sync when connectivity is restored.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">// Enable offline-first mode in configuration
+val config = SoliDBConfig(
+    host = "localhost",
+    port = 6745,
+    database = "mydb",
+    username = "admin",
+    password = "password",
+    offlineMode = OfflineMode.ENABLED,     // Enable offline support
+    enableLocalCache = true,                // Cache documents locally
+    syncInterval = 30_000L                  // Auto-sync every 30 seconds
+)
+
+// All operations work offline
+// Changes are automatically queued and synced
+val doc = client.save(
+    collection = "notes",
+    document = mapOf(
+        "title" to "Important Note",
+        "content" to "..."
+    )
+)
+// Works even without network! Automatically syncs later.</code></pre>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-bolt text-yellow-400 mr-2"></i>
+              <span class="font-semibold text-white">Native Performance</span>
+            </div>
+            <p class="text-sm text-gray-400">UniFFI-powered Rust bindings deliver native speed for all operations.</p>
+          </div>
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-database text-blue-400 mr-2"></i>
+              <span class="font-semibold text-white">Local SQLite</span>
+            </div>
+            <p class="text-sm text-gray-400">Encrypted SQLite storage for offline data persistence with SQLCipher.</p>
+          </div>
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-sync text-green-400 mr-2"></i>
+              <span class="font-semibold text-white">Auto-Sync</span>
+            </div>
+            <p class="text-sm text-gray-400">Automatic background sync with WorkManager for reliability.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Conflict Resolution -->
+      <section id="conflict-resolution" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Conflict Resolution</h3>
+        <p class="text-gray-400 mb-4">
+          When the same document is modified offline on multiple devices, SoliDB provides configurable conflict resolution strategies.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">// Configure conflict resolution strategy
+val config = SoliDBConfig(
+    // ... other options
+    conflictResolution = ConflictResolution.LAST_WRITE_WINS,  // Default
+    // Other options:
+    // ConflictResolution.FIRST_WRITE_WINS
+    // ConflictResolution.SERVER_WINS
+    // ConflictResolution.CLIENT_WINS
+    // ConflictResolution.CUSTOM(resolver)
+)
+
+// Custom conflict resolver
+val customConfig = SoliDBConfig(
+    conflictResolution = ConflictResolution.CUSTOM { serverDoc, localDoc ->
+        // Implement your own logic
+        val localModified = localDoc["modified_at"] as? Date
+        val serverModified = serverDoc["modified_at"] as? Date
+        
+        if (localModified != null && serverModified != null) {
+            if (localModified > serverModified) localDoc else serverDoc
+        } else {
+            localDoc  // Default to local
+        }
+    }
+)</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Strategy</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-green-400">LAST_WRITE_WINS</code></td><td class="px-4 py-3 text-gray-400">Document with most recent timestamp wins</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-green-400">FIRST_WRITE_WINS</code></td><td class="px-4 py-3 text-gray-400">First write wins, subsequent rejected</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-green-400">SERVER_WINS</code></td><td class="px-4 py-3 text-gray-400">Always prefer server version</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-green-400">CLIENT_WINS</code></td><td class="px-4 py-3 text-gray-400">Always prefer local version</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-green-400">CUSTOM</code></td><td class="px-4 py-3 text-gray-400">Provide your own resolution logic</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Delta Sync -->
+      <section id="delta-sync" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Delta Sync</h3>
+        <p class="text-gray-400 mb-4">
+          Delta sync only transmits changed fields, dramatically reducing bandwidth and improving sync speed.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">// Delta sync is enabled by default
+val config = SoliDBConfig(
+    // ... other options
+    enableDeltaSync = true,              // Only sync changed fields
+    deltaSyncThreshold = 1024            // Use delta for docs > 1KB
+)
+
+// Manual delta sync control
+// Force full sync when needed
+client.sync.pullFull()
+
+// Sync specific collections with delta
+client.sync.pull(
+    collections = listOf("users", "settings"),
+    mode = SyncMode.DELTA
+)
+
+// Get sync statistics
+val syncStats = client.sync.statistics
+Log.d("SoliDB", "Bytes saved by delta sync: ${syncStats.bytesSaved}")
+Log.d("SoliDB", "Documents synced: ${syncStats.documentsSynced}")</code></pre>
+        </div>
+      </section>
+
+      <!-- Configuration -->
+      <section id="configuration" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Sync Configuration</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">val config = SoliDBConfig(
+    host = "localhost",
+    port = 6745,
+    database = "mydb",
+    username = "admin",
+    password = "password",
+    
+    // Offline settings
+    offlineMode = OfflineMode.ENABLED,
+    enableLocalCache = true,
+    localCacheSize = 100 * 1024 * 1024L,  // 100 MB cache limit
+    
+    // Sync settings
+    syncInterval = 30_000L,               // Auto-sync every 30s
+    syncOnConnectivityChange = true,      // Sync when going online
+    retryAttempts = 5,                    // Retry failed syncs
+    retryDelay = 2_000L,                  // Initial retry delay (ms)
+    
+    // Conflict & delta
+    conflictResolution = ConflictResolution.LAST_WRITE_WINS,
+    enableDeltaSync = true,
+    
+    // Network
+    enableCompression = true,
+    timeout = 30_000L
+)</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- EXAMPLES -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-teal-500/20 text-teal-400 mr-4">
+          <i class="fas fa-code text-lg"></i>
+        </span>
+        Examples
+      </h2>
+
+      <!-- Todo Example -->
+      <section id="todo-example" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Complete Todo App</h3>
+        <p class="text-gray-400 mb-4">
+          A fully functional Todo app demonstrating offline-first capabilities, real-time sync, and CRUD operations using Jetpack Compose.
+        </p>
+        
+        <h4 class="text-lg font-semibold text-teal-400 mb-3">Model & ViewModel</h4>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">import com.solidb.android.SoliDBClient
+import com.solidb.android.SoliDBConfig
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+
+// MARK: - Model
+
+data class Todo(
+    val id: String,
+    val title: String,
+    val completed: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    companion object {
+        fun fromDocument(doc: Document): Todo {
+            return Todo(
+                id = doc.key,
+                title = doc["title"] as? String ?: "",
+                completed = doc["completed"] as? Boolean ?: false,
+                createdAt = doc["created_at"] as? Long ?: System.currentTimeMillis()
+            )
+        }
+    }
+    
+    fun toDocument(): Map&lt;String, Any&gt; = mapOf(
+        "title" to title,
+        "completed" to completed,
+        "created_at" to createdAt
+    )
+}
+
+// MARK: - ViewModel
+
+class TodoViewModel(
+    private val client: SoliDBClient
+) : ViewModel() {
+    
+    private val _todos = MutableStateFlow&lt;List&lt;Todo&gt;&gt;(emptyList())
+    val todos: StateFlow&lt;List&lt;Todo&gt;&gt; = _todos
+    
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow&lt;Boolean&gt; = _isSyncing
+    
+    private val _errorMessage = MutableStateFlow&lt;String?&gt;(null)
+    val errorMessage: StateFlow&lt;String?&gt; = _errorMessage
+    
+    private var subscription: SyncSubscription? = null
+    
+    init {
+        loadTodos()
+        subscribeToChanges()
+    }
+    
+    private fun loadTodos() {
+        viewModelScope.launch {
+            try {
+                val results = client.query(
+                    "FOR t IN todos SORT t.created_at DESC RETURN t"
+                )
+                _todos.value = results.map { Todo.fromDocument(it) }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to load: ${e.message}"
+            }
+        }
+    }
+    
+    private fun subscribeToChanges() {
+        viewModelScope.launch {
+            try {
+                subscription = client.sync.subscribe(
+                    collection = "todos"
+                ) { change ->
+                    // Refresh on any change
+                    loadTodos()
+                }
+            } catch (e: Exception) {
+                Log.e("TodoViewModel", "Subscription error: ${e.message}")
+            }
+        }
+    }
+    
+    fun addTodo(title: String) {
+        viewModelScope.launch {
+            try {
+                client.save(
+                    collection = "todos",
+                    document = mapOf(
+                        "title" to title,
+                        "completed" to false,
+                        "created_at" to System.currentTimeMillis()
+                    )
+                )
+                // Real-time update will come through subscription
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to add: ${e.message}"
+            }
+        }
+    }
+    
+    fun toggleTodo(todo: Todo) {
+        viewModelScope.launch {
+            try {
+                client.save(
+                    collection = "todos",
+                    key = todo.id,
+                    document = todo.copy(completed = !todo.completed).toDocument()
+                )
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to update: ${e.message}"
+            }
+        }
+    }
+    
+    fun deleteTodo(todo: Todo) {
+        viewModelScope.launch {
+            try {
+                client.delete(collection = "todos", key = todo.id)
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to delete: ${e.message}"
+            }
+        }
+    }
+    
+    fun syncNow() {
+        viewModelScope.launch {
+            _isSyncing.value = true
+            try {
+                client.sync.push()
+                client.sync.pull()
+                loadTodos()
+            } catch (e: Exception) {
+                _errorMessage.value = "Sync failed: ${e.message}"
+            } finally {
+                _isSyncing.value = false
+            }
+        }
+    }
+    
+    override fun onCleared() {
+        super.onCleared()
+        subscription?.cancel()
+    }
+}</code></pre>
+        </div>
+
+        <h4 class="text-lg font-semibold text-teal-400 mb-3 mt-6">Jetpack Compose UI</h4>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">@Composable
+fun TodoScreen(viewModel: TodoViewModel = viewModel()) {
+    val todos by viewModel.todos.collectAsState()
+    val isSyncing by viewModel.isSyncing.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
+    var newTodoTitle by remember { mutableStateOf("") }
+    
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Todos") },
+                actions = {
+                    IconButton(onClick = { viewModel.syncNow() }) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = "Sync")
+                        }
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            // Add todo dialog or inline input
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            // Add new todo
+            OutlinedTextField(
+                value = newTodoTitle,
+                onValueChange = { newTodoTitle = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                placeholder = { Text("Add new todo...") },
+                trailingIcon = {
+                    if (newTodoTitle.isNotBlank()) {
+                        IconButton(onClick = {
+                            viewModel.addTodo(newTodoTitle)
+                            newTodoTitle = ""
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = "Add")
+                        }
+                    }
+                }
+            )
+            
+            // Todo list
+            LazyColumn {
+                items(todos, key = { it.id }) { todo ->
+                    TodoItem(
+                        todo = todo,
+                        onToggle = { viewModel.toggleTodo(todo) },
+                        onDelete = { viewModel.deleteTodo(todo) }
+                    )
+                }
+            }
+        }
+        
+        // Error snackbar
+        errorMessage?.let { message ->
+            LaunchedEffect(message) {
+                // Show snackbar
+            }
+        }
+    }
+}
+
+@Composable
+fun TodoItem(
+    todo: Todo,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = todo.completed,
+                onCheckedChange = { onToggle() }
+            )
+            
+            Text(
+                text = todo.title,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyLarge,
+                textDecoration = if (todo.completed) {
+                    TextDecoration.LineThrough
+                } else {
+                    TextDecoration.None
+                }
+            )
+            
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete")
+            }
+        }
+    }
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Coroutines & Flow -->
+      <section id="coroutines" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Coroutines & Flow Integration</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">// Convert sync subscriptions to Flow
+fun SoliDBClient.todosFlow(): Flow&lt;List&lt;Todo&gt;&gt; = callbackFlow {
+    val subscription = sync.subscribe(
+        query = "FOR t IN todos SORT t.created_at DESC RETURN t"
+    ) { result ->
+        when (result) {
+            is SyncResult.Success -> {
+                trySend(result.documents.map { Todo.fromDocument(it) })
+            }
+            is SyncResult.Error -> {
+                close(result.error)
+            }
+        }
+    }
+    
+    awaitClose { subscription.cancel() }
+}
+
+// Use with Compose
+@Composable
+fun TodoList(client: SoliDBClient) {
+    val todos by client.todosFlow().collectAsState(initial = emptyList())
+    
+    LazyColumn {
+        items(todos) { todo ->
+            TodoItem(todo = todo)
+        }
+    }
+}
+
+// Background sync with WorkManager
+class SyncWorker(
+    context: Context,
+    params: WorkerParameters
+) : CoroutineWorker(context, params) {
+    
+    override suspend fun doWork(): Result {
+        val client = SoliDBClient.create(config)
+        
+        return try {
+            client.sync.push()
+            client.sync.pull()
+            Result.success()
+        } catch (e: Exception) {
+            Result.retry()
+        }
+    }
+}
+
+// Schedule periodic sync
+val syncWorkRequest = PeriodicWorkRequestBuilder&lt;SyncWorker&gt;(15, TimeUnit.MINUTES)
+    .setConstraints(
+        Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+    )
+    .build()
+
+WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+    "solidb_sync",
+    ExistingPeriodicWorkPolicy.KEEP,
+    syncWorkRequest
+)</code></pre>
+        </div>
+      </section>
+
+      <!-- Error Handling -->
+      <section id="error-handling" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Error Handling</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-kotlin">try {
+    val client = SoliDBClient.create(config)
+} catch (e: SoliDBException.ConnectionFailed) {
+    Log.e("SoliDB", "Connection failed: ${e.message}")
+} catch (e: SoliDBException.AuthenticationFailed) {
+    Log.e("SoliDB", "Auth failed: ${e.message}")
+} catch (e: SoliDBException.DocumentNotFound) {
+    Log.e("SoliDB", "Document not found: ${e.key}")
+} catch (e: SoliDBException.NetworkError) {
+    Log.e("SoliDB", "Network error: ${e.message}")
+    // Will auto-retry in offline mode
+} catch (e: SoliDBException.SyncConflict) {
+    Log.e("SoliDB", "Sync conflict: ${e.message}")
+    // Resolve manually if needed
+} catch (e: SoliDBException) {
+    Log.e("SoliDB", "SoliDB error: ${e.message}")
+} catch (e: Exception) {
+    Log.e("SoliDB", "Unknown error: ${e.message}")
+}
+
+// With Result type wrapper
+suspend fun safeGet(client: SoliDBClient, key: String): Result&lt;Document&gt; {
+    return try {
+        Result.success(client.get("todos", key))
+    } catch (e: SoliDBException.DocumentNotFound) {
+        Result.failure(e)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+}</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- FOOTER -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <div class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+        <div class="flex items-start">
+          <i class="fas fa-book text-green-400 mt-1 mr-4 text-xl"></i>
+          <div>
+            <h3 class="text-lg font-bold text-white mb-2">Next Steps</h3>
+            <p class="text-gray-400 mb-4">
+              Explore more features of the SoliDB Android SDK:
+            </p>
+            <ul class="space-y-2 text-sm text-gray-400">
+              <li><i class="fas fa-chevron-right text-green-400 mr-2"></i><a href="/docs/query-language" class="hover:text-white transition-colors">Learn SDBQL Query Language</a></li>
+              <li><i class="fas fa-chevron-right text-green-400 mr-2"></i><a href="/docs/sync" class="hover:text-white transition-colors">Advanced Sync Strategies</a></li>
+              <li><i class="fas fa-chevron-right text-green-400 mr-2"></i><a href="https://github.com/solidb/android-sdk" class="hover:text-white transition-colors">GitHub Repository & Examples</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

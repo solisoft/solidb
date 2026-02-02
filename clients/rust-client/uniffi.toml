@@ -1,0 +1,13 @@
+[bindings.kotlin]
+package_name = "com.solidb.client"
+cdylib_name = "solidb_client"
+
+[bindings.swift]
+module_name = "SoliDBClient"
+cdylib_name = "solidb_client"
+
+[bindings.python]
+module_name = "solidb_client"
+
+[bindings.ruby]
+module_name = "solidb_client"

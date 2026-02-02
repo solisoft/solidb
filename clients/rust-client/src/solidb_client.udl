@@ -1,0 +1,111 @@
+// UniFFI Definition Language for SoliDB Mobile Client
+// This file defines the interface exposed to Swift and Kotlin
+
+namespace solidb_client {
+    // Error types
+    [Error]
+    enum SyncError {
+        "NetworkError",
+        "DatabaseError",
+        "ConflictError",
+        "AuthError",
+        "NotFound",
+        "InvalidData",
+    };
+
+    // Sync configuration
+    dictionary SyncConfig {
+        string device_id;
+        string? server_url;
+        string? api_key;
+        sequence<string>? collections;
+        u64 sync_interval_secs;
+        u64 max_retries;
+        boolean auto_sync;
+    };
+
+    // Document data
+    dictionary Document {
+        string id;
+        string data;  // JSON string
+    };
+
+    // Sync change entry
+    dictionary SyncChange {
+        string collection;
+        string document_key;
+        string operation;  // "INSERT", "UPDATE", "DELETE"
+        string? data;      // JSON string for INSERT/UPDATE
+    };
+
+    // Sync result
+    dictionary SyncResult {
+        boolean success;
+        u64 pulled;
+        u64 pushed;
+        u64 conflicts;
+        sequence<string> errors;
+    };
+
+    // Conflict information
+    dictionary ConflictInfo {
+        string document_key;
+        string collection;
+        string local_data;   // JSON string
+        string remote_data;  // JSON string
+    };
+
+    // Pending change
+    dictionary PendingChange {
+        u64 id;
+        string collection;
+        string document_key;
+        string operation;
+        string? data;
+        u32 retry_count;
+    };
+
+    // Main sync manager interface
+    interface SyncManager {
+        // Constructor
+        [Name="new"]
+        constructor(SyncConfig config);
+
+        // Lifecycle
+        void start();
+        void stop();
+        boolean is_online();
+        void set_online(boolean online);
+
+        // Document operations
+        void save_document(string collection, string key, string data) throws SyncError;
+        string? get_document(string collection, string key) throws SyncError;
+        void delete_document(string collection, string key) throws SyncError;
+        sequence<Document> query_documents(string collection) throws SyncError;
+
+        // Sync control
+        SyncResult sync_now() throws SyncError;
+        sequence<PendingChange> get_pending_changes();
+        u64 get_pending_count();
+
+        // Subscriptions
+        void subscribe_collection(string collection);
+        void unsubscribe_collection(string collection);
+        sequence<string> get_subscriptions();
+
+        // Conflict resolution
+        sequence<ConflictInfo> get_conflicts();
+        void resolve_conflict(string document_key, string resolution, string? merged_data) throws SyncError;
+
+        // Stats
+        string? get_last_sync_time();
+        string get_stats();
+    };
+
+    // Utility functions
+    namespace utils {
+        string generate_device_id();
+        boolean is_valid_json(string data);
+        string version();
+    };
+};

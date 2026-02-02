@@ -10,6 +10,7 @@ pub mod indexes;
 pub mod query;
 pub mod schema;
 pub mod sharding;
+pub mod sync;
 pub mod system;
 pub mod websocket;
 
@@ -26,5 +27,6 @@ pub use indexes::*;
 pub use query::*;
 pub use schema::*;
 pub use sharding::*;
+pub use sync::*;
 pub use system::*;
 pub use websocket::*;

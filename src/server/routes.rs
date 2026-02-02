@@ -109,6 +109,9 @@ pub fn create_router(
     let permission_cache = crate::server::permission_cache::PermissionCache::new();
     permission_cache.initialize_builtin_roles();
 
+    // Initialize sync session manager for offline-first client sync
+    let sync_session_manager = Arc::new(crate::sync::SyncSessionManager::new());
+
     let state = AppState {
         storage: Arc::new(storage),
         cursor_store: CursorStore::new(Duration::from_secs(300)),
@@ -125,6 +128,7 @@ pub fn create_router(
         permission_cache,
         repl_sessions: crate::server::repl_session::ReplSessionStore::new(),
         channel_manager: Arc::new(crate::scripting::ChannelManager::new()),
+        sync_session_manager: Some(sync_session_manager),
     };
 
     // Protected API routes
@@ -715,6 +719,13 @@ pub fn create_router(
             "/_api/sql/translate",
             post(super::sql_handlers::translate_sql_handler),
         )
+        // Offline sync routes
+        .route("/_api/sync/session", post(register_sync_session))
+        .route("/_api/sync/pull", post(pull_changes))
+        .route("/_api/sync/push", post(push_changes))
+        .route("/_api/sync/ack", post(acknowledge_changes))
+        .route("/_api/sync/conflicts", get(list_conflicts))
+        .route("/_api/sync/resolve", post(resolve_conflict))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::server::auth::auth_middleware,

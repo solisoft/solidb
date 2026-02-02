@@ -77,6 +77,8 @@ pub struct AppState {
     pub repl_sessions: crate::server::repl_session::ReplSessionStore,
     // WebSocket Channel Manager for pub/sub and presence
     pub channel_manager: Arc<crate::scripting::ChannelManager>,
+    // Sync session manager for offline-first client sync
+    pub sync_session_manager: Option<Arc<crate::sync::SyncSessionManager>>,
 }
 
 impl AppState {

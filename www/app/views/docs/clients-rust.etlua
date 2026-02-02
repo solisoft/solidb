@@ -64,6 +64,7 @@
         <div>
           <h3 class="text-orange-400 font-semibold mb-2">Advanced Features</h3>
           <ul class="space-y-1 text-gray-400">
+            <li><a href="#offline-sync" class="hover:text-white transition-colors">Offline Sync</a></li>
             <li><a href="#vector" class="hover:text-white transition-colors">Vector Search</a></li>
             <li><a href="#geo" class="hover:text-white transition-colors">Geospatial</a></li>
             <li><a href="#ttl" class="hover:text-white transition-colors">TTL Indexes</a></li>
@@ -1166,6 +1167,277 @@ async fn run_operations() -> Result<(), DriverError> {
           <p class="text-sm text-gray-400">Unsupported operation, malformed request</p>
         </div>
       </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- OFFLINE SYNC -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-success/20 text-success mr-4">
+          <i class="fas fa-wifi text-lg"></i>
+        </span>
+        Offline Sync
+      </h2>
+
+      <p class="text-gray-400 mb-8">
+        Build resilient applications that work anywhere. The Rust client provides offline-first capabilities with automatic synchronization, conflict resolution, and local storage using SQLite or RocksDB.
+      </p>
+
+      <!-- Introduction -->
+      <section id="offline-sync" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Introduction</h3>
+        <p class="text-gray-300 mb-4">
+          Offline Sync enables local-first data operations. All reads and writes happen locally first, then sync automatically when connectivity is available. The sync manager handles version vectors, conflict resolution, and delta encoding transparently.
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-wifi-slash text-red-400 mr-2"></i>
+              <h4 class="text-white font-semibold text-sm">Works Offline</h4>
+            </div>
+            <p class="text-xs text-gray-400">All operations work locally without network connectivity</p>
+          </div>
+          <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-bolt text-yellow-400 mr-2"></i>
+              <h4 class="text-white font-semibold text-sm">Instant Response</h4>
+            </div>
+            <p class="text-xs text-gray-400">Zero-latency reads and writes from local storage</p>
+          </div>
+          <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-handshake text-success mr-2"></i>
+              <h4 class="text-white font-semibold text-sm">Auto Conflict Resolution</h4>
+            </div>
+            <p class="text-xs text-gray-400">Version vectors ensure data consistency across devices</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Setup -->
+      <section class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Setup</h3>
+        <div class="bg-gray-950 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-success/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <pre class="relative z-10"><code class="language-rust">use solidb_client::{SoliDBClient, OfflineSyncManager, SyncConfig, ConflictStrategy, StorageEngine};
+use serde_json::json;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create regular client
+    let client = SoliDBClient::connect("localhost:6745").await?;
+    
+    // Configure offline sync
+    let config = SyncConfig {
+        database: "mydb".to_string(),
+        local_storage_path: "./local_data".to_string(),
+        auto_sync: true,
+        sync_interval_seconds: 30,
+        conflict_strategy: ConflictStrategy::LastWriteWins,
+        storage_engine: StorageEngine::Sqlite,
+        encryption_key: None,
+    };
+    
+    // Initialize sync manager
+    let sync_manager = OfflineSyncManager::new(client, config)
+        .initialize()
+        .await?;
+    
+    // Authenticate (cached for reconnects)
+    sync_manager.authenticate("admin", "password").await?;
+    
+    println!("Offline sync ready!");
+    Ok(())
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Basic Operations -->
+      <section class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Basic Operations</h3>
+        <p class="text-gray-300 mb-4">
+          All CRUD operations work on local data first. Changes are queued for sync automatically when online.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Insert document locally
+let doc = sync_manager.save_document(
+    "users",
+    Some("user-123"),
+    json!({
+        "name": "Alice",
+        "email": "alice@example.com",
+        "created_at": "2024-01-15T10:00:00Z"
+    })
+).await?;
+
+// Get document from local store
+let user = sync_manager.get_document("users", "user-123").await?;
+
+// Update document (merge mode)
+let updated = sync_manager.save_document(
+    "users",
+    Some("user-123"),
+    json!({"email": "alice.new@example.com"})
+).await?;
+
+// Delete document locally
+sync_manager.delete_document("users", "user-123").await?;
+
+// Query local data with SDBQL
+let active_users = sync_manager.query(
+    "FOR u IN users FILTER u.status == 'active' RETURN u",
+    None
+).await?;
+
+// List documents with pagination
+let (docs, total) = sync_manager.list_documents(
+    "users",
+    Some(50),
+    Some(0)
+).await?;</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-success">save_document(col, key, doc)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Value&gt;</td><td class="px-4 py-3 text-gray-400">Insert or update document locally</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-success">get_document(col, key)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Value&gt;</td><td class="px-4 py-3 text-gray-400">Get document from local store</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-success">delete_document(col, key)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Delete document locally</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-success">query(sdbql, params)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Vec&lt;Value&gt;&gt;</td><td class="px-4 py-3 text-gray-400">Execute SDBQL on local data</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-success">list_documents(col, limit, offset)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;(Vec, usize)&gt;</td><td class="px-4 py-3 text-gray-400">List documents with pagination</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Sync Control -->
+      <section class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Sync Control</h3>
+        <p class="text-gray-300 mb-4">
+          While auto-sync handles most cases, you have full control over synchronization and can subscribe to changes.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">use solidb_client::{Change, ChangeType};
+
+// Trigger immediate sync
+let result = sync_manager.sync_now().await?;
+println!("Synced: {} pushed, {} pulled", result.pushed, result.pulled);
+
+// Check sync status
+let status = sync_manager.sync_status().await;
+println!("Pending: {}, Last sync: {:?}", status.pending_changes, status.last_sync);
+
+// Subscribe to all changes
+sync_manager.on_change(|change: Change| {
+    match change.change_type {
+        ChangeType::LocalInsert => println!("Local insert: {}", change.document_key),
+        ChangeType::RemoteInsert => println!("Remote insert: {}", change.document_key),
+        ChangeType::Conflict => println!("Conflict resolved: {}", change.document_key),
+        ChangeType::SyncComplete => println!("Sync done: {} up, {} down", change.pushed_count, change.pulled_count),
+        _ => {}
+    }
+});
+
+// Subscribe to specific collection
+sync_manager.on_collection_change("users", |change| {
+    println!("User changed: {:?}", change);
+});
+
+// Pause/resume auto-sync
+sync_manager.pause_sync().await?;
+// ... do batch work ...
+sync_manager.resume_sync().await?;</code></pre>
+        </div>
+      </section>
+
+      <!-- Conflict Resolution -->
+      <section class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Conflict Resolution</h3>
+        <p class="text-gray-300 mb-4">
+          When the same document is modified on multiple clients, conflicts are automatically resolved using your configured strategy. You can also handle conflicts manually.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">// Configure conflict strategy in SyncConfig
+let config = SyncConfig {
+    conflict_strategy: ConflictStrategy::LastWriteWins,  // or FirstWriteWins, MergeFields
+    ..Default::default()
+};
+
+// Custom conflict resolver
+let config = SyncConfig {
+    conflict_strategy: ConflictStrategy::Custom(Box::new(|local, remote, base| {
+        let mut resolved = local.clone();
+        if remote["timestamp"] > local["timestamp"] {
+            resolved["status"] = remote["status"].clone();
+        }
+        Ok(resolved)
+    })),
+    ..Default::default()
+};
+
+// Handle conflicts after sync
+let result = sync_manager.sync_now().await?;
+if !result.conflicts.is_empty() {
+    for conflict in &result.conflicts {
+        println!("Conflict in {}:{}", conflict.collection, conflict.document_key);
+        // Access local_version, remote_version, base_version
+        // Manually resolve if needed
+    }
+}
+
+// Set up conflict callback
+sync_manager.on_conflict(|conflict| {
+    // Show UI to user or auto-resolve
+    ConflictResolution::AcceptRemote  // or AcceptLocal, Merge(doc)
+});</code></pre>
+        </div>
+      </section>
+
+      <!-- Configuration Options -->
+      <section class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Configuration Options</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-rust">SyncConfig {
+    // Required
+    database: "mydb".to_string(),
+    local_storage_path: "./sync_data".to_string(),
+    
+    // Sync behavior
+    auto_sync: true,                    // Enable automatic sync
+    sync_interval_seconds: 60,          // Auto-sync interval
+    push_on_change: true,               // Sync immediately on local changes
+    
+    // Conflict resolution
+    conflict_strategy: ConflictStrategy::LastWriteWins,
+    // Options: LastWriteWins, FirstWriteWins, MergeFields, Custom(...)
+    
+    // Storage
+    storage_engine: StorageEngine::Sqlite,  // or RocksDB
+    
+    // Selective sync - only sync matching documents
+    sync_filter: Some("FOR doc IN users FILTER doc.user_id == @id RETURN doc".to_string()),
+    sync_filter_params: Some(vec![("id", json!("user-123"))].into_iter().collect()),
+    
+    // Encryption for local storage (AES-256-GCM)
+    encryption_key: Some("your-32-byte-secret-key-here!!".to_string()),
+}</code></pre>
+        </div>
+        <div class="mt-4 p-4 bg-success/10 border border-success/20 rounded-lg">
+          <div class="flex items-start">
+            <i class="fas fa-info-circle text-success mt-0.5 mr-3"></i>
+            <p class="text-sm text-gray-300">
+              <strong>Tip:</strong> Use selective sync to limit local storage usage. Only sync data the current user needs, such as their own documents or recent records.
+            </p>
+          </div>
+        </div>
+      </section>
     </div>
 
   </div>

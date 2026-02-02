@@ -46,6 +46,13 @@ impl LogEntry {
             document_key: self.key.clone(),
             document_data: self.data.clone(),
             shard_id: None,
+            // New offline sync fields
+            version_vector: None,
+            parent_vectors: Vec::new(),
+            is_delta: false,
+            delta_data: None,
+            session_id: None,
+            device_id: Some(self.node_id.clone()),
         }
     }
 }

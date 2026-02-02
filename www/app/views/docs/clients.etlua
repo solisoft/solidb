@@ -34,7 +34,7 @@
             <h2 class="text-2xl font-bold text-white">Supported Ecosystems</h2>
           </div>
 
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 text-center">
+          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-11 gap-4 text-center">
               <% local ecosystems = {
                   { id = "rust", icon = "fab fa-rust", hex = "#f97316", name = "Rust" },
                   { id = "node", icon = "fab fa-node-js", hex = "#22c55e", name = "Node.js" },
@@ -42,7 +42,11 @@
                   { id = "elixir", icon = "fab fa-phoenix-framework", hex = "#f87171", name = "Elixir" },
                   { id = "python", icon = "fab fa-python", hex = "#eab308", name = "Python" },
                   { id = "php", icon = "fab fa-php", hex = "#a855f7", name = "PHP" },
-                  { id = "ruby", icon = "fas fa-gem", hex = "#ef4444", name = "Ruby" }
+                  { id = "ruby", icon = "fas fa-gem", hex = "#ef4444", name = "Ruby" },
+                  { id = "ios", icon = "fab fa-apple", hex = "#5a9fd4", name = "iOS" },
+                  { id = "android", icon = "fab fa-android", hex = "#3ddc84", name = "Android" },
+                  { id = "react-native", icon = "fab fa-react", hex = "#61dafb", name = "React Native" },
+                  { id = "flutter", icon = "fas fa-dove", hex = "#02569b", name = "Flutter" }
               } %>
               <% for _, eco in ipairs(ecosystems) do %>
               <a href="#<%= eco.id %>-client" 
@@ -211,8 +215,96 @@
                   { name = "commit_transaction", signature = "commit_transaction(tx_id)", desc = "Commit changes" },
                   { name = "rollback_transaction", signature = "rollback_transaction(tx_id)", desc = "Rollback changes" }
               }
-          }
-      } %>
+          },
+          {
+              id = "ios",
+              name = "iOS",
+              icon = "fab fa-apple",
+              color = "blue-500",
+              install = "pod 'SoliDB'",
+              usage = "let client = SoliDBClient(host: \"localhost\", port: 6745)\ntry await client.connect()\ntry await client.auth(database: \"_system\", username: \"admin\", password: \"password\")\nlet doc = try await client.insert(database: \"db\", collection: \"users\", document: [\"name\": \"Alice\"])",
+              lang_code = "swift",
+              commands = {
+                  { name = "connect", signature = "connect() async throws", desc = "Establish connection" },
+                  { name = "auth", signature = "auth(database:user:password:)", desc = "Authenticate session" },
+                  { name = "ping", signature = "ping() async throws", desc = "Check connection health" },
+                  { name = "insert", signature = "insert(database:collection:document:key:)", desc = "Add document with optional key" },
+                  { name = "get", signature = "get(database:collection:key:)", desc = "Retrieve document by key" },
+                  { name = "update", signature = "update(database:collection:key:document:merge:)", desc = "Modify existing document" },
+                  { name = "delete", signature = "delete(database:collection:key:)", desc = "Remove document by key" },
+                  { name = "query", signature = "query(database:sdbql:vars:)", desc = "Execute SDBQL query" },
+                  { name = "beginTransaction", signature = "beginTransaction(database:isolation:)", desc = "Start ACID transaction" },
+                  { name = "commitTransaction", signature = "commitTransaction() async throws", desc = "Commit transaction" },
+                  { name = "rollbackTransaction", signature = "rollbackTransaction() async throws", desc = "Abort transaction" }
+              }
+          },
+           {
+               id = "android",
+               name = "Android",
+               icon = "fab fa-android",
+               color = "green-500",
+               install = "implementation 'com.solidb:solidb-android:0.1.0'",
+               usage = "val client = SoliDBClient(\"localhost\", 6745)\nclient.connect()\nclient.auth(\"_system\", \"admin\", \"password\")\nval doc = client.insert(\"db\", \"users\", mapOf(\"name\" to \"Alice\"))",
+               lang_code = "kotlin",
+               commands = {
+                   { name = "connect", signature = "connect()", desc = "Establish connection" },
+                   { name = "auth", signature = "auth(db, user, pass)", desc = "Authenticate session" },
+                   { name = "ping", signature = "ping()", desc = "Check connection health" },
+                   { name = "insert", signature = "insert(db, col, doc, key)", desc = "Add document with optional key" },
+                   { name = "get", signature = "get(db, col, key)", desc = "Retrieve document by key" },
+                   { name = "update", signature = "update(db, col, key, doc, merge)", desc = "Modify existing document" },
+                   { name = "delete", signature = "delete(db, col, key)", desc = "Remove document by key" },
+                   { name = "query", signature = "query(db, sdbql, vars)", desc = "Execute SDBQL query" },
+                   { name = "beginTransaction", signature = "beginTransaction(db, iso)", desc = "Start ACID transaction" },
+                   { name = "commitTransaction", signature = "commitTransaction()", desc = "Commit transaction" },
+                   { name = "rollbackTransaction", signature = "rollbackTransaction()", desc = "Abort transaction" }
+               }
+           },
+           {
+               id = "react-native",
+               name = "React Native",
+               icon = "fab fa-react",
+               color = "cyan-400",
+               install = "npm install @solidb/react-native",
+               usage = "import { useSoliDB, useSync } from '@solidb/react-native';\n\nfunction App() {\n  const client = useSoliDB('localhost:6745');\n  const { data, loading, error } = useSync(\n    'db', 'users',\n    FOR doc IN users FILTER doc.active RETURN doc\n  );\n  return <UserList users={data} />;\n}",
+               lang_code = "tsx",
+               commands = {
+                   { name = "useSoliDB", signature = "useSoliDB(host, port)", desc = "Initialize client hook" },
+                   { name = "useSync", signature = "useSync(db, col, sdbql, vars?)", desc = "Live reactive query hook" },
+                   { name = "useAuth", signature = "useAuth(client)", desc = "Authentication hook" },
+                   { name = "insert", signature = "insert(db, col, doc, key?)", desc = "Add document async" },
+                   { name = "get", signature = "get(db, col, key)", desc = "Fetch document async" },
+                   { name = "update", signature = "update(db, col, key, doc, merge?)", desc = "Update document async" },
+                   { name = "delete", signature = "delete(db, col, key)", desc = "Remove document async" },
+                   { name = "query", signature = "query(db, sdbql, vars?)", desc = "Execute SDBQL async" },
+                   { name = "beginTransaction", signature = "beginTransaction(db, iso?)", desc = "Start transaction context" },
+                   { name = "commitTransaction", signature = "commitTransaction(txId)", desc = "Commit changes async" },
+                   { name = "rollbackTransaction", signature = "rollbackTransaction(txId)", desc = "Rollback async" }
+               }
+           },
+           {
+               id = "flutter",
+               name = "Flutter",
+               icon = "fas fa-dove",
+               color = "blue-400",
+               install = "flutter pub add solidb",
+               usage = "final client = SoliDBClient('localhost', 6745);\nawait client.connect();\nawait client.auth('_system', 'admin', 'password');\nfinal docs = await client.query('db', 'FOR doc IN users RETURN doc');",
+               lang_code = "dart",
+               commands = {
+                   { name = "connect", signature = "connect()", desc = "Establish socket connection" },
+                   { name = "auth", signature = "auth(db, user, pass)", desc = "Authenticate session" },
+                   { name = "ping", signature = "ping()", desc = "Check connection health" },
+                   { name = "insert", signature = "insert(db, col, doc, key?)", desc = "Add document async" },
+                   { name = "get", signature = "get(db, col, key)", desc = "Fetch document async" },
+                   { name = "update", signature = "update(db, col, key, doc, merge?)", desc = "Update document async" },
+                   { name = "delete", signature = "delete(db, col, key)", desc = "Remove document async" },
+                   { name = "query", signature = "query(db, sdbql, vars?)", desc = "Execute SDBQL async" },
+                   { name = "beginTransaction", signature = "beginTransaction(db, iso?)", desc = "Start ACID transaction" },
+                   { name = "commitTransaction", signature = "commitTransaction()", desc = "Commit transaction async" },
+                   { name = "rollbackTransaction", signature = "rollbackTransaction()", desc = "Abort transaction async" }
+               }
+           }
+       } %>
 
       <% for _, lang in ipairs(languages) do %>
       <section id="<%= lang.id %>-client" class="scroll-mt-24">
@@ -223,7 +315,7 @@
           </div>
           
           <div class="flex items-center mb-8 relative">
-            <div class="flex items-center justify-center w-12 h-12 rounded-2xl bg-<%= lang.color %> text-white shadow-[0_0_20px_rgba(var(--<%= lang.id %>-rgb),0.4)] mr-5" style="--<%= lang.id %>-rgb: <%= lang.color == 'orange-500' and '249,115,22' or (lang.color == 'green-500' and '34,197,94' or (lang.color == 'cyan-500' and '6,182,212' or (lang.color == 'red-400' and '248,113,113' or (lang.color == 'yellow-500' and '234,179,8' or (lang.color == 'purple-500' and '168,85,247' or '239,68,68'))))) %>">
+            <div class="flex items-center justify-center w-12 h-12 rounded-2xl bg-<%= lang.color %> text-white shadow-[0_0_20px_rgba(var(--<%= lang.id %>-rgb),0.4)] mr-5" style="--<%= lang.id %>-rgb: <%= lang.color == 'orange-500' and '249,115,22' or (lang.color == 'green-500' and '34,197,94' or (lang.color == 'cyan-500' and '6,182,212' or (lang.color == 'cyan-400' and '34,211,238' or (lang.color == 'red-400' and '248,113,113' or (lang.color == 'yellow-500' and '234,179,8' or (lang.color == 'purple-500' and '168,85,247' or (lang.color == 'blue-500' and '59,130,246' or (lang.color == 'blue-400' and '96,165,250' or '239,68,68')))))))) %>">
               <i class="<%= lang.icon %> text-2xl"></i>
             </div>
             <div>
@@ -248,7 +340,11 @@
               
               <div class="flex flex-col justify-end">
                   <p class="text-sm text-gray-400 leading-relaxed italic mb-1">
+                      <% if lang.id == "ios" or lang.id == "android" then %>
+                      Native performance via UniFFI. Offline-first with built-in SQLite sync.
+                      <% else %>
                       Stable official release maintained by the SoliDB core team.
+                      <% end %>
                   </p>
               </div>
             </div>
@@ -294,10 +390,59 @@
                       </tr>
                       <% end %>
                     </tbody>
-                  </table>
+                   </table>
                 </div>
               </div>
             </div>
+            
+            <% if lang.id == "ios" or lang.id == "android" then %>
+            <!-- Mobile: Full Documentation Link -->
+            <div class="mt-8 p-4 bg-gray-900/30 rounded-xl border border-white/5">
+              <div class="flex items-start">
+                <i class="fas fa-mobile-alt text-<%= lang.color %> mt-0.5 mr-3"></i>
+                <div class="text-xs text-gray-400 leading-relaxed">
+                  <strong class="text-gray-300">Native Mobile SDK:</strong> 
+                  Built for offline-first mobile apps with automatic SQLite synchronization, 
+                  background sync queues, and battery-efficient networking. 
+                  <a href="/docs/clients-<%= lang.id %>" class="text-<%= lang.color %> hover:underline ml-1">
+                    View full <%= lang.name %> documentation →
+                  </a>
+                </div>
+              </div>
+            </div>
+            <% end %>
+            
+            <% if lang.id == "react-native" then %>
+            <!-- React Native: Full Documentation Link -->
+            <div class="mt-8 p-4 bg-gray-900/30 rounded-xl border border-white/5">
+              <div class="flex items-start">
+                <i class="fab fa-react text-<%= lang.color %> mt-0.5 mr-3"></i>
+                <div class="text-xs text-gray-400 leading-relaxed">
+                  <strong class="text-gray-300">Cross-platform.</strong> 
+                  Works with Expo and bare React Native. Hooks-based API with useSync for live queries.
+                  <a href="/docs/clients-react-native" class="text-<%= lang.color %> hover:underline ml-1">
+                    View full React Native documentation →
+                  </a>
+                </div>
+              </div>
+            </div>
+            <% end %>
+            
+            <% if lang.id == "flutter" then %>
+            <!-- Flutter: Full Documentation Link -->
+            <div class="mt-8 p-4 bg-gray-900/30 rounded-xl border border-white/5">
+              <div class="flex items-start">
+                <i class="fas fa-dove text-<%= lang.color %> mt-0.5 mr-3"></i>
+                <div class="text-xs text-gray-400 leading-relaxed">
+                  <strong class="text-gray-300">Cross-platform.</strong> 
+                  Widget-based reactive API with streams. Works on iOS, Android, Web, and Desktop.
+                  <a href="/docs/clients-flutter" class="text-<%= lang.color %> hover:underline ml-1">
+                    View full Flutter documentation →
+                  </a>
+                </div>
+              </div>
+            </div>
+            <% end %>
           </div>
         </div>
       </section>

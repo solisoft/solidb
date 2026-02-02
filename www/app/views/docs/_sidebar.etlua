@@ -78,6 +78,7 @@ local sections = {
     items = {
       { slug = "changefeeds", label = "Changefeeds", icon = "fa-bolt", color = "error" },
       { slug = "live-queries", label = "Live Queries", icon = "fa-satellite-dish", color = "success" },
+      { slug = "offline-sync", label = "Offline Sync", icon = "fa-sync-alt", color = "primary" },
     }
   },
   {
@@ -110,6 +111,10 @@ local sections = {
         { slug = "clients-ruby", label = "Ruby" },
         { slug = "clients-elixir", label = "Elixir" },
         { slug = "clients-rust", label = "Rust" },
+        { slug = "clients-ios", label = "iOS (Swift)" },
+        { slug = "clients-android", label = "Android (Kotlin)" },
+        { slug = "clients-react-native", label = "React Native" },
+        { slug = "clients-flutter", label = "Flutter" },
       }},
       { slug = "comparison", label = "DB Comparison", icon = "fa-balance-scale", color = "warning" },
     }

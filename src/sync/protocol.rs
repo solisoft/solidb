@@ -2,7 +2,10 @@
 //!
 //! Uses bincode for efficient binary serialization over TCP.
 //! Includes LZ4 compression for large batches.
+//!
+//! Extended for offline-first sync with version vectors and client sessions.
 
+use crate::sync::version_vector::VersionVector;
 use serde::{Deserialize, Serialize};
 
 /// Type of operation in the replication log
@@ -29,11 +32,11 @@ pub enum Operation {
 /// A single entry in the sync log
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncEntry {
-    /// Local sequence number on this node
+    /// Local sequence number on this node (legacy, for compatibility)
     pub sequence: u64,
     /// Node that originated this entry
     pub origin_node: String,
-    /// Sequence on the origin node
+    /// Sequence on the origin node (legacy, for compatibility)
     pub origin_sequence: u64,
     /// HLC timestamp (physical time component)
     pub hlc_ts: u64,
@@ -52,6 +55,21 @@ pub struct SyncEntry {
     pub document_data: Option<Vec<u8>>,
     /// Shard ID for sharded collections
     pub shard_id: Option<u16>,
+
+    // === New fields for offline-first sync ===
+    /// Full version vector (replaces sequence numbers for conflict detection)
+    pub version_vector: Option<VersionVector>,
+    /// Parent version vectors (causal history)
+    pub parent_vectors: Vec<VersionVector>,
+    /// Is this a delta (patch) or full document?
+    pub is_delta: bool,
+    /// Delta patch data (if is_delta is true)
+    #[serde(with = "serde_bytes")]
+    pub delta_data: Option<Vec<u8>>,
+    /// Client session ID (for client-initiated changes)
+    pub session_id: Option<String>,
+    /// Device ID that made the change
+    pub device_id: Option<String>,
 }
 
 /// Shard configuration for a collection
@@ -181,6 +199,107 @@ pub enum SyncMessage {
         collection: String,
         assignments: Vec<ShardAssignment>,
     },
+
+    // === Client Sync (Offline-First) ===
+    /// Register a new client sync session
+    ClientRegisterSession {
+        device_id: String,
+        api_key: String,
+        /// Optional: filter query for partial sync
+        filter_query: Option<String>,
+        /// Collections to subscribe to
+        subscriptions: Vec<String>,
+    },
+    /// Response to session registration
+    ClientSessionRegistered {
+        session_id: String,
+        /// Server's current version vector
+        server_vector: VersionVector,
+        /// Server capabilities
+        supports_delta_sync: bool,
+        supports_crdt: bool,
+    },
+    /// Client pulling changes from server
+    ClientPullRequest {
+        session_id: String,
+        /// Client's current version vector
+        client_vector: VersionVector,
+        /// Maximum number of changes to return
+        limit: Option<usize>,
+    },
+    /// Server response with changes
+    ClientPullResponse {
+        /// Changes for client to apply
+        changes: Vec<SyncEntry>,
+        /// Server's version vector after these changes
+        server_vector: VersionVector,
+        /// Whether there are more changes
+        has_more: bool,
+        /// Conflicts detected (if any)
+        conflicts: Vec<ConflictEntry>,
+    },
+    /// Client pushing changes to server
+    ClientPushRequest {
+        session_id: String,
+        /// Changes from client
+        changes: Vec<SyncEntry>,
+        /// Client's vector before these changes
+        client_vector: VersionVector,
+    },
+    /// Server response to push
+    ClientPushResponse {
+        /// Server's new version vector
+        server_vector: VersionVector,
+        /// Conflicts that need resolution
+        conflicts: Vec<ConflictEntry>,
+        /// Number of changes accepted
+        accepted: usize,
+        /// Number of changes rejected
+        rejected: usize,
+    },
+    /// Acknowledge receipt of changes
+    ClientSyncAck {
+        session_id: String,
+        /// Vector up to which client has applied changes
+        applied_vector: VersionVector,
+    },
+    /// Real-time subscription request
+    ClientSubscribe {
+        session_id: String,
+        collections: Vec<String>,
+    },
+    /// Unsubscribe from collections
+    ClientUnsubscribe {
+        session_id: String,
+        collections: Vec<String>,
+    },
+    /// Server notifying client of new changes (push)
+    ClientNotifyChanges {
+        session_id: String,
+        /// Brief notification, client should pull
+        has_changes: bool,
+        /// Collections with changes
+        collections: Vec<String>,
+    },
+}
+
+/// Entry describing a conflict for client resolution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConflictEntry {
+    /// Document key
+    pub document_key: String,
+    /// Collection name
+    pub collection: String,
+    /// Local (server) version vector
+    pub local_vector: VersionVector,
+    /// Remote (client) version vector
+    pub remote_vector: VersionVector,
+    /// Server document data
+    pub local_data: Option<Vec<u8>>,
+    /// Client document data
+    pub remote_data: Option<Vec<u8>>,
+    /// Timestamp when conflict was detected
+    pub detected_at: u64,
 }
 
 impl SyncMessage {
@@ -228,7 +347,71 @@ impl SyncEntry {
             document_key,
             document_data,
             shard_id,
+            // New fields for offline sync
+            version_vector: None,
+            parent_vectors: Vec::new(),
+            is_delta: false,
+            delta_data: None,
+            session_id: None,
+            device_id: None,
         }
+    }
+
+    /// Create a new sync entry with version vector support
+    pub fn with_version_vector(
+        origin_node: String,
+        database: String,
+        collection: String,
+        operation: Operation,
+        document_key: String,
+        document_data: Option<Vec<u8>>,
+        version_vector: VersionVector,
+    ) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        Self {
+            sequence: 0,
+            origin_node: origin_node.clone(),
+            origin_sequence: 0,
+            hlc_ts: now,
+            hlc_count: 0,
+            database,
+            collection,
+            operation,
+            document_key,
+            document_data,
+            shard_id: None,
+            version_vector: Some(version_vector),
+            parent_vectors: Vec::new(),
+            is_delta: false,
+            delta_data: None,
+            session_id: None,
+            device_id: Some(origin_node),
+        }
+    }
+
+    /// Set the version vector
+    pub fn set_version_vector(&mut self, vector: VersionVector) {
+        self.version_vector = Some(vector);
+    }
+
+    /// Add a parent vector (causal history)
+    pub fn add_parent_vector(&mut self, vector: VersionVector) {
+        self.parent_vectors.push(vector);
+    }
+
+    /// Mark this entry as a delta (patch)
+    pub fn set_delta(&mut self, patch_data: Vec<u8>) {
+        self.is_delta = true;
+        self.delta_data = Some(patch_data);
+    }
+
+    /// Get the effective version vector (new style or legacy)
+    pub fn effective_vector(&self) -> Option<VersionVector> {
+        self.version_vector.clone()
     }
 }
 
