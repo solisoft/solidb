@@ -75,12 +75,17 @@ impl Collection {
                 .map_err(|e| DbError::InternalError(format!("Failed to create index: {}", e)))?;
         }
 
-        // Build index from existing documents
+        // Build index from existing documents using WriteBatch for better performance
         let docs = self.all();
         let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
+
+        // Use WriteBatch for atomic, high-performance index creation
+        let mut batch = WriteBatch::default();
+        let mut indexed_count = 0;
+        const BATCH_SIZE_LIMIT: usize = 10000; // Flush every 10k entries to avoid excessive memory usage
 
         for doc in &docs {
             let doc_value = doc.to_value();
@@ -91,8 +96,8 @@ impl Collection {
 
             if !field_values.iter().all(|v| v.is_null()) {
                 let entry_key = Self::idx_entry_key(&name, &field_values, &doc.key);
-                db.put_cf(cf, entry_key, doc.key.as_bytes())
-                    .map_err(|e| DbError::InternalError(format!("Failed to build index: {}", e)))?;
+                batch.put_cf(cf, entry_key, doc.key.as_bytes());
+                indexed_count += 1;
 
                 // If bloom/cuckoo filter, also update in-memory filter
                 if index_type == IndexType::Bloom {
@@ -104,7 +109,22 @@ impl Collection {
                         self.cuckoo_insert(&name, &value.to_string());
                     }
                 }
+
+                // Flush batch periodically to avoid excessive memory usage
+                if indexed_count % BATCH_SIZE_LIMIT == 0 {
+                    db.write(batch).map_err(|e| {
+                        DbError::InternalError(format!("Failed to write index batch: {}", e))
+                    })?;
+                    batch = WriteBatch::default();
+                }
             }
+        }
+
+        // Write any remaining entries in the batch
+        if indexed_count > 0 && indexed_count % BATCH_SIZE_LIMIT != 0 {
+            db.write(batch).map_err(|e| {
+                DbError::InternalError(format!("Failed to write final index batch: {}", e))
+            })?;
         }
 
         // Save bloom/cuckoo filter if applicable
@@ -143,9 +163,13 @@ impl Collection {
             .cf_handle(&self.name)
             .expect("Column family should exist");
 
+        // Use WriteBatch for atomic, high-performance index deletion
+        let mut batch = WriteBatch::default();
+        let mut deleted_count = 0;
+        const BATCH_SIZE_LIMIT: usize = 10000; // Flush every 10k entries
+
         // Delete index metadata
-        db.delete_cf(cf, Self::idx_meta_key(name))
-            .map_err(|e| DbError::InternalError(format!("Failed to drop index: {}", e)))?;
+        batch.delete_cf(cf, Self::idx_meta_key(name));
 
         // Delete all index entries
         let prefix = format!("{}{}:", IDX_PREFIX, name);
@@ -154,12 +178,26 @@ impl Collection {
         for result in iter.flatten() {
             let (key, _) = result;
             if key.starts_with(prefix.as_bytes()) {
-                db.delete_cf(cf, &key).map_err(|e| {
-                    DbError::InternalError(format!("Failed to drop index entry: {}", e))
-                })?;
+                batch.delete_cf(cf, &key);
+                deleted_count += 1;
+
+                // Flush batch periodically to avoid excessive memory usage
+                if deleted_count % BATCH_SIZE_LIMIT == 0 {
+                    db.write(batch).map_err(|e| {
+                        DbError::InternalError(format!("Failed to write drop batch: {}", e))
+                    })?;
+                    batch = WriteBatch::default();
+                }
             } else {
                 break;
             }
+        }
+
+        // Write any remaining entries in the batch
+        if deleted_count > 0 || !batch.is_empty() {
+            db.write(batch).map_err(|e| {
+                DbError::InternalError(format!("Failed to write final drop batch: {}", e))
+            })?;
         }
 
         Ok(())
@@ -278,117 +316,157 @@ impl Collection {
             clear_start.elapsed()
         );
 
-        // Load all documents
-        let load_start = std::time::Instant::now();
-        let docs = self.all();
-        let doc_count = docs.len();
-        tracing::info!(
-            "rebuild_all_indexes: Loaded {} docs in {:?}",
-            doc_count,
-            load_start.elapsed()
-        );
+        // Stream documents from storage instead of loading all into memory
+        // This allows handling collections with millions of documents without OOM
+        let stream_start = std::time::Instant::now();
+        let db = &self.db;
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
-        // Rebuild regular indexes
-        if !indexes.is_empty() {
-            let idx_start = std::time::Instant::now();
-            let db = &self.db;
-            let cf = db
-                .cf_handle(&self.name)
-                .expect("Column family should exist");
-            let mut batch = WriteBatch::default();
+        let prefix = DOC_PREFIX.as_bytes();
+        let iter = db.prefix_iterator_cf(cf, prefix);
 
-            for doc in &docs {
-                let doc_value = doc.to_value();
-                for index in &indexes {
-                    let field_values: Vec<Value> = index
-                        .fields
-                        .iter()
-                        .map(|f| extract_field_value(&doc_value, f))
-                        .collect();
+        // Build all index types in a single pass with periodic batch flushing
+        // This reduces memory usage and I/O compared to loading all docs then multiple passes
+        const BATCH_SIZE_LIMIT: usize = 10000; // Flush every 10k entries per index type
+        let mut doc_count = 0;
 
-                    if !field_values.iter().all(|v| v.is_null()) {
-                        let entry_key = Self::idx_entry_key(&index.name, &field_values, &doc.key);
-                        batch.put_cf(cf, entry_key, doc.key.as_bytes());
-                    }
-                }
+        // Initialize batches for each index type
+        let mut regular_batch = if !indexes.is_empty() {
+            Some(WriteBatch::default())
+        } else {
+            None
+        };
+        let mut geo_batch = if !geo_indexes.is_empty() {
+            Some(WriteBatch::default())
+        } else {
+            None
+        };
+        let mut ft_batch = if !ft_indexes.is_empty() {
+            Some(WriteBatch::default())
+        } else {
+            None
+        };
+
+        // Counters for batch flushing
+        let mut regular_count = 0;
+        let mut geo_count = 0;
+        let mut ft_count = 0;
+
+        for result in iter.flatten() {
+            let (key, value) = result;
+            if !key.starts_with(prefix) {
+                break;
             }
 
-            let _ = db.write(batch);
-            tracing::info!(
-                "rebuild_all_indexes: Regular indexes took {:?}",
-                idx_start.elapsed()
-            );
-        }
-
-        // Rebuild geo indexes
-        if !geo_indexes.is_empty() {
-            let geo_start = std::time::Instant::now();
-            let db = &self.db;
-            let cf = db
-                .cf_handle(&self.name)
-                .expect("Column family should exist");
-            let mut batch = WriteBatch::default();
-
-            for doc in &docs {
+            if let Ok(doc) = deserialize_doc(&value) {
+                doc_count += 1;
                 let doc_value = doc.to_value();
-                for geo_index in &geo_indexes {
-                    let field_value = extract_field_value(&doc_value, &geo_index.field);
-                    if !field_value.is_null() {
-                        let entry_key = Self::geo_entry_key(&geo_index.name, &doc.key);
-                        if let Ok(geo_data) = serde_json::to_vec(&field_value) {
-                            batch.put_cf(cf, entry_key, &geo_data);
+
+                // Build regular indexes
+                if let Some(ref mut batch) = regular_batch {
+                    for index in &indexes {
+                        let field_values: Vec<Value> = index
+                            .fields
+                            .iter()
+                            .map(|f| extract_field_value(&doc_value, f))
+                            .collect();
+
+                        if !field_values.iter().all(|v| v.is_null()) {
+                            let entry_key =
+                                Self::idx_entry_key(&index.name, &field_values, &doc.key);
+                            batch.put_cf(cf, entry_key, doc.key.as_bytes());
+                            regular_count += 1;
+
+                            // Flush batch periodically
+                            if regular_count % BATCH_SIZE_LIMIT == 0 {
+                                let _ = db.write(std::mem::take(batch));
+                                *batch = WriteBatch::default();
+                            }
                         }
                     }
                 }
-            }
 
-            let _ = db.write(batch);
-            tracing::info!(
-                "rebuild_all_indexes: Geo indexes took {:?}",
-                geo_start.elapsed()
-            );
-        }
+                // Build geo indexes
+                if let Some(ref mut batch) = geo_batch {
+                    for geo_index in &geo_indexes {
+                        let field_value = extract_field_value(&doc_value, &geo_index.field);
+                        if !field_value.is_null() {
+                            let entry_key = Self::geo_entry_key(&geo_index.name, &doc.key);
+                            if let Ok(geo_data) = serde_json::to_vec(&field_value) {
+                                batch.put_cf(cf, entry_key, &geo_data);
+                                geo_count += 1;
 
-        // Rebuild fulltext indexes
-        if !ft_indexes.is_empty() {
-            let ft_start = std::time::Instant::now();
-            let db = &self.db;
-            let cf = db
-                .cf_handle(&self.name)
-                .expect("Column family should exist");
-            let mut batch = WriteBatch::default();
-
-            for doc in &docs {
-                let doc_value = doc.to_value();
-                for ft_index in &ft_indexes {
-                    for field in &ft_index.fields {
-                        let field_value = extract_field_value(&doc_value, field);
-                        if let Some(text) = field_value.as_str() {
-                            let terms = tokenize(text);
-                            for term in &terms {
-                                if term.len() >= ft_index.min_length {
-                                    let term_key =
-                                        Self::ft_term_key(&ft_index.name, term, &doc.key);
-                                    batch.put_cf(cf, term_key, doc.key.as_bytes());
+                                // Flush batch periodically
+                                if geo_count % BATCH_SIZE_LIMIT == 0 {
+                                    let _ = db.write(std::mem::take(batch));
+                                    *batch = WriteBatch::default();
                                 }
                             }
+                        }
+                    }
+                }
 
-                            let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                            for ngram in &ngrams {
-                                let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, &doc.key);
-                                batch.put_cf(cf, ngram_key, doc.key.as_bytes());
+                // Build fulltext indexes
+                if let Some(ref mut batch) = ft_batch {
+                    for ft_index in &ft_indexes {
+                        for field in &ft_index.fields {
+                            let field_value = extract_field_value(&doc_value, field);
+                            if let Some(text) = field_value.as_str() {
+                                let terms = tokenize(text);
+                                for term in &terms {
+                                    if term.len() >= ft_index.min_length {
+                                        let term_key =
+                                            Self::ft_term_key(&ft_index.name, term, &doc.key);
+                                        batch.put_cf(cf, term_key, doc.key.as_bytes());
+                                        ft_count += 1;
+                                    }
+                                }
+
+                                let ngrams = generate_ngrams(text, NGRAM_SIZE);
+                                for ngram in &ngrams {
+                                    let ngram_key =
+                                        Self::ft_ngram_key(&ft_index.name, ngram, &doc.key);
+                                    batch.put_cf(cf, ngram_key, doc.key.as_bytes());
+                                    ft_count += 1;
+                                }
+
+                                // Flush batch periodically (check after each field)
+                                if ft_count >= BATCH_SIZE_LIMIT {
+                                    let _ = db.write(std::mem::take(batch));
+                                    *batch = WriteBatch::default();
+                                    ft_count = 0;
+                                }
                             }
                         }
                     }
                 }
             }
-
-            let _ = db.write(batch);
-            tracing::info!(
-                "rebuild_all_indexes: Fulltext indexes took {:?}",
-                ft_start.elapsed()
-            );
         }
+
+        // Write any remaining entries in batches
+        if let Some(batch) = regular_batch {
+            if regular_count > 0 && regular_count % BATCH_SIZE_LIMIT != 0 {
+                let _ = db.write(batch);
+            }
+        }
+        if let Some(batch) = geo_batch {
+            if geo_count > 0 && geo_count % BATCH_SIZE_LIMIT != 0 {
+                let _ = db.write(batch);
+            }
+        }
+        if let Some(batch) = ft_batch {
+            if ft_count > 0 {
+                let _ = db.write(batch);
+            }
+        }
+
+        tracing::info!(
+            "rebuild_all_indexes: Streamed {} docs in {:?}",
+            doc_count,
+            stream_start.elapsed()
+        );
 
         // Rebuild vector indexes
         let vector_configs = self.get_all_vector_index_configs();
@@ -400,10 +478,20 @@ impl Collection {
                 entry.clear();
             }
 
-            // Re-index all documents
-            for doc in &docs {
-                let doc_value = doc.to_value();
-                self.update_vector_indexes_on_upsert(&doc.key, &doc_value);
+            // Re-index all documents - stream from storage
+            let prefix = DOC_PREFIX.as_bytes();
+            let iter = db.prefix_iterator_cf(cf, prefix);
+
+            for result in iter.flatten() {
+                let (key, value) = result;
+                if !key.starts_with(prefix) {
+                    break;
+                }
+
+                if let Ok(doc) = deserialize_doc(&value) {
+                    let doc_value = doc.to_value();
+                    self.update_vector_indexes_on_upsert(&doc.key, &doc_value);
+                }
             }
 
             // Persist vector indexes

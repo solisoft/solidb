@@ -1,5 +1,7 @@
 pub mod cli;
 pub mod cluster;
+#[cfg(unix)]
+pub mod daemon;
 pub mod driver;
 pub mod error;
 pub mod queue;

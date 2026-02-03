@@ -780,7 +780,7 @@ fn main() -> anyhow::Result<()> {
 
     #[cfg(unix)]
     if args.daemon {
-        use daemonize::Daemonize;
+        use solidb::daemon::Daemonize;
         use std::fs::File;
         use std::path::Path;
         use std::time::Duration;
@@ -812,7 +812,7 @@ fn main() -> anyhow::Result<()> {
 
         let daemonize = Daemonize::new()
             .pid_file(&args.pid_file)
-            // .working_directory(".") // Don't change dir, might break relative mount paths
+            // Note: working directory not changed to avoid breaking relative mount paths
             .stdout(stdout)
             .stderr(stderr);
 

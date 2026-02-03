@@ -86,10 +86,11 @@ tempfile = "3.10"
 reqwest = { version = "0.12", features = ["json", "blocking", "multipart"] }
 
 # FUSE filesystem (requires macFUSE on macOS)
-fuser = { version = "0.14", optional = true }
+fuser = { version = "0.16", optional = true }
 
 # Daemon mode (Unix only)
-daemonize = "0.5"
+# daemonize crate removed - using custom implementation in src/daemon.rs
+# daemonize = "0.5"
 libc = "0.2"
 
 # Parallel processing (for concurrent benchmarks)
@@ -127,7 +128,7 @@ cookie = "0.18"
 time = "0.3"
 
 # Caching
-lru = "0.12"
+lru = "0.16"
 fastbloom = { version = "0.14.0", features = ["serde"] }
 cuckoofilter = { version = "0.5", features = ["serde_support"] }
 parking_lot = "0.12"

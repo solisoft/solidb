@@ -76,7 +76,7 @@ fn main() -> anyhow::Result<()> {
     // Handle daemonization before starting async runtime
     #[cfg(unix)]
     if args.daemon {
-        use daemonize::Daemonize;
+        use solidb::daemon::Daemonize;
         use std::fs::File;
         use std::path::Path;
 
