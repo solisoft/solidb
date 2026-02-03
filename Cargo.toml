@@ -140,6 +140,11 @@ walkdir = "2"          # Directory traversal
 similar = "2"          # Diff generation
 rpassword = "7"        # Secure password input
 
+# TUI
+ratatui = "0.29"       # TUI framework
+crossterm = "0.28"     # Cross-platform terminal backend
+tui-textarea = { version = "0.7", features = ["search"] }   # Multi-line text editor widget
+
 # Default binary
 [[bin]]
 name = "solidb"

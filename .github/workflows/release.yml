@@ -1,0 +1,62 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+
+      - uses: actions/checkout@v4
+        if: ${{ steps.release.outputs.release_created }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        if: ${{ steps.release.outputs.release_created }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            libclang-dev \
+            pkg-config \
+            libssl-dev \
+            libzstd-dev \
+            libsnappy-dev \
+            liblz4-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            cmake \
+            protobuf-compiler
+        if: ${{ steps.release.outputs.release_created }}
+
+      - name: Build release binary
+        if: ${{ steps.release.outputs.release_created }}
+        run: cargo build --release --locked
+
+      - name: Create GitHub Release
+        if: ${{ steps.release.outputs.release_created }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/release/solidb
+            target/release/solidb-dump
+            target/release/solidb-restore
+          tag_name: ${{ steps.release.outputs.tag_name }}
+          body: ${{ steps.release.outputs.release_body }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

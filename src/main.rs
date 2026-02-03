@@ -35,7 +35,7 @@ struct Args {
     data_dir: String,
 
     /// Run as a daemon (background process)
-    #[arg(long)]
+    #[arg(short = 'd', long)]
     daemon: bool,
 
     /// PID file path (used in daemon mode)
@@ -55,6 +55,8 @@ struct Args {
 enum Command {
     /// Manage Lua scripts for custom API endpoints
     Scripts(solidb::cli::scripts::ScriptsArgs),
+    /// Launch the Terminal User Interface
+    Tui(solidb::cli::tui::TuiArgs),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -67,6 +69,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(command) = args.command {
         return match command {
             Command::Scripts(scripts_args) => solidb::cli::scripts::execute(scripts_args),
+            Command::Tui(tui_args) => solidb::cli::tui::execute(tui_args),
         };
     }
 

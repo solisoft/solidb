@@ -59,9 +59,9 @@ end
 -- Jobs list by status (HTMX partial)
 function QueueController:jobs()
   local db = self:get_db()
-  local status_filter = self.params.status or "pending"
+  local status_filter = self.params.status or GetParam("status")  -- nil means "all"
 
-  Log(kLogInfo, "Fetching jobs for status: " .. tostring(status_filter))
+  Log(kLogInfo, "Fetching jobs for status: " .. tostring(status_filter or "all"))
 
   -- Fetch all queues first to know which ones to query
   local status, _, body = self:fetch_api("/_api/database/" .. db .. "/queues")
@@ -85,7 +85,10 @@ function QueueController:jobs()
 
           if type(queue_name) == "string" then
             Log(kLogInfo, "Fetching jobs for queue: " .. queue_name)
-            local api_path = "/_api/database/" .. db .. "/queues/" .. queue_name .. "/jobs?status=" .. status_filter
+            local api_path = "/_api/database/" .. db .. "/queues/" .. queue_name .. "/jobs"
+            if status_filter and status_filter ~= "" then
+              api_path = api_path .. "?status=" .. status_filter
+            end
             local q_status, _, q_body = self:fetch_api(api_path)
             
             if q_status == 200 then
@@ -128,7 +131,7 @@ function QueueController:jobs()
 
   self:render_partial("dashboard/_queues_jobs", {
     jobs = all_jobs,
-    status_filter = status_filter,
+    status_filter = status_filter or "all",
     db = db
   })
 end

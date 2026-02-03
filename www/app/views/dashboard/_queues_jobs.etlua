@@ -1,6 +1,7 @@
 <%
   local jobs = jobs or {}
   local status_filter = status_filter or "pending"
+  local show_all = (status_filter == "all")
   local db = db or "_system"
 
   -- Helper to format timestamp
@@ -30,6 +31,13 @@
     end
   end
 
+  -- Helper to get job status string
+  local function get_job_status(job)
+    if not job.status then return "pending" end
+    if type(job.status) == "string" then return job.status:lower() end
+    return tostring(job.status):lower():gsub('"', '')
+  end
+
   local status_colors = {
     pending = "warning",
     running = "info",
@@ -47,7 +55,10 @@
 
 <% if #jobs == 0 then %>
   <div class="p-8 text-center text-text-muted">
-    <% if status_filter == "pending" then %>
+    <% if show_all then %>
+      <i class="fas fa-inbox text-4xl mb-4 opacity-30"></i>
+      <p class="text-sm">No jobs in queues</p>
+    <% elseif status_filter == "pending" then %>
       <i class="fas fa-hourglass text-4xl mb-4 opacity-30"></i>
       <p class="text-sm">No pending jobs</p>
     <% elseif status_filter == "running" then %>
@@ -67,11 +78,16 @@
       <thead class="bg-bg-dark/50 text-left">
         <tr>
           <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Job ID</th>
+          <% if show_all then %>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Status</th>
+          <% end %>
           <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Queue</th>
           <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Script</th>
           <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Priority</th>
           <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">
-            <% if status_filter == "pending" then %>
+            <% if show_all then %>
+              Retries
+            <% elseif status_filter == "pending" then %>
               Scheduled
             <% elseif status_filter == "running" then %>
               Started
@@ -86,7 +102,9 @@
       </thead>
       <tbody class="divide-y divide-border/20">
         <% for _, job in ipairs(jobs) do %>
-          <% local color = status_colors[status_filter] or "text-dim" %>
+          <% local job_status = get_job_status(job) %>
+          <% local color = status_colors[job_status] or "text-dim" %>
+          <% local icon = status_icons[job_status] or "fa-question" %>
           <tr class="hover:bg-white/5 transition-colors" id="job-<%= job._key or job.id %>">
             <td class="px-4 py-3">
               <div class="flex items-center gap-2">
@@ -96,6 +114,14 @@
                 <code class="text-xs font-mono text-text"><%= job._key or job.id or "?" %></code>
               </div>
             </td>
+            <% if show_all then %>
+            <td class="px-4 py-3">
+              <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-<%= color %>">
+                <i class="fas <%= icon %>"></i>
+                <%= job_status:sub(1,1):upper() .. job_status:sub(2) %>
+              </span>
+            </td>
+            <% end %>
             <td class="px-4 py-3">
               <span class="px-2 py-1 rounded bg-bg-dark text-xs text-text-muted"><%= job.queue or "default" %></span>
             </td>
@@ -113,7 +139,11 @@
               </span>
             </td>
             <td class="px-4 py-3 text-xs text-text-muted">
-              <% if status_filter == "pending" then %>
+              <% if show_all then %>
+                <span class="<%= (job.retry_count or 0) > 0 and 'text-warning' or '' %>">
+                  <%= job.retry_count or 0 %>/<%= job.max_retries or 20 %>
+                </span>
+              <% elseif status_filter == "pending" then %>
                 <% if job.run_at and job.run_at > os.time() then %>
                   <span class="text-warning"><i class="fas fa-clock mr-1"></i><%= format_datetime(job.run_at) %></span>
                 <% else %>
@@ -130,7 +160,20 @@
               <% end %>
             </td>
             <td class="px-4 py-3">
-              <% if status_filter == "pending" then %>
+              <% if show_all and job_status == "pending" then %>
+                <button type="button"
+                        hx-delete="/database/<%= db %>/queues/jobs/<%= job._key or job.id %>"
+                        hx-target="#job-<%= job._key or job.id %>"
+                        hx-swap="outerHTML"
+                        hx-confirm="Cancel this job?"
+                        class="text-xs text-text-muted hover:text-error transition-colors">
+                  <i class="fas fa-times mr-1"></i>Cancel
+                </button>
+              <% elseif show_all and job_status == "failed" and job.last_error then %>
+                <button type="button" onclick="showJobError('<%= (job.last_error or ''):gsub("'", "\\'"):gsub("\n", "\\n") %>')" class="text-xs text-error hover:text-error/80 transition-colors">
+                  <i class="fas fa-exclamation-circle mr-1"></i>View Error
+                </button>
+              <% elseif status_filter == "pending" then %>
                 <button type="button"
                         hx-delete="/database/<%= db %>/queues/jobs/<%= job._key or job.id %>"
                         hx-target="#job-<%= job._key or job.id %>"
@@ -150,7 +193,7 @@
           </tr>
           <% if job.params and type(job.params) == "table" and next(job.params) then %>
             <tr id="params-<%= job._key or job.id %>" class="hidden bg-bg-dark/30">
-              <td colspan="6" class="px-4 py-3">
+              <td colspan="<%= show_all and 7 or 6 %>" class="px-4 py-3">
                 <div class="text-xs">
                   <span class="text-text-dim font-medium">Parameters:</span>
                   <pre class="mt-1 p-2 bg-bg-dark rounded text-text-muted font-mono overflow-x-auto"><%- EncodeJson(job.params) %></pre>
@@ -164,7 +207,11 @@
   </div>
 
   <div class="px-4 py-3 border-t border-border/30 text-xs text-text-dim">
-    Showing <%= #jobs %> <%= status_filter %> job<%= #jobs ~= 1 and 's' or '' %>
+    <% if show_all then %>
+      Showing <%= #jobs %> job<%= #jobs ~= 1 and 's' or '' %>
+    <% else %>
+      Showing <%= #jobs %> <%= status_filter %> job<%= #jobs ~= 1 and 's' or '' %>
+    <% end %>
   </div>
 <% end %>
 
