@@ -6,6 +6,7 @@
 //! - Storage engine functionality
 
 use serde_json::json;
+use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
 use solidb::storage::{Document, StorageEngine};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -493,6 +494,205 @@ fn test_collection_batch_insert() {
 
     let count = collection.count();
     assert_eq!(count, 100);
+}
+
+#[test]
+fn test_batch_insert_empty() {
+    let (engine, _tmp) = create_test_engine();
+    engine
+        .create_collection("batch_empty_test".to_string(), None)
+        .unwrap();
+    let collection = engine.get_collection("batch_empty_test").unwrap();
+
+    // Empty batch should return empty result without error
+    let result = collection.insert_batch(vec![]);
+    assert!(result.is_ok(), "Empty batch insert should succeed");
+    assert_eq!(result.unwrap().len(), 0);
+
+    let count = collection.count();
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn test_batch_insert_with_keys() {
+    let (engine, _tmp) = create_test_engine();
+    engine
+        .create_collection("batch_keys_test".to_string(), None)
+        .unwrap();
+    let collection = engine.get_collection("batch_keys_test").unwrap();
+
+    // Prepare batch with explicit _key values
+    let documents: Vec<serde_json::Value> = (0..10)
+        .map(|i| json!({"_key": format!("doc_{}", i), "value": i}))
+        .collect();
+
+    let result = collection.insert_batch(documents);
+    assert!(result.is_ok(), "Batch insert with keys should succeed");
+
+    let inserted = result.unwrap();
+    assert_eq!(inserted.len(), 10);
+
+    // Verify keys were preserved
+    for i in 0..10 {
+        let key = format!("doc_{}", i);
+        let doc = collection.get(&key);
+        assert!(doc.is_ok(), "Document with key {} should exist", key);
+    }
+}
+
+#[test]
+fn test_batch_insert_duplicate_key_in_batch() {
+    let (engine, _tmp) = create_test_engine();
+    engine
+        .create_collection("batch_dup_test".to_string(), None)
+        .unwrap();
+    let collection = engine.get_collection("batch_dup_test").unwrap();
+
+    // Insert a document first
+    collection
+        .insert(json!({"_key": "existing", "value": 1}))
+        .unwrap();
+
+    // Batch with duplicate key should fail on unique constraint check
+    let documents: Vec<serde_json::Value> = vec![
+        json!({"_key": "new1", "value": 2}),
+        json!({"_key": "existing", "value": 3}), // Duplicate!
+        json!({"_key": "new2", "value": 4}),
+    ];
+
+    let result = collection.insert_batch(documents);
+    assert!(
+        result.is_err(),
+        "Batch insert with duplicate key should fail"
+    );
+
+    // Verify no new documents were inserted (atomicity)
+    let count = collection.count();
+    assert_eq!(count, 1, "Only original document should exist");
+}
+
+#[test]
+fn test_batch_insert_schema_validation() {
+    let (engine, _tmp) = create_test_engine();
+    engine
+        .create_collection("batch_schema_test".to_string(), None)
+        .unwrap();
+    let collection = engine.get_collection("batch_schema_test").unwrap();
+
+    // Set up schema validation
+    let schema = CollectionSchema::new(
+        "default".to_string(),
+        json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer", "minimum": 0}
+            },
+            "required": ["name"]
+        }),
+        SchemaValidationMode::Strict,
+    );
+    collection.set_json_schema(schema).unwrap();
+
+    // Valid batch should succeed
+    let valid_docs: Vec<serde_json::Value> = (0..5)
+        .map(|i| json!({"name": format!("user_{}", i), "age": i * 10}))
+        .collect();
+
+    let result = collection.insert_batch(valid_docs);
+    assert!(result.is_ok(), "Valid batch should succeed");
+    assert_eq!(result.unwrap().len(), 5);
+
+    // Invalid batch (missing required field) should fail
+    let invalid_docs: Vec<serde_json::Value> = vec![
+        json!({"name": "valid", "age": 25}),
+        json!({"age": 30}), // Missing required "name" field
+    ];
+
+    let result = collection.insert_batch(invalid_docs);
+    assert!(result.is_err(), "Batch with schema violation should fail");
+
+    // Verify partial documents weren't inserted
+    let count = collection.count();
+    assert_eq!(count, 5, "Only first batch should be committed");
+}
+
+#[test]
+fn test_batch_insert_edge_validation() {
+    let (engine, _tmp) = create_test_engine();
+    engine
+        .create_collection("batch_edge_test".to_string(), Some("edge".to_string()))
+        .unwrap();
+    let collection = engine.get_collection("batch_edge_test").unwrap();
+
+    // Valid edge documents
+    let valid_edges: Vec<serde_json::Value> = vec![
+        json!({
+            "_from": "users/alice",
+            "_to": "users/bob",
+            "relationship": "friend"
+        }),
+        json!({
+            "_from": "users/bob",
+            "_to": "users/charlie",
+            "relationship": "follows"
+        }),
+    ];
+
+    let result = collection.insert_batch(valid_edges);
+    assert!(result.is_ok(), "Valid edge batch should succeed");
+    assert_eq!(result.unwrap().len(), 2);
+
+    // Invalid edge document (missing _from)
+    let invalid_edges: Vec<serde_json::Value> = vec![
+        json!({
+            "_from": "users/alice",
+            "_to": "users/bob",
+            "relationship": "friend"
+        }),
+        json!({
+            "_to": "users/charlie",
+            "relationship": "invalid" // Missing _from
+        }),
+    ];
+
+    let result = collection.insert_batch(invalid_edges);
+    assert!(result.is_err(), "Batch with invalid edge should fail");
+
+    // Verify count
+    let count = collection.count();
+    assert_eq!(count, 2, "Only first edge batch should be committed");
+}
+
+#[test]
+fn test_batch_insert_mixed_key_generation() {
+    let (engine, _tmp) = create_test_engine();
+    engine
+        .create_collection("batch_mixed_keys".to_string(), None)
+        .unwrap();
+    let collection = engine.get_collection("batch_mixed_keys").unwrap();
+
+    // Mix of documents with and without _key
+    let documents: Vec<serde_json::Value> = vec![
+        json!({"_key": "explicit_key", "value": 1}),
+        json!({"value": 2}), // Will get auto-generated key
+        json!({"_key": "another_explicit", "value": 3}),
+        json!({"value": 4}), // Will get auto-generated key
+    ];
+
+    let result = collection.insert_batch(documents);
+    assert!(result.is_ok(), "Mixed key batch should succeed");
+
+    let inserted = result.unwrap();
+    assert_eq!(inserted.len(), 4);
+
+    // Verify explicit keys
+    assert!(collection.get("explicit_key").is_ok());
+    assert!(collection.get("another_explicit").is_ok());
+
+    // All docs should be queryable
+    let count = collection.count();
+    assert_eq!(count, 4);
 }
 
 // ============================================================================

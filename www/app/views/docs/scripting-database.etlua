@@ -121,5 +121,99 @@
         </div>
       </div>
     </section>
+    <!-- Collection Object -->
+    <section id="collection">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-indigo-500 mr-2"></span>
+            Collection Object
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">
+            Access collections directly via <code>db:collection("name")</code> for cleaner, scoped operations.
+          </p>
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-6">
+            <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-blue-400">local</span> users = <span class="text-purple-400">db:collection</span>(<span class="text-green-400">"users"</span>)
+
+<span class="text-gray-500">-- CRUD operations</span>
+<span class="text-blue-400">local</span> user = users:<span class="text-purple-400">get</span>(<span class="text-green-400">"alice"</span>)              <span class="text-gray-500">-- Get by _key</span>
+<span class="text-blue-400">local</span> newKey = users:<span class="text-purple-400">insert</span>({name = <span class="text-green-400">"Bob"</span>})    <span class="text-gray-500">-- Insert, returns _key</span>
+users:<span class="text-purple-400">update</span>(<span class="text-green-400">"alice"</span>, {age = <span class="text-purple-400">30</span>})       <span class="text-gray-500">-- Update existing</span>
+users:<span class="text-purple-400">delete</span>(<span class="text-green-400">"alice"</span>)                     <span class="text-gray-500">-- Delete document</span>
+
+<span class="text-gray-500">-- Querying</span>
+<span class="text-blue-400">local</span> adults = users:<span class="text-purple-400">find</span>({age = {<span class="text-green-400">"$gte"</span> = <span class="text-purple-400">18</span>}})   <span class="text-gray-500">-- Find with filter</span>
+<span class="text-blue-400">local</span> bob = users:<span class="text-purple-400">find_one</span>({name = <span class="text-green-400">"Bob"</span>})       <span class="text-gray-500">-- Find single document</span>
+<span class="text-blue-400">local</span> count = users:<span class="text-purple-400">count</span>()                   <span class="text-gray-500">-- Count all documents</span>
+
+<span class="text-gray-500">-- Bulk operations</span>
+users:<span class="text-purple-400">bulk_insert</span>({                         <span class="text-gray-500">-- Insert multiple</span>
+  {name = <span class="text-green-400">"User1"</span>},
+  {name = <span class="text-green-400">"User2"</span>},
+  {name = <span class="text-green-400">"User3"</span>}
+})
+
+users:<span class="text-purple-400">upsert</span>(<span class="text-green-400">"user-key"</span>, {name = <span class="text-green-400">"Updated"</span>})  <span class="text-gray-500">-- Insert or update</span></pre>
+            </div>
+          </div>
+          <h3 class="text-lg font-semibold text-white mb-3">Collection Methods</h3>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:get(key)</span> <span class="text-gray-500">-&gt; table|nil</span>
+              <div class="text-xs text-gray-500 mt-1">Get document by <strong>_key</strong> (not _id). Returns nil if not found.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:insert(doc)</span> <span class="text-gray-500">-&gt; string (key)</span>
+              <div class="text-xs text-gray-500 mt-1">Insert document. Uses <code>_key</code> if provided, or generates UUID v7.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:update(key, doc)</span> <span class="text-gray-500">-&gt; bool</span>
+              <div class="text-xs text-gray-500 mt-1">Update document by key. Merges fields with existing document.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:delete(key)</span> <span class="text-gray-500">-&gt; bool</span>
+              <div class="text-xs text-gray-500 mt-1">Delete document by key. Returns true on success.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:count([filter])</span> <span class="text-gray-500">-&gt; number</span>
+              <div class="text-xs text-gray-500 mt-1">Count documents. Optional filter object for conditional counting.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:find(filter)</span> <span class="text-gray-500">-&gt; table[]</span>
+              <div class="text-xs text-gray-500 mt-1">Find all documents matching filter criteria.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:find_one(filter)</span> <span class="text-gray-500">-&gt; table|nil</span>
+              <div class="text-xs text-gray-500 mt-1">Find first document matching filter. Returns nil if not found.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:bulk_insert(docs)</span> <span class="text-gray-500">-&gt; table[]</span>
+              <div class="text-xs text-gray-500 mt-1">Insert array of documents efficiently. Returns array of inserted documents.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:upsert(key_or_filter, doc)</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">Insert if not exists, update if exists. Accepts key string or filter table.</div>
+            </li>
+          </ul>
+          <div class="mt-6 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+            <div class="flex items-start">
+              <svg class="w-5 h-5 text-yellow-400 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              <div>
+                <h4 class="text-yellow-400 font-semibold mb-1">Important: get() uses _key, not _id</h4>
+                <p class="text-sm text-gray-400">
+                  The <code>collection:get()</code> method expects just the document key, not the full _id format (<code>collection/key</code>).
+                  <br><br>
+                  <strong>Correct:</strong> <code>users:get("019c243e-9d0b-756c-be78-e4cad62fa2a1")</code><br>
+                  <strong>Wrong:</strong> <code>users:get("users/019c243e-9d0b-756c-be78-e4cad62fa2a1")</code>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </div>

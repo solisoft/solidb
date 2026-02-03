@@ -735,16 +735,119 @@ impl Collection {
         Ok(updated_docs)
     }
 
-    /// Insert multiple documents
+    /// Insert multiple documents with atomic batched write
     pub fn insert_batch(&self, documents: Vec<Value>) -> DbResult<Vec<Document>> {
-        let mut inserted_docs = Vec::new();
-        for doc_data in documents {
-            // Re-use single insert which handles validation, indexing, etc.
-            // This is slower than batch write but safer for consistency with indexes.
-            // Converting to batch write would be an optimization similar to upsert_batch.
-            let doc = self.insert(doc_data)?;
+        if documents.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let is_edge = *self.collection_type.read().unwrap() == "edge";
+        let schema_validator = self.get_cached_schema_validator()?;
+
+        let db = &self.db;
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        let mut batch = WriteBatch::default();
+        let mut inserted_docs = Vec::with_capacity(documents.len());
+        let mut doc_values: Vec<(String, Value)> = Vec::with_capacity(documents.len());
+
+        for mut data in documents {
+            // Validate edge documents
+            if is_edge {
+                self.validate_edge_document(&data)?;
+            }
+
+            // Validate against JSON schema if defined
+            if let Some(ref validator) = schema_validator {
+                validator.validate(&data).map_err(|e| {
+                    DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+                })?;
+            }
+
+            // Extract or generate key
+            let key = if let Some(obj) = data.as_object_mut() {
+                if let Some(key_value) = obj.remove("_key") {
+                    if let Some(key_str) = key_value.as_str() {
+                        key_str.to_string()
+                    } else {
+                        return Err(DbError::InvalidDocument(
+                            "_key must be a string".to_string(),
+                        ));
+                    }
+                } else {
+                    uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
+                }
+            } else {
+                uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
+            };
+
+            let doc = Document::with_key(&self.name, key.clone(), data);
+            let doc_value = doc.to_value();
+
+            // Check unique constraints
+            self.check_unique_constraints(&key, &doc_value)?;
+
+            let doc_bytes = serialize_doc(&doc)?;
+
+            // Add document to batch
+            batch.put_cf(cf, Self::doc_key(&key), &doc_bytes);
+
+            // Compute and add regular + geo index entries
+            let (regular_entries, geo_entries) =
+                self.compute_index_entries_for_insert(&key, &doc_value)?;
+            for (entry_key, entry_value) in regular_entries {
+                batch.put_cf(cf, entry_key, entry_value);
+            }
+            for (entry_key, entry_value) in geo_entries {
+                batch.put_cf(cf, entry_key, entry_value);
+            }
+
+            // Compute and add fulltext entries
+            let fulltext_entries = self.compute_fulltext_entries_for_insert(&key, &doc_value);
+            for (entry_key, entry_value) in fulltext_entries {
+                batch.put_cf(cf, entry_key, entry_value);
+            }
+
+            // Compute and add TTL expiry entries
+            let ttl_expiry_entries = self.compute_ttl_expiry_entries_for_insert(&key, &doc_value);
+            for (entry_key, _entry_value) in ttl_expiry_entries {
+                batch.put_cf(cf, entry_key, Vec::new());
+            }
+
+            doc_values.push((key, doc_value));
             inserted_docs.push(doc);
         }
+
+        // Atomic write: all documents + indexes together
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to batch insert: {}", e)))?;
+
+        // Update vector indexes in-memory (separate from WriteBatch)
+        for (key, doc_value) in &doc_values {
+            self.update_vector_indexes_on_upsert(key, doc_value);
+        }
+        // Persist vector indexes after batch
+        if let Err(e) = self.persist_vector_indexes() {
+            tracing::warn!("Failed to persist vector indexes: {}", e);
+        }
+
+        // Update document count
+        let count = inserted_docs.len();
+        self.doc_count.fetch_add(count, Ordering::Relaxed);
+        self.count_dirty.store(true, Ordering::Relaxed);
+
+        // Broadcast change events
+        for (key, doc_value) in doc_values {
+            let _ = self.change_sender.send(ChangeEvent {
+                type_: ChangeType::Insert,
+                key,
+                data: Some(doc_value),
+                old_data: None,
+            });
+        }
+
         Ok(inserted_docs)
     }
 

@@ -2,7 +2,7 @@ use crate::error::{DbError, DbResult};
 use crate::storage::document::Document;
 use serde::{Deserialize, Serialize};
 
-pub const DOC_FORMAT_VERSION: u8 = 1;
+pub const DOC_FORMAT_VERSION: u8 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentWithVersion {
@@ -23,7 +23,8 @@ pub struct DocumentWithVersion {
 
 impl DocumentWithVersion {
     pub fn from_doc(doc: &Document) -> Self {
-        let data_bytes = serde_json::to_vec(&doc.data).unwrap_or_default();
+        // Use MessagePack for data field - ~20-30% smaller than JSON
+        let data_bytes = rmp_serde::to_vec(&doc.data).unwrap_or_default();
         Self {
             version: DOC_FORMAT_VERSION,
             key: doc.key.clone(),
@@ -36,7 +37,10 @@ impl DocumentWithVersion {
     }
 
     pub fn to_doc(&self) -> Document {
-        let data: serde_json::Value = serde_json::from_slice(&self.data).unwrap_or_default();
+        // Try MessagePack first (new format), fall back to JSON (legacy)
+        let data: serde_json::Value = rmp_serde::from_slice(&self.data)
+            .or_else(|_| serde_json::from_slice(&self.data))
+            .unwrap_or_default();
         Document {
             key: self.key.clone(),
             id: self.id.clone(),
@@ -63,15 +67,42 @@ pub fn deserialize_doc(bytes: &[u8]) -> DbResult<Document> {
     }
 
     match bytes[0] {
-        1 => bincode::deserialize::<DocumentWithVersion>(&bytes[1..])
+        2 => bincode::deserialize::<DocumentWithVersion>(&bytes[1..])
             .map_err(|e| DbError::InternalError(format!("Deserialization failed: {}", e)))
             .map(|doc_with_version| doc_with_version.to_doc()),
+        1 => {
+            // Version 1: Legacy format with JSON in data field
+            bincode::deserialize::<DocumentWithVersion>(&bytes[1..])
+                .map_err(|e| {
+                    DbError::InternalError(format!("Legacy v1 deserialization failed: {}", e))
+                })
+                .map(|doc_with_version| {
+                    // For v1, data field contains JSON - handle in to_doc_legacy_v1
+                    to_doc_legacy_v1(&doc_with_version)
+                })
+        }
         _ => {
+            // Pre-versioned format: pure JSON
             let doc: Document = serde_json::from_slice(bytes).map_err(|e| {
                 DbError::InternalError(format!("Legacy JSON deserialization failed: {}", e))
             })?;
             Ok(doc)
         }
+    }
+}
+
+/// Convert DocumentWithVersion (v1 format with JSON data) to Document
+fn to_doc_legacy_v1(doc_with_version: &DocumentWithVersion) -> Document {
+    // Version 1 used JSON for the data field
+    let data: serde_json::Value =
+        serde_json::from_slice(&doc_with_version.data).unwrap_or_default();
+    Document {
+        key: doc_with_version.key.clone(),
+        id: doc_with_version.id.clone(),
+        rev: doc_with_version.rev.clone(),
+        created_at: doc_with_version.created_at,
+        updated_at: doc_with_version.updated_at,
+        data,
     }
 }
 
@@ -130,16 +161,32 @@ mod tests {
         let doc = create_test_doc();
 
         let json_bytes = serde_json::to_vec(&doc).unwrap();
-        let bincode_bytes = serialize_doc(&doc).unwrap();
+        let optimized_bytes = serialize_doc(&doc).unwrap();
 
-        println!("JSON size: {} bytes", json_bytes.len());
-        println!("Bincode size: {} bytes", bincode_bytes.len());
+        // Compare data field only (JSON vs MessagePack)
+        let data_json_bytes = serde_json::to_vec(&doc.data).unwrap();
+        let data_msgpack_bytes = rmp_serde::to_vec(&doc.data).unwrap();
+
+        println!("Full JSON size: {} bytes", json_bytes.len());
+        println!("Optimized size: {} bytes", optimized_bytes.len());
+        println!("Data field JSON size: {} bytes", data_json_bytes.len());
         println!(
-            "Size reduction: {:.1}%",
-            100.0 * (1.0 - bincode_bytes.len() as f64 / json_bytes.len() as f64)
+            "Data field MessagePack size: {} bytes",
+            data_msgpack_bytes.len()
+        );
+        println!(
+            "MessagePack data reduction: {:.1}%",
+            100.0 * (1.0 - data_msgpack_bytes.len() as f64 / data_json_bytes.len() as f64)
+        );
+        println!(
+            "Overall size reduction: {:.1}%",
+            100.0 * (1.0 - optimized_bytes.len() as f64 / json_bytes.len() as f64)
         );
 
-        assert!(bincode_bytes.len() < json_bytes.len());
+        assert!(
+            data_msgpack_bytes.len() < data_json_bytes.len(),
+            "MessagePack should be smaller than JSON for data field"
+        );
     }
 
     #[test]
@@ -153,6 +200,35 @@ mod tests {
 
         assert_eq!(doc.key, deserialized.key);
         assert_eq!(doc.data, deserialized.data);
+    }
+
+    #[test]
+    fn test_legacy_v1_format_compatibility() {
+        // Test that version 1 documents (with JSON data field) can still be read
+        let doc = create_test_doc();
+
+        // Manually create a v1 format document (JSON in data field)
+        let data_bytes = serde_json::to_vec(&doc.data).unwrap();
+        let doc_v1 = DocumentWithVersion {
+            version: 1, // Version 1 uses JSON
+            key: doc.key.clone(),
+            id: doc.id.clone(),
+            rev: doc.rev.clone(),
+            created_at: doc.created_at,
+            updated_at: doc.updated_at,
+            data: data_bytes,
+        };
+
+        let mut bytes_v1 = vec![1u8]; // Version byte
+        bincode::serialize_into(&mut bytes_v1, &doc_v1).unwrap();
+
+        assert!(needs_migration(&bytes_v1));
+
+        let deserialized = deserialize_doc(&bytes_v1).unwrap();
+
+        assert_eq!(doc.key, deserialized.key);
+        assert_eq!(doc.data, deserialized.data);
+        assert_eq!(doc.id, deserialized.id);
     }
 
     #[test]

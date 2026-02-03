@@ -60,14 +60,72 @@ impl std::fmt::Debug for StorageEngine {
 }
 
 impl StorageEngine {
+    /// Create optimized column family options
+    /// Used for all column families to ensure consistent compression and performance settings
+    fn create_cf_options() -> Options {
+        let mut opts = Options::default();
+
+        // Enable LZ4 compression for this column family
+        opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+
+        // Level compaction is the default and works well for most workloads
+        // Optimize for SSD storage with fast sequential I/O
+        opts.set_target_file_size_base(64 * 1024 * 1024); // 64MB base file size
+        opts.set_target_file_size_multiplier(2);
+
+        // Write buffer settings
+        opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB memtable
+        opts.set_max_write_buffer_number(3);
+        opts.set_min_write_buffer_number_to_merge(1);
+
+        // Optimize for SSD storage - parallel compactions
+        opts.set_max_subcompactions(4);
+
+        opts
+    }
+
     /// Create a new storage engine
     pub fn new<P: AsRef<Path>>(data_dir: P) -> DbResult<Self> {
         let path = data_dir.as_ref().to_path_buf();
 
-        // Configure RocksDB options
+        // Configure RocksDB options with performance optimizations
         let mut opts = Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
+
+        // Compression settings - use LZ4 for fast compression/decompression
+        // Reduces storage size by ~40-60% and improves I/O performance
+        opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+        opts.set_compression_options(-14, -1, 0, 0);
+
+        // Block cache - use 512MB or 30% of available memory
+        // Improves read performance by caching frequently accessed blocks
+        let cache = rocksdb::Cache::new_lru_cache(512 * 1024 * 1024);
+        let mut block_opts = rocksdb::BlockBasedOptions::default();
+        block_opts.set_block_cache(&cache);
+        // Enable bloom filter for faster point lookups
+        block_opts.set_bloom_filter(10.0, false);
+        opts.set_block_based_table_factory(&block_opts);
+
+        // Write buffer settings - larger memtable reduces flush frequency
+        // Better for write-heavy workloads
+        opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB memtable
+        opts.set_max_write_buffer_number(4);
+        opts.set_min_write_buffer_number_to_merge(1);
+
+        // Background jobs - more threads for compaction/flushing
+        // Improves write throughput under heavy load
+        opts.set_max_background_jobs(6);
+        opts.set_max_subcompactions(4);
+
+        // Target file size for better compaction behavior
+        opts.set_target_file_size_base(64 * 1024 * 1024); // 64MB
+        opts.set_target_file_size_multiplier(2);
+
+        // Level compaction settings
+        opts.set_max_bytes_for_level_base(512 * 1024 * 1024); // 512MB
+        opts.set_max_bytes_for_level_multiplier(10.0);
+        opts.set_num_levels(7);
 
         // Limit WAL file size to prevent unbounded disk growth
         // Max total WAL size across all column families: 50MB
@@ -78,6 +136,9 @@ impl StorageEngine {
 
         // Recycle LOG files instead of deleting
         opts.set_recycle_log_file_num(3);
+
+        // Enable parallel memtable writes for better concurrency
+        opts.set_enable_pipelined_write(true);
 
         // Get existing column families or create default
         let cf_names = match DB::list_cf(&opts, &path) {
@@ -91,10 +152,11 @@ impl StorageEngine {
             cf_names.push(META_CF.to_string());
         }
 
-        // Create column family descriptors
+        // Create column family descriptors with optimized options
+        // All column families inherit compression and performance settings
         let cf_descriptors: Vec<ColumnFamilyDescriptor> = cf_names
             .iter()
-            .map(|name| ColumnFamilyDescriptor::new(name, Options::default()))
+            .map(|name| ColumnFamilyDescriptor::new(name, Self::create_cf_options()))
             .collect();
 
         // Open database with column families
@@ -335,7 +397,7 @@ impl StorageEngine {
         let type_ = collection_type.unwrap_or_else(|| "document".to_string());
 
         // Create the column family - requires exclusive lock
-        let opts = Options::default();
+        let opts = Self::create_cf_options();
         {
             let _cf_guard = self.cf_lock.write().unwrap();
             // Safety: We use cf_lock to ensure exclusive access for CF operations
