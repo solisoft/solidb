@@ -176,12 +176,16 @@ impl App {
             CurrentView::Documents => {
                 if let Some(ref coll) = self.ctx.current_collection {
                     let coll = coll.clone();
-                    self.documents_view
-                        .refresh(&self.ctx.client, &self.ctx.current_database, &coll);
+                    self.documents_view.refresh(
+                        &self.ctx.client,
+                        &self.ctx.current_database,
+                        &coll,
+                    );
                 }
             }
             CurrentView::Jobs => {
-                self.jobs_view.refresh(&self.ctx.client, &self.ctx.current_database);
+                self.jobs_view
+                    .refresh(&self.ctx.client, &self.ctx.current_database);
             }
             CurrentView::Cluster => {
                 self.cluster_view.refresh(&self.ctx.client);
@@ -249,7 +253,8 @@ impl App {
             }
             KeyCode::Char('5') if !self.query_view.is_editing() => {
                 self.ctx.current_view = CurrentView::Jobs;
-                self.jobs_view.refresh(&self.ctx.client, &self.ctx.current_database);
+                self.jobs_view
+                    .refresh(&self.ctx.client, &self.ctx.current_database);
                 return true;
             }
             KeyCode::Char('6') if !self.query_view.is_editing() => {
@@ -291,7 +296,8 @@ impl App {
                 }
             }
             CurrentView::Jobs => {
-                self.jobs_view.refresh(&self.ctx.client, &self.ctx.current_database);
+                self.jobs_view
+                    .refresh(&self.ctx.client, &self.ctx.current_database);
             }
             CurrentView::Cluster => {
                 self.cluster_view.refresh(&self.ctx.client);
@@ -355,8 +361,11 @@ fn run_app(
                 let coll = coll.clone();
                 match app.ctx.current_view {
                     CurrentView::Documents => {
-                        app.documents_view
-                            .refresh(&app.ctx.client, &app.ctx.current_database, &coll);
+                        app.documents_view.refresh(
+                            &app.ctx.client,
+                            &app.ctx.current_database,
+                            &coll,
+                        );
                     }
                     CurrentView::Indexes => {
                         app.indexes_view

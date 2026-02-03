@@ -79,7 +79,11 @@ impl JobsView {
     fn format_status(status: &serde_json::Value) -> (String, Color) {
         let status_str = match status {
             serde_json::Value::String(s) => s.to_lowercase(),
-            _ => status.to_string().to_lowercase().trim_matches('"').to_string(),
+            _ => status
+                .to_string()
+                .to_lowercase()
+                .trim_matches('"')
+                .to_string(),
         };
         match status_str.as_str() {
             "pending" => ("Pending".to_string(), Color::Yellow),
@@ -131,8 +135,10 @@ impl View for JobsView {
                 .map(|q| {
                     Row::new(vec![
                         Cell::from(q.name.clone()).style(Style::default().fg(Color::Cyan)),
-                        Cell::from(format!("{}", q.pending)).style(Style::default().fg(Color::Yellow)),
-                        Cell::from(format!("{}", q.running)).style(Style::default().fg(Color::Blue)),
+                        Cell::from(format!("{}", q.pending))
+                            .style(Style::default().fg(Color::Yellow)),
+                        Cell::from(format!("{}", q.running))
+                            .style(Style::default().fg(Color::Blue)),
                         Cell::from(format!("{}", q.failed)).style(Style::default().fg(Color::Red)),
                     ])
                 })
@@ -149,7 +155,11 @@ impl View for JobsView {
                 .block(queue_block)
                 .header(
                     Row::new(vec!["Queue", "Pend", "Run", "Fail"])
-                        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                        .style(
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        )
                         .bottom_margin(1),
                 )
                 .row_highlight_style(
@@ -207,7 +217,11 @@ impl View for JobsView {
                 .block(jobs_block)
                 .header(
                     Row::new(vec!["ID", "Status", "Script", "Retry"])
-                        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                        .style(
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        )
                         .bottom_margin(1),
                 )
                 .row_highlight_style(
@@ -241,13 +255,21 @@ impl View for JobsView {
                 if self.focus_jobs {
                     let len = self.jobs.len();
                     if len > 0 {
-                        let i = self.job_state.selected().map(|i| (i + 1) % len).unwrap_or(0);
+                        let i = self
+                            .job_state
+                            .selected()
+                            .map(|i| (i + 1) % len)
+                            .unwrap_or(0);
                         self.job_state.select(Some(i));
                     }
                 } else {
                     let len = self.queues.len();
                     if len > 0 {
-                        let i = self.queue_state.selected().map(|i| (i + 1) % len).unwrap_or(0);
+                        let i = self
+                            .queue_state
+                            .selected()
+                            .map(|i| (i + 1) % len)
+                            .unwrap_or(0);
                         self.queue_state.select(Some(i));
                     }
                 }

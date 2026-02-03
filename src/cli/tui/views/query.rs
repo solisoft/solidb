@@ -12,11 +12,38 @@ use tui_textarea::{Input, Key, TextArea};
 
 /// SDBQL keywords for syntax highlighting
 const SDBQL_KEYWORDS: &[&str] = &[
-    "FOR", "IN", "FILTER", "RETURN", "SORT", "LIMIT", "LET", "COLLECT",
-    "INSERT", "UPDATE", "REPLACE", "REMOVE", "UPSERT",
-    "AND", "OR", "NOT", "WITH", "INTO", "ASC", "DESC",
-    "AGGREGATE", "DISTINCT", "GRAPH", "OUTBOUND", "INBOUND", "ANY",
-    "PRUNE", "OPTIONS", "SEARCH", "LIKE", "JOIN", "LEFT",
+    "FOR",
+    "IN",
+    "FILTER",
+    "RETURN",
+    "SORT",
+    "LIMIT",
+    "LET",
+    "COLLECT",
+    "INSERT",
+    "UPDATE",
+    "REPLACE",
+    "REMOVE",
+    "UPSERT",
+    "AND",
+    "OR",
+    "NOT",
+    "WITH",
+    "INTO",
+    "ASC",
+    "DESC",
+    "AGGREGATE",
+    "DISTINCT",
+    "GRAPH",
+    "OUTBOUND",
+    "INBOUND",
+    "ANY",
+    "PRUNE",
+    "OPTIONS",
+    "SEARCH",
+    "LIKE",
+    "JOIN",
+    "LEFT",
 ];
 
 /// Query view state
@@ -50,7 +77,11 @@ impl QueryView {
         let keywords_pattern = SDBQL_KEYWORDS.join("|");
         let pattern = format!(r"(?i)\b({})\b", keywords_pattern);
         let _ = textarea.set_search_pattern(&pattern);
-        textarea.set_search_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+        textarea.set_search_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        );
 
         Self {
             textarea,

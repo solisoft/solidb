@@ -197,8 +197,13 @@ impl TuiClient {
         }
 
         let text = resp.text().map_err(|e| format!("Read failed: {}", e))?;
-        let data: Response = serde_json::from_str(&text)
-            .map_err(|e| format!("JSON parse failed: {} (response: {})", e, &text[..text.len().min(200)]))?;
+        let data: Response = serde_json::from_str(&text).map_err(|e| {
+            format!(
+                "JSON parse failed: {} (response: {})",
+                e,
+                &text[..text.len().min(200)]
+            )
+        })?;
 
         Ok(data
             .databases
@@ -359,8 +364,13 @@ impl TuiClient {
         }
 
         let text = resp.text().map_err(|e| format!("Read failed: {}", e))?;
-        let data: Response = serde_json::from_str(&text)
-            .map_err(|e| format!("JSON parse failed: {} (response: {})", e, &text[..text.len().min(300)]))?;
+        let data: Response = serde_json::from_str(&text).map_err(|e| {
+            format!(
+                "JSON parse failed: {} (response: {})",
+                e,
+                &text[..text.len().min(300)]
+            )
+        })?;
         Ok(data.indexes)
     }
 
@@ -587,14 +597,27 @@ impl TuiClient {
         }
 
         let text = resp.text().map_err(|e| format!("Read failed: {}", e))?;
-        let data: Vec<QueueStats> = serde_json::from_str(&text)
-            .map_err(|e| format!("JSON parse failed: {} (response: {})", e, &text[..text.len().min(200)]))?;
+        let data: Vec<QueueStats> = serde_json::from_str(&text).map_err(|e| {
+            format!(
+                "JSON parse failed: {} (response: {})",
+                e,
+                &text[..text.len().min(200)]
+            )
+        })?;
         Ok(data)
     }
 
     /// List jobs in a queue
-    pub fn list_jobs(&self, database: &str, queue: &str, limit: usize) -> Result<Vec<JobInfo>, String> {
-        let path = format!("/_api/database/{}/queues/{}/jobs?limit={}", database, queue, limit);
+    pub fn list_jobs(
+        &self,
+        database: &str,
+        queue: &str,
+        limit: usize,
+    ) -> Result<Vec<JobInfo>, String> {
+        let path = format!(
+            "/_api/database/{}/queues/{}/jobs?limit={}",
+            database, queue, limit
+        );
         let resp = self
             .request(reqwest::Method::GET, &path)
             .send()
@@ -610,8 +633,13 @@ impl TuiClient {
         }
 
         let text = resp.text().map_err(|e| format!("Read failed: {}", e))?;
-        let data: Response = serde_json::from_str(&text)
-            .map_err(|e| format!("JSON parse failed: {} (response: {})", e, &text[..text.len().min(300)]))?;
+        let data: Response = serde_json::from_str(&text).map_err(|e| {
+            format!(
+                "JSON parse failed: {} (response: {})",
+                e,
+                &text[..text.len().min(300)]
+            )
+        })?;
         Ok(data.jobs)
     }
 }
