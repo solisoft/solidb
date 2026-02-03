@@ -1,3 +1,4 @@
+use crate::scripting::engine::{LuaPool, ScriptCache, ScriptIndex};
 use crate::scripting::ScriptStats;
 use crate::server::cursor_store::CursorStore;
 use crate::storage::StorageEngine;
@@ -79,6 +80,12 @@ pub struct AppState {
     pub channel_manager: Arc<crate::scripting::ChannelManager>,
     // Sync session manager for offline-first client sync
     pub sync_session_manager: Option<Arc<crate::sync::SyncSessionManager>>,
+    // Lua VM pool for efficient script execution
+    pub lua_pool: Arc<LuaPool>,
+    // Script bytecode cache
+    pub script_cache: Arc<ScriptCache>,
+    // Script index for fast route lookup
+    pub script_index: Arc<ScriptIndex>,
 }
 
 impl AppState {

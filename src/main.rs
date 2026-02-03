@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use solidb::server::multiplex::{ChannelListener, PeekedStream};
 use solidb::{cluster::ClusterConfig, create_router, scripting::ScriptStats, StorageEngine};
 use std::sync::Arc;
@@ -11,6 +11,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[command(name = "solidb")]
 #[command(about = "SolidDB - A high-performance document database", long_about = None)]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// Port to listen on
     #[arg(short, long, default_value_t = 6745)]
     port: u16,
@@ -32,7 +35,7 @@ struct Args {
     data_dir: String,
 
     /// Run as a daemon (background process)
-    #[arg(short, long)]
+    #[arg(long)]
     daemon: bool,
 
     /// PID file path (used in daemon mode)
@@ -48,11 +51,24 @@ struct Args {
     keyfile: Option<String>,
 }
 
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Manage Lua scripts for custom API endpoints
+    Scripts(solidb::cli::scripts::ScriptsArgs),
+}
+
 fn main() -> anyhow::Result<()> {
     // Load .env file if present (before parsing CLI args)
     let _ = dotenvy::dotenv();
 
     let args = Args::parse();
+
+    // Handle subcommands first (before daemonization)
+    if let Some(command) = args.command {
+        return match command {
+            Command::Scripts(scripts_args) => solidb::cli::scripts::execute(scripts_args),
+        };
+    }
 
     // Handle daemonization before starting async runtime
     #[cfg(unix)]

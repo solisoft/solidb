@@ -14,7 +14,7 @@ mod time_ext;
 
 pub use crypto::setup_crypto_globals;
 pub use http::create_fetch_function;
-pub use json::setup_json_globals;
+pub use json::{setup_json_globals, setup_json_globals_static};
 pub use stdlib::setup_table_extensions;
 pub use string_ext::setup_string_extensions;
 pub use table_ext::setup_table_lib_extensions;

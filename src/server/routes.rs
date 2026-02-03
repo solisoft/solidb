@@ -27,6 +27,7 @@ async fn request_counter_middleware(
 
 use super::handlers::*;
 use super::nl_handlers;
+use crate::scripting::engine::{LuaPool, ScriptCache, ScriptIndex};
 use crate::scripting::ScriptStats;
 use crate::server::cursor_store::CursorStore;
 use crate::storage::StorageEngine;
@@ -112,8 +113,33 @@ pub fn create_router(
     // Initialize sync session manager for offline-first client sync
     let sync_session_manager = Arc::new(crate::sync::SyncSessionManager::new());
 
+    // Initialize Lua VM pool for efficient script execution
+    let lua_pool = Arc::new(LuaPool::with_default_size());
+    tracing::info!(
+        "Lua VM pool initialized with {} states",
+        lua_pool.stats().size
+    );
+
+    // Initialize script bytecode cache
+    let script_cache = Arc::new(ScriptCache::with_default_size());
+
+    // Initialize script index for fast route lookup
+    let script_index = Arc::new(ScriptIndex::new());
+
+    // Wrap storage in Arc before building the index
+    let storage = Arc::new(storage);
+
+    // Build script index from storage
+    script_index.rebuild(&storage);
+    let index_stats = script_index.stats();
+    tracing::info!(
+        "Script index built: {} exact paths, {} pattern paths",
+        index_stats.exact_entries,
+        index_stats.pattern_entries
+    );
+
     let state = AppState {
-        storage: Arc::new(storage),
+        storage,
         cursor_store: CursorStore::new(Duration::from_secs(300)),
         cluster_manager,
         replication_log,
@@ -129,6 +155,9 @@ pub fn create_router(
         repl_sessions: crate::server::repl_session::ReplSessionStore::new(),
         channel_manager: Arc::new(crate::scripting::ChannelManager::new()),
         sync_session_manager: Some(sync_session_manager),
+        lua_pool,
+        script_cache,
+        script_index,
     };
 
     // Protected API routes

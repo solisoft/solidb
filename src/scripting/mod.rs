@@ -8,7 +8,7 @@ mod auth;
 pub mod channel_manager;
 mod conversion;
 mod dev_tools;
-mod engine;
+pub mod engine;
 mod error_handling;
 mod file_handling;
 mod http_helpers;

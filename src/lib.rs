@@ -1,3 +1,4 @@
+pub mod cli;
 pub mod cluster;
 pub mod driver;
 pub mod error;

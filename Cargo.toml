@@ -133,6 +133,13 @@ cuckoofilter = { version = "0.5", features = ["serde_support"] }
 parking_lot = "0.12"
 dashmap = "6"
 
+# CLI Script Development
+notify = "6"           # File system watcher
+toml = "0.8"           # Config file parsing
+walkdir = "2"          # Directory traversal
+similar = "2"          # Diff generation
+rpassword = "7"        # Secure password input
+
 # Default binary
 [[bin]]
 name = "solidb"

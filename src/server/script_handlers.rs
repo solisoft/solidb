@@ -14,6 +14,7 @@ use super::handlers::AppState;
 use crate::error::DbError;
 use crate::scripting::{Script, ScriptContext, ScriptEngine, ScriptUser};
 use crate::sync::{LogEntry, Operation};
+use tracing::debug;
 
 /// System collection for storing scripts
 pub const SCRIPTS_COLLECTION: &str = "_scripts";
@@ -135,6 +136,9 @@ pub async fn create_script_handler(
         db_name
     );
 
+    // Update script index
+    state.script_index.insert(script.clone());
+
     // Record write for replication
     if let Some(ref log) = state.replication_log {
         let entry = LogEntry {
@@ -251,6 +255,13 @@ pub async fn update_script_handler(
 
     tracing::info!("Lua script '{}' updated", script_id);
 
+    // Update script index (remove old, add new)
+    state.script_index.remove(&script_id, &script.database);
+    state.script_index.insert(script.clone());
+
+    // Invalidate bytecode cache for this script
+    state.script_cache.invalidate(&script_id);
+
     // Record write for replication
     if let Some(ref log) = state.replication_log {
         let entry = LogEntry {
@@ -281,6 +292,12 @@ pub async fn delete_script_handler(
     collection.delete(&script_id)?;
 
     tracing::info!("Lua script '{}' deleted", script_id);
+
+    // Remove from script index
+    state.script_index.remove(&script_id, &db_name);
+
+    // Invalidate bytecode cache
+    state.script_cache.invalidate(&script_id);
 
     // Record write for replication
     if let Some(ref log) = state.replication_log {
@@ -349,9 +366,33 @@ pub async fn execute_script_handler(
 
     let is_ws_upgrade = ws_res.is_ok();
 
-    // Find matching script
-    let script =
-        find_script_for_scoped_path(&state, db_name, script_path, method.as_str(), is_ws_upgrade)?;
+    // Find matching script using the index (fast path)
+    let script = match state
+        .script_index
+        .find(db_name, script_path, method.as_str())
+    {
+        Some(s) => {
+            debug!(
+                "Script found in index for {} {} in {}",
+                method, script_path, db_name
+            );
+            s
+        }
+        None => {
+            // Fallback to collection scan (for cold starts or edge cases)
+            debug!(
+                "Script not in index, falling back to scan for {} {} in {}",
+                method, script_path, db_name
+            );
+            find_script_for_scoped_path(
+                &state,
+                db_name,
+                script_path,
+                method.as_str(),
+                is_ws_upgrade,
+            )?
+        }
+    };
 
     // Build context
     let query_params: HashMap<String, String> = uri
@@ -401,8 +442,10 @@ pub async fn execute_script_handler(
         user,
     };
 
-    // Execute script
-    let mut engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone());
+    // Execute script with pooled Lua VM and bytecode cache
+    let mut engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone())
+        .with_lua_pool(state.lua_pool.clone())
+        .with_script_cache(state.script_cache.clone());
 
     if let Some(sm) = &state.stream_manager {
         engine = engine.with_stream_manager(sm.clone());
