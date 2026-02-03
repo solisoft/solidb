@@ -36,13 +36,20 @@
             <p class="text-gray-300 mb-6 leading-relaxed">
               SoliDB provides essential command-line tools for data management:
             </p>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
                 <div class="flex items-center mb-3">
                   <i class="fas fa-terminal text-xl text-yellow-400 mr-3"></i>
                   <h3 class="text-white font-bold">solidb-repl</h3>
                 </div>
                 <p class="text-sm text-gray-400">Interactive Lua REPL for testing and debugging.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <i class="fas fa-code text-xl text-emerald-400 mr-3"></i>
+                  <h3 class="text-white font-bold">solidb scripts</h3>
+                </div>
+                <p class="text-sm text-gray-400">Manage Lua scripts from IDE with folder-based conventions.</p>
               </div>
               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
                 <div class="flex items-center mb-3">
@@ -199,6 +206,221 @@
   <span class="text-green-400">"Charlie"</span>
 <span class="text-white">]</span>
   <span class="text-gray-500">(1.23ms)</span></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- solidb scripts -->
+      <section id="solidb-scripts" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+              solidb scripts
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Manage Lua scripts for custom API endpoints from your IDE. Uses folder-based conventions to map file paths to API routes.
+            </p>
+
+            <h3 class="text-lg font-bold text-white mb-4">Folder Convention</h3>
+            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-8">
+              <div class="p-4 font-mono text-sm">
+<pre class="text-gray-300">scripts/
+├── hello.lua                → <span class="text-emerald-400">/api/custom/{db}/hello</span>
+├── users.lua                → <span class="text-emerald-400">/api/custom/{db}/users</span>
+├── users/
+│   └── _id.lua              → <span class="text-emerald-400">/api/custom/{db}/users/:id</span>
+└── api/
+    └── v1/
+        └── products.lua     → <span class="text-emerald-400">/api/custom/{db}/api/v1/products</span></pre>
+              </div>
+            </div>
+
+            <div class="bg-blue-900/10 border border-blue-500/20 rounded-xl p-4 flex items-start mb-8">
+               <i class="fas fa-info-circle text-blue-400 mt-1 mr-3"></i>
+               <p class="text-sm text-gray-300"><strong>Naming Rules:</strong> Filename (without .lua) = last API path segment. Prefix with <code class="bg-gray-800 px-1 rounded text-xs">_</code> for path parameters (e.g., <code class="bg-gray-800 px-1 rounded text-xs">_id.lua</code> → <code class="bg-gray-800 px-1 rounded text-xs">:id</code>).</p>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Comment Header</h3>
+            <p class="text-gray-300 mb-4">Configure methods and metadata in the first lines of your Lua file:</p>
+            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-6">
+              <div class="p-4 font-mono text-sm">
+<pre class="text-gray-300"><span class="text-gray-500">-- @methods GET, POST</span>
+<span class="text-gray-500">-- @description List or create users</span>
+<span class="text-gray-500">-- @collection users</span>
+
+<span class="text-cyan-400">local</span> users = db:collection(<span class="text-green-400">"users"</span>)
+
+<span class="text-cyan-400">if</span> request.method == <span class="text-green-400">"GET"</span> <span class="text-cyan-400">then</span>
+    <span class="text-cyan-400">return</span> users:find({})
+<span class="text-cyan-400">else</span>
+    <span class="text-cyan-400">return</span> users:insert(request.body)
+<span class="text-cyan-400">end</span></pre>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Directive</th>
+                    <th class="px-4 py-3">Required</th>
+                    <th class="px-4 py-3">Example</th>
+                    <th class="px-4 py-3">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-emerald-300">@methods</td>
+                    <td class="px-4 py-3"><span class="text-yellow-300">No*</span></td>
+                    <td class="px-4 py-3 font-mono text-xs">GET, POST, PUT</td>
+                    <td class="px-4 py-3">HTTP methods (comma-separated). Default: GET</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-emerald-300">@description</td>
+                    <td class="px-4 py-3">No</td>
+                    <td class="px-4 py-3 font-mono text-xs">User CRUD endpoint</td>
+                    <td class="px-4 py-3">Human-readable description</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-emerald-300">@collection</td>
+                    <td class="px-4 py-3">No</td>
+                    <td class="px-4 py-3 font-mono text-xs">users</td>
+                    <td class="px-4 py-3">Target collection for context</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-emerald-300">@ws</td>
+                    <td class="px-4 py-3">No</td>
+                    <td class="px-4 py-3 font-mono text-xs">true</td>
+                    <td class="px-4 py-3">WebSocket endpoint (or use <code class="bg-gray-800 px-1 rounded text-xs">@methods WS</code>)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Commands</h3>
+
+            <!-- init -->
+            <div class="mb-6">
+              <h4 class="text-md font-bold text-white mb-2 flex items-center"><span class="bg-emerald-500/20 text-emerald-300 text-xs px-2 py-1 rounded border border-emerald-500/30 mr-2">init</span> Initialize a scripts directory</h4>
+              <div class="bg-gray-950 rounded-lg p-4 mb-3 font-mono text-sm overflow-x-auto border border-white/10">
+                <code class="text-green-400">solidb scripts init</code> --host localhost --port 6745 --db mydb
+              </div>
+              <p class="text-sm text-gray-400">Creates <code class="bg-gray-800 px-1 rounded text-xs">solidb-scripts.toml</code> configuration file.</p>
+            </div>
+
+            <!-- login -->
+            <div class="mb-6">
+              <h4 class="text-md font-bold text-white mb-2 flex items-center"><span class="bg-emerald-500/20 text-emerald-300 text-xs px-2 py-1 rounded border border-emerald-500/30 mr-2">login</span> Authenticate with the server</h4>
+              <div class="bg-gray-950 rounded-lg p-4 mb-3 font-mono text-sm overflow-x-auto border border-white/10">
+                <code class="text-green-400">solidb scripts login</code> -u admin
+              </div>
+              <p class="text-sm text-gray-400">Prompts for password and saves JWT token to config.</p>
+            </div>
+
+            <!-- push -->
+            <div class="mb-6">
+              <h4 class="text-md font-bold text-white mb-2 flex items-center"><span class="bg-emerald-500/20 text-emerald-300 text-xs px-2 py-1 rounded border border-emerald-500/30 mr-2">push</span> Push scripts to server</h4>
+              <div class="bg-gray-950 rounded-lg p-4 mb-3 font-mono text-sm overflow-x-auto border border-white/10">
+                <code class="text-green-400">solidb scripts push</code>                <span class="text-gray-500"># Push all scripts</span><br>
+                <code class="text-green-400">solidb scripts push</code> users.lua      <span class="text-gray-500"># Push single file</span><br>
+                <code class="text-green-400">solidb scripts push</code> users/         <span class="text-gray-500"># Push directory</span>
+              </div>
+            </div>
+
+            <!-- pull -->
+            <div class="mb-6">
+              <h4 class="text-md font-bold text-white mb-2 flex items-center"><span class="bg-emerald-500/20 text-emerald-300 text-xs px-2 py-1 rounded border border-emerald-500/30 mr-2">pull</span> Pull scripts from server</h4>
+              <div class="bg-gray-950 rounded-lg p-4 mb-3 font-mono text-sm overflow-x-auto border border-white/10">
+                <code class="text-green-400">solidb scripts pull</code>                <span class="text-gray-500"># Pull all scripts</span><br>
+                <code class="text-green-400">solidb scripts pull</code> --force        <span class="text-gray-500"># Overwrite local files</span>
+              </div>
+            </div>
+
+            <!-- watch -->
+            <div class="mb-6">
+              <h4 class="text-md font-bold text-white mb-2 flex items-center"><span class="bg-emerald-500/20 text-emerald-300 text-xs px-2 py-1 rounded border border-emerald-500/30 mr-2">watch</span> Auto-sync on file changes</h4>
+              <div class="bg-gray-950 rounded-lg p-4 mb-3 font-mono text-sm overflow-x-auto border border-white/10">
+                <code class="text-green-400">solidb scripts watch</code>
+              </div>
+              <p class="text-sm text-gray-400">Watches for file changes and automatically pushes updates to server.</p>
+            </div>
+
+            <!-- list, diff, delete -->
+            <div class="mb-6">
+              <h4 class="text-md font-bold text-white mb-2 flex items-center"><span class="bg-emerald-500/20 text-emerald-300 text-xs px-2 py-1 rounded border border-emerald-500/30 mr-2">list / diff / delete</span> Other commands</h4>
+              <div class="bg-gray-950 rounded-lg p-4 mb-3 font-mono text-sm overflow-x-auto border border-white/10">
+                <code class="text-green-400">solidb scripts list</code>                <span class="text-gray-500"># List scripts on server</span><br>
+                <code class="text-green-400">solidb scripts diff</code>                <span class="text-gray-500"># Show diff between local and server</span><br>
+                <code class="text-green-400">solidb scripts delete</code> users/:id    <span class="text-gray-500"># Delete script by API path</span>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Environment Variables</h3>
+            <p class="text-gray-300 mb-4">Set these in a <code class="bg-gray-800 px-1 rounded text-xs">.env</code> file for CI/CD or automated workflows:</p>
+            <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Variable</th>
+                    <th class="px-4 py-3">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-emerald-300">SOLIDB_API_KEY</td>
+                    <td class="px-4 py-3">API key for authentication (takes precedence over login token)</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-emerald-300">SOLIDB_HOST</td>
+                    <td class="px-4 py-3">Override server host</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-emerald-300">SOLIDB_PORT</td>
+                    <td class="px-4 py-3">Override server port</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-emerald-300">SOLIDB_DATABASE</td>
+                    <td class="px-4 py-3">Override target database</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Example Workflow</h3>
+            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+              <div class="p-4 font-mono text-sm">
+<pre class="text-gray-300"><span class="text-gray-500"># 1. Initialize project</span>
+<span class="text-green-400">solidb scripts init</span> --host localhost --port 6745 --db myapp
+
+<span class="text-gray-500"># 2. Authenticate (choose one method)</span>
+<span class="text-green-400">solidb scripts login</span> -u admin            <span class="text-gray-500"># Interactive login</span>
+<span class="text-cyan-400">echo</span> <span class="text-green-400">"SOLIDB_API_KEY=xxx"</span> > .env       <span class="text-gray-500"># Or use API key</span>
+
+<span class="text-gray-500"># 3. Create a script</span>
+<span class="text-cyan-400">cat</span> > users.lua << <span class="text-green-400">'EOF'</span>
+<span class="text-gray-500">-- @methods GET, POST</span>
+<span class="text-gray-500">-- @description User management</span>
+local users = db:collection("users")
+if request.method == "GET" then
+    return users:find({})
+else
+    return users:insert(request.body)
+end
+<span class="text-green-400">EOF</span>
+
+<span class="text-gray-500"># 4. Push to server</span>
+<span class="text-green-400">solidb scripts push</span>
+
+<span class="text-gray-500"># 5. Start watching for changes</span>
+<span class="text-green-400">solidb scripts watch</span>
+
+<span class="text-gray-500"># 6. Edit in your IDE - changes auto-deploy!</span></pre>
               </div>
             </div>
           </div>
