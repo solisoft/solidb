@@ -24,6 +24,10 @@ pub const ENV_API_KEY: &str = "SOLIDB_API_KEY";
 pub const ENV_HOST: &str = "SOLIDB_HOST";
 pub const ENV_PORT: &str = "SOLIDB_PORT";
 pub const ENV_DATABASE: &str = "SOLIDB_DATABASE";
+pub const ENV_SERVICE: &str = "SOLIDB_SERVICE";
+
+/// Test environment file name
+pub const TEST_ENV_FILE: &str = ".env.test";
 
 /// Main configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,9 +41,16 @@ pub struct Config {
     /// Optional authentication token
     #[serde(default)]
     pub auth_token: String,
+    /// Default service for script routing
+    #[serde(default = "default_service")]
+    pub service: String,
     /// Scripts configuration
     #[serde(default)]
     pub scripts: ScriptsConfig,
+}
+
+fn default_service() -> String {
+    "default".to_string()
 }
 
 /// Scripts-specific configuration
@@ -48,9 +59,16 @@ pub struct ScriptsConfig {
     /// Directory containing scripts (relative to config file)
     #[serde(default = "default_directory")]
     pub directory: PathBuf,
+    /// Directory containing tests (relative to scripts directory)
+    #[serde(default = "default_tests_dir")]
+    pub tests_dir: String,
     /// Patterns to ignore
     #[serde(default = "default_ignore")]
     pub ignore: Vec<String>,
+}
+
+fn default_tests_dir() -> String {
+    "tests".to_string()
 }
 
 fn default_directory() -> PathBuf {
@@ -62,6 +80,7 @@ fn default_ignore() -> Vec<String> {
         "*.bak".to_string(),
         ".git".to_string(),
         "node_modules".to_string(),
+        "tests".to_string(),
     ]
 }
 
@@ -69,6 +88,7 @@ impl Default for ScriptsConfig {
     fn default() -> Self {
         Self {
             directory: default_directory(),
+            tests_dir: default_tests_dir(),
             ignore: default_ignore(),
         }
     }
@@ -82,6 +102,7 @@ impl Config {
             port,
             database,
             auth_token: String::new(),
+            service: default_service(),
             scripts: ScriptsConfig::default(),
         }
     }
@@ -91,8 +112,27 @@ impl Config {
     /// This also loads any `.env` file in the directory and applies
     /// environment variable overrides.
     pub fn load(dir: &Path) -> anyhow::Result<Self> {
-        // Load .env file if present (ignore errors)
-        let env_path = dir.join(".env");
+        Self::load_with_env(dir, ".env")
+    }
+
+    /// Load configuration for testing
+    ///
+    /// This loads `.env.test` first, falling back to `.env` if not found.
+    pub fn load_for_test(dir: &Path) -> anyhow::Result<Self> {
+        // Try .env.test first
+        let test_env_path = dir.join(TEST_ENV_FILE);
+        if test_env_path.exists() {
+            return Self::load_with_env(dir, TEST_ENV_FILE);
+        }
+
+        // Fall back to .env
+        Self::load_with_env(dir, ".env")
+    }
+
+    /// Load configuration with a specific env file
+    fn load_with_env(dir: &Path, env_file: &str) -> anyhow::Result<Self> {
+        // Load env file if present (ignore errors)
+        let env_path = dir.join(env_file);
         if env_path.exists() {
             let _ = dotenvy::from_path(&env_path);
         }
@@ -143,6 +183,18 @@ impl Config {
                 self.database = database;
             }
         }
+
+        // Override service if set
+        if let Ok(service) = std::env::var(ENV_SERVICE) {
+            if !service.is_empty() {
+                self.service = service;
+            }
+        }
+    }
+
+    /// Get the default service for API routing
+    pub fn default_service(&self) -> String {
+        self.service.clone()
     }
 
     /// Check if authentication is configured (either via token or env var)

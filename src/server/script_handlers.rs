@@ -12,12 +12,15 @@ use std::collections::HashMap;
 use super::auth::Claims;
 use super::handlers::AppState;
 use crate::error::DbError;
-use crate::scripting::{Script, ScriptContext, ScriptEngine, ScriptUser};
+use crate::scripting::{Script, ScriptContext, ScriptEngine, ScriptUser, Service};
 use crate::sync::{LogEntry, Operation};
 use tracing::debug;
 
 /// System collection for storing scripts
 pub const SCRIPTS_COLLECTION: &str = "_scripts";
+
+/// System collection for storing services
+pub const SERVICES_COLLECTION: &str = "_services";
 
 // ==================== Request/Response Types ====================
 
@@ -35,6 +38,13 @@ pub struct CreateScriptRequest {
     pub description: Option<String>,
     /// Target collection (optional)
     pub collection: Option<String>,
+    /// Service this script belongs to (defaults to "default")
+    #[serde(default = "default_service")]
+    pub service: String,
+}
+
+fn default_service() -> String {
+    "default".to_string()
 }
 
 #[derive(Debug, Serialize)]
@@ -43,6 +53,7 @@ pub struct CreateScriptResponse {
     pub name: String,
     pub path: String,
     pub methods: Vec<String>,
+    pub service: String,
     pub created_at: String,
 }
 
@@ -59,6 +70,7 @@ pub struct ScriptSummary {
     pub methods: Vec<String>,
     pub description: Option<String>,
     pub database: String,
+    pub service: String,
     pub collection: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -94,11 +106,22 @@ pub async fn create_script_handler(
 
     let collection = db.get_collection(SCRIPTS_COLLECTION)?;
 
-    // Generate unique ID based on db/collection/path
+    // Generate unique ID based on db/service/collection/path
     let id = if let Some(col) = &req.collection {
-        format!("{}_{}_{}", db_name, col, sanitize_path_to_key(&req.path))
+        format!(
+            "{}_{}_{}_{}",
+            db_name,
+            req.service,
+            col,
+            sanitize_path_to_key(&req.path)
+        )
     } else {
-        format!("{}_{}", db_name, sanitize_path_to_key(&req.path))
+        format!(
+            "{}_{}_{}",
+            db_name,
+            req.service,
+            sanitize_path_to_key(&req.path)
+        )
     };
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -117,6 +140,7 @@ pub async fn create_script_handler(
         methods: req.methods.clone(),
         path: req.path.clone(),
         database: db_name.clone(),
+        service: req.service.clone(),
         collection: req.collection.clone(),
         code: req.code,
         description: req.description,
@@ -160,6 +184,7 @@ pub async fn create_script_handler(
         name: req.name,
         path: req.path,
         methods: req.methods,
+        service: req.service,
         created_at: now,
     }))
 }
@@ -194,6 +219,7 @@ pub async fn list_scripts_handler(
                 methods: script.methods,
                 description: script.description,
                 database: script.database,
+                service: script.service,
                 collection: script.collection,
                 created_at: script.created_at,
                 updated_at: script.updated_at,
@@ -233,14 +259,15 @@ pub async fn update_script_handler(
     let existing: Script = serde_json::from_value(existing_doc.to_value())
         .map_err(|_| DbError::InternalError("Corrupted script data".to_string()))?;
 
-    // We don't allow changing database or collection effectively changing ID logic
-    // So we persist existing database/collection
+    // We don't allow changing database, service, or collection effectively changing ID logic
+    // So we persist existing database/service/collection
     let script = Script {
         key: script_id.clone(),
         name: req.name,
         methods: req.methods,
         path: req.path,
         database: existing.database,
+        service: existing.service,
         collection: existing.collection,
         code: req.code,
         description: req.description,
@@ -256,7 +283,9 @@ pub async fn update_script_handler(
     tracing::info!("Lua script '{}' updated", script_id);
 
     // Update script index (remove old, add new)
-    state.script_index.remove(&script_id, &script.database);
+    state
+        .script_index
+        .remove(&script_id, &script.database, &script.service);
     state.script_index.insert(script.clone());
 
     // Invalidate bytecode cache for this script
@@ -289,12 +318,19 @@ pub async fn delete_script_handler(
     let db = state.storage.get_database(&db_name)?;
     let collection = db.get_collection(SCRIPTS_COLLECTION)?;
 
+    // Get the script first to know its service for index removal
+    let doc = collection.get(&script_id)?;
+    let script: Script = serde_json::from_value(doc.to_value())
+        .map_err(|_| DbError::InternalError("Corrupted script data".to_string()))?;
+
     collection.delete(&script_id)?;
 
     tracing::info!("Lua script '{}' deleted", script_id);
 
     // Remove from script index
-    state.script_index.remove(&script_id, &db_name);
+    state
+        .script_index
+        .remove(&script_id, &db_name, &script.service);
 
     // Invalidate bytecode cache
     state.script_cache.invalidate(&script_id);
@@ -333,149 +369,6 @@ pub async fn get_script_stats_handler(
     }))
 }
 
-// ==================== Script Execution Handler ====================
-
-/// Execute a Lua script based on the URL path
-pub async fn execute_script_handler(
-    State(state): State<AppState>,
-    claims: Option<axum::Extension<Claims>>,
-    ws_res: Result<
-        axum::extract::ws::WebSocketUpgrade,
-        axum::extract::ws::rejection::WebSocketUpgradeRejection,
-    >,
-    method: axum::http::Method,
-    axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
-    headers: axum::http::HeaderMap,
-    body: Option<Json<Value>>,
-) -> Result<Response, DbError> {
-    // Extract the path after /api/custom/:db/:collection/
-    let uri_path = uri.path().to_string();
-    let prefix = "/api/custom/";
-    let remaining = uri_path.strip_prefix(prefix).unwrap_or(&uri_path);
-
-    // Parse db/path
-    let parts: Vec<&str> = remaining.splitn(2, '/').collect();
-    if parts.len() < 2 {
-        return Err(DbError::BadRequest(
-            "Invalid custom API path. Expected /api/custom/:db/:path".to_string(),
-        ));
-    }
-
-    let db_name = parts[0];
-    let script_path = parts[1];
-
-    let is_ws_upgrade = ws_res.is_ok();
-
-    // Find matching script using the index (fast path)
-    let script = match state
-        .script_index
-        .find(db_name, script_path, method.as_str())
-    {
-        Some(s) => {
-            debug!(
-                "Script found in index for {} {} in {}",
-                method, script_path, db_name
-            );
-            s
-        }
-        None => {
-            // Fallback to collection scan (for cold starts or edge cases)
-            debug!(
-                "Script not in index, falling back to scan for {} {} in {}",
-                method, script_path, db_name
-            );
-            find_script_for_scoped_path(
-                &state,
-                db_name,
-                script_path,
-                method.as_str(),
-                is_ws_upgrade,
-            )?
-        }
-    };
-
-    // Build context
-    let query_params: HashMap<String, String> = uri
-        .query()
-        .map(|q| {
-            url::form_urlencoded::parse(q.as_bytes())
-                .into_owned()
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let headers_map: HashMap<String, String> = headers
-        .iter()
-        .filter_map(|(k, v)| {
-            v.to_str()
-                .ok()
-                .map(|v| (k.as_str().to_string(), v.to_string()))
-        })
-        .collect();
-
-    // Build ScriptUser from claims if authenticated
-    let user = match claims {
-        Some(axum::Extension(c)) => ScriptUser {
-            username: c.sub.clone(),
-            roles: c.roles.clone().unwrap_or_default(),
-            authenticated: true,
-            scoped_databases: c.scoped_databases.clone(),
-            exp: Some(c.exp as u64),
-        },
-        None => ScriptUser::anonymous(),
-    };
-
-    let context = ScriptContext {
-        method: method.to_string(),
-        path: script_path.to_string(),
-        query_params,
-        params: extract_path_params(&script.path, script_path),
-        headers: headers_map,
-        body: body.map(|b| b.0),
-        is_websocket: ws_res.is_ok()
-            && headers
-                .get("upgrade")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or_default()
-                .to_lowercase()
-                == "websocket",
-        user,
-    };
-
-    // Execute script with pooled Lua VM and bytecode cache
-    let mut engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone())
-        .with_lua_pool(state.lua_pool.clone())
-        .with_script_cache(state.script_cache.clone());
-
-    if let Some(sm) = &state.stream_manager {
-        engine = engine.with_stream_manager(sm.clone());
-    }
-    engine = engine.with_channel_manager(state.channel_manager.clone());
-
-    // Handle WebSocket upgrade
-    if context.is_websocket {
-        if let Ok(ws) = ws_res {
-            let db_name = db_name.to_string();
-            return Ok(ws
-                .on_upgrade(move |socket| async move {
-                    if let Err(e) = engine.execute_ws(&script, &db_name, &context, socket).await {
-                        tracing::error!("WebSocket script execution failed: {}", e);
-                    }
-                })
-                .into_response());
-        }
-    }
-
-    // Auto-select DB in Lua context using the path's db_name
-    let result = engine.execute(&script, db_name, &context).await?;
-
-    Ok((
-        StatusCode::from_u16(result.status).unwrap_or(StatusCode::OK),
-        Json(result.body),
-    )
-        .into_response())
-}
-
 // ==================== Helper Functions ====================
 
 /// Convert a URL path to a valid document key
@@ -483,48 +376,6 @@ fn sanitize_path_to_key(path: &str) -> String {
     path.replace(['/', ':', '*'], "_")
         .trim_matches('_')
         .to_string()
-}
-
-/// Find a script that matches the given path and method within a scope
-fn find_script_for_scoped_path(
-    state: &AppState,
-    db_name: &str,
-    path: &str,
-    method: &str,
-    is_ws_upgrade: bool,
-) -> Result<Script, DbError> {
-    let db = state.storage.get_database(db_name)?;
-    let collection = db.get_collection(SCRIPTS_COLLECTION)?;
-
-    // Scan is inefficient but works for MVP. Indexing usage would be better.
-    for doc in collection.scan(None) {
-        let script: Script = match serde_json::from_value(doc.to_value()) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-
-        // Check scope
-        if script.database != db_name {
-            continue;
-        }
-
-        // Check if method matches
-        if !script.methods.iter().any(|m| {
-            m.eq_ignore_ascii_case(method) || (is_ws_upgrade && m.eq_ignore_ascii_case("WS"))
-        }) {
-            continue;
-        }
-
-        // Check if path matches (simple matching for now)
-        if path_matches(&script.path, path) {
-            return Ok(script);
-        }
-    }
-
-    Err(DbError::DocumentNotFound(format!(
-        "No script found for {} {} in {}",
-        method, path, db_name
-    )))
 }
 
 /// Check if a script path pattern matches the actual path
@@ -691,6 +542,666 @@ pub async fn repl_eval_handler(
             }))
         }
     }
+}
+
+// ==================== Service Management Types ====================
+
+#[derive(Debug, Deserialize)]
+pub struct CreateServiceRequest {
+    /// Service identifier (e.g., "users", "auth")
+    pub key: String,
+    /// Human-readable name
+    pub name: String,
+    /// Optional description
+    pub description: Option<String>,
+    /// API version (e.g., "1.0.0")
+    pub version: Option<String>,
+    /// Whether this service is enabled
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    /// Default auth requirement for scripts in this service
+    #[serde(default)]
+    pub require_auth: bool,
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateServiceResponse {
+    pub key: String,
+    pub name: String,
+    pub database: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListServicesResponse {
+    pub services: Vec<ServiceSummary>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ServiceSummary {
+    pub key: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub version: Option<String>,
+    pub database: String,
+    pub enabled: bool,
+    pub require_auth: bool,
+    pub script_count: usize,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateServiceRequest {
+    /// Human-readable name
+    pub name: Option<String>,
+    /// Optional description
+    pub description: Option<String>,
+    /// API version (e.g., "1.0.0")
+    pub version: Option<String>,
+    /// Whether this service is enabled
+    pub enabled: Option<bool>,
+    /// Default auth requirement for scripts in this service
+    pub require_auth: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteServiceResponse {
+    pub deleted: bool,
+    pub scripts_deleted: usize,
+}
+
+// ==================== Service Management Handlers ====================
+
+/// Create a new service
+pub async fn create_service_handler(
+    State(state): State<AppState>,
+    Path(db_name): Path<String>,
+    Json(req): Json<CreateServiceRequest>,
+) -> Result<Json<CreateServiceResponse>, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+
+    // Ensure _services collection exists
+    if db.get_collection(SERVICES_COLLECTION).is_err() {
+        db.create_collection(SERVICES_COLLECTION.to_string(), None)?;
+    }
+
+    let collection = db.get_collection(SERVICES_COLLECTION)?;
+
+    // Check if service already exists
+    if collection.get(&req.key).is_ok() {
+        return Err(DbError::BadRequest(format!(
+            "Service '{}' already exists in database '{}'",
+            req.key, db_name
+        )));
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let service = Service {
+        key: req.key.clone(),
+        name: req.name.clone(),
+        description: req.description,
+        version: req.version,
+        database: db_name.clone(),
+        enabled: req.enabled,
+        require_auth: req.require_auth,
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    };
+
+    let doc_value = serde_json::to_value(&service)
+        .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+
+    collection.insert(doc_value.clone())?;
+
+    tracing::info!("Service '{}' created in database '{}'", req.key, db_name);
+
+    // Record write for replication
+    if let Some(ref log) = state.replication_log {
+        let entry = LogEntry {
+            sequence: 0,
+            node_id: "".to_string(),
+            database: db_name.clone(),
+            collection: SERVICES_COLLECTION.to_string(),
+            operation: Operation::Insert,
+            key: req.key.clone(),
+            data: serde_json::to_vec(&doc_value).ok(),
+            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            origin_sequence: None,
+        };
+        let _ = log.append(entry);
+    }
+
+    Ok(Json(CreateServiceResponse {
+        key: req.key,
+        name: req.name,
+        database: db_name,
+        created_at: now,
+    }))
+}
+
+/// List all services for a database
+pub async fn list_services_handler(
+    State(state): State<AppState>,
+    Path(db_name): Path<String>,
+) -> Result<Json<ListServicesResponse>, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+
+    // Return empty if collection doesn't exist
+    let collection = match db.get_collection(SERVICES_COLLECTION) {
+        Ok(c) => c,
+        Err(DbError::CollectionNotFound(_)) => {
+            return Ok(Json(ListServicesResponse { services: vec![] }));
+        }
+        Err(e) => return Err(e),
+    };
+
+    // Also get scripts collection for counting
+    let scripts: Vec<Script> = match db.get_collection(SCRIPTS_COLLECTION) {
+        Ok(scripts_col) => scripts_col
+            .scan(None)
+            .into_iter()
+            .filter_map(|doc| serde_json::from_value::<Script>(doc.to_value()).ok())
+            .filter(|s| s.database == db_name)
+            .collect(),
+        Err(_) => vec![],
+    };
+
+    let mut services = Vec::new();
+    for doc in collection.scan(None) {
+        let service: Service = serde_json::from_value(doc.to_value())
+            .map_err(|_| DbError::InternalError("Corrupted service data".to_string()))?;
+
+        if service.database == db_name {
+            let script_count = scripts.iter().filter(|s| s.service == service.key).count();
+            services.push(ServiceSummary {
+                key: service.key,
+                name: service.name,
+                description: service.description,
+                version: service.version,
+                database: service.database,
+                enabled: service.enabled,
+                require_auth: service.require_auth,
+                script_count,
+                created_at: service.created_at,
+                updated_at: service.updated_at,
+            });
+        }
+    }
+
+    Ok(Json(ListServicesResponse { services }))
+}
+
+/// Get a specific service
+pub async fn get_service_handler(
+    State(state): State<AppState>,
+    Path((db_name, service_key)): Path<(String, String)>,
+) -> Result<Json<Service>, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let collection = db.get_collection(SERVICES_COLLECTION)?;
+
+    let doc = collection.get(&service_key)?;
+    let service: Service = serde_json::from_value(doc.to_value())
+        .map_err(|_| DbError::InternalError("Corrupted service data".to_string()))?;
+
+    Ok(Json(service))
+}
+
+/// Update a service
+pub async fn update_service_handler(
+    State(state): State<AppState>,
+    Path((db_name, service_key)): Path<(String, String)>,
+    Json(req): Json<UpdateServiceRequest>,
+) -> Result<Json<Service>, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let collection = db.get_collection(SERVICES_COLLECTION)?;
+
+    // Get existing service
+    let existing_doc = collection.get(&service_key)?;
+    let existing: Service = serde_json::from_value(existing_doc.to_value())
+        .map_err(|_| DbError::InternalError("Corrupted service data".to_string()))?;
+
+    let service = Service {
+        key: existing.key,
+        name: req.name.unwrap_or(existing.name),
+        description: req.description.or(existing.description),
+        version: req.version.or(existing.version),
+        database: existing.database,
+        enabled: req.enabled.unwrap_or(existing.enabled),
+        require_auth: req.require_auth.unwrap_or(existing.require_auth),
+        created_at: existing.created_at,
+        updated_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    let doc_value = serde_json::to_value(&service)
+        .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+
+    collection.update(&service_key, doc_value.clone())?;
+
+    tracing::info!(
+        "Service '{}' updated in database '{}'",
+        service_key,
+        db_name
+    );
+
+    // Record write for replication
+    if let Some(ref log) = state.replication_log {
+        let entry = LogEntry {
+            sequence: 0,
+            node_id: "".to_string(),
+            database: db_name.clone(),
+            collection: SERVICES_COLLECTION.to_string(),
+            operation: Operation::Update,
+            key: service_key.clone(),
+            data: serde_json::to_vec(&doc_value).ok(),
+            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            origin_sequence: None,
+        };
+        let _ = log.append(entry);
+    }
+
+    Ok(Json(service))
+}
+
+/// Delete a service and all its scripts (cascade delete)
+pub async fn delete_service_handler(
+    State(state): State<AppState>,
+    Path((db_name, service_key)): Path<(String, String)>,
+) -> Result<Json<DeleteServiceResponse>, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+
+    // First delete all scripts belonging to this service
+    let mut scripts_deleted = 0;
+    if let Ok(scripts_col) = db.get_collection(SCRIPTS_COLLECTION) {
+        let scripts_to_delete: Vec<String> = scripts_col
+            .scan(None)
+            .into_iter()
+            .filter_map(|doc| {
+                serde_json::from_value::<Script>(doc.to_value())
+                    .ok()
+                    .filter(|s| s.database == db_name && s.service == service_key)
+                    .map(|s| s.key)
+            })
+            .collect();
+
+        for script_key in &scripts_to_delete {
+            if scripts_col.delete(script_key).is_ok() {
+                state
+                    .script_index
+                    .remove(script_key, &db_name, &service_key);
+                state.script_cache.invalidate(script_key);
+                scripts_deleted += 1;
+
+                // Record delete for replication
+                if let Some(ref log) = state.replication_log {
+                    let entry = LogEntry {
+                        sequence: 0,
+                        node_id: "".to_string(),
+                        database: db_name.clone(),
+                        collection: SCRIPTS_COLLECTION.to_string(),
+                        operation: Operation::Delete,
+                        key: script_key.clone(),
+                        data: None,
+                        timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                        origin_sequence: None,
+                    };
+                    let _ = log.append(entry);
+                }
+            }
+        }
+    }
+
+    // Now delete the service
+    let collection = db.get_collection(SERVICES_COLLECTION)?;
+    collection.delete(&service_key)?;
+
+    tracing::info!(
+        "Service '{}' deleted from database '{}' ({} scripts deleted)",
+        service_key,
+        db_name,
+        scripts_deleted
+    );
+
+    // Record write for replication
+    if let Some(ref log) = state.replication_log {
+        let entry = LogEntry {
+            sequence: 0,
+            node_id: "".to_string(),
+            database: db_name.clone(),
+            collection: SERVICES_COLLECTION.to_string(),
+            operation: Operation::Delete,
+            key: service_key.clone(),
+            data: None,
+            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            origin_sequence: None,
+        };
+        let _ = log.append(entry);
+    }
+
+    Ok(Json(DeleteServiceResponse {
+        deleted: true,
+        scripts_deleted,
+    }))
+}
+
+/// Get OpenAPI spec for a specific service
+pub async fn get_service_openapi_handler(
+    State(state): State<AppState>,
+    Path((db_name, service_key)): Path<(String, String)>,
+) -> Result<Json<Value>, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+
+    // Get service info
+    let services_col = db.get_collection(SERVICES_COLLECTION)?;
+    let service_doc = services_col.get(&service_key)?;
+    let service: Service = serde_json::from_value(service_doc.to_value())
+        .map_err(|_| DbError::InternalError("Corrupted service data".to_string()))?;
+
+    // Get scripts for this service
+    let scripts: Vec<Script> = match db.get_collection(SCRIPTS_COLLECTION) {
+        Ok(scripts_col) => scripts_col
+            .scan(None)
+            .into_iter()
+            .filter_map(|doc| serde_json::from_value::<Script>(doc.to_value()).ok())
+            .filter(|s| s.database == db_name && s.service == service_key)
+            .collect(),
+        Err(_) => vec![],
+    };
+
+    // Build OpenAPI spec
+    let mut paths = serde_json::Map::new();
+    for script in scripts {
+        let path_key = format!("/api/{}/{}/{}", db_name, service_key, script.path);
+        let mut methods = serde_json::Map::new();
+
+        for method in &script.methods {
+            let method_lower = method.to_lowercase();
+            if method_lower == "ws" {
+                continue; // Skip WebSocket methods for OpenAPI
+            }
+
+            let mut operation = serde_json::Map::new();
+            operation.insert("summary".to_string(), Value::String(script.name.clone()));
+            if let Some(ref desc) = script.description {
+                operation.insert("description".to_string(), Value::String(desc.clone()));
+            }
+            operation.insert(
+                "operationId".to_string(),
+                Value::String(format!("{}_{}", method_lower, script.key)),
+            );
+
+            // Add tags
+            operation.insert(
+                "tags".to_string(),
+                Value::Array(vec![Value::String(service_key.clone())]),
+            );
+
+            // Default responses
+            let responses = serde_json::json!({
+                "200": {
+                    "description": "Successful response"
+                }
+            });
+            operation.insert("responses".to_string(), responses);
+
+            methods.insert(method_lower, Value::Object(operation));
+        }
+
+        paths.insert(path_key, Value::Object(methods));
+    }
+
+    let openapi = serde_json::json!({
+        "openapi": "3.0.0",
+        "info": {
+            "title": service.name,
+            "description": service.description,
+            "version": service.version.unwrap_or_else(|| "1.0.0".to_string())
+        },
+        "servers": [
+            {
+                "url": format!("/api/{}/{}", db_name, service_key),
+                "description": "Service API endpoint"
+            }
+        ],
+        "paths": paths
+    });
+
+    Ok(Json(openapi))
+}
+
+// ==================== Service Script Execution ====================
+
+/// Execute a Lua script via service-based routing: /api/{db}/{service}/{path}
+pub async fn execute_service_script_handler(
+    State(state): State<AppState>,
+    claims: Option<axum::Extension<Claims>>,
+    ws_res: Result<
+        axum::extract::ws::WebSocketUpgrade,
+        axum::extract::ws::rejection::WebSocketUpgradeRejection,
+    >,
+    method: axum::http::Method,
+    axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
+    headers: axum::http::HeaderMap,
+    body: Option<Json<Value>>,
+) -> Result<Response, DbError> {
+    // Parse /api/{db}/{service}/{path}
+    let uri_path = uri.path().to_string();
+    let prefix = "/api/";
+    let remaining = uri_path.strip_prefix(prefix).unwrap_or(&uri_path);
+
+    // Split into db/service/path
+    let parts: Vec<&str> = remaining.splitn(3, '/').collect();
+    if parts.len() < 2 {
+        return Err(DbError::BadRequest(
+            "Invalid API path. Expected /api/{db}/{service}/{path}".to_string(),
+        ));
+    }
+
+    let db_name = parts[0];
+    let service_key = parts[1];
+    let script_path = if parts.len() > 2 { parts[2] } else { "" };
+
+    // Verify service exists and is enabled
+    let service = {
+        let db = state.storage.get_database(db_name)?;
+        let services_col = match db.get_collection(SERVICES_COLLECTION) {
+            Ok(c) => c,
+            Err(DbError::CollectionNotFound(_)) => {
+                return Err(DbError::DocumentNotFound(format!(
+                    "Service '{}' not found in database '{}'",
+                    service_key, db_name
+                )));
+            }
+            Err(e) => return Err(e),
+        };
+
+        match services_col.get(service_key) {
+            Ok(doc) => {
+                let s: Service = serde_json::from_value(doc.to_value())
+                    .map_err(|_| DbError::InternalError("Corrupted service data".to_string()))?;
+                if !s.enabled {
+                    return Err(DbError::BadRequest(format!(
+                        "Service '{}' is disabled",
+                        service_key
+                    )));
+                }
+                s
+            }
+            Err(DbError::DocumentNotFound(_)) => {
+                return Err(DbError::DocumentNotFound(format!(
+                    "Service '{}' not found in database '{}'",
+                    service_key, db_name
+                )));
+            }
+            Err(e) => return Err(e),
+        }
+    };
+
+    // Check service-level auth if required
+    if service.require_auth && claims.is_none() {
+        return Err(DbError::Unauthorized(
+            "Authentication required for this service".to_string(),
+        ));
+    }
+
+    let is_ws_upgrade = ws_res.is_ok();
+
+    // Find matching script using the index (fast path)
+    let script = match state
+        .script_index
+        .find(db_name, service_key, script_path, method.as_str())
+    {
+        Some(s) => {
+            debug!(
+                "Script found in index for {} {}/{}/{} in {}",
+                method, db_name, service_key, script_path, db_name
+            );
+            s
+        }
+        None => {
+            // Fallback to collection scan
+            debug!(
+                "Script not in index, falling back to scan for {} {}/{}/{} in {}",
+                method, db_name, service_key, script_path, db_name
+            );
+            find_script_for_service_path(
+                &state,
+                db_name,
+                service_key,
+                script_path,
+                method.as_str(),
+                is_ws_upgrade,
+            )?
+        }
+    };
+
+    // Build context
+    let query_params: HashMap<String, String> = uri
+        .query()
+        .map(|q| {
+            url::form_urlencoded::parse(q.as_bytes())
+                .into_owned()
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let headers_map: HashMap<String, String> = headers
+        .iter()
+        .filter_map(|(k, v)| {
+            v.to_str()
+                .ok()
+                .map(|v| (k.as_str().to_string(), v.to_string()))
+        })
+        .collect();
+
+    // Build ScriptUser from claims if authenticated
+    let user = match claims {
+        Some(axum::Extension(c)) => ScriptUser {
+            username: c.sub.clone(),
+            roles: c.roles.clone().unwrap_or_default(),
+            authenticated: true,
+            scoped_databases: c.scoped_databases.clone(),
+            exp: Some(c.exp as u64),
+        },
+        None => ScriptUser::anonymous(),
+    };
+
+    let context = ScriptContext {
+        method: method.to_string(),
+        path: script_path.to_string(),
+        query_params,
+        params: extract_path_params(&script.path, script_path),
+        headers: headers_map,
+        body: body.map(|b| b.0),
+        is_websocket: ws_res.is_ok()
+            && headers
+                .get("upgrade")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_lowercase()
+                == "websocket",
+        user,
+    };
+
+    // Execute script with pooled Lua VM and bytecode cache
+    let mut engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone())
+        .with_lua_pool(state.lua_pool.clone())
+        .with_script_cache(state.script_cache.clone());
+
+    if let Some(sm) = &state.stream_manager {
+        engine = engine.with_stream_manager(sm.clone());
+    }
+    engine = engine.with_channel_manager(state.channel_manager.clone());
+
+    // Handle WebSocket upgrade
+    if context.is_websocket {
+        if let Ok(ws) = ws_res {
+            let db_name = db_name.to_string();
+            return Ok(ws
+                .on_upgrade(move |socket| async move {
+                    if let Err(e) = engine.execute_ws(&script, &db_name, &context, socket).await {
+                        tracing::error!("WebSocket script execution failed: {}", e);
+                    }
+                })
+                .into_response());
+        }
+    }
+
+    // Auto-select DB in Lua context using the path's db_name
+    let result = engine.execute(&script, db_name, &context).await?;
+
+    Ok((
+        StatusCode::from_u16(result.status).unwrap_or(StatusCode::OK),
+        Json(result.body),
+    )
+        .into_response())
+}
+
+/// Find a script that matches the given service path and method
+fn find_script_for_service_path(
+    state: &AppState,
+    db_name: &str,
+    service_key: &str,
+    path: &str,
+    method: &str,
+    is_ws_upgrade: bool,
+) -> Result<Script, DbError> {
+    let db = state.storage.get_database(db_name)?;
+    let collection = db.get_collection(SCRIPTS_COLLECTION)?;
+
+    for doc in collection.scan(None) {
+        let script: Script = match serde_json::from_value(doc.to_value()) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        // Check database and service
+        if script.database != db_name || script.service != service_key {
+            continue;
+        }
+
+        // Check if method matches
+        if !script.methods.iter().any(|m| {
+            m.eq_ignore_ascii_case(method) || (is_ws_upgrade && m.eq_ignore_ascii_case("WS"))
+        }) {
+            continue;
+        }
+
+        // Check if path matches
+        if path_matches(&script.path, path) {
+            return Ok(script);
+        }
+    }
+
+    Err(DbError::DocumentNotFound(format!(
+        "No script found for {} {}/{}/{} in {}",
+        method, db_name, service_key, path, db_name
+    )))
 }
 
 /// Parse a Lua error message to extract line/column information

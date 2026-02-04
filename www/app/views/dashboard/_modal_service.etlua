@@ -1,0 +1,170 @@
+<%
+  local is_edit = is_edit or false
+  local service = service or {}
+  local service_key = service._key or service.key or ""
+  local service_name = service.name or ""
+  local service_description = service.description or ""
+  local service_version = service.version or ""
+  local service_enabled = service.enabled
+  if service_enabled == nil then service_enabled = true end
+  local service_require_auth = service.require_auth or false
+%>
+
+<div class="fixed inset-0 z-[150] overflow-y-auto" id="service-modal">
+  <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0">
+    <!-- Backdrop -->
+    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+         onclick="document.getElementById('modal-container').innerHTML = ''"></div>
+
+    <!-- Modal Content -->
+    <div class="relative bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg">
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-border/30 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-text">
+          <% if is_edit then %>
+            Edit Service
+          <% else %>
+            New Service
+          <% end %>
+        </h3>
+        <button type="button"
+                onclick="document.getElementById('modal-container').innerHTML = ''"
+                class="text-text-muted hover:text-text transition-colors">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <!-- Form -->
+      <form hx-post="<% if is_edit then %>/database/<%= db %>/scripts/services/<%= service_key %><% else %>/database/<%= db %>/scripts/services<% end %>"
+            hx-target="#services-section"
+            hx-swap="innerHTML"
+            hx-on:htmx:after-request="
+              if(event.detail.successful) {
+                closeModal();
+              }
+            "
+            <% if is_edit then %>hx-put="/database/<%= db %>/scripts/services/<%= service_key %>"<% end %>
+            class="p-6 space-y-5">
+
+        <% if is_edit then %>
+          <input type="hidden" name="_method" value="PUT">
+        <% end %>
+
+        <!-- Key (only for create) -->
+        <% if not is_edit then %>
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-1.5">Service Key</label>
+          <input type="text"
+                 name="key"
+                 value="<%= service_key %>"
+                 placeholder="my-service"
+                 pattern="[a-z0-9-]+"
+                 required
+                 class="w-full bg-bg-dark border border-border/50 rounded-lg px-3 py-2 text-text placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30">
+          <p class="mt-1 text-xs text-text-dim">Lowercase letters, numbers, and hyphens only. Used in URL: /api/<%= db %>/{key}/</p>
+        </div>
+        <% else %>
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-1.5">Service Key</label>
+          <div class="w-full bg-bg-dark/50 border border-border/50 rounded-lg px-3 py-2 text-text-muted">
+            <i class="fas fa-cube mr-2 text-indigo-400"></i><%= service_key %>
+            <span class="text-text-dim text-xs ml-2">(cannot be changed)</span>
+          </div>
+        </div>
+        <% end %>
+
+        <!-- Name -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-1.5">Display Name</label>
+          <input type="text"
+                 name="name"
+                 value="<%= service_name %>"
+                 placeholder="My Service API"
+                 required
+                 class="w-full bg-bg-dark border border-border/50 rounded-lg px-3 py-2 text-text placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30">
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-1.5">Description <span class="text-text-dim">(optional)</span></label>
+          <textarea name="description"
+                    rows="2"
+                    placeholder="Brief description of this service"
+                    class="w-full bg-bg-dark border border-border/50 rounded-lg px-3 py-2 text-text placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 resize-none"><%= service_description %></textarea>
+        </div>
+
+        <!-- Version -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-1.5">API Version <span class="text-text-dim">(optional)</span></label>
+          <input type="text"
+                 name="version"
+                 value="<%= service_version %>"
+                 placeholder="1.0.0"
+                 class="w-full bg-bg-dark border border-border/50 rounded-lg px-3 py-2 text-text placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30">
+        </div>
+
+        <!-- Toggles -->
+        <div class="flex flex-wrap gap-6">
+          <label class="inline-flex items-center cursor-pointer group">
+            <input type="checkbox" name="enabled" value="1" <%= service_enabled and "checked" or "" %>
+                   class="sr-only peer">
+            <span class="px-4 py-2 rounded-lg border border-border/50 text-sm font-medium
+                         peer-checked:bg-green-500/20 peer-checked:text-green-300 peer-checked:border-green-500/50
+                         text-text-muted bg-bg-dark hover:bg-white/5 transition-colors cursor-pointer">
+              <i class="fas fa-check-circle mr-2"></i>Enabled
+            </span>
+          </label>
+          <label class="inline-flex items-center cursor-pointer group">
+            <input type="checkbox" name="require_auth" value="1" <%= service_require_auth and "checked" or "" %>
+                   class="sr-only peer">
+            <span class="px-4 py-2 rounded-lg border border-border/50 text-sm font-medium
+                         peer-checked:bg-yellow-500/20 peer-checked:text-yellow-300 peer-checked:border-yellow-500/50
+                         text-text-muted bg-bg-dark hover:bg-white/5 transition-colors cursor-pointer">
+              <i class="fas fa-lock mr-2"></i>Require Auth
+            </span>
+          </label>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-border/30">
+          <button type="button"
+                  onclick="document.getElementById('modal-container').innerHTML = ''"
+                  class="px-4 py-2 text-text-muted hover:text-text font-medium transition-colors">
+            Cancel
+          </button>
+          <button type="submit"
+                  class="px-5 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+            <% if is_edit then %>
+              Update Service
+            <% else %>
+              Create Service
+            <% end %>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  // Close modal function
+  window.closeModal = function() {
+    document.getElementById('modal-container').innerHTML = '';
+  };
+
+  // Close modal on Escape key
+  function handleEscape(e) {
+    if (e.key === 'Escape') {
+      closeModal();
+      document.removeEventListener('keydown', handleEscape);
+    }
+  }
+  document.addEventListener('keydown', handleEscape);
+
+  // Listen for closeModal event
+  document.body.addEventListener('closeModal', function() {
+    closeModal();
+  });
+})();
+</script>

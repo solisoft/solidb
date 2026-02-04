@@ -6,6 +6,36 @@ use std::sync::atomic::AtomicUsize;
 
 pub use super::auth::ScriptUser;
 
+/// Service metadata stored in _services collection
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Service {
+    /// Service identifier (e.g., "users", "auth")
+    #[serde(rename = "_key")]
+    pub key: String,
+    /// Human-readable name
+    pub name: String,
+    /// Optional description
+    pub description: Option<String>,
+    /// API version (e.g., "1.0.0")
+    pub version: Option<String>,
+    /// Database this service belongs to
+    pub database: String,
+    /// Whether this service is enabled
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    /// Default auth requirement for scripts in this service
+    #[serde(default)]
+    pub require_auth: bool,
+    /// Creation timestamp
+    pub created_at: String,
+    /// Last modified timestamp
+    pub updated_at: String,
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
 /// Context passed to Lua scripts containing request information
 #[derive(Debug, Clone)]
 pub struct ScriptContext {
@@ -41,6 +71,9 @@ pub struct Script {
     /// Database this script belongs to
     #[serde(default = "default_database")]
     pub database: String,
+    /// Service this script belongs to (required)
+    #[serde(default = "default_service")]
+    pub service: String,
     /// Collection this script is scoped to (optional)
     pub collection: Option<String>,
     /// The Lua source code
@@ -55,6 +88,10 @@ pub struct Script {
 
 fn default_database() -> String {
     "_system".to_string()
+}
+
+fn default_service() -> String {
+    "default".to_string()
 }
 
 /// Runtime statistics for the script engine

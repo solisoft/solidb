@@ -1,0 +1,2156 @@
+<%
+  local db = db or "_system"
+  local vertex_collections = vertex_collections or {}
+  local edge_collections = edge_collections or {}
+  local collections = collections or {}
+%>
+<div class="max-w-full mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text">Graph Explorer</h1>
+      <p class="text-text-muted text-sm">Visualize relationships in <span class="font-medium text-primary-light"><%= db %></span></p>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button type="button" onclick="openVertexModal()"
+              class="px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors text-sm">
+        <i class="fas fa-plus mr-2"></i>New Vertex
+      </button>
+      <button type="button" onclick="openEdgeModal()"
+              class="px-4 py-2 bg-accent hover:bg-accent-light text-white font-medium rounded-lg transition-colors text-sm">
+        <i class="fas fa-link mr-2"></i>New Edge
+      </button>
+    </div>
+  </div>
+
+  <!-- Graph Load Form -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 mb-6">
+    <form id="graph-load-form" class="space-y-4">
+      <!-- Row 1: Collections -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Vertex Collection</label>
+          <select id="vertex-collection" name="vertex_collection"
+                  class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:ring-2 focus:ring-primary/50 focus:border-primary">
+            <option value="">Select collection...</option>
+            <% for _, coll in ipairs(vertex_collections) do %>
+            <option value="<%= coll %>"><%= coll %></option>
+            <% end %>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Start Vertex (optional)</label>
+          <input type="text" id="start-vertex" name="start_vertex"
+                 placeholder="collection/key (e.g., users/alice)"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary/50 focus:border-primary">
+        </div>
+      </div>
+
+      <!-- Row 2: Edge Collections -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-2">Edge Collections</label>
+        <div class="flex flex-wrap gap-3" id="edge-collections-checkboxes">
+          <% if #edge_collections == 0 then %>
+          <span class="text-text-muted text-sm">No edge collections found</span>
+          <% else %>
+          <% for idx, coll in ipairs(edge_collections) do
+             local colors = {"#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"}
+             local color = colors[((idx - 1) % #colors) + 1]
+          %>
+          <label class="inline-flex items-center gap-2 px-3 py-1.5 bg-bg-dark border border-border/50 rounded-lg cursor-pointer hover:border-primary/50 transition-colors">
+            <input type="checkbox" name="edge_collection" value="<%= coll %>"
+                   class="edge-collection-checkbox w-4 h-4 rounded border-border/50 text-primary focus:ring-primary/50">
+            <span class="w-3 h-3 rounded-full" style="background-color: <%= color %>"></span>
+            <span class="text-sm text-text"><%= coll %></span>
+          </label>
+          <% end %>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Row 3: Traversal Options -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Min Depth</label>
+          <input type="number" id="min-depth" name="min_depth" value="1" min="0" max="10"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:ring-2 focus:ring-primary/50 focus:border-primary">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Max Depth</label>
+          <input type="number" id="max-depth" name="max_depth" value="2" min="1" max="10"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:ring-2 focus:ring-primary/50 focus:border-primary">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Direction</label>
+          <select id="direction" name="direction"
+                  class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:ring-2 focus:ring-primary/50 focus:border-primary">
+            <option value="ANY">Any</option>
+            <option value="OUTBOUND">Outbound</option>
+            <option value="INBOUND">Inbound</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Node Limit</label>
+          <input type="number" id="node-limit" name="limit" value="50" min="10" max="500"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:ring-2 focus:ring-primary/50 focus:border-primary">
+        </div>
+      </div>
+
+      <!-- Row 4: Actions -->
+      <div class="flex justify-end">
+        <button type="submit" id="load-graph-btn"
+                class="px-6 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+          <i class="fas fa-project-diagram mr-2"></i>Load Graph
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Search & Filter Bar -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 mb-6">
+    <div class="flex flex-col lg:flex-row gap-4">
+      <!-- Search Input -->
+      <div class="flex-1">
+        <div class="relative">
+          <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-text-dim"></i>
+          <input type="text" id="graph-search" placeholder="Search nodes by ID, property, or label..."
+                 class="w-full pl-10 pr-4 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                 oninput="searchGraph(this.value)">
+        </div>
+      </div>
+      
+      <!-- Filter Controls -->
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="toggleFilterPanel()" id="filter-toggle-btn"
+                class="px-3 py-2 bg-bg-dark hover:bg-bg-card border border-border/50 rounded-lg text-text text-sm transition-colors">
+          <i class="fas fa-filter mr-2"></i>Filters
+        </button>
+        <button type="button" onclick="clearFilters()"
+                class="px-3 py-2 bg-bg-dark hover:bg-bg-card border border-border/50 rounded-lg text-text text-sm transition-colors">
+          <i class="fas fa-undo mr-2"></i>Clear
+        </button>
+        <button type="button" onclick="resetView()"
+                class="px-3 py-2 bg-bg-dark hover:bg-bg-card border border-border/50 rounded-lg text-text text-sm transition-colors">
+          <i class="fas fa-sync mr-2"></i>Reset
+        </button>
+      </div>
+    </div>
+    
+    <!-- Collapsible Filter Panel -->
+    <div id="filter-panel" class="hidden mt-4 pt-4 border-t border-border/30">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Collection Filter -->
+        <div>
+          <label class="block text-xs font-medium text-text-dim mb-1">Filter by Collection</label>
+          <select id="filter-collection" multiple size="3"
+                  class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+            <% for _, coll in ipairs(vertex_collections) do %>
+            <option value="<%= coll %>"><%= coll %></option>
+            <% end %>
+          </select>
+        </div>
+        
+        <!-- Property Filter -->
+        <div>
+          <label class="block text-xs font-medium text-text-dim mb-1">Filter by Property</label>
+          <div class="flex gap-2">
+            <select id="filter-property-name" 
+                    class="flex-1 px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+              <option value="">Load graph to see properties...</option>
+            </select>
+            <input type="text" id="filter-property-value" placeholder="Value"
+                   class="flex-1 px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+          </div>
+        </div>
+        
+        <!-- Degree Filter -->
+        <div>
+          <label class="block text-xs font-medium text-text-dim mb-1">Min Connections (Degree)</label>
+          <input type="number" id="filter-min-degree" min="0" max="100" value="0"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+        </div>
+      </div>
+      
+      <div class="flex justify-end mt-4">
+        <button type="button" onclick="applyFilters()"
+                class="px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors text-sm">
+          Apply Filters
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content: Graph Canvas + Analytics Sidebar -->
+  <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <!-- Graph Canvas -->
+    <div class="lg:col-span-3 bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+      <!-- Canvas Toolbar -->
+      <div class="border-b border-border/30 px-4 py-2 flex items-center justify-between flex-wrap gap-2">
+        <div class="flex items-center gap-3">
+          <span id="graph-stats" class="text-xs text-text-dim">0 nodes, 0 edges</span>
+          <span id="selection-stats" class="text-xs text-primary hidden">| <span id="selected-count">0</span> selected</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <select id="layout-select" onchange="changeLayout(this.value)"
+                  class="px-2 py-1 text-xs bg-bg-dark border border-border/50 rounded text-text">
+            <option value="cose">Force (Cose)</option>
+            <option value="circle">Circle</option>
+            <option value="grid">Grid</option>
+            <option value="breadthfirst">Hierarchy</option>
+            <option value="concentric">Concentric</option>
+            <option value="dagre">DAG</option>
+          </select>
+          <button type="button" onclick="cy.fit()" title="Fit to screen"
+                  class="p-1.5 text-text-muted hover:text-text hover:bg-white/10 rounded transition-colors">
+            <i class="fas fa-expand"></i>
+          </button>
+          <button type="button" onclick="cy.zoom(cy.zoom() * 1.2)" title="Zoom in"
+                  class="p-1.5 text-text-muted hover:text-text hover:bg-white/10 rounded transition-colors">
+            <i class="fas fa-search-plus"></i>
+          </button>
+          <button type="button" onclick="cy.zoom(cy.zoom() / 1.2)" title="Zoom out"
+                  class="p-1.5 text-text-muted hover:text-text hover:bg-white/10 rounded transition-colors">
+            <i class="fas fa-search-minus"></i>
+          </button>
+          <div class="relative group">
+            <button type="button" title="Export"
+                    class="p-1.5 text-text-muted hover:text-text hover:bg-white/10 rounded transition-colors">
+              <i class="fas fa-download"></i>
+            </button>
+            <div class="hidden group-hover:block absolute right-0 top-full mt-1 bg-bg-card border border-border/50 rounded-lg shadow-xl py-1 min-w-[140px] z-50">
+              <button onclick="exportPNG()" class="w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10">
+                <i class="fas fa-image w-4 mr-2"></i>PNG Image
+              </button>
+              <button onclick="exportJSON()" class="w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10">
+                <i class="fas fa-code w-4 mr-2"></i>JSON
+              </button>
+              <button onclick="exportCSV()" class="w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10">
+                <i class="fas fa-table w-4 mr-2"></i>CSV
+              </button>
+              <button onclick="exportGraphML()" class="w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10">
+                <i class="fas fa-project-diagram w-4 mr-2"></i>GraphML
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cytoscape Canvas -->
+      <div id="graph-canvas" class="h-[600px] bg-bg-dark relative">
+        <!-- Loading Overlay -->
+        <div id="graph-loading" class="hidden absolute inset-0 bg-bg-dark/80 flex items-center justify-center z-10">
+          <div class="text-center">
+            <i class="fas fa-spinner fa-spin text-3xl text-primary mb-2"></i>
+            <p class="text-text-muted text-sm">Loading graph...</p>
+          </div>
+        </div>
+        
+        <!-- Empty State Overlay -->
+        <div id="graph-empty" class="absolute inset-0 flex items-center justify-center z-0">
+          <div class="text-center max-w-md px-6">
+            <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-bg-card flex items-center justify-center">
+              <i class="fas fa-project-diagram text-4xl text-primary"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-text mb-2">No Graph Loaded</h3>
+            <p class="text-text-muted text-sm mb-4">Load a graph to visualize relationships between your data.</p>
+            
+            <div class="bg-bg-card/50 rounded-lg p-4 text-left text-sm space-y-2 border border-border/50">
+              <div class="flex items-start gap-2">
+                <span class="text-primary font-mono">1</span>
+                <span class="text-text-muted">Select a <strong class="text-text">Vertex Collection</strong> from the dropdown above</span>
+              </div>
+              <div class="flex items-start gap-2">
+                <span class="text-primary font-mono">2</span>
+                <span class="text-text-muted">Choose <strong class="text-text">Edge Collections</strong> to define relationships</span>
+              </div>
+              <div class="flex items-start gap-2">
+                <span class="text-primary font-mono">3</span>
+                <span class="text-text-muted">Adjust depth, direction, and limits as needed</span>
+              </div>
+              <div class="flex items-start gap-2">
+                <span class="text-primary font-mono">4</span>
+                <span class="text-text-muted">Click <strong class="text-primary">Load Graph</strong> to visualize</span>
+              </div>
+            </div>
+            
+            <p class="text-text-dim text-xs mt-4">
+              <i class="fas fa-info-circle mr-1"></i>
+              Tip: Start with a small limit (50 nodes) for better performance
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div id="legend-container" class="border-t border-border/30 px-4 py-2 flex items-center gap-4 flex-wrap">
+        <span class="text-xs text-text-dim">Legend:</span>
+        <div id="legend-items" class="flex items-center gap-3 flex-wrap"></div>
+      </div>
+    </div>
+
+    <!-- Sidebar: Analytics & Details -->
+    <div class="lg:col-span-1 space-y-4">
+      <!-- Graph Analytics Panel -->
+      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden sticky top-20">
+        <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+          <h3 class="font-semibold text-text"><i class="fas fa-chart-bar mr-2"></i>Analytics</h3>
+          <button onclick="refreshAnalytics()" class="text-text-dim hover:text-primary transition-colors">
+            <i class="fas fa-sync-alt text-xs"></i>
+          </button>
+        </div>
+        
+        <div id="analytics-panel" class="p-4 space-y-4">
+          <!-- Empty State Message -->
+          <div id="analytics-empty" class="text-center py-4">
+            <i class="fas fa-chart-pie text-3xl text-text-dim mb-2 opacity-50"></i>
+            <p class="text-sm text-text-muted">Load a graph to see analytics</p>
+          </div>
+          
+          <!-- Overview Stats (hidden initially) -->
+          <div id="analytics-stats" class="hidden space-y-4">
+            <!-- Overview Stats -->
+            <div class="grid grid-cols-2 gap-2">
+              <div class="bg-bg-dark/50 rounded-lg p-2 text-center">
+                <div id="stat-total-nodes" class="text-xl font-bold text-primary">0</div>
+                <div class="text-xs text-text-dim">Nodes</div>
+              </div>
+              <div class="bg-bg-dark/50 rounded-lg p-2 text-center">
+                <div id="stat-total-edges" class="text-xl font-bold text-accent">0</div>
+                <div class="text-xs text-text-dim">Edges</div>
+              </div>
+            </div>
+            
+            <!-- Degree Statistics -->
+            <div class="border-t border-border/30 pt-3">
+              <h4 class="text-xs font-medium text-text-dim mb-2">DEGREE STATISTICS</h4>
+              <div class="space-y-1 text-sm">
+                <div class="flex justify-between">
+                  <span class="text-text-muted">Avg Degree</span>
+                  <span id="stat-avg-degree" class="text-text font-medium">-</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-text-muted">Max Degree</span>
+                  <span id="stat-max-degree" class="text-text font-medium">-</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-text-muted">Isolated</span>
+                  <span id="stat-isolated" class="text-text font-medium">-</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Collection Distribution -->
+            <div class="border-t border-border/30 pt-3">
+              <h4 class="text-xs font-medium text-text-dim mb-2">COLLECTIONS</h4>
+              <div id="collection-distribution" class="space-y-1 max-h-32 overflow-y-auto">
+                <p class="text-xs text-text-muted italic">Load a graph to see distribution</p>
+              </div>
+            </div>
+            
+            <!-- Top Connected Nodes -->
+            <div class="border-t border-border/30 pt-3">
+              <h4 class="text-xs font-medium text-text-dim mb-2">MOST CONNECTED</h4>
+              <div id="top-nodes" class="space-y-1 max-h-32 overflow-y-auto text-xs">
+                <p class="text-text-muted italic">Load a graph to see top nodes</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-bg-dark/50 rounded-lg p-2 text-center">
+              <div id="stat-total-nodes" class="text-xl font-bold text-primary">0</div>
+              <div class="text-xs text-text-dim">Nodes</div>
+            </div>
+            <div class="bg-bg-dark/50 rounded-lg p-2 text-center">
+              <div id="stat-total-edges" class="text-xl font-bold text-accent">0</div>
+              <div class="text-xs text-text-dim">Edges</div>
+            </div>
+          </div>
+          
+          <!-- Degree Stats -->
+          <div class="border-t border-border/30 pt-3">
+            <h4 class="text-xs font-medium text-text-dim mb-2">DEGREE STATISTICS</h4>
+            <div class="space-y-1 text-sm">
+              <div class="flex justify-between">
+                <span class="text-text-muted">Avg Degree</span>
+                <span id="stat-avg-degree" class="text-text font-medium">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-text-muted">Max Degree</span>
+                <span id="stat-max-degree" class="text-text font-medium">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-text-muted">Isolated</span>
+                <span id="stat-isolated" class="text-text font-medium">-</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Collection Distribution -->
+          <div class="border-t border-border/30 pt-3">
+            <h4 class="text-xs font-medium text-text-dim mb-2">COLLECTIONS</h4>
+            <div id="collection-distribution" class="space-y-1 max-h-32 overflow-y-auto">
+              <p class="text-xs text-text-muted italic">Load a graph to see distribution</p>
+            </div>
+          </div>
+          
+          <!-- Top Connected Nodes -->
+          <div class="border-t border-border/30 pt-3">
+            <h4 class="text-xs font-medium text-text-dim mb-2">MOST CONNECTED</h4>
+            <div id="top-nodes" class="space-y-1 max-h-32 overflow-y-auto text-xs">
+              <p class="text-text-muted italic">Load a graph to see top nodes</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Selection Details Panel -->
+      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden sticky top-20">
+        <div class="border-b border-border/30 px-4 py-3">
+          <h3 class="font-semibold text-text">Details</h3>
+        </div>
+
+        <div id="details-panel" class="p-4">
+          <div class="text-center text-text-muted py-8">
+            <i class="fas fa-mouse-pointer text-3xl mb-3 opacity-50"></i>
+            <p class="text-sm">Click a node or edge to view details</p>
+            <p class="text-xs text-text-dim mt-2">Hold Ctrl/Cmd for multi-select</p>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Bulk Actions Panel (shown when multiple selected) -->
+      <div id="bulk-actions-panel" class="hidden bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden sticky top-20">
+        <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+          <h3 class="font-semibold text-text"><i class="fas fa-tasks mr-2"></i>Bulk Actions</h3>
+          <span id="bulk-count" class="text-xs bg-primary/20 text-primary px-2 py-1 rounded-full">0</span>
+        </div>
+        <div class="p-4 space-y-2">
+          <button onclick="expandSelected()" class="w-full px-3 py-2 bg-bg-dark hover:bg-primary/20 border border-border/50 rounded-lg text-text text-sm transition-colors text-left">
+            <i class="fas fa-expand-arrows-alt mr-2 text-primary"></i>Expand Selected
+          </button>
+          <button onclick="hideUnselected()" class="w-full px-3 py-2 bg-bg-dark hover:bg-accent/20 border border-border/50 rounded-lg text-text text-sm transition-colors text-left">
+            <i class="fas fa-eye-slash mr-2 text-accent"></i>Hide Others
+          </button>
+          <button onclick="showAllNodes()" class="w-full px-3 py-2 bg-bg-dark hover:bg-bg-card border border-border/50 rounded-lg text-text text-sm transition-colors text-left">
+            <i class="fas fa-eye mr-2"></i>Show All
+          </button>
+          <div class="border-t border-border/30 my-2"></div>
+          <button onclick="deleteSelected()" class="w-full px-3 py-2 bg-error/20 hover:bg-error/30 border border-error/50 rounded-lg text-error text-sm transition-colors text-left">
+            <i class="fas fa-trash mr-2"></i>Delete Selected
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Query Builder Modal -->
+<div id="query-builder-modal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+  <div class="bg-bg-card border border-border/50 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div class="border-b border-border/30 px-6 py-4 flex items-center justify-between">
+      <h3 class="text-lg font-semibold text-text">Advanced Query Builder</h3>
+      <button onclick="closeQueryBuilder()" class="text-text-dim hover:text-error transition-colors">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="p-6 overflow-y-auto flex-1 space-y-4">
+      <!-- Start Conditions -->
+      <div>
+        <h4 class="text-sm font-medium text-text mb-2">Start From</h4>
+        <div class="space-y-2">
+          <div class="flex gap-2">
+            <select id="query-start-type" onchange="updateQueryBuilder()"
+                    class="flex-1 px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+              <option value="vertex">Specific Vertex</option>
+              <option value="collection">Entire Collection</option>
+              <option value="filter">Filtered Selection</option>
+            </select>
+          </div>
+          <div id="query-start-vertex-input" class="flex gap-2">
+            <input type="text" id="query-start-vertex" placeholder="collection/key (e.g., users/alice)"
+                   class="flex-1 px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+          </div>
+          <div id="query-start-filter-input" class="hidden space-y-2">
+            <select id="query-start-collection"
+                    class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+              <option value="">Select collection...</option>
+              <% for _, coll in ipairs(vertex_collections) do %>
+              <option value="<%= coll %>"><%= coll %></option>
+              <% end %>
+            </select>
+            <input type="text" id="query-start-filter-field" placeholder="Property name"
+                   class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+            <select id="query-start-filter-operator"
+                    class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+              <option value="eq">equals</option>
+              <option value="ne">not equals</option>
+              <option value="gt">greater than</option>
+              <option value="lt">less than</option>
+              <option value="contains">contains</option>
+              <option value="regex">matches regex</option>
+            </select>
+            <input type="text" id="query-start-filter-value" placeholder="Value"
+                   class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+          </div>
+        </div>
+      </div>
+      
+      <!-- Traversal Settings -->
+      <div class="border-t border-border/30 pt-4">
+        <h4 class="text-sm font-medium text-text mb-2">Traversal Settings</h4>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-text-dim mb-1">Direction</label>
+            <select id="query-direction"
+                    class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+              <option value="ANY">Any</option>
+              <option value="OUTBOUND">Outbound</option>
+              <option value="INBOUND">Inbound</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-text-dim mb-1">Edge Collections</label>
+            <select id="query-edge-collections" multiple size="2"
+                    class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+              <% for _, coll in ipairs(edge_collections) do %>
+              <option value="<%= coll %>"><%= coll %></option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4 mt-2">
+          <div>
+            <label class="block text-xs text-text-dim mb-1">Min Depth</label>
+            <input type="number" id="query-min-depth" value="1" min="0" max="10"
+                   class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-text-dim mb-1">Max Depth</label>
+            <input type="number" id="query-max-depth" value="2" min="1" max="10"
+                   class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+          </div>
+        </div>
+      </div>
+      
+      <!-- Result Limit -->
+      <div class="border-t border-border/30 pt-4">
+        <h4 class="text-sm font-medium text-text mb-2">Results</h4>
+        <div class="flex items-center gap-4">
+          <label class="text-sm text-text-muted">Max Results:</label>
+          <input type="range" id="query-limit" min="10" max="500" value="100" step="10"
+                 class="flex-1" oninput="document.getElementById('query-limit-value').textContent = this.value">
+          <span id="query-limit-value" class="text-sm text-text font-medium w-12 text-right">100</span>
+        </div>
+      </div>
+      
+      <!-- Generated Query Preview -->
+      <div class="border-t border-border/30 pt-4">
+        <h4 class="text-sm font-medium text-text mb-2">Generated Query Preview</h4>
+        <pre id="query-preview" class="bg-bg-dark rounded-lg p-3 text-xs text-text-muted font-mono overflow-x-auto">FOR v IN ...</pre>
+      </div>
+    </div>
+    
+    <div class="border-t border-border/30 px-6 py-4 flex justify-end gap-2">
+      <button onclick="closeQueryBuilder()" class="px-4 py-2 text-text-muted hover:text-text transition-colors">
+        Cancel
+      </button>
+      <button onclick="executeQueryBuilder()" class="px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+        <i class="fas fa-play mr-2"></i>Execute Query
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Context Menu -->
+<div id="context-menu" class="hidden fixed z-50 bg-bg-card border border-border/50 rounded-lg shadow-xl py-1 min-w-[180px]">
+  <button type="button" onclick="expandNode()" class="context-menu-item w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10 flex items-center gap-2">
+    <i class="fas fa-expand-arrows-alt w-4"></i> Expand Node
+  </button>
+  <button type="button" onclick="findPathsFrom()" class="context-menu-item w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10 flex items-center gap-2">
+    <i class="fas fa-route w-4"></i> Find Paths From
+  </button>
+  <button type="button" onclick="openEdgeModal(contextMenuTarget)" class="context-menu-item w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10 flex items-center gap-2">
+    <i class="fas fa-link w-4"></i> Create Edge From
+  </button>
+  <button type="button" onclick="selectConnected()" class="context-menu-item w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10 flex items-center gap-2">
+    <i class="fas fa-project-diagram w-4"></i> Select Connected
+  </button>
+  <div class="border-t border-border/30 my-1"></div>
+  <button type="button" onclick="highlightPath()" class="context-menu-item w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10 flex items-center gap-2">
+    <i class="fas fa-highlighter w-4"></i> Highlight Path
+  </button>
+  <button type="button" onclick="hideNode()" class="context-menu-item w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10 flex items-center gap-2">
+    <i class="fas fa-eye-slash w-4"></i> Hide Node
+  </button>
+  <div class="border-t border-border/30 my-1"></div>
+  <button type="button" onclick="deleteSelected()" class="context-menu-item w-full px-4 py-2 text-left text-sm text-error hover:bg-error/10 flex items-center gap-2">
+    <i class="fas fa-trash w-4"></i> Delete
+  </button>
+</div>
+
+<!-- Path Finding Modal -->
+<div id="path-modal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+  <div class="bg-bg-card border border-border/50 rounded-xl shadow-2xl max-w-lg w-full">
+    <div class="border-b border-border/30 px-6 py-4 flex items-center justify-between">
+      <h3 class="text-lg font-semibold text-text">Find Shortest Path</h3>
+      <button onclick="closePathModal()" class="text-text-dim hover:text-error transition-colors">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <div class="p-6 space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">From</label>
+        <input type="text" id="path-from" readonly
+               class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">To</label>
+        <select id="path-to"
+                class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text text-sm">
+          <option value="">Select target node...</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Via Edge Collections</label>
+        <div id="path-edge-collections" class="flex flex-wrap gap-2">
+          <% for idx, coll in ipairs(edge_collections) do
+             local colors = {"#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"}
+             local color = colors[((idx - 1) % #colors) + 1]
+          %>
+          <label class="inline-flex items-center gap-2 px-3 py-1.5 bg-bg-dark border border-border/50 rounded-lg cursor-pointer hover:border-primary/50 transition-colors">
+            <input type="checkbox" value="<%= coll %>" checked
+                   class="w-4 h-4 rounded border-border/50 text-primary focus:ring-primary/50">
+            <span class="w-3 h-3 rounded-full" style="background-color: <%= color %>"></span>
+            <span class="text-sm text-text"><%= coll %></span>
+          </label>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    <div class="border-t border-border/30 px-6 py-4 flex justify-end gap-2">
+      <button onclick="closePathModal()" class="px-4 py-2 text-text-muted hover:text-text transition-colors">
+        Cancel
+      </button>
+      <button onclick="findPath()" class="px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+        <i class="fas fa-search mr-2"></i>Find Path
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var db = '<%= db %>';
+  var cy = null;
+  var contextMenuTarget = null;
+  var selectedElements = new Set();
+  var hiddenElements = new Set();
+  var allNodesData = [];
+  var allEdgesData = [];
+  var currentFilters = {};
+
+  // Color palette matching controller
+  var EDGE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+  var COLLECTION_COLORS = {};
+
+  // Initialize collection colors
+  <% for idx, coll in ipairs(vertex_collections) do
+     local colors = {"#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"}
+     local color = colors[((idx - 1) % #colors) + 1]
+  %>
+  COLLECTION_COLORS['<%= coll %>'] = '<%= color %>';
+  <% end %>
+
+  // Wait for Cytoscape to be available
+  function waitForCytoscape(callback) {
+    if (typeof cytoscape !== 'undefined') {
+      callback();
+    } else {
+      // Try again in 100ms
+      setTimeout(function() {
+        if (typeof cytoscape !== 'undefined') {
+          callback();
+        } else {
+          // Cytoscape still not available, try a few more times
+          var attempts = 0;
+          var interval = setInterval(function() {
+            attempts++;
+            if (typeof cytoscape !== 'undefined') {
+              clearInterval(interval);
+              callback();
+            } else if (attempts > 50) {
+              clearInterval(interval);
+              console.error('Cytoscape failed to load');
+              showToast('Graph library failed to load. Please refresh the page.', 'error');
+            }
+          }, 100);
+        }
+      }, 100);
+    }
+  }
+
+  // Initialize Cytoscape
+  function initCytoscape() {
+    cy = cytoscape({
+      container: document.getElementById('graph-canvas'),
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'background-color': 'data(collectionColor)',
+            'label': 'data(label)',
+            'color': '#fff',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'font-size': '11px',
+            'font-weight': '500',
+            'width': 40,
+            'height': 40,
+            'text-outline-color': '#1a1a2e',
+            'text-outline-width': 2,
+            'text-max-width': '80px',
+            'text-wrap': 'ellipsis',
+            'border-width': 2,
+            'border-color': '#1a1a2e'
+          }
+        },
+        {
+          selector: 'node[?isStart]',
+          style: {
+            'border-width': 4,
+            'border-color': '#fbbf24',
+            'width': 50,
+            'height': 50
+          }
+        },
+        {
+          selector: 'node.highlighted',
+          style: {
+            'background-color': '#10b981',
+            'border-color': '#34d399',
+            'transition-property': 'background-color, border-color',
+            'transition-duration': '0.3s'
+          }
+        },
+        {
+          selector: 'node.filtered-out',
+          style: {
+            'opacity': 0.2,
+            'events': 'no'
+          }
+        },
+        {
+          selector: 'node:selected',
+          style: {
+            'border-width': 4,
+            'border-color': '#8b5cf6',
+            'background-color': '#a78bfa'
+          }
+        },
+        {
+          selector: 'edge',
+          style: {
+            'width': 2,
+            'line-color': 'data(color)',
+            'target-arrow-color': 'data(color)',
+            'target-arrow-shape': 'triangle',
+            'curve-style': 'bezier',
+            'arrow-scale': 1.2,
+            'label': 'data(label)',
+            'font-size': '9px',
+            'color': '#9ca3af',
+            'text-background-color': '#1a1a2e',
+            'text-background-opacity': 0.8,
+            'text-background-padding': '2px'
+          }
+        },
+        {
+          selector: 'edge:selected',
+          style: {
+            'width': 4,
+            'line-style': 'dashed',
+            'line-color': '#8b5cf6',
+            'target-arrow-color': '#8b5cf6'
+          }
+        },
+        {
+          selector: 'edge.filtered-out',
+          style: {
+            'opacity': 0.1,
+            'events': 'no'
+          }
+        },
+        {
+          selector: '.hidden',
+          style: {
+            'display': 'none'
+          }
+        }
+      ],
+      layout: { 
+        name: 'cose', 
+        animate: true, 
+        nodeRepulsion: function(node) { return 8000; }, 
+        idealEdgeLength: function(edge) { return 100; }
+      },
+      minZoom: 0.1,
+      maxZoom: 3,
+      wheelSensitivity: 0.3,
+      selectionType: 'additive'
+    });
+
+    // Event: Click node/edge with multi-select support
+    cy.on('tap', 'node, edge', function(evt) {
+      var target = evt.target;
+      
+      if (evt.originalEvent.ctrlKey || evt.originalEvent.metaKey) {
+        // Multi-select toggle
+        if (target.selected()) {
+          target.unselect();
+          selectedElements.delete(target.id());
+        } else {
+          target.select();
+          selectedElements.add(target.id());
+        }
+      } else {
+        // Single select - clear others
+        cy.elements().unselect();
+        selectedElements.clear();
+        target.select();
+        selectedElements.add(target.id());
+      }
+      
+      updateSelectionUI();
+    });
+
+    // Event: Click background (deselect all)
+    cy.on('tap', function(evt) {
+      if (evt.target === cy) {
+        cy.elements().unselect();
+        selectedElements.clear();
+        updateSelectionUI();
+        showEmptyDetails();
+      }
+    });
+
+    // Event: Double-click node (expand)
+    cy.on('dbltap', 'node', function(evt) {
+      expandNodeById(evt.target.id());
+    });
+
+    // Event: Right-click (context menu)
+    cy.on('cxttap', 'node', function(evt) {
+      evt.originalEvent.preventDefault();
+      contextMenuTarget = evt.target.id();
+      showContextMenu(evt.originalEvent.pageX, evt.originalEvent.pageY);
+    });
+
+    // Box selection
+    cy.on('boxselect', function(evt) {
+      evt.target.forEach(function(ele) {
+        selectedElements.add(ele.id());
+      });
+      updateSelectionUI();
+    });
+
+    // Hide context menu on click elsewhere
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('#context-menu')) {
+        hideContextMenu();
+      }
+    });
+
+    // Make cy available globally
+    window.cy = cy;
+  }
+
+  // Update UI based on selection
+  function updateSelectionUI() {
+    var count = selectedElements.size;
+    var statsEl = document.getElementById('selection-stats');
+    var countEl = document.getElementById('selected-count');
+    var bulkPanel = document.getElementById('bulk-actions-panel');
+    var bulkCount = document.getElementById('bulk-count');
+    
+    if (count > 0) {
+      statsEl.classList.remove('hidden');
+      countEl.textContent = count;
+      bulkPanel.classList.remove('hidden');
+      bulkCount.textContent = count;
+      
+      if (count === 1) {
+        // Show single element details
+        var ele = cy.getElementById(Array.from(selectedElements)[0]);
+        if (ele.isNode()) {
+          showNodeDetails(ele.data());
+        } else {
+          showEdgeDetails(ele.data());
+        }
+      } else {
+        // Show bulk selection details
+        showBulkDetails(count);
+      }
+    } else {
+      statsEl.classList.add('hidden');
+      bulkPanel.classList.add('hidden');
+      showEmptyDetails();
+    }
+  }
+
+  // Show bulk selection details
+  function showBulkDetails(count) {
+    var nodes = cy.nodes().filter(function(n) { return selectedElements.has(n.id()); });
+    var edges = cy.edges().filter(function(e) { return selectedElements.has(e.id()); });
+    
+    var html = '<div class="space-y-4">';
+    html += '<div>';
+    html += '<span class="text-xs text-text-dim uppercase tracking-wider">Selection</span>';
+    html += '<h4 class="font-semibold text-text">' + count + ' elements selected</h4>';
+    html += '</div>';
+    
+    html += '<div class="border-t border-border/30 pt-3">';
+    html += '<div class="text-sm text-text-muted">';
+    html += '<div class="flex justify-between"><span>Nodes:</span><span class="text-text">' + nodes.length + '</span></div>';
+    html += '<div class="flex justify-between"><span>Edges:</span><span class="text-text">' + edges.length + '</span></div>';
+    html += '</div>';
+    html += '</div>';
+    
+    html += '</div>';
+    document.getElementById('details-panel').innerHTML = html;
+  }
+
+  // Search functionality
+  window.searchGraph = function(query) {
+    if (!cy || cy.elements().length === 0) {
+      showToast('Please load a graph first', 'error');
+      return;
+    }
+    
+    if (!query || query.length < 2) {
+      cy.elements().removeClass('filtered-out');
+      return;
+    }
+    
+    query = query.toLowerCase();
+    
+    cy.nodes().forEach(function(node) {
+      var data = node.data();
+      var match = false;
+      
+      // Search in ID, label, and data properties
+      if (data.id && data.id.toLowerCase().includes(query)) match = true;
+      if (data.label && data.label.toLowerCase().includes(query)) match = true;
+      if (data.collection && data.collection.toLowerCase().includes(query)) match = true;
+      
+      if (data.data) {
+        var dataStr = JSON.stringify(data.data).toLowerCase();
+        if (dataStr.includes(query)) match = true;
+      }
+      
+      if (match) {
+        node.removeClass('filtered-out');
+        // Highlight matched nodes
+        node.addClass('highlighted');
+      } else {
+        node.addClass('filtered-out');
+        node.removeClass('highlighted');
+      }
+    });
+    
+    // Also filter edges
+    cy.edges().forEach(function(edge) {
+      var data = edge.data();
+      if (data.id && data.id.toLowerCase().includes(query)) {
+        edge.removeClass('filtered-out');
+      } else {
+        edge.addClass('filtered-out');
+      }
+    });
+  };
+
+  // Filter panel toggle
+  window.toggleFilterPanel = function() {
+    var panel = document.getElementById('filter-panel');
+    panel.classList.toggle('hidden');
+  };
+
+  // Clear all filters
+  window.clearFilters = function() {
+    document.getElementById('graph-search').value = '';
+    document.getElementById('filter-collection').selectedIndex = -1;
+    document.getElementById('filter-property-name').value = '';
+    document.getElementById('filter-property-value').value = '';
+    document.getElementById('filter-min-degree').value = '0';
+    
+    if (cy && cy.elements().length > 0) {
+      cy.elements().removeClass('filtered-out highlighted');
+    }
+    currentFilters = {};
+  };
+
+  // Apply filters
+  window.applyFilters = function() {
+    if (!cy || cy.elements().length === 0) {
+      showToast('Please load a graph first', 'error');
+      return;
+    }
+    
+    var collections = Array.from(document.getElementById('filter-collection').selectedOptions).map(o => o.value);
+    var propertyName = document.getElementById('filter-property-name').value;
+    var propertyValue = document.getElementById('filter-property-value').value;
+    var minDegree = parseInt(document.getElementById('filter-min-degree').value) || 0;
+    
+    currentFilters = { collections, propertyName, propertyValue, minDegree };
+    
+    cy.nodes().forEach(function(node) {
+      var data = node.data();
+      var visible = true;
+      
+      // Filter by collection
+      if (collections.length > 0 && !collections.includes(data.collection)) {
+        visible = false;
+      }
+      
+      // Filter by property
+      if (visible && propertyName && propertyValue) {
+        if (!data.data || !data.data[propertyName]) {
+          visible = false;
+        } else {
+          var val = String(data.data[propertyName]).toLowerCase();
+          if (!val.includes(propertyValue.toLowerCase())) {
+            visible = false;
+          }
+        }
+      }
+      
+      // Filter by degree
+      if (visible && minDegree > 0) {
+        var degree = node.degree();
+        if (degree < minDegree) {
+          visible = false;
+        }
+      }
+      
+      if (visible) {
+        node.removeClass('filtered-out');
+      } else {
+        node.addClass('filtered-out');
+      }
+    });
+    
+    // Filter edges based on visible nodes
+    cy.edges().forEach(function(edge) {
+      var sourceVisible = !cy.getElementById(edge.data('source')).hasClass('filtered-out');
+      var targetVisible = !cy.getElementById(edge.data('target')).hasClass('filtered-out');
+      
+      if (sourceVisible && targetVisible) {
+        edge.removeClass('filtered-out');
+      } else {
+        edge.addClass('filtered-out');
+      }
+    });
+  };
+
+  // Reset view
+  window.resetView = function() {
+    clearFilters();
+    if (!cy || cy.elements().length === 0) {
+      showToast('Please load a graph first', 'error');
+      return;
+    }
+    showAllNodes();
+    cy.fit();
+    cy.center();
+  };
+
+  // Show/hide empty state
+  function showEmptyState() {
+    var emptyEl = document.getElementById('graph-empty');
+    if (emptyEl) {
+      emptyEl.classList.remove('hidden');
+    }
+  }
+
+  // Show context menu
+  function showContextMenu(x, y) {
+    var menu = document.getElementById('context-menu');
+    var canvas = document.getElementById('graph-canvas');
+    var rect = canvas.getBoundingClientRect();
+    
+    // Ensure menu stays within canvas bounds
+    x = Math.min(x, rect.right - 180);
+    y = Math.min(y, rect.bottom - 200);
+    
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    menu.classList.remove('hidden');
+  }
+
+  function hideContextMenu() {
+    document.getElementById('context-menu').classList.add('hidden');
+  }
+
+  // Show node details in sidebar
+  function showNodeDetails(data) {
+    var html = '<div class="space-y-4">';
+    html += '<div>';
+    html += '<span class="text-xs text-text-dim uppercase tracking-wider">Node</span>';
+    html += '<h4 class="font-semibold text-text truncate" title="' + escapeHtml(data.id) + '">' + escapeHtml(data.id) + '</h4>';
+    html += '</div>';
+
+    html += '<div class="border-t border-border/30 pt-3">';
+    html += '<span class="text-xs text-text-dim uppercase tracking-wider">Collection</span>';
+    html += '<p class="text-text">' + escapeHtml(data.collection || 'Unknown') + '</p>';
+    html += '</div>';
+
+    html += '<div class="border-t border-border/30 pt-3">';
+    html += '<span class="text-xs text-text-dim uppercase tracking-wider">Connections</span>';
+    html += '<p class="text-text">In: <span class="text-accent">' + (data.inDegree || 0) + '</span> | Out: <span class="text-accent">' + (data.outDegree || 0) + '</span> | Total: <span class="text-primary">' + (data.degree || 0) + '</span></p>';
+    html += '</div>';
+
+    if (data.data && Object.keys(data.data).length > 0) {
+      html += '<div class="border-t border-border/30 pt-3">';
+      html += '<span class="text-xs text-text-dim uppercase tracking-wider">Properties</span>';
+      html += '<div class="mt-2 space-y-1 max-h-48 overflow-y-auto">';
+      for (var key in data.data) {
+        var val = data.data[key];
+        var valStr = typeof val === 'object' ? JSON.stringify(val) : String(val);
+        html += '<div class="text-xs">';
+        html += '<span class="text-text-dim">' + escapeHtml(key) + ':</span> ';
+        html += '<span class="text-text">' + escapeHtml(valStr.substring(0, 50)) + (valStr.length > 50 ? '...' : '') + '</span>';
+        html += '</div>';
+      }
+      html += '</div>';
+      html += '</div>';
+    }
+
+    html += '<div class="border-t border-border/30 pt-3 flex gap-2">';
+    html += '<button onclick="expandNodeById(\'' + escapeHtml(data.id) + '\')" class="flex-1 px-3 py-1.5 text-xs bg-primary/20 hover:bg-primary/30 text-primary-light rounded transition-colors"><i class="fas fa-expand-arrows-alt mr-1"></i> Expand</button>';
+    html += '<button onclick="findPaths(\'' + escapeHtml(data.id) + '\')" class="flex-1 px-3 py-1.5 text-xs bg-accent/20 hover:bg-accent/30 text-accent rounded transition-colors"><i class="fas fa-route mr-1"></i> Paths</button>';
+    html += '<button onclick="deleteElement(\'vertex\', \'' + escapeHtml(data.id) + '\')" class="px-3 py-1.5 text-xs bg-error/20 hover:bg-error/30 text-error rounded transition-colors"><i class="fas fa-trash"></i></button>';
+    html += '</div>';
+    html += '</div>';
+
+    document.getElementById('details-panel').innerHTML = html;
+  }
+
+  // Show edge details in sidebar
+  function showEdgeDetails(data) {
+    var html = '<div class="space-y-4">';
+    html += '<div>';
+    html += '<span class="text-xs text-text-dim uppercase tracking-wider">Edge</span>';
+    html += '<h4 class="font-semibold text-text truncate" title="' + escapeHtml(data.id) + '">' + escapeHtml(data.id || 'Edge') + '</h4>';
+    html += '</div>';
+
+    html += '<div class="border-t border-border/30 pt-3">';
+    html += '<span class="text-xs text-text-dim uppercase tracking-wider">Collection</span>';
+    html += '<p class="text-text">' + escapeHtml(data.collection || 'Unknown') + '</p>';
+    html += '</div>';
+
+    html += '<div class="border-t border-border/30 pt-3">';
+    html += '<span class="text-xs text-text-dim uppercase tracking-wider">Connection</span>';
+    html += '<p class="text-sm text-text"><span class="text-text-dim">From:</span> ' + escapeHtml(data.source) + '</p>';
+    html += '<p class="text-sm text-text"><span class="text-text-dim">To:</span> ' + escapeHtml(data.target) + '</p>';
+    html += '</div>';
+
+    if (data.data && Object.keys(data.data).length > 0) {
+      html += '<div class="border-t border-border/30 pt-3">';
+      html += '<span class="text-xs text-text-dim uppercase tracking-wider">Properties</span>';
+      html += '<div class="mt-2 space-y-1 max-h-48 overflow-y-auto">';
+      for (var key in data.data) {
+        var val = data.data[key];
+        var valStr = typeof val === 'object' ? JSON.stringify(val) : String(val);
+        html += '<div class="text-xs">';
+        html += '<span class="text-text-dim">' + escapeHtml(key) + ':</span> ';
+        html += '<span class="text-text">' + escapeHtml(valStr.substring(0, 50)) + (valStr.length > 50 ? '...' : '') + '</span>';
+        html += '</div>';
+      }
+      html += '</div>';
+      html += '</div>';
+    }
+
+    html += '<div class="border-t border-border/30 pt-3">';
+    html += '<button onclick="deleteElement(\'edge\', \'' + escapeHtml(data.id) + '\')" class="w-full px-3 py-1.5 text-xs bg-error/20 hover:bg-error/30 text-error rounded transition-colors"><i class="fas fa-trash mr-1"></i> Delete Edge</button>';
+    html += '</div>';
+    html += '</div>';
+
+    document.getElementById('details-panel').innerHTML = html;
+  }
+
+  // Show empty details
+  function showEmptyDetails() {
+    document.getElementById('details-panel').innerHTML =
+      '<div class="text-center text-text-muted py-8">' +
+      '<i class="fas fa-mouse-pointer text-3xl mb-3 opacity-50"></i>' +
+      '<p class="text-sm">Click a node or edge to view details</p>' +
+      '<p class="text-xs text-text-dim mt-2">Hold Ctrl/Cmd for multi-select</p>' +
+      '</div>';
+  }
+
+  // Refresh analytics panel
+  window.refreshAnalytics = function() {
+    if (!cy || cy.elements().length === 0) {
+      showToast('Please load a graph first', 'error');
+      return;
+    }
+    calculateAndDisplayAnalytics();
+  };
+
+  // Calculate and display graph analytics
+  function calculateAndDisplayAnalytics() {
+    if (!cy) return;
+    
+    var nodes = cy.nodes().filter(function(n) { return !n.hasClass('filtered-out') && !n.hasClass('hidden'); });
+    var edges = cy.edges().filter(function(e) { return !e.hasClass('filtered-out') && !e.hasClass('hidden'); });
+    
+    // Show/hide empty state
+    var emptyEl = document.getElementById('analytics-empty');
+    var statsEl = document.getElementById('analytics-stats');
+    
+    if (nodes.length === 0 && edges.length === 0) {
+      if (emptyEl) emptyEl.classList.remove('hidden');
+      if (statsEl) statsEl.classList.add('hidden');
+      return;
+    }
+    
+    if (emptyEl) emptyEl.classList.add('hidden');
+    if (statsEl) statsEl.classList.remove('hidden');
+    
+    // Basic counts
+    document.getElementById('stat-total-nodes').textContent = nodes.length;
+    document.getElementById('stat-total-edges').textContent = edges.length;
+    
+    // Degree statistics
+    var degrees = [];
+    var maxDegree = 0;
+    var isolatedCount = 0;
+    var degreeSum = 0;
+    
+    nodes.forEach(function(node) {
+      var degree = node.degree();
+      degrees.push({ id: node.id(), degree: degree, data: node.data() });
+      degreeSum += degree;
+      if (degree > maxDegree) maxDegree = degree;
+      if (degree === 0) isolatedCount++;
+    });
+    
+    var avgDegree = nodes.length > 0 ? (degreeSum / nodes.length).toFixed(1) : 0;
+    
+    document.getElementById('stat-avg-degree').textContent = avgDegree;
+    document.getElementById('stat-max-degree').textContent = maxDegree;
+    document.getElementById('stat-isolated').textContent = isolatedCount;
+    
+    // Collection distribution
+    var collectionCounts = {};
+    nodes.forEach(function(node) {
+      var coll = node.data('collection') || 'Unknown';
+      collectionCounts[coll] = (collectionCounts[coll] || 0) + 1;
+    });
+    
+    var distributionHtml = '';
+    var sortedCollections = Object.entries(collectionCounts).sort((a, b) => b[1] - a[1]);
+    sortedCollections.forEach(function([coll, count]) {
+      var color = COLLECTION_COLORS[coll] || '#6366f1';
+      var percentage = Math.round((count / nodes.length) * 100);
+      distributionHtml += '<div class="flex items-center justify-between text-xs">';
+      distributionHtml += '<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background-color: ' + color + '"></span> ' + escapeHtml(coll) + '</span>';
+      distributionHtml += '<span class="text-text-dim">' + count + ' (' + percentage + '%)</span>';
+      distributionHtml += '</div>';
+    });
+    
+    if (sortedCollections.length === 0) {
+      distributionHtml = '<p class="text-xs text-text-muted italic">No nodes loaded</p>';
+    }
+    document.getElementById('collection-distribution').innerHTML = distributionHtml;
+    
+    // Top connected nodes
+    degrees.sort((a, b) => b.degree - a.degree);
+    var topNodes = degrees.slice(0, 5);
+    
+    var topNodesHtml = '';
+    topNodes.forEach(function(node) {
+      if (node.degree > 0) {
+        topNodesHtml += '<div class="flex items-center justify-between py-1">';
+        topNodesHtml += '<span class="truncate max-w-[140px]" title="' + escapeHtml(node.id) + '">' + escapeHtml(node.data.label || node.id) + '</span>';
+        topNodesHtml += '<span class="text-primary font-medium">' + node.degree + '</span>';
+        topNodesHtml += '</div>';
+      }
+    });
+    
+    if (topNodesHtml === '') {
+      topNodesHtml = '<p class="text-text-muted italic">No connections found</p>';
+    }
+    document.getElementById('top-nodes').innerHTML = topNodesHtml;
+  }
+
+  // Show loading overlay
+  function showLoading() {
+    document.getElementById('graph-loading').classList.remove('hidden');
+  }
+
+  function hideLoading() {
+    document.getElementById('graph-loading').classList.add('hidden');
+  }
+
+  // Load graph data
+  function loadGraph() {
+    showLoading();
+    
+    var vertexColl = document.getElementById('vertex-collection').value;
+    var startVertex = document.getElementById('start-vertex').value;
+    var minDepth = document.getElementById('min-depth').value;
+    var maxDepth = document.getElementById('max-depth').value;
+    var direction = document.getElementById('direction').value;
+    var limit = document.getElementById('node-limit').value;
+
+    // Get selected edge collections
+    var edgeColls = [];
+    document.querySelectorAll('.edge-collection-checkbox:checked').forEach(function(cb) {
+      edgeColls.push(cb.value);
+    });
+
+    if (!vertexColl && !startVertex) {
+      showToast('Please select a vertex collection or enter a start vertex', 'error');
+      hideLoading();
+      return;
+    }
+
+    fetch('/database/' + db + '/graph/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        vertex_collection: vertexColl,
+        edge_collections: edgeColls.join(','),
+        start_vertex: startVertex,
+        min_depth: minDepth,
+        max_depth: maxDepth,
+        direction: direction,
+        limit: limit
+      })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      hideLoading();
+      
+      if (data.error) {
+        showToast(data.error, 'error');
+        return;
+      }
+
+      renderGraph(data);
+    })
+    .catch(function(err) {
+      hideLoading();
+      showToast('Failed to load graph: ' + err.message, 'error');
+    });
+  }
+
+  // Render graph data to Cytoscape
+  function renderGraph(data) {
+    allNodesData = data.nodes || [];
+    allEdgesData = data.edges || [];
+    
+    // Hide empty state overlay
+    document.getElementById('graph-empty').classList.add('hidden');
+    
+    cy.elements().remove();
+    selectedElements.clear();
+    updateSelectionUI();
+
+    var elements = [];
+
+    // Add nodes with collection colors and degree info
+    allNodesData.forEach(function(node) {
+      var degree = node.inDegree + node.outDegree;
+      elements.push({
+        group: 'nodes',
+        data: {
+          id: node.id,
+          label: node.label || node.id,
+          collection: node.collection,
+          collectionColor: COLLECTION_COLORS[node.collection] || '#6366f1',
+          isStart: node.isStart,
+          data: node.data,
+          degree: degree,
+          inDegree: node.inDegree,
+          outDegree: node.outDegree
+        }
+      });
+    });
+
+    // Add edges
+    allEdgesData.forEach(function(edge) {
+      elements.push({
+        group: 'edges',
+        data: {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          collection: edge.collection,
+          color: edge.color || '#6366f1',
+          label: edge.label || edge.collection,
+          data: edge.data
+        }
+      });
+    });
+
+    cy.add(elements);
+
+    // Apply layout
+    var layoutName = document.getElementById('layout-select').value;
+    cy.layout({ name: layoutName, animate: true, animationDuration: 500 }).run();
+
+    // Update stats
+    document.getElementById('graph-stats').textContent =
+      data.nodes.length + ' nodes, ' + data.edges.length + ' edges';
+
+    // Update legend
+    updateLegend(data.legend || []);
+    
+    // Update analytics
+    calculateAndDisplayAnalytics();
+    
+    // Populate property dropdown for filtering
+    populatePropertyDropdown();
+
+    showToast('Graph loaded: ' + data.nodes.length + ' nodes, ' + data.edges.length + ' edges', 'success');
+  }
+
+  // Populate property dropdown for filtering
+  function populatePropertyDropdown() {
+    var properties = new Set();
+    allNodesData.forEach(function(node) {
+      if (node.data) {
+        Object.keys(node.data).forEach(function(key) {
+          properties.add(key);
+        });
+      }
+    });
+    
+    var select = document.getElementById('filter-property-name');
+    var currentValue = select.value;
+    
+    if (properties.size === 0) {
+      select.innerHTML = '<option value="">No properties found in loaded data</option>';
+      return;
+    }
+    
+    select.innerHTML = '<option value="">Select property...</option>';
+    
+    Array.from(properties).sort().forEach(function(prop) {
+      var option = document.createElement('option');
+      option.value = prop;
+      option.textContent = prop;
+      if (prop === currentValue) option.selected = true;
+      select.appendChild(option);
+    });
+  }
+
+  // Update legend
+  function updateLegend(legend) {
+    var container = document.getElementById('legend-items');
+    var html = '';
+
+    legend.forEach(function(item) {
+      html += '<span class="inline-flex items-center gap-1.5 text-xs text-text">' +
+              '<span class="w-3 h-3 rounded-full" style="background-color: ' + item.color + '"></span>' +
+              item.collection +
+              '</span>';
+    });
+
+    if (legend.length === 0) {
+      html = '<span class="text-xs text-text-muted">No edges loaded</span>';
+    }
+
+    container.innerHTML = html;
+  }
+
+  // Expand node (load connected nodes)
+  function expandNodeById(nodeId) {
+    var edgeColls = [];
+    document.querySelectorAll('.edge-collection-checkbox:checked').forEach(function(cb) {
+      edgeColls.push(cb.value);
+    });
+
+    if (edgeColls.length === 0) {
+      showToast('Please select at least one edge collection', 'error');
+      return;
+    }
+
+    showLoading();
+
+    fetch('/database/' + db + '/graph/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        vertex_collection: '',
+        edge_collections: edgeColls.join(','),
+        start_vertex: nodeId,
+        min_depth: 1,
+        max_depth: 1,
+        direction: 'ANY',
+        limit: 20
+      })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      hideLoading();
+      
+      if (data.error) {
+        showToast(data.error, 'error');
+        return;
+      }
+
+      var addedNodes = 0;
+      var addedEdges = 0;
+
+      // Add new nodes (skip existing)
+      (data.nodes || []).forEach(function(node) {
+        if (!cy.getElementById(node.id).length) {
+          cy.add({
+            group: 'nodes',
+            data: {
+              id: node.id,
+              label: node.label || node.id,
+              collection: node.collection,
+              collectionColor: COLLECTION_COLORS[node.collection] || '#6366f1',
+              data: node.data
+            }
+          });
+          addedNodes++;
+        }
+      });
+
+      // Add new edges (skip existing)
+      (data.edges || []).forEach(function(edge) {
+        if (!cy.getElementById(edge.id).length) {
+          cy.add({
+            group: 'edges',
+            data: {
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+              collection: edge.collection,
+              color: edge.color || '#6366f1',
+              data: edge.data
+            }
+          });
+          addedEdges++;
+        }
+      });
+
+      // Re-run layout
+      cy.layout({ name: 'cose', animate: true, animationDuration: 300 }).run();
+
+      // Update stats
+      document.getElementById('graph-stats').textContent =
+        cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+      
+      // Update analytics
+      calculateAndDisplayAnalytics();
+
+      if (addedNodes > 0 || addedEdges > 0) {
+        showToast('Expanded: +' + addedNodes + ' nodes, +' + addedEdges + ' edges', 'success');
+      } else {
+        showToast('No new connections found', 'info');
+      }
+    })
+    .catch(function(err) {
+      hideLoading();
+      showToast('Failed to expand: ' + err.message, 'error');
+    });
+  }
+
+  // Change layout
+  window.changeLayout = function(name) {
+    if (!cy || cy.elements().length === 0) {
+      showToast('Please load a graph first', 'error');
+      return;
+    }
+    
+    var opts = { name: name, animate: true, animationDuration: 500 };
+
+    if (name === 'cose') {
+      opts.nodeRepulsion = function() { return 8000; };
+      opts.idealEdgeLength = function() { return 100; };
+    } else if (name === 'breadthfirst') {
+      opts.directed = true;
+      opts.spacingFactor = 1.5;
+    } else if (name === 'concentric') {
+      opts.concentric = function(node) { return node.degree(); };
+      opts.levelWidth = function() { return 2; };
+    } else if (name === 'dagre') {
+      opts.rankDir = 'TB';
+      opts.align = 'UL';
+    }
+
+    cy.layout(opts).run();
+  };
+
+  // Export functions
+  window.exportPNG = function() {
+    if (!cy) {
+      showToast('Please load a graph first', 'error');
+      return;
+    }
+    
+    var png = cy.png({ bg: '#1a1a2e', full: true, scale: 2 });
+    var link = document.createElement('a');
+    link.download = 'graph-' + db + '-' + Date.now() + '.png';
+    link.href = png;
+    link.click();
+    showToast('Graph exported as PNG', 'success');
+  };
+
+  window.exportJSON = function() {
+    if (!cy || cy.elements().length === 0) {
+      showToast('Please load a graph first', 'error');
+      return;
+    }
+    
+    var nodes = [];
+    var edges = [];
+    
+    cy.nodes().forEach(function(node) {
+      if (!node.hasClass('hidden') && !node.hasClass('filtered-out')) {
+        nodes.push(node.data());
+      }
+    });
+    
+    cy.edges().forEach(function(edge) {
+      if (!edge.hasClass('hidden') && !edge.hasClass('filtered-out')) {
+        edges.push(edge.data());
+      }
+    });
+    
+    var graphData = { nodes: nodes, edges: edges };
+    var blob = new Blob([JSON.stringify(graphData, null, 2)], { type: 'application/json' });
+    var link = document.createElement('a');
+    link.download = 'graph-' + db + '-' + Date.now() + '.json';
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    showToast('Graph exported as JSON', 'success');
+  };
+
+  window.exportCSV = function() {
+    if (!cy || cy.elements().length === 0) {
+      showToast('Please load a graph first', 'error');
+      return;
+    }
+    
+    var csvContent = 'id,collection,label,degree\n';
+    
+    cy.nodes().forEach(function(node) {
+      if (!node.hasClass('hidden') && !node.hasClass('filtered-out')) {
+        var data = node.data();
+        csvContent += [data.id, data.collection, data.label || '', data.degree || 0].join(',') + '\n';
+      }
+    });
+    
+    var blob = new Blob([csvContent], { type: 'text/csv' });
+    var link = document.createElement('a');
+    link.download = 'graph-nodes-' + db + '-' + Date.now() + '.csv';
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    showToast('Graph exported as CSV', 'success');
+  };
+
+  window.exportGraphML = function() {
+    if (!cy || cy.elements().length === 0) {
+      showToast('Please load a graph first', 'error');
+      return;
+    }
+    
+    var xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xml += '<graphml xmlns="http://graphml.graphdrawing.org/xmlns">\n';
+    xml += '<graph id="G" edgedefault="directed">\n';
+    
+    cy.nodes().forEach(function(node) {
+      if (!node.hasClass('hidden') && !node.hasClass('filtered-out')) {
+        var data = node.data();
+        xml += '<node id="' + escapeXml(data.id) + '">\n';
+        xml += '<data key="collection">' + escapeXml(data.collection || '') + '</data>\n';
+        xml += '<data key="label">' + escapeXml(data.label || '') + '</data>\n';
+        xml += '</node>\n';
+      }
+    });
+    
+    cy.edges().forEach(function(edge) {
+      if (!edge.hasClass('hidden') && !edge.hasClass('filtered-out')) {
+        var data = edge.data();
+        xml += '<edge source="' + escapeXml(data.source) + '" target="' + escapeXml(data.target) + '">\n';
+        xml += '<data key="collection">' + escapeXml(data.collection || '') + '</data>\n';
+        xml += '</edge>\n';
+      }
+    });
+    
+    xml += '</graph>\n';
+    xml += '</graphml>';
+    
+    var blob = new Blob([xml], { type: 'application/xml' });
+    var link = document.createElement('a');
+    link.download = 'graph-' + db + '-' + Date.now() + '.graphml';
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    showToast('Graph exported as GraphML', 'success');
+  };
+
+  // Bulk operations
+  window.expandSelected = function() {
+    var count = 0;
+    selectedElements.forEach(function(id) {
+      var node = cy.getElementById(id);
+      if (node.isNode()) {
+        expandNodeById(id);
+        count++;
+      }
+    });
+    if (count > 0) {
+      showToast('Expanding ' + count + ' nodes...', 'info');
+    }
+  };
+
+  window.hideUnselected = function() {
+    if (!cy || cy.elements().length === 0) return;
+    
+    cy.elements().forEach(function(ele) {
+      if (!selectedElements.has(ele.id())) {
+        ele.addClass('hidden');
+        hiddenElements.add(ele.id());
+      }
+    });
+    showToast('Hidden ' + (cy.elements().length - selectedElements.size) + ' elements', 'success');
+    calculateAndDisplayAnalytics();
+  };
+
+  window.showAllNodes = function() {
+    if (!cy) return;
+    
+    cy.elements().removeClass('hidden');
+    hiddenElements.clear();
+    calculateAndDisplayAnalytics();
+  };
+
+  window.selectConnected = function() {
+    if (!contextMenuTarget) return;
+    
+    var node = cy.getElementById(contextMenuTarget);
+    var connected = node.neighborhood();
+    
+    connected.forEach(function(ele) {
+      ele.select();
+      selectedElements.add(ele.id());
+    });
+    
+    updateSelectionUI();
+    hideContextMenu();
+  };
+
+  window.hideNode = function() {
+    if (!contextMenuTarget) return;
+    
+    var ele = cy.getElementById(contextMenuTarget);
+    ele.addClass('hidden');
+    hiddenElements.add(contextMenuTarget);
+    
+    hideContextMenu();
+    calculateAndDisplayAnalytics();
+  };
+
+  // Path finding
+  window.findPathsFrom = function() {
+    if (!contextMenuTarget) return;
+    
+    document.getElementById('path-from').value = contextMenuTarget;
+    
+    // Populate target dropdown with all visible nodes
+    var select = document.getElementById('path-to');
+    select.innerHTML = '<option value="">Select target node...</option>';
+    
+    cy.nodes().forEach(function(node) {
+      if (node.id() !== contextMenuTarget && !node.hasClass('hidden')) {
+        var option = document.createElement('option');
+        option.value = node.id();
+        option.textContent = node.data('label') || node.id();
+        select.appendChild(option);
+      }
+    });
+    
+    document.getElementById('path-modal').classList.remove('hidden');
+    hideContextMenu();
+  };
+
+  window.findPaths = function(startId) {
+    if (startId) {
+      document.getElementById('path-from').value = startId;
+      
+      var select = document.getElementById('path-to');
+      select.innerHTML = '<option value="">Select target node...</option>';
+      
+      cy.nodes().forEach(function(node) {
+        if (node.id() !== startId && !node.hasClass('hidden')) {
+          var option = document.createElement('option');
+          option.value = node.id();
+          option.textContent = node.data('label') || node.id();
+          select.appendChild(option);
+        }
+      });
+      
+      document.getElementById('path-modal').classList.remove('hidden');
+      return;
+    }
+    
+    var from = document.getElementById('path-from').value;
+    var to = document.getElementById('path-to').value;
+    
+    if (!to) {
+      showToast('Please select a target node', 'error');
+      return;
+    }
+    
+    // Get selected edge collections
+    var edgeColls = [];
+    document.querySelectorAll('#path-edge-collections input:checked').forEach(function(cb) {
+      edgeColls.push(cb.value);
+    });
+    
+    // Use BFS to find shortest path
+    var path = findShortestPath(from, to, edgeColls);
+    
+    if (path) {
+      highlightPath(path);
+      showToast('Path found: ' + (path.length - 1) + ' hops', 'success');
+    } else {
+      showToast('No path found between nodes', 'error');
+    }
+    
+    closePathModal();
+  };
+
+  // BFS shortest path algorithm
+  function findShortestPath(from, to, edgeCollections) {
+    var queue = [[from]];
+    var visited = new Set([from]);
+    
+    while (queue.length > 0) {
+      var path = queue.shift();
+      var current = path[path.length - 1];
+      
+      if (current === to) {
+        return path;
+      }
+      
+      var node = cy.getElementById(current);
+      var neighbors = node.neighborhood('node');
+      
+      neighbors.forEach(function(neighbor) {
+        var neighborId = neighbor.id();
+        if (!visited.has(neighborId)) {
+          visited.add(neighborId);
+          queue.push([...path, neighborId]);
+        }
+      });
+    }
+    
+    return null;
+  }
+
+  window.highlightPath = function(pathNodes) {
+    if (!pathNodes) {
+      // Highlight from context menu
+      if (!contextMenuTarget) return;
+      
+      // Simple highlight of connected nodes
+      var node = cy.getElementById(contextMenuTarget);
+      node.addClass('highlighted');
+      node.neighborhood().addClass('highlighted');
+      
+      setTimeout(function() {
+        cy.elements().removeClass('highlighted');
+      }, 3000);
+      
+      hideContextMenu();
+      return;
+    }
+    
+    // Highlight path nodes and edges
+    cy.elements().removeClass('highlighted');
+    
+    pathNodes.forEach(function(nodeId) {
+      cy.getElementById(nodeId).addClass('highlighted');
+    });
+    
+    // Highlight edges between path nodes
+    for (var i = 0; i < pathNodes.length - 1; i++) {
+      var edges = cy.edges().filter(function(edge) {
+        return (edge.source().id() === pathNodes[i] && edge.target().id() === pathNodes[i + 1]) ||
+               (edge.source().id() === pathNodes[i + 1] && edge.target().id() === pathNodes[i]);
+      });
+      edges.addClass('highlighted');
+    }
+    
+    // Auto-fit to path
+    var pathEles = cy.collection();
+    pathNodes.forEach(function(id) {
+      pathEles = pathEles.union(cy.getElementById(id));
+    });
+    cy.fit(pathEles, 50);
+  };
+
+  window.closePathModal = function() {
+    document.getElementById('path-modal').classList.add('hidden');
+  };
+
+  // Query Builder
+  window.openQueryBuilder = function() {
+    document.getElementById('query-builder-modal').classList.remove('hidden');
+    updateQueryBuilder();
+  };
+
+  window.closeQueryBuilder = function() {
+    document.getElementById('query-builder-modal').classList.add('hidden');
+  };
+
+  window.updateQueryBuilder = function() {
+    var type = document.getElementById('query-start-type').value;
+    
+    document.getElementById('query-start-vertex-input').classList.toggle('hidden', type !== 'vertex');
+    document.getElementById('query-start-filter-input').classList.toggle('hidden', type !== 'filter');
+    
+    // Update preview
+    updateQueryPreview();
+  };
+
+  function updateQueryPreview() {
+    var type = document.getElementById('query-start-type').value;
+    var direction = document.getElementById('query-direction').value;
+    var minDepth = document.getElementById('query-min-depth').value;
+    var maxDepth = document.getElementById('query-max-depth').value;
+    
+    var preview = 'FOR v IN ' + (direction === 'ANY' ? '' : direction + ' ') + minDepth + '..' + maxDepth + '\n';
+    
+    if (type === 'vertex') {
+      preview += '  start_vertex\n';
+    } else if (type === 'collection') {
+      preview += '  collection\n';
+    } else if (type === 'filter') {
+      preview += '  FILTER collection\n';
+    }
+    
+    preview += '  GRAPH edges\n';
+    preview += '  RETURN v';
+    
+    document.getElementById('query-preview').textContent = preview;
+  }
+
+  window.executeQueryBuilder = function() {
+    // TODO: Implement query builder execution
+    showToast('Query builder execution - coming soon', 'info');
+    closeQueryBuilder();
+  };
+
+  // Delete element
+  window.deleteElement = function(type, id) {
+    if (!confirm('Delete this ' + type + '?')) return;
+
+    var parts = id.split('/');
+    if (parts.length !== 2) {
+      showToast('Invalid ID format', 'error');
+      return;
+    }
+
+    var collection = parts[0];
+    var key = parts[1];
+
+    fetch('/database/' + db + '/graph/' + type + '/' + collection + '/' + key, {
+      method: 'DELETE'
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success) {
+        cy.getElementById(id).remove();
+        showEmptyDetails();
+        document.getElementById('graph-stats').textContent =
+          cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+        calculateAndDisplayAnalytics();
+        showToast(type.charAt(0).toUpperCase() + type.slice(1) + ' deleted', 'success');
+      } else {
+        showToast(data.error || 'Failed to delete', 'error');
+      }
+    })
+    .catch(function(err) {
+      showToast('Failed to delete: ' + err.message, 'error');
+    });
+  };
+
+  // Delete selected (from context menu)
+  window.deleteSelected = function() {
+    hideContextMenu();
+    if (contextMenuTarget) {
+      deleteElement('vertex', contextMenuTarget);
+    }
+  };
+
+  // Expand node (from context menu)
+  window.expandNode = function() {
+    hideContextMenu();
+    if (contextMenuTarget) {
+      expandNodeById(contextMenuTarget);
+    }
+  };
+
+  // Open vertex modal
+  window.openVertexModal = function() {
+    htmx.ajax('GET', '/database/' + db + '/graph/modal/vertex', {
+      target: '#modal-container',
+      swap: 'innerHTML'
+    });
+  };
+
+  // Open edge modal
+  window.openEdgeModal = function(fromNodeId) {
+    var url = '/database/' + db + '/graph/modal/edge';
+    if (fromNodeId) {
+      url += '?from=' + encodeURIComponent(fromNodeId);
+    }
+    htmx.ajax('GET', url, {
+      target: '#modal-container',
+      swap: 'innerHTML'
+    });
+  };
+
+  // Add new vertex to graph (called after modal submit)
+  window.addVertexToGraph = function(vertex) {
+    cy.add({
+      group: 'nodes',
+      data: {
+        id: vertex.id,
+        label: vertex.label || vertex.id,
+        collection: vertex.collection,
+        collectionColor: COLLECTION_COLORS[vertex.collection] || '#6366f1',
+        data: vertex.data
+      },
+      position: { x: cy.width() / 2, y: cy.height() / 2 }
+    });
+
+    document.getElementById('graph-stats').textContent =
+      cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+    
+    calculateAndDisplayAnalytics();
+  };
+
+  // Add new edge to graph (called after modal submit)
+  window.addEdgeToGraph = function(edge, color) {
+    cy.add({
+      group: 'edges',
+      data: {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        collection: edge.collection,
+        color: color || '#6366f1',
+        data: edge.data
+      }
+    });
+
+    document.getElementById('graph-stats').textContent =
+      cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+    
+    calculateAndDisplayAnalytics();
+  };
+
+  // Escape HTML
+  function escapeHtml(text) {
+    if (!text) return '';
+    var div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+  }
+
+  // Escape XML
+  function escapeXml(text) {
+    if (!text) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  // Show toast
+  function showToast(message, type) {
+    if (typeof htmx !== 'undefined') {
+      document.body.dispatchEvent(new CustomEvent('showToast', { detail: { message: message, type: type } }));
+    }
+  }
+
+  // Initialize function
+  function initializeGraph() {
+    // Check if graph-canvas exists (might not on partial loads)
+    var canvas = document.getElementById('graph-canvas');
+    if (!canvas) {
+      console.log('Graph canvas not found, skipping initialization');
+      return;
+    }
+    
+    initCytoscape();
+    showEmptyState();
+
+    // Form submit
+    var form = document.getElementById('graph-load-form');
+    if (form) {
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        loadGraph();
+      });
+    }
+    
+    // Query builder listeners
+    ['query-start-type', 'query-direction', 'query-min-depth', 'query-max-depth'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('change', updateQueryPreview);
+      }
+    });
+  }
+
+  // Handle both DOMContentLoaded and HTMX loads
+  function doInitialize() {
+    waitForCytoscape(initializeGraph);
+  }
+
+  // Run on DOMContentLoaded or immediately if already loaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', doInitialize);
+  } else {
+    doInitialize();
+  }
+
+  // Also handle HTMX afterSwap in case content is loaded dynamically
+  if (typeof htmx !== 'undefined') {
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+      if (evt.detail.target.querySelector && evt.detail.target.querySelector('#graph-canvas')) {
+        doInitialize();
+      }
+    });
+  }
+
+  // Expose for global access
+  window.expandNodeById = expandNodeById;
+  window.contextMenuTarget = null;
+  Object.defineProperty(window, 'contextMenuTarget', {
+    get: function() { return contextMenuTarget; },
+    set: function(v) { contextMenuTarget = v; }
+  });
+  window.calculateAndDisplayAnalytics = calculateAndDisplayAnalytics;
+})();
+</script>

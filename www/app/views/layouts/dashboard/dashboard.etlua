@@ -24,6 +24,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
   <!-- Monaco Completions -->
   <script src="<%- public_path('js/solidb-completions.js') %>"></script>
+  <!-- Cytoscape.js for Graph Visualization -->
+  <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
   <%- head_content or "" %>
 </head>
 <body class="min-h-screen bg-bg text-text">

@@ -584,6 +584,31 @@ pub fn create_router(
             "/_api/scripts/stats",
             get(super::script_handlers::get_script_stats_handler),
         )
+        // Service management routes
+        .route(
+            "/_api/database/{db}/services",
+            post(super::script_handlers::create_service_handler),
+        )
+        .route(
+            "/_api/database/{db}/services",
+            get(super::script_handlers::list_services_handler),
+        )
+        .route(
+            "/_api/database/{db}/services/{key}",
+            get(super::script_handlers::get_service_handler),
+        )
+        .route(
+            "/_api/database/{db}/services/{key}",
+            put(super::script_handlers::update_service_handler),
+        )
+        .route(
+            "/_api/database/{db}/services/{key}",
+            delete(super::script_handlers::delete_service_handler),
+        )
+        .route(
+            "/_api/database/{db}/services/{key}/openapi",
+            get(super::script_handlers::get_service_openapi_handler),
+        )
         // REPL endpoint for interactive Lua execution
         .route(
             "/_api/database/{db}/repl",
@@ -790,22 +815,39 @@ pub fn create_router(
         // WebSocket route (outside auth middleware - uses token in query param)
         .route("/_api/cluster/status/ws", get(cluster_status_ws))
         .route("/_api/ws/changefeed", get(ws_changefeed_handler))
-        // Custom Lua API endpoints (public, script handles own auth if needed)
+        // Service-based Lua API endpoints: /api/{db}/{service}/{path}
+        // (public, service/script handles own auth if needed)
         .route(
-            "/api/custom/{*path}",
-            get(super::script_handlers::execute_script_handler),
+            "/api/{db}/{service}",
+            get(super::script_handlers::execute_service_script_handler),
         )
         .route(
-            "/api/custom/{*path}",
-            post(super::script_handlers::execute_script_handler),
+            "/api/{db}/{service}",
+            post(super::script_handlers::execute_service_script_handler),
         )
         .route(
-            "/api/custom/{*path}",
-            put(super::script_handlers::execute_script_handler),
+            "/api/{db}/{service}",
+            put(super::script_handlers::execute_service_script_handler),
         )
         .route(
-            "/api/custom/{*path}",
-            delete(super::script_handlers::execute_script_handler),
+            "/api/{db}/{service}",
+            delete(super::script_handlers::execute_service_script_handler),
+        )
+        .route(
+            "/api/{db}/{service}/{*path}",
+            get(super::script_handlers::execute_service_script_handler),
+        )
+        .route(
+            "/api/{db}/{service}/{*path}",
+            post(super::script_handlers::execute_service_script_handler),
+        )
+        .route(
+            "/api/{db}/{service}/{*path}",
+            put(super::script_handlers::execute_service_script_handler),
+        )
+        .route(
+            "/api/{db}/{service}/{*path}",
+            delete(super::script_handlers::execute_service_script_handler),
         )
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),

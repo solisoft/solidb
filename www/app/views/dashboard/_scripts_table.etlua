@@ -1,17 +1,13 @@
+<%
+  local service = selected_service or ""
+%>
 <% if #scripts == 0 then %>
   <div class="p-12 text-center">
     <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-bg-dark flex items-center justify-center">
       <i class="fas fa-code text-2xl text-text-dim"></i>
     </div>
-    <p class="text-text-muted text-lg font-medium mb-2">No scripts yet</p>
-    <p class="text-text-dim text-sm mb-4">Create your first custom API endpoint</p>
-    <button type="button"
-            hx-get="/database/<%= db %>/scripts/modal/create"
-            hx-target="#modal-container"
-            hx-swap="innerHTML"
-            class="text-primary-light hover:text-primary text-sm font-medium">
-      <i class="fas fa-plus mr-1"></i> Create Script
-    </button>
+    <p class="text-text-muted text-lg font-medium mb-2">No endpoints yet</p>
+    <p class="text-text-dim text-sm">Click "New Endpoint" to create your first API endpoint for this service</p>
   </div>
 <% else %>
   <table class="w-full">
@@ -19,12 +15,15 @@
       <tr>
         <th class="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Name</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Methods</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Endpoint</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Path</th>
         <th class="px-4 py-3 text-right text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-border/30">
       <% for _, script in ipairs(scripts) do %>
+        <%
+          local script_service = script.service or "default"
+        %>
         <tr class="hover:bg-white/5 transition-colors" id="script-row-<%= script.id %>">
           <td class="px-4 py-3">
             <div class="text-text font-medium"><%= script.name %></div>
@@ -35,7 +34,7 @@
           <td class="px-4 py-3">
             <div class="flex flex-wrap gap-1">
               <% for _, method in ipairs(script.methods or {}) do %>
-                <% 
+                <%
                   local badge_class = "bg-gray-500/20 text-gray-300"
                   if method == "GET" then badge_class = "bg-blue-500/20 text-blue-300"
                   elseif method == "POST" then badge_class = "bg-green-500/20 text-green-300"
@@ -51,9 +50,9 @@
             </div>
           </td>
           <td class="px-4 py-3">
-            <div class="flex items-center gap-2 group cursor-pointer" onclick="copyToClipboard('/api/custom/<%= db %>/<%= script.path %>')">
-              <code class="text-sm text-text-muted font-mono">
-                <span class="text-text-dim">/api/custom/<%= db %>/</span><span class="text-primary-light"><%= script.path %></span>
+            <div class="flex items-center gap-2 group cursor-pointer" onclick="copyToClipboard('/api/<%= db %>/<%= script_service %>/<%= script.path %>')">
+              <code class="text-sm font-mono">
+                <span class="text-primary-light">/<%= script.path %></span>
               </code>
               <span class="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-text-dim">
                 <i class="fas fa-copy"></i>
@@ -74,7 +73,7 @@
                       hx-delete="/database/<%= db %>/scripts/<%= script.id %>"
                       hx-target="#script-row-<%= script.id %>"
                       hx-swap="outerHTML"
-                      hx-confirm="Delete script '<%= script.name %>'?"
+                      hx-confirm="Delete endpoint '<%= script.name %>'?"
                       class="p-2 text-text-muted hover:text-error transition-colors"
                       title="Delete">
                 <i class="fas fa-trash"></i>

@@ -2,69 +2,189 @@
   <!-- Header -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
     <div>
-      <h1 class="text-2xl font-bold text-text">Lua Scripts</h1>
-      <p class="text-text-muted text-sm">Custom API endpoints in <span class="font-medium text-primary-light"><%= db %></span></p>
+      <h1 class="text-2xl font-bold text-text">Lua Scripts & Services</h1>
+      <p class="text-text-muted text-sm">API endpoints and service management for <span class="font-medium text-primary-light"><%= db %></span></p>
     </div>
 
     <button type="button"
-            hx-get="/database/<%= db %>/scripts/modal/create"
+            hx-get="/database/<%= db %>/scripts/services/modal/create"
             hx-target="#modal-container"
             hx-swap="innerHTML"
-            class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
-      <i class="fas fa-plus"></i>
-      <span>New Script</span>
+            class="inline-flex items-center gap-2 px-3 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-medium rounded-lg transition-colors">
+      <i class="fas fa-cube"></i>
+      <span>New Service</span>
     </button>
   </div>
 
-  <!-- Stats -->
+  <!-- Services Section -->
+  <div id="services-section"
+       hx-get="/database/<%= db %>/scripts/services/section"
+       hx-trigger="load"
+       hx-swap="innerHTML">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-6">
+      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-6 animate-pulse">
+        <div class="h-16 bg-bg-dark rounded"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts Section (shown when a service is selected) -->
+  <div id="scripts-section" class="hidden">
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+      <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <button type="button" onclick="deselectService()" class="text-text-muted hover:text-text transition-colors" title="Back to all services">
+            <i class="fas fa-arrow-left"></i>
+          </button>
+          <span class="text-text font-medium">
+            <span id="selected-service-name">Endpoints</span>
+          </span>
+          <span id="selected-service-badge" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-500/20 text-indigo-300"></span>
+          <a id="service-api-docs-link" href="#" target="_blank"
+             class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-accent/20 text-accent-light hover:bg-accent/30 transition-colors">
+            <i class="fas fa-book-open"></i>
+            <span>API Docs</span>
+          </a>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" id="new-script-btn" onclick="openNewScriptModal()"
+                  class="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-primary hover:bg-primary-light text-white rounded-lg transition-colors">
+            <i class="fas fa-plus text-xs"></i>
+            <span>New Endpoint</span>
+          </button>
+          <button type="button" id="refresh-scripts-btn"
+                  class="text-text-muted hover:text-text text-sm transition-colors p-2">
+            <i class="fas fa-sync-alt"></i>
+          </button>
+        </div>
+      </div>
+      <div id="scripts-table">
+        <div class="p-8 text-center">
+          <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+          <p class="text-text-muted">Loading endpoints...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats (shown at bottom) -->
   <div id="scripts-stats"
        hx-get="/database/<%= db %>/scripts/stats"
        hx-trigger="load, refreshStats from:body"
        hx-swap="innerHTML"
-       class="mb-6">
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
-        <div class="h-12 bg-bg-dark rounded"></div>
-      </div>
-      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
-        <div class="h-12 bg-bg-dark rounded"></div>
-      </div>
-      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
-        <div class="h-12 bg-bg-dark rounded"></div>
-      </div>
-      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
-        <div class="h-12 bg-bg-dark rounded"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Scripts Table -->
-  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
-    <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
-      <span class="text-text font-medium">API Endpoints</span>
-      <button type="button"
-              hx-get="/database/<%= db %>/scripts/table"
-              hx-target="#scripts-table"
-              hx-swap="innerHTML"
-              class="text-text-muted hover:text-text text-sm transition-colors">
-        <i class="fas fa-sync-alt"></i>
-      </button>
-    </div>
-    <div id="scripts-table"
-         hx-get="/database/<%= db %>/scripts/table"
-         hx-trigger="load"
-         hx-swap="innerHTML">
-      <div class="p-8 text-center">
-        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
-        <p class="text-text-muted">Loading scripts...</p>
-      </div>
-    </div>
+       class="mt-6">
   </div>
 </div>
 
 <script>
-// Auto-refresh stats every 15 seconds
-setInterval(function() {
-  htmx.trigger('#scripts-stats', 'refreshStats');
-}, 15000);
+(function() {
+  var selectedService = null;
+  var db = <%- EncodeJson(db) %>;
+  var initialService = <%- EncodeJson(selected_service or "") %>;
+
+  // Select a service and show its endpoints
+  window.selectService = function(key, name, skipUrlUpdate) {
+    selectedService = key;
+
+    // Update URL without reload
+    if (!skipUrlUpdate) {
+      var newUrl = '/database/' + db + '/scripts/service/' + encodeURIComponent(key);
+      history.pushState({service: key}, '', newUrl);
+    }
+
+    // Update UI
+    document.getElementById('selected-service-name').textContent = (name || key) + ' Endpoints';
+    document.getElementById('selected-service-badge').textContent = key;
+    document.getElementById('service-api-docs-link').href = '/database/' + db + '/api-docs/service/' + encodeURIComponent(key);
+    document.getElementById('scripts-section').classList.remove('hidden');
+
+    // Update service cards to show selected state
+    document.querySelectorAll('[data-service-key]').forEach(function(card) {
+      if (card.dataset.serviceKey === key) {
+        card.classList.add('ring-2', 'ring-indigo-500', 'bg-indigo-500/10');
+      } else {
+        card.classList.remove('ring-2', 'ring-indigo-500', 'bg-indigo-500/10');
+        card.classList.add('opacity-50');
+      }
+    });
+
+    // Load scripts for this service
+    loadScripts(key);
+  };
+
+  // Open new script modal with current service
+  window.openNewScriptModal = function() {
+    if (!selectedService) {
+      console.log('openNewScriptModal: no service selected');
+      return;
+    }
+    var url = '/database/' + db + '/scripts/modal/create?service=' + encodeURIComponent(selectedService);
+    console.log('openNewScriptModal: fetching', url);
+    htmx.ajax('GET', url, {target: '#modal-container', swap: 'innerHTML'});
+  };
+
+  // Deselect service and go back to overview
+  window.deselectService = function() {
+    selectedService = null;
+    document.getElementById('scripts-section').classList.add('hidden');
+
+    // Update URL
+    history.pushState({}, '', '/database/' + db + '/scripts');
+
+    // Reset service cards
+    document.querySelectorAll('[data-service-key]').forEach(function(card) {
+      card.classList.remove('ring-2', 'ring-indigo-500', 'bg-indigo-500/10', 'opacity-50');
+    });
+  };
+
+  // Load scripts for a service
+  function loadScripts(service) {
+    var url = '/database/' + db + '/scripts/table?service=' + encodeURIComponent(service);
+    htmx.ajax('GET', url, {target: '#scripts-table', swap: 'innerHTML'});
+  }
+
+  // Setup refresh button
+  document.getElementById('refresh-scripts-btn').addEventListener('click', function() {
+    if (selectedService) {
+      loadScripts(selectedService);
+    }
+  });
+
+  // Listen for service deletion - refresh and deselect
+  document.body.addEventListener('refreshScriptsTable', function() {
+    if (selectedService) {
+      loadScripts(selectedService);
+    }
+  });
+
+  // Handle browser back/forward
+  window.addEventListener('popstate', function(e) {
+    if (e.state && e.state.service) {
+      selectService(e.state.service, e.state.service, true);
+    } else {
+      deselectService();
+    }
+  });
+
+  // Auto-select service from URL on page load (after services are loaded)
+  if (initialService) {
+    document.body.addEventListener('htmx:afterSwap', function onServicesLoaded(evt) {
+      if (evt.detail.target.id === 'services-section' && initialService) {
+        // Find the service card to get the name
+        var card = document.querySelector('[data-service-key="' + initialService + '"]');
+        if (card) {
+          var nameEl = card.querySelector('.text-text.font-medium');
+          var name = nameEl ? nameEl.textContent.trim() : initialService;
+          selectService(initialService, name, true);
+        }
+        document.body.removeEventListener('htmx:afterSwap', onServicesLoaded);
+      }
+    });
+  }
+
+  // Auto-refresh stats every 15 seconds
+  setInterval(function() {
+    htmx.trigger('#scripts-stats', 'refreshStats');
+  }, 15000);
+})();
 </script>

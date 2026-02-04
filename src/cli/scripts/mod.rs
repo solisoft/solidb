@@ -28,6 +28,8 @@
 pub mod client;
 pub mod config;
 pub mod mapper;
+pub mod test_http;
+pub mod test_runner;
 pub mod watcher;
 
 use clap::{Parser, Subcommand};
@@ -41,6 +43,7 @@ use self::config::Config;
 use self::mapper::{
     api_path_to_file, file_to_api_path, generate_header, has_metadata_header, parse_script_meta,
 };
+use self::test_runner::{TestRunner, TestRunnerConfig};
 use self::watcher::ScriptWatcher;
 
 /// Create an authenticated client and print auth source info
@@ -158,6 +161,20 @@ pub enum ScriptsCommand {
 
     /// Logout (remove saved authentication token)
     Logout,
+
+    /// Run API tests from the tests/ directory
+    Test {
+        /// Specific test file to run (optional)
+        file: Option<PathBuf>,
+
+        /// Show verbose output including debug prints
+        #[arg(long, short)]
+        verbose: bool,
+
+        /// Filter tests by name pattern
+        #[arg(long, short)]
+        filter: Option<String>,
+    },
 }
 
 /// Execute a scripts command
@@ -177,6 +194,11 @@ pub fn execute(args: ScriptsArgs) -> anyhow::Result<()> {
         ScriptsCommand::List => cmd_list(),
         ScriptsCommand::Diff { path } => cmd_diff(path.as_deref()),
         ScriptsCommand::Delete { path } => cmd_delete(&path),
+        ScriptsCommand::Test {
+            file,
+            verbose,
+            filter,
+        } => cmd_test(file, verbose, filter),
     }
 }
 
@@ -726,4 +748,68 @@ fn print_diff(old: &str, new: &str) {
         print!("  {}{}", sign, change);
     }
     println!();
+}
+
+/// Run tests from the tests/ directory
+fn cmd_test(
+    file: Option<PathBuf>,
+    verbose: bool,
+    filter: Option<String>,
+) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+
+    // Load config with test environment
+    let config = Config::load_for_test(&cwd)?;
+    let scripts_dir = config.scripts_dir(&cwd);
+
+    // Check auth
+    if !config.has_auth() {
+        println!(
+            "{} No authentication configured.",
+            "!".yellow()
+        );
+        println!(
+            "  Set {} in .env.test or run 'solidb scripts login'",
+            config::ENV_API_KEY
+        );
+        println!();
+    } else if std::env::var(config::ENV_API_KEY)
+        .map(|k| !k.is_empty())
+        .unwrap_or(false)
+    {
+        println!(
+            "{} Using API key from {} environment variable",
+            "•".dimmed(),
+            config::ENV_API_KEY
+        );
+    } else {
+        println!("{} Using saved authentication token", "•".dimmed());
+    }
+
+    // Print test config info
+    println!(
+        "{} Testing against {} (database: {}, service: {})",
+        "•".dimmed(),
+        config.base_url(),
+        config.database,
+        config.default_service()
+    );
+    println!();
+
+    // Create and run the test runner
+    let runner_config = TestRunnerConfig {
+        verbose,
+        filter,
+        file,
+    };
+
+    let runner = TestRunner::new(config, scripts_dir, runner_config);
+    let summary = runner.run()?;
+
+    // Exit with error code if tests failed
+    if summary.failed > 0 {
+        std::process::exit(1);
+    }
+
+    Ok(())
 }

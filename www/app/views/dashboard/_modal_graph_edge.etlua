@@ -1,0 +1,154 @@
+<%
+  local db = db or "_system"
+  local edge_collections = edge_collections or {}
+  local preselected_collection = preselected_collection or ""
+  local from_vertex = from_vertex or ""
+  local to_vertex = to_vertex or ""
+%>
+<div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
+     onclick="if(event.target === this) closeModal()">
+  <div class="bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[calc(100vh-2rem)] overflow-y-auto"
+       onclick="event.stopPropagation()">
+    <!-- Header -->
+    <div class="border-b border-border/30 px-6 py-4 flex items-center justify-between">
+      <h3 class="text-lg font-semibold text-text">Create New Edge</h3>
+      <button type="button" onclick="closeModal()" class="text-text-muted hover:text-text transition-colors">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form id="create-edge-form" class="p-6 space-y-4">
+      <!-- Collection Select -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Edge Collection</label>
+        <select id="edge-modal-collection" name="collection" required
+                class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:ring-2 focus:ring-primary/50 focus:border-primary">
+          <option value="">Select edge collection...</option>
+          <% for _, coll in ipairs(edge_collections) do %>
+          <option value="<%= coll %>" <%= preselected_collection == coll and 'selected' or '' %>><%= coll %></option>
+          <% end %>
+        </select>
+      </div>
+
+      <!-- From Vertex -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">From Vertex</label>
+        <input type="text" id="edge-from-vertex" name="from_vertex" required
+               placeholder="collection/key (e.g., users/alice)"
+               value="<%= from_vertex %>"
+               class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary/50 focus:border-primary">
+      </div>
+
+      <!-- To Vertex -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">To Vertex</label>
+        <input type="text" id="edge-to-vertex" name="to_vertex" required
+               placeholder="collection/key (e.g., users/bob)"
+               value="<%= to_vertex %>"
+               class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary/50 focus:border-primary">
+      </div>
+
+      <!-- Additional Properties -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Additional Properties (JSON, optional)</label>
+        <textarea id="edge-document" name="document" rows="5"
+                  placeholder='{"since": 2024, "type": "follows"}'
+                  class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text font-mono text-sm placeholder-text-dim focus:ring-2 focus:ring-primary/50 focus:border-primary">{}</textarea>
+        <p class="text-xs text-text-dim mt-1">Optional: add extra properties to the edge document.</p>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex justify-end gap-3 pt-2">
+        <button type="button" onclick="closeModal()"
+                class="px-4 py-2 text-text-muted hover:text-text transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-6 py-2 bg-accent hover:bg-accent-light text-white font-medium rounded-lg transition-colors">
+          <i class="fas fa-link mr-2"></i>Create Edge
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function() {
+  var db = '<%= db %>';
+
+  // Color palette for edge collections
+  var EDGE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+
+  // Get color for collection based on position in checkbox list
+  function getCollectionColor(collection) {
+    var checkboxes = document.querySelectorAll('.edge-collection-checkbox');
+    var idx = 0;
+    checkboxes.forEach(function(cb, i) {
+      if (cb.value === collection) idx = i;
+    });
+    return EDGE_COLORS[idx % EDGE_COLORS.length];
+  }
+
+  document.getElementById('create-edge-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    var collection = document.getElementById('edge-modal-collection').value;
+    var fromVertex = document.getElementById('edge-from-vertex').value;
+    var toVertex = document.getElementById('edge-to-vertex').value;
+    var documentJson = document.getElementById('edge-document').value;
+
+    if (!collection) {
+      showToast('Please select an edge collection', 'error');
+      return;
+    }
+
+    if (!fromVertex || !toVertex) {
+      showToast('Please specify both from and to vertices', 'error');
+      return;
+    }
+
+    // Validate JSON if provided
+    if (documentJson && documentJson.trim() !== '') {
+      try {
+        JSON.parse(documentJson);
+      } catch (err) {
+        showToast('Invalid JSON: ' + err.message, 'error');
+        return;
+      }
+    }
+
+    fetch('/database/' + db + '/graph/edge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        collection: collection,
+        from_vertex: fromVertex,
+        to_vertex: toVertex,
+        document: documentJson || '{}'
+      })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success && data.edge) {
+        // Add to graph with collection color
+        if (typeof addEdgeToGraph === 'function') {
+          var color = getCollectionColor(collection);
+          addEdgeToGraph(data.edge, color);
+        }
+        showToast('Edge created: ' + data.edge.id, 'success');
+        closeModal();
+      } else {
+        showToast(data.error || 'Failed to create edge', 'error');
+      }
+    })
+    .catch(function(err) {
+      showToast('Error: ' + err.message, 'error');
+    });
+  });
+
+  function showToast(message, type) {
+    document.body.dispatchEvent(new CustomEvent('showToast', { detail: { message: message, type: type } }));
+  }
+})();
+</script>

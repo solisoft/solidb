@@ -1,0 +1,1036 @@
+<%
+  local db = db or "_system"
+  local scripts = scripts or {}
+  local services = services or {}
+  local selected_service = selected_service or nil
+  local documented_count = documented_count or 0
+  local api_server = api_server or "http://localhost:6745"
+%>
+<!-- Swagger UI CSS -->
+<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+<style>
+  /* Override Swagger UI styles for dark theme */
+  .swagger-ui {
+    background: transparent;
+  }
+  .swagger-ui .topbar {
+    display: none;
+  }
+  .swagger-ui .info {
+    margin: 0;
+  }
+  .swagger-ui .info .title {
+    color: var(--text);
+  }
+  .swagger-ui .info .description {
+    color: var(--text-muted);
+  }
+  .swagger-ui .scheme-container {
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+  }
+  .swagger-ui .opblock-tag {
+    color: #e0e0e0;
+    border-bottom-color: var(--border);
+  }
+  .swagger-ui .opblock-tag:hover {
+    color: #fff;
+  }
+  .swagger-ui .opblock-tag small {
+    color: #9ca3af !important;
+  }
+  .swagger-ui .opblock {
+    border-radius: 8px;
+    border-width: 1px;
+    border-style: solid;
+  }
+  .swagger-ui .opblock .opblock-summary {
+    border-color: transparent;
+  }
+  .swagger-ui .opblock .opblock-summary-method {
+    border-radius: 4px;
+    font-weight: 700;
+    min-width: 70px;
+  }
+  .swagger-ui .opblock .opblock-summary-path {
+    color: #e0e0e0 !important;
+    font-weight: 600;
+  }
+  .swagger-ui .opblock .opblock-summary-path span {
+    color: #e0e0e0 !important;
+  }
+  .swagger-ui .opblock .opblock-summary-description {
+    color: #9ca3af !important;
+  }
+  .swagger-ui .opblock .opblock-summary-operation-id {
+    color: #6b7280 !important;
+  }
+  .swagger-ui .opblock.opblock-get {
+    background: rgba(97, 175, 254, 0.15);
+    border-color: rgba(97, 175, 254, 0.5);
+  }
+  .swagger-ui .opblock.opblock-get .opblock-summary-method {
+    background: #61affe;
+  }
+  .swagger-ui .opblock.opblock-post {
+    background: rgba(73, 204, 144, 0.15);
+    border-color: rgba(73, 204, 144, 0.5);
+  }
+  .swagger-ui .opblock.opblock-post .opblock-summary-method {
+    background: #49cc90;
+  }
+  .swagger-ui .opblock.opblock-put {
+    background: rgba(252, 161, 48, 0.15);
+    border-color: rgba(252, 161, 48, 0.5);
+  }
+  .swagger-ui .opblock.opblock-put .opblock-summary-method {
+    background: #fca130;
+  }
+  .swagger-ui .opblock.opblock-delete {
+    background: rgba(249, 62, 62, 0.15);
+    border-color: rgba(249, 62, 62, 0.5);
+  }
+  .swagger-ui .opblock.opblock-delete .opblock-summary-method {
+    background: #f93e3e;
+  }
+  .swagger-ui .opblock.opblock-patch {
+    background: rgba(80, 227, 194, 0.15);
+    border-color: rgba(80, 227, 194, 0.5);
+  }
+  .swagger-ui .opblock.opblock-patch .opblock-summary-method {
+    background: #50e3c2;
+  }
+  .swagger-ui .opblock.opblock-deprecated {
+    background: rgba(107, 114, 128, 0.15);
+    border-color: rgba(107, 114, 128, 0.5);
+  }
+  .swagger-ui .opblock.opblock-deprecated .opblock-summary-method {
+    background: #6b7280;
+  }
+  .swagger-ui .opblock-body pre.microlight {
+    background: #0d0d1a;
+    border-radius: 6px;
+    color: #e0e0e0;
+  }
+  .swagger-ui .opblock-body pre.microlight code {
+    color: #e0e0e0 !important;
+  }
+  .swagger-ui .opblock-description-wrapper p {
+    color: #9ca3af;
+  }
+  .swagger-ui .opblock .opblock-section-header {
+    background: rgba(0, 0, 0, 0.2);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .swagger-ui .opblock .opblock-section-header h4 {
+    color: #e0e0e0;
+  }
+  .swagger-ui .opblock .opblock-section-header label {
+    color: #9ca3af;
+  }
+  .swagger-ui table thead tr td, .swagger-ui table thead tr th {
+    color: #e0e0e0;
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .swagger-ui table tbody tr td {
+    color: #d1d5db;
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+  .swagger-ui .model-box {
+    background: #0d0d1a;
+  }
+  .swagger-ui .model {
+    color: #9ca3af;
+  }
+  .swagger-ui .model-title {
+    color: #e0e0e0;
+  }
+  .swagger-ui .parameter__name {
+    color: #e0e0e0;
+  }
+  .swagger-ui .parameter__name.required span {
+    color: #f87171;
+  }
+  .swagger-ui .parameter__name.required::after {
+    color: #f87171;
+  }
+  .swagger-ui .parameter__type {
+    color: #60a5fa;
+  }
+  .swagger-ui .parameter__deprecated {
+    color: #f87171;
+  }
+  .swagger-ui .parameter__in {
+    color: #6b7280;
+  }
+  .swagger-ui .response-col_status {
+    color: #e0e0e0;
+  }
+  .swagger-ui .response-col_description {
+    color: #9ca3af;
+  }
+  .swagger-ui .response-col_links {
+    color: #9ca3af;
+  }
+  .swagger-ui .btn {
+    border-radius: 6px;
+  }
+  .swagger-ui .btn.execute {
+    background-color: #8b5cf6;
+    border-color: #8b5cf6;
+    color: #fff;
+  }
+  .swagger-ui .btn.execute:hover {
+    background-color: #a78bfa;
+    border-color: #a78bfa;
+  }
+  .swagger-ui .btn.cancel {
+    color: #e0e0e0;
+    border-color: #6b7280;
+  }
+  .swagger-ui select {
+    background: #0d0d1a;
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #e0e0e0;
+  }
+  .swagger-ui input[type=text], .swagger-ui textarea {
+    background: #0d0d1a;
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #e0e0e0;
+  }
+  .swagger-ui .responses-inner h4, .swagger-ui .responses-inner h5 {
+    color: #e0e0e0;
+  }
+  .swagger-ui .response-control-media-type__title {
+    color: #9ca3af;
+  }
+  .swagger-ui .tab li {
+    color: #6b7280;
+  }
+  .swagger-ui .tab li.active {
+    color: #e0e0e0;
+  }
+  .swagger-ui .servers > label {
+    color: #e0e0e0;
+  }
+  .swagger-ui .servers select {
+    background: #0d0d1a;
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #e0e0e0;
+  }
+  .swagger-ui .loading-container {
+    background: transparent;
+  }
+  .swagger-ui .loading-container .loading::after {
+    border-color: #8b5cf6 transparent transparent;
+  }
+  /* Filter input */
+  .swagger-ui .filter-container {
+    background: transparent;
+  }
+  .swagger-ui .filter-container .filter input {
+    background: #0d0d1a;
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #e0e0e0;
+  }
+  /* Arrow icons */
+  .swagger-ui .expand-operation svg, .swagger-ui .expand-methods svg {
+    fill: #9ca3af;
+  }
+  .swagger-ui .arrow {
+    fill: #9ca3af;
+  }
+  /* Response codes */
+  .swagger-ui .responses-wrapper .responses-inner {
+    background: rgba(0, 0, 0, 0.1);
+  }
+  .swagger-ui .response .response-col_status {
+    font-weight: 600;
+  }
+  /* Markdown content */
+  .swagger-ui .markdown p, .swagger-ui .markdown li {
+    color: #9ca3af;
+  }
+  .swagger-ui .markdown code {
+    background: rgba(0, 0, 0, 0.3);
+    color: #f0abfc;
+  }
+  /* Hide validator badge */
+  .swagger-ui .info hgroup.main a {
+    display: none;
+  }
+  /* Copy button */
+  .swagger-ui .copy-to-clipboard {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .swagger-ui .copy-to-clipboard button {
+    background: transparent;
+  }
+  /* JSON highlighting in microlight */
+  .swagger-ui .microlight .string { color: #a5d6ff; }
+  .swagger-ui .microlight .number { color: #79c0ff; }
+
+  /* Authorize dialog/modal */
+  .swagger-ui .dialog-ux .modal-ux {
+    background: #1a1a2e;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+  }
+  .swagger-ui .dialog-ux .modal-ux-header {
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+  .swagger-ui .dialog-ux .modal-ux-header h3 {
+    color: #e0e0e0;
+  }
+  .swagger-ui .dialog-ux .modal-ux-content {
+    background: #1a1a2e;
+  }
+  .swagger-ui .dialog-ux .modal-ux-content p {
+    color: #9ca3af;
+  }
+  .swagger-ui .dialog-ux .modal-ux-content h4 {
+    color: #e0e0e0;
+  }
+  .swagger-ui .dialog-ux .modal-ux-content label {
+    color: #9ca3af;
+  }
+  .swagger-ui .dialog-ux .modal-ux-content code {
+    background: rgba(0, 0, 0, 0.3);
+    color: #f0abfc;
+  }
+  .swagger-ui .auth-container {
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .swagger-ui .auth-container h4 {
+    color: #e0e0e0;
+  }
+  .swagger-ui .auth-container .wrapper {
+    background: transparent;
+  }
+  .swagger-ui .auth-btn-wrapper {
+    background: transparent;
+  }
+  .swagger-ui .btn.modal-btn {
+    background: transparent;
+    border-color: #6b7280;
+    color: #e0e0e0;
+  }
+  .swagger-ui .btn.modal-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .swagger-ui .btn.modal-btn.auth {
+    background: #8b5cf6;
+    border-color: #8b5cf6;
+    color: #fff;
+  }
+  .swagger-ui .btn.modal-btn.auth:hover {
+    background: #a78bfa;
+    border-color: #a78bfa;
+  }
+  .swagger-ui .btn.authorize {
+    background: transparent;
+    border-color: #49cc90;
+    color: #49cc90;
+  }
+  .swagger-ui .btn.authorize:hover {
+    background: rgba(73, 204, 144, 0.1);
+  }
+  .swagger-ui .btn.authorize svg {
+    fill: #49cc90;
+  }
+  .swagger-ui .auth-wrapper .authorize {
+    background: transparent;
+  }
+  .swagger-ui .authorization__btn {
+    background: transparent;
+  }
+  .swagger-ui .authorization__btn svg {
+    fill: #9ca3af;
+  }
+  .swagger-ui .authorization__btn.locked svg {
+    fill: #49cc90;
+  }
+  .swagger-ui .authorization__btn.unlocked svg {
+    fill: #fca130;
+  }
+  /* Auth scopes */
+  .swagger-ui .scopes h2 {
+    color: #e0e0e0;
+  }
+  .swagger-ui .scope-def {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .swagger-ui .errors-wrapper {
+    background: rgba(249, 62, 62, 0.1);
+    border-color: rgba(249, 62, 62, 0.5);
+  }
+  .swagger-ui .errors-wrapper h4 {
+    color: #f87171;
+  }
+  .swagger-ui .errors-wrapper .error {
+    color: #f87171;
+  }
+  /* Close button */
+  .swagger-ui .dialog-ux .modal-ux-header .close-modal {
+    background: transparent;
+  }
+  .swagger-ui .dialog-ux .modal-ux-header .close-modal svg {
+    fill: #9ca3af;
+  }
+  .swagger-ui .dialog-ux .modal-ux-header .close-modal:hover svg {
+    fill: #e0e0e0;
+  }
+  .swagger-ui .microlight .boolean { color: #ff7b72; }
+  .swagger-ui .microlight .null { color: #ff7b72; }
+  .swagger-ui .microlight .attr { color: #7ee787; }
+</style>
+
+<div class="max-w-7xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text">API Documentation</h1>
+      <p class="text-text-muted text-sm">OpenAPI/Swagger documentation for <span class="font-medium text-primary-light"><%= db %></span></p>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <!-- Service Filter -->
+      <% if #services > 0 then %>
+      <select onchange="window.location.href='/database/<%= db %>/api-docs' + (this.value ? '?service=' + this.value : '')"
+              class="bg-bg-dark border border-border/50 rounded-lg px-3 py-1.5 text-sm text-text focus:outline-none focus:border-primary/50">
+        <option value="">All Services</option>
+        <% for _, svc in ipairs(services) do %>
+          <option value="<%= svc.key %>" <%= selected_service == svc.key and "selected" or "" %>><%= svc.name %></option>
+        <% end %>
+      </select>
+      <% end %>
+
+      <!-- Stats -->
+      <div class="text-sm text-text-muted">
+        <span class="font-medium text-text"><%= documented_count %></span> / <span><%= #scripts %></span> scripts documented
+      </div>
+
+      <!-- Actions -->
+      <button type="button" onclick="refreshSpec()"
+              class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-white/5 border border-border/50 text-text-muted hover:text-text hover:bg-white/10 transition-colors">
+        <i class="fas fa-sync-alt"></i>
+        <span>Refresh</span>
+      </button>
+
+      <button type="button" onclick="exportSpec()"
+              class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-white/5 border border-border/50 text-text-muted hover:text-text hover:bg-white/10 transition-colors">
+        <i class="fas fa-download"></i>
+        <span>Export</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Info Cards -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+          <i class="fas fa-code text-primary-light"></i>
+        </div>
+        <div>
+          <div class="text-lg font-semibold text-text"><%= #scripts %></div>
+          <div class="text-sm text-text-muted">Total Scripts</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+          <i class="fas fa-book text-success"></i>
+        </div>
+        <div>
+          <div class="text-lg font-semibold text-text"><%= documented_count %></div>
+          <div class="text-sm text-text-muted">Documented</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
+          <i class="fas fa-link text-info"></i>
+        </div>
+        <div>
+          <div class="text-sm font-mono text-text truncate"><%= api_server %>/api/<%= db %>/<% if selected_service then %><%= selected_service %><% else %>{service}<% end %></div>
+          <div class="text-sm text-text-muted">Base URL</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Annotation Help -->
+  <details class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl mb-6">
+    <summary class="px-4 py-3 cursor-pointer flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <i class="fas fa-lightbulb text-warning"></i>
+        <span class="font-medium text-text">How to Document Your Scripts</span>
+      </div>
+      <i class="fas fa-chevron-down text-text-muted transition-transform"></i>
+    </summary>
+    <div class="px-4 pb-4 border-t border-border/30 pt-4">
+      <p class="text-text-muted text-sm mb-4">Add JSDoc-style comments to your Lua scripts to generate API documentation:</p>
+      <pre class="bg-bg-dark rounded-lg p-4 text-sm overflow-x-auto"><code class="text-text-muted">---@summary Get user by ID
+---@description Retrieves a user document by their unique identifier
+---@tag Users
+---@param id string required The user's unique ID
+---@query include string optional Fields to include
+---@response 200 User found successfully
+---@response 404 {"error": "string"} User not found
+
+local user = db.collection("users"):get(request.params.id)
+return user</code></pre>
+      <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div>
+          <h4 class="font-medium text-text mb-2">Supported Annotations</h4>
+          <ul class="space-y-1 text-text-muted">
+            <li><code class="text-primary-light">@summary</code> - Short operation summary</li>
+            <li><code class="text-primary-light">@description</code> - Detailed description</li>
+            <li><code class="text-primary-light">@tag</code> - Tag for grouping endpoints</li>
+            <li><code class="text-primary-light">@param</code> - Path parameter</li>
+            <li><code class="text-primary-light">@query</code> - Query parameter</li>
+            <li><code class="text-primary-light">@header</code> - Header parameter</li>
+            <li><code class="text-primary-light">@body</code> - Request body schema</li>
+            <li><code class="text-primary-light">@response</code> - Response definition</li>
+            <li><code class="text-primary-light">@deprecated</code> - Mark as deprecated</li>
+            <li><code class="text-primary-light">@security</code> - Security requirement</li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="font-medium text-text mb-2">Parameter Format</h4>
+          <pre class="bg-bg-dark rounded p-2 text-xs"><code>@param name type required|optional description
+@query name type required|optional description
+@header name type required|optional description</code></pre>
+          <h4 class="font-medium text-text mt-3 mb-2">Multiline Body/Response</h4>
+          <pre class="bg-bg-dark rounded p-2 text-xs"><code>---@body
+---{
+---  "type": "object",
+---  "properties": {
+---    "name": {"type": "string"}
+---  }
+---}</code></pre>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <!-- Swagger UI Container -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+    <div id="swagger-ui" class="p-4"></div>
+  </div>
+
+  <!-- Empty State -->
+  <div id="empty-state" class="hidden bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-12 text-center">
+    <i class="fas fa-book-open text-4xl text-text-dim mb-4"></i>
+    <h3 class="text-lg font-semibold text-text mb-2">No Scripts Found</h3>
+    <p class="text-text-muted mb-4">Create Lua scripts with OpenAPI annotations to generate documentation.</p>
+    <a href="/database/<%= db %>/scripts"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+      <i class="fas fa-plus"></i>
+      <span>Create Script</span>
+    </a>
+  </div>
+</div>
+
+<!-- Swagger UI Bundle - disable AMD to avoid conflict with Monaco -->
+<script>
+  // Save AMD define/require to avoid conflict with Swagger UI
+  window._amdDefine = window.define;
+  window._amdRequire = window.require;
+  window.define = undefined;
+  window.require = undefined;
+</script>
+<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+<script>
+  // Restore AMD define/require for Monaco
+  window.define = window._amdDefine;
+  window.require = window._amdRequire;
+</script>
+
+<script>
+(function() {
+  var dbName = <%- EncodeJson(db) %>;
+  var selectedService = <%- EncodeJson(selected_service) %> || null;
+  var apiServer = <%- EncodeJson(api_server) %> || 'http://localhost:6745';
+  var swaggerUi = null;
+  var currentSpec = null;
+
+  // ============================================
+  // OpenAPI Annotation Parser
+  // ============================================
+
+  function parseOpenAPIAnnotations(code) {
+    var annotations = {
+      summary: '',
+      description: '',
+      tags: [],
+      parameters: [],
+      requestBody: null,
+      responses: {},
+      deprecated: false,
+      security: []
+    };
+
+    if (!code) return annotations;
+
+    var lines = code.split('\n');
+    var i = 0;
+
+    // Helper: collect multiline JSON block
+    function collectMultilineJSON(startIndex) {
+      var jsonLines = [];
+      var j = startIndex;
+      var description = '';
+
+      while (j < lines.length) {
+        var line = lines[j];
+        // Check if line continues the JSON block (starts with ---{ or ---  or --- followed by JSON content)
+        if (line.match(/^---[\s{"\[]/) || line.match(/^---$/)) {
+          // Extract content after ---
+          var content = line.substring(3);
+          // Check for description after JSON closing brace
+          if (content.trim().match(/^\}\s*(.+)$/)) {
+            var match = content.trim().match(/^\}(.*)$/);
+            jsonLines.push('}');
+            if (match && match[1].trim()) {
+              description = match[1].trim();
+            }
+            j++;
+            break;
+          }
+          jsonLines.push(content);
+          j++;
+        } else if (line.match(/^---@/) || !line.startsWith('---')) {
+          // New directive or end of comments - stop
+          break;
+        } else {
+          j++;
+        }
+      }
+
+      return { json: jsonLines.join('\n').trim(), nextIndex: j, description: description };
+    }
+
+    // Helper: parse shorthand type to JSON Schema
+    function parseType(typeStr) {
+      if (!typeStr) return { type: 'object' };
+      typeStr = typeStr.trim();
+
+      // Simple types
+      if (['string', 'number', 'integer', 'boolean'].indexOf(typeStr) !== -1) {
+        return { type: typeStr };
+      }
+      if (typeStr === 'array') {
+        return { type: 'array', items: {} };
+      }
+      if (typeStr === 'object') {
+        return { type: 'object' };
+      }
+
+      // Try parsing as JSON
+      try {
+        return JSON.parse(typeStr);
+      } catch (e) {
+        // Try shorthand: {id: string, name: string}
+        try {
+          var converted = typeStr
+            .replace(/(\w+)\s*:\s*(\w+)/g, '"$1": {"type": "$2"}')
+            .replace(/'/g, '"');
+          return JSON.parse(converted);
+        } catch (e2) {
+          return { type: 'object' };
+        }
+      }
+    }
+
+    while (i < lines.length) {
+      var line = lines[i];
+      var match = line.match(/^---@(\w+)\s*(.*)$/);
+
+      if (!match) {
+        i++;
+        continue;
+      }
+
+      var directive = match[1];
+      var content = match[2] || '';
+
+      switch (directive) {
+        case 'summary':
+          annotations.summary = content.trim();
+          break;
+
+        case 'description':
+          annotations.description = content.trim();
+          // Check for continuation lines
+          i++;
+          while (i < lines.length && lines[i].match(/^---[^@]/) && !lines[i].match(/^---$/)) {
+            var contLine = lines[i].substring(3).trim();
+            if (contLine) {
+              annotations.description += ' ' + contLine;
+            }
+            i++;
+          }
+          i--; // Back up one since the outer loop will increment
+          break;
+
+        case 'tag':
+          annotations.tags.push(content.trim());
+          break;
+
+        case 'param':
+        case 'query':
+        case 'header':
+          // Format: name type required|optional description
+          var paramMatch = content.match(/^(\w+)\s+(\w+)\s+(required|optional)\s*(.*)$/);
+          if (paramMatch) {
+            annotations.parameters.push({
+              name: paramMatch[1],
+              in: directive === 'param' ? 'path' : directive,
+              schema: parseType(paramMatch[2]),
+              required: paramMatch[3] === 'required',
+              description: paramMatch[4] || ''
+            });
+          }
+          break;
+
+        case 'body':
+          if (content.trim()) {
+            // Single-line body
+            annotations.requestBody = {
+              required: true,
+              content: { 'application/json': { schema: parseType(content) } }
+            };
+          } else {
+            // Multiline body - collect following lines
+            i++;
+            var bodyResult = collectMultilineJSON(i);
+            if (bodyResult.json) {
+              annotations.requestBody = {
+                required: true,
+                content: { 'application/json': { schema: parseType(bodyResult.json) } }
+              };
+            }
+            i = bodyResult.nextIndex - 1; // -1 because loop will increment
+          }
+          break;
+
+        case 'response':
+          // Format: code [schema] [description] OR code on its own for multiline
+          var codeMatch = content.match(/^(\d+)\s*(.*)$/);
+          if (codeMatch) {
+            var statusCode = codeMatch[1];
+            var rest = codeMatch[2].trim();
+
+            if (!rest) {
+              // Multiline response - collect following lines
+              i++;
+              var respResult = collectMultilineJSON(i);
+              var schema = {};
+              var respDescription = respResult.description || 'Response';
+
+              if (respResult.json) {
+                schema = parseType(respResult.json);
+              }
+
+              annotations.responses[statusCode] = {
+                description: respDescription,
+                content: Object.keys(schema).length > 0 ? { 'application/json': { schema: schema } } : undefined
+              };
+              i = respResult.nextIndex - 1;
+            } else {
+              // Single-line: try to parse schema and description
+              var inlineMatch = rest.match(/^(\{.*\})\s*(.*)$/);
+              if (inlineMatch) {
+                annotations.responses[statusCode] = {
+                  description: inlineMatch[2] || 'Response',
+                  content: { 'application/json': { schema: parseType(inlineMatch[1]) } }
+                };
+              } else {
+                // Just description, no schema
+                annotations.responses[statusCode] = {
+                  description: rest || 'Response'
+                };
+              }
+            }
+          }
+          break;
+
+        case 'deprecated':
+          annotations.deprecated = true;
+          break;
+
+        case 'security':
+          var secScheme = content.trim();
+          var secObj = {};
+          secObj[secScheme] = [];
+          annotations.security.push(secObj);
+          break;
+      }
+
+      i++;
+    }
+
+    return annotations;
+  }
+
+  // ============================================
+  // OpenAPI Spec Generator
+  // ============================================
+
+  function generateOpenAPISpec(scripts, database) {
+    // Group scripts by service for proper URL generation
+    var serviceGroups = {};
+    for (var i = 0; i < scripts.length; i++) {
+      var s = scripts[i];
+      var svc = s.service || 'default';
+      if (!serviceGroups[svc]) {
+        serviceGroups[svc] = [];
+      }
+      serviceGroups[svc].push(s);
+    }
+
+    // Determine server URL based on selected service (use DB server, not dashboard)
+    var serverUrl = apiServer + '/api/' + database;
+    var serverDescription = 'Service-based API';
+    if (selectedService) {
+      serverUrl = apiServer + '/api/' + database + '/' + selectedService;
+      serverDescription = selectedService + ' service API';
+    }
+
+    var spec = {
+      openapi: '3.0.3',
+      info: {
+        title: database + ' API' + (selectedService ? ' - ' + selectedService : ''),
+        description: 'Custom API endpoints for the ' + database + ' database powered by SoliDB Lua scripts.',
+        version: '1.0.0'
+      },
+      servers: [
+        { url: serverUrl, description: serverDescription }
+      ],
+      paths: {},
+      tags: [],
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT'
+          }
+        }
+      }
+    };
+
+    var tagSet = {};
+
+    for (var s = 0; s < scripts.length; s++) {
+      var script = scripts[s];
+      if (!script.path || !script.methods) {
+        console.log('Skipping script (no path or methods):', script.name, { path: script.path, methods: script.methods });
+        continue;
+      }
+
+      var annotations = parseOpenAPIAnnotations(script.code || '');
+      console.log('Parsed annotations for ' + script.name + ':', annotations);
+
+      // Convert path params from :name to {name}
+      var scriptService = script.service || 'default';
+      var path;
+      if (selectedService) {
+        // When filtering by service, paths are relative to the service
+        path = '/' + script.path.replace(/:(\w+)/g, '{$1}');
+      } else {
+        // When showing all, include service in path
+        path = '/' + scriptService + '/' + script.path.replace(/:(\w+)/g, '{$1}');
+      }
+
+      // Auto-detect path parameters from the path
+      var pathParams = [];
+      var paramMatches = path.match(/\{(\w+)\}/g) || [];
+      for (var pm = 0; pm < paramMatches.length; pm++) {
+        var paramName = paramMatches[pm].slice(1, -1);
+        // Check if already defined in annotations
+        var alreadyDefined = false;
+        for (var ap = 0; ap < annotations.parameters.length; ap++) {
+          if (annotations.parameters[ap].name === paramName && annotations.parameters[ap].in === 'path') {
+            alreadyDefined = true;
+            break;
+          }
+        }
+        if (!alreadyDefined) {
+          pathParams.push({
+            name: paramName,
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Path parameter: ' + paramName
+          });
+        }
+      }
+
+      if (!spec.paths[path]) {
+        spec.paths[path] = {};
+      }
+
+      for (var m = 0; m < script.methods.length; m++) {
+        var method = script.methods[m];
+        if (method === 'WS') continue; // Skip WebSocket
+
+        // Determine tags - use service name as default when showing all services
+        var operationTags = annotations.tags.length > 0 ? annotations.tags : [];
+        if (operationTags.length === 0) {
+          operationTags = selectedService ? ['Default'] : [scriptService];
+        }
+
+        var operation = {
+          summary: annotations.summary || script.name || path,
+          description: annotations.description || script.description || '',
+          operationId: (method.toLowerCase() + '_' + scriptService + '_' + script.name).replace(/[^a-zA-Z0-9]/g, '_'),
+          tags: operationTags,
+          parameters: pathParams.concat(annotations.parameters),
+          responses: Object.keys(annotations.responses).length > 0
+            ? annotations.responses
+            : { '200': { description: 'Successful response' } }
+        };
+
+        if (annotations.requestBody && ['POST', 'PUT', 'PATCH'].indexOf(method) !== -1) {
+          operation.requestBody = annotations.requestBody;
+        }
+
+        if (annotations.deprecated) {
+          operation.deprecated = true;
+        }
+
+        if (annotations.security.length > 0) {
+          operation.security = annotations.security;
+        }
+
+        // Collect tags
+        for (var t = 0; t < operation.tags.length; t++) {
+          tagSet[operation.tags[t]] = true;
+        }
+
+        spec.paths[path][method.toLowerCase()] = operation;
+      }
+    }
+
+    // Convert tag set to array
+    spec.tags = Object.keys(tagSet).map(function(name) {
+      return { name: name };
+    });
+
+    return spec;
+  }
+
+  // ============================================
+  // UI Functions
+  // ============================================
+
+  function loadSpec() {
+    var url = '/database/' + dbName + '/api-docs/openapi.json';
+    if (selectedService) {
+      url += '?service=' + encodeURIComponent(selectedService);
+    }
+    fetch(url)
+      .then(function(response) {
+        return response.json();
+      })
+      .then(function(data) {
+        var scripts = data.scripts || [];
+
+        console.log('Loaded scripts:', scripts);
+
+        // Debug: check each script
+        scripts.forEach(function(s, i) {
+          console.log('Script ' + i + ':', {
+            name: s.name,
+            path: s.path,
+            methods: s.methods,
+            hasCode: !!s.code,
+            codePreview: s.code ? s.code.substring(0, 100) : '(no code)'
+          });
+        });
+
+        if (scripts.length === 0) {
+          document.getElementById('swagger-ui').parentElement.classList.add('hidden');
+          document.getElementById('empty-state').classList.remove('hidden');
+          return;
+        }
+
+        document.getElementById('swagger-ui').parentElement.classList.remove('hidden');
+        document.getElementById('empty-state').classList.add('hidden');
+
+        currentSpec = generateOpenAPISpec(scripts, data.database || dbName);
+        console.log('Generated OpenAPI spec:', currentSpec);
+
+        if (swaggerUi) {
+          swaggerUi.specActions.updateSpec(JSON.stringify(currentSpec));
+        } else {
+          swaggerUi = SwaggerUIBundle({
+            spec: currentSpec,
+            dom_id: '#swagger-ui',
+            deepLinking: true,
+            presets: [
+              SwaggerUIBundle.presets.apis,
+              SwaggerUIStandalonePreset
+            ],
+            plugins: [
+              SwaggerUIBundle.plugins.DownloadUrl
+            ],
+            layout: 'BaseLayout',
+            defaultModelsExpandDepth: 0,
+            defaultModelExpandDepth: 2,
+            docExpansion: 'list',
+            filter: true,
+            showExtensions: false,
+            showCommonExtensions: false
+          });
+        }
+      })
+      .catch(function(err) {
+        console.error('Failed to load OpenAPI spec:', err);
+        showToast('Failed to load API documentation', 'error');
+      });
+  }
+
+  window.refreshSpec = function() {
+    loadSpec();
+    showToast('Documentation refreshed', 'success');
+  };
+
+  window.exportSpec = function() {
+    if (!currentSpec) {
+      showToast('No specification to export', 'error');
+      return;
+    }
+
+    var blob = new Blob([JSON.stringify(currentSpec, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = dbName + '-openapi.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('OpenAPI spec exported', 'success');
+  };
+
+  function showToast(message, type) {
+    if (typeof htmx !== 'undefined') {
+      document.body.dispatchEvent(new CustomEvent('showToast', { detail: { message: message, type: type || 'info' } }));
+    }
+  }
+
+  // Initialize
+  loadSpec();
+})();
+</script>

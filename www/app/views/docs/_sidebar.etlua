@@ -66,6 +66,8 @@ local sections = {
         { slug = "scripting-utils", label = "Utilities" },
         { slug = "scripting-streams", label = "Streams" },
         { slug = "scripting-development", label = "Development" },
+        { slug = "scripting-tutorial-crud", label = "Tutorial: CRUD API" },
+        { slug = "scripting-tutorial-testing", label = "Tutorial: Testing" },
       }},
       { slug = "queues", label = "Queues & Jobs", icon = "fa-tasks", color = "primary" },
       { slug = "triggers", label = "Triggers", icon = "fa-bolt", color = "warning" },

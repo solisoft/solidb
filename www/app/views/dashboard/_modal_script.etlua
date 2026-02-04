@@ -1,22 +1,20 @@
 <%
   local is_edit = is_edit or false
   local script = script or {}
-  -- Script from backend uses 'key', but from some contexts might use 'id'
-  -- Rust struct serializes 'key' as '_key', so we must check that too
+  local preselected_svc = preselected_service or ""
   local script_id = script._key or script.key or script.id or ""
-  
-  -- If we are in edit mode but have no ID, something is wrong
+
   if is_edit and script_id == "" then
-    -- Fallback for debugging - will show in logs if rendering fails or produces bad URL
-    script_id = "MISSING_ID" 
+    script_id = "MISSING_ID"
   end
   local script_name = script.name or ""
   local script_path = script.path or ""
+  local script_service = script.service or preselected_svc
+  if script_service == "" then script_service = "default" end
   local script_code = script.code or "-- Your Lua code here\n\nreturn { message = \"Hello, World!\" }"
   local script_description = script.description or ""
   local script_methods = script.methods or {"GET"}
 
-  -- Helper to check if method is selected
   local function has_method(method)
     for _, m in ipairs(script_methods) do
       if m == method then return true end
@@ -81,30 +79,34 @@
           <input type="hidden" name="_method" value="PUT">
         <% end %>
 
-        <!-- Name & Path Row -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-text-muted mb-1.5">Name</label>
+        <!-- Name & Service Row -->
+        <!-- Service is auto-assigned based on context -->
+        <input type="hidden" name="service" value="<%= script_service %>">
+
+        <!-- Name -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-1.5">Name</label>
+          <input type="text"
+                 name="name"
+                 value="<%= script_name %>"
+                 placeholder="My API Endpoint"
+                 required
+                 class="w-full bg-bg-dark border border-border/50 rounded-lg px-3 py-2 text-text placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30">
+        </div>
+
+        <!-- Path -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-1.5">Path</label>
+          <div class="flex">
+            <span id="script-path-prefix" class="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-border/50 bg-bg-dark/50 text-text-dim text-sm">
+              /api/<%= db %>/<span id="script-service-preview"><%= script_service %></span>/
+            </span>
             <input type="text"
-                   name="name"
-                   value="<%= script_name %>"
-                   placeholder="My API Endpoint"
+                   name="path"
+                   value="<%= script_path %>"
+                   placeholder="users/:id"
                    required
-                   class="w-full bg-bg-dark border border-border/50 rounded-lg px-3 py-2 text-text placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30">
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-text-muted mb-1.5">Path</label>
-            <div class="flex">
-              <span class="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-border/50 bg-bg-dark/50 text-text-dim text-sm">
-                /api/custom/<%= db %>/
-              </span>
-              <input type="text"
-                     name="path"
-                     value="<%= script_path %>"
-                     placeholder="users/:id"
-                     required
-                     class="flex-1 min-w-0 bg-bg-dark border border-border/50 rounded-r-lg px-3 py-2 text-text placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30">
-            </div>
+                   class="flex-1 min-w-0 bg-bg-dark border border-border/50 rounded-r-lg px-3 py-2 text-text placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30">
           </div>
         </div>
 
@@ -310,10 +312,15 @@
     });
   }
 
+  // Close modal function
+  window.closeModal = function() {
+    document.getElementById('modal-container').innerHTML = '';
+  };
+
   // Close modal on Escape key
   function handleEscape(e) {
     if (e.key === 'Escape') {
-      document.getElementById('modal-container').innerHTML = '';
+      closeModal();
       document.removeEventListener('keydown', handleEscape);
     }
   }
@@ -321,7 +328,7 @@
 
   // Listen for closeModal event
   document.body.addEventListener('closeModal', function() {
-    document.getElementById('modal-container').innerHTML = '';
+    closeModal();
   });
 })();
 </script>

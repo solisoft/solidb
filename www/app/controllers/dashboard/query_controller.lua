@@ -305,16 +305,25 @@ end
 -- Scripts manager page
 function QueryController:scripts()
   self.layout = "dashboard"
+  local selected_service = self.params.service_key or ""
   self:render("dashboard/scripts", {
     title = "Scripts - " .. self:get_db(),
     db = self:get_db(),
-    current_page = "scripts"
+    current_page = "scripts",
+    selected_service = selected_service
   })
 end
 
 -- Scripts table (HTMX partial)
 function QueryController:scripts_table()
   local db = self:get_db()
+  local selected_service = self.params.service or ""
+
+  -- Fallback to GetParam for query string
+  if selected_service == "" then
+    selected_service = GetParam("service") or ""
+  end
+  Log(kLogInfo, "scripts_table called with service filter: '" .. selected_service .. "'")
   local status, _, body = self:fetch_api("/_api/database/" .. db .. "/scripts")
 
   local scripts = {}
@@ -322,11 +331,41 @@ function QueryController:scripts_table()
     local ok, data = pcall(DecodeJson, body)
     if ok and data then
       scripts = data.scripts or {}
+      Log(kLogInfo, "Loaded " .. #scripts .. " scripts from API")
+      for i, s in ipairs(scripts) do
+        Log(kLogInfo, "Script " .. i .. ": " .. (s.name or "?") .. " service=" .. tostring(s.service))
+      end
+    end
+  end
+
+  -- Filter scripts by service if specified
+  if selected_service ~= "" and selected_service ~= "all" then
+    local filtered = {}
+    for _, script in ipairs(scripts) do
+      local script_service = script.service or "default"
+      Log(kLogInfo, "Checking script '" .. (script.name or "?") .. "' service='" .. script_service .. "' against filter='" .. selected_service .. "'")
+      if script_service == selected_service then
+        table.insert(filtered, script)
+      end
+    end
+    Log(kLogInfo, "After filter: " .. #filtered .. " scripts")
+    scripts = filtered
+  end
+
+  -- Also fetch services for the filter dropdown
+  local services = {}
+  local s_status, _, s_body = self:fetch_api("/_api/database/" .. db .. "/services")
+  if s_status == 200 then
+    local ok, data = pcall(DecodeJson, s_body)
+    if ok and data then
+      services = data.services or {}
     end
   end
 
   self:render_partial("dashboard/_scripts_table", {
     scripts = scripts,
+    services = services,
+    selected_service = selected_service,
     db = db
   })
 end
@@ -368,9 +407,25 @@ end
 
 -- Scripts create modal
 function QueryController:scripts_modal_create()
+  local db = self:get_db()
+  -- Try multiple ways to get the service parameter
+  local preselected_service = self.params.service
+  Log(kLogInfo, "scripts_modal_create: self.params.service = '" .. tostring(preselected_service) .. "'")
+  Log(kLogInfo, "scripts_modal_create: all params = " .. EncodeJson(self.params))
+
+  -- If params doesn't have it, try query string
+  if not preselected_service or preselected_service == "" then
+    local query = GetParam("service")
+    if query then
+      preselected_service = query
+      Log(kLogInfo, "scripts_modal_create: GetParam('service') = '" .. tostring(preselected_service) .. "'")
+    end
+  end
+
   self:render_partial("dashboard/_modal_script", {
-    db = self:get_db(),
+    db = db,
     script = nil,
+    preselected_service = preselected_service,
     is_edit = false
   })
 end
@@ -386,9 +441,21 @@ function QueryController:scripts_modal_edit()
     local ok, script = pcall(DecodeJson, body)
     if ok and script then
       Log(kLogInfo, "Loaded script for edit: " .. EncodeJson(script))
+
+      -- Fetch available services (for reference even in edit mode)
+      local services = {}
+      local s_status, _, s_body = self:fetch_api("/_api/database/" .. db .. "/services")
+      if s_status == 200 then
+        local s_ok, data = pcall(DecodeJson, s_body)
+        if s_ok and data and data.services then
+          services = data.services
+        end
+      end
+
       self:render_partial("dashboard/_modal_script", {
         db = db,
         script = script,
+        services = services,
         is_edit = true
       })
       return
@@ -404,13 +471,19 @@ end
 function QueryController:create_script()
   local db = self:get_db()
 
+  local service = self.params.service or "default"
+  if service == "" then service = "default" end
+  Log(kLogInfo, "create_script: service param = '" .. tostring(self.params.service) .. "', using service = '" .. service .. "'")
+
   local request_body = {
     name = self.params.name or "",
     path = self.params.path or "",
+    service = service,
     methods = {},
     code = self.params.code or "",
     description = self.params.description
   }
+  Log(kLogInfo, "create_script: request_body = " .. EncodeJson(request_body))
 
   -- Parse methods from form checkboxes
   for _, method in ipairs({"GET", "POST", "PUT", "DELETE", "WS"}) do
@@ -564,6 +637,159 @@ function QueryController:api_collections()
 
   SetHeader("Content-Type", "application/json")
   self:html(EncodeJson({ collections = {} }))
+end
+
+-- Services section (HTMX partial for scripts page)
+function QueryController:services_section()
+  local db = self:get_db()
+  local status, _, body = self:fetch_api("/_api/database/" .. db .. "/services")
+
+  local services = {}
+  if status == 200 then
+    local ok, data = pcall(DecodeJson, body)
+    if ok and data then
+      services = data.services or {}
+    end
+  end
+
+  self:render_partial("dashboard/_services_section", {
+    services = services,
+    db = db
+  })
+end
+
+-- Service create modal
+function QueryController:services_modal_create()
+  self:render_partial("dashboard/_modal_service", {
+    db = self:get_db(),
+    service = nil,
+    is_edit = false
+  })
+end
+
+-- Service edit modal
+function QueryController:services_modal_edit()
+  local db = self:get_db()
+  local key = self.params.key
+
+  local status, _, body = self:fetch_api("/_api/database/" .. db .. "/services/" .. key)
+
+  if status == 200 then
+    local ok, service = pcall(DecodeJson, body)
+    if ok and service then
+      self:render_partial("dashboard/_modal_service", {
+        db = db,
+        service = service,
+        is_edit = true
+      })
+      return
+    end
+  end
+
+  self:html('<div class="p-4 text-error">Failed to load service</div>')
+end
+
+-- Create service action
+function QueryController:create_service()
+  local db = self:get_db()
+
+  local request_body = {
+    key = self.params.key or "",
+    name = self.params.name or "",
+    description = self.params.description,
+    version = self.params.version,
+    enabled = self.params.enabled ~= nil,
+    require_auth = self.params.require_auth ~= nil
+  }
+
+  if request_body.key == "" or request_body.name == "" then
+    SetHeader("HX-Trigger", '{"showToast": {"message": "Key and Name are required", "type": "error"}}')
+    return self:services_section()
+  end
+
+  local status, _, body = self:fetch_api("/_api/database/" .. db .. "/services", {
+    method = "POST",
+    body = EncodeJson(request_body)
+  })
+
+  if status == 200 or status == 201 then
+    SetHeader("HX-Trigger", '{"closeModal": true, "showToast": {"message": "Service created successfully", "type": "success"}}')
+  else
+    local err_msg = "Failed to create service"
+    local ok, err_data = pcall(DecodeJson, body)
+    if ok and err_data and err_data.error then
+      err_msg = err_data.error
+    end
+    SetHeader("HX-Trigger", '{"showToast": {"message": "' .. err_msg:gsub('"', '\\"') .. '", "type": "error"}}')
+    SetStatus(422)
+  end
+
+  self:services_section()
+end
+
+-- Update service action
+function QueryController:update_service()
+  local db = self:get_db()
+  local key = self.params.key
+
+  local request_body = {
+    name = self.params.name or "",
+    description = self.params.description,
+    version = self.params.version,
+    enabled = self.params.enabled ~= nil,
+    require_auth = self.params.require_auth ~= nil
+  }
+
+  local status, _, body = self:fetch_api("/_api/database/" .. db .. "/services/" .. key, {
+    method = "PUT",
+    body = EncodeJson(request_body)
+  })
+
+  if status == 200 then
+    SetHeader("HX-Trigger", '{"showToast": {"message": "Service updated successfully", "type": "success"}}')
+  else
+    local err_msg = "Failed to update service"
+    local ok, err_data = pcall(DecodeJson, body)
+    if ok and err_data and err_data.error then
+      err_msg = err_data.error
+    end
+    SetHeader("HX-Trigger", '{"showToast": {"message": "' .. err_msg:gsub('"', '\\"') .. '", "type": "error"}}')
+    SetStatus(422)
+  end
+
+  self:services_section()
+end
+
+-- Delete service action (cascade deletes scripts)
+function QueryController:delete_service()
+  local db = self:get_db()
+  local key = self.params.key
+
+  local status, _, body = self:fetch_api("/_api/database/" .. db .. "/services/" .. key, {
+    method = "DELETE"
+  })
+
+  if status == 200 or status == 204 then
+    local ok, data = pcall(DecodeJson, body)
+    local scripts_deleted = 0
+    if ok and data and data.scripts_deleted then
+      scripts_deleted = data.scripts_deleted
+    end
+    local msg = "Service deleted"
+    if scripts_deleted > 0 then
+      msg = msg .. " (" .. scripts_deleted .. " scripts removed)"
+    end
+    SetHeader("HX-Trigger", '{"showToast": {"message": "' .. msg .. '", "type": "success"}, "refreshScriptsTable": true}')
+    self:html("")
+  else
+    local err_msg = "Failed to delete service"
+    local ok, err_data = pcall(DecodeJson, body)
+    if ok and err_data and err_data.error then
+      err_msg = err_data.error
+    end
+    SetHeader("HX-Trigger", '{"showToast": {"message": "' .. err_msg:gsub('"', '\\"') .. '", "type": "error"}}')
+    self:html("")
+  end
 end
 
 return QueryController

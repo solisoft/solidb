@@ -23,4 +23,4 @@ pub use channel_manager::ChannelManager;
 pub use conversion::{json_to_lua, lua_to_json_value, lua_value_to_json, matches_filter};
 pub use engine::ScriptEngine;
 
-pub use types::{Script, ScriptContext, ScriptResult, ScriptStats};
+pub use types::{Script, ScriptContext, ScriptResult, ScriptStats, Service};

@@ -1,0 +1,111 @@
+<%
+  local db = db or "_system"
+  local vertex_collections = vertex_collections or {}
+  local preselected_collection = preselected_collection or ""
+%>
+<div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
+     onclick="if(event.target === this) closeModal()">
+  <div class="bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[calc(100vh-2rem)] overflow-y-auto"
+       onclick="event.stopPropagation()">
+    <!-- Header -->
+    <div class="border-b border-border/30 px-6 py-4 flex items-center justify-between">
+      <h3 class="text-lg font-semibold text-text">Create New Vertex</h3>
+      <button type="button" onclick="closeModal()" class="text-text-muted hover:text-text transition-colors">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form id="create-vertex-form" class="p-6 space-y-4">
+      <!-- Collection Select -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Collection</label>
+        <select id="vertex-modal-collection" name="collection" required
+                class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:ring-2 focus:ring-primary/50 focus:border-primary">
+          <option value="">Select collection...</option>
+          <% for _, coll in ipairs(vertex_collections) do %>
+          <option value="<%= coll %>" <%= preselected_collection == coll and 'selected' or '' %>><%= coll %></option>
+          <% end %>
+        </select>
+      </div>
+
+      <!-- Document JSON -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Document (JSON)</label>
+        <textarea id="vertex-document" name="document" rows="10" required
+                  placeholder='{"name": "Example", "type": "person"}'
+                  class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text font-mono text-sm placeholder-text-dim focus:ring-2 focus:ring-primary/50 focus:border-primary">{
+  "name": ""
+}</textarea>
+        <p class="text-xs text-text-dim mt-1">Enter the document properties as JSON. _key will be auto-generated if not provided.</p>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex justify-end gap-3 pt-2">
+        <button type="button" onclick="closeModal()"
+                class="px-4 py-2 text-text-muted hover:text-text transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-6 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+          <i class="fas fa-plus mr-2"></i>Create Vertex
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function() {
+  var db = '<%= db %>';
+
+  document.getElementById('create-vertex-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    var collection = document.getElementById('vertex-modal-collection').value;
+    var documentJson = document.getElementById('vertex-document').value;
+
+    if (!collection) {
+      showToast('Please select a collection', 'error');
+      return;
+    }
+
+    // Validate JSON
+    try {
+      JSON.parse(documentJson);
+    } catch (err) {
+      showToast('Invalid JSON: ' + err.message, 'error');
+      return;
+    }
+
+    fetch('/database/' + db + '/graph/vertex', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        collection: collection,
+        document: documentJson
+      })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success && data.vertex) {
+        // Add to graph
+        if (typeof addVertexToGraph === 'function') {
+          addVertexToGraph(data.vertex);
+        }
+        showToast('Vertex created: ' + data.vertex.id, 'success');
+        closeModal();
+      } else {
+        showToast(data.error || 'Failed to create vertex', 'error');
+      }
+    })
+    .catch(function(err) {
+      showToast('Error: ' + err.message, 'error');
+    });
+  });
+
+  function showToast(message, type) {
+    document.body.dispatchEvent(new CustomEvent('showToast', { detail: { message: message, type: type } }));
+  }
+})();
+</script>

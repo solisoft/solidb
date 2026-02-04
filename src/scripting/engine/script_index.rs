@@ -13,6 +13,7 @@ use crate::storage::StorageEngine;
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 struct IndexKey {
     database: String,
+    service: String,
     path: String,
     method: String,
 }
@@ -21,14 +22,14 @@ struct IndexKey {
 ///
 /// The original implementation scans the entire _scripts collection
 /// for every request, which is O(n) where n is the number of scripts.
-/// This index provides O(1) lookup by (database, path, method).
+/// This index provides O(1) lookup by (database, service, path, method).
 pub struct ScriptIndex {
-    /// Map from (database, path, method) to Script
+    /// Map from (database, service, path, method) to Script
     /// We store exact paths and use a separate structure for patterns
     exact_paths: DashMap<IndexKey, Script>,
     /// Scripts with path parameters (e.g., "users/:id")
-    /// Stored per database for pattern matching
-    pattern_paths: DashMap<String, Vec<Script>>,
+    /// Stored per (database, service) for pattern matching
+    pattern_paths: DashMap<(String, String), Vec<Script>>,
 }
 
 impl Default for ScriptIndex {
@@ -49,13 +50,14 @@ impl ScriptIndex {
     /// Find a script matching the given request.
     ///
     /// First checks exact path matches, then falls back to pattern matching.
-    pub fn find(&self, database: &str, path: &str, method: &str) -> Option<Script> {
+    pub fn find(&self, database: &str, service: &str, path: &str, method: &str) -> Option<Script> {
         // Normalize method to uppercase
         let method_upper = method.to_uppercase();
 
         // Try exact match first (most common case)
         let key = IndexKey {
             database: database.to_string(),
+            service: service.to_string(),
             path: path.to_string(),
             method: method_upper.clone(),
         };
@@ -68,6 +70,7 @@ impl ScriptIndex {
         if method_upper == "GET" {
             let ws_key = IndexKey {
                 database: database.to_string(),
+                service: service.to_string(),
                 path: path.to_string(),
                 method: "WS".to_string(),
             };
@@ -77,7 +80,8 @@ impl ScriptIndex {
         }
 
         // Fall back to pattern matching
-        if let Some(patterns) = self.pattern_paths.get(database) {
+        let pattern_key = (database.to_string(), service.to_string());
+        if let Some(patterns) = self.pattern_paths.get(&pattern_key) {
             for script in patterns.iter() {
                 if script
                     .methods
@@ -123,16 +127,22 @@ impl ScriptIndex {
     /// Add a script to the index.
     pub fn insert(&self, script: Script) {
         let database = script.database.clone();
+        let service = script.service.clone();
         let path = script.path.clone();
 
         if Self::has_parameters(&path) {
             // Pattern path - add to pattern list
-            self.pattern_paths.entry(database).or_default().push(script);
+            let pattern_key = (database, service);
+            self.pattern_paths
+                .entry(pattern_key)
+                .or_default()
+                .push(script);
         } else {
             // Exact path - add for each method
             for method in &script.methods {
                 let key = IndexKey {
                     database: script.database.clone(),
+                    service: script.service.clone(),
                     path: path.clone(),
                     method: method.to_uppercase(),
                 };
@@ -142,12 +152,13 @@ impl ScriptIndex {
     }
 
     /// Remove a script from the index.
-    pub fn remove(&self, script_key: &str, database: &str) {
+    pub fn remove(&self, script_key: &str, database: &str, service: &str) {
         // Remove from exact paths
         self.exact_paths.retain(|_, v| v.key != script_key);
 
         // Remove from pattern paths
-        if let Some(mut patterns) = self.pattern_paths.get_mut(database) {
+        let pattern_key = (database.to_string(), service.to_string());
+        if let Some(mut patterns) = self.pattern_paths.get_mut(&pattern_key) {
             patterns.retain(|s| s.key != script_key);
         }
     }
@@ -185,7 +196,7 @@ impl ScriptIndex {
     pub fn rebuild_database(&self, storage: &Arc<StorageEngine>, database: &str) {
         // Remove existing entries for this database
         self.exact_paths.retain(|k, _| k.database != database);
-        self.pattern_paths.remove(database);
+        self.pattern_paths.retain(|k, _| k.0 != database);
 
         // Re-index from storage
         if let Ok(db) = storage.get_database(database) {
@@ -204,14 +215,19 @@ impl ScriptIndex {
     /// Get index statistics.
     pub fn stats(&self) -> IndexStats {
         let mut pattern_count = 0;
+        let mut databases = std::collections::HashSet::new();
         for entry in self.pattern_paths.iter() {
             pattern_count += entry.value().len();
+            databases.insert(entry.key().0.clone());
+        }
+        for entry in self.exact_paths.iter() {
+            databases.insert(entry.key().database.clone());
         }
 
         IndexStats {
             exact_entries: self.exact_paths.len(),
             pattern_entries: pattern_count,
-            databases: self.pattern_paths.len(),
+            databases: databases.len(),
         }
     }
 }
@@ -232,12 +248,23 @@ mod tests {
     use super::*;
 
     fn make_script(key: &str, database: &str, path: &str, methods: Vec<&str>) -> Script {
+        make_script_with_service(key, database, "default", path, methods)
+    }
+
+    fn make_script_with_service(
+        key: &str,
+        database: &str,
+        service: &str,
+        path: &str,
+        methods: Vec<&str>,
+    ) -> Script {
         Script {
             key: key.to_string(),
             name: key.to_string(),
             methods: methods.into_iter().map(|s| s.to_string()).collect(),
             path: path.to_string(),
             database: database.to_string(),
+            service: service.to_string(),
             collection: None,
             code: "return {}".to_string(),
             description: None,
@@ -253,16 +280,20 @@ mod tests {
         let script = make_script("s1", "testdb", "hello", vec!["GET"]);
         index.insert(script.clone());
 
-        let found = index.find("testdb", "hello", "GET");
+        let found = index.find("testdb", "default", "hello", "GET");
         assert!(found.is_some());
         assert_eq!(found.unwrap().key, "s1");
 
         // Wrong method
-        let found = index.find("testdb", "hello", "POST");
+        let found = index.find("testdb", "default", "hello", "POST");
         assert!(found.is_none());
 
         // Wrong database
-        let found = index.find("otherdb", "hello", "GET");
+        let found = index.find("otherdb", "default", "hello", "GET");
+        assert!(found.is_none());
+
+        // Wrong service
+        let found = index.find("testdb", "other", "hello", "GET");
         assert!(found.is_none());
     }
 
@@ -273,15 +304,15 @@ mod tests {
         let script = make_script("s1", "testdb", "users/:id", vec!["GET"]);
         index.insert(script);
 
-        let found = index.find("testdb", "users/123", "GET");
+        let found = index.find("testdb", "default", "users/123", "GET");
         assert!(found.is_some());
         assert_eq!(found.unwrap().key, "s1");
 
-        let found = index.find("testdb", "users/456", "GET");
+        let found = index.find("testdb", "default", "users/456", "GET");
         assert!(found.is_some());
 
         // Wrong path structure
-        let found = index.find("testdb", "users/123/posts", "GET");
+        let found = index.find("testdb", "default", "users/123/posts", "GET");
         assert!(found.is_none());
     }
 
@@ -292,9 +323,9 @@ mod tests {
         let script = make_script("s1", "testdb", "api", vec!["GET", "POST"]);
         index.insert(script);
 
-        assert!(index.find("testdb", "api", "GET").is_some());
-        assert!(index.find("testdb", "api", "POST").is_some());
-        assert!(index.find("testdb", "api", "DELETE").is_none());
+        assert!(index.find("testdb", "default", "api", "GET").is_some());
+        assert!(index.find("testdb", "default", "api", "POST").is_some());
+        assert!(index.find("testdb", "default", "api", "DELETE").is_none());
     }
 
     #[test]
@@ -306,13 +337,13 @@ mod tests {
         index.insert(script1);
         index.insert(script2);
 
-        assert!(index.find("testdb", "api1", "GET").is_some());
-        assert!(index.find("testdb", "api2", "GET").is_some());
+        assert!(index.find("testdb", "default", "api1", "GET").is_some());
+        assert!(index.find("testdb", "default", "api2", "GET").is_some());
 
-        index.remove("s1", "testdb");
+        index.remove("s1", "testdb", "default");
 
-        assert!(index.find("testdb", "api1", "GET").is_none());
-        assert!(index.find("testdb", "api2", "GET").is_some());
+        assert!(index.find("testdb", "default", "api1", "GET").is_none());
+        assert!(index.find("testdb", "default", "api2", "GET").is_some());
     }
 
     #[test]
@@ -354,7 +385,7 @@ mod tests {
         index.insert(script);
 
         // GET request should match WS script (for upgrade)
-        let found = index.find("testdb", "chat", "GET");
+        let found = index.find("testdb", "default", "chat", "GET");
         assert!(found.is_some());
     }
 
@@ -366,10 +397,10 @@ mod tests {
         index.insert(script);
 
         // All case variants should match
-        assert!(index.find("db", "api", "GET").is_some());
-        assert!(index.find("db", "api", "get").is_some());
-        assert!(index.find("db", "api", "Get").is_some());
-        assert!(index.find("db", "api", "gEt").is_some());
+        assert!(index.find("db", "default", "api", "GET").is_some());
+        assert!(index.find("db", "default", "api", "get").is_some());
+        assert!(index.find("db", "default", "api", "Get").is_some());
+        assert!(index.find("db", "default", "api", "gEt").is_some());
     }
 
     #[test]
@@ -387,22 +418,29 @@ mod tests {
 
         // Should match various ID combinations
         assert!(index
-            .find("db", "posts/123/comments/456/replies/789", "GET")
+            .find("db", "default", "posts/123/comments/456/replies/789", "GET")
             .is_some());
         assert!(index
-            .find("db", "posts/abc/comments/xyz/replies/def", "GET")
+            .find("db", "default", "posts/abc/comments/xyz/replies/def", "GET")
             .is_some());
         assert!(index
-            .find("db", "posts/1/comments/2/replies/3", "GET")
+            .find("db", "default", "posts/1/comments/2/replies/3", "GET")
             .is_some());
 
         // Should NOT match wrong structure
-        assert!(index.find("db", "posts/123/comments/456", "GET").is_none());
         assert!(index
-            .find("db", "posts/123/comments/456/replies", "GET")
+            .find("db", "default", "posts/123/comments/456", "GET")
             .is_none());
         assert!(index
-            .find("db", "posts/123/comments/456/replies/789/extra", "GET")
+            .find("db", "default", "posts/123/comments/456/replies", "GET")
+            .is_none());
+        assert!(index
+            .find(
+                "db",
+                "default",
+                "posts/123/comments/456/replies/789/extra",
+                "GET"
+            )
             .is_none());
     }
 
@@ -417,7 +455,7 @@ mod tests {
         index.insert(script.clone());
 
         // Should still find it
-        assert!(index.find("db", "api", "GET").is_some());
+        assert!(index.find("db", "default", "api", "GET").is_some());
 
         // Stats might show duplicate entries (implementation detail)
         let stats = index.stats();
@@ -432,11 +470,11 @@ mod tests {
         index.insert(script);
 
         // Remove non-existent key - should not panic
-        index.remove("nonexistent", "db");
-        index.remove("nonexistent", "other_db");
+        index.remove("nonexistent", "db", "default");
+        index.remove("nonexistent", "other_db", "default");
 
         // Original should still be there
-        assert!(index.find("db", "api", "GET").is_some());
+        assert!(index.find("db", "default", "api", "GET").is_some());
     }
 
     #[test]
@@ -460,7 +498,7 @@ mod tests {
                         match (thread_id + i) % 3 {
                             0 => {
                                 // Find operations
-                                let _ = idx.find("db", &format!("api{}", i % 10), "GET");
+                                let _ = idx.find("db", "default", &format!("api{}", i % 10), "GET");
                             }
                             1 => {
                                 // Insert operations
@@ -477,6 +515,7 @@ mod tests {
                                 idx.remove(
                                     &format!("new_s{}_{}", thread_id, i.saturating_sub(1)),
                                     "db",
+                                    "default",
                                 );
                             }
                             _ => unreachable!(),
@@ -494,7 +533,9 @@ mod tests {
         // Original scripts should still be findable (we didn't remove them)
         for i in 0..10 {
             assert!(
-                index.find("db", &format!("api{}", i), "GET").is_some(),
+                index
+                    .find("db", "default", &format!("api{}", i), "GET")
+                    .is_some(),
                 "Original script api{} should still exist",
                 i
             );
@@ -509,11 +550,11 @@ mod tests {
         let script = make_script("s1", "db", ":id", vec!["GET"]);
         index.insert(script);
 
-        assert!(index.find("db", "123", "GET").is_some());
-        assert!(index.find("db", "abc", "GET").is_some());
+        assert!(index.find("db", "default", "123", "GET").is_some());
+        assert!(index.find("db", "default", "abc", "GET").is_some());
 
         // Multiple segments should not match
-        assert!(index.find("db", "123/456", "GET").is_none());
+        assert!(index.find("db", "default", "123/456", "GET").is_none());
     }
 
     #[test]
@@ -523,8 +564,8 @@ mod tests {
         let script = make_script("s1", "db", "", vec!["GET"]);
         index.insert(script);
 
-        assert!(index.find("db", "", "GET").is_some());
-        assert!(index.find("db", "something", "GET").is_none());
+        assert!(index.find("db", "default", "", "GET").is_some());
+        assert!(index.find("db", "default", "something", "GET").is_none());
     }
 
     #[test]
@@ -538,10 +579,10 @@ mod tests {
         index.insert(make_script("s4", "db3", "users/:id", vec!["POST"]));
 
         // Each database should have its own script
-        let found1 = index.find("db1", "api", "GET");
-        let found2 = index.find("db2", "api", "GET");
-        let found3 = index.find("db3", "users/123", "GET");
-        let found4 = index.find("db3", "users/123", "POST");
+        let found1 = index.find("db1", "default", "api", "GET");
+        let found2 = index.find("db2", "default", "api", "GET");
+        let found3 = index.find("db3", "default", "users/123", "GET");
+        let found4 = index.find("db3", "default", "users/123", "POST");
 
         assert!(found1.is_some());
         assert!(found2.is_some());
@@ -570,7 +611,72 @@ mod tests {
         assert_eq!(stats.exact_entries, 0);
         assert_eq!(stats.pattern_entries, 0);
 
-        assert!(index.find("db", "api1", "GET").is_none());
-        assert!(index.find("db", "users/123", "GET").is_none());
+        assert!(index.find("db", "default", "api1", "GET").is_none());
+        assert!(index.find("db", "default", "users/123", "GET").is_none());
+    }
+
+    #[test]
+    fn test_service_isolation() {
+        let index = ScriptIndex::new();
+
+        // Same path in different services
+        index.insert(make_script_with_service(
+            "s1",
+            "db",
+            "users",
+            "hello",
+            vec!["GET"],
+        ));
+        index.insert(make_script_with_service(
+            "s2",
+            "db",
+            "admin",
+            "hello",
+            vec!["GET"],
+        ));
+
+        // Each service should have its own script
+        let found1 = index.find("db", "users", "hello", "GET");
+        let found2 = index.find("db", "admin", "hello", "GET");
+        let found3 = index.find("db", "other", "hello", "GET");
+
+        assert!(found1.is_some());
+        assert!(found2.is_some());
+        assert!(found3.is_none());
+
+        assert_eq!(found1.unwrap().key, "s1");
+        assert_eq!(found2.unwrap().key, "s2");
+    }
+
+    #[test]
+    fn test_service_pattern_isolation() {
+        let index = ScriptIndex::new();
+
+        // Pattern paths in different services
+        index.insert(make_script_with_service(
+            "s1",
+            "db",
+            "users",
+            "items/:id",
+            vec!["GET"],
+        ));
+        index.insert(make_script_with_service(
+            "s2",
+            "db",
+            "admin",
+            "items/:id",
+            vec!["GET"],
+        ));
+
+        let found1 = index.find("db", "users", "items/123", "GET");
+        let found2 = index.find("db", "admin", "items/123", "GET");
+        let found3 = index.find("db", "other", "items/123", "GET");
+
+        assert!(found1.is_some());
+        assert!(found2.is_some());
+        assert!(found3.is_none());
+
+        assert_eq!(found1.unwrap().key, "s1");
+        assert_eq!(found2.unwrap().key, "s2");
     }
 }

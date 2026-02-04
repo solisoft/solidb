@@ -1,0 +1,538 @@
+<%
+  local db = db or "_system"
+  local scripts = scripts or {}
+  local documented_count = documented_count or 0
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Documentation - <%= db %></title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --bg: #0f0f1a;
+      --bg-card: #1a1a2e;
+      --bg-dark: #0d0d1a;
+      --text: #e0e0e0;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --border: rgba(255, 255, 255, 0.1);
+      --primary: #8b5cf6;
+      --primary-light: #a78bfa;
+      --success: #49cc90;
+      --info: #61affe;
+      --warning: #fca130;
+      --error: #f93e3e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 1.75rem;
+      font-weight: 700;
+    }
+
+    .header p {
+      margin: 0.25rem 0 0;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    .header .db-name {
+      color: var(--primary-light);
+      font-weight: 500;
+    }
+
+    .actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+    }
+
+    .stats {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .stat-icon {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stat-icon.primary { background: rgba(139, 92, 246, 0.1); color: var(--primary-light); }
+    .stat-icon.success { background: rgba(73, 204, 144, 0.1); color: var(--success); }
+    .stat-icon.info { background: rgba(97, 175, 254, 0.1); color: var(--info); }
+
+    .stat-value {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .stat-label {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .swagger-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      overflow: hidden;
+    }
+
+    #swagger-ui {
+      padding: 1rem;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+    }
+
+    .empty-state i {
+      font-size: 3rem;
+      color: var(--text-dim);
+      margin-bottom: 1rem;
+    }
+
+    .empty-state h3 {
+      margin: 0 0 0.5rem;
+      font-size: 1.25rem;
+    }
+
+    .empty-state p {
+      margin: 0;
+      color: var(--text-muted);
+    }
+
+    /* Swagger UI Dark Theme */
+    .swagger-ui { background: transparent; }
+    .swagger-ui .topbar { display: none; }
+    .swagger-ui .info { margin: 0; }
+    .swagger-ui .info .title { color: var(--text); }
+    .swagger-ui .info .description { color: var(--text-muted); }
+    .swagger-ui .scheme-container { background: transparent; box-shadow: none; padding: 0; }
+    .swagger-ui .opblock-tag { color: #e0e0e0; border-bottom-color: var(--border); }
+    .swagger-ui .opblock-tag:hover { color: #fff; }
+    .swagger-ui .opblock-tag small { color: #9ca3af !important; }
+    .swagger-ui .opblock { border-radius: 8px; border-width: 1px; border-style: solid; }
+    .swagger-ui .opblock .opblock-summary { border-color: transparent; }
+    .swagger-ui .opblock .opblock-summary-method { border-radius: 4px; font-weight: 700; min-width: 70px; }
+    .swagger-ui .opblock .opblock-summary-path { color: #e0e0e0 !important; font-weight: 600; }
+    .swagger-ui .opblock .opblock-summary-path span { color: #e0e0e0 !important; }
+    .swagger-ui .opblock .opblock-summary-description { color: #9ca3af !important; }
+    .swagger-ui .opblock.opblock-get { background: rgba(97, 175, 254, 0.15); border-color: rgba(97, 175, 254, 0.5); }
+    .swagger-ui .opblock.opblock-get .opblock-summary-method { background: #61affe; }
+    .swagger-ui .opblock.opblock-post { background: rgba(73, 204, 144, 0.15); border-color: rgba(73, 204, 144, 0.5); }
+    .swagger-ui .opblock.opblock-post .opblock-summary-method { background: #49cc90; }
+    .swagger-ui .opblock.opblock-put { background: rgba(252, 161, 48, 0.15); border-color: rgba(252, 161, 48, 0.5); }
+    .swagger-ui .opblock.opblock-put .opblock-summary-method { background: #fca130; }
+    .swagger-ui .opblock.opblock-delete { background: rgba(249, 62, 62, 0.15); border-color: rgba(249, 62, 62, 0.5); }
+    .swagger-ui .opblock.opblock-delete .opblock-summary-method { background: #f93e3e; }
+    .swagger-ui .opblock.opblock-patch { background: rgba(80, 227, 194, 0.15); border-color: rgba(80, 227, 194, 0.5); }
+    .swagger-ui .opblock.opblock-patch .opblock-summary-method { background: #50e3c2; }
+    .swagger-ui .opblock-body pre.microlight { background: #0d0d1a; border-radius: 6px; color: #e0e0e0; }
+    .swagger-ui .opblock-body pre.microlight code { color: #e0e0e0 !important; }
+    .swagger-ui .opblock-description-wrapper p { color: #9ca3af; }
+    .swagger-ui .opblock .opblock-section-header { background: rgba(0, 0, 0, 0.2); border-color: rgba(255, 255, 255, 0.1); }
+    .swagger-ui .opblock .opblock-section-header h4 { color: #e0e0e0; }
+    .swagger-ui .opblock .opblock-section-header label { color: #9ca3af; }
+    .swagger-ui table thead tr td, .swagger-ui table thead tr th { color: #e0e0e0; border-color: rgba(255, 255, 255, 0.1); }
+    .swagger-ui table tbody tr td { color: #d1d5db; border-color: rgba(255, 255, 255, 0.05); }
+    .swagger-ui .model-box { background: #0d0d1a; }
+    .swagger-ui .model { color: #9ca3af; }
+    .swagger-ui .model-title { color: #e0e0e0; }
+    .swagger-ui .parameter__name { color: #e0e0e0; }
+    .swagger-ui .parameter__name.required span { color: #f87171; }
+    .swagger-ui .parameter__type { color: #60a5fa; }
+    .swagger-ui .parameter__in { color: #6b7280; }
+    .swagger-ui .response-col_status { color: #e0e0e0; }
+    .swagger-ui .response-col_description { color: #9ca3af; }
+    .swagger-ui .btn { border-radius: 6px; }
+    .swagger-ui .btn.execute { background-color: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+    .swagger-ui .btn.execute:hover { background-color: #a78bfa; border-color: #a78bfa; }
+    .swagger-ui .btn.cancel { color: #e0e0e0; border-color: #6b7280; }
+    .swagger-ui select { background: #0d0d1a; border-color: rgba(255, 255, 255, 0.2); color: #e0e0e0; }
+    .swagger-ui input[type=text], .swagger-ui textarea { background: #0d0d1a; border-color: rgba(255, 255, 255, 0.2); color: #e0e0e0; }
+    .swagger-ui .responses-inner h4, .swagger-ui .responses-inner h5 { color: #e0e0e0; }
+    .swagger-ui .tab li { color: #6b7280; }
+    .swagger-ui .tab li.active { color: #e0e0e0; }
+    .swagger-ui .servers > label { color: #e0e0e0; }
+    .swagger-ui .servers select { background: #0d0d1a; border-color: rgba(255, 255, 255, 0.2); color: #e0e0e0; }
+    .swagger-ui .loading-container { background: transparent; }
+    .swagger-ui .filter-container { background: transparent; }
+    .swagger-ui .filter-container .filter input { background: #0d0d1a; border-color: rgba(255, 255, 255, 0.2); color: #e0e0e0; }
+    .swagger-ui .expand-operation svg, .swagger-ui .expand-methods svg { fill: #9ca3af; }
+    .swagger-ui .arrow { fill: #9ca3af; }
+    .swagger-ui .markdown p, .swagger-ui .markdown li { color: #9ca3af; }
+    .swagger-ui .markdown code { background: rgba(0, 0, 0, 0.3); color: #f0abfc; }
+    .swagger-ui .info hgroup.main a { display: none; }
+    .swagger-ui .microlight .string { color: #a5d6ff; }
+    .swagger-ui .microlight .number { color: #79c0ff; }
+    .swagger-ui .microlight .boolean { color: #ff7b72; }
+    .swagger-ui .microlight .null { color: #ff7b72; }
+    .swagger-ui .microlight .attr { color: #7ee787; }
+
+    /* Authorize dialog */
+    .swagger-ui .dialog-ux .modal-ux { background: #1a1a2e; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; }
+    .swagger-ui .dialog-ux .modal-ux-header { border-bottom-color: rgba(255, 255, 255, 0.1); }
+    .swagger-ui .dialog-ux .modal-ux-header h3 { color: #e0e0e0; }
+    .swagger-ui .dialog-ux .modal-ux-content { background: #1a1a2e; }
+    .swagger-ui .dialog-ux .modal-ux-content p { color: #9ca3af; }
+    .swagger-ui .dialog-ux .modal-ux-content h4 { color: #e0e0e0; }
+    .swagger-ui .dialog-ux .modal-ux-content label { color: #9ca3af; }
+    .swagger-ui .auth-container { background: transparent; border-color: rgba(255, 255, 255, 0.1); }
+    .swagger-ui .auth-container h4 { color: #e0e0e0; }
+    .swagger-ui .btn.modal-btn { background: transparent; border-color: #6b7280; color: #e0e0e0; }
+    .swagger-ui .btn.modal-btn:hover { background: rgba(255, 255, 255, 0.1); }
+    .swagger-ui .btn.modal-btn.auth { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+    .swagger-ui .btn.authorize { background: transparent; border-color: #49cc90; color: #49cc90; }
+    .swagger-ui .btn.authorize svg { fill: #49cc90; }
+    .swagger-ui .authorization__btn svg { fill: #9ca3af; }
+    .swagger-ui .authorization__btn.locked svg { fill: #49cc90; }
+    .swagger-ui .authorization__btn.unlocked svg { fill: #fca130; }
+    .swagger-ui .dialog-ux .modal-ux-header .close-modal { background: transparent; }
+    .swagger-ui .dialog-ux .modal-ux-header .close-modal svg { fill: #9ca3af; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>API Documentation</h1>
+        <p>OpenAPI/Swagger documentation for <span class="db-name"><%= db %></span></p>
+      </div>
+      <div class="actions">
+        <button class="btn" onclick="refreshSpec()">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+        <button class="btn" onclick="exportSpec()">
+          <i class="fas fa-download"></i> Export
+        </button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-icon primary">
+          <i class="fas fa-code"></i>
+        </div>
+        <div>
+          <div class="stat-value"><%= #scripts %></div>
+          <div class="stat-label">Total Scripts</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon success">
+          <i class="fas fa-book"></i>
+        </div>
+        <div>
+          <div class="stat-value"><%= documented_count %></div>
+          <div class="stat-label">Documented</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon info">
+          <i class="fas fa-link"></i>
+        </div>
+        <div>
+          <div class="stat-value" style="font-size: 0.875rem; font-family: monospace;">/api/custom/<%= db %></div>
+          <div class="stat-label">Base URL</div>
+        </div>
+      </div>
+    </div>
+
+    <% if #scripts > 0 then %>
+    <div class="swagger-container">
+      <div id="swagger-ui"></div>
+    </div>
+    <% else %>
+    <div class="empty-state">
+      <i class="fas fa-book-open"></i>
+      <h3>No Scripts Found</h3>
+      <p>No API endpoints are configured for this database.</p>
+    </div>
+    <% end %>
+  </div>
+
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+  <script>
+  (function() {
+    var dbName = '<%= db %>';
+    var swaggerUi = null;
+    var currentSpec = null;
+
+    function parseOpenAPIAnnotations(code) {
+      var annotations = {
+        summary: '', description: '', tags: [], parameters: [],
+        requestBody: null, responses: {}, deprecated: false, security: []
+      };
+      if (!code) return annotations;
+
+      var lines = code.split('\n');
+      var i = 0;
+
+      function collectMultilineJSON(startIndex) {
+        var jsonLines = [], j = startIndex, description = '';
+        while (j < lines.length) {
+          var line = lines[j];
+          if (line.match(/^---[\s{"\[]/) || line.match(/^---$/)) {
+            var content = line.substring(3);
+            if (content.trim().match(/^\}\s*(.+)$/)) {
+              var match = content.trim().match(/^\}(.*)$/);
+              jsonLines.push('}');
+              if (match && match[1].trim()) description = match[1].trim();
+              j++; break;
+            }
+            jsonLines.push(content); j++;
+          } else if (line.match(/^---@/) || !line.startsWith('---')) { break; }
+          else { j++; }
+        }
+        return { json: jsonLines.join('\n').trim(), nextIndex: j, description: description };
+      }
+
+      function parseType(typeStr) {
+        if (!typeStr) return { type: 'object' };
+        typeStr = typeStr.trim();
+        if (['string', 'number', 'integer', 'boolean'].indexOf(typeStr) !== -1) return { type: typeStr };
+        if (typeStr === 'array') return { type: 'array', items: {} };
+        if (typeStr === 'object') return { type: 'object' };
+        try { return JSON.parse(typeStr); } catch (e) {
+          try {
+            var converted = typeStr.replace(/(\w+)\s*:\s*(\w+)/g, '"$1": {"type": "$2"}').replace(/'/g, '"');
+            return JSON.parse(converted);
+          } catch (e2) { return { type: 'object' }; }
+        }
+      }
+
+      while (i < lines.length) {
+        var line = lines[i];
+        var match = line.match(/^---@(\w+)\s*(.*)$/);
+        if (!match) { i++; continue; }
+        var directive = match[1], content = match[2] || '';
+
+        switch (directive) {
+          case 'summary': annotations.summary = content.trim(); break;
+          case 'description':
+            annotations.description = content.trim();
+            i++;
+            while (i < lines.length && lines[i].match(/^---[^@]/) && !lines[i].match(/^---$/)) {
+              var contLine = lines[i].substring(3).trim();
+              if (contLine) annotations.description += ' ' + contLine;
+              i++;
+            }
+            i--;
+            break;
+          case 'tag': annotations.tags.push(content.trim()); break;
+          case 'param': case 'query': case 'header':
+            var paramMatch = content.match(/^(\w+)\s+(\w+)\s+(required|optional)\s*(.*)$/);
+            if (paramMatch) {
+              annotations.parameters.push({
+                name: paramMatch[1], in: directive === 'param' ? 'path' : directive,
+                schema: parseType(paramMatch[2]), required: paramMatch[3] === 'required',
+                description: paramMatch[4] || ''
+              });
+            }
+            break;
+          case 'body':
+            if (content.trim()) {
+              annotations.requestBody = { required: true, content: { 'application/json': { schema: parseType(content) } } };
+            } else {
+              i++;
+              var bodyResult = collectMultilineJSON(i);
+              if (bodyResult.json) annotations.requestBody = { required: true, content: { 'application/json': { schema: parseType(bodyResult.json) } } };
+              i = bodyResult.nextIndex - 1;
+            }
+            break;
+          case 'response':
+            var codeMatch = content.match(/^(\d+)\s*(.*)$/);
+            if (codeMatch) {
+              var statusCode = codeMatch[1], rest = codeMatch[2].trim();
+              if (!rest) {
+                i++;
+                var respResult = collectMultilineJSON(i);
+                var schema = respResult.json ? parseType(respResult.json) : {};
+                annotations.responses[statusCode] = {
+                  description: respResult.description || 'Response',
+                  content: Object.keys(schema).length > 0 ? { 'application/json': { schema: schema } } : undefined
+                };
+                i = respResult.nextIndex - 1;
+              } else {
+                var inlineMatch = rest.match(/^(\{.*\})\s*(.*)$/);
+                if (inlineMatch) {
+                  annotations.responses[statusCode] = { description: inlineMatch[2] || 'Response', content: { 'application/json': { schema: parseType(inlineMatch[1]) } } };
+                } else {
+                  annotations.responses[statusCode] = { description: rest || 'Response' };
+                }
+              }
+            }
+            break;
+          case 'deprecated': annotations.deprecated = true; break;
+          case 'security':
+            var secObj = {}; secObj[content.trim()] = [];
+            annotations.security.push(secObj);
+            break;
+        }
+        i++;
+      }
+      return annotations;
+    }
+
+    function generateOpenAPISpec(scripts, database) {
+      var spec = {
+        openapi: '3.0.3',
+        info: { title: database + ' API', description: 'Custom API endpoints for the ' + database + ' database.', version: '1.0.0' },
+        servers: [{ url: '/api/custom/' + database, description: 'Custom Scripts API' }],
+        paths: {}, tags: [],
+        components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } } }
+      };
+
+      var tagSet = {};
+      for (var s = 0; s < scripts.length; s++) {
+        var script = scripts[s];
+        if (!script.path || !script.methods) continue;
+        var annotations = parseOpenAPIAnnotations(script.code || '');
+        var path = '/' + script.path.replace(/:(\w+)/g, '{$1}');
+
+        var pathParams = [];
+        var paramMatches = path.match(/\{(\w+)\}/g) || [];
+        for (var pm = 0; pm < paramMatches.length; pm++) {
+          var paramName = paramMatches[pm].slice(1, -1);
+          var alreadyDefined = false;
+          for (var ap = 0; ap < annotations.parameters.length; ap++) {
+            if (annotations.parameters[ap].name === paramName && annotations.parameters[ap].in === 'path') { alreadyDefined = true; break; }
+          }
+          if (!alreadyDefined) pathParams.push({ name: paramName, in: 'path', required: true, schema: { type: 'string' }, description: 'Path parameter: ' + paramName });
+        }
+
+        if (!spec.paths[path]) spec.paths[path] = {};
+
+        for (var m = 0; m < script.methods.length; m++) {
+          var method = script.methods[m];
+          if (method === 'WS') continue;
+          var operation = {
+            summary: annotations.summary || script.name || path,
+            description: annotations.description || script.description || '',
+            operationId: (method.toLowerCase() + '_' + script.name).replace(/[^a-zA-Z0-9]/g, '_'),
+            tags: annotations.tags.length > 0 ? annotations.tags : ['Default'],
+            parameters: pathParams.concat(annotations.parameters),
+            responses: Object.keys(annotations.responses).length > 0 ? annotations.responses : { '200': { description: 'Successful response' } }
+          };
+          if (annotations.requestBody && ['POST', 'PUT', 'PATCH'].indexOf(method) !== -1) operation.requestBody = annotations.requestBody;
+          if (annotations.deprecated) operation.deprecated = true;
+          if (annotations.security.length > 0) operation.security = annotations.security;
+          for (var t = 0; t < operation.tags.length; t++) tagSet[operation.tags[t]] = true;
+          spec.paths[path][method.toLowerCase()] = operation;
+        }
+      }
+      spec.tags = Object.keys(tagSet).map(function(name) { return { name: name }; });
+      return spec;
+    }
+
+    function loadSpec() {
+      fetch('/api/' + dbName + '/docs/openapi.json')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var scripts = data.scripts || [];
+          if (scripts.length === 0) return;
+          currentSpec = generateOpenAPISpec(scripts, data.database || dbName);
+          if (swaggerUi) {
+            swaggerUi.specActions.updateSpec(JSON.stringify(currentSpec));
+          } else {
+            swaggerUi = SwaggerUIBundle({
+              spec: currentSpec, dom_id: '#swagger-ui', deepLinking: true,
+              presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+              plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+              layout: 'BaseLayout', defaultModelsExpandDepth: 0, docExpansion: 'list', filter: true
+            });
+          }
+        })
+        .catch(function(err) { console.error('Failed to load spec:', err); });
+    }
+
+    window.refreshSpec = function() { loadSpec(); };
+
+    window.exportSpec = function() {
+      if (!currentSpec) return;
+      var blob = new Blob([JSON.stringify(currentSpec, null, 2)], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = dbName + '-openapi.json';
+      a.click();
+    };
+
+    <% if #scripts > 0 then %>
+    loadSpec();
+    <% end %>
+  })();
+  </script>
+</body>
+</html>

@@ -11,6 +11,14 @@ router.get("/", "home#index")
 router.get("/up", "home#up")
 router.get("/about", "home#about")
 
+-- Public API Documentation (Basic Auth via DB env vars: API_DOCS_USERNAME, API_DOCS_PASSWORD)
+-- Database-level docs (all services)
+router.get("/api/:db/docs", "public_apidocs#index")
+router.get("/api/:db/docs/openapi.json", "public_apidocs#openapi")
+-- Service-specific docs
+router.get("/api/:db/:service/docs", "public_apidocs#service_index")
+router.get("/api/:db/:service/docs/openapi.json", "public_apidocs#service_openapi")
+
 -- Global Sidebar Widgets (use session auth, not dashboard auth)
 router.get("/sidebar/tasks_progress", "dashboard#sidebar_tasks_progress")
 router.get("/sidebar/tasks_priority", "dashboard#sidebar_tasks_priority")
@@ -104,6 +112,7 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
 
   -- Scripts routes
   router.get("/scripts", "dashboard/query#scripts")
+  router.get("/scripts/service/:service_key", "dashboard/query#scripts")
   router.get("/scripts/table", "dashboard/query#scripts_table")
   router.get("/scripts/stats", "dashboard/query#scripts_stats")
   router.get("/scripts/modal/create", "dashboard/query#scripts_modal_create")
@@ -112,8 +121,33 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   router.put("/scripts/:script_id", "dashboard/query#update_script")
   router.delete("/scripts/:script_id", "dashboard/query#delete_script")
 
+  -- Services routes (inline management on scripts page)
+  router.get("/scripts/services/section", "dashboard/query#services_section")
+  router.get("/scripts/services/modal/create", "dashboard/query#services_modal_create")
+  router.get("/scripts/services/:key/modal/edit", "dashboard/query#services_modal_edit")
+  router.post("/scripts/services", "dashboard/query#create_service")
+  router.put("/scripts/services/:key", "dashboard/query#update_service")
+  router.delete("/scripts/services/:key", "dashboard/query#delete_service")
+
+  -- API Documentation
+  router.get("/api-docs", "dashboard/apidocs#index")
+  router.get("/api-docs/service/:service", "dashboard/apidocs#index")
+  router.get("/api-docs/openapi.json", "dashboard/apidocs#openapi")
+
   -- Live Query
   router.get("/live-query", "dashboard/query#live_query")
+
+  -- Graph Explorer
+  router.get("/graph", "dashboard/graph#index")
+  router.get("/graph/collections", "dashboard/graph#collections")
+  router.post("/graph/data", "dashboard/graph#data")
+  router.post("/graph/traverse", "dashboard/graph#traverse")
+  router.post("/graph/vertex", "dashboard/graph#create_vertex")
+  router.post("/graph/edge", "dashboard/graph#create_edge")
+  router.delete("/graph/vertex/:collection/:key", "dashboard/graph#delete_vertex")
+  router.delete("/graph/edge/:collection/:key", "dashboard/graph#delete_edge")
+  router.get("/graph/modal/vertex", "dashboard/graph#modal_vertex")
+  router.get("/graph/modal/edge", "dashboard/graph#modal_edge")
 
   -- Columnar routes
   router.get("/columnar", "dashboard/collections#columnar")

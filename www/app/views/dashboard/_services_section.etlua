@@ -1,0 +1,81 @@
+<% if #services == 0 then %>
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-8 mb-6 text-center">
+    <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-bg-dark flex items-center justify-center">
+      <i class="fas fa-cube text-2xl text-text-dim"></i>
+    </div>
+    <p class="text-text-muted text-lg font-medium mb-2">No services yet</p>
+    <p class="text-text-dim text-sm mb-4">Create a service to organize your API endpoints</p>
+    <button type="button"
+            hx-get="/database/<%= db %>/scripts/services/modal/create"
+            hx-target="#modal-container"
+            hx-swap="innerHTML"
+            class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-medium rounded-lg transition-colors">
+      <i class="fas fa-plus"></i>
+      <span>Create Service</span>
+    </button>
+  </div>
+<% else %>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-6">
+    <% for _, service in ipairs(services) do %>
+      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 cursor-pointer hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
+           data-service-key="<%= service.key %>"
+           onclick="selectService('<%= service.key %>', '<%= (service.name or service.key):gsub("'", "\\'") %>')">
+        <div class="flex items-start justify-between mb-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
+              <i class="fas fa-cube text-indigo-400"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-text font-medium truncate"><%= service.name %></div>
+              <div class="text-text-dim text-xs font-mono truncate"><%= service.key %></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onclick="event.stopPropagation()">
+            <button type="button"
+                    hx-get="/database/<%= db %>/scripts/services/<%= service.key %>/modal/edit"
+                    hx-target="#modal-container"
+                    hx-swap="innerHTML"
+                    class="p-1.5 text-text-muted hover:text-primary-light hover:bg-white/10 rounded transition-colors"
+                    title="Edit">
+              <i class="fas fa-edit text-xs"></i>
+            </button>
+            <button type="button"
+                    hx-delete="/database/<%= db %>/scripts/services/<%= service.key %>"
+                    hx-target="closest div[data-service-key]"
+                    hx-swap="outerHTML"
+                    hx-confirm="Delete service '<%= service.name %>'? This will also delete all <%= service.script_count or 0 %> scripts in this service!"
+                    class="p-1.5 text-text-muted hover:text-error hover:bg-white/10 rounded transition-colors"
+                    title="Delete">
+              <i class="fas fa-trash text-xs"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="inline-flex items-center px-2 py-1 rounded-lg text-sm font-medium bg-primary/20 text-primary-light">
+            <i class="fas fa-code mr-1.5 text-xs"></i>
+            <%= service.script_count or 0 %> endpoints
+          </span>
+          <% if service.enabled then %>
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-green-500/20 text-green-300">
+              <i class="fas fa-check-circle mr-1"></i>On
+            </span>
+          <% else %>
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-red-500/20 text-red-300">
+              <i class="fas fa-times-circle mr-1"></i>Off
+            </span>
+          <% end %>
+          <% if service.require_auth then %>
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-300">
+              <i class="fas fa-lock mr-1"></i>Auth
+            </span>
+          <% end %>
+        </div>
+
+        <% if service.description and service.description ~= "" then %>
+          <p class="text-text-dim text-xs mt-2 line-clamp-2"><%= service.description %></p>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+<% end %>

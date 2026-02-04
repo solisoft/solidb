@@ -1,0 +1,524 @@
+<div class="max-w-4xl mx-auto">
+  <div class="mb-8">
+    <a href="/docs/scripting" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Lua Scripting Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-purple-500 to-pink-600 rounded-lg blur opacity-25"></div>
+      <div class="relative">
+        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 mb-4 tracking-tight">Tutorial: Testing Your API</h1>
+        <p class="text-lg text-gray-300 max-w-3xl leading-relaxed">
+          Write automated tests for your Lua scripts using the SoliDB test runner. Learn the test framework, assertions, and HTTP client.
+        </p>
+      </div>
+    </div>
+
+    <!-- Overview -->
+    <section id="overview">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            Test Runner Overview
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-6">
+            The <code class="text-purple-400">solidb scripts test</code> command discovers and runs Lua test files that make real HTTP requests to your API endpoints.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+              <h3 class="font-bold text-purple-400 mb-2 mt-0">describe/it</h3>
+              <p class="text-sm text-gray-400">Familiar test structure</p>
+            </div>
+            <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+              <h3 class="font-bold text-purple-400 mb-2 mt-0">http client</h3>
+              <p class="text-sm text-gray-400">Built-in HTTP requests</p>
+            </div>
+            <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+              <h3 class="font-bold text-purple-400 mb-2 mt-0">expect()</h3>
+              <p class="text-sm text-gray-400">Expressive assertions</p>
+            </div>
+          </div>
+
+          <div class="bg-purple-500/10 border border-purple-500/20 rounded-lg p-4 flex items-start">
+            <svg class="w-5 h-5 text-purple-400 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <div class="text-sm text-purple-200">
+              <strong>Important:</strong> Tests run against a real server. Consider using a separate test database to avoid affecting production data.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Setup -->
+    <section id="setup">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+            Step 1: Setup Test Environment
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">Create a <code class="text-cyan-400">.env.test</code> file for test-specific configuration.</p>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-6">
+            <div class="px-4 py-2 bg-gray-800/50 border-b border-white/5 flex items-center">
+              <span class="text-xs text-gray-400 font-mono">.env.test</span>
+            </div>
+            <div class="p-4 font-mono text-sm text-gray-300">
+<pre><span class="text-gray-500"># Test environment configuration</span>
+SOLIDB_HOST=localhost
+SOLIDB_PORT=6745
+SOLIDB_DATABASE=myapp_test    <span class="text-gray-500"># Separate test database</span>
+SOLIDB_SERVICE=default
+SOLIDB_API_KEY=your_test_token</pre>
+            </div>
+          </div>
+
+          <p class="text-gray-300 mb-4">Create the tests directory structure:</p>
+          <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5">
+<pre class="text-gray-300">scripts/
+├── products.lua
+├── products/
+│   └── _id.lua
+└── tests/                    <span class="text-purple-400"># Test files go here</span>
+    ├── products_test.lua
+    └── auth_test.lua</pre>
+          </div>
+
+          <div class="mt-6 bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+            <p class="text-sm text-blue-200">
+              <strong>Note:</strong> The <code>tests/</code> folder is automatically excluded from sync. Test files are never pushed to the server.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Writing Tests -->
+    <section id="writing">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
+            Step 2: Write Your First Test
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">Create <code class="text-cyan-400">tests/products_test.lua</code> to test the products API.</p>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-6">
+            <div class="px-4 py-2 bg-gray-800/50 border-b border-white/5 flex items-center">
+              <span class="text-xs text-gray-400 font-mono">tests/products_test.lua</span>
+            </div>
+            <div class="p-4 font-mono text-sm text-gray-300 overflow-x-auto">
+<pre class="language-lua"><span class="text-gray-500">-- Test variables to store state between tests</span>
+<span class="text-blue-400">local</span> created_id = <span class="text-purple-400">nil</span>
+
+describe(<span class="text-green-400">"Products API"</span>, <span class="text-blue-400">function</span>()
+
+  it(<span class="text-green-400">"should create a new product"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-blue-400">local</span> response = http.post(<span class="text-green-400">"/products"</span>, {
+      name = <span class="text-green-400">"Test Widget"</span>,
+      price = <span class="text-purple-400">19.99</span>,
+      category = <span class="text-green-400">"test"</span>
+    })
+
+    expect(response.status).to_equal(<span class="text-purple-400">201</span>)
+    expect(response.body.product).to_exist()
+    expect(response.body.product.name).to_equal(<span class="text-green-400">"Test Widget"</span>)
+    expect(response.body.product._key).to_exist()
+
+    <span class="text-gray-500">-- Save the ID for later tests</span>
+    created_id = response.body.product._key
+  <span class="text-blue-400">end</span>)
+
+  it(<span class="text-green-400">"should list products"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-blue-400">local</span> response = http.get(<span class="text-green-400">"/products"</span>)
+
+    expect(response.status).to_equal(<span class="text-purple-400">200</span>)
+    expect(response.body.products).to_exist()
+    expect(response.body.count).to_be_greater_than(<span class="text-purple-400">0</span>)
+  <span class="text-blue-400">end</span>)
+
+  it(<span class="text-green-400">"should filter products by category"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-blue-400">local</span> response = http.get(<span class="text-green-400">"/products?category=test"</span>)
+
+    expect(response.status).to_equal(<span class="text-purple-400">200</span>)
+    expect(response.body.products).to_exist()
+
+    <span class="text-gray-500">-- All returned products should have the test category</span>
+    <span class="text-blue-400">for</span> _, product <span class="text-blue-400">in</span> <span class="text-yellow-400">ipairs</span>(response.body.products) <span class="text-blue-400">do</span>
+      expect(product.category).to_equal(<span class="text-green-400">"test"</span>)
+    <span class="text-blue-400">end</span>
+  <span class="text-blue-400">end</span>)
+
+  it(<span class="text-green-400">"should get a product by ID"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-blue-400">local</span> response = http.get(<span class="text-green-400">"/products/"</span> .. created_id)
+
+    expect(response.status).to_equal(<span class="text-purple-400">200</span>)
+    expect(response.body.name).to_equal(<span class="text-green-400">"Test Widget"</span>)
+  <span class="text-blue-400">end</span>)
+
+  it(<span class="text-green-400">"should update a product"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-blue-400">local</span> response = http.put(<span class="text-green-400">"/products/"</span> .. created_id, {
+      price = <span class="text-purple-400">24.99</span>
+    })
+
+    expect(response.status).to_equal(<span class="text-purple-400">200</span>)
+    expect(response.body.product.price).to_equal(<span class="text-purple-400">24.99</span>)
+  <span class="text-blue-400">end</span>)
+
+  it(<span class="text-green-400">"should delete a product"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-blue-400">local</span> response = http.delete(<span class="text-green-400">"/products/"</span> .. created_id)
+
+    expect(response.status).to_equal(<span class="text-purple-400">200</span>)
+    expect(response.body.message).to_contain(<span class="text-green-400">"deleted"</span>)
+  <span class="text-blue-400">end</span>)
+
+  it(<span class="text-green-400">"should return 404 for deleted product"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-blue-400">local</span> response = http.get(<span class="text-green-400">"/products/"</span> .. created_id)
+
+    expect(response.status).to_equal(<span class="text-purple-400">404</span>)
+  <span class="text-blue-400">end</span>)
+
+<span class="text-blue-400">end</span>)</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Running Tests -->
+    <section id="running">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-orange-500 mr-2"></span>
+            Step 3: Run Tests
+          </h2>
+        </div>
+        <div class="p-8">
+          <h3 class="text-lg font-bold text-white mb-3 mt-0">Run All Tests</h3>
+          <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5 mb-6">
+            <div class="text-green-400">$ solidb scripts test</div>
+            <div class="text-gray-400 mt-4">
+Running tests from /path/to/scripts...
+
+Products API
+  <span class="text-green-400">✓</span> should create a new product (45ms)
+  <span class="text-green-400">✓</span> should list products (23ms)
+  <span class="text-green-400">✓</span> should filter products by category (28ms)
+  <span class="text-green-400">✓</span> should get a product by ID (18ms)
+  <span class="text-green-400">✓</span> should update a product (35ms)
+  <span class="text-green-400">✓</span> should delete a product (22ms)
+  <span class="text-green-400">✓</span> should return 404 for deleted product (15ms)
+
+──────────────────────────────────────────────────
+Tests: <span class="text-green-400">7 passed</span>
+Time:  186ms</div>
+          </div>
+
+          <h3 class="text-lg font-bold text-white mb-3 mt-0">CLI Options</h3>
+          <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5 space-y-3">
+            <div>
+              <span class="text-cyan-400"># Run a specific test file</span>
+              <div class="text-green-400">$ solidb scripts test products_test.lua</div>
+            </div>
+            <div>
+              <span class="text-cyan-400"># Filter tests by name</span>
+              <div class="text-green-400">$ solidb scripts test --filter "create"</div>
+            </div>
+            <div>
+              <span class="text-cyan-400"># Verbose output (show print statements)</span>
+              <div class="text-green-400">$ solidb scripts test --verbose</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- HTTP Client Reference -->
+    <section id="http">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            HTTP Client Reference
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">The <code>http</code> module is available in all test files for making requests.</p>
+
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-cyan-400">http.get(path, headers?)</span> <span class="text-gray-500">-> response</span>
+              <div class="text-xs text-gray-500 mt-1">
+<pre class="mt-2">local response = http.get("/products")
+local response = http.get("/products?category=test")
+local response = http.get("/products", { ["X-Custom"] = "value" })</pre>
+              </div>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-cyan-400">http.post(path, body?, headers?)</span> <span class="text-gray-500">-> response</span>
+              <div class="text-xs text-gray-500 mt-1">
+<pre class="mt-2">local response = http.post("/products", { name = "Widget", price = 9.99 })</pre>
+              </div>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-cyan-400">http.put(path, body?, headers?)</span> <span class="text-gray-500">-> response</span>
+              <div class="text-xs text-gray-500 mt-1">
+<pre class="mt-2">local response = http.put("/products/123", { price = 14.99 })</pre>
+              </div>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-cyan-400">http.patch(path, body?, headers?)</span> <span class="text-gray-500">-> response</span>
+            </li>
+            <li class="bg-black/20 p-3 rounded border border-white/5">
+              <span class="text-cyan-400">http.delete(path, headers?)</span> <span class="text-gray-500">-> response</span>
+            </li>
+          </ul>
+
+          <h3 class="text-lg font-bold text-white mt-6 mb-3">Response Object</h3>
+          <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5">
+<pre class="text-gray-300">{
+  status = <span class="text-purple-400">200</span>,              <span class="text-gray-500">-- HTTP status code</span>
+  ok = <span class="text-purple-400">true</span>,                  <span class="text-gray-500">-- true if 2xx status</span>
+  body = { ... },            <span class="text-gray-500">-- Parsed JSON body</span>
+  headers = {                <span class="text-gray-500">-- Response headers</span>
+    [<span class="text-green-400">"content-type"</span>] = <span class="text-green-400">"application/json"</span>,
+    ...
+  }
+}</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Assertions Reference -->
+    <section id="assertions">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            Assertions Reference
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Use <code>expect(value)</code> followed by a matcher.</p>
+
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">expect(value).to_equal(expected)</span>
+              <div class="text-xs text-gray-500 mt-1">Strict equality check</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">expect(value).to_exist()</span>
+              <div class="text-xs text-gray-500 mt-1">Value is not nil</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">expect(value).to_be_nil()</span>
+              <div class="text-xs text-gray-500 mt-1">Value is nil</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">expect(value).to_be_true()</span> / <span class="text-cyan-400">to_be_false()</span>
+              <div class="text-xs text-gray-500 mt-1">Boolean checks</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">expect(string).to_contain(substring)</span>
+              <div class="text-xs text-gray-500 mt-1">String contains substring</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">expect(string).to_match(pattern)</span>
+              <div class="text-xs text-gray-500 mt-1">String matches regex pattern</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">expect(number).to_be_greater_than(n)</span>
+              <div class="text-xs text-gray-500 mt-1">Number comparison</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">expect(number).to_be_less_than(n)</span>
+              <div class="text-xs text-gray-500 mt-1">Number comparison</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">expect(fn).to_throw()</span>
+              <div class="text-xs text-gray-500 mt-1">Function throws an error</div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Test Hooks -->
+    <section id="hooks">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            Test Hooks
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Setup and teardown functions for test suites.</p>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+            <div class="p-4 font-mono text-sm text-gray-300 overflow-x-auto">
+<pre class="language-lua">describe(<span class="text-green-400">"With Hooks"</span>, <span class="text-blue-400">function</span>()
+
+  <span class="text-gray-500">-- Run once before all tests in this describe</span>
+  before_all(<span class="text-blue-400">function</span>()
+    <span class="text-gray-500">-- Create test data</span>
+    http.post(<span class="text-green-400">"/setup"</span>, { seed = <span class="text-purple-400">true</span> })
+  <span class="text-blue-400">end</span>)
+
+  <span class="text-gray-500">-- Run before each test</span>
+  before(<span class="text-blue-400">function</span>()
+    <span class="text-yellow-400">print</span>(<span class="text-green-400">"Starting test..."</span>)
+  <span class="text-blue-400">end</span>)
+
+  <span class="text-gray-500">-- Run after each test</span>
+  after(<span class="text-blue-400">function</span>()
+    <span class="text-yellow-400">print</span>(<span class="text-green-400">"Test complete"</span>)
+  <span class="text-blue-400">end</span>)
+
+  <span class="text-gray-500">-- Run once after all tests</span>
+  after_all(<span class="text-blue-400">function</span>()
+    <span class="text-gray-500">-- Cleanup test data</span>
+    http.post(<span class="text-green-400">"/cleanup"</span>)
+  <span class="text-blue-400">end</span>)
+
+  it(<span class="text-green-400">"test case 1"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-gray-500">-- ...</span>
+  <span class="text-blue-400">end</span>)
+
+  it(<span class="text-green-400">"test case 2"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-gray-500">-- ...</span>
+  <span class="text-blue-400">end</span>)
+
+<span class="text-blue-400">end</span>)</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Validation Error Tests -->
+    <section id="validation-tests">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            Testing Validation Errors
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">Test that your API correctly rejects invalid input.</p>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+            <div class="p-4 font-mono text-sm text-gray-300 overflow-x-auto">
+<pre class="language-lua">describe(<span class="text-green-400">"Validation Errors"</span>, <span class="text-blue-400">function</span>()
+
+  it(<span class="text-green-400">"should reject missing name"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-blue-400">local</span> response = http.post(<span class="text-green-400">"/products"</span>, {
+      price = <span class="text-purple-400">9.99</span>
+      <span class="text-gray-500">-- name is missing</span>
+    })
+
+    expect(response.status).to_equal(<span class="text-purple-400">400</span>)
+    expect(response.body.error).to_contain(<span class="text-green-400">"Name"</span>)
+  <span class="text-blue-400">end</span>)
+
+  it(<span class="text-green-400">"should reject negative price"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-blue-400">local</span> response = http.post(<span class="text-green-400">"/products"</span>, {
+      name = <span class="text-green-400">"Widget"</span>,
+      price = <span class="text-purple-400">-5</span>
+    })
+
+    expect(response.status).to_equal(<span class="text-purple-400">400</span>)
+    expect(response.body.error).to_contain(<span class="text-green-400">"price"</span>)
+  <span class="text-blue-400">end</span>)
+
+  it(<span class="text-green-400">"should reject empty name"</span>, <span class="text-blue-400">function</span>()
+    <span class="text-blue-400">local</span> response = http.post(<span class="text-green-400">"/products"</span>, {
+      name = <span class="text-green-400">""</span>,
+      price = <span class="text-purple-400">9.99</span>
+    })
+
+    expect(response.status).to_equal(<span class="text-purple-400">400</span>)
+  <span class="text-blue-400">end</span>)
+
+<span class="text-blue-400">end</span>)</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Best Practices -->
+    <section id="best-practices">
+      <div class="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-2xl p-8">
+        <h2 class="text-2xl font-bold text-white mb-6 mt-0">Best Practices</h2>
+
+        <div class="space-y-4">
+          <div class="flex items-start">
+            <span class="text-green-400 mr-3 mt-1">1.</span>
+            <div>
+              <h3 class="font-bold text-white mt-0 mb-1">Use a Test Database</h3>
+              <p class="text-sm text-gray-400">Configure <code>.env.test</code> to use a separate database for testing.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start">
+            <span class="text-green-400 mr-3 mt-1">2.</span>
+            <div>
+              <h3 class="font-bold text-white mt-0 mb-1">Clean Up Test Data</h3>
+              <p class="text-sm text-gray-400">Delete created resources in <code>after_all</code> hooks or at the start of test runs.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start">
+            <span class="text-green-400 mr-3 mt-1">3.</span>
+            <div>
+              <h3 class="font-bold text-white mt-0 mb-1">Test Edge Cases</h3>
+              <p class="text-sm text-gray-400">Include tests for invalid input, missing data, and error conditions.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start">
+            <span class="text-green-400 mr-3 mt-1">4.</span>
+            <div>
+              <h3 class="font-bold text-white mt-0 mb-1">Keep Tests Independent</h3>
+              <p class="text-sm text-gray-400">Each test should be able to run in isolation without depending on others.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start">
+            <span class="text-green-400 mr-3 mt-1">5.</span>
+            <div>
+              <h3 class="font-bold text-white mt-0 mb-1">Run Tests in CI/CD</h3>
+              <p class="text-sm text-gray-400">Integrate <code>solidb scripts test</code> into your deployment pipeline.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Related -->
+    <section id="related">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <a href="/docs/scripting-tutorial-crud" class="bg-gray-900/60 rounded-xl p-4 border border-white/10 hover:border-purple-500/30 transition-colors">
+          <h3 class="font-bold text-purple-400 mb-2 mt-0">Tutorial: CRUD API</h3>
+          <p class="text-sm text-gray-400">Build the API that these tests verify</p>
+        </a>
+        <a href="/docs/scripting-development" class="bg-gray-900/60 rounded-xl p-4 border border-white/10 hover:border-purple-500/30 transition-colors">
+          <h3 class="font-bold text-purple-400 mb-2 mt-0">Development Tools</h3>
+          <p class="text-sm text-gray-400">Debug, profile, and mock your scripts</p>
+        </a>
+      </div>
+    </section>
+  </div>
+</div>
