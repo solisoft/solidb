@@ -84,13 +84,26 @@ end
 -- Fetch graph data (vertices + edges from multiple collections)
 function GraphController:data()
   local db = self:get_db()
-  local vertex_coll = self.params.vertex_collection
+  local vertex_colls_raw = self.params.vertex_collections or ""
   local edge_colls_raw = self.params.edge_collections or ""
   local start_vertex = self.params.start_vertex
   local min_depth = tonumber(self.params.min_depth) or 1
   local max_depth = tonumber(self.params.max_depth) or 2
   local direction = self.params.direction or "ANY"
   local node_limit = tonumber(self.params.limit) or 50
+
+  -- Parse vertex collections (comma-separated)
+  local vertex_colls = {}
+  if type(vertex_colls_raw) == "string" and vertex_colls_raw ~= "" then
+    for coll in string.gmatch(vertex_colls_raw, "[^,]+") do
+      local trimmed = coll:match("^%s*(.-)%s*$")
+      if trimmed ~= "" then
+        table.insert(vertex_colls, trimmed)
+      end
+    end
+  elseif type(vertex_colls_raw) == "table" then
+    vertex_colls = vertex_colls_raw
+  end
 
   -- Parse edge collections (comma-separated)
   local edge_colls = {}
@@ -182,28 +195,33 @@ function GraphController:data()
       end
     end
 
-  -- No start vertex - load sample from vertex collection
-  elseif vertex_coll and vertex_coll ~= "" then
-    -- Fetch vertices
-    local v_query = string.format("FOR doc IN %s LIMIT %d RETURN doc", vertex_coll, node_limit)
-    local v_status, _, v_body = self:fetch_api("/_api/database/" .. db .. "/cursor", {
-      method = "POST",
-      body = EncodeJson({ query = v_query })
-    })
+  -- No start vertex - load sample from vertex collections
+  elseif #vertex_colls > 0 then
+    -- Calculate limit per collection to distribute evenly
+    local limit_per_coll = math.ceil(node_limit / #vertex_colls)
 
-    if v_status == 200 then
-      local ok, v_data = pcall(DecodeJson, v_body)
-      if ok and v_data and v_data.result then
-        for _, vertex in ipairs(v_data.result) do
-          if vertex._id then
-            seen_nodes[vertex._id] = true
-            local label = vertex.name or vertex.title or vertex._key
-            table.insert(all_nodes, {
-              id = vertex._id,
-              label = tostring(label),
-              collection = vertex_coll,
-              data = vertex
-            })
+    -- Fetch vertices from each selected collection
+    for _, vertex_coll in ipairs(vertex_colls) do
+      local v_query = string.format("FOR doc IN %s LIMIT %d RETURN doc", vertex_coll, limit_per_coll)
+      local v_status, _, v_body = self:fetch_api("/_api/database/" .. db .. "/cursor", {
+        method = "POST",
+        body = EncodeJson({ query = v_query })
+      })
+
+      if v_status == 200 then
+        local ok, v_data = pcall(DecodeJson, v_body)
+        if ok and v_data and v_data.result then
+          for _, vertex in ipairs(v_data.result) do
+            if vertex._id and not seen_nodes[vertex._id] then
+              seen_nodes[vertex._id] = true
+              local label = vertex.name or vertex.title or vertex._key
+              table.insert(all_nodes, {
+                id = vertex._id,
+                label = tostring(label),
+                collection = vertex_coll,
+                data = vertex
+              })
+            end
           end
         end
       end
@@ -345,12 +363,16 @@ function GraphController:modal_edge()
     end
   end
 
+  -- Use GetParam as fallback for query string parameters
+  local from_vertex = self.params.from or GetParam("from") or ""
+  local to_vertex = self.params.to or GetParam("to") or ""
+
   self:render_partial("dashboard/_modal_graph_edge", {
     db = db,
     edge_collections = edge_collections,
-    preselected_collection = self.params.collection,
-    from_vertex = self.params.from,
-    to_vertex = self.params.to
+    preselected_collection = self.params.collection or GetParam("collection") or "",
+    from_vertex = from_vertex,
+    to_vertex = to_vertex
   })
 end
 
