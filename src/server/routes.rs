@@ -10,6 +10,7 @@ use axum::{
 };
 use std::sync::Arc;
 use std::time::Duration;
+use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
@@ -138,9 +139,12 @@ pub fn create_router(
         index_stats.pattern_entries
     );
 
+    let cursor_store = CursorStore::new(Duration::from_secs(300));
+    cursor_store.spawn_cleanup_task();
+
     let state = AppState {
         storage,
-        cursor_store: CursorStore::new(Duration::from_secs(300)),
+        cursor_store,
         cluster_manager,
         replication_log,
         shard_coordinator,
@@ -862,6 +866,13 @@ pub fn create_router(
         // Global request body limit: 10MB default (import/blob have 500MB override)
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
+        .layer(
+            CompressionLayer::new()
+                .gzip(true)
+                .zstd(true)
+                .no_br()
+                .no_deflate(),
+        )
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

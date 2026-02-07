@@ -142,6 +142,18 @@
                          <td class="p-3">Name/Description for the API key.</td>
                          <td class="p-3 text-white">Yes</td>
                        </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">roles</td>
+                         <td class="p-3 font-mono">array</td>
+                         <td class="p-3">List of role names to assign to this key (e.g. ["editor", "viewer"]). Defaults to empty.</td>
+                         <td class="p-3">No</td>
+                       </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">scoped_databases</td>
+                         <td class="p-3 font-mono">array</td>
+                         <td class="p-3">Restrict key access to specific databases (e.g. ["mydb", "analytics"]). Omit for unrestricted access.</td>
+                         <td class="p-3">No</td>
+                       </tr>
                      </tbody>
                    </table>
                  </div>
@@ -157,7 +169,9 @@
                      "id": "uuid-v4-...",
                      "name": "My API Key",
                      "key": "sk_...",
-                     "created_at": "2023-..."
+                     "created_at": "2023-...",
+                     "roles": ["editor"],
+                     "scoped_databases": ["mydb"]
                    }
                  </div>
                </div>
@@ -295,9 +309,44 @@
                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                 <code class="text-gray-300">/_api/auth/roles</code>
               </div>
-              <p class="text-sm text-gray-400 mb-4">Create a custom role. Requires admin permission.</p>
+              <p class="text-sm text-gray-400 mb-4">Create a custom role. Requires admin permission. Role names cannot start with reserved prefixes (admin, editor, viewer).</p>
               <div class="mb-4">
-                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                      <tr>
+                        <th class="p-3">Field</th>
+                        <th class="p-3">Type</th>
+                        <th class="p-3">Description</th>
+                        <th class="p-3">Required</th>
+                      </tr>
+                    </thead>
+                    <tbody class="text-gray-400 divide-y divide-white/5">
+                      <tr>
+                        <td class="p-3 text-fuchsia-400 font-mono">name</td>
+                        <td class="p-3 font-mono">string</td>
+                        <td class="p-3">Name of the custom role.</td>
+                        <td class="p-3 text-white">Yes</td>
+                      </tr>
+                      <tr>
+                        <td class="p-3 text-fuchsia-400 font-mono">description</td>
+                        <td class="p-3 font-mono">string</td>
+                        <td class="p-3">Human-readable description.</td>
+                        <td class="p-3">No</td>
+                      </tr>
+                      <tr>
+                        <td class="p-3 text-fuchsia-400 font-mono">permissions</td>
+                        <td class="p-3 font-mono">array</td>
+                        <td class="p-3">List of permission objects. Each has: <code class="text-fuchsia-400">action</code> (admin|write|read), <code class="text-fuchsia-400">scope</code> (global|database), <code class="text-fuchsia-400">database</code> (required if scope is database).</td>
+                        <td class="p-3 text-white">Yes</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Example</h4>
                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
                   { "name": "analyst", "description": "Read-only analyst", "permissions": [{"action": "read", "scope": "database", "database": "analytics"}] }
                 </div>
@@ -319,7 +368,36 @@
                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
                 <code class="text-gray-300">/_api/auth/roles/:name</code>
               </div>
-              <p class="text-sm text-gray-400">Update a custom role. Cannot modify builtin roles.</p>
+              <p class="text-sm text-gray-400 mb-4">Update a custom role. Cannot modify builtin roles.</p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                      <tr>
+                        <th class="p-3">Field</th>
+                        <th class="p-3">Type</th>
+                        <th class="p-3">Description</th>
+                        <th class="p-3">Required</th>
+                      </tr>
+                    </thead>
+                    <tbody class="text-gray-400 divide-y divide-white/5">
+                      <tr>
+                        <td class="p-3 text-fuchsia-400 font-mono">description</td>
+                        <td class="p-3 font-mono">string</td>
+                        <td class="p-3">Updated description for the role.</td>
+                        <td class="p-3">No</td>
+                      </tr>
+                      <tr>
+                        <td class="p-3 text-fuchsia-400 font-mono">permissions</td>
+                        <td class="p-3 font-mono">array</td>
+                        <td class="p-3">Updated list of permission objects. Each has: <code class="text-fuchsia-400">action</code> (admin|write|read), <code class="text-fuchsia-400">scope</code> (global|database), <code class="text-fuchsia-400">database</code> (required if scope is database).</td>
+                        <td class="p-3">No</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
 
             <!-- DELETE /_api/auth/roles/:name -->
@@ -368,9 +446,38 @@
               </div>
               <p class="text-sm text-gray-400 mb-4">Create a new user.</p>
               <div class="mb-4">
-                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
-                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
-                  { "username": "newuser", "password": "securepass123", "initial_role": "viewer" }
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                      <tr>
+                        <th class="p-3">Field</th>
+                        <th class="p-3">Type</th>
+                        <th class="p-3">Description</th>
+                        <th class="p-3">Required</th>
+                      </tr>
+                    </thead>
+                    <tbody class="text-gray-400 divide-y divide-white/5">
+                      <tr>
+                        <td class="p-3 text-fuchsia-400 font-mono">username</td>
+                        <td class="p-3 font-mono">string</td>
+                        <td class="p-3">Username (1-64 characters).</td>
+                        <td class="p-3 text-white">Yes</td>
+                      </tr>
+                      <tr>
+                        <td class="p-3 text-fuchsia-400 font-mono">password</td>
+                        <td class="p-3 font-mono">string</td>
+                        <td class="p-3">Password (minimum 6 characters).</td>
+                        <td class="p-3 text-white">Yes</td>
+                      </tr>
+                      <tr>
+                        <td class="p-3 text-fuchsia-400 font-mono">initial_role</td>
+                        <td class="p-3 font-mono">string</td>
+                        <td class="p-3">Role to assign immediately. Must reference an existing role.</td>
+                        <td class="p-3">No</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -407,11 +514,33 @@
               </div>
               <p class="text-sm text-gray-400 mb-4">Assign a role to a user.</p>
               <div class="mb-4">
-                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
-                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
-                  { "role": "editor", "database": "mydb" }
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                      <tr>
+                        <th class="p-3">Field</th>
+                        <th class="p-3">Type</th>
+                        <th class="p-3">Description</th>
+                        <th class="p-3">Required</th>
+                      </tr>
+                    </thead>
+                    <tbody class="text-gray-400 divide-y divide-white/5">
+                      <tr>
+                        <td class="p-3 text-fuchsia-400 font-mono">role</td>
+                        <td class="p-3 font-mono">string</td>
+                        <td class="p-3">Name of an existing role to assign.</td>
+                        <td class="p-3 text-white">Yes</td>
+                      </tr>
+                      <tr>
+                        <td class="p-3 text-fuchsia-400 font-mono">database</td>
+                        <td class="p-3 font-mono">string</td>
+                        <td class="p-3">Limit role to a specific database. Omit or set to null for global assignment.</td>
+                        <td class="p-3">No</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-                <p class="text-xs text-gray-500 mt-2">Set <code>database</code> to null for global role assignment.</p>
               </div>
             </div>
 
@@ -421,7 +550,30 @@
                 <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
                 <code class="text-gray-300">/_api/auth/users/:username/roles/:role</code>
               </div>
-              <p class="text-sm text-gray-400">Revoke a role from a user. Use <code>?database=mydb</code> for database-scoped revocation.</p>
+              <p class="text-sm text-gray-400 mb-4">Revoke a role from a user.</p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Query Parameters</h4>
+                <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                      <tr>
+                        <th class="p-3">Parameter</th>
+                        <th class="p-3">Type</th>
+                        <th class="p-3">Description</th>
+                        <th class="p-3">Required</th>
+                      </tr>
+                    </thead>
+                    <tbody class="text-gray-400 divide-y divide-white/5">
+                      <tr>
+                        <td class="p-3 text-fuchsia-400 font-mono">database</td>
+                        <td class="p-3 font-mono">string</td>
+                        <td class="p-3">Revoke role for a specific database scope. Omit to revoke global assignment.</td>
+                        <td class="p-3">No</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
          </div>

@@ -538,43 +538,24 @@ pub async fn execute_query(
         mutations.documents_removed,
     );
 
-    if total_count > batch_size {
-        let cursor_id = state.cursor_store.store(query_result.results, batch_size);
-        let (first_batch, has_more) = state
-            .cursor_store
-            .get_next_batch(&cursor_id)
-            .unwrap_or((vec![], false));
+    let (cursor_id, result_batch, has_more) = state
+        .cursor_store
+        .store_and_get_first_batch(query_result.results, batch_size);
 
-        Ok(ApiResponse::new(
-            ExecuteQueryResponse {
-                result: first_batch,
-                count: total_count,
-                has_more,
-                id: if has_more { Some(cursor_id) } else { None },
-                cached: false,
-                execution_time_ms,
-                documents_inserted: mutations.documents_inserted,
-                documents_updated: mutations.documents_updated,
-                documents_removed: mutations.documents_removed,
-            },
-            &headers,
-        ))
-    } else {
-        Ok(ApiResponse::new(
-            ExecuteQueryResponse {
-                result: query_result.results,
-                count: total_count,
-                has_more: false,
-                id: None,
-                cached: false,
-                execution_time_ms,
-                documents_inserted: mutations.documents_inserted,
-                documents_updated: mutations.documents_updated,
-                documents_removed: mutations.documents_removed,
-            },
-            &headers,
-        ))
-    }
+    Ok(ApiResponse::new(
+        ExecuteQueryResponse {
+            result: result_batch,
+            count: total_count,
+            has_more,
+            id: cursor_id,
+            cached: false,
+            execution_time_ms,
+            documents_inserted: mutations.documents_inserted,
+            documents_updated: mutations.documents_updated,
+            documents_removed: mutations.documents_removed,
+        },
+        &headers,
+    ))
 }
 
 pub async fn explain_query(
@@ -607,20 +588,24 @@ pub async fn explain_query(
 pub async fn get_next_batch(
     State(state): State<AppState>,
     Path(cursor_id): Path<String>,
-) -> Result<Json<ExecuteQueryResponse>, DbError> {
+    headers: HeaderMap,
+) -> Result<ApiResponse<ExecuteQueryResponse>, DbError> {
     if let Some((batch, has_more)) = state.cursor_store.get_next_batch(&cursor_id) {
         let count = batch.len();
-        Ok(Json(ExecuteQueryResponse {
-            result: batch,
-            count,
-            has_more,
-            id: if has_more { Some(cursor_id) } else { None },
-            cached: true,
-            execution_time_ms: 0.0, // Cached results, no execution time
-            documents_inserted: 0,  // Mutations already counted in first response
-            documents_updated: 0,
-            documents_removed: 0,
-        }))
+        Ok(ApiResponse::new(
+            ExecuteQueryResponse {
+                result: batch,
+                count,
+                has_more,
+                id: if has_more { Some(cursor_id) } else { None },
+                cached: true,
+                execution_time_ms: 0.0, // Cached results, no execution time
+                documents_inserted: 0,  // Mutations already counted in first response
+                documents_updated: 0,
+                documents_removed: 0,
+            },
+            &headers,
+        ))
     } else {
         Err(DbError::DocumentNotFound(format!(
             "Cursor not found or expired: {}",
