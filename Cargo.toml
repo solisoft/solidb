@@ -3,7 +3,7 @@ members = ["clients/rust-client", "sdbql-core"]
 
 [package]
 name = "solidb"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 default-run = "solidb"
 description = "A lightweight, high-performance structured database server written in Rust."
