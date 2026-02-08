@@ -3398,7 +3398,7 @@ dependencies = [
 
 [[package]]
 name = "sdbql-core"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "chrono",
  "regex",
@@ -3688,7 +3688,7 @@ dependencies = [
 
 [[package]]
 name = "solidb"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -3772,7 +3772,7 @@ dependencies = [
 
 [[package]]
 name = "solidb-client"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "chrono",
  "dirs",
