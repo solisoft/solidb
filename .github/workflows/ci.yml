@@ -9,7 +9,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 1
+  CARGO_INCREMENTAL: 0
 
 jobs:
   check-and-build:
@@ -60,6 +60,14 @@ jobs:
 
       - name: Build
         run: cargo build --tests -j2 --verbose
+
+      - name: Clean target before upload
+        run: |
+          rm -rf target/debug/incremental
+          rm -rf target/debug/examples
+          rm -rf target/debug/.fingerprint/solidb-*/invoked.timestamp
+          find target/debug/deps -name '*.d' -delete
+          find target/debug/build -name '*.o' -delete
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
