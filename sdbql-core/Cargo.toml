@@ -1,6 +1,6 @@
 [package]
 name = "sdbql-core"
-version = "0.1.0"
+version = "0.8.0"
 edition = "2021"
 description = "Storage-independent SDBQL query language parser and executor"
 license = "MIT"
