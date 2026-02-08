@@ -32,6 +32,7 @@ async fn test_lua_now() {
         methods: vec!["POST".to_string()],
         path: "time".to_string(),
         database: "testdb".to_string(),
+        service: "default".to_string(),
         collection: None,
         code: r#"
             local t1 = solidb.now()

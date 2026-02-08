@@ -48,6 +48,7 @@ fn create_script(code: &str) -> Script {
         methods: vec!["POST".to_string()],
         path: "/test".to_string(),
         database: "testdb".to_string(),
+        service: "default".to_string(),
         collection: None,
         code: code.to_string(),
         description: None,

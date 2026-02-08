@@ -33,6 +33,7 @@ fn create_script(key: &str, code: &str) -> Script {
         methods: vec!["GET".to_string()],
         path: "/test".to_string(),
         database: "testdb".to_string(),
+        service: "default".to_string(),
         collection: None,
         code: code.to_string(),
         description: None,
@@ -244,6 +245,7 @@ fn test_script_index_basic_operations() {
         methods: vec!["GET".to_string()],
         path: "hello".to_string(),
         database: "testdb".to_string(),
+        service: "default".to_string(),
         collection: None,
         code: "return 'hello'".to_string(),
         description: None,
@@ -254,13 +256,13 @@ fn test_script_index_basic_operations() {
     index.insert(script1);
 
     // Find should work
-    let found = index.find("testdb", "hello", "GET");
+    let found = index.find("testdb", "default", "hello", "GET");
     assert!(found.is_some());
     assert_eq!(found.unwrap().key, "hello");
 
     // Remove should work
-    index.remove("hello", "testdb");
-    assert!(index.find("testdb", "hello", "GET").is_none());
+    index.remove("hello", "testdb", "default");
+    assert!(index.find("testdb", "default", "hello", "GET").is_none());
 }
 
 #[test]
@@ -273,6 +275,7 @@ fn test_script_index_parameter_paths() {
         methods: vec!["GET".to_string()],
         path: "users/:id".to_string(),
         database: "testdb".to_string(),
+        service: "default".to_string(),
         collection: None,
         code: "return {}".to_string(),
         description: None,
@@ -283,15 +286,15 @@ fn test_script_index_parameter_paths() {
     index.insert(script);
 
     // Should match any ID
-    assert!(index.find("testdb", "users/123", "GET").is_some());
-    assert!(index.find("testdb", "users/abc", "GET").is_some());
+    assert!(index.find("testdb", "default", "users/123", "GET").is_some());
+    assert!(index.find("testdb", "default", "users/abc", "GET").is_some());
     assert!(index
-        .find("testdb", "users/uuid-like-string", "GET")
+        .find("testdb", "default", "users/uuid-like-string", "GET")
         .is_some());
 
     // Should not match different paths
-    assert!(index.find("testdb", "users", "GET").is_none());
-    assert!(index.find("testdb", "users/123/posts", "GET").is_none());
+    assert!(index.find("testdb", "default", "users", "GET").is_none());
+    assert!(index.find("testdb", "default", "users/123/posts", "GET").is_none());
 }
 
 #[test]
@@ -309,6 +312,7 @@ fn test_script_index_multiple_methods() {
         ],
         path: "resource".to_string(),
         database: "testdb".to_string(),
+        service: "default".to_string(),
         collection: None,
         code: "return {}".to_string(),
         description: None,
@@ -319,13 +323,13 @@ fn test_script_index_multiple_methods() {
     index.insert(script);
 
     // All methods should work
-    assert!(index.find("testdb", "resource", "GET").is_some());
-    assert!(index.find("testdb", "resource", "POST").is_some());
-    assert!(index.find("testdb", "resource", "PUT").is_some());
-    assert!(index.find("testdb", "resource", "DELETE").is_some());
+    assert!(index.find("testdb", "default", "resource", "GET").is_some());
+    assert!(index.find("testdb", "default", "resource", "POST").is_some());
+    assert!(index.find("testdb", "default", "resource", "PUT").is_some());
+    assert!(index.find("testdb", "default", "resource", "DELETE").is_some());
 
     // PATCH should not match
-    assert!(index.find("testdb", "resource", "PATCH").is_none());
+    assert!(index.find("testdb", "default", "resource", "PATCH").is_none());
 }
 
 #[test]
@@ -339,6 +343,7 @@ fn test_script_index_database_isolation() {
         methods: vec!["GET".to_string()],
         path: "api".to_string(),
         database: "db1".to_string(),
+        service: "default".to_string(),
         collection: None,
         code: "return 'db1'".to_string(),
         description: None,
@@ -352,6 +357,7 @@ fn test_script_index_database_isolation() {
         methods: vec!["GET".to_string()],
         path: "api".to_string(),
         database: "db2".to_string(),
+        service: "default".to_string(),
         collection: None,
         code: "return 'db2'".to_string(),
         description: None,
@@ -363,8 +369,8 @@ fn test_script_index_database_isolation() {
     index.insert(script2);
 
     // Each database should return its own script
-    let found1 = index.find("db1", "api", "GET").unwrap();
-    let found2 = index.find("db2", "api", "GET").unwrap();
+    let found1 = index.find("db1", "default", "api", "GET").unwrap();
+    let found2 = index.find("db2", "default", "api", "GET").unwrap();
 
     assert_eq!(found1.key, "api1");
     assert_eq!(found2.key, "api2");

@@ -32,6 +32,7 @@ async fn test_lua_regex_match() {
         methods: vec!["POST".to_string()],
         path: "test".to_string(),
         database: "testdb".to_string(),
+        service: "default".to_string(),
         collection: None,
         code: r#"
             -- Validate email pattern
@@ -84,6 +85,7 @@ async fn test_lua_regex_replace() {
         methods: vec!["POST".to_string()],
         path: "test".to_string(),
         database: "testdb".to_string(),
+        service: "default".to_string(),
         collection: None,
         code: r#"
             local text = "The year is 2023"
@@ -136,6 +138,7 @@ async fn test_lua_regex_capture_groups() {
         methods: vec!["POST".to_string()],
         path: "test".to_string(),
         database: "testdb".to_string(),
+        service: "default".to_string(),
         collection: None,
         code: r#"
             local text = "John Doe"
