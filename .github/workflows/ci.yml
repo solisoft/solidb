@@ -14,6 +14,8 @@ env:
 jobs:
   check-and-build:
     name: Check & Build
+    if: |
+      !(github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'chore: release') || startsWith(github.event.head_commit.message, 'chore(main): release')))
     runs-on: ubuntu-latest
 
     steps:
