@@ -26,7 +26,7 @@ echo "[1/13] Building SoliDB server (release)..."
 cargo build --release --quiet 2>/dev/null || cargo build --release
 
 echo "[2/13] Building Rust benchmark..."
-cargo build --release --bin benchmark --quiet 2>/dev/null || cargo build --release --bin benchmark
+cargo build --release --bin solidb-benchmark --quiet 2>/dev/null || cargo build --release --bin solidb-benchmark
 
 echo "[3/13] Installing client dependencies..."
 # Go dependencies
@@ -76,10 +76,10 @@ extract_result() {
 
 echo ""
 echo "[5/18] Running Rust benchmark..."
-cargo build --release --bin benchmark --quiet 2>/dev/null || cargo build --release --bin benchmark
+cargo build --release --bin solidb-benchmark --quiet 2>/dev/null || cargo build --release --bin solidb-benchmark
 export SOLIDB_PORT=$BENCH_PORT
 export SOLIDB_PASSWORD=$BENCH_PASSWORD
-RUST_OUTPUT=$(timeout 60s ./target/release/benchmark 2>&1 || echo "TIMEOUT_OR_ERROR")
+RUST_OUTPUT=$(timeout 60s ./target/release/solidb-benchmark 2>&1 || echo "TIMEOUT_OR_ERROR")
 RUST_RESULT=$(extract_result "RUST_BENCH_RESULT:" "$RUST_OUTPUT")
 RUST_READ_RESULT=$(extract_result "RUST_READ_BENCH_RESULT:" "$RUST_OUTPUT")
 if [ -z "$RUST_RESULT" ] || [ "$RUST_RESULT" = "0" ]; then
@@ -202,10 +202,10 @@ echo "=== MULTI-CORE PARALLEL BENCHMARKS (16 workers, 10K inserts) ==="
 echo ""
 
 echo "[12/18] Running Rust parallel benchmark..."
-cargo build --release --bin benchmark_parallel --quiet 2>/dev/null || cargo build --release --bin benchmark_parallel
+cargo build --release --bin solidb-benchmark-parallel --quiet 2>/dev/null || cargo build --release --bin solidb-benchmark-parallel
 export SOLIDB_PORT=$BENCH_PORT
 export SOLIDB_PASSWORD=$BENCH_PASSWORD
-RUST_PARALLEL_OUTPUT=$(timeout 60s ./target/release/benchmark_parallel 2>&1 || echo "TIMEOUT_OR_ERROR")
+RUST_PARALLEL_OUTPUT=$(timeout 60s ./target/release/solidb-benchmark-parallel 2>&1 || echo "TIMEOUT_OR_ERROR")
 RUST_PARALLEL_RESULT=$(extract_result "RUST_PARALLEL_BENCH_RESULT:" "$RUST_PARALLEL_OUTPUT")
 if [ -z "$RUST_PARALLEL_RESULT" ] || [ "$RUST_PARALLEL_RESULT" = "0" ]; then
     echo "    Rust (parallel): FAILED"

@@ -18,8 +18,8 @@ declare -A RESULTS
 
 # 1. Rust (need to have it built first)
 echo -n "Rust........... "
-if cargo build --bin benchmark --release 2>/dev/null; then
-    RUST_RES=$(./target/release/benchmark 2>/dev/null | grep "RUST_BENCH_RESULT" | cut -d':' -f2)
+if cargo build --bin solidb-benchmark --release 2>/dev/null; then
+    RUST_RES=$(./target/release/solidb-benchmark 2>/dev/null | grep "RUST_BENCH_RESULT" | cut -d':' -f2)
     if [ -n "$RUST_RES" ]; then
         echo "$RUST_RES ops/s"
         RESULTS[rust]=$RUST_RES
