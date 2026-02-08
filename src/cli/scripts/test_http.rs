@@ -67,10 +67,9 @@ impl TestHttpClient {
         // Add custom headers
         if let Some(custom) = custom_headers {
             for (key, value) in custom {
-                if let (Ok(name), Ok(val)) = (
-                    HeaderName::from_str(&key),
-                    HeaderValue::from_str(&value),
-                ) {
+                if let (Ok(name), Ok(val)) =
+                    (HeaderName::from_str(&key), HeaderValue::from_str(&value))
+                {
                     headers.insert(name, val);
                 }
             }
@@ -224,15 +223,24 @@ pub fn register_http_module(lua: &Lua, client: TestHttpClient) -> LuaResult<()> 
 
         let path: String = match iter.next() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => return Err(mlua::Error::RuntimeError("http.get requires a path string".to_string())),
+            _ => {
+                return Err(mlua::Error::RuntimeError(
+                    "http.get requires a path string".to_string(),
+                ))
+            }
         };
 
         let headers = extract_headers(lua, iter.next())?;
 
-        let client = client_clone.lock().map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+        let client = client_clone
+            .lock()
+            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
         match client.get(&path, headers) {
             Ok(response) => response_to_lua(lua, response),
-            Err(e) => Err(mlua::Error::RuntimeError(format!("HTTP request failed: {}", e))),
+            Err(e) => Err(mlua::Error::RuntimeError(format!(
+                "HTTP request failed: {}",
+                e
+            ))),
         }
     })?;
     http.set("get", get_fn)?;
@@ -244,16 +252,25 @@ pub fn register_http_module(lua: &Lua, client: TestHttpClient) -> LuaResult<()> 
 
         let path: String = match iter.next() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => return Err(mlua::Error::RuntimeError("http.post requires a path string".to_string())),
+            _ => {
+                return Err(mlua::Error::RuntimeError(
+                    "http.post requires a path string".to_string(),
+                ))
+            }
         };
 
         let body = extract_body(lua, iter.next())?;
         let headers = extract_headers(lua, iter.next())?;
 
-        let client = client_clone.lock().map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+        let client = client_clone
+            .lock()
+            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
         match client.post(&path, body, headers) {
             Ok(response) => response_to_lua(lua, response),
-            Err(e) => Err(mlua::Error::RuntimeError(format!("HTTP request failed: {}", e))),
+            Err(e) => Err(mlua::Error::RuntimeError(format!(
+                "HTTP request failed: {}",
+                e
+            ))),
         }
     })?;
     http.set("post", post_fn)?;
@@ -265,16 +282,25 @@ pub fn register_http_module(lua: &Lua, client: TestHttpClient) -> LuaResult<()> 
 
         let path: String = match iter.next() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => return Err(mlua::Error::RuntimeError("http.put requires a path string".to_string())),
+            _ => {
+                return Err(mlua::Error::RuntimeError(
+                    "http.put requires a path string".to_string(),
+                ))
+            }
         };
 
         let body = extract_body(lua, iter.next())?;
         let headers = extract_headers(lua, iter.next())?;
 
-        let client = client_clone.lock().map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+        let client = client_clone
+            .lock()
+            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
         match client.put(&path, body, headers) {
             Ok(response) => response_to_lua(lua, response),
-            Err(e) => Err(mlua::Error::RuntimeError(format!("HTTP request failed: {}", e))),
+            Err(e) => Err(mlua::Error::RuntimeError(format!(
+                "HTTP request failed: {}",
+                e
+            ))),
         }
     })?;
     http.set("put", put_fn)?;
@@ -286,15 +312,24 @@ pub fn register_http_module(lua: &Lua, client: TestHttpClient) -> LuaResult<()> 
 
         let path: String = match iter.next() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => return Err(mlua::Error::RuntimeError("http.delete requires a path string".to_string())),
+            _ => {
+                return Err(mlua::Error::RuntimeError(
+                    "http.delete requires a path string".to_string(),
+                ))
+            }
         };
 
         let headers = extract_headers(lua, iter.next())?;
 
-        let client = client_clone.lock().map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+        let client = client_clone
+            .lock()
+            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
         match client.delete(&path, headers) {
             Ok(response) => response_to_lua(lua, response),
-            Err(e) => Err(mlua::Error::RuntimeError(format!("HTTP request failed: {}", e))),
+            Err(e) => Err(mlua::Error::RuntimeError(format!(
+                "HTTP request failed: {}",
+                e
+            ))),
         }
     })?;
     http.set("delete", delete_fn)?;
@@ -306,16 +341,25 @@ pub fn register_http_module(lua: &Lua, client: TestHttpClient) -> LuaResult<()> 
 
         let path: String = match iter.next() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
-            _ => return Err(mlua::Error::RuntimeError("http.patch requires a path string".to_string())),
+            _ => {
+                return Err(mlua::Error::RuntimeError(
+                    "http.patch requires a path string".to_string(),
+                ))
+            }
         };
 
         let body = extract_body(lua, iter.next())?;
         let headers = extract_headers(lua, iter.next())?;
 
-        let client = client_clone.lock().map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+        let client = client_clone
+            .lock()
+            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
         match client.patch(&path, body, headers) {
             Ok(response) => response_to_lua(lua, response),
-            Err(e) => Err(mlua::Error::RuntimeError(format!("HTTP request failed: {}", e))),
+            Err(e) => Err(mlua::Error::RuntimeError(format!(
+                "HTTP request failed: {}",
+                e
+            ))),
         }
     })?;
     http.set("patch", patch_fn)?;
@@ -394,11 +438,9 @@ fn value_to_json(lua: &Lua, value: &Value) -> LuaResult<serde_json::Value> {
         Value::Nil => Ok(serde_json::Value::Null),
         Value::Boolean(b) => Ok(serde_json::Value::Bool(*b)),
         Value::Integer(i) => Ok(serde_json::Value::Number((*i).into())),
-        Value::Number(n) => {
-            serde_json::Number::from_f64(*n)
-                .map(serde_json::Value::Number)
-                .ok_or_else(|| mlua::Error::RuntimeError("Invalid number".to_string()))
-        }
+        Value::Number(n) => serde_json::Number::from_f64(*n)
+            .map(serde_json::Value::Number)
+            .ok_or_else(|| mlua::Error::RuntimeError("Invalid number".to_string())),
         Value::String(s) => Ok(serde_json::Value::String(s.to_str()?.to_string())),
         Value::Table(t) => table_to_json(lua, t),
         _ => Ok(serde_json::Value::Null),

@@ -751,11 +751,7 @@ fn print_diff(old: &str, new: &str) {
 }
 
 /// Run tests from the tests/ directory
-fn cmd_test(
-    file: Option<PathBuf>,
-    verbose: bool,
-    filter: Option<String>,
-) -> anyhow::Result<()> {
+fn cmd_test(file: Option<PathBuf>, verbose: bool, filter: Option<String>) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
 
     // Load config with test environment
@@ -764,10 +760,7 @@ fn cmd_test(
 
     // Check auth
     if !config.has_auth() {
-        println!(
-            "{} No authentication configured.",
-            "!".yellow()
-        );
+        println!("{} No authentication configured.", "!".yellow());
         println!(
             "  Set {} in .env.test or run 'solidb scripts login'",
             config::ENV_API_KEY

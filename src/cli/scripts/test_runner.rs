@@ -147,10 +147,7 @@ impl TestRunner {
             return Ok(TestSummary::new());
         }
 
-        println!(
-            "Running tests from {}...\n",
-            self.scripts_dir.display()
-        );
+        println!("Running tests from {}...\n", self.scripts_dir.display());
 
         let mut summary = TestSummary::new();
 
@@ -188,7 +185,13 @@ impl TestRunner {
         let filter = self.runner_config.filter.clone();
 
         // Register describe/it functions
-        self.register_test_functions(&lua, results.clone(), current_describe.clone(), verbose, filter)?;
+        self.register_test_functions(
+            &lua,
+            results.clone(),
+            current_describe.clone(),
+            verbose,
+            filter,
+        )?;
 
         // Execute the test file
         if let Err(e) = lua.load(&code).exec() {
@@ -202,7 +205,9 @@ impl TestRunner {
         }
 
         // Add results to summary
-        let results_guard = results.lock().map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
+        let results_guard = results
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
         for result in results_guard.iter() {
             summary.add(result.clone());
         }
@@ -229,7 +234,10 @@ impl TestRunner {
             let parts: Vec<String> = args
                 .iter()
                 .map(|v| match v {
-                    Value::String(s) => s.to_str().map(|s| s.to_string()).unwrap_or_else(|_| "[invalid string]".to_string()),
+                    Value::String(s) => s
+                        .to_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|_| "[invalid string]".to_string()),
                     Value::Number(n) => n.to_string(),
                     Value::Integer(i) => i.to_string(),
                     Value::Boolean(b) => b.to_string(),
@@ -254,15 +262,14 @@ impl TestRunner {
         // json.encode
         let encode = lua.create_function(|lua, value: Value| {
             let json_value = lua_to_json(lua, &value)?;
-            serde_json::to_string(&json_value)
-                .map_err(|e| mlua::Error::RuntimeError(e.to_string()))
+            serde_json::to_string(&json_value).map_err(|e| mlua::Error::RuntimeError(e.to_string()))
         })?;
         json.set("encode", encode)?;
 
         // json.decode
         let decode = lua.create_function(|lua, s: String| {
-            let json_value: serde_json::Value = serde_json::from_str(&s)
-                .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+            let json_value: serde_json::Value =
+                serde_json::from_str(&s).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
             json_to_lua(lua, &json_value)
         })?;
         json.set("decode", decode)?;
@@ -321,7 +328,8 @@ impl TestRunner {
         let it_results = Arc::clone(&results);
         let it_current = Arc::clone(&current_describe);
         let it_fn = lua.create_function(move |lua, (name, func): (String, Function)| {
-            let describe_name = it_current.lock()
+            let describe_name = it_current
+                .lock()
                 .map(|guard| guard.clone())
                 .unwrap_or_default();
             let start = Instant::now();
@@ -499,8 +507,9 @@ impl TestRunner {
                 match actual {
                     Value::String(s) => {
                         let s_str = s.to_str()?.to_string();
-                        let re = regex::Regex::new(&pattern)
-                            .map_err(|e| mlua::Error::RuntimeError(format!("Invalid regex: {}", e)))?;
+                        let re = regex::Regex::new(&pattern).map_err(|e| {
+                            mlua::Error::RuntimeError(format!("Invalid regex: {}", e))
+                        })?;
                         if !re.is_match(&s_str) {
                             return Err(mlua::Error::RuntimeError(format!(
                                 "Expected '{}' to match pattern '{}'",
@@ -632,10 +641,7 @@ impl TestRunner {
                 summary.failed.to_string().red()
             )
         } else {
-            format!(
-                "Tests: {} passed",
-                summary.passed.to_string().green()
-            )
+            format!("Tests: {} passed", summary.passed.to_string().green())
         };
 
         if summary.skipped > 0 {
@@ -658,9 +664,7 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Integer(a), Value::Number(b)) | (Value::Number(b), Value::Integer(a)) => {
             ((*a as f64) - b).abs() < f64::EPSILON
         }
-        (Value::String(a), Value::String(b)) => {
-            a.to_str().ok() == b.to_str().ok()
-        }
+        (Value::String(a), Value::String(b)) => a.to_str().ok() == b.to_str().ok(),
         (Value::Table(a), Value::Table(b)) => {
             // Simple table comparison - check all keys
             let a_pairs: Vec<_> = a.pairs::<Value, Value>().filter_map(|r| r.ok()).collect();
@@ -708,11 +712,9 @@ fn lua_to_json(lua: &Lua, value: &Value) -> LuaResult<serde_json::Value> {
         Value::Nil => Ok(serde_json::Value::Null),
         Value::Boolean(b) => Ok(serde_json::Value::Bool(*b)),
         Value::Integer(i) => Ok(serde_json::Value::Number((*i).into())),
-        Value::Number(n) => {
-            serde_json::Number::from_f64(*n)
-                .map(serde_json::Value::Number)
-                .ok_or_else(|| mlua::Error::RuntimeError("Invalid number".to_string()))
-        }
+        Value::Number(n) => serde_json::Number::from_f64(*n)
+            .map(serde_json::Value::Number)
+            .ok_or_else(|| mlua::Error::RuntimeError("Invalid number".to_string())),
         Value::String(s) => Ok(serde_json::Value::String(s.to_str()?.to_string())),
         Value::Table(t) => {
             // Check if it's an array (sequential integer keys starting from 1)
