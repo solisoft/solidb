@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/solisoft/solidb/compare/v0.8.0...v0.9.0) (2026-02-08)
+
+
+### Features
+
+* add default service parameter to script creation in tests ([ed6de25](https://github.com/solisoft/solidb/commit/ed6de254b73b9701360d1ce9745132086b29a749))
+
 ## [0.8.0](https://github.com/solisoft/solidb/compare/v0.7.0...v0.8.0) (2026-02-08)
 
 
