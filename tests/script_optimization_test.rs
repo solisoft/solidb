@@ -286,15 +286,21 @@ fn test_script_index_parameter_paths() {
     index.insert(script);
 
     // Should match any ID
-    assert!(index.find("testdb", "default", "users/123", "GET").is_some());
-    assert!(index.find("testdb", "default", "users/abc", "GET").is_some());
+    assert!(index
+        .find("testdb", "default", "users/123", "GET")
+        .is_some());
+    assert!(index
+        .find("testdb", "default", "users/abc", "GET")
+        .is_some());
     assert!(index
         .find("testdb", "default", "users/uuid-like-string", "GET")
         .is_some());
 
     // Should not match different paths
     assert!(index.find("testdb", "default", "users", "GET").is_none());
-    assert!(index.find("testdb", "default", "users/123/posts", "GET").is_none());
+    assert!(index
+        .find("testdb", "default", "users/123/posts", "GET")
+        .is_none());
 }
 
 #[test]
@@ -324,12 +330,18 @@ fn test_script_index_multiple_methods() {
 
     // All methods should work
     assert!(index.find("testdb", "default", "resource", "GET").is_some());
-    assert!(index.find("testdb", "default", "resource", "POST").is_some());
+    assert!(index
+        .find("testdb", "default", "resource", "POST")
+        .is_some());
     assert!(index.find("testdb", "default", "resource", "PUT").is_some());
-    assert!(index.find("testdb", "default", "resource", "DELETE").is_some());
+    assert!(index
+        .find("testdb", "default", "resource", "DELETE")
+        .is_some());
 
     // PATCH should not match
-    assert!(index.find("testdb", "default", "resource", "PATCH").is_none());
+    assert!(index
+        .find("testdb", "default", "resource", "PATCH")
+        .is_none());
 }
 
 #[test]
