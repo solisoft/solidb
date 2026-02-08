@@ -44,6 +44,9 @@ clients/
 # Web application (optional - uncomment if you want to include www/)
 # www/
 
+# Benchmarks
+benchmarks/
+
 # Scripts
 scripts/
 

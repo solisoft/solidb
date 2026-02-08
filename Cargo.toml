@@ -158,6 +158,7 @@ path = "src/bin/solidb-restore.rs"
 
 [dev-dependencies]
 tokio-test = "0.4"
+solidb-client = { path = "clients/rust-client" }
 
 [features]
 fuse = ["dep:fuser"]

@@ -3748,6 +3748,7 @@ dependencies = [
  "sha2",
  "similar",
  "slug",
+ "solidb-client",
  "sysinfo",
  "tempfile",
  "thiserror 2.0.17",

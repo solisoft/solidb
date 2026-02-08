@@ -22,23 +22,31 @@ WORKDIR /app
 
 # Copy manifests first for better layer caching
 COPY Cargo.toml Cargo.lock ./
+COPY sdbql-core/Cargo.toml sdbql-core/Cargo.toml
+COPY clients/rust-client/Cargo.toml clients/rust-client/Cargo.toml
+COPY benchmarks/Cargo.toml benchmarks/Cargo.toml
 
-# Create dummy main.rs to build dependencies
-RUN mkdir -p src/bin && \
+# Create dummy sources to build dependencies
+RUN mkdir -p src/bin sdbql-core/src clients/rust-client/src benchmarks/src/bin && \
     echo "fn main() {}" > src/main.rs && \
     echo "fn main() {}" > src/bin/solidb-dump.rs && \
-    echo "fn main() {}" > src/bin/solidb-restore.rs
+    echo "fn main() {}" > src/bin/solidb-restore.rs && \
+    echo "fn main() {}" > src/bin/solidb-repl.rs && \
+    echo "" > src/lib.rs && \
+    echo "" > sdbql-core/src/lib.rs && \
+    echo "" > clients/rust-client/src/lib.rs && \
+    echo "fn main() {}" > benchmarks/src/bin/placeholder.rs
 
 # Build dependencies only (cached layer)
-RUN cargo build --release && rm -rf src
+RUN cargo build --release -p solidb 2>/dev/null || true
+RUN rm -rf src sdbql-core/src clients/rust-client/src benchmarks/src
 
 # Copy actual source code
 COPY src ./src
+COPY sdbql-core/src ./sdbql-core/src
+COPY clients/rust-client/src ./clients/rust-client/src
 
-# Touch main.rs to ensure rebuild
-RUN touch src/main.rs
-
-# Build the actual binary
+# Build the actual binaries
 RUN cargo build --release --bin solidb --bin solidb-dump --bin solidb-restore
 
 # Strip debug symbols for smaller binary
