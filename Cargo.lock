@@ -3748,7 +3748,6 @@ dependencies = [
  "sha2",
  "similar",
  "slug",
- "solidb-client",
  "sysinfo",
  "tempfile",
  "thiserror 2.0.17",
@@ -3768,6 +3767,17 @@ dependencies = [
  "uuid7",
  "walkdir",
  "x25519-dalek",
+]
+
+[[package]]
+name = "solidb-benchmarks"
+version = "0.9.0"
+dependencies = [
+ "rayon",
+ "reqwest",
+ "serde_json",
+ "solidb-client",
+ "tokio",
 ]
 
 [[package]]
