@@ -1,6 +1,6 @@
 [package]
 name = "solidb-client"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 description = "Official Rust client for SoliDB database with HTTP and TCP transport"
 license = "MIT"
