@@ -326,6 +326,10 @@ jobs:
             runner: macos-14
             os: darwin
             arch: arm64
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            os: windows
+            arch: amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -363,13 +367,18 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install zstd snappy lz4 protobuf cmake
 
+      - name: Install system dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: choco install llvm cmake protoc -y
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build release binary
         run: cargo build --release --locked
 
-      - name: Package binaries
+      - name: Package binaries (Unix)
+        if: runner.os != 'Windows'
         run: |
           mkdir -p dist
           cp target/release/solidb dist/
@@ -377,11 +386,21 @@ jobs:
           cp target/release/solidb-restore dist/
           tar czf solidb-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C dist .
 
+      - name: Package binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item target/release/solidb.exe dist/
+          Copy-Item target/release/solidb-dump.exe dist/
+          Copy-Item target/release/solidb-restore.exe dist/
+          Compress-Archive -Path dist/* -DestinationPath solidb-${{ matrix.os }}-${{ matrix.arch }}.zip
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: solidb-${{ matrix.os }}-${{ matrix.arch }}
-          path: solidb-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+          path: solidb-${{ matrix.os }}-${{ matrix.arch }}.*
 
   release:
     name: Release
@@ -399,7 +418,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.tar.gz
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
           tag_name: ${{ needs.release-please.outputs.tag_name }}
           body: ${{ needs.release-please.outputs.release_body }}
         env:
