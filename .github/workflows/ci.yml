@@ -68,10 +68,89 @@ jobs:
           path: target/
           retention-days: 1
 
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    needs: check-and-build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          docker system prune -af || true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            lld \
+            libclang-dev \
+            pkg-config \
+            libssl-dev \
+            libzstd-dev \
+            libsnappy-dev \
+            liblz4-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            cmake \
+            protobuf-compiler
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-target
+          path: target/
+
+      - name: Run clippy
+        run: cargo clippy -j2 -- -D warnings
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    needs: clippy
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          docker system prune -af || true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run security audit
+        run: cargo audit
+
   test:
     name: Test ${{ matrix.category }}
     runs-on: ubuntu-latest
-    needs: check-and-build
+    needs: security
     strategy:
       fail-fast: false
       matrix:
@@ -191,24 +270,28 @@ jobs:
             done
           fi
 
-  clippy:
-    name: Clippy
+  release:
+    name: Release
     runs-on: ubuntu-latest
-    needs: check-and-build
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: google-github-actions/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
 
-      - name: Free up disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          docker system prune -af || true
+      - uses: actions/checkout@v4
+        if: ${{ steps.release.outputs.release_created }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        if: ${{ steps.release.outputs.release_created }}
 
       - name: Install system dependencies
         run: |
@@ -216,7 +299,6 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             clang \
-            lld \
             libclang-dev \
             pkg-config \
             libssl-dev \
@@ -227,45 +309,61 @@ jobs:
             libbz2-dev \
             cmake \
             protobuf-compiler
+        if: ${{ steps.release.outputs.release_created }}
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        if: ${{ steps.release.outputs.release_created }}
+        run: cargo build --release --locked
+
+      - name: Create GitHub Release
+        if: ${{ steps.release.outputs.release_created }}
+        uses: softprops/action-gh-release@v2
         with:
-          components: clippy
+          files: |
+            target/release/solidb
+            target/release/solidb-dump
+            target/release/solidb-restore
+          tag_name: ${{ steps.release.outputs.tag_name }}
+          body: ${{ steps.release.outputs.release_body }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: cargo-target
-          path: target/
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
 
-      - name: Run clippy
-        run: cargo clippy -j2 -- -D warnings
-
-  security:
-    name: Security Audit
+  publish:
+    name: Publish
     runs-on: ubuntu-latest
-    needs: check-and-build
+    needs: release
+    if: needs.release.outputs.release_created == 'true'
+    environment: main
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Free up disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          docker system prune -af || true
-
-      - name: Install Rust toolchain
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev libzstd-dev
 
-      - name: Run security audit
-        run: cargo audit
+      - name: Publish sdbql-core to crates.io
+        run: cargo publish -p sdbql-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for sdbql-core to be available
+        run: sleep 30
+
+      - name: Publish solidb-client to crates.io
+        run: cargo publish -p solidb-client
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for solidb-client to be available
+        run: sleep 30
+
+      - name: Publish solidb to crates.io
+        run: cargo publish -p solidb
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
