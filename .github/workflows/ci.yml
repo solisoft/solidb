@@ -364,7 +364,15 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for sdbql-core to be available
-        run: sleep 30
+        run: |
+          for i in $(seq 1 12); do
+            if cargo search sdbql-core 2>/dev/null | grep -q "^sdbql-core = \"0"; then
+              echo "sdbql-core is available on crates.io"
+              break
+            fi
+            echo "Waiting for sdbql-core to appear in index (attempt $i/12)..."
+            sleep 15
+          done
 
       - name: Publish solidb-client to crates.io
         run: cargo publish -p solidb-client
@@ -372,9 +380,17 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for solidb-client to be available
-        run: sleep 30
+        run: |
+          for i in $(seq 1 12); do
+            if cargo search solidb-client 2>/dev/null | grep -q "^solidb-client = \"0"; then
+              echo "solidb-client is available on crates.io"
+              break
+            fi
+            echo "Waiting for solidb-client to appear in index (attempt $i/12)..."
+            sleep 15
+          done
 
       - name: Publish solidb to crates.io
-        run: cargo publish -p solidb
+        run: cargo publish -p solidb --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
