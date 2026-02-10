@@ -122,7 +122,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 
 # Cookie handling
 cookie = "0.18"
-time = "0.3"
+time = "0.3.47"
 
 # Caching
 lru = "0.16"
