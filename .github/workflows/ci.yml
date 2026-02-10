@@ -10,6 +10,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
   check-and-build:
@@ -17,6 +18,8 @@ jobs:
     if: |
       !(github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'chore: release') || startsWith(github.event.head_commit.message, 'chore(main): release')))
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
 
     steps:
       - name: Checkout code
@@ -80,6 +83,8 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     needs: check-and-build
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
 
     steps:
       - name: Checkout code
@@ -183,6 +188,9 @@ jobs:
           - category: other
             pattern: ""
 
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -196,6 +204,7 @@ jobs:
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           docker system prune -af || true
+          sudo apt-get clean
 
       - name: Install system dependencies
         run: |
@@ -227,53 +236,23 @@ jobs:
       - name: Run ${{ matrix.category }} tests
         run: |
           if [ "${{ matrix.category }}" = "other" ]; then
-            # Run all tests except those matching other patterns
-            cargo test -j2 --test aggregation_query_tests || true
-            cargo test -j2 --test ai_handlers_tests || true
-            cargo test -j2 --test auth_tests || true
-            cargo test -j2 --test blob_distribution_tests || true
-            cargo test -j2 --test blob_storage_tests || true
-            cargo test -j2 --test bloom_filter_tests || true
-            cargo test -j2 --test codec_database_tests || true
-            cargo test -j2 --test collection_coverage_tests || true
-            cargo test -j2 --test collection_properties_test || true
-            cargo test -j2 --test columnar_index_tests || true
-            cargo test -j2 --test columnar_tests || true
-            cargo test -j2 --test cuckoo_filter_tests || true
-            cargo test -j2 --test cursor_pagination_tests || true
-            cargo test -j2 --test document_edge_case_tests || true
-            cargo test -j2 --test document_operations_tests || true
-            cargo test -j2 --test driver_client_tests || true
-            cargo test -j2 --test driver_protocol_tests || true
-            cargo test -j2 --test error_handling_tests || true
-            cargo test -j2 --test explain_analyze_tests || true
-            cargo test -j2 --test explain_columnar_test || true
-            cargo test -j2 --test graph_traversal_tests || true
-            cargo test -j2 --test handlers_tests || true
-            cargo test -j2 --test http_api_test || true
-            cargo test -j2 --test hybrid_search_tests || true
-            cargo test -j2 --test index_tests || true
-            cargo test -j2 --test materialized_views_tests || true
-            cargo test -j2 --test queue_handlers_tests || true
-            cargo test -j2 --test queue_tests || true
-            cargo test -j2 --test reproduce_document_issue || true
-            cargo test -j2 --test schema_persistence_tests || true
-            cargo test -j2 --test schema_validation_tests || true
-            cargo test -j2 --test scripting_tests || true
-            cargo test -j2 --test sync_protocol_tests || true
-            cargo test -j2 --test timeseries_tests || true
-            cargo test -j2 --test time_bucket_tests || true
-            cargo test -j2 --test transaction_tests || true
-            cargo test -j2 --test transaction_handlers_tests || true
-            cargo test -j2 --test ttl_expiration_tests || true
-            cargo test -j2 --test vector_index_tests || true
+            # Run all tests except those matching category patterns
+            for test in tests/*.rs; do
+              testname=$(basename "$test" .rs)
+              # Skip tests that belong to other categories
+              case "$testname" in
+                sdbql_*|storage_*|api_*|lua_*|cluster_*) continue ;;
+              esac
+              echo "Running test: $testname"
+              cargo test --test "$testname" -j2 || true
+            done
           else
             # Find and run tests matching the pattern
             for test in tests/${{ matrix.pattern }}*; do
               if [ -f "$test" ]; then
                 testname=$(basename "$test" .rs)
                 echo "Running test: $testname"
-                cargo test --test $testname -j2 || true
+                cargo test --test "$testname" -j2 || true
               fi
             done
           fi
