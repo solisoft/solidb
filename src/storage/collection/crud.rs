@@ -783,6 +783,28 @@ impl Collection {
                 uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
             };
 
+            // Check for duplicate _key within the batch
+            if doc_values.iter().any(|(k, _)| k == &key) {
+                return Err(DbError::InvalidDocument(format!(
+                    "Duplicate _key '{}' within batch",
+                    key
+                )));
+            }
+
+            // Check if document with this key already exists in the DB
+            if db
+                .get_cf(cf, Self::doc_key(&key))
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to check existing key: {}", e))
+                })?
+                .is_some()
+            {
+                return Err(DbError::InvalidDocument(format!(
+                    "Document with _key '{}' already exists",
+                    key
+                )));
+            }
+
             let doc = Document::with_key(&self.name, key.clone(), data);
             let doc_value = doc.to_value();
 
