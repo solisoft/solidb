@@ -269,12 +269,15 @@ jobs:
       always() &&
       github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       (needs.test.result == 'success' || needs.test.result == 'skipped')
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          config-file: release-please-config.json
+          release-type: rust
 
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
