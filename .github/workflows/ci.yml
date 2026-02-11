@@ -186,7 +186,7 @@ jobs:
         run: cargo test -j2
 
   release:
-    needs: test
+    needs: [check-and-build, clippy, test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
