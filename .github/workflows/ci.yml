@@ -56,6 +56,18 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/
+            ~/.cargo/git/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Check formatting
         run: cargo fmt -- --check
 
@@ -70,17 +82,9 @@ jobs:
           find target/debug/deps -name '*.d' -delete
           find target/debug/build -name '*.o' -delete
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: cargo-target
-          path: target/
-          retention-days: 1
-
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
-    needs: check-and-build
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
 
@@ -121,11 +125,17 @@ jobs:
         with:
           components: clippy
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
+      - name: Cache cargo
+        uses: actions/cache@v4
         with:
-          name: cargo-target
-          path: target/
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/
+            ~/.cargo/git/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Run clippy
         run: cargo clippy -j2 -- -D warnings
@@ -133,7 +143,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    needs: clippy
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
 
@@ -172,12 +181,6 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: cargo-target
-          path: target/
 
       - name: Run tests
         run: cargo test -j2

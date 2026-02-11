@@ -132,11 +132,9 @@ fn log_slow_query(
             "execution_time_ms": execution_time_ms,
             "timestamp": chrono::Utc::now().to_rfc3339(),
             "results_count": results_count,
-            "mutations": {
-                "inserted": documents_inserted,
-                "updated": documents_updated,
-                "removed": documents_removed
-            }
+            "documents_inserted": documents_inserted,
+            "documents_updated": documents_updated,
+            "documents_removed": documents_removed
         });
 
         if let Err(e) = collection.insert(log_entry) {
