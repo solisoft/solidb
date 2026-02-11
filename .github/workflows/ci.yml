@@ -200,7 +200,7 @@ jobs:
 
       - name: Release Please
         id: release
-        uses: googleapis/release-please-action@v5
+        uses: googleapis/release-please-action@v4
         with:
           release-type: rust
 
