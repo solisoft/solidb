@@ -74,8 +74,56 @@
                 class="text-lg font-semibold text-white mb-3 flex items-center"
               >
                 <span
-                  class="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm font-bold mr-3 border border-blue-500/30"
+                  class="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold mr-3 border border-emerald-500/30"
                   >1</span
+                >
+                Quick Install (Recommended)
+              </h3>
+              <div
+                class="bg-gray-950/50 rounded-xl border border-white/5 p-4 group-hover:border-emerald-500/30 transition-colors"
+              >
+                <div class="flex items-center justify-between mb-2">
+                  <span
+                    class="text-xs font-bold text-gray-500 uppercase tracking-widest"
+                    >Terminal</span
+                  >
+                  <button
+                    class="text-gray-500 hover:text-white transition-colors"
+                    onclick="navigator.clipboard.writeText('curl -sSL https://raw.githubusercontent.com/solisoft/solidb/main/install.sh | sh')"
+                  >
+                    <svg
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      ></path>
+                    </svg>
+                  </button>
+                </div>
+                <code class="font-mono text-sm text-emerald-300"
+                  >curl -sSL https://raw.githubusercontent.com/solisoft/solidb/main/install.sh | sh</code
+                >
+              </div>
+              <div class="mt-4 bg-emerald-900/20 border border-emerald-500/20 rounded-lg p-3">
+                <p class="text-sm text-emerald-200">
+                  Installs the latest pre-built binary to <code class="text-emerald-400">~/.local/bin</code>. Use <code class="text-emerald-400">--system</code> flag for system-wide install to <code class="text-emerald-400">/usr/local/bin</code>.
+                </p>
+              </div>
+            </div>
+
+            <div class="group">
+              <h3
+                class="text-lg font-semibold text-white mb-3 flex items-center"
+              >
+                <span
+                  class="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm font-bold mr-3 border border-blue-500/30"
+                  >2</span
                 >
                 Using Cargo
               </h3>
@@ -118,7 +166,7 @@
               >
                 <span
                   class="w-8 h-8 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center text-sm font-bold mr-3 border border-purple-500/30"
-                  >2</span
+                  >3</span
                 >
                 From Source
               </h3>
@@ -156,7 +204,7 @@
               >
                 <span
                   class="w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-sm font-bold mr-3 border border-cyan-500/30"
-                  >3</span
+                  >4</span
                 >
                 Using Docker
               </h3>
