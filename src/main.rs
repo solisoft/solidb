@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
-#[command(name = "solidb")]
+#[command(name = "solidb", version)]
 #[command(about = "SolidDB - A high-performance document database", long_about = None)]
 struct Args {
     #[command(subcommand)]
