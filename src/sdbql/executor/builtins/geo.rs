@@ -54,6 +54,77 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 serde_json::Number::from_f64(dist).unwrap_or(serde_json::Number::from(0)),
             )))
         }
+        "GEO_WITHIN" => {
+            if args.len() != 2 {
+                return Err(DbError::ExecutionError(
+                    "GEO_WITHIN requires 2 arguments: point, polygon".to_string(),
+                ));
+            }
+            let point = GeoPoint::from_value(&args[0]).ok_or_else(|| {
+                DbError::ExecutionError(
+                    "GEO_WITHIN: first argument must be a geo point".to_string(),
+                )
+            })?;
+
+            let polygon = args[1].as_array().ok_or_else(|| {
+                DbError::ExecutionError(
+                    "GEO_WITHIN: second argument must be an array of points".to_string(),
+                )
+            })?;
+
+            if polygon.len() < 3 {
+                return Err(DbError::ExecutionError(
+                    "GEO_WITHIN: polygon must have at least 3 points".to_string(),
+                ));
+            }
+
+            let inside = point_in_polygon(point.lat, point.lon, polygon);
+            Ok(Some(Value::Bool(inside)))
+        }
         _ => Ok(None),
     }
+}
+
+fn point_in_polygon(lat: f64, lon: f64, polygon: &[Value]) -> bool {
+    let mut inside = false;
+    let n = polygon.len();
+    let mut j = n - 1;
+
+    for i in 0..n {
+        let pi = &polygon[i];
+        let pj = &polygon[j];
+
+        let (xi, yi) = get_coords(pi);
+        let (xj, yj) = get_coords(pj);
+
+        let intersect =
+            ((yi > lat) != (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+
+        if intersect {
+            inside = !inside;
+        }
+        j = i;
+    }
+
+    inside
+}
+
+fn get_coords(point: &Value) -> (f64, f64) {
+    if let Some(arr) = point.as_array() {
+        if arr.len() >= 2 {
+            let lon = arr[0].as_f64().unwrap_or(0.0);
+            let lat = arr[1].as_f64().unwrap_or(0.0);
+            return (lon, lat);
+        }
+    }
+    if let Some(obj) = point.as_object() {
+        let lon = obj
+            .get("lon")
+            .or_else(|| obj.get("lng"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let lat = obj.get("lat").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        return (lon, lat);
+    }
+    (0.0, 0.0)
 }

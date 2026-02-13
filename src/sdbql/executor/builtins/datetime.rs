@@ -248,6 +248,59 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 )),
             }
         }
+        "HUMAN_TIME" => {
+            if args.is_empty() {
+                return Err(DbError::ExecutionError(
+                    "HUMAN_TIME requires at least 1 argument".to_string(),
+                ));
+            }
+
+            let date_value = &args[0];
+            let now = args
+                .get(1)
+                .and_then(|v| v.as_i64())
+                .unwrap_or_else(|| Utc::now().timestamp_millis());
+
+            let date_ts = match date_value {
+                Value::Number(n) => n.as_i64().ok_or_else(|| {
+                    DbError::ExecutionError("HUMAN_TIME: invalid timestamp".to_string())
+                })?,
+                Value::String(s) => {
+                    let dt = parse_datetime(date_value)?;
+                    dt.timestamp_millis()
+                }
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "HUMAN_TIME: first argument must be a timestamp or date string".to_string(),
+                    ));
+                }
+            };
+
+            let diff_secs = (now - date_ts) / 1000;
+
+            let result = if diff_secs.abs() < 60 {
+                "just now".to_string()
+            } else if diff_secs < 0 {
+                "in the future".to_string()
+            } else if diff_secs < 3600 {
+                let mins = diff_secs / 60;
+                format!("{} minute{} ago", mins, if mins == 1 { "" } else { "s" })
+            } else if diff_secs < 86400 {
+                let hours = diff_secs / 3600;
+                format!("{} hour{} ago", hours, if hours == 1 { "" } else { "s" })
+            } else if diff_secs < 2592000 {
+                let days = diff_secs / 86400;
+                format!("{} day{} ago", days, if days == 1 { "" } else { "s" })
+            } else if diff_secs < 31536000 {
+                let months = diff_secs / 2592000;
+                format!("{} month{} ago", months, if months == 1 { "" } else { "s" })
+            } else {
+                let years = diff_secs / 31536000;
+                format!("{} year{} ago", years, if years == 1 { "" } else { "s" })
+            };
+
+            Ok(Some(Value::String(result)))
+        }
         _ => Ok(None),
     }
 }

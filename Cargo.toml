@@ -159,6 +159,14 @@ path = "src/bin/solidb-dump.rs"
 name = "solidb-restore"
 path = "src/bin/solidb-restore.rs"
 
+[profile.release]
+lto = "thin"
+codegen-units = 16
+opt-level = 3
+
+[profile.bench]
+inherits = "release"
+
 [dev-dependencies]
 tokio-test = "0.4"
 solidb-client = { path = "clients/rust-client" }
