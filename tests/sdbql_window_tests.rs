@@ -3,24 +3,11 @@
 //! Tests for SQL-like window functions: ROW_NUMBER, RANK, DENSE_RANK,
 //! LAG, LEAD, FIRST_VALUE, LAST_VALUE, and running aggregates.
 
+mod common;
+use common::{create_test_engine, execute_query};
 use serde_json::json;
-use solidb::parse;
-use solidb::sdbql::QueryExecutor;
 use solidb::storage::StorageEngine;
 use tempfile::TempDir;
-
-fn create_test_engine() -> (StorageEngine, TempDir) {
-    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-    let engine =
-        StorageEngine::new(tmp_dir.path().to_str().unwrap()).expect("Failed to create storage");
-    (engine, tmp_dir)
-}
-
-fn execute_query(engine: &StorageEngine, query_str: &str) -> Vec<serde_json::Value> {
-    let query = parse(query_str).expect("Failed to parse query");
-    let executor = QueryExecutor::new(engine);
-    executor.execute(&query).expect("Failed to execute query")
-}
 
 fn setup_sales_data(engine: &StorageEngine) {
     engine.create_collection("sales".to_string(), None).unwrap();

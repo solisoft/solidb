@@ -7,18 +7,11 @@
 //! - Multi-hop traversals
 //! - Graph path queries
 
+mod common;
+use common::execute_query;
 use serde_json::json;
 use solidb::storage::StorageEngine;
-use solidb::{parse, QueryExecutor};
 use tempfile::TempDir;
-
-fn execute_query(engine: &StorageEngine, query_str: &str) -> Vec<serde_json::Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
-    let executor = QueryExecutor::new(engine);
-    executor
-        .execute(&query)
-        .expect(&format!("Query failed: {}", query_str))
-}
 
 fn create_social_graph() -> (StorageEngine, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");

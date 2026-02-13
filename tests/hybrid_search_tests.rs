@@ -3,26 +3,12 @@
 //! Tests for hybrid search functionality combining vector similarity
 //! with fulltext search for improved RAG results.
 
+mod common;
+use common::{create_test_engine, execute_query};
 use serde_json::json;
 use solidb::storage::{StorageEngine, VectorIndexConfig, VectorMetric};
 use solidb::{parse, QueryExecutor};
 use tempfile::TempDir;
-
-fn create_test_engine() -> (StorageEngine, TempDir) {
-    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
-        .expect("Failed to create storage engine");
-    (engine, tmp_dir)
-}
-
-/// Helper to execute a query and get all results
-fn execute_query(engine: &StorageEngine, query_str: &str) -> Vec<serde_json::Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
-    let executor = QueryExecutor::new(engine);
-    executor
-        .execute(&query)
-        .expect(&format!("Query failed: {}", query_str))
-}
 
 /// Set up a test collection with vector and fulltext indexes
 fn setup_hybrid_collection(engine: &StorageEngine) {

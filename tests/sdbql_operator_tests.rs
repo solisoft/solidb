@@ -8,33 +8,9 @@
 //! - Array operators
 //! - Ternary expressions
 
+mod common;
+use common::{create_test_engine, execute_query, execute_single};
 use serde_json::json;
-use solidb::storage::StorageEngine;
-use solidb::{parse, QueryExecutor};
-use tempfile::TempDir;
-
-fn execute_query(engine: &StorageEngine, query_str: &str) -> Vec<serde_json::Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
-    let executor = QueryExecutor::new(engine);
-    executor
-        .execute(&query)
-        .expect(&format!("Query failed: {}", query_str))
-}
-
-fn execute_single(engine: &StorageEngine, query_str: &str) -> serde_json::Value {
-    let results = execute_query(engine, query_str);
-    results
-        .into_iter()
-        .next()
-        .unwrap_or(serde_json::Value::Null)
-}
-
-fn create_test_engine() -> (StorageEngine, TempDir) {
-    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
-        .expect("Failed to create storage engine");
-    (engine, tmp_dir)
-}
 
 // ============================================================================
 // Arithmetic Operators
