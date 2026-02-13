@@ -77,27 +77,36 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     "RANGE requires 1-3 arguments: end or start, end, [step]".to_string(),
                 ));
             }
+            let get_i64 = |v: &Value| -> i64 {
+                v.as_i64()
+                    .unwrap_or_else(|| v.as_f64().unwrap_or(0.0) as i64)
+            };
             let (start, end, step) = if args.len() == 1 {
-                (0i64, args[0].as_i64().unwrap_or(0), 1i64)
+                (0i64, get_i64(&args[0]), 1i64)
             } else if args.len() == 2 {
-                (
-                    args[0].as_i64().unwrap_or(0),
-                    args[1].as_i64().unwrap_or(0),
-                    1i64,
-                )
+                (get_i64(&args[0]), get_i64(&args[1]), 1i64)
             } else {
-                (
-                    args[0].as_i64().unwrap_or(0),
-                    args[1].as_i64().unwrap_or(0),
-                    args[2].as_i64().unwrap_or(1).max(1),
-                )
+                let step_val = get_i64(&args[2]);
+                if step_val == 0 {
+                    return Err(DbError::ExecutionError(
+                        "RANGE: step cannot be 0".to_string(),
+                    ));
+                }
+                (get_i64(&args[0]), get_i64(&args[1]), step_val)
             };
 
             let mut result = Vec::new();
             let mut i = start;
-            while i < end {
-                result.push(Value::Number(serde_json::Number::from(i)));
-                i += step;
+            if step > 0 {
+                while i <= end {
+                    result.push(Value::Number(serde_json::Number::from(i)));
+                    i += step;
+                }
+            } else {
+                while i >= end {
+                    result.push(Value::Number(serde_json::Number::from(i)));
+                    i += step;
+                }
             }
             Ok(Some(Value::Array(result)))
         }

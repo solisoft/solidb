@@ -193,6 +193,53 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let reversed: String = s.chars().rev().collect();
             Ok(Some(Value::String(reversed)))
         }
+        "FIND_FIRST" | "FIND" => {
+            if args.len() < 2 {
+                return Err(DbError::ExecutionError(
+                    "FIND_FIRST requires 2 arguments: string, search".to_string(),
+                ));
+            }
+            let s = args[0].as_str().unwrap_or("");
+            let search = args[1].as_str().unwrap_or("");
+            if search.is_empty() {
+                return Ok(Some(Value::Number(serde_json::Number::from(0))));
+            }
+            match s.find(search) {
+                Some(pos) => Ok(Some(Value::Number(serde_json::Number::from(pos as i64)))),
+                None => Ok(Some(Value::Number(serde_json::Number::from(-1)))),
+            }
+        }
+        "FIND_LAST" | "RFIND" => {
+            if args.len() < 2 {
+                return Err(DbError::ExecutionError(
+                    "FIND_LAST requires 2 arguments: string, search".to_string(),
+                ));
+            }
+            let s = args[0].as_str().unwrap_or("");
+            let search = args[1].as_str().unwrap_or("");
+            if search.is_empty() {
+                return Ok(Some(Value::Number(
+                    serde_json::Number::from(s.len() as i64),
+                )));
+            }
+            match s.rfind(search) {
+                Some(pos) => Ok(Some(Value::Number(serde_json::Number::from(pos as i64)))),
+                None => Ok(Some(Value::Number(serde_json::Number::from(-1)))),
+            }
+        }
+        "REGEX_TEST" => {
+            if args.len() < 2 {
+                return Err(DbError::ExecutionError(
+                    "REGEX_TEST requires 2 arguments: string, pattern".to_string(),
+                ));
+            }
+            let s = args[0].as_str().unwrap_or("");
+            let pattern = args[1].as_str().unwrap_or("");
+            match regex::Regex::new(pattern) {
+                Ok(re) => Ok(Some(Value::Bool(re.is_match(s)))),
+                Err(_) => Ok(Some(Value::Bool(false))),
+            }
+        }
         _ => Ok(None),
     }
 }
