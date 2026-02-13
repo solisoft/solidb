@@ -34,20 +34,40 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let s = args[0].as_str().unwrap_or("");
             Ok(Some(Value::String(s.trim_end().to_string())))
         }
-        "CONCAT" | "CONCAT_WS" => {
+        "CONCAT" | "CONCAT_WS" | "CONCAT_SEPARATOR" => {
             if args.is_empty() {
                 return Ok(Some(Value::String(String::new())));
             }
-            let result: String = args
+            let separator: String;
+            let items: &[Value] = match name {
+                "CONCAT" => {
+                    separator = String::new();
+                    args
+                }
+                "CONCAT_WS" if args.len() > 1 => {
+                    separator = args[0].as_str().unwrap_or("").to_string();
+                    &args[1..]
+                }
+                "CONCAT_SEPARATOR" if args.len() > 2 => {
+                    separator = args[0].as_str().unwrap_or("").to_string();
+                    &args[2..]
+                }
+                _ => {
+                    separator = String::new();
+                    args
+                }
+            };
+            let result: String = items
                 .iter()
                 .map(|v| match v {
                     Value::String(s) => s.clone(),
                     Value::Number(n) => n.to_string(),
                     Value::Bool(b) => b.to_string(),
                     Value::Null => String::new(),
-                    _ => serde_json::to_string(v).unwrap_or_default(),
+                    _ => serde_json::to_string(&v).unwrap_or_default(),
                 })
-                .collect();
+                .collect::<Vec<_>>()
+                .join(&separator);
             Ok(Some(Value::String(result)))
         }
         "CONTAINS" => {

@@ -208,6 +208,52 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let r: i64 = rand::thread_rng().gen_range(min..=max);
             Ok(Some(Value::Number(serde_json::Number::from(r))))
         }
+        "MEDIAN" if args.len() == 1 && args[0].is_array() => {
+            let arr = args[0].as_array().unwrap();
+            let mut nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
+            if nums.is_empty() {
+                return Ok(Some(Value::Null));
+            }
+            nums.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let mid = nums.len() / 2;
+            let median = if nums.len().is_multiple_of(2) {
+                (nums[mid - 1] + nums[mid]) / 2.0
+            } else {
+                nums[mid]
+            };
+            Ok(Some(Value::Number(num_from_f64(median))))
+        }
+        "VARIANCE" | "VAR_POP" | "VAR_SAMP" if args.len() == 1 && args[0].is_array() => {
+            let arr = args[0].as_array().unwrap();
+            let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
+            if nums.len() < 2 {
+                return Ok(Some(Value::Null));
+            }
+            let mean = nums.iter().sum::<f64>() / nums.len() as f64;
+            let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+            Ok(Some(Value::Number(num_from_f64(variance))))
+        }
+        "STDDEV" | "STDDEV_POP" | "STDDEV_SAMP" | "STDDEV_POPULATION"
+            if args.len() == 1 && args[0].is_array() =>
+        {
+            let arr = args[0].as_array().unwrap();
+            let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
+            if nums.len() < 2 {
+                return Ok(Some(Value::Null));
+            }
+            let mean = nums.iter().sum::<f64>() / nums.len() as f64;
+            let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+            let stddev = variance.sqrt();
+            Ok(Some(Value::Number(num_from_f64(stddev))))
+        }
+        "COUNT_DISTINCT" | "COUNT_UNIQUE" | "UNIQUE_COUNT"
+            if args.len() == 1 && args[0].is_array() =>
+        {
+            let arr = args[0].as_array().unwrap();
+            let mut seen = std::collections::HashSet::new();
+            let count = arr.iter().filter(|v| seen.insert(v.to_string())).count();
+            Ok(Some(Value::Number(serde_json::Number::from(count))))
+        }
         _ => Ok(None),
     }
 }

@@ -11,7 +11,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     match name {
         "UUID" | "UUID_V4" => Ok(Some(Value::String(Uuid::new_v4().to_string()))),
         "UUID_V7" => Ok(Some(Value::String(Uuid::now_v7().to_string()))),
-        "TYPEOF" | "TYPE_OF" => {
+        "TYPEOF" | "TYPE_OF" | "TYPENAME" => {
             check_args(name, args, 1)?;
             let type_name = match &args[0] {
                 Value::Null => "null",
@@ -145,6 +145,134 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 Value::Null => Ok(Some(Value::Array(vec![]))),
                 other => Ok(Some(Value::Array(vec![other.clone()]))),
             }
+        }
+        "IF" => {
+            if args.len() != 3 {
+                return Err(DbError::ExecutionError(
+                    "IF requires 3 arguments: condition, true_value, false_value".to_string(),
+                ));
+            }
+            let condition = match &args[0] {
+                Value::Bool(b) => *b,
+                Value::Null => false,
+                _ => true,
+            };
+            Ok(Some(if condition {
+                args[1].clone()
+            } else {
+                args[2].clone()
+            }))
+        }
+        "ATTRIBUTES" | "KEYS" => {
+            check_args(name, args, 1)?;
+            let keys = match &args[0] {
+                Value::Object(obj) => obj.keys().map(|k| Value::String(k.clone())).collect(),
+                Value::Array(arr) => {
+                    let mut keys = Vec::new();
+                    for item in arr {
+                        if let Value::Object(obj) = item {
+                            keys.extend(obj.keys().map(|k| Value::String(k.clone())));
+                        }
+                    }
+                    keys
+                }
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "ATTRIBUTES: argument must be an object or array of objects".to_string(),
+                    ));
+                }
+            };
+            Ok(Some(Value::Array(keys)))
+        }
+        "VALUES" => {
+            check_args(name, args, 1)?;
+            let values = match &args[0] {
+                Value::Object(obj) => obj.values().cloned().collect(),
+                Value::Array(arr) => {
+                    let mut values = Vec::new();
+                    for item in arr {
+                        if let Value::Object(obj) = item {
+                            values.extend(obj.values().cloned());
+                        }
+                    }
+                    values
+                }
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "VALUES: argument must be an object or array of objects".to_string(),
+                    ));
+                }
+            };
+            Ok(Some(Value::Array(values)))
+        }
+        "KEEP" => {
+            if args.len() < 2 {
+                return Err(DbError::ExecutionError(
+                    "KEEP requires at least 2 arguments: object, key1, key2, ...".to_string(),
+                ));
+            }
+            let obj = match &args[0] {
+                Value::Object(obj) => obj.clone(),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "KEEP: first argument must be an object".to_string(),
+                    ));
+                }
+            };
+            let keys: Vec<&str> = args[1..].iter().filter_map(|v| v.as_str()).collect();
+            let result: serde_json::Map<String, Value> = obj
+                .into_iter()
+                .filter(|(k, _)| keys.contains(&k.as_str()))
+                .collect();
+            Ok(Some(Value::Object(result)))
+        }
+        "UNSET" => {
+            if args.len() < 2 {
+                return Err(DbError::ExecutionError(
+                    "UNSET requires at least 2 arguments: object, key1, key2, ...".to_string(),
+                ));
+            }
+            let obj = match &args[0] {
+                Value::Object(obj) => obj.clone(),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "UNSET: first argument must be an object".to_string(),
+                    ));
+                }
+            };
+            let keys: Vec<&str> = args[1..].iter().filter_map(|v| v.as_str()).collect();
+            let result: serde_json::Map<String, Value> = obj
+                .into_iter()
+                .filter(|(k, _)| !keys.contains(&k.as_str()))
+                .collect();
+            Ok(Some(Value::Object(result)))
+        }
+        "HAS" => {
+            if args.len() != 2 {
+                return Err(DbError::ExecutionError(
+                    "HAS requires 2 arguments: object, key".to_string(),
+                ));
+            }
+            let key = match &args[1] {
+                Value::String(s) => s.clone(),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "HAS: second argument must be a string (key)".to_string(),
+                    ));
+                }
+            };
+            let has_key = match &args[0] {
+                Value::Object(obj) => obj.contains_key(&key),
+                Value::Array(arr) => arr.iter().any(|item| {
+                    if let Value::Object(obj) = item {
+                        obj.contains_key(&key)
+                    } else {
+                        false
+                    }
+                }),
+                _ => false,
+            };
+            Ok(Some(Value::Bool(has_key)))
         }
         _ => Ok(None),
     }

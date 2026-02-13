@@ -180,6 +180,143 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 _ => Ok(Some(Value::Number(serde_json::Number::from(1)))),
             }
         }
+        "LENGTH" => {
+            check_args(name, args, 1)?;
+            match &args[0] {
+                Value::Array(arr) => Ok(Some(Value::Number(serde_json::Number::from(arr.len())))),
+                Value::String(s) => Ok(Some(Value::Number(serde_json::Number::from(
+                    s.chars().count(),
+                )))),
+                Value::Object(obj) => Ok(Some(Value::Number(serde_json::Number::from(obj.len())))),
+                Value::Null => Ok(Some(Value::Number(serde_json::Number::from(0)))),
+                _ => Ok(Some(Value::Number(serde_json::Number::from(0)))),
+            }
+        }
+        "APPEND" => {
+            if args.len() < 2 {
+                return Err(DbError::ExecutionError(
+                    "APPEND requires at least 2 arguments".to_string(),
+                ));
+            }
+            let mut arr = match &args[0] {
+                Value::Array(a) => a.clone(),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "APPEND: first argument must be an array".to_string(),
+                    ));
+                }
+            };
+            for item in &args[1..] {
+                arr.push(item.clone());
+            }
+            Ok(Some(Value::Array(arr)))
+        }
+        "SHIFT" => {
+            check_args(name, args, 1)?;
+            let mut arr = match &args[0] {
+                Value::Array(a) => a.clone(),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "SHIFT: argument must be an array".to_string(),
+                    ));
+                }
+            };
+            arr.remove(0);
+            Ok(Some(Value::Array(arr)))
+        }
+        "UNSHIFT" => {
+            if args.len() < 2 {
+                return Err(DbError::ExecutionError(
+                    "UNSHIFT requires at least 2 arguments".to_string(),
+                ));
+            }
+            let mut arr = match &args[0] {
+                Value::Array(a) => a.clone(),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "UNSHIFT: first argument must be an array".to_string(),
+                    ));
+                }
+            };
+            let mut items = args[1..].to_vec();
+            items.append(&mut arr);
+            Ok(Some(Value::Array(items)))
+        }
+        "UNION" => {
+            let mut result = Vec::new();
+            for arg in args {
+                match arg {
+                    Value::Array(arr) => {
+                        for item in arr {
+                            if !result.contains(item) {
+                                result.push(item.clone());
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "UNION: all arguments must be arrays".to_string(),
+                        ));
+                    }
+                }
+            }
+            Ok(Some(Value::Array(result)))
+        }
+        "INTERSECTION" => {
+            if args.len() < 2 {
+                return Err(DbError::ExecutionError(
+                    "INTERSECTION requires at least 2 arguments".to_string(),
+                ));
+            }
+            let mut result = match &args[0] {
+                Value::Array(a) => a.clone(),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "INTERSECTION: first argument must be an array".to_string(),
+                    ));
+                }
+            };
+            for arg in &args[1..] {
+                let arr = match arg {
+                    Value::Array(a) => a,
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "INTERSECTION: all arguments must be arrays".to_string(),
+                        ));
+                    }
+                };
+                result.retain(|item| arr.contains(item));
+            }
+            Ok(Some(Value::Array(result)))
+        }
+        "MINUS" | "DIFFERENCE" => {
+            if args.len() != 2 {
+                return Err(DbError::ExecutionError(
+                    "MINUS requires 2 arguments".to_string(),
+                ));
+            }
+            let arr1 = match &args[0] {
+                Value::Array(a) => a.clone(),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "MINUS: first argument must be an array".to_string(),
+                    ));
+                }
+            };
+            let arr2 = match &args[1] {
+                Value::Array(a) => a,
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "MINUS: second argument must be an array".to_string(),
+                    ));
+                }
+            };
+            let result: Vec<Value> = arr1
+                .into_iter()
+                .filter(|item| !arr2.contains(item))
+                .collect();
+            Ok(Some(Value::Array(result)))
+        }
         _ => Ok(None),
     }
 }
