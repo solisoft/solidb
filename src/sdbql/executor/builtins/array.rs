@@ -206,8 +206,14 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     ));
                 }
             };
-            for item in &args[1..] {
-                arr.push(item.clone());
+            for arg in &args[1..] {
+                if let Value::Array(items) = arg {
+                    for item in items {
+                        arr.push(item.clone());
+                    }
+                } else {
+                    arr.push(arg.clone());
+                }
             }
             Ok(Some(Value::Array(arr)))
         }

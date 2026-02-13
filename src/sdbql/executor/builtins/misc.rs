@@ -16,7 +16,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let type_name = match &args[0] {
                 Value::Null => "null",
                 Value::Bool(_) => "bool",
-                Value::Number(_) => "number",
+                Value::Number(_) => "int",
                 Value::String(_) => "string",
                 Value::Array(_) => "array",
                 Value::Object(_) => "object",

@@ -48,27 +48,37 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     separator = args[0].as_str().unwrap_or("").to_string();
                     &args[1..]
                 }
-                "CONCAT_SEPARATOR" if args.len() > 2 => {
+                "CONCAT_SEPARATOR" if args.len() >= 2 => {
                     separator = args[0].as_str().unwrap_or("").to_string();
-                    &args[2..]
+                    &args[1..]
                 }
                 _ => {
                     separator = String::new();
                     args
                 }
             };
-            let result: String = items
-                .iter()
-                .map(|v| match v {
-                    Value::String(s) => s.clone(),
-                    Value::Number(n) => n.to_string(),
-                    Value::Bool(b) => b.to_string(),
-                    Value::Null => String::new(),
-                    _ => serde_json::to_string(&v).unwrap_or_default(),
-                })
-                .collect::<Vec<_>>()
-                .join(&separator);
-            Ok(Some(Value::String(result)))
+            let mut result_parts: Vec<String> = Vec::new();
+            for v in items {
+                match v {
+                    Value::Array(arr) => {
+                        for item in arr {
+                            result_parts.push(match item {
+                                Value::String(s) => s.clone(),
+                                Value::Number(n) => n.to_string(),
+                                Value::Bool(b) => b.to_string(),
+                                Value::Null => String::new(),
+                                _ => serde_json::to_string(&item).unwrap_or_default(),
+                            });
+                        }
+                    }
+                    Value::String(s) => result_parts.push(s.clone()),
+                    Value::Number(n) => result_parts.push(n.to_string()),
+                    Value::Bool(b) => result_parts.push(b.to_string()),
+                    Value::Null => result_parts.push(String::new()),
+                    _ => result_parts.push(serde_json::to_string(&v).unwrap_or_default()),
+                }
+            }
+            Ok(Some(Value::String(result_parts.join(&separator))))
         }
         "CONTAINS" => {
             if args.len() < 2 {
