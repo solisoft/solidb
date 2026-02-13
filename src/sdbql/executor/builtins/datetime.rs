@@ -265,7 +265,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 Value::Number(n) => n.as_i64().ok_or_else(|| {
                     DbError::ExecutionError("HUMAN_TIME: invalid timestamp".to_string())
                 })?,
-                Value::String(s) => {
+                Value::String(_s) => {
                     let dt = parse_datetime(date_value)?;
                     dt.timestamp_millis()
                 }
