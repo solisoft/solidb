@@ -1,5 +1,6 @@
 use super::system::{sanitize_filename, AppState};
 use crate::error::DbError;
+use crate::storage::http_client::get_http_client;
 use axum::{
     body::Body,
     extract::{Multipart, Path, State},
@@ -43,7 +44,7 @@ pub async fn export_collection(
                 None
             };
 
-            let client = reqwest::Client::new();
+            let client = get_http_client();
             let my_node_id = if let Some(mgr) = &cluster_manager_opt {
                 mgr.local_node_id()
             } else {

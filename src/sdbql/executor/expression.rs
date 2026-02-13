@@ -392,7 +392,26 @@ impl<'a> QueryExecutor<'a> {
                         for arg in args {
                             evaluated_args.push(self.evaluate_expr_with_context(arg, ctx)?);
                         }
-                        self.evaluate_function_with_values(&name.to_uppercase(), &evaluated_args)
+
+                        // Try phonetic first
+                        let name_upper = name.to_uppercase();
+                        if let Some(val) = crate::sdbql::executor::phonetic::evaluate(
+                            &name_upper,
+                            &evaluated_args,
+                        )? {
+                            return Ok(val);
+                        }
+                        // Try builtins
+                        if let Some(val) = crate::sdbql::executor::builtins::evaluate(
+                            &name_upper,
+                            &evaluated_args,
+                        )? {
+                            return Ok(val);
+                        }
+                        Err(DbError::ExecutionError(format!(
+                            "Unknown function: {}",
+                            name_upper
+                        )))
                     }
                     _ => Err(DbError::ExecutionError(
                         "Pipeline operator |> requires a function call on the right side"

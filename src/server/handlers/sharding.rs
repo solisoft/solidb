@@ -1,5 +1,6 @@
 use super::system::AppState;
 use crate::error::DbError;
+use crate::storage::http_client::get_http_client;
 use axum::{
     extract::{Path, State},
     http::HeaderMap,
@@ -106,7 +107,7 @@ pub async fn get_sharding_details(
 
     // Query each physical shard for actual stats
     // Use scatter-gather to query remote nodes when shard isn't local
-    let client = reqwest::Client::new();
+    let client = get_http_client();
     let secret = state.cluster_secret();
 
     // Get auth token from request headers to forward to remote nodes

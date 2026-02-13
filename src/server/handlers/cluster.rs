@@ -502,3 +502,181 @@ pub async fn cluster_reshard(
         "migrated": migrated
     })))
 }
+
+// ==================== Blob Distribution & Rebalancing ====================
+
+#[derive(Debug, Serialize)]
+pub struct BlobDistributionResponse {
+    pub nodes: Vec<BlobNodeStats>,
+    pub total_chunks: usize,
+    pub total_bytes: u64,
+    pub mean_chunks_per_node: f64,
+    pub std_dev: f64,
+    pub imbalance_ratio: f64,
+    pub needs_rebalancing: bool,
+    pub config: BlobRebalanceConfigInfo,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BlobNodeStats {
+    pub node_id: String,
+    pub chunk_count: usize,
+    pub total_bytes: u64,
+    pub collections: Vec<BlobCollectionStats>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BlobCollectionStats {
+    pub collection: String,
+    pub chunk_count: usize,
+    pub total_bytes: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BlobRebalanceConfigInfo {
+    pub interval_secs: u64,
+    pub imbalance_threshold: f64,
+    pub min_chunks_to_rebalance: usize,
+    pub batch_size: usize,
+    pub enabled: bool,
+}
+
+pub async fn blob_distribution(
+    State(state): State<AppState>,
+) -> Result<Json<BlobDistributionResponse>, DbError> {
+    let worker = state.blob_rebalance_worker.as_ref().ok_or_else(|| {
+        DbError::InternalError(
+            "Blob rebalance worker not available - not in cluster mode".to_string(),
+        )
+    })?;
+
+    let config = worker.config();
+    let all_stats = worker
+        .collect_node_stats()
+        .await
+        .map_err(|e| DbError::InternalError(format!("Failed to collect blob stats: {}", e)))?;
+
+    let metrics = worker
+        .calculate_distribution_metrics(&all_stats)
+        .map_err(|e| DbError::InternalError(format!("Failed to calculate metrics: {}", e)))?;
+
+    let total_chunks: usize = all_stats.iter().map(|n| n.chunk_count).sum();
+    let total_bytes: u64 = all_stats.iter().map(|n| n.total_bytes).sum();
+
+    let imbalance_ratio = if metrics.mean_chunks > 0.0 {
+        metrics.std_dev / metrics.mean_chunks
+    } else {
+        0.0
+    };
+
+    let needs_rebalancing = total_chunks >= config.min_chunks_to_rebalance
+        && imbalance_ratio >= config.imbalance_threshold;
+
+    let nodes: Vec<BlobNodeStats> = all_stats
+        .into_iter()
+        .map(|n| {
+            let collections: Vec<BlobCollectionStats> = n
+                .collections
+                .iter()
+                .map(|(name, stats)| BlobCollectionStats {
+                    collection: name.clone(),
+                    chunk_count: stats.chunk_count,
+                    total_bytes: stats.total_bytes,
+                })
+                .collect();
+
+            BlobNodeStats {
+                node_id: n.node_id,
+                chunk_count: n.chunk_count,
+                total_bytes: n.total_bytes,
+                collections,
+            }
+        })
+        .collect();
+
+    Ok(Json(BlobDistributionResponse {
+        nodes,
+        total_chunks,
+        total_bytes,
+        mean_chunks_per_node: metrics.mean_chunks,
+        std_dev: metrics.std_dev,
+        imbalance_ratio,
+        needs_rebalancing,
+        config: BlobRebalanceConfigInfo {
+            interval_secs: config.interval_secs,
+            imbalance_threshold: config.imbalance_threshold,
+            min_chunks_to_rebalance: config.min_chunks_to_rebalance,
+            batch_size: config.batch_size,
+            enabled: config.enabled,
+        },
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BlobRebalanceRequest {
+    #[serde(default = "default_force")]
+    pub force: bool,
+}
+
+fn default_force() -> bool {
+    false
+}
+
+pub async fn blob_rebalance(
+    State(state): State<AppState>,
+    Json(request): Json<BlobRebalanceRequest>,
+) -> Result<Json<serde_json::Value>, DbError> {
+    let worker = state.blob_rebalance_worker.as_ref().ok_or_else(|| {
+        DbError::InternalError(
+            "Blob rebalance worker not available - not in cluster mode".to_string(),
+        )
+    })?;
+
+    if request.force {
+        worker
+            .check_and_rebalance()
+            .await
+            .map_err(|e| DbError::InternalError(format!("Blob rebalance failed: {}", e)))?;
+        Ok(Json(serde_json::json!({
+            "success": true,
+            "message": "Blob rebalancing triggered successfully"
+        })))
+    } else {
+        let all_stats = worker
+            .collect_node_stats()
+            .await
+            .map_err(|e| DbError::InternalError(format!("Failed to collect blob stats: {}", e)))?;
+
+        let metrics = worker
+            .calculate_distribution_metrics(&all_stats)
+            .map_err(|e| DbError::InternalError(format!("Failed to calculate metrics: {}", e)))?;
+
+        let total_chunks: usize = all_stats.iter().map(|n| n.chunk_count).sum();
+        let config = worker.config();
+
+        let imbalance_ratio = if metrics.mean_chunks > 0.0 {
+            metrics.std_dev / metrics.mean_chunks
+        } else {
+            0.0
+        };
+
+        let needs_rebalancing = total_chunks >= config.min_chunks_to_rebalance
+            && imbalance_ratio >= config.imbalance_threshold;
+
+        Ok(Json(serde_json::json!({
+            "success": true,
+            "message": if needs_rebalancing {
+                "Rebalancing recommended"
+            } else {
+                "No rebalancing needed"
+            },
+            "needs_rebalancing": needs_rebalancing,
+            "total_chunks": total_chunks,
+            "mean_chunks_per_node": metrics.mean_chunks,
+            "std_dev": metrics.std_dev,
+            "imbalance_ratio": imbalance_ratio,
+            "threshold": config.imbalance_threshold,
+            "min_chunks_required": config.min_chunks_to_rebalance
+        })))
+    }
+}

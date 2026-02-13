@@ -15,6 +15,7 @@ use futures::stream::StreamExt;
 use serde_json::Value;
 
 use crate::error::DbError;
+use crate::storage::http_client::get_http_client;
 use crate::sync::blob_replication::replicate_blob_to_node;
 use crate::sync::{LogEntry, Operation};
 
@@ -467,7 +468,7 @@ pub(crate) async fn fetch_blob_chunk_from_cluster(
             )
         };
 
-        let client = reqwest::Client::new();
+        let client = get_http_client();
         let secret = coordinator.cluster_secret();
 
         match client

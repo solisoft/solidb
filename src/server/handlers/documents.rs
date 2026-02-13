@@ -2,6 +2,7 @@ use super::system::{is_physical_shard_collection, is_protected_collection, AppSt
 use crate::{
     error::DbError,
     server::response::ApiResponse,
+    storage::http_client::get_http_client,
     sync::{LogEntry, Operation},
     transaction::TransactionId,
     triggers::{fire_collection_triggers, TriggerEvent},
@@ -232,7 +233,7 @@ pub async fn insert_documents_batch(
                         if let Some(assignment) = table.assignments.get(&shard_id) {
                             if !assignment.replica_nodes.is_empty() {
                                 // Forward to replicas in parallel
-                                let client = reqwest::Client::new();
+                                let client = get_http_client();
                                 let secret = state.cluster_secret();
 
                                 if let Some(ref cluster_manager) = state.cluster_manager {
@@ -396,7 +397,7 @@ pub async fn copy_shard_data(
 
     // Step 1: Check Source Count using Metadata API
     let secret = state.cluster_secret();
-    let client = reqwest::Client::new();
+    let client = get_http_client();
 
     // Get doc count first to avoid massive transfer if already in sync
     let meta_url = format!(

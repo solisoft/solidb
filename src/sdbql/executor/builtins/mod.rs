@@ -7,12 +7,14 @@
 //! - math: FLOOR, CEIL, ROUND, SIN, COS, etc.
 //! - crypto: MD5, SHA256, BASE64, ARGON2, etc.
 //! - datetime: NOW, DATE_*, TIME_BUCKET, etc.
+//! - geo: DISTANCE, GEO_DISTANCE, etc.
 //! - json: JSON_PARSE, JSON_STRINGIFY
 //! - misc: UUID, TYPEOF, COALESCE, etc.
 
 pub mod array;
 pub mod crypto;
 pub mod datetime;
+pub mod geo;
 pub mod json;
 pub mod math;
 pub mod misc;
@@ -47,6 +49,9 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         return Ok(Some(v));
     }
     if let Some(v) = datetime::evaluate(name, args)? {
+        return Ok(Some(v));
+    }
+    if let Some(v) = geo::evaluate(name, args)? {
         return Ok(Some(v));
     }
     if let Some(v) = json::evaluate(name, args)? {

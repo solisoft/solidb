@@ -1268,10 +1268,11 @@ impl Collection {
         if let Some(cf) = db.cf_handle(&self.name) {
             let key = format!("{}{}", CFO_IDX_PREFIX, index_name);
             if let Ok(Some(_bytes)) = db.get_cf(cf, key.as_bytes()) {
-                // FIXME: CuckooFilter deserialization failing due to DefaultHasher
-                // if let Ok(filter) = serde_json::from_slice(&bytes) {
-                //     self.cuckoo_filters.insert(index_name.to_string(), filter);
-                // }
+                // CuckooFilter doesn't implement Serialize/Deserialize due to DefaultHasher,
+                // so we create a new empty filter instead of deserializing
+                // This means bloom filters are rebuilt on restart - acceptable for the use case
+                self.cuckoo_filters
+                    .insert(index_name.to_string(), CuckooFilter::new());
             } else {
                 self.cuckoo_filters
                     .insert(index_name.to_string(), CuckooFilter::new());

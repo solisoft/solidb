@@ -42,6 +42,7 @@ pub fn create_router(
     queue_worker: Option<Arc<crate::queue::QueueWorker>>,
     script_stats: Arc<ScriptStats>,
     stream_manager: Option<Arc<crate::stream::StreamManager>>,
+    blob_rebalance_worker: Option<Arc<crate::sharding::BlobRebalanceWorker>>,
     _api_port: u16,
 ) -> Router {
     // Initialize Auth (create default admin if needed)
@@ -162,6 +163,7 @@ pub fn create_router(
         lua_pool,
         script_cache,
         script_index,
+        blob_rebalance_worker,
     };
 
     // Protected API routes
@@ -449,6 +451,8 @@ pub fn create_router(
         .route("/_api/cluster/info", get(cluster_info))
         .route("/_api/cluster/remove-node", post(cluster_remove_node))
         .route("/_api/cluster/rebalance", post(cluster_rebalance))
+        .route("/_api/cluster/blob-distribution", get(blob_distribution))
+        .route("/_api/cluster/blob-rebalance", post(blob_rebalance))
         // WebSocket routes (moved to public router)
         // .route("/_api/ws/changefeed", get(ws_changefeed_handler))
         // Auth management

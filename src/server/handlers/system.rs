@@ -86,6 +86,8 @@ pub struct AppState {
     pub script_cache: Arc<ScriptCache>,
     // Script index for fast route lookup
     pub script_index: Arc<ScriptIndex>,
+    // Blob rebalance worker for cluster maintenance
+    pub blob_rebalance_worker: Option<Arc<crate::sharding::BlobRebalanceWorker>>,
 }
 
 impl AppState {

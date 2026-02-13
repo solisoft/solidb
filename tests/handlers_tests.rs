@@ -37,6 +37,7 @@ fn create_test_app() -> (TempDir, axum::Router, String) {
         None, // QueueWorker
         script_stats,
         None, // StreamManager
+        None, // BlobRebalanceWorker
         0,    // port
     );
 

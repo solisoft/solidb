@@ -15,7 +15,6 @@ mod evaluate;
 mod execution;
 mod explain;
 mod expression;
-pub mod functions;
 mod helpers;
 mod index_opt;
 mod materialized_views;

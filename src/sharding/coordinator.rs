@@ -9,6 +9,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::cluster::manager::ClusterManager;
 use crate::sharding::migration::BatchSender;
+use crate::storage::http_client::get_http_client;
 use crate::storage::StorageEngine;
 use crate::sync::{LogEntry, Operation};
 use crate::DbError;
@@ -1190,7 +1191,7 @@ impl ShardCoordinator {
                             let source_addr =
                                 mgr.get_node_api_address(&source_node).unwrap_or_default();
 
-                            let client = reqwest::Client::new();
+                            let client = get_http_client();
                             let res = client
                                 .post(&url)
                                 .header("X-Cluster-Secret", &secret)
@@ -1307,7 +1308,7 @@ impl ShardCoordinator {
                         source_addr, database, &physical_coll
                     );
                     let secret = self.cluster_secret();
-                    let client = reqwest::Client::new();
+                    let client = get_http_client();
 
                     match client
                         .get(&url)
@@ -1484,7 +1485,7 @@ impl ShardCoordinator {
 
         // Step 1: Check Source Count using Metadata API
         let secret = self.cluster_secret();
-        let client = reqwest::Client::new();
+        let client = get_http_client();
 
         // Use standard Collection API to get metadata (count)
         let meta_url = format!(
@@ -1713,7 +1714,7 @@ impl ShardCoordinator {
 
         let mut total_success = 0usize;
         let mut total_fail = 0usize;
-        let client = reqwest::Client::new();
+        let client = get_http_client();
         let secret = self.cluster_secret();
 
         // Collect futures for parallel processing
@@ -1979,7 +1980,7 @@ impl ShardCoordinator {
                             addr, database, physical_coll
                         );
                         let secret = self.cluster_secret();
-                        let client = reqwest::Client::new();
+                        let client = get_http_client();
 
                         // Extract just values for the remote call
                         let values: Vec<serde_json::Value> =
@@ -2197,7 +2198,7 @@ impl ShardCoordinator {
             // FORWARD to Remote Primary
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(&target_node) {
-                    let client = reqwest::Client::new();
+                    let client = get_http_client();
                     let url = format!(
                         "http://{}/_api/database/{}/document/{}",
                         addr, database, physical_coll
@@ -2361,7 +2362,7 @@ impl ShardCoordinator {
             // FORWARD to Remote Primary
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(&target_node) {
-                    let client = reqwest::Client::new();
+                    let client = get_http_client();
                     let url = format!(
                         "http://{}/_internal/blob/upload/{}/{}",
                         addr, database, physical_coll
@@ -2548,7 +2549,7 @@ impl ShardCoordinator {
             // FORWARD to Remote Primary
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
-                    let client = reqwest::Client::new();
+                    let client = get_http_client();
                     let url = format!(
                         "http://{}/_api/blob/{}/{}/{}",
                         addr, database, physical_coll, key
@@ -2681,7 +2682,7 @@ impl ShardCoordinator {
             }
 
             // Try nodes in order until one succeeds
-            let client = reqwest::Client::new();
+            let client = get_http_client();
             let secret = self.cluster_secret();
 
             for node_id in &nodes_to_try {
@@ -2814,7 +2815,7 @@ impl ShardCoordinator {
             // Forward
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
-                    let client = reqwest::Client::new();
+                    let client = get_http_client();
                     let url = format!(
                         "http://{}/_api/database/{}/document/{}/{}",
                         addr, database, physical_coll, key
@@ -2911,7 +2912,7 @@ impl ShardCoordinator {
             // Forward
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
-                    let client = reqwest::Client::new();
+                    let client = get_http_client();
                     let url = format!(
                         "http://{}/_api/database/{}/document/{}/{}",
                         addr, database, physical_coll, key
@@ -3036,7 +3037,7 @@ impl ShardCoordinator {
             None
         };
 
-        let client = reqwest::Client::new();
+        let client = get_http_client();
         let secret = self.cluster_secret();
 
         // Track created shards to avoid duplicates
@@ -3193,7 +3194,7 @@ impl ShardCoordinator {
         })?;
 
         let my_id = self.my_node_id();
-        let client = reqwest::Client::new();
+        let client = get_http_client();
         let secret = self.cluster_secret();
 
         let mut total_count = 0usize;
@@ -3333,7 +3334,7 @@ impl ShardCoordinator {
         })?;
 
         let my_id = self.my_node_id();
-        let client = reqwest::Client::new();
+        let client = get_http_client();
         let secret = self.cluster_secret();
 
         let mut total_docs = 0u64;

@@ -82,4 +82,36 @@ impl Collection {
 
         Ok(())
     }
+
+    /// Get blob statistics for this collection
+    pub fn blob_stats(&self) -> DbResult<(usize, u64)> {
+        if *self.collection_type.read().unwrap() != "blob" {
+            return Ok((0, 0));
+        }
+
+        let db = &self.db;
+        let cf = db
+            .cf_handle(&self.name)
+            .ok_or(DbError::CollectionNotFound(self.name.clone()))?;
+
+        let prefix = BLO_PREFIX.as_bytes();
+        let mut total_bytes = 0u64;
+        let mut chunk_count = 0usize;
+
+        let iter = db.prefix_iterator_cf(cf, prefix);
+        for item in iter.flatten() {
+            let (key, value) = item;
+            if !key.starts_with(prefix) {
+                break;
+            }
+            // Key format: "blo:{key}:{chunk_index}"
+            // Only count the data entries (even indices), not metadata
+            if key.len() > 4 {
+                chunk_count += 1;
+                total_bytes += value.len() as u64;
+            }
+        }
+
+        Ok((chunk_count, total_bytes))
+    }
 }

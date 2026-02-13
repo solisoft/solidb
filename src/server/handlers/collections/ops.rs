@@ -1,6 +1,7 @@
 use super::super::system::{is_protected_collection, AppState};
 use crate::{
     error::DbError,
+    storage::http_client::get_http_client,
     sync::{LogEntry, Operation},
 };
 use axum::{
@@ -79,7 +80,7 @@ pub async fn truncate_collection(
 
             // Truncate physical shards on remote nodes
             if !remote_nodes.is_empty() {
-                let client = reqwest::Client::new();
+                let client = get_http_client();
                 let secret = state.cluster_secret();
                 let auth_header = headers
                     .get("authorization")

@@ -1044,11 +1044,27 @@ impl SyncWorker {
             .map(|c| c.cpu_usage())
             .unwrap_or(0.0);
         let memory_used = self.system.used_memory();
-        let disk_used = 0; // Disk stats require different API in newer sysinfo
+        let disk_used = 0;
 
-        // Count documents (estimate)
-        let document_count = 0; // TODO: Add actual count
-        let collections_count = 0; // TODO: Add actual count
+        // Count documents and collections
+        let mut document_count = 0u64;
+        let mut collections_count = 0u32;
+
+        let dbs = self.storage.list_databases();
+        for db_name in dbs {
+            if db_name.starts_with('_') {
+                continue; // Skip system databases
+            }
+            if let Ok(db) = self.storage.get_database(&db_name) {
+                let colls = db.list_collections();
+                collections_count = collections_count.saturating_add(colls.len() as u32);
+                for coll_name in colls {
+                    if let Ok(coll) = db.get_collection(&coll_name) {
+                        document_count = document_count.saturating_add(coll.count() as u64);
+                    }
+                }
+            }
+        }
 
         NodeStats {
             cpu_usage,

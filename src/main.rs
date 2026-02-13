@@ -5,6 +5,7 @@ use std::sync::Arc;
 use sysinfo::{Pid, System};
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
+use tokio::time::Duration;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
@@ -470,6 +471,22 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         storage.clone(),
     )));
 
+    // Create HTTP client with connection pooling for better performance
+    let http_client = Arc::new(
+        reqwest::Client::builder()
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(60))
+            .tcp_keepalive(Duration::from_secs(60))
+            .tcp_nodelay(true)
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .expect("Failed to create HTTP client"),
+    );
+    tracing::info!("HTTP client with connection pooling initialized");
+
+    // Initialize global HTTP client for use throughout the application
+    solidb::storage::http_client::init_http_client(http_client.as_ref().clone());
+
     // Create Router - use the shared coordinator so all parts share the same shard table cache
     let app = create_router(
         storage,
@@ -479,6 +496,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         Some(queue_worker),
         script_stats,
         Some(stream_manager),
+        Some(blob_worker),
         args.port,
     );
 

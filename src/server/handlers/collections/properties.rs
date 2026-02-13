@@ -1,5 +1,6 @@
 use super::super::system::AppState;
 use crate::error::DbError;
+use crate::storage::http_client::get_http_client;
 use axum::{
     extract::{Path, State},
     response::Json,
@@ -185,7 +186,7 @@ pub async fn update_collection_properties(
         if let Some(ref manager) = state.cluster_manager {
             let my_node_id = manager.local_node_id();
             let secret = state.cluster_secret();
-            let client = reqwest::Client::new();
+            let client = get_http_client();
 
             // Clone payload and set propagate = false
             let mut forward_payload = payload.clone();

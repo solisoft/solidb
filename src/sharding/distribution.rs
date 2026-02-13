@@ -61,11 +61,16 @@ pub fn compute_assignments(
             match load_a.cmp(load_b) {
                 std::cmp::Ordering::Equal => {
                     let prev_map = previous_assignments;
-                    let prev_this = prev_map.and_then(|p| p.get(&shard_id));
+                    let prev_this =
+                        prev_map.and_then(|p: &HashMap<u16, ShardAssignment>| p.get(&shard_id));
 
                     // Priority A: Stability for THIS shard
-                    let a_was_primary = prev_this.map(|p| p.primary_node == *a).unwrap_or(false);
-                    let b_was_primary = prev_this.map(|p| p.primary_node == *b).unwrap_or(false);
+                    let a_was_primary = prev_this
+                        .map(|p: &ShardAssignment| p.primary_node == *a)
+                        .unwrap_or(false);
+                    let b_was_primary = prev_this
+                        .map(|p: &ShardAssignment| p.primary_node == *b)
+                        .unwrap_or(false);
 
                     if a_was_primary != b_was_primary {
                         return if a_was_primary {
@@ -76,10 +81,10 @@ pub fn compute_assignments(
                     }
 
                     let a_was_replica = prev_this
-                        .map(|p| p.replica_nodes.contains(a))
+                        .map(|p: &ShardAssignment| p.replica_nodes.contains(a))
                         .unwrap_or(false);
                     let b_was_replica = prev_this
-                        .map(|p| p.replica_nodes.contains(b))
+                        .map(|p: &ShardAssignment| p.replica_nodes.contains(b))
                         .unwrap_or(false);
 
                     if a_was_replica != b_was_replica {
@@ -92,13 +97,13 @@ pub fn compute_assignments(
 
                     // Priority B: Avoid nodes used for other shards in OLD map
                     let a_is_primary_elsewhere = prev_map
-                        .map(|p| {
+                        .map(|p: &HashMap<u16, ShardAssignment>| {
                             p.values()
                                 .any(|v| v.shard_id != shard_id && v.primary_node == *a)
                         })
                         .unwrap_or(false);
                     let b_is_primary_elsewhere = prev_map
-                        .map(|p| {
+                        .map(|p: &HashMap<u16, ShardAssignment>| {
                             p.values()
                                 .any(|v| v.shard_id != shard_id && v.primary_node == *b)
                         })
@@ -113,13 +118,13 @@ pub fn compute_assignments(
                     }
 
                     let a_is_replica_elsewhere = prev_map
-                        .map(|p| {
+                        .map(|p: &HashMap<u16, ShardAssignment>| {
                             p.values()
                                 .any(|v| v.shard_id != shard_id && v.replica_nodes.contains(a))
                         })
                         .unwrap_or(false);
                     let b_is_replica_elsewhere = prev_map
-                        .map(|p| {
+                        .map(|p: &HashMap<u16, ShardAssignment>| {
                             p.values()
                                 .any(|v| v.shard_id != shard_id && v.replica_nodes.contains(b))
                         })
@@ -203,13 +208,14 @@ pub fn compute_assignments(
                         match load_a.cmp(load_b) {
                             std::cmp::Ordering::Equal => {
                                 let prev_map = previous_assignments;
-                                let prev_this = prev_map.and_then(|p| p.get(&shard_id));
+                                let prev_this = prev_map
+                                    .and_then(|p: &HashMap<u16, ShardAssignment>| p.get(&shard_id));
 
                                 let a_was_replica = prev_this
-                                    .map(|p| p.replica_nodes.contains(a))
+                                    .map(|p: &ShardAssignment| p.replica_nodes.contains(a))
                                     .unwrap_or(false);
                                 let b_was_replica = prev_this
-                                    .map(|p| p.replica_nodes.contains(b))
+                                    .map(|p: &ShardAssignment| p.replica_nodes.contains(b))
                                     .unwrap_or(false);
 
                                 if a_was_replica != b_was_replica {
@@ -221,8 +227,8 @@ pub fn compute_assignments(
                                 }
 
                                 let a_used_elsewhere = prev_map
-                                    .map(|p| {
-                                        p.values().any(|v| {
+                                    .map(|p: &HashMap<u16, ShardAssignment>| {
+                                        p.values().any(|v: &ShardAssignment| {
                                             v.shard_id != shard_id
                                                 && (v.primary_node == *a
                                                     || v.replica_nodes.contains(a))
@@ -230,8 +236,8 @@ pub fn compute_assignments(
                                     })
                                     .unwrap_or(false);
                                 let b_used_elsewhere = prev_map
-                                    .map(|p| {
-                                        p.values().any(|v| {
+                                    .map(|p: &HashMap<u16, ShardAssignment>| {
+                                        p.values().any(|v: &ShardAssignment| {
                                             v.shard_id != shard_id
                                                 && (v.primary_node == *b
                                                     || v.replica_nodes.contains(b))

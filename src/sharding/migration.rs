@@ -6,6 +6,7 @@
 
 use crate::sharding::coordinator::{CollectionShardConfig, ShardAssignment};
 use crate::sharding::router::ShardRouter;
+use crate::storage::http_client::get_http_client;
 use crate::storage::StorageEngine;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -98,7 +99,7 @@ async fn verify_migrated_documents(
 
     // Verify remote keys via HTTP endpoint
     if let Some(mgr) = cluster_manager {
-        let client = reqwest::Client::new();
+        let client = get_http_client();
         let secret = storage
             .cluster_config()
             .and_then(|c| c.keyfile.clone())

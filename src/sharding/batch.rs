@@ -15,6 +15,7 @@ use std::sync::{Arc, RwLock};
 use crate::cluster::manager::ClusterManager;
 use crate::sharding::coordinator::{CollectionShardConfig, ShardTable};
 use crate::sharding::router::ShardRouter;
+use crate::storage::http_client::get_http_client;
 use crate::storage::StorageEngine;
 use crate::DbError;
 
@@ -73,7 +74,7 @@ pub async fn insert_batch(
 
     let mut total_success = 0usize;
     let mut total_fail = 0usize;
-    let client = reqwest::Client::new();
+    let client = get_http_client();
 
     // Collect futures for parallel processing
     let mut local_batches = Vec::new();
@@ -338,7 +339,7 @@ pub async fn upsert_batch_to_shards(
                         "http://{}/_api/database/{}/document/{}/_batch",
                         addr, database, physical_coll
                     );
-                    let client = reqwest::Client::new();
+                    let client = get_http_client();
 
                     // Extract just values for the remote call
                     let values: Vec<serde_json::Value> =

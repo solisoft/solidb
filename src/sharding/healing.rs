@@ -16,6 +16,7 @@ use std::sync::{
 
 use crate::cluster::manager::ClusterManager;
 use crate::sharding::coordinator::ShardTable;
+use crate::storage::http_client::get_http_client;
 use crate::storage::StorageEngine;
 use crate::DbError;
 
@@ -137,7 +138,7 @@ pub async fn copy_shard_from_source(
         .ok_or_else(|| DbError::InternalError("Source node address not found".to_string()))?;
 
     // Step 1: Check Source Count using Metadata API
-    let client = reqwest::Client::new();
+    let client = get_http_client();
 
     // Use standard Collection API to get metadata (count)
     let meta_url = format!(
@@ -512,7 +513,7 @@ pub async fn heal_shards(
                         let source_addr =
                             mgr.get_node_api_address(&source_node).unwrap_or_default();
 
-                        let client = reqwest::Client::new();
+                        let client = get_http_client();
                         let res = client
                             .post(&url)
                             .header("X-Cluster-Secret", cluster_secret)
@@ -627,7 +628,7 @@ pub async fn heal_shards(
                     "http://{}/_api/database/{}/collection/{}/count",
                     source_addr, database, &physical_coll
                 );
-                let client = reqwest::Client::new();
+                let client = get_http_client();
 
                 match client
                     .get(&url)

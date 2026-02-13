@@ -1,0 +1,22 @@
+[package]
+name = "solidb-bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+lru = "0.16"
+
+[[bin]]
+name = "http_bench"
+path = "http_client.rs"
+
+[[bin]]
+name = "cache_bench"
+path = "document_cache.rs"
+
+[[bin]]
+name = "query_cache_bench"
+path = "query_cache.rs"

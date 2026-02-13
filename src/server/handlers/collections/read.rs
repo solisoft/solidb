@@ -1,5 +1,6 @@
 use super::super::system::{is_protected_collection, AppState};
 use crate::error::DbError;
+use crate::storage::http_client::get_http_client;
 use axum::{
     extract::{Path, State},
     http::HeaderMap,
@@ -126,7 +127,7 @@ pub async fn list_collections(
                     let mut total_memtable_size = 0;
                     let mut total_chunk_count = 0;
 
-                    let client = reqwest::Client::new();
+                    let client = get_http_client();
                     let secret = state.cluster_secret();
 
                     for shard_id in 0..config.num_shards {

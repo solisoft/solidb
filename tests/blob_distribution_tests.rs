@@ -5,6 +5,8 @@
 //! - Blob upload handling (multipart)
 //! - Blob chunk retrieval
 //! - Internal replication handlers
+//! - Blob distribution API
+//! - Blob rebalance API
 
 use axum::{
     body::Body,
@@ -26,7 +28,7 @@ fn create_test_app() -> (axum::Router, TempDir, String) {
 
     let script_stats = Arc::new(ScriptStats::default());
 
-    let router = create_router(engine, None, None, None, None, script_stats, None, 0);
+    let router = create_router(engine, None, None, None, None, script_stats, None, None, 0);
 
     // Create a JWT token for authentication
     let token =
@@ -218,4 +220,254 @@ async fn test_blob_replication_endpoint() {
     // Check Status
     let json = response_json(response).await;
     assert_eq!(json["chunks_received"], 2);
+}
+
+#[tokio::test]
+async fn test_blob_distribution_endpoint_not_in_cluster_mode() {
+    let (app, _tmp, token) = create_test_app();
+
+    // Without cluster mode (no BlobRebalanceWorker), should return error
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/_api/cluster/blob-distribution")
+                .header("Authorization", auth_header(&token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn test_blob_rebalance_endpoint_not_in_cluster_mode() {
+    let (app, _tmp, token) = create_test_app();
+
+    // Without cluster mode (no BlobRebalanceWorker), should return error
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/_api/cluster/blob-rebalance")
+                .header("Authorization", auth_header(&token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(json!({ "force": false }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn test_blob_distribution_with_data() {
+    let (app, _tmp, token) = create_test_app();
+
+    // Create database and blob collection
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/_api/database")
+                .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
+                .body(Body::from(json!({ "name": "test_blob_dist" }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/_api/database/test_blob_dist/collection")
+                .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
+                .body(Body::from(
+                    json!({ "name": "documents", "type": "blob" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Upload some blob data via internal endpoint
+    let boundary = "------------------------BlobDistTest";
+    let metadata = json!({ "_key": "doc1", "size": 100 }).to_string();
+    let chunk_data = b"This is test blob content for distribution testing".to_vec();
+
+    let parts = vec![
+        ("metadata", metadata.into_bytes()),
+        ("chunk_0", chunk_data.clone()),
+    ];
+    let body_bytes = create_multipart_body(boundary, parts);
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/_internal/blob/upload/test_blob_dist/documents")
+                .header(
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={}", boundary),
+                )
+                .body(Body::from(body_bytes))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_blob_rebalance_check_without_force() {
+    let (app, _tmp, token) = create_test_app();
+
+    // Create database and blob collection
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/_api/database")
+                .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
+                .body(Body::from(json!({ "name": "test_rebalance" }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/_api/database/test_rebalance/collection")
+                .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
+                .body(Body::from(
+                    json!({ "name": "assets", "type": "blob" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Attempt to rebalance check - should fail without cluster mode
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/_api/cluster/blob-rebalance")
+                .header("Authorization", auth_header(&token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(json!({ "force": false }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Should get internal server error because blob rebalance worker is not available
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn test_cluster_status_endpoint_exists() {
+    let (app, _tmp, token) = create_test_app();
+
+    // Test that cluster status endpoint exists (should work without cluster mode)
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/_api/cluster/status")
+                .header("Authorization", auth_header(&token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Should return OK (even if not in cluster mode, returns local info)
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = response_json(response).await;
+    assert!(json.get("node_id").is_some());
+    assert!(json.get("status").is_some());
+}
+
+#[tokio::test]
+async fn test_cluster_info_endpoint_exists() {
+    let (app, _tmp, token) = create_test_app();
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/_api/cluster/info")
+                .header("Authorization", auth_header(&token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = response_json(response).await;
+    assert!(json.get("node_id").is_some());
+    assert!(json.get("is_cluster_mode").is_some());
+}
+
+#[tokio::test]
+async fn test_blob_distribution_requires_auth() {
+    let (app, _tmp, _token) = create_test_app();
+
+    // Test without auth header - should fail
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/_api/cluster/blob-distribution")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Should return 401 Unauthorized
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_blob_rebalance_requires_auth() {
+    let (app, _tmp, _token) = create_test_app();
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/_api/cluster/blob-rebalance")
+                .header("Content-Type", "application/json")
+                .body(Body::from(json!({ "force": true }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Should return 401 Unauthorized
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }

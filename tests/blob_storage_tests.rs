@@ -391,3 +391,48 @@ fn test_blob_persistence() {
         assert_eq!(String::from_utf8(retrieved).unwrap(), "Persistent data");
     }
 }
+
+#[test]
+fn test_blob_stats() {
+    let path = tempfile::tempdir().unwrap();
+    let engine = StorageEngine::new(path.path()).unwrap();
+    engine
+        .create_collection("files".to_string(), Some("blob".to_string()))
+        .unwrap();
+    let files = engine.get_collection("files").unwrap();
+
+    // Initially, stats should be zero
+    let (count, bytes) = files.blob_stats().unwrap();
+    assert_eq!(count, 0);
+    assert_eq!(bytes, 0);
+
+    // Add some blob chunks
+    files.put_blob_chunk("file1", 0, b"Hello World").unwrap();
+    files.put_blob_chunk("file1", 1, b"Chunk 2").unwrap();
+    files.put_blob_chunk("file2", 0, b"Another file").unwrap();
+
+    // Check stats
+    let (count, bytes) = files.blob_stats().unwrap();
+    assert_eq!(count, 3);
+    assert_eq!(bytes, 11 + 7 + 12); // "Hello World" = 11, "Chunk 2" = 7, "Another file" = 12
+
+    // Delete one blob
+    files.delete_blob_data("file1").unwrap();
+
+    let (count, bytes) = files.blob_stats().unwrap();
+    assert_eq!(count, 1);
+    assert_eq!(bytes, 12);
+}
+
+#[test]
+fn test_blob_stats_non_blob_collection() {
+    let path = tempfile::tempdir().unwrap();
+    let engine = StorageEngine::new(path.path()).unwrap();
+    engine.create_collection("docs".to_string(), None).unwrap();
+    let docs = engine.get_collection("docs").unwrap();
+
+    // Non-blob collection should return (0, 0)
+    let (count, bytes) = docs.blob_stats().unwrap();
+    assert_eq!(count, 0);
+    assert_eq!(bytes, 0);
+}

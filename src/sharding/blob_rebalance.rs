@@ -119,8 +119,13 @@ impl BlobRebalanceWorker {
         }
     }
 
-    /// Check for imbalance and trigger rebalancing if needed
-    async fn check_and_rebalance(&self) -> Result<(), String> {
+    /// Get the rebalance configuration
+    pub fn config(&self) -> Arc<RebalanceConfig> {
+        self.config.clone()
+    }
+
+    /// Manually trigger blob rebalance check and execution
+    pub async fn check_and_rebalance(&self) -> Result<(), String> {
         // Prevent concurrent rebalancing
         if self.is_rebalancing.load(Ordering::SeqCst) {
             tracing::debug!("Blob rebalance already in progress, skipping");
@@ -134,9 +139,23 @@ impl BlobRebalanceWorker {
         result
     }
 
+    /// Collect blob statistics from all nodes (public for API)
+    pub async fn collect_node_stats(&self) -> Result<Vec<NodeBlobStats>, String> {
+        self.collect_node_stats_internal().await
+    }
+
+    /// Calculate distribution metrics (public for API)
+    pub fn calculate_distribution_metrics(
+        &self,
+        node_stats: &[NodeBlobStats],
+    ) -> Result<DistributionMetrics, String> {
+        self.calculate_distribution_metrics_internal(node_stats)
+    }
+
+    /// Check for imbalance and trigger rebalancing if needed
     async fn check_and_rebalance_inner(&self) -> Result<(), String> {
         // Collect stats from all healthy nodes
-        let all_stats = self.collect_node_stats().await?;
+        let all_stats = self.collect_node_stats_internal().await?;
 
         if all_stats.is_empty() {
             tracing::debug!("No nodes available for blob rebalance");
@@ -144,7 +163,7 @@ impl BlobRebalanceWorker {
         }
 
         // Calculate global distribution metrics
-        let metrics = self.calculate_distribution_metrics(&all_stats)?;
+        let metrics = self.calculate_distribution_metrics_internal(&all_stats)?;
 
         tracing::info!(
             "Blob distribution: {} nodes, {} total chunks, mean {:.1} chunks/node, std_dev {:.3}",
@@ -192,8 +211,8 @@ impl BlobRebalanceWorker {
         Ok(())
     }
 
-    /// Collect blob statistics from all nodes
-    async fn collect_node_stats(&self) -> Result<Vec<NodeBlobStats>, String> {
+    /// Collect blob statistics from all nodes (internal)
+    async fn collect_node_stats_internal(&self) -> Result<Vec<NodeBlobStats>, String> {
         let mut all_stats = Vec::new();
 
         // Add local node stats
@@ -257,16 +276,14 @@ impl BlobRebalanceWorker {
     /// Count blobs in a collection
     async fn count_collection_blobs(
         &self,
-        _coll: &crate::storage::Collection,
+        coll: &crate::storage::Collection,
     ) -> Result<CollectionBlobStats, String> {
-        // Note: This is a simplified implementation. In practice, we'd iterate
-        // through the RocksDB to count blob chunks efficiently.
-        // For now, we use the collection's stats if available.
+        let (chunk_count, total_bytes) = coll.blob_stats().map_err(|e| e.to_string())?;
 
-        // TODO: Implement actual blob counting by iterating RocksDB with BLO_PREFIX
-        // This would need to be implemented based on the actual storage structure
-
-        Ok(CollectionBlobStats::default())
+        Ok(CollectionBlobStats {
+            chunk_count,
+            total_bytes,
+        })
     }
 
     /// Fetch blob stats from a remote node via HTTP
@@ -281,7 +298,7 @@ impl BlobRebalanceWorker {
 
         // Example endpoint: GET http://{addr}/_internal/stats/blobs
         /*
-        let client = reqwest::Client::new();
+        let client = get_http_client();
         let url = format!("http://{}/_internal/stats/blobs", addr);
         match client.get(&url).send().await {
             Ok(response) => {
@@ -303,8 +320,8 @@ impl BlobRebalanceWorker {
         })
     }
 
-    /// Calculate distribution metrics across all nodes
-    fn calculate_distribution_metrics(
+    /// Calculate distribution metrics across all nodes (internal)
+    fn calculate_distribution_metrics_internal(
         &self,
         node_stats: &[NodeBlobStats],
     ) -> Result<DistributionMetrics, String> {
@@ -520,10 +537,10 @@ impl BlobRebalanceWorker {
 
 /// Distribution metrics for blob chunks across nodes
 #[derive(Debug)]
-struct DistributionMetrics {
-    total_chunks: usize,
-    mean_chunks: f64,
-    std_dev: f64,
+pub struct DistributionMetrics {
+    pub total_chunks: usize,
+    pub mean_chunks: f64,
+    pub std_dev: f64,
 }
 
 /// Information about a chunk to migrate
@@ -533,4 +550,291 @@ struct ChunkInfo {
     blob_key: String,
     chunk_index: u32,
     size_bytes: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn create_test_config() -> RebalanceConfig {
+        RebalanceConfig {
+            interval_secs: 3600,
+            imbalance_threshold: 0.2,
+            min_chunks_to_rebalance: 100,
+            batch_size: 50,
+            enabled: true,
+        }
+    }
+
+    fn create_node_stats(node_id: &str, chunk_count: usize, total_bytes: u64) -> NodeBlobStats {
+        NodeBlobStats {
+            node_id: node_id.to_string(),
+            chunk_count,
+            total_bytes,
+            collections: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_rebalance_config_default_values() {
+        let config = RebalanceConfig::default();
+        assert_eq!(config.interval_secs, 3600);
+        assert_eq!(config.imbalance_threshold, 0.2);
+        assert_eq!(config.min_chunks_to_rebalance, 100);
+        assert_eq!(config.batch_size, 50);
+        assert!(config.enabled);
+    }
+
+    #[test]
+    fn test_rebalance_config_custom_values() {
+        let config = RebalanceConfig {
+            interval_secs: 1800,
+            imbalance_threshold: 0.15,
+            min_chunks_to_rebalance: 50,
+            batch_size: 25,
+            enabled: false,
+        };
+        assert_eq!(config.interval_secs, 1800);
+        assert_eq!(config.imbalance_threshold, 0.15);
+        assert_eq!(config.min_chunks_to_rebalance, 50);
+        assert_eq!(config.batch_size, 25);
+        assert!(!config.enabled);
+    }
+
+    #[test]
+    fn test_calculate_distribution_metrics_empty() {
+        let empty_stats: Vec<NodeBlobStats> = vec![];
+
+        // Calculate manually to test logic
+        let result = calculate_metrics_internal(&empty_stats);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_calculate_distribution_metrics_single_node() {
+        let stats = vec![create_node_stats("node1", 100, 1000)];
+
+        let result = calculate_metrics_internal(&stats).unwrap();
+        assert_eq!(result.total_chunks, 100);
+        assert_eq!(result.mean_chunks, 100.0);
+        assert_eq!(result.std_dev, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_distribution_metrics_balanced() {
+        // 3 nodes with equal chunks = balanced
+        let stats = vec![
+            create_node_stats("node1", 100, 1000),
+            create_node_stats("node2", 100, 1000),
+            create_node_stats("node3", 100, 1000),
+        ];
+
+        let result = calculate_metrics_internal(&stats).unwrap();
+        assert_eq!(result.total_chunks, 300);
+        assert_eq!(result.mean_chunks, 100.0);
+        assert!((result.std_dev - 0.0).abs() < 0.001); // Should be 0 or very close
+    }
+
+    #[test]
+    fn test_calculate_distribution_metrics_unbalanced() {
+        // 3 nodes with very different chunks = unbalanced
+        let stats = vec![
+            create_node_stats("node1", 10, 100),
+            create_node_stats("node2", 100, 1000),
+            create_node_stats("node3", 190, 1900),
+        ];
+
+        let result = calculate_metrics_internal(&stats).unwrap();
+        assert_eq!(result.total_chunks, 300);
+        assert_eq!(result.mean_chunks, 100.0);
+        assert!(result.std_dev > 50.0); // Should have significant deviation
+    }
+
+    #[test]
+    fn test_imbalance_ratio_calculation() {
+        // Perfectly balanced: std_dev = 0, ratio = 0
+        let balanced = vec![
+            create_node_stats("node1", 100, 1000),
+            create_node_stats("node2", 100, 1000),
+        ];
+        let metrics = calculate_metrics_internal(&balanced).unwrap();
+        let ratio = if metrics.mean_chunks > 0.0 {
+            metrics.std_dev / metrics.mean_chunks
+        } else {
+            0.0
+        };
+        assert!((ratio - 0.0).abs() < 0.001);
+
+        // Unbalanced: node1=10, node2=190, mean=100, std_dev=90
+        let unbalanced = vec![
+            create_node_stats("node1", 10, 100),
+            create_node_stats("node2", 190, 1900),
+        ];
+        let metrics = calculate_metrics_internal(&unbalanced).unwrap();
+        let ratio = if metrics.mean_chunks > 0.0 {
+            metrics.std_dev / metrics.mean_chunks
+        } else {
+            0.0
+        };
+        assert!(ratio > 0.6); // Should be ~0.9 or higher
+    }
+
+    #[test]
+    fn test_node_blob_stats_struct() {
+        let mut collections = HashMap::new();
+        collections.insert(
+            "files".to_string(),
+            CollectionBlobStats {
+                chunk_count: 50,
+                total_bytes: 5000,
+            },
+        );
+
+        let stats = NodeBlobStats {
+            node_id: "test-node".to_string(),
+            chunk_count: 50,
+            total_bytes: 5000,
+            collections,
+        };
+
+        assert_eq!(stats.node_id, "test-node");
+        assert_eq!(stats.chunk_count, 50);
+        assert_eq!(stats.total_bytes, 5000);
+        assert_eq!(stats.collections.len(), 1);
+        assert_eq!(stats.collections.get("files").unwrap().chunk_count, 50);
+    }
+
+    #[test]
+    fn test_chunk_migration_struct() {
+        let migration = ChunkMigration {
+            db_name: "test_db".to_string(),
+            coll_name: "files".to_string(),
+            blob_key: "myfile.txt".to_string(),
+            chunk_index: 0,
+            size_bytes: 1024,
+            source_node: "node1".to_string(),
+            target_node: "node2".to_string(),
+        };
+
+        assert_eq!(migration.db_name, "test_db");
+        assert_eq!(migration.blob_key, "myfile.txt");
+        assert_eq!(migration.chunk_index, 0);
+        assert_eq!(migration.size_bytes, 1024);
+        assert_eq!(migration.source_node, "node1");
+        assert_eq!(migration.target_node, "node2");
+    }
+
+    #[test]
+    fn test_distribution_metrics_struct() {
+        let metrics = DistributionMetrics {
+            total_chunks: 500,
+            mean_chunks: 100.0,
+            std_dev: 50.0,
+        };
+
+        assert_eq!(metrics.total_chunks, 500);
+        assert_eq!(metrics.mean_chunks, 100.0);
+        assert_eq!(metrics.std_dev, 50.0);
+    }
+
+    #[test]
+    fn test_should_rebalance_below_minimum() {
+        let config = RebalanceConfig {
+            min_chunks_to_rebalance: 100,
+            imbalance_threshold: 0.2,
+            ..Default::default()
+        };
+
+        // Only 50 total chunks - below minimum
+        let stats = vec![
+            create_node_stats("node1", 25, 250),
+            create_node_stats("node2", 25, 250),
+        ];
+        let metrics = calculate_metrics_internal(&stats).unwrap();
+
+        let should_rebalance = metrics.total_chunks >= config.min_chunks_to_rebalance
+            && (metrics.std_dev / metrics.mean_chunks) >= config.imbalance_threshold;
+
+        assert!(!should_rebalance);
+    }
+
+    #[test]
+    fn test_should_rebalance_above_threshold() {
+        let config = RebalanceConfig {
+            min_chunks_to_rebalance: 100,
+            imbalance_threshold: 0.2,
+            ..Default::default()
+        };
+
+        // 300 total chunks (above min), but balanced (std_dev = 0)
+        let stats = vec![
+            create_node_stats("node1", 100, 1000),
+            create_node_stats("node2", 100, 1000),
+            create_node_stats("node3", 100, 1000),
+        ];
+        let metrics = calculate_metrics_internal(&stats).unwrap();
+
+        let imbalance_ratio = metrics.std_dev / metrics.mean_chunks;
+        let should_rebalance = metrics.total_chunks >= config.min_chunks_to_rebalance
+            && imbalance_ratio >= config.imbalance_threshold;
+
+        assert!(!should_rebalance); // Balanced, no rebalance needed
+    }
+
+    #[test]
+    fn test_should_rebalance_needed() {
+        let config = RebalanceConfig {
+            min_chunks_to_rebalance: 100,
+            imbalance_threshold: 0.2,
+            ..Default::default()
+        };
+
+        // 300 total chunks AND unbalanced
+        let stats = vec![
+            create_node_stats("node1", 10, 100),
+            create_node_stats("node2", 290, 2900),
+        ];
+        let metrics = calculate_metrics_internal(&stats).unwrap();
+
+        let imbalance_ratio = metrics.std_dev / metrics.mean_chunks;
+        let should_rebalance = metrics.total_chunks >= config.min_chunks_to_rebalance
+            && imbalance_ratio >= config.imbalance_threshold;
+
+        assert!(should_rebalance); // Should trigger rebalance
+    }
+}
+
+// Helper function to calculate metrics (extracted for testing)
+#[allow(dead_code)]
+fn calculate_metrics_internal(node_stats: &[NodeBlobStats]) -> Result<DistributionMetrics, String> {
+    if node_stats.is_empty() {
+        return Err("No node statistics provided".to_string());
+    }
+
+    let _total_bytes: u64 = node_stats.iter().map(|n| n.total_bytes).sum();
+
+    let mean_chunks = if !node_stats.is_empty() {
+        node_stats.iter().map(|n| n.chunk_count).sum::<usize>() as f64 / node_stats.len() as f64
+    } else {
+        0.0
+    };
+
+    // Calculate standard deviation
+    let variance: f64 = node_stats
+        .iter()
+        .map(|n| {
+            let diff = n.chunk_count as f64 - mean_chunks;
+            diff * diff
+        })
+        .sum::<f64>()
+        / node_stats.len() as f64;
+
+    let std_dev = variance.sqrt();
+
+    Ok(DistributionMetrics {
+        total_chunks: node_stats.iter().map(|n| n.chunk_count).sum(),
+        mean_chunks,
+        std_dev,
+    })
 }

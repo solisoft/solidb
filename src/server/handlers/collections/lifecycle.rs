@@ -1,6 +1,7 @@
 use super::super::system::{is_protected_collection, AppState};
 use crate::{
     error::DbError,
+    storage::http_client::get_http_client,
     sync::{LogEntry, Operation},
 };
 use axum::{
@@ -219,7 +220,7 @@ pub async fn delete_collection(
 
                 // Delete physical shards on remote nodes
                 if !remote_nodes.is_empty() {
-                    let client = reqwest::Client::new();
+                    let client = get_http_client();
                     let secret = state.cluster_secret();
 
                     for shard_id in 0..shard_config.num_shards {

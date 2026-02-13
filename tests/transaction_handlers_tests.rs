@@ -24,7 +24,7 @@ fn create_test_app() -> (axum::Router, TempDir, String) {
 
     let script_stats = Arc::new(ScriptStats::default());
 
-    let router = create_router(engine, None, None, None, None, script_stats, None, 0);
+    let router = create_router(engine, None, None, None, None, script_stats, None, None, 0);
 
     let token =
         AuthService::create_jwt_with_roles("test_admin", Some(vec!["admin".to_string()]), None)

@@ -14,6 +14,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::cluster::manager::ClusterManager;
 use crate::sharding::coordinator::ShardTable;
+use crate::storage::http_client::get_http_client;
 use crate::storage::StorageEngine;
 use crate::DbError;
 
@@ -122,7 +123,7 @@ pub async fn broadcast_cleanup_orphaned_shards(
         None => return Ok(()), // Single node, local cleanup is enough
     };
 
-    let client = reqwest::Client::new();
+    let client = get_http_client();
 
     // Collect all shard tables to broadcast
     let tables: Vec<ShardTable> = {

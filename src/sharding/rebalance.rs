@@ -17,6 +17,7 @@ use std::sync::{
 use crate::cluster::manager::ClusterManager;
 use crate::sharding::coordinator::{CollectionShardConfig, ShardTable};
 use crate::sharding::migration::BatchSender;
+use crate::storage::http_client::get_http_client;
 use crate::storage::StorageEngine;
 use crate::DbError;
 
@@ -146,7 +147,7 @@ pub async fn broadcast_reshard_removed_shards(
         None => return Ok(()), // Single node, no broadcast needed
     };
 
-    let client = reqwest::Client::new();
+    let client = get_http_client();
 
     // For each removed shard, broadcast reshard request to all nodes
     for removed_shard_id in new_shards..old_shards {
@@ -448,7 +449,7 @@ async fn create_shards(
         None
     };
 
-    let client = reqwest::Client::new();
+    let client = get_http_client();
 
     // Track created shards to avoid duplicates
     let mut created_shards = std::collections::HashSet::new();

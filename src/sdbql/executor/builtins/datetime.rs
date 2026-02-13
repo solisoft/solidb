@@ -1,10 +1,11 @@
 //! Date and time functions for SDBQL.
 //!
-//! NOW, DATE_*, TIME_BUCKET, etc.
+//! NOW, DATE_*, TIME_BUCKET, UUIDV4, UUIDV7, etc.
 
 use crate::error::{DbError, DbResult};
 use chrono::{Datelike, Timelike, Utc};
 use serde_json::Value;
+use uuid::Uuid;
 
 /// Evaluate datetime functions
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
@@ -16,6 +17,11 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             ))))
         }
         "NOW_ISO" | "DATE_NOW_ISO" => Ok(Some(Value::String(Utc::now().to_rfc3339()))),
+        "UUIDV4" => Ok(Some(Value::String(Uuid::new_v4().to_string()))),
+        "UUIDV7" => {
+            let ts = uuid::Timestamp::now(uuid::NoContext);
+            Ok(Some(Value::String(Uuid::new_v7(ts).to_string())))
+        }
         "DATE_YEAR" => {
             check_args(name, args, 1)?;
             let dt = parse_datetime(&args[0])?;
@@ -167,6 +173,80 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 }
             };
             Ok(Some(Value::Number(serde_json::Number::from(result))))
+        }
+        "TIME_BUCKET" => {
+            if args.len() != 2 {
+                return Err(DbError::ExecutionError(
+                    " 2 arguments:TIME_BUCKET requires timestamp, interval (e.g. '5m')".to_string(),
+                ));
+            }
+            let interval_str = args[1].as_str().ok_or_else(|| {
+                DbError::ExecutionError("TIME_BUCKET: interval must be a string".to_string())
+            })?;
+
+            let len = interval_str.len();
+            if len < 2 {
+                return Err(DbError::ExecutionError(
+                    "TIME_BUCKET: invalid interval format".to_string(),
+                ));
+            }
+
+            let unit = &interval_str[len - 1..];
+            let val_str = &interval_str[..len - 1];
+            let val: u64 = val_str.parse().map_err(|_| {
+                DbError::ExecutionError("TIME_BUCKET: invalid interval number".to_string())
+            })?;
+
+            let interval_ms = match unit {
+                "s" => val * 1000,
+                "m" => val * 1000 * 60,
+                "h" => val * 1000 * 60 * 60,
+                "d" => val * 1000 * 60 * 60 * 24,
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "TIME_BUCKET: valid units are s, m, h, d".to_string(),
+                    ))
+                }
+            };
+
+            if interval_ms == 0 {
+                return Err(DbError::ExecutionError(
+                    "TIME_BUCKET: interval cannot be 0".to_string(),
+                ));
+            }
+
+            match &args[0] {
+                Value::Number(n) => {
+                    let ts = n.as_i64().ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "TIME_BUCKET: timestamp must be a valid number".to_string(),
+                        )
+                    })?;
+                    let bucket = ts.div_euclid(interval_ms as i64) * (interval_ms as i64);
+                    Ok(Some(Value::Number(bucket.into())))
+                }
+                Value::String(s) => {
+                    let dt = chrono::DateTime::parse_from_rfc3339(s).map_err(|_| {
+                        DbError::ExecutionError("TIME_BUCKET: invalid timestamp string".to_string())
+                    })?;
+                    let ts = dt.timestamp_millis();
+                    let bucket_ts = ts.div_euclid(interval_ms as i64) * (interval_ms as i64);
+
+                    let seconds = bucket_ts.div_euclid(1000);
+                    let nanos = (bucket_ts.rem_euclid(1000) * 1_000_000) as u32;
+
+                    if let Some(dt) = chrono::DateTime::from_timestamp(seconds, nanos) {
+                        Ok(Some(Value::String(dt.to_rfc3339())))
+                    } else {
+                        Err(DbError::ExecutionError(
+                            "TIME_BUCKET: failed to construct date".to_string(),
+                        ))
+                    }
+                }
+                _ => Err(DbError::ExecutionError(
+                    "TIME_BUCKET: timestamp must be number or string".to_string(),
+                )),
+            }
         }
         _ => Ok(None),
     }

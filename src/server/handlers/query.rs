@@ -4,7 +4,7 @@ use crate::{
     error::DbError,
     sdbql::{parse, BodyClause, Query, QueryExecutor},
     server::response::ApiResponse,
-    storage::StorageEngine,
+    storage::{query_cache, StorageEngine},
 };
 use axum::{
     extract::{Path, State},
@@ -413,6 +413,46 @@ pub async fn execute_query(
     // Non-transactional execution (existing logic)
     let query = parse(&req.query)?;
 
+    // Check if query is cacheable (read-only with no mutations)
+    let is_read_only = !query.body_clauses.iter().any(|clause| {
+        matches!(
+            clause,
+            BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_)
+        )
+    });
+
+    // Try to get cached result for read-only queries
+    let cache_key = if is_read_only {
+        Some(query_cache::hash_query(&req.query, &req.bind_vars))
+    } else {
+        None
+    };
+
+    // Check cache if query is read-only
+    if let Some(ref key) = cache_key {
+        let cached_result = query_cache::get_query_cache().get(key).await;
+        if let Some(result) = cached_result {
+            tracing::debug!(
+                "Query cache hit for: {}",
+                &req.query[..req.query.len().min(50)]
+            );
+            return Ok(ApiResponse::new(
+                ExecuteQueryResponse {
+                    result: result.clone(),
+                    count: result.len(),
+                    has_more: false,
+                    id: None,
+                    cached: true,
+                    execution_time_ms: 0.0,
+                    documents_inserted: 0,
+                    documents_updated: 0,
+                    documents_removed: 0,
+                },
+                &headers,
+            ));
+        }
+    }
+
     // Handle CREATE STREAM clause
     if let Some(ref _create_stream) = query.create_stream_clause {
         if let Some(manager) = &state.stream_manager {
@@ -523,6 +563,15 @@ pub async fn execute_query(
 
     let total_count = query_result.results.len();
     let mutations = &query_result.mutations;
+
+    // Cache read-only query results (fire and forget)
+    if let Some(key) = cache_key {
+        let result_clone: Vec<serde_json::Value> = query_result.results.clone();
+        let cache = query_cache::get_query_cache();
+        tokio::spawn(async move {
+            cache.put(key, result_clone).await;
+        });
+    }
 
     // Log slow query if it exceeds threshold (async, non-blocking)
     log_slow_query(

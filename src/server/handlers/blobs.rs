@@ -1,6 +1,7 @@
 use super::system::AppState;
 use crate::{
     error::DbError,
+    storage::http_client::get_http_client,
     sync::blob_replication::replicate_blob_to_node,
     sync::{LogEntry, Operation},
 };
@@ -441,7 +442,7 @@ async fn fetch_blob_chunk_from_cluster(
             )
         };
 
-        let client = reqwest::Client::new();
+        let client = get_http_client();
         let secret = coordinator.cluster_secret();
 
         match client
