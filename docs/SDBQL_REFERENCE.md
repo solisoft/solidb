@@ -378,6 +378,7 @@ RETURN users[*].name -- Returns array of names
 | `IS_EMAIL(v)`, `IS_URL(v)`, `IS_UUID(v)` | Format checks | |
 | `TO_STRING(v)`, `TO_NUMBER(v)`, `TO_BOOL(v)`, `TO_ARRAY(v)` | Casting | `TO_NUMBER("1")` → `1` |
 | `COALESCE(v1, v2)` | First non-null | `COALESCE(null, 1)` → `1` |
+| `NULLIF(v1, v2)` | Return null if v1==v2 | `NULLIF(1, 1)` → `null` |
 
 ### Control Flow & Misc
 

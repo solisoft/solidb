@@ -1156,6 +1156,13 @@
       "url": "/docs/sdbql-functions-misc#fn-COALESCE"
     },
     {
+      "name": "NULLIF",
+      "description": "Returns null if expr1 equals expr2, otherwise returns expr1",
+      "category": "misc",
+      "signature": "NULLIF(expr1, expr2)",
+      "url": "/docs/sdbql-functions-misc#fn-NULLIF"
+    },
+    {
       "name": "MERGE",
       "description": "Shallow merge of objects",
       "category": "misc",
