@@ -121,6 +121,95 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Object(result))
             }
 
+            // VECTOR_SIMILARITY(v1, v2) - cosine similarity between two vectors
+            "VECTOR_SIMILARITY" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "VECTOR_SIMILARITY requires 2 arguments: vector1, vector2".to_string(),
+                    ));
+                }
+                let v1 = Self::extract_vector_arg(&evaluated_args[0], "VECTOR_SIMILARITY")?;
+                let v2 = Self::extract_vector_arg(&evaluated_args[1], "VECTOR_SIMILARITY")?;
+
+                let dot: f32 = v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum::<f32>();
+                let mag1: f32 = v1.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let mag2: f32 = v2.iter().map(|x| x * x).sum::<f32>().sqrt();
+
+                if mag1 == 0.0 || mag2 == 0.0 {
+                    Ok(Value::Number(serde_json::Number::from(0)))
+                } else {
+                    let similarity = dot / (mag1 * mag2);
+                    Ok(Value::Number(number_from_f64(similarity as f64)))
+                }
+            }
+
+            // VECTOR_NORMALIZE(v) - normalize a vector to unit length
+            "VECTOR_NORMALIZE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "VECTOR_NORMALIZE requires 1 argument: vector".to_string(),
+                    ));
+                }
+                let v = Self::extract_vector_arg(&evaluated_args[0], "VECTOR_NORMALIZE")?;
+
+                let mag: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+                if mag == 0.0 {
+                    Ok(Value::Array(vec![]))
+                } else {
+                    let normalized: Vec<Value> = v
+                        .iter()
+                        .map(|x| Value::Number(number_from_f64((x / mag) as f64)))
+                        .collect();
+                    Ok(Value::Array(normalized))
+                }
+            }
+
+            // VECTOR_DISTANCE(v1, v2) or VECTOR_DISTANCE(v1, v2, metric) - distance between two vectors
+            "VECTOR_DISTANCE" => {
+                if evaluated_args.len() == 2 || evaluated_args.len() == 3 {
+                    let v1 = Self::extract_vector_arg(&evaluated_args[0], "VECTOR_DISTANCE")?;
+                    let v2 = Self::extract_vector_arg(&evaluated_args[1], "VECTOR_DISTANCE")?;
+
+                    if evaluated_args.len() == 2 {
+                        let mut sum = 0.0f32;
+                        for (a, b) in v1.iter().zip(v2.iter()) {
+                            let diff = a - b;
+                            sum += diff * diff;
+                        }
+                        let distance = sum.sqrt();
+                        Ok(Value::Number(number_from_f64(distance as f64)))
+                    } else {
+                        let metric = evaluated_args[2].as_str().unwrap_or("euclidean");
+                        let distance = match metric.to_lowercase().as_str() {
+                            "cosine" | "cosineSimilarity" => {
+                                let dot: f32 =
+                                    v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum::<f32>();
+                                let mag1: f32 = v1.iter().map(|x| x * x).sum::<f32>().sqrt();
+                                let mag2: f32 = v2.iter().map(|x| x * x).sum::<f32>().sqrt();
+                                if mag1 == 0.0 || mag2 == 0.0 {
+                                    0.0f32
+                                } else {
+                                    1.0 - (dot / (mag1 * mag2))
+                                }
+                            }
+                            _ => {
+                                let mut sum = 0.0f32;
+                                for (a, b) in v1.iter().zip(v2.iter()) {
+                                    let diff = a - b;
+                                    sum += diff * diff;
+                                }
+                                sum.sqrt()
+                            }
+                        };
+                        Ok(Value::Number(number_from_f64(distance as f64)))
+                    }
+                } else {
+                    Err(DbError::ExecutionError(
+                        "VECTOR_DISTANCE requires 2 or 3 arguments".to_string(),
+                    ))
+                }
+            }
+
             // LENGTH(array_or_string_or_collection) - get length of array/string or count of collection
             "LENGTH" => {
                 if evaluated_args.len() != 1 {

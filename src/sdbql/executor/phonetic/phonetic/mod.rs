@@ -31,8 +31,21 @@ use serde_json::Value;
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     match name {
         "SOUNDEX" => {
-            if let Some(Value::String(s)) = args.first() {
-                Ok(Some(Value::String(soundex(s))))
+            let s = args.first().and_then(|v| v.as_str());
+            if let Some(s) = s {
+                let locale = args.get(1).and_then(|v| v.as_str()).unwrap_or("en");
+                let result = match locale {
+                    "de" => cologne_phonetic(s),
+                    "fr" => soundex_fr(s),
+                    "es" => soundex_es(s),
+                    "it" => soundex_it(s),
+                    "pt" => soundex_pt(s),
+                    "nl" => soundex_nl(s),
+                    "el" => soundex_el(s),
+                    "ja" => soundex_ja(s),
+                    _ => soundex(s),
+                };
+                Ok(Some(Value::String(result)))
             } else {
                 Ok(Some(Value::Null))
             }
@@ -47,10 +60,10 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "DOUBLE_METAPHONE" => {
             if let Some(Value::String(s)) = args.first() {
                 let (primary, secondary) = double_metaphone(s);
-                Ok(Some(serde_json::json!({
-                    "primary": primary,
-                    "secondary": secondary
-                })))
+                Ok(Some(Value::Array(vec![
+                    Value::String(primary),
+                    Value::String(secondary),
+                ])))
             } else {
                 Ok(Some(Value::Null))
             }
