@@ -128,9 +128,11 @@ impl Collection {
         // Invalidate document cache for this key
         let cache_key = format!("{}:{}", self.name, key);
         let cache = get_document_cache();
-        tokio::spawn(async move {
-            cache.invalidate(&cache_key).await;
-        });
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                cache.invalidate(&cache_key).await;
+            });
+        }
 
         // Update vector indexes in-memory (separate from WriteBatch)
         if update_indexes {
@@ -344,9 +346,11 @@ impl Collection {
         // Invalidate document cache for this key
         let cache_key = format!("{}:{}", self.name, key);
         let cache = get_document_cache();
-        tokio::spawn(async move {
-            cache.invalidate(&cache_key).await;
-        });
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                cache.invalidate(&cache_key).await;
+            });
+        }
 
         // Update vector indexes in-memory (separate from WriteBatch)
         self.update_vector_indexes_on_delete(key);
@@ -408,9 +412,11 @@ impl Collection {
         // Invalidate document cache for this key
         let cache_key = format!("{}:{}", self.name, key);
         let cache = get_document_cache();
-        tokio::spawn(async move {
-            cache.invalidate(&cache_key).await;
-        });
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                cache.invalidate(&cache_key).await;
+            });
+        }
 
         // If blob collection, delete chunks (separate from WriteBatch)
         if *self.collection_type.read().unwrap() == "blob" {
