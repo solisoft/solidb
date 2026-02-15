@@ -19,7 +19,10 @@ async fn main() -> Result<(), solidb_client::DriverError> {
     http_client.create_database("bench_db").await.ok();
     http_client.set_database("bench_db");
     http_client.create_collection("bench_collection").await.ok();
-    http_client.create_collection("bench_http_collection").await.ok();
+    http_client
+        .create_collection("bench_http_collection")
+        .await
+        .ok();
 
     println!("Inserting {} documents (sequential)...", iterations);
     let start = Instant::now();
@@ -57,7 +60,10 @@ async fn main() -> Result<(), solidb_client::DriverError> {
         .await?;
 
     // Create collection in _system database
-    tcp_client.create_collection("_system", "bench_tcp_collection", None).await.ok();
+    tcp_client
+        .create_collection("_system", "bench_tcp_collection", None)
+        .await
+        .ok();
 
     println!("Inserting {} documents (sequential)...", iterations);
     let start = Instant::now();

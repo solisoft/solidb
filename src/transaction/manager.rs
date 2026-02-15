@@ -7,6 +7,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 /// Transaction manager handles transaction lifecycle
+#[allow(dead_code)]
 pub struct TransactionManager {
     /// Active transactions
     active_transactions: Arc<RwLock<HashMap<TransactionId, Arc<RwLock<Transaction>>>>>,
