@@ -19,8 +19,9 @@ async fn main() -> Result<(), solidb_client::DriverError> {
     http_client.create_database("bench_db").await.ok();
     http_client.set_database("bench_db");
     http_client.create_collection("bench_collection").await.ok();
+    http_client.create_collection("bench_http_collection").await.ok();
 
-    println!("Inserting {} documents...", iterations);
+    println!("Inserting {} documents (sequential)...", iterations);
     let start = Instant::now();
     for i in 0..iterations {
         let doc = serde_json::json!({
@@ -29,25 +30,25 @@ async fn main() -> Result<(), solidb_client::DriverError> {
             "timestamp": chrono::Utc::now().timestamp_millis()
         });
         http_client
-            .insert("bench_collection", doc, Some(&format!("http_{}", i)))
+            .insert("bench_http_collection", doc, Some(&format!("http_{}", i)))
             .await?;
     }
     let duration = start.elapsed();
     let ops = iterations as f64 / duration.as_secs_f64();
-    println!("HTTP INSERT: {:.2} ops/sec", ops);
+    println!("HTTP INSERT (sequential): {:.2} ops/sec", ops);
 
-    println!("Reading {} documents...", iterations);
+    println!("Reading {} documents (sequential)...", iterations);
     let start = Instant::now();
     for i in 0..iterations {
         let _ = http_client
-            .get("bench_collection", &format!("http_{}", i))
+            .get("bench_http_collection", &format!("http_{}", i))
             .await?;
     }
     let duration = start.elapsed();
     let ops = iterations as f64 / duration.as_secs_f64();
-    println!("HTTP READ: {:.2} ops/sec", ops);
+    println!("HTTP READ (sequential): {:.2} ops/sec", ops);
 
-    // Test TCP Client
+    // Test TCP Client - use _system database
     println!("\n--- TCP CLIENT BENCHMARK ---");
 
     let mut tcp_client = SoliDBClientBuilder::new(tcp_addr)
@@ -55,7 +56,10 @@ async fn main() -> Result<(), solidb_client::DriverError> {
         .build()
         .await?;
 
-    println!("Inserting {} documents...", iterations);
+    // Create collection in _system database
+    tcp_client.create_collection("_system", "bench_tcp_collection", None).await.ok();
+
+    println!("Inserting {} documents (sequential)...", iterations);
     let start = Instant::now();
     for i in 0..iterations {
         let doc = serde_json::json!({
@@ -65,8 +69,8 @@ async fn main() -> Result<(), solidb_client::DriverError> {
         });
         tcp_client
             .insert(
-                "bench_db",
-                "bench_collection",
+                "_system",
+                "bench_tcp_collection",
                 Some(&format!("tcp_{}", i)),
                 doc,
             )
@@ -74,18 +78,29 @@ async fn main() -> Result<(), solidb_client::DriverError> {
     }
     let duration = start.elapsed();
     let ops = iterations as f64 / duration.as_secs_f64();
-    println!("TCP INSERT: {:.2} ops/sec", ops);
+    println!("TCP INSERT (sequential): {:.2} ops/sec", ops);
 
-    println!("Reading {} documents...", iterations);
+    println!("Reading {} documents (sequential)...", iterations);
     let start = Instant::now();
     for i in 0..iterations {
         let _ = tcp_client
-            .get("bench_db", "bench_collection", &format!("tcp_{}", i))
+            .get("_system", "bench_tcp_collection", &format!("tcp_{}", i))
             .await?;
     }
     let duration = start.elapsed();
     let ops = iterations as f64 / duration.as_secs_f64();
-    println!("TCP READ: {:.2} ops/sec", ops);
+    println!("TCP INSERT (sequential): {:.2} ops/sec", ops);
+
+    println!("Reading {} documents (sequential)...", iterations);
+    let start = Instant::now();
+    for i in 0..iterations {
+        let _ = tcp_client
+            .get("_system", "bench_tcp_collection", &format!("tcp_{}", i))
+            .await?;
+    }
+    let duration = start.elapsed();
+    let ops = iterations as f64 / duration.as_secs_f64();
+    println!("TCP READ (sequential): {:.2} ops/sec", ops);
 
     println!("\n========================================");
     println!("Benchmark complete!");

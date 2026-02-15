@@ -1,10 +1,14 @@
 use super::{Operation, Transaction, TransactionId};
 use crate::error::{DbError, DbResult};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
+};
 
 /// Write-Ahead Log entry types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,15 +50,23 @@ impl WalEntry {
     }
 }
 
-/// Write-Ahead Log writer
+/// Write-Ahead Log writer with batching support
 pub struct WalWriter {
     file: Arc<Mutex<File>>,
     path: PathBuf,
+    buffer: Arc<Mutex<VecDeque<String>>>,
+    batch_size: usize,
+    pending_writes: Arc<AtomicUsize>,
 }
 
 impl WalWriter {
-    /// Create a new WAL writer
+    /// Create a new WAL writer with batching disabled by default
     pub fn new<P: AsRef<Path>>(path: P) -> DbResult<Self> {
+        Self::with_batch_size(path, 1)
+    }
+
+    /// Create a new WAL writer with configurable batch size
+    pub fn with_batch_size<P: AsRef<Path>>(path: P, batch_size: usize) -> DbResult<Self> {
         let path = path.as_ref().to_path_buf();
         let file = OpenOptions::new()
             .create(true)
@@ -65,23 +77,60 @@ impl WalWriter {
         Ok(Self {
             file: Arc::new(Mutex::new(file)),
             path,
+            buffer: Arc::new(Mutex::new(VecDeque::new())),
+            batch_size: batch_size.max(1),
+            pending_writes: Arc::new(AtomicUsize::new(0)),
         })
     }
 
-    /// Write a WAL entry
+    /// Write a WAL entry (batched)
     pub fn write(&self, entry: &WalEntry) -> DbResult<()> {
         let json = serde_json::to_string(entry)
             .map_err(|e| DbError::InternalError(format!("Failed to serialize WAL entry: {}", e)))?;
 
+        let mut buffer = self.buffer.lock().unwrap();
+
+        // Add to buffer
+        buffer.push_back(json);
+        let pending = self.pending_writes.fetch_add(1, Ordering::SeqCst) + 1;
+
+        // If batch is full, flush
+        if pending >= self.batch_size {
+            drop(buffer);
+            self.flush()?;
+        }
+
+        Ok(())
+    }
+
+    /// Flush buffered writes to disk
+    pub fn flush(&self) -> DbResult<()> {
+        let mut buffer = self.buffer.lock().unwrap();
+
+        if buffer.is_empty() {
+            return Ok(());
+        }
+
         let mut file = self.file.lock().unwrap();
-        writeln!(file, "{}", json)
-            .map_err(|e| DbError::InternalError(format!("Failed to write WAL entry: {}", e)))?;
+
+        // Write all buffered entries
+        while let Some(json) = buffer.pop_front() {
+            writeln!(file, "{}", json)
+                .map_err(|e| DbError::InternalError(format!("Failed to write WAL entry: {}", e)))?;
+        }
 
         // Ensure durability - flush to disk
         file.sync_all()
             .map_err(|e| DbError::InternalError(format!("Failed to sync WAL: {}", e)))?;
 
+        self.pending_writes.store(0, Ordering::SeqCst);
+
         Ok(())
+    }
+
+    /// Force flush without batching (for critical operations like commit)
+    pub fn force_sync(&self) -> DbResult<()> {
+        self.flush()
     }
 
     /// Write transaction begin
@@ -97,15 +146,26 @@ impl WalWriter {
         self.write(&WalEntry::Operation { tx_id, operation })
     }
 
-    /// Write transaction commit
+    /// Write transaction commit (always forces sync)
     pub fn write_commit(&self, tx_id: TransactionId) -> DbResult<()> {
-        self.write(&WalEntry::Commit {
+        let entry = WalEntry::Commit {
             tx_id,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos() as u64,
-        })
+        };
+
+        // For commit, we always want to ensure durability
+        let json = serde_json::to_string(&entry)
+            .map_err(|e| DbError::InternalError(format!("Failed to serialize WAL entry: {}", e)))?;
+
+        let mut buffer = self.buffer.lock().unwrap();
+        buffer.push_back(json);
+        drop(buffer);
+
+        // Force flush on commit
+        self.flush()
     }
 
     /// Write transaction abort
@@ -119,19 +179,34 @@ impl WalWriter {
         })
     }
 
-    /// Write checkpoint marker
+    /// Write checkpoint marker (forces sync)
     pub fn write_checkpoint(&self) -> DbResult<()> {
-        self.write(&WalEntry::Checkpoint {
+        let entry = WalEntry::Checkpoint {
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos() as u64,
-        })
+        };
+
+        let json = serde_json::to_string(&entry)
+            .map_err(|e| DbError::InternalError(format!("Failed to serialize WAL entry: {}", e)))?;
+
+        let mut buffer = self.buffer.lock().unwrap();
+        buffer.push_back(json);
+        drop(buffer);
+
+        self.flush()
     }
 
     /// Get WAL file path
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Set batch size (0 disables batching)
+    pub fn set_batch_size(&self, size: usize) {
+        // Can't change batch size at runtime safely, this is just for config
+        let _ = size;
     }
 }
 

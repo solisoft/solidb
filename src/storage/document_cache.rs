@@ -28,6 +28,16 @@ pub struct DocumentCache {
     max_entries: usize,
 }
 
+impl Clone for DocumentCache {
+    fn clone(&self) -> Self {
+        Self {
+            cache: RwLock::new(HashMap::new()),
+            access_order: RwLock::new(Vec::new()),
+            max_entries: self.max_entries,
+        }
+    }
+}
+
 impl DocumentCache {
     pub fn new(max_entries: usize) -> Self {
         Self {

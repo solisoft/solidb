@@ -61,7 +61,7 @@ pub enum TransactionState {
 /// Isolation level for transactions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum IsolationLevel {
-    /// Read uncommitted data (dirty reads possible)
+    /// Read uncommitted data (dirty reads possible) - no WAL needed
     ReadUncommitted,
     /// Read only committed data (default)
     #[default]
@@ -70,6 +70,18 @@ pub enum IsolationLevel {
     RepeatableRead,
     /// Fully serializable execution
     Serializable,
+}
+
+impl IsolationLevel {
+    /// Returns true if this isolation level requires WAL for durability
+    pub fn requires_wal(&self) -> bool {
+        match self {
+            IsolationLevel::ReadUncommitted => false,
+            IsolationLevel::ReadCommitted => true,
+            IsolationLevel::RepeatableRead => true,
+            IsolationLevel::Serializable => true,
+        }
+    }
 }
 
 use crate::driver::protocol::IsolationLevel as ClientIsolationLevel;

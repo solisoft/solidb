@@ -14,17 +14,25 @@ pub struct TransactionManager {
     wal: Arc<WalWriter>,
     /// Transaction timeout
     timeout: Duration,
+    /// WAL batch size (0 = disabled)
+    wal_batch_size: usize,
 }
 
 impl TransactionManager {
     /// Create a new transaction manager
     pub fn new(wal_path: PathBuf) -> DbResult<Self> {
-        let wal = WalWriter::new(&wal_path)?;
+        Self::with_wal_batch_size(wal_path, 100) // Default batch size of 100
+    }
+
+    /// Create a new transaction manager with configurable WAL batch size
+    pub fn with_wal_batch_size(wal_path: PathBuf, batch_size: usize) -> DbResult<Self> {
+        let wal = WalWriter::with_batch_size(&wal_path, batch_size)?;
 
         Ok(Self {
             active_transactions: Arc::new(RwLock::new(HashMap::new())),
             wal: Arc::new(wal),
             timeout: Duration::from_secs(300), // 5 minutes default
+            wal_batch_size: batch_size,
         })
     }
 
@@ -38,8 +46,10 @@ impl TransactionManager {
         let tx = Transaction::new(isolation_level);
         let tx_id = tx.id;
 
-        // Write to WAL
-        self.wal.write_begin(tx_id)?;
+        // Write to WAL only if isolation level requires it
+        if isolation_level.requires_wal() {
+            self.wal.write_begin(tx_id)?;
+        }
 
         // Store in active transactions
         {
@@ -151,8 +161,8 @@ impl TransactionManager {
         // Get transaction
         let tx_arc = self.get(tx_id)?;
 
-        // Prepare transaction
-        {
+        // Prepare transaction and get isolation level
+        let requires_wal = {
             let mut tx = tx_arc.write().unwrap();
             if !tx.is_active() {
                 return Err(DbError::TransactionConflict(format!(
@@ -161,10 +171,13 @@ impl TransactionManager {
                 )));
             }
             tx.prepare();
-        }
+            tx.isolation_level.requires_wal()
+        };
 
-        // Write commit to WAL (ensures durability)
-        self.wal.write_commit(tx_id)?;
+        // Write commit to WAL only if isolation level requires it
+        if requires_wal {
+            self.wal.write_commit(tx_id)?;
+        }
 
         // Mark as committed
         {
@@ -187,8 +200,16 @@ impl TransactionManager {
         // Get transaction
         let tx_arc = self.get(tx_id)?;
 
-        // Write abort to WAL
-        self.wal.write_abort(tx_id)?;
+        // Get isolation level to check if WAL is needed
+        let requires_wal = {
+            let tx = tx_arc.read().unwrap();
+            tx.isolation_level.requires_wal()
+        };
+
+        // Write abort to WAL only if required
+        if requires_wal {
+            self.wal.write_abort(tx_id)?;
+        }
 
         // Mark as aborted
         {

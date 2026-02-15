@@ -54,14 +54,59 @@ fn main() {
 
     // Check server is running
     match client.get(format!("{}/_api/databases", SERVER_URL)).send() {
-        Ok(_) => println!("✅ Server is running at {}\n", SERVER_URL),
+        Ok(response) => {
+            if response.status() == 401 {
+                println!("🔐 Authenticating...");
+                let login_response = client
+                    .post(format!("{}/auth/login", SERVER_URL))
+                    .json(&json!({"username": "admin", "password": "admin"}))
+                    .send()
+                    .expect("Login failed");
+
+                let login: serde_json::Value = login_response
+                    .json()
+                    .expect("Failed to parse login response");
+                let token = login["token"].as_str().expect("No token in response");
+
+                // Create authenticated client with Bearer token
+                let mut auth_headers = reqwest::header::HeaderMap::new();
+                auth_headers.insert(
+                    reqwest::header::AUTHORIZATION,
+                    reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
+                );
+                if use_msgpack {
+                    auth_headers.insert(
+                        reqwest::header::ACCEPT,
+                        reqwest::header::HeaderValue::from_static("application/msgpack"),
+                    );
+                }
+
+                let client = Client::builder()
+                    .default_headers(auth_headers)
+                    .pool_max_idle_per_host(10)
+                    .pool_idle_timeout(std::time::Duration::from_secs(90))
+                    .tcp_keepalive(std::time::Duration::from_secs(60))
+                    .build()
+                    .expect("Failed to create authenticated HTTP client");
+
+                println!("✅ Authenticated successfully!\n");
+
+                // Run benchmarks with authenticated client
+                run_benchmarks(client, Some(token.to_string()));
+            } else {
+                println!("✅ Server is running at {}\n", SERVER_URL);
+                run_benchmarks(client, None);
+            }
+        }
         Err(_) => {
             eprintln!("❌ Error: Server is not running at {}", SERVER_URL);
             eprintln!("   Please start the server with: cargo run --release");
             std::process::exit(1);
         }
     }
+}
 
+fn run_benchmarks(client: Client, token: Option<String>) {
     // Setup: Create test collection
     setup_collection(&client);
 
@@ -77,7 +122,7 @@ fn main() {
     bench_transactions(&client);
 
     // Run concurrent benchmarks
-    bench_concurrent();
+    bench_concurrent(token);
 
     // Cleanup
     cleanup(&client);
@@ -705,7 +750,7 @@ fn bench_transactions(client: &Client) {
     println!();
 }
 
-fn bench_concurrent() {
+fn bench_concurrent(token: Option<String>) {
     println!("⚡ CONCURRENT BENCHMARKS (Multi-threaded)");
     print_separator();
     println!(
@@ -722,7 +767,18 @@ fn bench_concurrent() {
     // Concurrent GET requests
     let start = Instant::now();
     (0..CONCURRENT_REQUESTS).into_par_iter().for_each(|i| {
-        let client = Client::new();
+        let mut client_builder = Client::builder();
+        if let Some(ref tok) = token {
+            client_builder = client_builder.default_headers({
+                let mut headers = reqwest::header::HeaderMap::new();
+                headers.insert(
+                    reqwest::header::AUTHORIZATION,
+                    reqwest::header::HeaderValue::from_str(&format!("Bearer {}", tok)).unwrap(),
+                );
+                headers
+            });
+        }
+        let client = client_builder.build().unwrap();
         let key_idx = i % (SMALL + MEDIUM);
         let url = format!(
             "{}/api/database/{}/document/bench_http/user_{}",
@@ -739,7 +795,18 @@ fn bench_concurrent() {
     // Concurrent SDBQL queries
     let start = Instant::now();
     (0..CONCURRENT_REQUESTS).into_par_iter().for_each(|_| {
-        let client = Client::new();
+        let mut client_builder = Client::builder();
+        if let Some(ref tok) = token {
+            client_builder = client_builder.default_headers({
+                let mut headers = reqwest::header::HeaderMap::new();
+                headers.insert(
+                    reqwest::header::AUTHORIZATION,
+                    reqwest::header::HeaderValue::from_str(&format!("Bearer {}", tok)).unwrap(),
+                );
+                headers
+            });
+        }
+        let client = client_builder.build().unwrap();
         let url = format!("{}/_api/database/{}/cursor", SERVER_URL, DATABASE);
         let query = json!({"query": "FOR u IN bench_http LIMIT 5 RETURN u"});
         client
@@ -757,7 +824,18 @@ fn bench_concurrent() {
     // Concurrent filtered queries
     let start = Instant::now();
     (0..CONCURRENT_REQUESTS).into_par_iter().for_each(|i| {
-        let client = Client::new();
+        let mut client_builder = Client::builder();
+        if let Some(ref tok) = token {
+            client_builder = client_builder.default_headers({
+                let mut headers = reqwest::header::HeaderMap::new();
+                headers.insert(
+                    reqwest::header::AUTHORIZATION,
+                    reqwest::header::HeaderValue::from_str(&format!("Bearer {}", tok)).unwrap(),
+                );
+                headers
+            });
+        }
+        let client = client_builder.build().unwrap();
         let url = format!("{}/api/database/{}/cursor", SERVER_URL, DATABASE);
         let min_age = (i % 80) + 20; // Vary the filter
         let query = json!({
@@ -779,7 +857,18 @@ fn bench_concurrent() {
     // Concurrent COUNT queries
     let start = Instant::now();
     (0..CONCURRENT_REQUESTS).into_par_iter().for_each(|_| {
-        let client = Client::new();
+        let mut client_builder = Client::builder();
+        if let Some(ref tok) = token {
+            client_builder = client_builder.default_headers({
+                let mut headers = reqwest::header::HeaderMap::new();
+                headers.insert(
+                    reqwest::header::AUTHORIZATION,
+                    reqwest::header::HeaderValue::from_str(&format!("Bearer {}", tok)).unwrap(),
+                );
+                headers
+            });
+        }
+        let client = client_builder.build().unwrap();
         let url = format!("{}/api/database/{}/cursor", SERVER_URL, DATABASE);
         let query = json!({"query": "RETURN COLLECTION_COUNT(\"bench_http\")"});
         client

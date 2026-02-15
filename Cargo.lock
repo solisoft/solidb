@@ -3785,8 +3785,11 @@ dependencies = [
 name = "solidb-benchmarks"
 version = "0.9.0"
 dependencies = [
+ "chrono",
  "rayon",
  "reqwest",
+ "rmp-serde",
+ "serde",
  "serde_json",
  "solidb-client",
  "tokio",

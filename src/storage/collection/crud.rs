@@ -1,5 +1,6 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use crate::storage::document_cache::get_document_cache;
 use crate::storage::serializer::{deserialize_doc, serialize_doc};
 use rocksdb::WriteBatch;
 use serde_json::Value;
@@ -123,6 +124,13 @@ impl Collection {
         // Atomic write: document + indexes together
         db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
+
+        // Invalidate document cache for this key
+        let cache_key = format!("{}:{}", self.name, key);
+        let cache = get_document_cache();
+        tokio::spawn(async move {
+            cache.invalidate(&cache_key).await;
+        });
 
         // Update vector indexes in-memory (separate from WriteBatch)
         if update_indexes {
@@ -333,6 +341,13 @@ impl Collection {
         db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
 
+        // Invalidate document cache for this key
+        let cache_key = format!("{}:{}", self.name, key);
+        let cache = get_document_cache();
+        tokio::spawn(async move {
+            cache.invalidate(&cache_key).await;
+        });
+
         // Update vector indexes in-memory (separate from WriteBatch)
         self.update_vector_indexes_on_delete(key);
         self.update_vector_indexes_on_upsert(key, &new_value);
@@ -389,6 +404,13 @@ impl Collection {
         // Atomic write: document deletion + index removals together
         db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to delete document: {}", e)))?;
+
+        // Invalidate document cache for this key
+        let cache_key = format!("{}:{}", self.name, key);
+        let cache = get_document_cache();
+        tokio::spawn(async move {
+            cache.invalidate(&cache_key).await;
+        });
 
         // If blob collection, delete chunks (separate from WriteBatch)
         if *self.collection_type.read().unwrap() == "blob" {
