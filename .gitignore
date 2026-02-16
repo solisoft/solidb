@@ -9,3 +9,5 @@ node_modules
 www/.env
 www/config/database.json
 .claude/settings.local.json
+/clients/solidb-laravel-eloquent/vendor
+/clients/solidb-laravel-eloquent/composer.lock

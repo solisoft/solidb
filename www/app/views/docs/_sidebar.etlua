@@ -106,6 +106,7 @@ local sections = {
       { slug = "security", label = "Security", icon = "fa-shield-alt", color = "error" },
       { slug = "tooling", label = "CLI Tools", icon = "fa-wrench", color = "warning" },
       { slug = "clients", label = "Official Clients", icon = "fa-laptop-code", color = "primary", subitems = {
+        { slug = "clients-laravel", label = "Laravel Eloquent" },
         { slug = "clients-go", label = "Go" },
         { slug = "clients-python", label = "Python" },
         { slug = "clients-nodejs", label = "Node.js / Bun" },

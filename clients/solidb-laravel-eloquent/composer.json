@@ -1,0 +1,58 @@
+{
+    "name": "solidb/laravel-eloquent",
+    "description": "Laravel Eloquent ORM adapter for SoliDB",
+    "license": "MIT",
+    "keywords": ["laravel", "eloquent", "orm", "solidb", "database"],
+    "homepage": "https://github.com/solidb/solidb-laravel-eloquent",
+    "support": {
+        "issues": "https://github.com/solidb/solidb-laravel-eloquent/issues"
+    },
+    "autoload": {
+        "psr-4": {
+            "SoliDB\\Laravel\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SoliDB\\Laravel\\Tests\\": "tests/"
+        }
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../PHP-client",
+            "options": {
+                "symlink": false
+            }
+        }
+    ],
+    "require": {
+        "php": "^7.4|^8.0",
+        "laravel/framework": "^10.0|^11.0|^12.0",
+        "solidb/php-client": "*@dev"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.0|^10.0",
+        "pestphp/pest": "^1.0|^2.0",
+        "pestphp/pest-plugin-laravel": "^1.0|^2.0",
+        "phpstan/phpstan": "^1.0"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "SoliDB\\Laravel\\SoliDBServiceProvider"
+            ],
+            "aliases": {
+                "SoliDB": "SoliDB\\Laravel\\Facades\\SoliDB"
+            }
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

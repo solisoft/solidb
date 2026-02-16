@@ -37,6 +37,7 @@ local PAGE_TITLES = {
   ["timeseries"] = "Time Series",
   ["columnar"] = "Columnar Storage",
   ["clients"] = "Official Clients",
+  ["clients-laravel"] = "Laravel Eloquent",
   ["clients-go"] = "Go Client",
   ["clients-python"] = "Python Client",
   ["clients-nodejs"] = "Node.js / Bun Client",
