@@ -1,5 +1,4 @@
-[build]
-# Use lld linker for faster and lower memory builds
+[target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "linker=clang", "-C", "force-unwind-tables=no"]
 
 [profile.release]
