@@ -43,15 +43,24 @@ Middleware.register("session_auth", function(ctx, next)
   end
 
   -- Verify user still exists in database (safe require at runtime)
+  -- Only destroy session if DB is reachable but user genuinely doesn't exist
   local ok, AuthHelper = pcall(require, "helpers.auth_helper")
   if ok and AuthHelper then
-    local user = AuthHelper.get_current_user()
-    if not user then
-      -- User no longer exists or session is invalid - clear and redirect
-      DestroySession()
-      local current_path = GetPath() or "/"
-      return ctx:redirect("/auth/login?redirect=" .. current_path)
+    local db = _G.Sdb
+    if db then
+      local res = db:Sdbql("FOR u IN users FILTER u._id == @id LIMIT 1 RETURN u._key", { id = session.user_id })
+      if res and res.result then
+        -- DB responded successfully
+        if #res.result == 0 then
+          -- User genuinely doesn't exist anymore - destroy session
+          DestroySession()
+          local current_path = GetPath() or "/"
+          return ctx:redirect("/auth/login?redirect=" .. current_path)
+        end
+      end
+      -- If res is nil or res.result is nil, DB had an error - keep session alive
     end
+    -- If no DB, skip verification - keep session alive
   end
 
   -- Refresh session on each interaction to extend expiry (sliding expiration)

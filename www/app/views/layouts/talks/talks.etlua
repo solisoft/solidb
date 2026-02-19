@@ -1003,6 +1003,12 @@
           return;
         }
 
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          alert('Camera/microphone access requires HTTPS. Please access this page over HTTPS or localhost.');
+          endCall();
+          return;
+        }
+
         console.log('[CALL] initCall starting', data);
 
         // Reset state for new call
@@ -1538,6 +1544,10 @@
             // Need to request video
             try {
               console.log('[CALL] Upgrading to video...');
+              if (!navigator.mediaDevices) {
+                alert('Camera access requires HTTPS.');
+                return;
+              }
               const loadingIndicator = document.getElementById('local-video-loading');
               const avatar = document.getElementById('local-avatar');
               if (loadingIndicator) loadingIndicator.classList.remove('hidden');
@@ -1670,6 +1680,10 @@
         } else {
           // Start screen share
           try {
+            if (!navigator.mediaDevices) {
+              alert('Screen sharing requires HTTPS.');
+              return;
+            }
             const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
             screenStream = stream;
             const screenTrack = stream.getVideoTracks()[0];

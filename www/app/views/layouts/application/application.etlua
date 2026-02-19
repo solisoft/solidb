@@ -58,7 +58,9 @@
 
     <!-- Flex Container for Sidebar + Main Content -->
     <div class="flex flex-1 overflow-hidden relative z-10">
+      <% if GetPath() ~= "/" then %>
       <%- partial("shared/activity_sidebar") %>
+      <% end %>
 
       <!-- Main Scrollable Content -->
       <main
