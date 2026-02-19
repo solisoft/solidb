@@ -1,6 +1,18 @@
 local Controller = require("controller")
 local HomeController = Controller:extend()
 
+local function get_version()
+  local handle = io.popen("grep -m1 '^version' ../Cargo.toml 2>/dev/null | sed 's/.*version.*=.*\"\\(.*\\)\".*/\\1/'")
+  if handle then
+    local result = handle:read("*a")
+    handle:close()
+    if result and result ~= "" then
+      return result:gsub("%s+", "")
+    end
+  end
+  return "0.11.0"
+end
+
 function HomeController:index()
   -- Using "app" layout by default or custom one if needed
   -- The original landing controller in www used:
@@ -16,7 +28,8 @@ function HomeController:index()
   
   self:render("home/index", {
     no_padding = true,
-    hide_header = true
+    hide_header = true,
+    version = get_version()
   })
 end
 
