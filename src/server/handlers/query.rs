@@ -564,13 +564,15 @@ pub async fn execute_query(
     let total_count = query_result.results.len();
     let mutations = &query_result.mutations;
 
-    // Cache read-only query results (fire and forget)
+    // Cache read-only query results
     if let Some(key) = cache_key {
         let result_clone: Vec<serde_json::Value> = query_result.results.clone();
-        let cache = query_cache::get_query_cache();
-        tokio::spawn(async move {
-            cache.put(key, result_clone).await;
-        });
+        query_cache::get_query_cache().put(key, result_clone).await;
+    }
+
+    // Invalidate query cache when mutations occurred
+    if mutations.has_mutations() {
+        query_cache::get_query_cache().invalidate_all().await;
     }
 
     // Log slow query if it exceeds threshold (async, non-blocking)

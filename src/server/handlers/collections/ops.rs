@@ -1,7 +1,7 @@
 use super::super::system::{is_protected_collection, AppState};
 use crate::{
     error::DbError,
-    storage::http_client::get_http_client,
+    storage::{http_client::get_http_client, query_cache},
     sync::{LogEntry, Operation},
 };
 use axum::{
@@ -124,6 +124,11 @@ pub async fn truncate_collection(
     if let Some(config) = saved_shard_config.clone() {
         let _ = collection.set_shard_config(&config);
     }
+
+    // Invalidate query cache for this collection
+    query_cache::get_query_cache()
+        .invalidate_collection(&coll_name)
+        .await;
 
     // Record to replication log (only for non-direct requests to avoid duplicate logging)
     if !is_shard_direct {

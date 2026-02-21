@@ -1,7 +1,7 @@
 use super::super::system::{is_protected_collection, AppState};
 use crate::{
     error::DbError,
-    storage::http_client::get_http_client,
+    storage::{http_client::get_http_client, query_cache},
     sync::{LogEntry, Operation},
 };
 use axum::{
@@ -247,6 +247,11 @@ pub async fn delete_collection(
 
     // Delete the logical collection
     database.delete_collection(&coll_name)?;
+
+    // Invalidate query cache for this collection
+    query_cache::get_query_cache()
+        .invalidate_collection(&coll_name)
+        .await;
 
     // Record to replication log
     if let Some(ref log) = state.replication_log {

@@ -2,7 +2,7 @@ use super::system::{is_physical_shard_collection, is_protected_collection, AppSt
 use crate::{
     error::DbError,
     server::response::ApiResponse,
-    storage::http_client::get_http_client,
+    storage::{http_client::get_http_client, query_cache},
     sync::{LogEntry, Operation},
     transaction::TransactionId,
     triggers::{fire_collection_triggers, TriggerEvent},
@@ -134,6 +134,11 @@ pub async fn insert_document(
         }
     }
 
+    // Invalidate query cache for this collection
+    query_cache::get_query_cache()
+        .invalidate_collection(&coll_name)
+        .await;
+
     // Fire triggers for the insert
     if !coll_name.starts_with('_') {
         let notifier = state.queue_worker.as_ref().map(|w| w.notifier());
@@ -198,6 +203,11 @@ pub async fn insert_documents_batch(
     } else {
         collection.insert_batch(documents.clone())?.len()
     };
+
+    // Invalidate query cache for this collection
+    query_cache::get_query_cache()
+        .invalidate_collection(&coll_name)
+        .await;
 
     // NOTE: Do NOT log to replication log for sharded data!
     // This endpoint is for internal shard operations (X-Shard-Direct).
@@ -322,6 +332,11 @@ pub async fn insert_documents_replica(
         .collect();
 
     let insert_count = collection.upsert_batch(keyed_docs)?;
+
+    // Invalidate query cache for this collection
+    query_cache::get_query_cache()
+        .invalidate_collection(&coll_name)
+        .await;
 
     tracing::debug!(
         "REPLICA: Stored {} docs for {}/{}",
@@ -647,6 +662,11 @@ pub async fn update_document(
         }
     }
 
+    // Invalidate query cache for this collection
+    query_cache::get_query_cache()
+        .invalidate_collection(&coll_name)
+        .await;
+
     // Fire triggers for the update (or insert if upsert)
     if !coll_name.starts_with('_') {
         let notifier = state.queue_worker.as_ref().map(|w| w.notifier());
@@ -716,6 +736,11 @@ pub async fn delete_document(
     let old_doc = collection.get(&key).ok();
 
     collection.delete(&key)?;
+
+    // Invalidate query cache for this collection
+    query_cache::get_query_cache()
+        .invalidate_collection(&coll_name)
+        .await;
 
     // If this is a blob collection, trigger compaction to reclaim space from deleted chunks immediately
     if collection.get_type() == "blob" {

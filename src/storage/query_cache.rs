@@ -138,7 +138,9 @@ pub fn get_query_cache() -> &'static QueryCache {
     QUERY_CACHE.get_or_init(QueryCache::default)
 }
 
-/// Generate a simple hash for a query to use as cache key
+/// Generate a cache key for a query that includes collection names for targeted invalidation.
+///
+/// The key format is `"coll1,coll2:hash"` so that `invalidate_collection` can match by name.
 pub fn hash_query(
     query: &str,
     bind_vars: &std::collections::HashMap<String, serde_json::Value>,
@@ -157,5 +159,25 @@ pub fn hash_query(
         v.hash(&mut hasher);
     }
 
-    format!("{:x}", hasher.finish())
+    // Extract collection names from query (appears after IN keyword in SDBQL)
+    let mut collections = Vec::new();
+    let upper = query.to_uppercase();
+    for (i, _) in upper.match_indices(" IN ") {
+        // Get the word after " IN "
+        let after = &query[i + 4..];
+        if let Some(name) = after.split_whitespace().next() {
+            // Skip bind variables (@var) and subqueries (starting with '(')
+            if !name.starts_with('@') && !name.starts_with('(') {
+                collections.push(name.to_string());
+            }
+        }
+    }
+    collections.sort();
+    collections.dedup();
+
+    if collections.is_empty() {
+        format!("{:x}", hasher.finish())
+    } else {
+        format!("{}:{:x}", collections.join(","), hasher.finish())
+    }
 }
