@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::handlers::AppState;
 use crate::error::DbError;
+use crate::storage::query_cache;
 use crate::transaction::{IsolationLevel, TransactionId};
 
 #[derive(Debug, Deserialize)]
@@ -81,6 +82,9 @@ pub async fn commit_transaction(
 
     // Commit transaction
     state.storage.commit_transaction(tx_id)?;
+
+    // Invalidate query cache since committed data is now visible
+    query_cache::get_query_cache().invalidate_all().await;
 
     Ok(Json(CommitTransactionResponse {
         id: tx_id.to_string(),
