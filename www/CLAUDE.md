@@ -122,6 +122,28 @@ lua beans.lua specs       # Run tests
 - `dashboard_admin_auth` for _system database admin routes
 - Tokens are JWT from SoliDB backend
 
+## Transactions
+
+Lua scripts can use ACID transactions with row-level locking:
+
+```lua
+db:transaction(function(tx)
+    local accounts = tx:collection("accounts")
+    
+    -- Reads acquire shared locks
+    local source = accounts:get(source_key)
+    local dest = accounts:get(dest_key)
+    
+    -- Writes acquire exclusive locks
+    accounts:update(source_key, { balance = source.balance - amount })
+    accounts:update(dest_key, { balance = dest.balance + amount })
+end)
+```
+
+- **Shared locks**: Multiple transactions can read the same document
+- **Exclusive locks**: Only one transaction can modify a document
+- Automatic rollback on error
+
 ## Gotchas
 - This is **LuaOnBeans/Redbean**, NOT OpenResty - don't use `ngx.*` functions
 - Use `self.params` for form parameters, not `ngx.req.get_post_args()`

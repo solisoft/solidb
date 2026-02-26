@@ -37,7 +37,7 @@ cargo clippy -- -D warnings    # Lint checks
 - **cluster/** - Multi-node coordination with Hybrid Logical Clocks for distributed timestamp ordering.
 - **sync/** - Replication worker and log management for eventual consistency across nodes.
 - **sharding/** - Horizontal partitioning with automatic rebalancing. `coordinator.rs` (151KB) orchestrates shard operations.
-- **transaction/** - ACID transactions with configurable isolation levels and WAL support.
+- **transaction/** - ACID transactions with configurable isolation levels, WAL support, and row-level locking.
 - **scripting/** - Embedded Lua 5.4 runtime for custom endpoints and database operations.
 - **queue/** - Background job processing with priorities and cron scheduling.
 - **driver/** - MessagePack-based binary protocol for high-performance clients.

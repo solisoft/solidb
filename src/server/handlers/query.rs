@@ -164,7 +164,8 @@ pub async fn execute_query(
         let mut tx = tx_arc
             .write()
             .map_err(|_| DbError::InternalError("Transaction lock poisoned".into()))?;
-        let wal = tx_manager.wal();
+        let wal = tx_manager.wal().clone();
+        let lock_manager = tx_manager.lock_manager().clone();
 
         // Check if query contains mutation operations
         let has_mutations = query.body_clauses.iter().any(|clause| {
@@ -332,7 +333,7 @@ pub async fn execute_query(
                     for ctx in &rows {
                         let doc_value =
                             executor.evaluate_expr_with_context(&insert_clause.document, ctx)?;
-                        collection.insert_tx(&mut tx, wal, doc_value)?;
+                        collection.insert_tx(&mut tx, &wal, &lock_manager, doc_value)?;
                         mutation_count += 1;
                     }
                 }
@@ -358,7 +359,7 @@ pub async fn execute_query(
 
                         let changes_value =
                             executor.evaluate_expr_with_context(&update_clause.changes, ctx)?;
-                        collection.update_tx(&mut tx, wal, &key, changes_value)?;
+                        collection.update_tx(&mut tx, &wal, &lock_manager, &key, changes_value)?;
                         mutation_count += 1;
                     }
                 }
@@ -382,7 +383,7 @@ pub async fn execute_query(
                             )),
                         };
 
-                        collection.delete_tx(&mut tx, wal, &key)?;
+                        collection.delete_tx(&mut tx, &wal, &lock_manager, &key)?;
                         mutation_count += 1;
                     }
                 }

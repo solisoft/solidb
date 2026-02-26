@@ -139,8 +139,9 @@ pub async fn insert_document_tx(
     let collection = state.storage.get_collection(&coll_name)?;
 
     // Perform transactional insert
-    let wal = tx_manager.wal();
-    let doc = collection.insert_tx(&mut tx, wal, data)?;
+    let wal = tx_manager.wal().clone();
+    let lock_manager = tx_manager.lock_manager().clone();
+    let doc = collection.insert_tx(&mut tx, &wal, &lock_manager, data)?;
 
     Ok(Json(doc.to_value()))
 }
@@ -169,8 +170,9 @@ pub async fn update_document_tx(
     let collection = state.storage.get_collection(&coll_name)?;
 
     // Perform transactional update
-    let wal = tx_manager.wal();
-    let doc = collection.update_tx(&mut tx, wal, &key, data)?;
+    let wal = tx_manager.wal().clone();
+    let lock_manager = tx_manager.lock_manager().clone();
+    let doc = collection.update_tx(&mut tx, &wal, &lock_manager, &key, data)?;
 
     Ok(Json(doc.to_value()))
 }
@@ -198,8 +200,9 @@ pub async fn delete_document_tx(
     let collection = state.storage.get_collection(&coll_name)?;
 
     // Perform transactional delete
-    let wal = tx_manager.wal();
-    collection.delete_tx(&mut tx, wal, &key)?;
+    let wal = tx_manager.wal().clone();
+    let lock_manager = tx_manager.lock_manager().clone();
+    collection.delete_tx(&mut tx, &wal, &lock_manager, &key)?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -235,7 +238,8 @@ pub async fn execute_transactional_sdbql(
     // Get transaction
     let tx_arc = tx_manager.get(tx_id)?;
     let mut tx = tx_arc.write().unwrap();
-    let wal = tx_manager.wal();
+    let wal = tx_manager.wal().clone();
+    let lock_manager = tx_manager.lock_manager().clone();
 
     // Parse SDBQL query
     let query = parse(&req.query)?;
@@ -372,7 +376,7 @@ pub async fn execute_transactional_sdbql(
                 for ctx in &rows {
                     let doc_value =
                         executor.evaluate_expr_with_context(&insert_clause.document, ctx)?;
-                    collection.insert_tx(&mut tx, wal, doc_value)?;
+                    collection.insert_tx(&mut tx, &wal, &lock_manager, doc_value)?;
                     mutation_count += 1;
                 }
             }
@@ -404,7 +408,7 @@ pub async fn execute_transactional_sdbql(
 
                     let changes_value =
                         executor.evaluate_expr_with_context(&update_clause.changes, ctx)?;
-                    collection.update_tx(&mut tx, wal, &key, changes_value)?;
+                    collection.update_tx(&mut tx, &wal, &lock_manager, &key, changes_value)?;
                     mutation_count += 1;
                 }
             }
@@ -434,7 +438,7 @@ pub async fn execute_transactional_sdbql(
                         )),
                     };
 
-                    collection.delete_tx(&mut tx, wal, &key)?;
+                    collection.delete_tx(&mut tx, &wal, &lock_manager, &key)?;
                     mutation_count += 1;
                 }
             }
@@ -465,11 +469,11 @@ pub async fn execute_transactional_sdbql(
                     if let Some(key) = found_doc_key {
                         let update_value =
                             executor.evaluate_expr_with_context(&upsert_clause.update, ctx)?;
-                        collection.update_tx(&mut tx, wal, &key, update_value)?;
+                        collection.update_tx(&mut tx, &wal, &lock_manager, &key, update_value)?;
                     } else {
                         let insert_value =
                             executor.evaluate_expr_with_context(&upsert_clause.insert, ctx)?;
-                        collection.insert_tx(&mut tx, wal, insert_value)?;
+                        collection.insert_tx(&mut tx, &wal, &lock_manager, insert_value)?;
                     }
                     mutation_count += 1;
                 }

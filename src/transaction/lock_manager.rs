@@ -3,16 +3,12 @@ use crate::error::{DbError, DbResult};
 use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
-/// Type of lock
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LockType {
-    /// Shared lock (for reading)
     Shared,
-    /// Exclusive lock (for writing)
     Exclusive,
 }
 
-/// A unique key identifying a resource to lock
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LockKey {
     pub database: String,
@@ -30,13 +26,9 @@ impl LockKey {
     }
 }
 
-/// Manages locks for transactions
 pub struct LockManager {
-    /// Maps a resource key to the transaction holding the exclusive lock
-    /// For now, we simplify to only supporting exclusive locks for robust OLTP writes
     exclusive_locks: RwLock<HashMap<LockKey, TransactionId>>,
-
-    /// Maps a transaction ID to the set of keys it holds (for fast release)
+    shared_locks: RwLock<HashMap<LockKey, HashSet<TransactionId>>>,
     tx_locks: RwLock<HashMap<TransactionId, HashSet<LockKey>>>,
 }
 
@@ -44,12 +36,12 @@ impl LockManager {
     pub fn new() -> Self {
         Self {
             exclusive_locks: RwLock::new(HashMap::new()),
+            shared_locks: RwLock::new(HashMap::new()),
             tx_locks: RwLock::new(HashMap::new()),
         }
     }
 
-    /// Try to acquire an exclusive lock on a key
-    pub fn acquire_exclusive(
+    pub fn acquire_shared(
         &self,
         tx_id: TransactionId,
         database: &str,
@@ -58,34 +50,31 @@ impl LockManager {
     ) -> DbResult<()> {
         let lock_key = LockKey::new(database, collection, key);
 
-        // Check availability
         {
-            let mut locks = self.exclusive_locks.write().unwrap();
-
-            if let Some(owner) = locks.get(&lock_key) {
+            let excl_locks = self.exclusive_locks.read().unwrap();
+            if let Some(owner) = excl_locks.get(&lock_key) {
                 if *owner == tx_id {
-                    // Already locked by this transaction, re-entrant
                     return Ok(());
                 }
-                // Locked by someone else
                 return Err(DbError::TransactionConflict(format!(
                     "Write conflict: Key {}/{}/{} is locked by transaction {}",
                     database, collection, key, owner
                 )));
             }
-
-            // Acquire lock
-            locks.insert(lock_key.clone(), tx_id);
         }
 
-        // Record in transaction's lock set
+        {
+            let mut shared = self.shared_locks.write().unwrap();
+            shared.entry(lock_key.clone()).or_default().insert(tx_id);
+        }
+
         {
             let mut tx_locks = self.tx_locks.write().unwrap();
             tx_locks.entry(tx_id).or_default().insert(lock_key);
         }
 
         tracing::debug!(
-            "Transaction {} acquired lock on {}/{}/{}",
+            "Transaction {} acquired SHARED lock on {}/{}/{}",
             tx_id,
             database,
             collection,
@@ -95,7 +84,103 @@ impl LockManager {
         Ok(())
     }
 
-    /// Release all locks held by a transaction
+    pub fn acquire_exclusive(
+        &self,
+        tx_id: TransactionId,
+        database: &str,
+        collection: &str,
+        key: &str,
+    ) -> DbResult<()> {
+        let lock_key = LockKey::new(database, collection, key);
+
+        {
+            let excl_locks = self.exclusive_locks.read().unwrap();
+            if let Some(owner) = excl_locks.get(&lock_key) {
+                if *owner == tx_id {
+                    return Ok(());
+                }
+                return Err(DbError::TransactionConflict(format!(
+                    "Write conflict: Key {}/{}/{} is locked by transaction {}",
+                    database, collection, key, owner
+                )));
+            }
+        }
+
+        {
+            let mut shared = self.shared_locks.write().unwrap();
+            if let Some(readers) = shared.get(&lock_key) {
+                if !readers.is_empty() && !readers.contains(&tx_id) {
+                    return Err(DbError::TransactionConflict(format!(
+                        "Read conflict: Key {}/{}/{} is locked by {} reader(s)",
+                        database,
+                        collection,
+                        key,
+                        readers.len()
+                    )));
+                }
+                shared.remove(&lock_key);
+            }
+        }
+
+        {
+            let mut excl_locks = self.exclusive_locks.write().unwrap();
+            excl_locks.insert(lock_key.clone(), tx_id);
+        }
+
+        {
+            let mut tx_locks = self.tx_locks.write().unwrap();
+            tx_locks.entry(tx_id).or_default().insert(lock_key);
+        }
+
+        tracing::debug!(
+            "Transaction {} acquired EXCLUSIVE lock on {}/{}/{}",
+            tx_id,
+            database,
+            collection,
+            key
+        );
+
+        Ok(())
+    }
+
+    pub fn upgrade_to_exclusive(
+        &self,
+        tx_id: TransactionId,
+        database: &str,
+        collection: &str,
+        key: &str,
+    ) -> DbResult<()> {
+        let lock_key = LockKey::new(database, collection, key);
+
+        {
+            let mut shared = self.shared_locks.write().unwrap();
+            if let Some(readers) = shared.get(&lock_key) {
+                if readers.len() > 1 || (readers.len() == 1 && !readers.contains(&tx_id)) {
+                    return Err(DbError::TransactionConflict(format!(
+                        "Cannot upgrade: Key {}/{}/{} has other readers",
+                        database, collection, key
+                    )));
+                }
+                shared.remove(&lock_key);
+            }
+        }
+
+        {
+            let mut excl_locks = self.exclusive_locks.write().unwrap();
+            excl_locks.insert(lock_key, tx_id);
+        }
+
+        tracing::debug!(
+            "Transaction {} upgraded to EXCLUSIVE lock on {}/{}/{}",
+            tx_id,
+            database,
+            collection,
+            key
+        );
+
+        Ok(())
+    }
+
     pub fn release_locks(&self, tx_id: TransactionId) {
         let locks_to_release = {
             let mut tx_locks = self.tx_locks.write().unwrap();
@@ -103,9 +188,15 @@ impl LockManager {
         };
 
         if let Some(keys) = locks_to_release {
-            let mut locks = self.exclusive_locks.write().unwrap();
             for key in keys {
-                locks.remove(&key);
+                {
+                    let mut excl_locks = self.exclusive_locks.write().unwrap();
+                    excl_locks.remove(&key);
+                }
+                {
+                    let mut shared = self.shared_locks.write().unwrap();
+                    shared.remove(&key);
+                }
                 tracing::debug!(
                     "Transaction {} released lock on {}/{}/{}",
                     tx_id,
@@ -115,6 +206,18 @@ impl LockManager {
                 );
             }
         }
+    }
+
+    pub fn get_locked_keys(&self, tx_id: TransactionId) -> Vec<(String, String, String)> {
+        let tx_locks = self.tx_locks.read().unwrap();
+        tx_locks
+            .get(&tx_id)
+            .map(|keys| {
+                keys.iter()
+                    .map(|k| (k.database.clone(), k.collection.clone(), k.key.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 

@@ -1,8 +1,9 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::serializer::serialize_doc;
+use crate::transaction::lock_manager::LockManager;
 use crate::transaction::wal::WalWriter;
-use crate::transaction::{Operation, Transaction};
+use crate::transaction::{Operation, Transaction, TransactionId};
 use rocksdb::WriteBatch;
 use serde_json::Value;
 use uuid;
@@ -10,19 +11,39 @@ use uuid;
 impl Collection {
     // ==================== Transactional Operations ====================
 
-    /// Insert a document within a transaction
+    fn parse_db_coll(&self) -> (String, String) {
+        let (a, b) = self.name.split_once(':').unwrap_or(("", &self.name));
+        (a.to_string(), b.to_string())
+    }
+
+    pub fn get_tx(
+        &self,
+        tx_id: TransactionId,
+        lock_manager: &Arc<LockManager>,
+        key: &str,
+    ) -> DbResult<Option<Document>> {
+        let (db_name, coll_name) = self.parse_db_coll();
+
+        lock_manager.acquire_shared(tx_id, &db_name, &coll_name, key)?;
+
+        match self.get(key) {
+            Ok(doc) => Ok(Some(doc)),
+            Err(DbError::DocumentNotFound(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn insert_tx(
         &self,
         tx: &mut Transaction,
         _wal: &Arc<WalWriter>,
+        lock_manager: &Arc<LockManager>,
         mut data: Value,
     ) -> DbResult<Document> {
-        // Validation similar to insert
         if *self.collection_type.read().unwrap() == "edge" {
             self.validate_edge_document(&data)?;
         }
 
-        // Generate key if needed
         let key = if let Some(obj) = data.as_object_mut() {
             if let Some(key_value) = obj.remove("_key") {
                 if let Some(key_str) = key_value.as_str() {
@@ -39,21 +60,15 @@ impl Collection {
             uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
         };
 
-        let doc = Document::with_key(&self.name, key.clone(), data);
+        let (db_name, coll_name) = self.parse_db_coll();
+        lock_manager.acquire_exclusive(tx.id, &db_name, &coll_name, &key)?;
 
-        // Check uniqueness in DB (snapshot isolation?)
-        // Standard check_unique_constraints checks CURRENT db state.
-        // It does NOT see uncommitted changes in other transactions,
-        // nor this transaction's previous ops without extra logic. (Simplified)
+        let doc = Document::with_key(&self.name, key.clone(), data);
         self.check_unique_constraints(&key, &doc.to_value())?;
 
-        // Parse database and collection from self.name (format: "db:coll")
-        let (db_name, coll_name) = self.name.split_once(':').unwrap_or(("", &self.name));
-
-        // Add to transaction log
         tx.add_operation(Operation::Insert {
-            database: db_name.to_string(),
-            collection: coll_name.to_string(),
+            database: db_name,
+            collection: coll_name,
             key: key.clone(),
             data: doc.to_value(),
         });
@@ -61,11 +76,11 @@ impl Collection {
         Ok(doc)
     }
 
-    /// Update a document within a transaction
     pub fn update_tx(
         &self,
         tx: &mut Transaction,
         _wal: &Arc<WalWriter>,
+        lock_manager: &Arc<LockManager>,
         key: &str,
         data: Value,
     ) -> DbResult<Document> {
@@ -75,25 +90,21 @@ impl Collection {
             ));
         }
 
-        // Get CURRENT document (from DB)
+        let (db_name, coll_name) = self.parse_db_coll();
+        lock_manager.acquire_exclusive(tx.id, &db_name, &coll_name, key)?;
+
         let mut doc = self.get(key)?;
         let old_data = doc.to_value();
 
-        // Apply update
         doc.update(data);
 
-        // Validation
         if *self.collection_type.read().unwrap() == "edge" {
             self.validate_edge_document(&doc.to_value())?;
         }
 
-        // Parse database and collection from self.name (format: "db:coll")
-        let (db_name, coll_name) = self.name.split_once(':').unwrap_or(("", &self.name));
-
-        // Add to transaction log
         tx.add_operation(Operation::Update {
-            database: db_name.to_string(),
-            collection: coll_name.to_string(),
+            database: db_name,
+            collection: coll_name,
             key: key.to_string(),
             old_data,
             new_data: doc.to_value(),
@@ -102,22 +113,22 @@ impl Collection {
         Ok(doc)
     }
 
-    /// Delete a document within a transaction
     pub fn delete_tx(
         &self,
         tx: &mut Transaction,
         _wal: &Arc<WalWriter>,
+        lock_manager: &Arc<LockManager>,
         key: &str,
     ) -> DbResult<()> {
+        let (db_name, coll_name) = self.parse_db_coll();
+        lock_manager.acquire_exclusive(tx.id, &db_name, &coll_name, key)?;
+
         let doc = self.get(key)?;
         let old_data = doc.to_value();
 
-        // Parse database and collection from self.name (format: "db:coll")
-        let (db_name, coll_name) = self.name.split_once(':').unwrap_or(("", &self.name));
-
         tx.add_operation(Operation::Delete {
-            database: db_name.to_string(),
-            collection: coll_name.to_string(),
+            database: db_name,
+            collection: coll_name,
             key: key.to_string(),
             old_data,
         });

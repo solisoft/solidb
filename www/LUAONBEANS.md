@@ -160,6 +160,144 @@ return {
 | Delete | `user:delete()` |
 | Count | `User.count()` |
 
+### Transactions
+
+SoliDB supports ACID transactions with row-level locking. Transactions ensure atomicity for multi-document operations.
+
+#### Starting a Transaction
+
+```lua
+local db = require("solidb"):new(database_config)
+
+-- Using transaction with automatic commit/rollback
+local result = db:transaction(function(tx)
+  -- tx is the transaction context
+  local accounts = tx:collection("accounts")
+  
+  -- Read operations (acquire shared locks)
+  local source = accounts:get(source_key)
+  local dest = accounts:get(dest_key)
+  
+  -- Verify business logic
+  if source.balance < amount then
+    error("Insufficient funds")
+  end
+  
+  -- Write operations (acquire exclusive locks)
+  accounts:update(source_key, { balance = source.balance - amount })
+  accounts:update(dest_key, { balance = dest.balance + amount })
+  
+  return { success = true }
+end)
+```
+
+#### Transaction Methods
+
+| Method | Description |
+|--------|-------------|
+| `tx:collection(name)` | Get transactional collection handle |
+| `tx:commit()` | Commit transaction (auto-called on success) |
+| `tx:rollback()` | Rollback transaction (auto-called on error) |
+
+#### Collection Methods within Transaction
+
+| Operation | Code |
+|-----------|------|
+| Read (shared lock) | `accounts:get(key)` |
+| Insert (exclusive lock) | `accounts:insert({ ... })` |
+| Update (exclusive lock) | `accounts:update(key, { ... })` |
+| Delete (exclusive lock) | `accounts:delete(key)` |
+
+#### Row-Level Locking
+
+Transactions use **eager locking** at the document level:
+
+- **Shared locks** (reads): Multiple transactions can read the same document simultaneously
+- **Exclusive locks** (writes): Only one transaction can modify a document at a time
+- Locks are acquired on first access and held until commit/rollback
+
+```lua
+-- Example: Transfer between accounts
+local function transfer(source_key, dest_key, amount)
+  db:transaction(function(tx)
+    local accounts = tx:collection("accounts")
+    
+    -- Both reads acquire shared locks
+    local source = accounts:get(source_key)
+    local dest = accounts:get(dest_key)
+    
+    if source.balance < amount then
+      error("Insufficient funds")
+    end
+    
+    -- Updates acquire exclusive locks
+    -- If another transaction tries to modify these,
+    -- it will wait until we commit or rollback
+    accounts:update(source_key, { 
+      balance = source.balance - amount 
+    })
+    accounts:update(dest_key, { 
+      balance = dest.balance + amount 
+    })
+  end)
+end
+```
+
+#### Lock Conflicts
+
+If a transaction tries to access a document locked by another transaction:
+
+```lua
+-- Transaction A is modifying account "123"
+tx_a:collection("accounts"):update("123", { balance = 100 })
+
+-- Transaction B tries to read the same account
+-- This will wait until Transaction A commits/rollbacks
+-- OR will fail with a conflict error depending on isolation level
+
+local result = pcall(function()
+  return tx_b:collection("accounts"):get("123")
+end)
+
+if not result then
+  -- Handle conflict - retry or return error
+end
+```
+
+#### Isolation Levels
+
+The default isolation level is `ReadCommitted`. You can specify a different level when beginning a transaction:
+
+```lua
+-- Available: ReadCommitted (default), RepeatableRead, Serializable
+local tx_id = db:begin_transaction("Serializable")
+```
+
+#### Error Handling
+
+Transactions automatically rollback on error:
+
+```lua
+local success, result = pcall(function()
+  return db:transaction(function(tx)
+    local accounts = tx:collection("accounts")
+    
+    accounts:update("123", { balance = 100 })
+    
+    if some_condition then
+      error("Validation failed")  -- This triggers rollback
+    end
+    
+    return { done = true }
+  end)
+end)
+
+if not success then
+  print("Transaction failed: " .. result)
+  -- Changes were automatically rolled back
+end
+```
+
 ### Mass Assignment Protection
 
 Protect your models from malicious form submissions by defining `permitted_fields`:

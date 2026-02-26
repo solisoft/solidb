@@ -1,3 +1,4 @@
+use super::lock_manager::LockManager;
 use super::wal::WalWriter;
 use super::{IsolationLevel, Operation, Transaction, TransactionId};
 use crate::error::{DbError, DbResult};
@@ -6,33 +7,28 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-/// Transaction manager handles transaction lifecycle
 #[allow(dead_code)]
 pub struct TransactionManager {
-    /// Active transactions
     active_transactions: Arc<RwLock<HashMap<TransactionId, Arc<RwLock<Transaction>>>>>,
-    /// Write-ahead log
     wal: Arc<WalWriter>,
-    /// Transaction timeout
+    lock_manager: Arc<LockManager>,
     timeout: Duration,
-    /// WAL batch size (0 = disabled)
     wal_batch_size: usize,
 }
 
 impl TransactionManager {
-    /// Create a new transaction manager
     pub fn new(wal_path: PathBuf) -> DbResult<Self> {
-        Self::with_wal_batch_size(wal_path, 100) // Default batch size of 100
+        Self::with_wal_batch_size(wal_path, 100)
     }
 
-    /// Create a new transaction manager with configurable WAL batch size
     pub fn with_wal_batch_size(wal_path: PathBuf, batch_size: usize) -> DbResult<Self> {
         let wal = WalWriter::with_batch_size(&wal_path, batch_size)?;
 
         Ok(Self {
             active_transactions: Arc::new(RwLock::new(HashMap::new())),
             wal: Arc::new(wal),
-            timeout: Duration::from_secs(300), // 5 minutes default
+            lock_manager: Arc::new(LockManager::new()),
+            timeout: Duration::from_secs(300),
             wal_batch_size: batch_size,
         })
     }
@@ -192,37 +188,37 @@ impl TransactionManager {
             active.remove(&tx_id);
         }
 
+        // Release locks
+        self.lock_manager.release_locks(tx_id);
+
         tracing::debug!("Transaction {} committed", tx_id);
         Ok(())
     }
 
-    /// Rollback/abort a transaction
     pub fn rollback(&self, tx_id: TransactionId) -> DbResult<()> {
-        // Get transaction
         let tx_arc = self.get(tx_id)?;
 
-        // Get isolation level to check if WAL is needed
         let requires_wal = {
             let tx = tx_arc.read().unwrap();
             tx.isolation_level.requires_wal()
         };
 
-        // Write abort to WAL only if required
         if requires_wal {
             self.wal.write_abort(tx_id)?;
         }
 
-        // Mark as aborted
         {
             let mut tx = tx_arc.write().unwrap();
             tx.abort();
         }
 
-        // Remove from active transactions
         {
             let mut active = self.active_transactions.write().unwrap();
             active.remove(&tx_id);
         }
+
+        // Release locks
+        self.lock_manager.release_locks(tx_id);
 
         tracing::debug!("Transaction {} rolled back", tx_id);
         Ok(())
@@ -269,12 +265,14 @@ impl TransactionManager {
         count
     }
 
-    /// Get WAL writer for writing operations
     pub fn wal(&self) -> &Arc<WalWriter> {
         &self.wal
     }
 
-    /// Checkpoint - create a WAL checkpoint marker
+    pub fn lock_manager(&self) -> &Arc<LockManager> {
+        &self.lock_manager
+    }
+
     pub fn checkpoint(&self) -> DbResult<()> {
         self.wal.write_checkpoint()
     }

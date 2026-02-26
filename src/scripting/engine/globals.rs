@@ -891,14 +891,16 @@ fn setup_db_transaction_method(
                         let db_name = db_coll.clone();
                         let tx_id = tx_id_coll;
 
+                        let lock_manager = tx_manager.lock_manager().clone();
+
                         let coll_handle = lua.create_table()?;
                         coll_handle.set("_db", db_name.clone())?;
                         coll_handle.set("_name", coll_name.clone())?;
                         coll_handle.set("_tx_id", tx_id.to_string())?;
 
-                        // Transactional insert
                         let storage_insert = storage.clone();
                         let tx_mgr_insert = tx_manager.clone();
+                        let lock_mgr_insert = lock_manager.clone();
                         let db_insert = db_name.clone();
                         let coll_insert = coll_name.clone();
                         let tx_id_insert = tx_id;
@@ -915,19 +917,20 @@ fn setup_db_transaction_method(
                                     .get(tx_id_insert)
                                     .map_err(mlua::Error::external)?;
                                 let mut tx = tx_arc.write().unwrap();
-                                let wal = tx_mgr_insert.wal();
+                                let wal = tx_mgr_insert.wal().clone();
+                                let lock_mgr = lock_mgr_insert.clone();
 
                                 let inserted = collection
-                                    .insert_tx(&mut tx, wal, json_doc)
+                                    .insert_tx(&mut tx, &wal, &lock_mgr, json_doc)
                                     .map_err(mlua::Error::external)?;
 
                                 json_to_lua(lua, &inserted.to_value())
                             })?;
                         coll_handle.set("insert", insert_fn)?;
 
-                        // Transactional update
                         let storage_update = storage.clone();
                         let tx_mgr_update = tx_manager.clone();
+                        let lock_mgr_update = lock_manager.clone();
                         let db_update = db_name.clone();
                         let coll_update = coll_name.clone();
                         let tx_id_update = tx_id;
@@ -944,10 +947,11 @@ fn setup_db_transaction_method(
                                     .get(tx_id_update)
                                     .map_err(mlua::Error::external)?;
                                 let mut tx = tx_arc.write().unwrap();
-                                let wal = tx_mgr_update.wal();
+                                let wal = tx_mgr_update.wal().clone();
+                                let lock_mgr = lock_mgr_update.clone();
 
                                 let updated = collection
-                                    .update_tx(&mut tx, wal, &key, json_doc)
+                                    .update_tx(&mut tx, &wal, &lock_mgr, &key, json_doc)
                                     .map_err(mlua::Error::external)?;
 
                                 json_to_lua(lua, &updated.to_value())
@@ -955,9 +959,9 @@ fn setup_db_transaction_method(
                         )?;
                         coll_handle.set("update", update_fn)?;
 
-                        // Transactional delete
                         let storage_delete = storage.clone();
                         let tx_mgr_delete = tx_manager.clone();
+                        let lock_mgr_delete = lock_manager.clone();
                         let db_delete = db_name.clone();
                         let coll_delete = coll_name.clone();
                         let tx_id_delete = tx_id;
@@ -972,20 +976,22 @@ fn setup_db_transaction_method(
                                     .get(tx_id_delete)
                                     .map_err(mlua::Error::external)?;
                                 let mut tx = tx_arc.write().unwrap();
-                                let wal = tx_mgr_delete.wal();
+                                let wal = tx_mgr_delete.wal().clone();
+                                let lock_mgr = lock_mgr_delete.clone();
 
                                 collection
-                                    .delete_tx(&mut tx, wal, &key)
+                                    .delete_tx(&mut tx, &wal, &lock_mgr, &key)
                                     .map_err(mlua::Error::external)?;
 
                                 Ok(true)
                             })?;
                         coll_handle.set("delete", delete_fn)?;
 
-                        // Read (non-transactional)
                         let storage_get = storage.clone();
+                        let lock_mgr_get = lock_manager.clone();
                         let db_get = db_name.clone();
                         let coll_get = coll_name.clone();
+                        let tx_id_get = tx_id;
                         let get_fn =
                             lua.create_function(move |lua, (_, key): (LuaValue, String)| {
                                 let full_coll_name = format!("{}:{}", db_get, coll_get);
@@ -993,11 +999,10 @@ fn setup_db_transaction_method(
                                     .get_collection(&full_coll_name)
                                     .map_err(mlua::Error::external)?;
 
-                                match collection.get(&key) {
-                                    Ok(doc) => json_to_lua(lua, &doc.to_value()),
-                                    Err(crate::error::DbError::DocumentNotFound(_)) => {
-                                        Ok(LuaValue::Nil)
-                                    }
+                                let lock_mgr = lock_mgr_get.clone();
+                                match collection.get_tx(tx_id_get, &lock_mgr, &key) {
+                                    Ok(Some(doc)) => json_to_lua(lua, &doc.to_value()),
+                                    Ok(None) => Ok(LuaValue::Nil),
                                     Err(e) => Err(mlua::Error::external(e)),
                                 }
                             })?;
@@ -2013,15 +2018,16 @@ pub fn setup_lua_globals(
                         let db_name = db_coll.clone();
                         let tx_id = tx_id_coll;
 
-                        // Create transactional collection handle
+                        let lock_manager = tx_manager.lock_manager().clone();
+
                         let coll_handle = lua.create_table()?;
                         coll_handle.set("_db", db_name.clone())?;
                         coll_handle.set("_name", coll_name.clone())?;
                         coll_handle.set("_tx_id", tx_id.to_string())?;
 
-                        // col:insert(doc) - transactional insert
                         let storage_insert = storage.clone();
                         let tx_mgr_insert = tx_manager.clone();
+                        let lock_mgr_insert = lock_manager.clone();
                         let db_insert = db_name.clone();
                         let coll_insert = coll_name.clone();
                         let tx_id_insert = tx_id;
@@ -2039,18 +2045,19 @@ pub fn setup_lua_globals(
                                     .map_err(mlua::Error::external)?;
                                 let mut tx = tx_arc.write().unwrap();
                                 let wal = tx_mgr_insert.wal();
+                                let lock_mgr = lock_mgr_insert.clone();
 
                                 let inserted = collection
-                                    .insert_tx(&mut tx, wal, json_doc)
+                                    .insert_tx(&mut tx, wal, &lock_mgr, json_doc)
                                     .map_err(mlua::Error::external)?;
 
                                 json_to_lua(lua, &inserted.to_value())
                             })?;
                         coll_handle.set("insert", insert_fn)?;
 
-                        // col:update(key, doc) - transactional update
                         let storage_update = storage.clone();
                         let tx_mgr_update = tx_manager.clone();
+                        let lock_mgr_update = lock_manager.clone();
                         let db_update = db_name.clone();
                         let coll_update = coll_name.clone();
                         let tx_id_update = tx_id;
@@ -2068,9 +2075,10 @@ pub fn setup_lua_globals(
                                     .map_err(mlua::Error::external)?;
                                 let mut tx = tx_arc.write().unwrap();
                                 let wal = tx_mgr_update.wal();
+                                let lock_mgr = lock_mgr_update.clone();
 
                                 let updated = collection
-                                    .update_tx(&mut tx, wal, &key, json_doc)
+                                    .update_tx(&mut tx, wal, &lock_mgr, &key, json_doc)
                                     .map_err(mlua::Error::external)?;
 
                                 json_to_lua(lua, &updated.to_value())
@@ -2078,9 +2086,9 @@ pub fn setup_lua_globals(
                         )?;
                         coll_handle.set("update", update_fn)?;
 
-                        // col:delete(key) - transactional delete
                         let storage_delete = storage.clone();
                         let tx_mgr_delete = tx_manager.clone();
+                        let lock_mgr_delete = lock_manager.clone();
                         let db_delete = db_name.clone();
                         let coll_delete = coll_name.clone();
                         let tx_id_delete = tx_id;
@@ -2096,19 +2104,21 @@ pub fn setup_lua_globals(
                                     .map_err(mlua::Error::external)?;
                                 let mut tx = tx_arc.write().unwrap();
                                 let wal = tx_mgr_delete.wal();
+                                let lock_mgr = lock_mgr_delete.clone();
 
                                 collection
-                                    .delete_tx(&mut tx, wal, &key)
+                                    .delete_tx(&mut tx, wal, &lock_mgr, &key)
                                     .map_err(mlua::Error::external)?;
 
                                 Ok(true)
                             })?;
                         coll_handle.set("delete", delete_fn)?;
 
-                        // col:get(key) - read (non-transactional, just reads current state)
                         let storage_get = storage.clone();
+                        let lock_mgr_get = lock_manager.clone();
                         let db_get = db_name.clone();
                         let coll_get = coll_name.clone();
+                        let tx_id_get = tx_id;
                         let get_fn =
                             lua.create_function(move |lua, (_, key): (LuaValue, String)| {
                                 let full_coll_name = format!("{}:{}", db_get, coll_get);
@@ -2116,11 +2126,10 @@ pub fn setup_lua_globals(
                                     .get_collection(&full_coll_name)
                                     .map_err(mlua::Error::external)?;
 
-                                match collection.get(&key) {
-                                    Ok(doc) => json_to_lua(lua, &doc.to_value()),
-                                    Err(crate::error::DbError::DocumentNotFound(_)) => {
-                                        Ok(LuaValue::Nil)
-                                    }
+                                let lock_mgr = lock_mgr_get.clone();
+                                match collection.get_tx(tx_id_get, &lock_mgr, &key) {
+                                    Ok(Some(doc)) => json_to_lua(lua, &doc.to_value()),
+                                    Ok(None) => Ok(LuaValue::Nil),
                                     Err(e) => Err(mlua::Error::external(e)),
                                 }
                             })?;

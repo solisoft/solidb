@@ -1,0 +1,9 @@
+name = "db.solisoft.net"
+domain = "db.solisoft.net"
+start_script = "./luaonbeans.org -D . -p $PORT"
+workers = 2
+stop_script = ""
+health_check = "/"
+graceful_timeout = 30
+port_range_start = 9000
+port_range_end = 9999

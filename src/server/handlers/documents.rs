@@ -55,9 +55,10 @@ pub async fn insert_document(
         let mut tx = tx_arc
             .write()
             .map_err(|_| DbError::InternalError("Transaction lock poisoned".into()))?;
-        let wal = tx_manager.wal();
+        let wal = tx_manager.wal().clone();
+        let lock_manager = tx_manager.lock_manager().clone();
 
-        let doc = collection.insert_tx(&mut tx, wal, data)?;
+        let doc = collection.insert_tx(&mut tx, &wal, &lock_manager, data)?;
 
         // No replication log for transactional write yet (will happen on commit)
 
@@ -602,9 +603,10 @@ pub async fn update_document(
         let mut tx = tx_arc
             .write()
             .map_err(|_| DbError::InternalError("Transaction lock poisoned".into()))?;
-        let wal = tx_manager.wal();
+        let wal = tx_manager.wal().clone();
+        let lock_manager = tx_manager.lock_manager().clone();
 
-        let doc = collection.update_tx(&mut tx, wal, &key, data)?;
+        let doc = collection.update_tx(&mut tx, &wal, &lock_manager, &key, data)?;
         return Ok(Json(doc.to_value()));
     }
 
@@ -712,9 +714,10 @@ pub async fn delete_document(
         let mut tx = tx_arc
             .write()
             .map_err(|_| DbError::InternalError("Transaction lock poisoned".into()))?;
-        let wal = tx_manager.wal();
+        let wal = tx_manager.wal().clone();
+        let lock_manager = tx_manager.lock_manager().clone();
 
-        collection.delete_tx(&mut tx, wal, &key)?;
+        collection.delete_tx(&mut tx, &wal, &lock_manager, &key)?;
         return Ok(StatusCode::NO_CONTENT);
     }
 
