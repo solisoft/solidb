@@ -1146,7 +1146,7 @@ impl Collection {
             let docs: Vec<Document> = iter
                 .filter_map(|r| r.ok())
                 .take_while(|(k, _)| k.starts_with(prefix))
-                .filter_map(|(_, v)| serde_json::from_slice::<Document>(&v).ok())
+                .filter_map(|(_, v)| deserialize_doc(&v).ok())
                 .take(limit.unwrap_or(usize::MAX))
                 .collect();
 

@@ -620,6 +620,35 @@ function QueryController:live_query()
   })
 end
 
+function QueryController:live_events()
+  self.layout = "dashboard"
+  local db = self:get_db()
+
+  -- Fetch Live Query Token
+  local t_status, _, t_body = self:fetch_api("/_api/livequery/token")
+  local token = ""
+  if t_status == 200 then
+    local ok, data = pcall(DecodeJson, t_body)
+    if ok and data and data.token then
+      token = data.token
+    end
+  end
+
+  -- Determine API URL for WS
+  local api_url = GetCookie("sdb_server") or "http://localhost:6745"
+  local ws_host = api_url:gsub("https?://", ""):gsub("/$", "")
+  local ws_protocol = api_url:match("^https") and "wss" or "ws"
+  local ws_url = ws_protocol .. "://" .. ws_host .. "/_api/ws/changefeed"
+
+  self:render("dashboard/live_events", {
+    title = "Live Events - " .. db,
+    db = db,
+    current_page = "live_events",
+    livequery_token = token,
+    ws_url = ws_url
+  })
+end
+
 -- API: Get collections list for autocomplete
 function QueryController:api_collections()
   local db = self:get_db()

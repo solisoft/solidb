@@ -78,6 +78,12 @@ end
     <span class="text-sm">Live Query</span>
   </a>
 
+  <a href="/database/<%= db %>/live-events"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('live_events') %>">
+    <i class="fas fa-rss w-5 text-center text-warning"></i>
+    <span class="text-sm">Live Events</span>
+  </a>
+
   <a href="/database/<%= db %>/graph"
      class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('graph') %>">
     <i class="fas fa-diagram-project w-5 text-center text-success"></i>

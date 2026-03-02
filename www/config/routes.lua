@@ -137,6 +137,9 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   -- Live Query
   router.get("/live-query", "dashboard/query#live_query")
 
+  -- Live Events
+  router.get("/live-events", "dashboard/query#live_events")
+
   -- Graph Explorer
   router.get("/graph", "dashboard/graph#index")
   router.get("/graph/collections", "dashboard/graph#collections")
