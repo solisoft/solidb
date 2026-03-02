@@ -40,12 +40,15 @@ data/
 
 # Client SDKs (not needed in server image)
 clients/
+!clients/rust-client/Cargo.toml
+!clients/rust-client/src/
 
 # Web application (optional - uncomment if you want to include www/)
 # www/
 
 # Benchmarks
 benchmarks/
+!benchmarks/Cargo.toml
 
 # Scripts
 scripts/
