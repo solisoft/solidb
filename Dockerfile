@@ -1,63 +1,8 @@
 # ==============================================================================
 # SoliDB Docker Image
-# Multi-stage build for minimal image size
+# Uses pre-built binaries from the release
 # ==============================================================================
 
-# ------------------------------------------------------------------------------
-# Stage 1: Build
-# ------------------------------------------------------------------------------
-FROM rust:1.85-bookworm AS builder
-
-# Install build dependencies for RocksDB and other native libs
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    clang \
-    libclang-dev \
-    pkg-config \
-    libssl-dev \
-    libzstd-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copy manifests first for better layer caching
-COPY Cargo.toml Cargo.lock ./
-COPY sdbql-core/Cargo.toml sdbql-core/Cargo.toml
-COPY clients/rust-client/Cargo.toml clients/rust-client/Cargo.toml
-
-# Remove benchmarks from workspace members (not needed in Docker image)
-RUN sed -i 's/, "benchmarks"//' Cargo.toml
-
-# Create dummy sources to build dependencies
-RUN mkdir -p src/bin sdbql-core/src clients/rust-client/src && \
-    echo "fn main() {}" > src/main.rs && \
-    echo "fn main() {}" > src/bin/solidb-dump.rs && \
-    echo "fn main() {}" > src/bin/solidb-restore.rs && \
-    echo "fn main() {}" > src/bin/solidb-repl.rs && \
-    echo "" > src/lib.rs && \
-    echo "" > sdbql-core/src/lib.rs && \
-    echo "" > clients/rust-client/src/lib.rs
-
-# Build dependencies only (cached layer)
-RUN cargo build --release -p solidb 2>/dev/null || true
-RUN rm -rf src sdbql-core/src clients/rust-client/src
-
-# Copy actual source code
-COPY src ./src
-COPY sdbql-core/src ./sdbql-core/src
-COPY clients/rust-client/src ./clients/rust-client/src
-
-# Build the actual binaries
-RUN cargo build --release --bin solidb --bin solidb-dump --bin solidb-restore
-
-# Strip debug symbols for smaller binary
-RUN strip /app/target/release/solidb \
-    /app/target/release/solidb-dump \
-    /app/target/release/solidb-restore
-
-# ------------------------------------------------------------------------------
-# Stage 2: Runtime
-# ------------------------------------------------------------------------------
 FROM debian:bookworm-slim
 
 # Labels
@@ -83,10 +28,10 @@ RUN groupadd -r solidb && useradd -r -g solidb solidb
 # Create data directory
 RUN mkdir -p /data && chown solidb:solidb /data
 
-# Copy binaries from builder
-COPY --from=builder /app/target/release/solidb /usr/local/bin/
-COPY --from=builder /app/target/release/solidb-dump /usr/local/bin/
-COPY --from=builder /app/target/release/solidb-restore /usr/local/bin/
+# Copy pre-built binaries
+COPY binaries/solidb /usr/local/bin/
+COPY binaries/solidb-dump /usr/local/bin/
+COPY binaries/solidb-restore /usr/local/bin/
 
 # Set ownership
 RUN chown solidb:solidb /usr/local/bin/solidb*
