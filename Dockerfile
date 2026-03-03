@@ -6,7 +6,7 @@
 # ------------------------------------------------------------------------------
 # Stage 1: Build
 # ------------------------------------------------------------------------------
-FROM rust:1.83-bookworm AS builder
+FROM rust:1.85-bookworm AS builder
 
 # Install build dependencies for RocksDB and other native libs
 RUN apt-get update && apt-get install -y \
