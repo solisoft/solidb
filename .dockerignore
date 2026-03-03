@@ -48,7 +48,6 @@ clients/
 
 # Benchmarks
 benchmarks/
-!benchmarks/Cargo.toml
 
 # Scripts
 scripts/
