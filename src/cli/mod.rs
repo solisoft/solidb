@@ -4,3 +4,4 @@
 
 pub mod scripts;
 pub mod tui;
+pub mod update;

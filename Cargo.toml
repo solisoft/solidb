@@ -3,7 +3,7 @@ members = ["clients/rust-client", "sdbql-core", "benchmarks"]
 
 [package]
 name = "solidb"
-version = "0.14.5"
+version = "0.15.0"
 edition = "2021"
 default-run = "solidb"
 description = "A lightweight, high-performance structured database server written in Rust."
@@ -133,6 +133,10 @@ fastbloom = { version = "0.14.0", features = ["serde"] }
 cuckoofilter = { version = "0.5", features = ["serde_support"] }
 parking_lot = "0.12"
 dashmap = "6"
+
+# Self-update
+flate2 = "1"           # Gzip decompression
+tar = "0.4"            # Tar archive extraction
 
 # CLI Script Development
 notify = "6"           # File system watcher

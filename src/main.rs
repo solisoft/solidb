@@ -58,6 +58,8 @@ enum Command {
     Scripts(solidb::cli::scripts::ScriptsArgs),
     /// Launch the Terminal User Interface
     Tui(solidb::cli::tui::TuiArgs),
+    /// Update SoliDB to the latest release
+    Update,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -71,6 +73,7 @@ fn main() -> anyhow::Result<()> {
         return match command {
             Command::Scripts(scripts_args) => solidb::cli::scripts::execute(scripts_args),
             Command::Tui(tui_args) => solidb::cli::tui::execute(tui_args),
+            Command::Update => solidb::cli::update::execute(),
         };
     }
 
