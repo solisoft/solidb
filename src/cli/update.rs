@@ -1,8 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-const GITHUB_API_LATEST: &str =
-    "https://api.github.com/repos/solisoft/solidb/releases/latest";
+const GITHUB_API_LATEST: &str = "https://api.github.com/repos/solisoft/solidb/releases/latest";
 
 pub fn execute() -> anyhow::Result<()> {
     let current_version = env!("CARGO_PKG_VERSION");
@@ -41,10 +40,7 @@ pub fn execute() -> anyhow::Result<()> {
             })
         })
         .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No release asset found for this platform ({})",
-                asset_name
-            )
+            anyhow::anyhow!("No release asset found for this platform ({})", asset_name)
         })?;
 
     println!("Downloading {}...", asset_name);
