@@ -86,21 +86,11 @@ pub fn deserialize_doc_as_value(bytes: &[u8]) -> DbResult<serde_json::Value> {
             let dwv: DocumentWithVersion = bincode::deserialize(&bytes[1..])
                 .map_err(|e| DbError::InternalError(format!("Deserialization failed: {}", e)))?;
             // V2 format always uses MessagePack for data - no JSON fallback needed
-            let data: serde_json::Value =
-                rmp_serde::from_slice(&dwv.data).unwrap_or_default();
+            let data: serde_json::Value = rmp_serde::from_slice(&dwv.data).unwrap_or_default();
             if let serde_json::Value::Object(mut map) = data {
-                map.insert(
-                    KEY_FIELD.to_owned(),
-                    serde_json::Value::String(dwv.key),
-                );
-                map.insert(
-                    ID_FIELD.to_owned(),
-                    serde_json::Value::String(dwv.id),
-                );
-                map.insert(
-                    REV_FIELD.to_owned(),
-                    serde_json::Value::String(dwv.rev),
-                );
+                map.insert(KEY_FIELD.to_owned(), serde_json::Value::String(dwv.key));
+                map.insert(ID_FIELD.to_owned(), serde_json::Value::String(dwv.id));
+                map.insert(REV_FIELD.to_owned(), serde_json::Value::String(dwv.rev));
                 map.insert(
                     CREATED_AT_FIELD.to_owned(),
                     serde_json::Value::String(dwv.created_at.to_rfc3339()),

@@ -120,7 +120,11 @@ fn setup_log_function(
                 }
             };
 
-            tracing::info!("[Lua Script] {}", msg);
+            let label = script_details
+                .as_ref()
+                .map(|(_, n)| n.as_str())
+                .unwrap_or("Lua Script");
+            tracing::info!("[{}] [{}] {}", db_log, label, msg);
 
             if let Some((sid, sname)) = &script_details {
                 if let Ok(db) = storage_log.get_database(&db_log) {
@@ -1164,7 +1168,11 @@ pub fn setup_lua_globals(
                 }
             };
 
-            tracing::info!("[Lua Script] {}", msg);
+            let label = script_details
+                .as_ref()
+                .map(|(_, n)| n.as_str())
+                .unwrap_or("Lua Script");
+            tracing::info!("[{}] [{}] {}", db_log, label, msg);
 
             if let Some((sid, sname)) = &script_details {
                 if let Ok(db) = storage_log.get_database(&db_log) {

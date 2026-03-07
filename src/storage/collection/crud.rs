@@ -958,17 +958,15 @@ impl Collection {
         let capacity = limit.unwrap_or(128);
         let mut results = Vec::with_capacity(capacity);
 
-        for item in iter {
-            if let Ok((key, value)) = item {
-                if !key.starts_with(prefix) {
-                    break;
-                }
-                if let Ok(val) = deserialize_doc_as_value(&value) {
-                    results.push(val);
-                    if let Some(n) = limit {
-                        if results.len() >= n {
-                            break;
-                        }
+        for (key, value) in iter.flatten() {
+            if !key.starts_with(prefix) {
+                break;
+            }
+            if let Ok(val) = deserialize_doc_as_value(&value) {
+                results.push(val);
+                if let Some(n) = limit {
+                    if results.len() >= n {
+                        break;
                     }
                 }
             }

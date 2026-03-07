@@ -176,8 +176,7 @@ impl<'a> QueryExecutor<'a> {
                                     (offset, count)
                                 });
 
-                                let collection =
-                                    self.get_collection(&for_clause.collection)?;
+                                let collection = self.get_collection(&for_clause.collection)?;
                                 let total = scan_limit.map(|(o, c)| o + c);
                                 let docs: Vec<Value> = collection.scan_values(total);
 
