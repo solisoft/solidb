@@ -62,6 +62,42 @@ impl<'a> QueryExecutor<'a> {
         let mut total_docs_scanned = 0usize;
         let mut rows: Vec<Context> = vec![initial_bindings.clone()];
 
+        // Optimization: Check if we can push LIMIT down to storage scan
+        let scan_limit = if query.sort_clause.is_none() {
+            let for_count = query
+                .body_clauses
+                .iter()
+                .filter(|c| matches!(c, BodyClause::For(_)))
+                .count();
+            let filter_count = query
+                .body_clauses
+                .iter()
+                .filter(|c| matches!(c, BodyClause::Filter(_)))
+                .count();
+
+            if for_count == 1 && filter_count == 0 {
+                query.limit_clause.as_ref().map(|l| {
+                    let offset = self
+                        .evaluate_expr_with_context(&l.offset, &initial_bindings)
+                        .ok()
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as usize)
+                        .unwrap_or(0);
+                    let count = self
+                        .evaluate_expr_with_context(&l.count, &initial_bindings)
+                        .ok()
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as usize)
+                        .unwrap_or(0);
+                    offset + count
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Iterate through body clauses (FOR, FILTER, etc.)
         let clauses = if !query.body_clauses.is_empty() {
             &query.body_clauses
@@ -140,7 +176,7 @@ impl<'a> QueryExecutor<'a> {
 
                         for ctx in &rows {
                             // Measure iterator creation/fetching time as part of scan
-                            let docs = self.get_for_source_docs(for_clause, ctx, None)?;
+                            let docs = self.get_for_source_docs(for_clause, ctx, scan_limit)?;
                             clause_docs_scanned += docs.len();
                             for doc in docs {
                                 let mut new_ctx = ctx.clone();
@@ -161,6 +197,8 @@ impl<'a> QueryExecutor<'a> {
                         variable: for_clause.variable.clone(),
                         access_type: if used_index {
                             "index_lookup".to_string()
+                        } else if scan_limit.is_some() {
+                            "limited_scan".to_string()
                         } else {
                             "full_scan".to_string()
                         },

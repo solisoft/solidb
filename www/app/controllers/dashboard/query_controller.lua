@@ -39,7 +39,7 @@ function QueryController:execute()
 
   local status, headers, body = self:fetch_api(endpoint, {
     method = "POST",
-    body = EncodeJson({ query = query })
+    body = EncodeJson({ query = query, cache = false })
   })
 
   if status and status >= 200 and status < 300 then

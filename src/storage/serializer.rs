@@ -50,6 +50,86 @@ impl DocumentWithVersion {
             data,
         }
     }
+
+    pub fn into_doc(self) -> Document {
+        // Try MessagePack first (new format), fall back to JSON (legacy)
+        let data: serde_json::Value = rmp_serde::from_slice(&self.data)
+            .or_else(|_| serde_json::from_slice(&self.data))
+            .unwrap_or_default();
+        Document {
+            key: self.key,
+            id: self.id,
+            rev: self.rev,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            data,
+        }
+    }
+}
+
+// Static field names to avoid repeated heap allocations
+const KEY_FIELD: &str = "_key";
+const ID_FIELD: &str = "_id";
+const REV_FIELD: &str = "_rev";
+const CREATED_AT_FIELD: &str = "_created_at";
+const UPDATED_AT_FIELD: &str = "_updated_at";
+
+/// Deserialize directly to a serde_json::Value, skipping the intermediate Document allocation.
+/// Used by scan_values for the fast query path.
+pub fn deserialize_doc_as_value(bytes: &[u8]) -> DbResult<serde_json::Value> {
+    if bytes.is_empty() {
+        return Err(DbError::DocumentNotFound("empty bytes".to_string()));
+    }
+
+    match bytes[0] {
+        2 => {
+            let dwv: DocumentWithVersion = bincode::deserialize(&bytes[1..])
+                .map_err(|e| DbError::InternalError(format!("Deserialization failed: {}", e)))?;
+            // V2 format always uses MessagePack for data - no JSON fallback needed
+            let data: serde_json::Value =
+                rmp_serde::from_slice(&dwv.data).unwrap_or_default();
+            if let serde_json::Value::Object(mut map) = data {
+                map.insert(
+                    KEY_FIELD.to_owned(),
+                    serde_json::Value::String(dwv.key),
+                );
+                map.insert(
+                    ID_FIELD.to_owned(),
+                    serde_json::Value::String(dwv.id),
+                );
+                map.insert(
+                    REV_FIELD.to_owned(),
+                    serde_json::Value::String(dwv.rev),
+                );
+                map.insert(
+                    CREATED_AT_FIELD.to_owned(),
+                    serde_json::Value::String(dwv.created_at.to_rfc3339()),
+                );
+                map.insert(
+                    UPDATED_AT_FIELD.to_owned(),
+                    serde_json::Value::String(dwv.updated_at.to_rfc3339()),
+                );
+                Ok(serde_json::Value::Object(map))
+            } else {
+                // Fallback: build via Document
+                Ok(DocumentWithVersion {
+                    version: 2,
+                    key: dwv.key,
+                    id: dwv.id,
+                    rev: dwv.rev,
+                    created_at: dwv.created_at,
+                    updated_at: dwv.updated_at,
+                    data: Vec::new(),
+                }
+                .into_doc()
+                .into_value())
+            }
+        }
+        _ => {
+            // Legacy formats: go through Document
+            deserialize_doc(bytes).map(|doc| doc.into_value())
+        }
+    }
 }
 
 pub fn serialize_doc(doc: &Document) -> DbResult<Vec<u8>> {
@@ -69,7 +149,7 @@ pub fn deserialize_doc(bytes: &[u8]) -> DbResult<Document> {
     match bytes[0] {
         2 => bincode::deserialize::<DocumentWithVersion>(&bytes[1..])
             .map_err(|e| DbError::InternalError(format!("Deserialization failed: {}", e)))
-            .map(|doc_with_version| doc_with_version.to_doc()),
+            .map(|doc_with_version| doc_with_version.into_doc()),
         1 => {
             // Version 1: Legacy format with JSON in data field
             bincode::deserialize::<DocumentWithVersion>(&bytes[1..])

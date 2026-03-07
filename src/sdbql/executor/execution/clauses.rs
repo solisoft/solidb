@@ -94,7 +94,7 @@ impl<'a> QueryExecutor<'a> {
                                                     let mut new_ctx = ctx.clone();
                                                     new_ctx.insert(
                                                         for_clause.variable.clone(),
-                                                        doc.to_value(),
+                                                        doc.into_value(),
                                                     );
                                                     new_rows.push(new_ctx);
                                                 }

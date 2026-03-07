@@ -133,7 +133,49 @@ impl Document {
 
     /// Convert to JSON value including metadata
     pub fn to_value(&self) -> Value {
-        serde_json::to_value(self).unwrap_or(Value::Null)
+        // Build the merged object directly instead of going through serde_json::to_value,
+        // which has significant overhead due to #[serde(flatten)] on the data field.
+        if let Value::Object(data_map) = &self.data {
+            let mut map = serde_json::Map::with_capacity(data_map.len() + 5);
+            map.insert("_key".to_string(), Value::String(self.key.clone()));
+            map.insert("_id".to_string(), Value::String(self.id.clone()));
+            map.insert("_rev".to_string(), Value::String(self.rev.clone()));
+            map.insert(
+                "_created_at".to_string(),
+                Value::String(self.created_at.to_rfc3339()),
+            );
+            map.insert(
+                "_updated_at".to_string(),
+                Value::String(self.updated_at.to_rfc3339()),
+            );
+            for (k, v) in data_map {
+                map.insert(k.clone(), v.clone());
+            }
+            Value::Object(map)
+        } else {
+            // Fallback for non-object data (rare)
+            serde_json::to_value(self).unwrap_or(Value::Null)
+        }
+    }
+
+    /// Convert to JSON value including metadata, consuming self to avoid cloning data
+    pub fn into_value(self) -> Value {
+        if let Value::Object(mut data_map) = self.data {
+            data_map.insert("_key".to_string(), Value::String(self.key));
+            data_map.insert("_id".to_string(), Value::String(self.id));
+            data_map.insert("_rev".to_string(), Value::String(self.rev));
+            data_map.insert(
+                "_created_at".to_string(),
+                Value::String(self.created_at.to_rfc3339()),
+            );
+            data_map.insert(
+                "_updated_at".to_string(),
+                Value::String(self.updated_at.to_rfc3339()),
+            );
+            Value::Object(data_map)
+        } else {
+            serde_json::to_value(&self).unwrap_or(Value::Null)
+        }
     }
 }
 

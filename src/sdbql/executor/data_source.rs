@@ -88,7 +88,7 @@ impl<'a> QueryExecutor<'a> {
         Ok(collection
             .scan(limit)
             .into_iter()
-            .map(|d| d.to_value())
+            .map(|d| d.into_value())
             .collect())
     }
     pub(super) fn scatter_gather_docs(
@@ -111,7 +111,7 @@ impl<'a> QueryExecutor<'a> {
             return Ok(collection
                 .scan(limit)
                 .into_iter()
-                .map(|d| d.to_value())
+                .map(|d| d.into_value())
                 .collect());
         };
 
@@ -145,7 +145,7 @@ impl<'a> QueryExecutor<'a> {
                         .and_then(|db| db.get_collection(&physical_coll))
                     {
                         for doc in coll.scan(limit) {
-                            let value = doc.to_value();
+                            let value = doc.into_value();
                             if let Some(key) = value.get("_key").and_then(|k| k.as_str()) {
                                 if seen_keys.insert(key.to_string()) {
                                     all_docs.push(value);

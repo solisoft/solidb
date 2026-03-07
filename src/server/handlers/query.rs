@@ -33,6 +33,12 @@ pub struct ExecuteQueryRequest {
     pub bind_vars: std::collections::HashMap<String, Value>,
     #[serde(default = "default_batch_size", alias = "batchSize")]
     pub batch_size: usize,
+    #[serde(default = "default_cache")]
+    pub cache: bool,
+}
+
+fn default_cache() -> bool {
+    true
 }
 
 fn default_batch_size() -> usize {
@@ -422,14 +428,14 @@ pub async fn execute_query(
         )
     });
 
-    // Try to get cached result for read-only queries
-    let cache_key = if is_read_only {
+    // Try to get cached result for read-only queries (unless cache is disabled)
+    let cache_key = if is_read_only && req.cache {
         Some(query_cache::hash_query(&req.query, &req.bind_vars))
     } else {
         None
     };
 
-    // Check cache if query is read-only
+    // Check cache if query is read-only and caching is enabled
     if let Some(ref key) = cache_key {
         let cached_result = query_cache::get_query_cache().get(key).await;
         if let Some(result) = cached_result {

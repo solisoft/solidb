@@ -148,6 +148,58 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
+        // Optimization: Direct scan for simple FOR + [LIMIT] + RETURN var
+        // Pattern: FOR var IN collection [LIMIT n] RETURN var
+        // Skips the entire Context/HashMap machinery
+        if query.body_clauses.len() == 1
+            && query.sort_clause.is_none()
+            && query.let_clauses.is_empty()
+        {
+            if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
+                if for_clause.source_expression.is_none() {
+                    if let Some(ref return_clause) = query.return_clause {
+                        if let Expression::Variable(ref var) = return_clause.expression {
+                            if var == &for_clause.variable {
+                                let scan_limit = query.limit_clause.as_ref().map(|l| {
+                                    let offset = self
+                                        .evaluate_expr_with_context(&l.offset, &initial_bindings)
+                                        .ok()
+                                        .and_then(|v| v.as_u64())
+                                        .map(|n| n as usize)
+                                        .unwrap_or(0);
+                                    let count = self
+                                        .evaluate_expr_with_context(&l.count, &initial_bindings)
+                                        .ok()
+                                        .and_then(|v| v.as_u64())
+                                        .map(|n| n as usize)
+                                        .unwrap_or(0);
+                                    (offset, count)
+                                });
+
+                                let collection =
+                                    self.get_collection(&for_clause.collection)?;
+                                let total = scan_limit.map(|(o, c)| o + c);
+                                let docs: Vec<Value> = collection.scan_values(total);
+
+                                let results = if let Some((offset, count)) = scan_limit {
+                                    let start = offset.min(docs.len());
+                                    let end = (start + count).min(docs.len());
+                                    docs[start..end].to_vec()
+                                } else {
+                                    docs
+                                };
+
+                                return Ok(QueryExecutionResult {
+                                    results,
+                                    mutations: MutationStats::new(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Optimization: Check if we can push LIMIT down to storage scan
         let scan_limit = if query.sort_clause.is_none() {
             let for_count = query

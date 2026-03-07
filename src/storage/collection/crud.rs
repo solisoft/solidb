@@ -1,7 +1,7 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::document_cache::get_document_cache;
-use crate::storage::serializer::{deserialize_doc, serialize_doc};
+use crate::storage::serializer::{deserialize_doc, deserialize_doc_as_value, serialize_doc};
 use rocksdb::WriteBatch;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
@@ -933,6 +933,48 @@ impl Collection {
         } else {
             iter.collect()
         }
+    }
+
+    /// Scan documents and return directly as serde_json::Value, skipping intermediate Document.
+    /// Faster for queries that just need the JSON value (e.g., FOR doc IN coll RETURN doc).
+    pub fn scan_values(&self, limit: Option<usize>) -> Vec<Value> {
+        let db = &self.db;
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        let prefix = DOC_PREFIX.as_bytes();
+
+        // Use optimized read options for sequential scan
+        let mut read_opts = rocksdb::ReadOptions::default();
+        read_opts.set_prefix_same_as_start(true);
+        read_opts.set_readahead_size(256 * 1024); // 256KB readahead for sequential scan
+
+        let iter = db.iterator_cf_opt(
+            cf,
+            read_opts,
+            rocksdb::IteratorMode::From(prefix, rocksdb::Direction::Forward),
+        );
+
+        let capacity = limit.unwrap_or(128);
+        let mut results = Vec::with_capacity(capacity);
+
+        for item in iter {
+            if let Ok((key, value)) = item {
+                if !key.starts_with(prefix) {
+                    break;
+                }
+                if let Ok(val) = deserialize_doc_as_value(&value) {
+                    results.push(val);
+                    if let Some(n) = limit {
+                        if results.len() >= n {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        results
     }
 
     // ==================== Counters ====================
