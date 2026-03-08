@@ -1,8 +1,8 @@
 <%
   local results = results or {}
   local stats = stats or {}
-  local count = 0
-  if type(results) == "table" then
+  local count = stats.count or 0
+  if count == 0 and type(results) == "table" then
     count = #results
   end
 

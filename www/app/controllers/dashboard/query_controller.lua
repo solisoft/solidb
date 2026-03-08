@@ -39,14 +39,14 @@ function QueryController:execute()
 
   local status, headers, body = self:fetch_api(endpoint, {
     method = "POST",
-    body = EncodeJson({ query = query, cache = false })
+    body = EncodeJson({ query = query, cache = false, batchSize = 100000 })
   })
 
   if status and status >= 200 and status < 300 then
     local ok, data = pcall(DecodeJson, body)
     if ok and data then
       local results = data.result or {}
-      local count = type(results) == "table" and #results or 0
+      local count = data.count or (type(results) == "table" and #results or 0)
       self:render_partial("dashboard/_query_results", {
         db = db_name,
         query = query,
