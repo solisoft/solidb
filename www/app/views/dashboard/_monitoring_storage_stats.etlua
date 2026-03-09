@@ -28,14 +28,6 @@
         <p class="text-xs text-text-dim mb-1">Total Chunks</p>
         <p class="text-lg font-semibold text-text"><%= format_number(total_chunk_count) %></p>
       </div>
-      <div>
-        <p class="text-xs text-text-dim mb-1">Network RX</p>
-        <p class="text-lg font-semibold text-text"><%= format_bytes(network_rx_bytes) %></p>
-      </div>
-      <div>
-        <p class="text-xs text-text-dim mb-1">Network TX</p>
-        <p class="text-lg font-semibold text-text"><%= format_bytes(network_tx_bytes) %></p>
-      </div>
     </div>
   </div>
 </div>

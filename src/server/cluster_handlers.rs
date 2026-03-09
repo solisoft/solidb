@@ -67,10 +67,41 @@ pub struct ClusterStatusResponse {
     pub stats: NodeStats,
 }
 
-/// Generate cluster status data (shared between HTTP and WebSocket handlers)
+/// Sysinfo data extracted under a short lock, passed to generate_cluster_status.
+pub(crate) struct SysInfo {
+    pub memory_used_mb: u64,
+    pub memory_total_mb: u64,
+    pub cpu_usage_percent: f32,
+}
+
+/// Extract sysinfo data under a short lock.
+pub(crate) fn collect_sysinfo(sys: &mut sysinfo::System) -> SysInfo {
+    sys.refresh_memory();
+    let pid = sysinfo::get_current_pid().ok();
+
+    let (memory_used_mb, cpu_usage_percent) = if let Some(p) = pid {
+        sys.refresh_process(p);
+        sys.process(p)
+            .map(|proc| (proc.memory() / (1024 * 1024), proc.cpu_usage()))
+            .unwrap_or((0, 0.0))
+    } else {
+        (0, 0.0)
+    };
+
+    let memory_total_mb = sys.total_memory() / (1024 * 1024);
+
+    SysInfo {
+        memory_used_mb,
+        memory_total_mb,
+        cpu_usage_percent,
+    }
+}
+
+/// Generate cluster status data (shared between HTTP and WebSocket handlers).
+/// Takes pre-extracted sysinfo to avoid holding the mutex during heavy I/O.
 pub(crate) fn generate_cluster_status(
     state: &AppState,
-    sys: &mut sysinfo::System,
+    sysinfo: &SysInfo,
 ) -> ClusterStatusResponse {
     use std::sync::atomic::Ordering;
 
@@ -121,26 +152,18 @@ pub(crate) fn generate_cluster_status(
         }
     }
 
-    // Storage size (approximate from data directory)
-    let storage_bytes = get_dir_size(&data_dir).unwrap_or(0);
+    // Storage size (approximate from data directory, fallback to RocksDB stats)
+    let storage_bytes = match get_dir_size(&data_dir) {
+        Ok(size) if size > 0 => size,
+        _ => total_sst_size + total_memtable_size + total_live_size,
+    };
 
     // Uptime
     let uptime_secs = state.startup_time.elapsed().as_secs();
 
-    // Memory and CPU usage
-    sys.refresh_memory();
-    let pid = sysinfo::get_current_pid().ok();
-
-    let (memory_used_mb, cpu_usage_percent) = if let Some(p) = pid {
-        sys.refresh_process(p);
-        sys.process(p)
-            .map(|proc| (proc.memory() / (1024 * 1024), proc.cpu_usage()))
-            .unwrap_or((0, 0.0))
-    } else {
-        (0, 0.0)
-    };
-
-    let memory_total_mb = sys.total_memory() / (1024 * 1024);
+    let memory_used_mb = sysinfo.memory_used_mb;
+    let memory_total_mb = sysinfo.memory_total_mb;
+    let cpu_usage_percent = sysinfo.cpu_usage_percent;
 
     // Request count
     let request_count = state.request_counter.load(Ordering::Relaxed);
@@ -239,12 +262,11 @@ pub(crate) fn generate_cluster_status(
 
 /// Get cluster status via HTTP
 pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatusResponse> {
-    use sysinfo::System;
-    // For single HTTP request, we create a new system.
-    // Note: CPU usage might be inaccurate (0.0) for single requests without a previous refresh.
-    // If accurate CPU is needed on HTTP, we'd need to sleep/refresh, but avoiding blocking is better.
-    let mut sys = System::new();
-    Json(generate_cluster_status(&state, &mut sys))
+    let sysinfo = {
+        let mut sys = state.system_monitor.lock().unwrap();
+        collect_sysinfo(&mut sys)
+    };
+    Json(generate_cluster_status(&state, &sysinfo))
 }
 
 /// WebSocket handler for real-time cluster status updates
@@ -268,11 +290,12 @@ async fn handle_cluster_ws(mut socket: axum::extract::ws::WebSocket, state: AppS
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                // Generate status using shared logic and persistent sys
-                let status = {
+                // Extract sysinfo under a short lock, then generate status without holding it
+                let sysinfo = {
                     let mut sys = state.system_monitor.lock().unwrap();
-                    generate_cluster_status(&state, &mut *sys)
+                    collect_sysinfo(&mut sys)
                 };
+                let status = generate_cluster_status(&state, &sysinfo);
 
                 let json = match serde_json::to_string(&status) {
                     Ok(j) => j,
@@ -302,11 +325,21 @@ async fn handle_cluster_ws(mut socket: axum::extract::ws::WebSocket, state: AppS
 /// Get the size of a directory in bytes (recursive)
 fn get_dir_size(path: &str) -> std::io::Result<u64> {
     let mut size = 0u64;
-    for entry in std::fs::read_dir(path)? {
-        let entry = entry?;
-        let metadata = entry.metadata()?;
+    let entries = match std::fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(0),
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
         if metadata.is_dir() {
-            size += get_dir_size(entry.path().to_str().unwrap_or(""))?;
+            size += get_dir_size(entry.path().to_str().unwrap_or("")).unwrap_or(0);
         } else {
             size += metadata.len();
         }

@@ -66,11 +66,17 @@ function MonitoringController:metrics()
   local cluster_status = self:get_cluster_status()
   local stats = cluster_status and cluster_status.stats or {}
 
+  -- Use RocksDB-derived stats (sst + memtable) as they are more reliable than storage_bytes from get_dir_size
+  local storage_bytes = stats.storage_bytes or 0
+  if storage_bytes == 0 then
+    storage_bytes = (stats.total_sst_size or 0) + (stats.total_memtable_size or 0)
+  end
+
   self:render_partial("dashboard/_monitoring_metrics", {
     cpu = stats.cpu_usage_percent or 0,
     memory_used = stats.memory_used_mb or 0,
     memory_total = stats.memory_total_mb or 0,
-    storage_bytes = stats.storage_bytes or 0,
+    storage_bytes = storage_bytes,
     request_count = stats.request_count or 0,
     format_bytes = format_bytes,
     format_number = format_number
@@ -103,8 +109,6 @@ function MonitoringController:storage_stats()
     total_live_size = stats.total_live_size or 0,
     total_file_count = stats.total_file_count or 0,
     total_chunk_count = stats.total_chunk_count or 0,
-    network_rx_bytes = stats.network_rx_bytes or 0,
-    network_tx_bytes = stats.network_tx_bytes or 0,
     system_load_avg = stats.system_load_avg or 0,
     format_bytes = format_bytes,
     format_number = format_number
@@ -118,6 +122,9 @@ function MonitoringController:operations()
 
   self:render_partial("dashboard/_monitoring_operations", {
     request_count = stats.request_count or 0,
+    query_count = stats.query_count or 0,
+    write_count = stats.write_count or 0,
+    uptime_secs = stats.uptime_secs or 0,
     format_number = format_number
   })
 end
@@ -203,9 +210,9 @@ function MonitoringController:stats_collections()
 
   local status, headers, body = self:fetch_api("/_api/database/" .. db .. "/collection")
   if status == 200 then
-    local ok, collections = pcall(DecodeJson, body)
-    if ok and collections then
-      self:html(tostring(#collections))
+    local ok, data = pcall(DecodeJson, body)
+    if ok and data and data.collections then
+      self:html(tostring(#data.collections))
     else
       self:html("-")
     end
@@ -229,11 +236,25 @@ function MonitoringController:stats_indexes()
   self:html("-")
 end
 
--- Stats: DB Size
+-- Stats: DB Size (per-database, summed from collection stats)
 function MonitoringController:stats_size()
-  local cluster_status = self:get_cluster_status()
-  if cluster_status and cluster_status.stats then
-    self:html(format_bytes(cluster_status.stats.storage_bytes or 0))
+  local db = self:get_db()
+
+  local status, headers, body = self:fetch_api("/_api/database/" .. db .. "/collection")
+  if status == 200 then
+    local ok, data = pcall(DecodeJson, body)
+    if ok and data and data.collections then
+      local total_size = 0
+      for _, coll in ipairs(data.collections) do
+        if coll.stats and coll.stats.disk_usage then
+          total_size = total_size + (coll.stats.disk_usage.sst_files_size or 0)
+          total_size = total_size + (coll.stats.disk_usage.memtable_size or 0)
+        end
+      end
+      self:html(format_bytes(total_size))
+    else
+      self:html("-")
+    end
   else
     self:html("-")
   end

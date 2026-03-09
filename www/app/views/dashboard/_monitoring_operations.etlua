@@ -1,3 +1,7 @@
+<%
+  local queries_per_sec = uptime_secs > 0 and (query_count / uptime_secs) or 0
+  local writes_per_sec = uptime_secs > 0 and (write_count / uptime_secs) or 0
+%>
 <div class="p-4">
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
     <div class="bg-bg-dark/50 rounded-lg p-4 text-center">
@@ -12,23 +16,16 @@
       <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-info/10 flex items-center justify-center">
         <i class="fas fa-search text-info text-xl"></i>
       </div>
-      <p class="text-2xl font-bold text-text">-</p>
-      <p class="text-xs text-text-dim">Queries/sec</p>
+      <p class="text-2xl font-bold text-text"><%= string.format("%.1f", queries_per_sec) %></p>
+      <p class="text-xs text-text-dim">Queries/sec (<%= format_number(query_count) %> total)</p>
     </div>
 
     <div class="bg-bg-dark/50 rounded-lg p-4 text-center">
       <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-warning/10 flex items-center justify-center">
         <i class="fas fa-edit text-warning text-xl"></i>
       </div>
-      <p class="text-2xl font-bold text-text">-</p>
-      <p class="text-xs text-text-dim">Writes/sec</p>
+      <p class="text-2xl font-bold text-text"><%= string.format("%.1f", writes_per_sec) %></p>
+      <p class="text-xs text-text-dim">Writes/sec (<%= format_number(write_count) %> total)</p>
     </div>
-  </div>
-
-  <div class="mt-4 pt-4 border-t border-border/30">
-    <p class="text-xs text-text-dim text-center">
-      <i class="fas fa-info-circle mr-1"></i>
-      Detailed operation metrics will be available in future versions
-    </p>
   </div>
 </div>

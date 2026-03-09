@@ -67,6 +67,8 @@ pub struct AppState {
     pub shard_coordinator: Option<Arc<crate::sharding::ShardCoordinator>>,
     pub startup_time: std::time::Instant,
     pub request_counter: Arc<std::sync::atomic::AtomicU64>,
+    pub query_counter: Arc<std::sync::atomic::AtomicU64>,
+    pub write_counter: Arc<std::sync::atomic::AtomicU64>,
     pub system_monitor: Arc<std::sync::Mutex<sysinfo::System>>,
     pub queue_worker: Option<Arc<crate::queue::QueueWorker>>,
     pub script_stats: Arc<ScriptStats>,

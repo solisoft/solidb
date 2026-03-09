@@ -152,6 +152,8 @@ pub fn create_router(
         queue_worker,
         startup_time: std::time::Instant::now(),
         request_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        query_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        write_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
 
         system_monitor: Arc::new(std::sync::Mutex::new(sysinfo::System::new())),
         script_stats,

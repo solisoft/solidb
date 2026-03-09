@@ -157,6 +157,11 @@ pub async fn execute_query(
     headers: HeaderMap,
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<ApiResponse<ExecuteQueryResponse>, DbError> {
+    // Count every query
+    state
+        .query_counter
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {
         // Execute transactional SDBQL query
@@ -570,6 +575,13 @@ pub async fn execute_query(
 
     let total_count = query_result.results.len();
     let mutations = &query_result.mutations;
+
+    // Increment write counter for mutation queries
+    if mutations.has_mutations() {
+        state
+            .write_counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
 
     // Cache read-only query results
     if let Some(key) = cache_key {

@@ -1,4 +1,4 @@
-use super::cluster::generate_cluster_status;
+use super::cluster::{collect_sysinfo, generate_cluster_status};
 use super::system::AppState;
 use crate::{server::handlers::auth::AuthParams, storage::StorageEngine};
 use axum::{
@@ -37,11 +37,12 @@ async fn handle_cluster_ws(mut socket: WebSocket, state: AppState) {
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                // Generate status using shared logic and persistent sys
-                let status = {
+                // Extract sysinfo under a short lock, then generate status without holding it
+                let sysinfo = {
                     let mut sys = state.system_monitor.lock().unwrap();
-                    generate_cluster_status(&state, &mut sys)
+                    collect_sysinfo(&mut sys)
                 };
+                let status = generate_cluster_status(&state, &sysinfo);
 
                 let json = match serde_json::to_string(&status) {
                     Ok(j) => j,

@@ -78,6 +78,31 @@ pub async fn cluster_info(State(state): State<AppState>) -> Json<ClusterInfoResp
 
 // ==================== Cluster Status ====================
 
+/// Extended stats for the monitoring dashboard
+#[derive(Debug, Serialize)]
+pub struct MonitoringStats {
+    // Core stats (same data as NodeStats, but with dashboard-expected field names)
+    pub cpu_usage_percent: f32,
+    pub memory_used_mb: u64,
+    pub memory_total_mb: u64,
+    pub storage_bytes: u64,
+    pub request_count: u64,
+    pub query_count: u64,
+    pub write_count: u64,
+    pub database_count: usize,
+    pub collection_count: usize,
+    pub document_count: u64,
+    pub uptime_secs: u64,
+    // Storage details
+    pub total_sst_size: u64,
+    pub total_memtable_size: u64,
+    pub total_live_size: u64,
+    pub total_file_count: u64,
+    pub total_chunk_count: u64,
+    // System
+    pub system_load_avg: f64,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ClusterStatusResponse {
     pub node_id: String,
@@ -87,7 +112,7 @@ pub struct ClusterStatusResponse {
     pub log_entries: usize,
     pub peers: Vec<PeerStatusResponse>,
     pub data_dir: String,
-    pub stats: NodeStats,
+    pub stats: MonitoringStats,
 }
 
 #[derive(Debug, Serialize)]
@@ -99,13 +124,42 @@ pub struct PeerStatusResponse {
     pub stats: Option<NodeStats>,
 }
 
-/// Generate cluster status data (shared between HTTP and WebSocket handlers)
+/// Sysinfo data extracted under a short lock, passed to generate_cluster_status.
+pub struct SysInfo {
+    pub memory_used_bytes: u64,
+    pub memory_total_mb: u64,
+    pub cpu_usage_percent: f32,
+}
+
+/// Extract sysinfo data under a short lock.
+pub fn collect_sysinfo(sys: &mut sysinfo::System) -> SysInfo {
+    sys.refresh_memory();
+    let pid = sysinfo::get_current_pid().ok();
+
+    let (memory_used_bytes, cpu_usage_percent) = if let Some(p) = pid {
+        sys.refresh_process(p);
+        sys.process(p)
+            .map(|proc| (proc.memory(), proc.cpu_usage()))
+            .unwrap_or((0, 0.0))
+    } else {
+        (0, 0.0)
+    };
+
+    let memory_total_mb = sys.total_memory() / (1024 * 1024);
+
+    SysInfo {
+        memory_used_bytes,
+        memory_total_mb,
+        cpu_usage_percent,
+    }
+}
+
+/// Generate cluster status data (shared between HTTP and WebSocket handlers).
+/// Takes pre-extracted sysinfo to avoid holding the mutex during heavy I/O.
 pub fn generate_cluster_status(
     state: &AppState,
-    sys: &mut sysinfo::System,
+    sysinfo: &SysInfo,
 ) -> ClusterStatusResponse {
-    use std::sync::atomic::Ordering;
-
     let node_id = state.storage.node_id().to_string();
     let data_dir = state.storage.data_dir().to_string();
 
@@ -125,10 +179,15 @@ pub fn generate_cluster_status(
 
     // Calculate stats
     let databases = state.storage.list_databases();
-    let _database_count = databases.len();
+    let database_count = databases.len();
 
     let mut collection_count = 0;
     let mut document_count: u64 = 0;
+    let mut total_file_count: u64 = 0;
+    let mut total_chunk_count: u64 = 0;
+    let mut total_sst_size: u64 = 0;
+    let mut total_memtable_size: u64 = 0;
+    let mut total_live_size: u64 = 0;
 
     for db_name in &databases {
         if let Ok(db) = state.storage.get_database(db_name) {
@@ -136,49 +195,59 @@ pub fn generate_cluster_status(
             collection_count += coll_names.len();
             for coll_name in coll_names {
                 if let Ok(coll) = db.get_collection(&coll_name) {
-                    let stats = coll.stats();
-                    document_count += stats.document_count as u64;
+                    let coll_stats = coll.stats();
+                    document_count += coll_stats.document_count as u64;
+                    total_file_count += coll_stats.disk_usage.num_sst_files;
+                    total_chunk_count += coll_stats.chunk_count as u64;
+                    total_sst_size += coll_stats.disk_usage.sst_files_size;
+                    total_memtable_size += coll_stats.disk_usage.memtable_size;
+                    total_live_size += coll_stats.disk_usage.live_data_size;
                 }
             }
         }
     }
 
-    // Storage size (approximate from data directory)
-    let storage_bytes = get_dir_size(&data_dir).unwrap_or(0);
-
-    // Uptime
-    let _uptime_secs = state.startup_time.elapsed().as_secs();
-
-    // Memory and CPU usage
-    sys.refresh_memory();
-    let pid = sysinfo::get_current_pid().ok();
-
-    let (memory_used_bytes, cpu_usage_percent) = if let Some(p) = pid {
-        sys.refresh_process(p);
-        sys.process(p)
-            .map(|proc| (proc.memory(), proc.cpu_usage()))
-            .unwrap_or((0, 0.0))
-    } else {
-        (0, 0.0)
+    // Storage size (approximate from data directory, fallback to RocksDB stats)
+    let storage_bytes = match get_dir_size(&data_dir) {
+        Ok(size) if size > 0 => size,
+        _ => total_sst_size + total_memtable_size + total_live_size,
     };
 
-    let _memory_total_mb = sys.total_memory() / (1024 * 1024);
+    // Uptime
+    let uptime_secs = state.startup_time.elapsed().as_secs();
 
-    // Request count
-    let _request_count = state.request_counter.load(Ordering::Relaxed);
-
-    // Network I/O - use separate Networks struct (sysinfo 0.30 API)
-    let _networks = sysinfo::Networks::new_with_refreshed_list();
+    // Counters
+    let request_count = state
+        .request_counter
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let query_count = state
+        .query_counter
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let write_count = state
+        .write_counter
+        .load(std::sync::atomic::Ordering::Relaxed);
 
     // System Load
-    let _system_load_avg = sysinfo::System::load_average().one;
+    let system_load_avg = sysinfo::System::load_average().one;
 
-    let stats = NodeStats {
-        cpu_usage: cpu_usage_percent,
-        memory_used: memory_used_bytes,
-        disk_used: storage_bytes,
+    let stats = MonitoringStats {
+        cpu_usage_percent: sysinfo.cpu_usage_percent,
+        memory_used_mb: sysinfo.memory_used_bytes / (1024 * 1024),
+        memory_total_mb: sysinfo.memory_total_mb,
+        storage_bytes,
+        request_count,
+        query_count,
+        write_count,
+        database_count,
+        collection_count,
         document_count,
-        collections_count: collection_count as u32,
+        uptime_secs,
+        total_sst_size,
+        total_memtable_size,
+        total_live_size,
+        total_file_count,
+        total_chunk_count,
+        system_load_avg,
     };
 
     // Get live status from cluster manager and replication log
@@ -242,10 +311,11 @@ pub fn generate_cluster_status(
 }
 
 pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatusResponse> {
-    use sysinfo::System;
-    // For single HTTP request, we create a new system.
-    let mut sys = System::new();
-    Json(generate_cluster_status(&state, &mut sys))
+    let sysinfo = {
+        let mut sys = state.system_monitor.lock().unwrap();
+        collect_sysinfo(&mut sys)
+    };
+    Json(generate_cluster_status(&state, &sysinfo))
 }
 
 // ==================== Cluster Remove Node ====================

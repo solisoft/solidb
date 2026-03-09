@@ -32,7 +32,7 @@
            <div class="p-2.5 bg-primary/10 rounded-lg text-primary-light group-hover:scale-110 transition-transform duration-300">
              <i class="fas fa-folder text-lg"></i>
            </div>
-           <span class="text-xs font-mono text-primary-light/70 bg-primary/5 px-2 py-0.5 rounded">+2 new</span>
+           <span class="text-xs font-mono text-primary-light/70 bg-primary/5 px-2 py-0.5 rounded"><i class="fas fa-folder-open text-xs"></i></span>
         </div>
         
         <div class="mt-auto">
