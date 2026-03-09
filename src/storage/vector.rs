@@ -331,7 +331,7 @@ impl HnswGraph {
         let mut rng = rand::thread_rng();
         let r: f64 = rng.gen();
         let level = (-r.ln() * self.level_mult).floor() as usize;
-        level.min(16) // Cap at reasonable max level
+        level.min(16)
     }
 
     /// Calculate distance between query and a document's vector

@@ -117,7 +117,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
     let base32_encode_fn = lua
         .create_function(|_, data: mlua::String| {
             let encoded = base32::encode(
-                base32::Alphabet::RFC4648 { padding: true },
+                base32::Alphabet::Rfc4648 { padding: true },
                 &data.as_bytes(),
             );
             Ok(encoded)
@@ -132,7 +132,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
     // base32_decode(data)
     let base32_decode_fn = lua
         .create_function(|lua, data: String| {
-            let bytes = base32::decode(base32::Alphabet::RFC4648 { padding: true }, &data)
+            let bytes = base32::decode(base32::Alphabet::Rfc4648 { padding: true }, &data)
                 .ok_or_else(|| mlua::Error::RuntimeError("Invalid base32".to_string()))?;
             lua.create_string(&bytes)
         })

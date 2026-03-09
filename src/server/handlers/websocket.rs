@@ -102,10 +102,10 @@ async fn handle_monitor_socket(mut socket: WebSocket, state: AppState) {
             let mut sys = state.system_monitor.lock().unwrap();
 
             // Refresh specific stats
-            sys.refresh_cpu();
+            sys.refresh_cpu_all();
             sys.refresh_memory();
 
-            let cpu = sys.global_cpu_info().cpu_usage();
+            let cpu = sys.global_cpu_usage();
             let mem_used = sys.used_memory();
             let mem_total = sys.total_memory();
             let up = sysinfo::System::uptime();

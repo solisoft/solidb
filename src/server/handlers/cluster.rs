@@ -46,10 +46,10 @@ pub async fn cluster_info(State(state): State<AppState>) -> Json<ClusterInfoResp
         let mut sys = state.system_monitor.lock().unwrap();
 
         // Refresh specific stats
-        sys.refresh_cpu();
+        sys.refresh_cpu_all();
         sys.refresh_memory();
 
-        let cpu = sys.global_cpu_info().cpu_usage();
+        let cpu = sys.global_cpu_usage();
         let mem_used = sys.used_memory();
         let mem_total = sys.total_memory();
         let up = sysinfo::System::uptime();
@@ -137,7 +137,8 @@ pub fn collect_sysinfo(sys: &mut sysinfo::System) -> SysInfo {
     let pid = sysinfo::get_current_pid().ok();
 
     let (memory_used_bytes, cpu_usage_percent) = if let Some(p) = pid {
-        sys.refresh_process(p);
+        use sysinfo::ProcessesToUpdate;
+        sys.refresh_processes(ProcessesToUpdate::Some(&[p]), false);
         sys.process(p)
             .map(|proc| (proc.memory(), proc.cpu_usage()))
             .unwrap_or((0, 0.0))
@@ -156,10 +157,7 @@ pub fn collect_sysinfo(sys: &mut sysinfo::System) -> SysInfo {
 
 /// Generate cluster status data (shared between HTTP and WebSocket handlers).
 /// Takes pre-extracted sysinfo to avoid holding the mutex during heavy I/O.
-pub fn generate_cluster_status(
-    state: &AppState,
-    sysinfo: &SysInfo,
-) -> ClusterStatusResponse {
+pub fn generate_cluster_status(state: &AppState, sysinfo: &SysInfo) -> ClusterStatusResponse {
     let node_id = state.storage.node_id().to_string();
     let data_dir = state.storage.data_dir().to_string();
 

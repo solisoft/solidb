@@ -95,8 +95,9 @@ fn main() -> anyhow::Result<()> {
 
                         let sys_pid = Pid::from(pid as usize);
                         if let Some(proc) = sys.process(sys_pid) {
-                            if proc.name() != "solidb" {
-                                eprintln!("SECURITY ERROR: Process with PID {} is named '{}', not 'solidb'. Refusing to kill potential mismatch.", pid, proc.name());
+                            let proc_name = proc.name().to_string_lossy();
+                            if proc_name != "solidb" {
+                                eprintln!("SECURITY ERROR: Process with PID {} is named '{}', not 'solidb'. Refusing to kill potential mismatch.", pid, proc_name);
                                 return Ok(());
                             }
                         }

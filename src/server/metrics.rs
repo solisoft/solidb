@@ -33,11 +33,11 @@ pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse
     // System Metrics (CPU, Memory)
     {
         let mut system = state.system_monitor.lock().unwrap();
-        system.refresh_cpu();
+        system.refresh_cpu_all();
         system.refresh_memory();
 
         // CPU Usage
-        let cpu_usage = system.global_cpu_info().cpu_usage();
+        let cpu_usage = system.global_cpu_usage();
         output.push_str("# HELP solidb_cpu_usage_percent Current CPU usage percentage\n");
         output.push_str("# TYPE solidb_cpu_usage_percent gauge\n");
         output.push_str(&format!("solidb_cpu_usage_percent {:.2}\n\n", cpu_usage));
