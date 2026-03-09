@@ -63,6 +63,9 @@ enum Command {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Install JWT crypto provider (required when both rust_crypto and aws_lc_rs features are active)
+    let _ = jsonwebtoken::crypto::rust_crypto::DEFAULT_PROVIDER.install_default();
+
     // Load .env file if present (before parsing CLI args)
     let _ = dotenvy::dotenv();
 

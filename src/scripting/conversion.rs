@@ -1,5 +1,12 @@
-use mlua::{Lua, Result as LuaResult, Value as LuaValue};
+use mlua::{Lua, Result as LuaResult, UserData, Value as LuaValue};
 use serde_json::Value as JsonValue;
+
+/// Wrapper for pre-serialized JSON strings that bypass Lua table conversion.
+/// Used by `db:query_json()` to avoid the JSON→Lua→JSON roundtrip.
+#[derive(Clone)]
+pub struct RawJson(pub String);
+
+impl UserData for RawJson {}
 
 /// Convert JSON value to Lua value
 pub fn json_to_lua(lua: &Lua, json: &JsonValue) -> LuaResult<LuaValue> {
@@ -156,7 +163,15 @@ pub fn lua_to_json_value(lua: &Lua, value: LuaValue) -> LuaResult<JsonValue> {
                 Ok(JsonValue::Object(obj))
             }
         }
-        _ => Ok(JsonValue::Null), // Functions, userdata, etc. become null
+        LuaValue::UserData(ud) => {
+            // Check for RawJson userdata — pre-serialized JSON string
+            if let Ok(raw) = ud.borrow::<RawJson>() {
+                return serde_json::from_str(&raw.0)
+                    .map_err(|e| mlua::Error::external(format!("Invalid RawJson: {}", e)));
+            }
+            Ok(JsonValue::Null)
+        }
+        _ => Ok(JsonValue::Null), // Functions, etc. become null
     }
 }
 

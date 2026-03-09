@@ -340,6 +340,31 @@ volumes:
                       <td class="p-3"><em>auto-generated</em></td>
                       <td class="p-3">Admin user password</td>
                     </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">JWT_SECRET</td>
+                      <td class="p-3"><em>auto-generated</em></td>
+                      <td class="p-3">Secret for signing JWT tokens</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">QUEUE_WORKERS</td>
+                      <td class="p-3">4</td>
+                      <td class="p-3">Background job workers per node</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLIDB_LUA_POOL_SIZE</td>
+                      <td class="p-3"><em>CPU cores</em></td>
+                      <td class="p-3">Number of Lua VM pool states</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLIDB_LUA_FAST_MODE</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Skip Lua global reset between requests</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLIDB_CLUSTER_SCHEME</td>
+                      <td class="p-3">http</td>
+                      <td class="p-3">Protocol for cluster communication</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -592,7 +617,7 @@ kubectl -n solidb get pods -w</pre>
                 <div
                   class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 mb-3"
                 >
-                  ./target/release/solidb --port 8080
+                  ./target/release/solidb
                 </div>
                 <div class="flex items-start bg-blue-900/20 border border-blue-500/20 rounded-lg p-3">
                   <svg
@@ -756,34 +781,135 @@ kubectl -n solidb get pods -w</pre>
               located in the same directory as the executable.
             </p>
 
+            <!-- Security -->
             <div class="bg-amber-900/10 border border-amber-500/20 rounded-xl p-6">
               <h3 class="text-amber-400 font-bold mb-3 text-sm uppercase tracking-wider">
-                Environment Variables
+                Security
               </h3>
               <div class="overflow-hidden border border-white/5 rounded-lg">
                 <table class="w-full text-left text-xs">
                   <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
                     <tr>
                       <th class="p-3">Variable</th>
+                      <th class="p-3">Default</th>
                       <th class="p-3">Description</th>
                     </tr>
                   </thead>
                   <tbody class="text-gray-400 divide-y divide-white/5">
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_ADMIN_PASSWORD</td>
-                      <td class="p-3">Overrides the auto-generated admin password.</td>
+                      <td class="p-3"><em>auto-generated</em></td>
+                      <td class="p-3">Override the default admin user password. If not set, a random password is generated and printed at startup.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">JWT_SECRET</td>
-                      <td class="p-3">Secret for signing JSON Web Tokens (32+ chars recommended).</td>
+                      <td class="p-3"><em>auto-generated</em></td>
+                      <td class="p-3">Secret key for signing JSON Web Tokens. 32+ characters recommended. If not set, a random secret is generated (warning logged).</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Performance Tuning -->
+            <div class="bg-cyan-900/10 border border-cyan-500/20 rounded-xl p-6">
+              <h3 class="text-cyan-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Performance Tuning
+              </h3>
+              <div class="overflow-hidden border border-white/5 rounded-lg">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-3">Variable</th>
+                      <th class="p-3">Default</th>
+                      <th class="p-3">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_LUA_POOL_SIZE</td>
+                      <td class="p-3"><em>CPU cores</em> (min 4)</td>
+                      <td class="p-3">Number of pre-initialized Lua VM states in the pool. Each state handles one script at a time. Increase beyond CPU core count (e.g. 32 or 64) to reduce contention under high concurrency.</td>
                     </tr>
                     <tr>
-                      <td class="p-3 font-mono text-indigo-400">SOLIDB_CLUSTER_SCHEME</td>
-                      <td class="p-3">Protocol for cluster traffic (http or https).</td>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_LUA_FAST_MODE</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Set to <code class="text-amber-400">1</code> or <code class="text-amber-400">true</code> to skip Lua global reset between requests. Provides maximum throughput for stateless scripts. Do not enable if scripts rely on clean global state.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">QUEUE_WORKERS</td>
-                      <td class="p-3">Concurrent workers per node (default: 4).</td>
+                      <td class="p-3">4</td>
+                      <td class="p-3">Number of concurrent background job workers per node. Each worker polls for queued jobs and cron tasks.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Cluster -->
+            <div class="bg-green-900/10 border border-green-500/20 rounded-xl p-6">
+              <h3 class="text-green-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Cluster & Networking
+              </h3>
+              <div class="overflow-hidden border border-white/5 rounded-lg">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-3">Variable</th>
+                      <th class="p-3">Default</th>
+                      <th class="p-3">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_CLUSTER_SCHEME</td>
+                      <td class="p-3">http</td>
+                      <td class="p-3">Protocol for inter-node communication (<code class="text-amber-400">http</code> or <code class="text-amber-400">https</code>). Used for replication, sharding, blob sync, and scatter-gather queries.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- CLI -->
+            <div class="bg-purple-900/10 border border-purple-500/20 rounded-xl p-6">
+              <h3 class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                CLI (solidb scripts)
+              </h3>
+              <div class="overflow-hidden border border-white/5 rounded-lg">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-3">Variable</th>
+                      <th class="p-3">Default</th>
+                      <th class="p-3">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_API_KEY</td>
+                      <td class="p-3"><em>none</em></td>
+                      <td class="p-3">API key for CLI authentication. Overrides the value in <code class="text-amber-400">.solidb.json</code> config file.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_HOST</td>
+                      <td class="p-3"><em>none</em></td>
+                      <td class="p-3">Server hostname for CLI commands. Overrides config file.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_PORT</td>
+                      <td class="p-3"><em>none</em></td>
+                      <td class="p-3">Server port for CLI commands. Overrides config file.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_DATABASE</td>
+                      <td class="p-3"><em>none</em></td>
+                      <td class="p-3">Target database for CLI commands. Overrides config file.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_SERVICE</td>
+                      <td class="p-3">default</td>
+                      <td class="p-3">Default service name for script API routing.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -796,7 +922,10 @@ kubectl -n solidb get pods -w</pre>
                 class="bg-gray-950 p-4 rounded-xl border border-white/10 font-mono text-sm text-gray-300 whitespace-pre"
               >SOLIDB_ADMIN_PASSWORD=my_secure_password
 JWT_SECRET=your-secure-jwt-secret-32-chars-min
-QUEUE_WORKERS=8</div>
+QUEUE_WORKERS=8
+SOLIDB_LUA_POOL_SIZE=32
+SOLIDB_LUA_FAST_MODE=1
+SOLIDB_CLUSTER_SCHEME=https</div>
             </div>
 
             <div class="bg-blue-900/10 border border-blue-500/20 rounded-xl p-6 mt-6">

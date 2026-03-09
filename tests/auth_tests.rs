@@ -236,6 +236,26 @@ fn test_jwt_subject_preserved() {
 }
 
 // ============================================================================
+// Crypto Provider Tests
+// ============================================================================
+
+#[test]
+fn test_jwt_crypto_provider_installed() {
+    // Regression test: jsonwebtoken 10.x panics at runtime if both 'rust_crypto' and
+    // 'aws_lc_rs' features are active and no CryptoProvider has been explicitly installed.
+    // The aws_lc_rs crate can be pulled in transitively (e.g. via rustls/reqwest), which
+    // may enable both features depending on build configuration.
+    //
+    // This test verifies that JWT encode + decode works end-to-end without panicking,
+    // catching any CryptoProvider misconfiguration.
+    let token = AuthService::create_jwt("crypto_provider_test")
+        .expect("JWT creation must not panic — is CryptoProvider installed in main()?");
+    let claims = AuthService::validate_token(&token)
+        .expect("JWT validation must not panic — is CryptoProvider installed in main()?");
+    assert_eq!(claims.sub, "crypto_provider_test");
+}
+
+// ============================================================================
 // Edge Cases Tests
 // ============================================================================
 

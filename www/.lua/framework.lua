@@ -237,10 +237,13 @@ function Framework.handle_request()
     i = i + 1
   end
 
-  -- Also try direct GetParam by name for common query params
-  local channel_param = GetParam("channel")
-  if channel_param then
-    raw_params["channel"] = channel_param
+  -- GetParam(index) can miss params in some builds, so also check by name
+  -- for params commonly used in query strings across the app
+  for _, name in ipairs({"service", "channel", "page", "search", "q", "filter", "sort"}) do
+    if not raw_params[name] then
+      local val = GetParam(name)
+      if val then raw_params[name] = val end
+    end
   end
 
   -- Merge POST body params

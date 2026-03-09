@@ -113,4 +113,6 @@ pub struct ScriptResult {
     pub status: u16,
     pub body: JsonValue,
     pub headers: HashMap<String, String>,
+    /// Pre-serialized JSON body — if set, used directly instead of serializing `body`
+    pub raw_body: Option<String>,
 }

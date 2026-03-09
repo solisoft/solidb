@@ -660,6 +660,7 @@ pub async fn create_service_handler(
     collection.insert(doc_value.clone())?;
 
     tracing::info!("Service '{}' created in database '{}'", req.key, db_name);
+    state.service_cache.insert(&db_name, &req.key, service);
 
     // Record write for replication
     if let Some(ref log) = state.replication_log {
@@ -788,6 +789,9 @@ pub async fn update_service_handler(
         service_key,
         db_name
     );
+    state
+        .service_cache
+        .insert(&db_name, &service_key, service.clone());
 
     // Record write for replication
     if let Some(ref log) = state.replication_log {
@@ -866,6 +870,7 @@ pub async fn delete_service_handler(
         db_name,
         scripts_deleted
     );
+    state.service_cache.invalidate(&db_name, &service_key);
 
     // Record write for replication
     if let Some(ref log) = state.replication_log {
@@ -1006,8 +1011,16 @@ pub async fn execute_service_script_handler(
     let service_key = parts[1];
     let script_path = if parts.len() > 2 { parts[2] } else { "" };
 
-    // Verify service exists and is enabled
-    let service = {
+    // Verify service exists and is enabled (cached)
+    let service = if let Some(cached) = state.service_cache.get(db_name, service_key) {
+        if !cached.enabled {
+            return Err(DbError::BadRequest(format!(
+                "Service '{}' is disabled",
+                service_key
+            )));
+        }
+        cached
+    } else {
         let db = state.storage.get_database(db_name)?;
         let services_col = match db.get_collection(SERVICES_COLLECTION) {
             Ok(c) => c,
@@ -1030,6 +1043,7 @@ pub async fn execute_service_script_handler(
                         service_key
                     )));
                 }
+                state.service_cache.insert(db_name, service_key, s.clone());
                 s
             }
             Err(DbError::DocumentNotFound(_)) => {
@@ -1155,11 +1169,19 @@ pub async fn execute_service_script_handler(
     // Auto-select DB in Lua context using the path's db_name
     let result = engine.execute(&script, db_name, &context).await?;
 
-    Ok((
-        StatusCode::from_u16(result.status).unwrap_or(StatusCode::OK),
-        Json(result.body),
-    )
-        .into_response())
+    let status = StatusCode::from_u16(result.status).unwrap_or(StatusCode::OK);
+
+    // Fast path: if script returned pre-serialized JSON, send it directly
+    if let Some(raw) = result.raw_body {
+        return Ok((
+            status,
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            raw,
+        )
+            .into_response());
+    }
+
+    Ok((status, Json(result.body)).into_response())
 }
 
 /// Find a script that matches the given service path and method

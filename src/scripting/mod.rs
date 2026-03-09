@@ -6,7 +6,7 @@
 mod ai_bindings;
 mod auth;
 pub mod channel_manager;
-mod conversion;
+pub(crate) mod conversion;
 mod dev_tools;
 pub mod engine;
 mod error_handling;

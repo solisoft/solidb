@@ -10,6 +10,8 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
+use super::globals::ScriptNeeds;
+
 /// Cache for compiled Lua bytecode.
 ///
 /// Compiling Lua source to bytecode takes ~10% of request time.
@@ -18,6 +20,8 @@ use std::time::Instant;
 pub struct ScriptCache {
     /// Cache entries: key -> (bytecode, last_access_time, access_count)
     entries: DashMap<String, CacheEntry>,
+    /// Cached code analysis results: script_key -> ScriptNeeds
+    needs_cache: DashMap<String, ScriptNeeds>,
     /// Maximum number of entries
     max_size: usize,
     /// Cache statistics
@@ -43,6 +47,7 @@ impl ScriptCache {
     pub fn new(max_size: usize) -> Self {
         Self {
             entries: DashMap::with_capacity(max_size),
+            needs_cache: DashMap::new(),
             max_size,
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
@@ -159,16 +164,28 @@ impl ScriptCache {
         );
     }
 
+    /// Get cached ScriptNeeds or analyze the code and cache the result.
+    pub fn get_or_analyze_needs(&self, script_key: &str, code: &str) -> ScriptNeeds {
+        if let Some(needs) = self.needs_cache.get(script_key) {
+            return *needs;
+        }
+        let needs = ScriptNeeds::analyze(code);
+        self.needs_cache.insert(script_key.to_string(), needs);
+        needs
+    }
+
     /// Invalidate cache entry for a script.
     pub fn invalidate(&self, script_key: &str) {
         // Remove all entries that start with this script key
         self.entries
             .retain(|k, _| !k.starts_with(&format!("{}:", script_key)));
+        self.needs_cache.remove(script_key);
     }
 
     /// Clear the entire cache.
     pub fn clear(&self) {
         self.entries.clear();
+        self.needs_cache.clear();
     }
 
     /// Evict the least recently used entry.

@@ -118,9 +118,16 @@
       console.log('openNewScriptModal: no service selected');
       return;
     }
-    var url = '/database/' + db + '/scripts/modal/create?service=' + encodeURIComponent(selectedService);
+    var svc = selectedService;
+    var url = '/database/' + db + '/scripts/modal/create?service=' + encodeURIComponent(svc);
     console.log('openNewScriptModal: fetching', url);
-    htmx.ajax('GET', url, {target: '#modal-container', swap: 'innerHTML'});
+    htmx.ajax('GET', url, {target: '#modal-container', swap: 'innerHTML'}).then(function() {
+      // Ensure the service is set correctly in the modal after render
+      var hiddenInput = document.querySelector('#script-modal input[name="service"]');
+      if (hiddenInput) hiddenInput.value = svc;
+      var preview = document.getElementById('script-service-preview');
+      if (preview) preview.textContent = svc;
+    });
   };
 
   // Deselect service and go back to overview

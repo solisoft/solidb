@@ -1,6 +1,7 @@
 use crate::scripting::engine::{LuaPool, ScriptCache, ScriptIndex};
 use crate::scripting::ScriptStats;
 use crate::server::cursor_store::CursorStore;
+use crate::server::service_cache::ServiceCache;
 use crate::storage::StorageEngine;
 use axum::response::Json;
 use serde_json::Value;
@@ -88,6 +89,8 @@ pub struct AppState {
     pub script_cache: Arc<ScriptCache>,
     // Script index for fast route lookup
     pub script_index: Arc<ScriptIndex>,
+    // Service metadata cache to avoid RocksDB reads on every script request
+    pub service_cache: Arc<ServiceCache>,
     // Blob rebalance worker for cluster maintenance
     pub blob_rebalance_worker: Option<Arc<crate::sharding::BlobRebalanceWorker>>,
 }

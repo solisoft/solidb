@@ -32,19 +32,172 @@ static ENV_CACHE: Lazy<DashMap<String, EnvCacheEntry>> = Lazy::new(DashMap::new)
 
 const ENV_CACHE_TTL: Duration = Duration::from_secs(5);
 
+/// Global cache for parsed SDBQL ASTs to avoid re-parsing the same query strings.
+/// Key: query string, Value: parsed Query AST
+static QUERY_AST_CACHE: Lazy<DashMap<String, Arc<crate::sdbql::ast::Query>>> =
+    Lazy::new(|| DashMap::with_capacity(256));
+
+/// Parse a query with caching. Returns a cached AST clone or parses and caches.
+fn parse_cached(query: &str) -> crate::error::DbResult<Arc<crate::sdbql::ast::Query>> {
+    if let Some(ast) = QUERY_AST_CACHE.get(query) {
+        return Ok(Arc::clone(ast.value()));
+    }
+    let ast = Arc::new(parse(query)?);
+    QUERY_AST_CACHE.insert(query.to_string(), Arc::clone(&ast));
+    Ok(ast)
+}
+
+/// Sync-friendly query result cache for Lua db:query() hot path.
+/// Key: u64 hash (zero-alloc), Value: (cached_at, json_values, json_string)
+type QueryResultEntry = (Instant, Arc<Vec<JsonValue>>, Arc<String>);
+static LUA_QUERY_CACHE: Lazy<DashMap<u64, QueryResultEntry>> =
+    Lazy::new(|| DashMap::with_capacity(1024));
+
+const LUA_QUERY_CACHE_TTL: Duration = Duration::from_millis(100);
+
+/// Compute a u64 cache key from db_name + query + bind vars (zero-alloc).
+fn query_cache_key(
+    db_name: &str,
+    query: &str,
+    bind_vars_map: &std::collections::HashMap<String, JsonValue>,
+) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    db_name.hash(&mut hasher);
+    query.hash(&mut hasher);
+    if !bind_vars_map.is_empty() {
+        let mut sorted: Vec<_> = bind_vars_map.iter().collect();
+        sorted.sort_by(|a, b| a.0.cmp(b.0));
+        for (k, v) in &sorted {
+            k.hash(&mut hasher);
+            v.to_string().hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
+/// Execute a query and populate the cache.
+fn query_execute_and_cache(
+    storage: &Arc<StorageEngine>,
+    db_name: &str,
+    query: &str,
+    bind_vars_map: std::collections::HashMap<String, JsonValue>,
+    cache_key: u64,
+) -> Result<(Arc<Vec<JsonValue>>, Arc<String>), crate::error::DbError> {
+    let query_ast = parse_cached(query)?;
+
+    let executor = if bind_vars_map.is_empty() {
+        QueryExecutor::with_database(storage, db_name.to_string())
+    } else {
+        QueryExecutor::with_database_and_bind_vars(storage, db_name.to_string(), bind_vars_map)
+    };
+
+    let results = executor.execute(&query_ast)?;
+    let json_str = serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string());
+    let results = Arc::new(results);
+    let json_str = Arc::new(json_str);
+
+    LUA_QUERY_CACHE.insert(
+        cache_key,
+        (Instant::now(), Arc::clone(&results), Arc::clone(&json_str)),
+    );
+
+    Ok((results, json_str))
+}
+
+/// Get or execute a read-only query with caching. Returns Vec<JsonValue>.
+fn query_cached(
+    storage: &Arc<StorageEngine>,
+    db_name: &str,
+    query: &str,
+    bind_vars_map: std::collections::HashMap<String, JsonValue>,
+) -> Result<Arc<Vec<JsonValue>>, crate::error::DbError> {
+    let cache_key = query_cache_key(db_name, query, &bind_vars_map);
+
+    if let Some(entry) = LUA_QUERY_CACHE.get(&cache_key) {
+        let (cached_at, results, _) = entry.value();
+        if cached_at.elapsed() < LUA_QUERY_CACHE_TTL {
+            return Ok(Arc::clone(results));
+        }
+    }
+
+    let (results, _) = query_execute_and_cache(storage, db_name, query, bind_vars_map, cache_key)?;
+    Ok(results)
+}
+
+/// Get or execute a read-only query with caching. Returns pre-serialized JSON string.
+fn query_cached_json(
+    storage: &Arc<StorageEngine>,
+    db_name: &str,
+    query: &str,
+    bind_vars_map: std::collections::HashMap<String, JsonValue>,
+) -> Result<Arc<String>, crate::error::DbError> {
+    let cache_key = query_cache_key(db_name, query, &bind_vars_map);
+
+    if let Some(entry) = LUA_QUERY_CACHE.get(&cache_key) {
+        let (cached_at, _, json_str) = entry.value();
+        if cached_at.elapsed() < LUA_QUERY_CACHE_TTL {
+            return Ok(Arc::clone(json_str));
+        }
+    }
+
+    let (_, json_str) = query_execute_and_cache(storage, db_name, query, bind_vars_map, cache_key)?;
+    Ok(json_str)
+}
+
+/// Flags indicating which globals a script needs, derived from code analysis.
+/// Cached per script to avoid re-scanning on every request.
+#[derive(Clone, Copy, Default)]
+pub struct ScriptNeeds {
+    pub db: bool,
+    pub request: bool,
+    pub solidb_log: bool,
+    pub solidb_stats: bool,
+    pub solidb_auth: bool,
+    pub solidb_env: bool,
+    pub solidb_file: bool,
+    pub solidb_ai: bool,
+    pub solidb_stream: bool,
+}
+
+impl ScriptNeeds {
+    /// Analyze script code to determine which globals it references.
+    pub fn analyze(code: &str) -> Self {
+        Self {
+            db: code.contains("db.") || code.contains("db:"),
+            request: code.contains("request") || code.contains("context"),
+            solidb_log: code.contains("solidb.log") || code.contains("solidb:log"),
+            solidb_stats: code.contains("solidb.stats") || code.contains("solidb:stats"),
+            solidb_auth: code.contains("solidb.auth") || code.contains("auth"),
+            solidb_env: code.contains("solidb.env"),
+            solidb_file: code.contains("solidb.file")
+                || code.contains("solidb.upload")
+                || code.contains("solidb.image"),
+            solidb_ai: code.contains("solidb.ai"),
+            solidb_stream: code.contains("solidb.stream"),
+        }
+    }
+
+    /// Returns true if any globals need setup at all.
+    pub fn any(&self) -> bool {
+        self.db
+            || self.request
+            || self.solidb_log
+            || self.solidb_stats
+            || self.solidb_auth
+            || self.solidb_env
+            || self.solidb_file
+            || self.solidb_ai
+            || self.solidb_stream
+    }
+}
+
 /// Setup only per-request globals (fast path for pooled states with static globals)
 ///
 /// This function is called on each request when the pool state already has
-/// static globals initialized. It only sets up:
-/// - `request` / `context` tables (from ScriptContext)
-/// - `db` object (needs db_name, storage)
-/// - `solidb.auth` (needs context.user)
-/// - `solidb.log` (needs db_name, script_info)
-/// - `solidb.env` (loaded from _env collection, cached)
-/// - `solidb.stats` (needs stats reference)
-/// - `solidb.file_*`, `solidb.upload`, `solidb.image_process` (need db_name)
-/// - `solidb.ai` (needs db_name)
-/// - `solidb.streams` (needs stream_manager)
+/// static globals initialized. Only sets up globals the script actually references.
 pub fn setup_request_globals(
     engine: &ScriptEngine,
     lua: &Lua,
@@ -52,49 +205,145 @@ pub fn setup_request_globals(
     context: &ScriptContext,
     script_info: Option<(&str, &str)>,
 ) -> Result<(), DbError> {
-    let globals = lua.globals();
+    setup_request_globals_selective(engine, lua, db_name, context, script_info, None)
+}
 
-    // Get the existing solidb table (created by static globals)
-    let solidb: mlua::Table = globals
-        .get("solidb")
-        .map_err(|e| DbError::InternalError(format!("solidb table not found: {}", e)))?;
+/// Setup per-request globals, optionally filtered by what the script needs.
+pub fn setup_request_globals_selective(
+    engine: &ScriptEngine,
+    lua: &Lua,
+    db_name: &str,
+    context: &ScriptContext,
+    script_info: Option<(&str, &str)>,
+    needs: Option<&ScriptNeeds>,
+) -> Result<(), DbError> {
+    // If no needs provided, set up everything (backwards compatible)
+    let all = ScriptNeeds {
+        db: true,
+        request: true,
+        solidb_log: true,
+        solidb_stats: true,
+        solidb_auth: true,
+        solidb_env: true,
+        solidb_file: true,
+        solidb_ai: true,
+        solidb_stream: true,
+    };
+    let needs = needs.unwrap_or(&all);
 
-    // 1. Setup solidb.log
-    setup_log_function(engine, lua, &solidb, db_name, script_info)?;
-
-    // 2. Setup solidb.stats
-    setup_stats_function(lua, &solidb, &engine.stats)?;
-
-    // 3. Setup solidb.auth
-    let auth_table = auth::create_auth_table(lua, &context.user)
-        .map_err(|e| DbError::InternalError(format!("Failed to create auth table: {}", e)))?;
-    solidb
-        .set("auth", auth_table)
-        .map_err(|e| DbError::InternalError(format!("Failed to set auth: {}", e)))?;
-
-    // 4. Setup solidb.env (with caching)
-    setup_env_table_cached(engine, lua, &solidb, db_name)?;
-
-    // 5. Setup file handling functions
-    setup_file_functions(lua, &solidb, &engine.storage, db_name)?;
-
-    // 6. Setup AI bindings
-    let ai_table = ai_bindings::create_ai_table(lua, engine.storage.clone(), db_name)
-        .map_err(|e| DbError::InternalError(format!("Failed to create AI table: {}", e)))?;
-    solidb
-        .set("ai", ai_table)
-        .map_err(|e| DbError::InternalError(format!("Failed to set solidb.ai: {}", e)))?;
-
-    // 7. Setup streams if available
-    if let Some(stream_manager) = engine.stream_manager.clone() {
-        setup_streams_table(lua, &solidb, stream_manager)?;
+    // Early return if nothing needed
+    if !needs.any() {
+        return Ok(());
     }
 
-    // 8. Setup db object
-    setup_db_object(engine, lua, db_name)?;
+    let globals = lua.globals();
 
-    // 9. Setup request/context tables
-    setup_request_table(lua, context)?;
+    // Check if db-level globals are already set up for this db+script combo.
+    // If so, only refresh per-request globals (request table + auth).
+    let bound_key: String = globals.get("__solidb_bound_key").unwrap_or_default();
+    let expected_key = format!("{}:{}", db_name, script_info.map(|(k, _)| k).unwrap_or(""));
+    let already_bound = !bound_key.is_empty() && bound_key == expected_key;
+
+    if already_bound {
+        // Fast path: only refresh what changes per-request
+        if needs.request {
+            setup_request_table(lua, context)?;
+        }
+        if needs.solidb_auth {
+            if let Ok(solidb) = globals.get::<mlua::Table>("solidb") {
+                let auth_table = auth::create_auth_table(lua, &context.user).map_err(|e| {
+                    DbError::InternalError(format!("Failed to create auth table: {}", e))
+                })?;
+                solidb
+                    .set("auth", auth_table)
+                    .map_err(|e| DbError::InternalError(format!("Failed to set auth: {}", e)))?;
+            }
+        }
+        return Ok(());
+    }
+
+    // Full setup: set up all needed globals and mark the pool state as bound
+    let needs_solidb = needs.solidb_log
+        || needs.solidb_stats
+        || needs.solidb_auth
+        || needs.solidb_env
+        || needs.solidb_file
+        || needs.solidb_ai
+        || needs.solidb_stream;
+
+    let solidb: Option<mlua::Table> = if needs_solidb {
+        Some(
+            globals
+                .get("solidb")
+                .map_err(|e| DbError::InternalError(format!("solidb table not found: {}", e)))?,
+        )
+    } else {
+        None
+    };
+
+    if needs.solidb_log {
+        if let Some(ref solidb) = solidb {
+            setup_log_function(engine, lua, solidb, db_name, script_info)?;
+        }
+    }
+
+    if needs.solidb_stats {
+        if let Some(ref solidb) = solidb {
+            setup_stats_function(lua, solidb, &engine.stats)?;
+        }
+    }
+
+    if needs.solidb_auth {
+        if let Some(ref solidb) = solidb {
+            let auth_table = auth::create_auth_table(lua, &context.user).map_err(|e| {
+                DbError::InternalError(format!("Failed to create auth table: {}", e))
+            })?;
+            solidb
+                .set("auth", auth_table)
+                .map_err(|e| DbError::InternalError(format!("Failed to set auth: {}", e)))?;
+        }
+    }
+
+    if needs.solidb_env {
+        if let Some(ref solidb) = solidb {
+            setup_env_table_cached(engine, lua, solidb, db_name)?;
+        }
+    }
+
+    if needs.solidb_file {
+        if let Some(ref solidb) = solidb {
+            setup_file_functions(lua, solidb, &engine.storage, db_name)?;
+        }
+    }
+
+    if needs.solidb_ai {
+        if let Some(ref solidb) = solidb {
+            let ai_table = ai_bindings::create_ai_table(lua, engine.storage.clone(), db_name)
+                .map_err(|e| DbError::InternalError(format!("Failed to create AI table: {}", e)))?;
+            solidb
+                .set("ai", ai_table)
+                .map_err(|e| DbError::InternalError(format!("Failed to set solidb.ai: {}", e)))?;
+        }
+    }
+
+    if needs.solidb_stream {
+        if let Some(ref solidb) = solidb {
+            if let Some(stream_manager) = engine.stream_manager.clone() {
+                setup_streams_table(lua, solidb, stream_manager)?;
+            }
+        }
+    }
+
+    if needs.db {
+        setup_db_object(engine, lua, db_name)?;
+    }
+
+    if needs.request {
+        setup_request_table(lua, context)?;
+    }
+
+    // Mark this pool state as bound to this db+script
+    let _ = globals.set("__solidb_bound_key", expected_key);
 
     Ok(())
 }
@@ -819,21 +1068,7 @@ fn setup_db_query_method(
                     std::collections::HashMap::new()
                 };
 
-                let query_ast = parse(&query)
-                    .map_err(|e| mlua::Error::external(DbError::BadRequest(e.to_string())))?;
-
-                let executor = if bind_vars_map.is_empty() {
-                    QueryExecutor::with_database(&storage, db_query.clone())
-                } else {
-                    QueryExecutor::with_database_and_bind_vars(
-                        &storage,
-                        db_query.clone(),
-                        bind_vars_map,
-                    )
-                };
-
-                let results = executor
-                    .execute(&query_ast)
+                let results = query_cached(&storage, &db_query, &query, bind_vars_map)
                     .map_err(mlua::Error::external)?;
 
                 let result_table = lua.create_table()?;
@@ -849,6 +1084,42 @@ fn setup_db_query_method(
     db_handle
         .set("query", query_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set query function: {}", e)))?;
+
+    // db:query_json(sdbql, bind_vars?) -> returns raw JSON string, skipping Lua table conversion
+    let storage_qj = storage.clone();
+    let db_qj = db_name.to_string();
+    let query_json_fn = lua
+        .create_function(
+            move |_lua, (_, query, bind_vars): (LuaValue, String, Option<LuaValue>)| {
+                let storage = storage_qj.clone();
+
+                let bind_vars_map = if let Some(vars) = bind_vars {
+                    let json_vars = lua_to_json_value(_lua, vars)?;
+                    if let JsonValue::Object(map) = json_vars {
+                        map.into_iter().collect()
+                    } else {
+                        std::collections::HashMap::new()
+                    }
+                } else {
+                    std::collections::HashMap::new()
+                };
+
+                let json_str = query_cached_json(&storage, &db_qj, &query, bind_vars_map)
+                    .map_err(mlua::Error::external)?;
+
+                // Return as RawJson userdata — bypasses all conversion
+                Ok(LuaValue::UserData(_lua.create_userdata(
+                    crate::scripting::conversion::RawJson((*json_str).clone()),
+                )?))
+            },
+        )
+        .map_err(|e| {
+            DbError::InternalError(format!("Failed to create query_json function: {}", e))
+        })?;
+
+    db_handle
+        .set("query_json", query_json_fn)
+        .map_err(|e| DbError::InternalError(format!("Failed to set query_json: {}", e)))?;
 
     Ok(())
 }
@@ -1952,22 +2223,7 @@ pub fn setup_lua_globals(
                     std::collections::HashMap::new()
                 };
 
-                // Parse and execute query
-                let query_ast = parse(&query)
-                    .map_err(|e| mlua::Error::external(DbError::BadRequest(e.to_string())))?;
-
-                let executor = if bind_vars_map.is_empty() {
-                    QueryExecutor::with_database(&storage, db_query.clone())
-                } else {
-                    QueryExecutor::with_database_and_bind_vars(
-                        &storage,
-                        db_query.clone(),
-                        bind_vars_map,
-                    )
-                };
-
-                let results = executor
-                    .execute(&query_ast)
+                let results = query_cached(&storage, &db_query, &query, bind_vars_map)
                     .map_err(mlua::Error::external)?;
 
                 // Convert results to Lua table

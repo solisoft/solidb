@@ -944,10 +944,17 @@ impl Collection {
             .expect("Column family should exist");
         let prefix = DOC_PREFIX.as_bytes();
 
-        // Use optimized read options for sequential scan
+        // Scale readahead to limit: small reads get minimal readahead
         let mut read_opts = rocksdb::ReadOptions::default();
         read_opts.set_prefix_same_as_start(true);
-        read_opts.set_readahead_size(256 * 1024); // 256KB readahead for sequential scan
+        let readahead = match limit {
+            Some(n) if n <= 10 => 0,          // Small reads: no readahead
+            Some(n) if n <= 100 => 16 * 1024, // Medium: 16KB
+            _ => 256 * 1024,                  // Large/unlimited: 256KB
+        };
+        if readahead > 0 {
+            read_opts.set_readahead_size(readahead);
+        }
 
         let iter = db.iterator_cf_opt(
             cf,

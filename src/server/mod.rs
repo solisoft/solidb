@@ -15,6 +15,7 @@ pub mod repl_session;
 pub mod role_handlers;
 pub mod routes;
 pub mod script_handlers;
+pub mod service_cache;
 pub mod sql_handlers;
 pub mod transaction_handlers;
 pub mod trigger_handlers;

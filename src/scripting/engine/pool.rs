@@ -117,10 +117,18 @@ impl LuaPool {
     }
 
     /// Create a pool sized to the available parallelism.
+    ///
+    /// Pool size can be overridden with `SOLIDB_LUA_POOL_SIZE` env var.
+    /// Fast mode (skip reset) can be enabled with `SOLIDB_LUA_FAST_MODE=1`.
     pub fn with_default_size() -> Self {
-        let size = std::thread::available_parallelism()
-            .map(|p| p.get())
-            .unwrap_or(4)
+        let size = std::env::var("SOLIDB_LUA_POOL_SIZE")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or_else(|| {
+                std::thread::available_parallelism()
+                    .map(|p| p.get())
+                    .unwrap_or(4)
+            })
             .max(4); // Minimum 4 states
 
         // Check environment variable for fast mode

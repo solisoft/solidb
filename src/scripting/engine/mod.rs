@@ -120,7 +120,7 @@ impl ScriptEngine {
     ///
     /// This method uses a two-tier globals system for maximum performance:
     /// - Static globals (crypto, time, json, etc.) are initialized once per pool state
-    /// - Per-request globals (db, request, context, etc.) are set up on each request
+    /// - Per-request globals (db, request, context, etc.) are set up only if referenced
     async fn execute_with_pool(
         &self,
         pool: &Arc<LuaPool>,
@@ -130,20 +130,17 @@ impl ScriptEngine {
     ) -> Result<ScriptResult, DbError> {
         let pool_guard = pool.acquire();
 
-        // Check if this is a "pure" script that doesn't need globals setup
-        // Pure scripts don't reference db, request, response, solidb, context
-        let needs_globals = !pool.skip_reset()
-            || script.code.contains("db.")
-            || script.code.contains("db:")
-            || script.code.contains("request")
-            || script.code.contains("response")
-            || script.code.contains("solidb")
-            || script.code.contains("context");
+        // Analyze what globals this script needs (cached in script_cache)
+        let needs = if let Some(ref cache) = self.script_cache {
+            cache.get_or_analyze_needs(&script.key, &script.code)
+        } else {
+            globals::ScriptNeeds::analyze(&script.code)
+        };
 
         // SINGLE lock acquisition for entire operation
-        let result = pool_guard.with_lua(|lua| {
-            // 1. Set up the Lua environment (skip for pure scripts in fast mode)
-            if needs_globals {
+        pool_guard.with_lua(|lua| {
+            // Set up only the globals this script actually uses
+            if needs.any() {
                 // Check if static globals are already initialized (two-tier optimization)
                 let has_static_globals = lua
                     .globals()
@@ -151,13 +148,14 @@ impl ScriptEngine {
                     .unwrap_or(false);
 
                 if has_static_globals {
-                    // Fast path: only set up per-request globals
-                    globals::setup_request_globals(
+                    // Fast path: only set up per-request globals the script needs
+                    globals::setup_request_globals_selective(
                         self,
                         lua,
                         db_name,
                         context,
                         Some((&script.key, &script.name)),
+                        Some(&needs),
                     )?;
                 } else {
                     // Fallback: set up all globals (for states without static initialization)
@@ -196,14 +194,24 @@ impl ScriptEngine {
                 .eval::<LuaValue>()
                 .map_err(|e| DbError::InternalError(format!("Lua error: {}", e)))?;
 
-            // 4. Convert result to JSON
-            self.lua_to_json(lua, lua_result)
-        })?;
-
-        Ok(ScriptResult {
-            status: 200,
-            body: result,
-            headers: HashMap::new(),
+            // 4. Check for RawJson (pre-serialized) or convert to JSON
+            if let LuaValue::UserData(ref ud) = lua_result {
+                if let Ok(raw) = ud.borrow::<crate::scripting::conversion::RawJson>() {
+                    return Ok(ScriptResult {
+                        status: 200,
+                        body: JsonValue::Null,
+                        headers: HashMap::new(),
+                        raw_body: Some(raw.0.clone()),
+                    });
+                }
+            }
+            let body = self.lua_to_json(lua, lua_result)?;
+            Ok(ScriptResult {
+                status: 200,
+                body,
+                headers: HashMap::new(),
+                raw_body: None,
+            })
         })
     }
 
@@ -257,6 +265,7 @@ impl ScriptEngine {
                     status: 200,
                     body: json_result,
                     headers: HashMap::new(),
+                    raw_body: None,
                 })
             }
             Err(e) => Err(DbError::InternalError(format!("Lua error: {}", e))),

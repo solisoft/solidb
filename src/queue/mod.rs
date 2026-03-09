@@ -58,8 +58,8 @@ impl QueueWorker {
                         _ = rx.recv() => {
                             // Woke up by notification
                         }
-                        _ = tokio::time::sleep(Duration::from_secs(1)) => {
-                            // Periodic check
+                        _ = tokio::time::sleep(Duration::from_secs(5)) => {
+                            // Periodic fallback check (jobs enqueued via notifier wake instantly)
                         }
                     }
 

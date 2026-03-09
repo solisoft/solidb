@@ -140,6 +140,53 @@ pub fn create_router(
         index_stats.pattern_entries
     );
 
+    // Pre-warm caches at startup: analyze script needs + compile bytecode + cache services
+    let service_cache = Arc::new(crate::server::service_cache::ServiceCache::new(5));
+    {
+        let mut scripts_warmed = 0u32;
+        let mut services_warmed = 0u32;
+        let temp_lua = mlua::Lua::new();
+
+        for db_name in storage.list_databases() {
+            if let Ok(db) = storage.get_database(&db_name) {
+                // Pre-warm script needs + bytecode
+                if let Ok(collection) = db.get_collection("_scripts") {
+                    for doc in collection.scan(None) {
+                        if let Ok(script) =
+                            serde_json::from_value::<crate::scripting::Script>(doc.to_value())
+                        {
+                            script_cache.get_or_analyze_needs(&script.key, &script.code);
+                            let _ =
+                                script_cache.get_or_compile(&script.key, &script.code, |code| {
+                                    let chunk = temp_lua.load(code);
+                                    let func = chunk.into_function()?;
+                                    Ok(func.dump(false))
+                                });
+                            scripts_warmed += 1;
+                        }
+                    }
+                }
+                // Pre-warm service cache
+                if let Ok(collection) = db.get_collection("_services") {
+                    for doc in collection.scan(None) {
+                        if let Ok(service) =
+                            serde_json::from_value::<crate::scripting::Service>(doc.to_value())
+                        {
+                            let key = service.key.clone();
+                            service_cache.insert(&db_name, &key, service);
+                            services_warmed += 1;
+                        }
+                    }
+                }
+            }
+        }
+        tracing::info!(
+            "Caches pre-warmed: {} scripts (needs + bytecode), {} services",
+            scripts_warmed,
+            services_warmed
+        );
+    }
+
     let cursor_store = CursorStore::new(Duration::from_secs(300));
     cursor_store.spawn_cleanup_task();
 
@@ -165,6 +212,7 @@ pub fn create_router(
         lua_pool,
         script_cache,
         script_index,
+        service_cache,
         blob_rebalance_worker,
     };
 
