@@ -17,6 +17,8 @@ impl QueueWorker {
             .unwrap()
             .as_secs();
 
+        tracing::debug!("Checking for pending jobs at timestamp {}", now);
+
         for db_name in databases {
             let db = match self.storage.get_database(&db_name) {
                 Ok(db) => db,
@@ -33,6 +35,8 @@ impl QueueWorker {
                 "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} SORT j.priority DESC LIMIT 1 RETURN j",
                 now
             );
+
+            tracing::debug!("Query for db {}: {}", db_name, query_str);
 
             let query_ast = match crate::sdbql::parse(&query_str) {
                 Ok(q) => q,
@@ -52,10 +56,20 @@ impl QueueWorker {
                 }
             };
 
+            if result.is_empty() {
+                continue;
+            }
+
             let job_val = match result.first() {
                 Some(val) => val,
                 None => continue,
             };
+
+            tracing::info!(
+                "Found pending job to execute in db {}: {:?}",
+                db_name,
+                job_val
+            );
 
             let mut job: Job = match serde_json::from_value(job_val.clone()) {
                 Ok(j) => j,
@@ -74,9 +88,12 @@ impl QueueWorker {
                 .as_millis() as u64;
             job.started_at = Some(now_millis);
             let doc_val = serde_json::to_value(&job).unwrap();
-            if let Err(_e) = jobs_coll.update_with_rev(&job.id, &rev, doc_val) {
+            if let Err(e) = jobs_coll.update_with_rev(&job.id, &rev, doc_val) {
+                tracing::warn!("Failed to claim job {}: {}", job.id, e);
                 continue;
             }
+
+            tracing::info!("Claimed job {} in db {}", job.id, db_name);
 
             // Execute
             let worker_storage = self.storage.clone();
@@ -147,6 +164,8 @@ impl QueueWorker {
         job: &Job,
         db_name: &str,
     ) -> Result<(), crate::error::DbError> {
+        tracing::info!("Executing job {} with script {}", job.id, job.script_path);
+
         let _db = storage.get_database(db_name)?;
 
         // Find script by path

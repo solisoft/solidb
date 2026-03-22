@@ -31,6 +31,7 @@ use super::nl_handlers;
 use crate::scripting::engine::{LuaPool, ScriptCache, ScriptIndex};
 use crate::scripting::ScriptStats;
 use crate::server::cursor_store::CursorStore;
+use crate::server::upload_session::UploadSessionStore;
 use crate::storage::StorageEngine;
 
 #[allow(clippy::too_many_arguments)]
@@ -190,6 +191,30 @@ pub fn create_router(
     let cursor_store = CursorStore::new(Duration::from_secs(300));
     cursor_store.spawn_cleanup_task();
 
+    let upload_session_store = UploadSessionStore::new(Duration::from_secs(24 * 60 * 60));
+    {
+        let storage_clone = storage.clone();
+        upload_session_store.spawn_cleanup_task(move |db_name, coll_name, upload_id| {
+            tracing::info!(
+                "Cleaning up expired upload session {} for {}/{}",
+                upload_id,
+                db_name,
+                coll_name
+            );
+            if let Ok(db) = storage_clone.get_database(db_name) {
+                if let Ok(coll) = db.get_collection(coll_name) {
+                    if let Err(e) = coll.delete_upload_chunks(upload_id) {
+                        tracing::warn!(
+                            "Failed to clean up temp chunks for upload {}: {}",
+                            upload_id,
+                            e
+                        );
+                    }
+                }
+            }
+        });
+    }
+
     let state = AppState {
         storage,
         cursor_store,
@@ -214,6 +239,7 @@ pub fn create_router(
         script_index,
         service_cache,
         blob_rebalance_worker,
+        upload_session_store,
     };
 
     // Protected API routes
@@ -312,6 +338,27 @@ pub fn create_router(
             post(upload_blob).layer(DefaultBodyLimit::max(500 * 1024 * 1024)),
         )
         .route("/_api/blob/{db}/{collection}/{key}", get(download_blob))
+        // Resumable blob upload routes
+        .route(
+            "/_api/blob/{db}/{collection}/upload",
+            post(create_upload_session),
+        )
+        .route(
+            "/_api/blob/{db}/{collection}/upload/{upload_id}/{chunk_index}",
+            post(upload_chunk).layer(DefaultBodyLimit::max(6 * 1024 * 1024)),
+        )
+        .route(
+            "/_api/blob/{db}/{collection}/upload/{upload_id}/complete",
+            post(complete_upload),
+        )
+        .route(
+            "/_api/blob/{db}/{collection}/upload/{upload_id}/status",
+            get(get_upload_status),
+        )
+        .route(
+            "/_api/blob/{db}/{collection}/upload/{upload_id}/abort",
+            delete(abort_upload),
+        )
         // Query routes
         .route("/_api/database/{db}/cursor", post(execute_query))
         .route("/_api/cursor/{id}", put(get_next_batch))
@@ -570,6 +617,10 @@ pub fn create_router(
         .route(
             "/_api/database/{db}/queues/jobs/{id}",
             delete(super::queue_handlers::cancel_job_handler),
+        )
+        .route(
+            "/_api/database/{db}/queues/jobs/{id}/run-now",
+            post(super::queue_handlers::run_now_job_handler),
         )
         // Cron Job Management
         .route(

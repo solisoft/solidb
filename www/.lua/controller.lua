@@ -1,7 +1,6 @@
 -- Controller base class for luaonbeans MVC framework
 -- Provides request/response helpers and view rendering
 
-local etlua = require("etlua")
 local view = require("view")
 
 local Controller = {}
@@ -20,23 +19,42 @@ function Controller:extend()
   return cls
 end
 
+-- Reusable empty table for avoiding allocations
+local _empty = {}
+
+-- Shared empty headers table (copy-on-write: replaced on first header set)
+local _empty_headers = {}
+
+-- Response defaults (shared via metatable, fields written on instance only when changed)
+local _response_defaults = { status = 200, headers = _empty_headers, body = "" }
+local _response_mt = { __index = _response_defaults }
+
+-- Prototype defaults (found via __index chain, no per-instance allocation)
+Controller.layout = "application"
+Controller.cookies = _empty
+Controller.session = _empty
+Controller.flash = _empty
+Controller.middleware_data = _empty
+
 -- Create a new controller instance
-function Controller:new(request_context)
+-- Accepts either (request_context_table) or (params, request, middleware_data) for performance
+function Controller:new(params_or_ctx, request, middleware_data)
   local instance = setmetatable({}, self)
-  instance.params = request_context.params or {}
-  instance.request = request_context.request or {}
-  instance.middleware_data = request_context.middleware_data or {} -- Data from middleware
-  instance.response = {
-    status = 200,
-    headers = {},
-    body = ""
-  }
-  instance.layout = "application" -- Default layout
-  instance.variant = nil -- View variant (e.g., "iphone", "tablet")
-  instance._rendered = false
-  instance.cookies = {}
-  instance.session = {}
-  instance.flash = {}
+
+  if request ~= nil then
+    -- Fast path: positional arguments from framework
+    instance.params = params_or_ctx
+    instance.request = request
+    if middleware_data then instance.middleware_data = middleware_data end
+  else
+    -- Legacy path: request_context table
+    local rc = params_or_ctx or _empty
+    instance.params = rc.params or _empty
+    instance.request = rc.request or _empty
+    if rc.middleware_data then instance.middleware_data = rc.middleware_data end
+  end
+
+  instance.response = setmetatable({}, _response_mt)
 
   return instance
 end
@@ -55,11 +73,15 @@ function Controller:_merge_query_params()
   end
 end
 
+-- Keys to skip when merging controller vars into view locals
+local _skip_merge = {
+  response = true, layout = true, variant = true,
+  cookies = true, session = true, flash = true,
+  request = true, middleware_data = true
+}
+
 -- Render a view with optional layout
 function Controller:render(template, locals, options)
-  if not self.response then
-      error("self.response is nil")
-  end
   if self._rendered then
     error("Double render detected! Can only render once per request.")
   end
@@ -67,9 +89,9 @@ function Controller:render(template, locals, options)
   options = options or {}
   locals = locals or {}
 
-  -- Merge controller instance variables into locals
+  -- Merge controller instance variables into locals (skip internals)
   for k, v in pairs(self) do
-    if type(v) ~= "function" and k:sub(1, 1) ~= "_" and not locals[k] then
+    if not locals[k] and not _skip_merge[k] and type(v) ~= "function" and k:sub(1, 1) ~= "_" then
       locals[k] = v
     end
   end
@@ -107,9 +129,9 @@ function Controller:render_partial(template, locals, options)
   locals = locals or {}
   options = options or {}
 
-  -- Merge controller instance variables into locals
+  -- Merge controller instance variables into locals (skip internals)
   for k, v in pairs(self) do
-    if type(v) ~= "function" and k:sub(1, 1) ~= "_" and not locals[k] then
+    if not locals[k] and not _skip_merge[k] and type(v) ~= "function" and k:sub(1, 1) ~= "_" then
       locals[k] = v
     end
   end
@@ -153,18 +175,29 @@ function Controller:smart_render(template, locals, options)
 end
 
 
+-- Get-or-create writable headers table (copy-on-write)
+local function ensure_headers(self)
+  local h = self.response.headers
+  if h == _empty_headers then
+    h = {}
+    self.response.headers = h
+  end
+  return h
+end
+
 -- Render JSON response
 function Controller:json(data, status)
   if self._rendered then
     error("Double render detected! Can only render once per request.")
   end
 
+  local body = EncodeJson(data)
   self.response.status = status or 200
-  self.response.headers["Content-Type"] = "application/json"
-  self.response.body = EncodeJson(data)
+  self.response._ct = "application/json"
+  self.response.body = body
   self._rendered = true
 
-  return self.response.body
+  return body
 end
 
 -- Alias for json
@@ -179,11 +212,11 @@ function Controller:text(content, status)
   end
 
   self.response.status = status or 200
-  self.response.headers["Content-Type"] = "text/plain; charset=utf-8"
+  self.response._ct = "text/plain; charset=utf-8"
   self.response.body = content
   self._rendered = true
 
-  return self.response.body
+  return content
 end
 
 -- Render HTML directly (without template)
@@ -193,11 +226,11 @@ function Controller:html(content, status)
   end
 
   self.response.status = status or 200
-  self.response.headers["Content-Type"] = "text/html; charset=utf-8"
+  self.response._ct = "text/html; charset=utf-8"
   self.response.body = content
   self._rendered = true
 
-  return self.response.body
+  return content
 end
 
 -- Redirect to another URL
@@ -207,7 +240,7 @@ function Controller:redirect(url, status)
   end
 
   self.response.status = status or 302
-  self.response.headers["Location"] = url
+  ensure_headers(self)["Location"] = url
   self._rendered = true
 end
 
@@ -216,21 +249,24 @@ function Controller:redirect_to(url, status)
   return self:redirect(url, status)
 end
 
--- Set cookie
+-- Set cookie (copy-on-write: allocate own table on first use)
 function Controller:set_cookie(name, value, options)
+  if self.cookies == _empty then self.cookies = {} end
   self.cookies[name] = { value = value, options = options }
   return self
 end
 
--- Set session
+-- Set session (copy-on-write)
 function Controller:set_session(data, ttl)
+  if self.session == _empty then self.session = {} end
   self.session.data = data or {}
   self.session.ttl = ttl
   return self
 end
 
--- Set flash
+-- Set flash (copy-on-write)
 function Controller:set_flash(name, value)
+  if self.flash == _empty then self.flash = {} end
   self.flash[name] = value
   return self
 end
@@ -243,7 +279,7 @@ end
 
 -- Set response header
 function Controller:set_header(name, value)
-  self.response.headers[name] = value
+  ensure_headers(self)[name] = value
   return self
 end
 
@@ -291,26 +327,46 @@ end
 
 -- Send the response to the client (called by framework)
 function Controller:send_response()
-  SetStatus(self.response.status)
+  local resp = self.response
+  SetStatus(resp.status)
 
-  for name, value in pairs(self.response.headers) do
-    SetHeader(name, value)
+  -- Fast path: Content-Type set via _ct shortcut (no headers table allocated)
+  local ct = rawget(resp, "_ct")
+  if ct then
+    SetHeader("Content-Type", ct)
   end
 
-  for name, cookie in pairs(self.cookies) do
-    SetCookie(name, cookie.value, cookie.options)
+  -- Other headers (skip if using shared default via metatable)
+  local h = rawget(resp, "headers")
+  if h then
+    for name, value in pairs(h) do
+      SetHeader(name, value)
+    end
   end
 
-  if self.session.data then
-    SetSession(self.session.data, self.session.ttl)
+  -- Cookies, session, flash: skip when using prototype defaults
+  local cookies = rawget(self, "cookies")
+  if cookies then
+    for name, cookie in pairs(cookies) do
+      SetCookie(name, cookie.value, cookie.options)
+    end
   end
 
-  for name, flash in pairs(self.flash) do
-    SetFlash(name, flash)
+  local session = rawget(self, "session")
+  if session and session.data then
+    SetSession(session.data, session.ttl)
   end
 
-  if self.response.body and self.response.body ~= "" then
-    Write(self.response.body)
+  local flash = rawget(self, "flash")
+  if flash then
+    for name, fl in pairs(flash) do
+      SetFlash(name, fl)
+    end
+  end
+
+  local body = resp.body
+  if body and body ~= "" then
+    Write(body)
   end
 end
 

@@ -9,6 +9,19 @@ View.cache = {}  -- Template cache for performance
 View.views_path = "app/views"
 View.layouts_path = "app/views/layouts"
 
+-- Pre-extract helper functions (computed once, reused per render)
+local _helper_funcs = nil
+local function get_helper_funcs()
+  if _helper_funcs then return _helper_funcs end
+  _helper_funcs = {}
+  for k, v in pairs(helpers) do
+    if type(v) == "function" then
+      _helper_funcs[k] = v
+    end
+  end
+  return _helper_funcs
+end
+
 -- Read file contents (DB-first for views, then filesystem)
 local function read_file(path)
   -- 0. Try DB first for views/partials/layouts
@@ -163,9 +176,9 @@ function View.render(template, locals, options)
 
   locals.public_path = helpers.public_path
 
-  -- Inject all helpers
-  for k, v in pairs(helpers) do
-    if not locals[k] and type(v) == "function" then
+  -- Inject all helpers (from cached set)
+  for k, v in pairs(get_helper_funcs()) do
+    if not locals[k] then
       locals[k] = v
     end
   end
@@ -271,9 +284,9 @@ function View.partial(partial_name, locals)
 
   locals.public_path = helpers.public_path
 
-  -- Inject all helpers
-  for k, v in pairs(helpers) do
-    if not locals[k] and type(v) == "function" then
+  -- Inject all helpers (from cached set)
+  for k, v in pairs(get_helper_funcs()) do
+    if not locals[k] then
       locals[k] = v
     end
   end
@@ -289,6 +302,7 @@ end
 -- Clear template cache (useful for development)
 function View.clear_cache()
   View.cache = {}
+  _helper_funcs = nil
 end
 
 -- Set views path

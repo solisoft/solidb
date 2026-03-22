@@ -61,7 +61,7 @@
           <i class="fas fa-list mr-2 text-accent-light"></i>All
         </button>
         <button type="button"
-                hx-get="/database/<%= db %>/queues/jobs?status=pending"
+                hx-get="/database/<%= db %>/queues/jobs/pending"
                 hx-target="#jobs-content"
                 hx-swap="innerHTML"
                 onclick="setActiveTab(this)"
@@ -69,7 +69,7 @@
           <i class="fas fa-hourglass-half mr-2 text-warning"></i>Pending
         </button>
         <button type="button"
-                hx-get="/database/<%= db %>/queues/jobs?status=running"
+                hx-get="/database/<%= db %>/queues/jobs/running"
                 hx-target="#jobs-content"
                 hx-swap="innerHTML"
                 onclick="setActiveTab(this)"
@@ -77,7 +77,7 @@
           <i class="fas fa-cog mr-2 text-info"></i>Running
         </button>
         <button type="button"
-                hx-get="/database/<%= db %>/queues/jobs?status=completed"
+                hx-get="/database/<%= db %>/queues/jobs/completed"
                 hx-target="#jobs-content"
                 hx-swap="innerHTML"
                 onclick="setActiveTab(this)"
@@ -85,7 +85,7 @@
           <i class="fas fa-check mr-2 text-success"></i>Completed
         </button>
         <button type="button"
-                hx-get="/database/<%= db %>/queues/jobs?status=failed"
+                hx-get="/database/<%= db %>/queues/jobs/failed"
                 hx-target="#jobs-content"
                 hx-swap="innerHTML"
                 onclick="setActiveTab(this)"

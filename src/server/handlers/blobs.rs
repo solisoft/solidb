@@ -333,7 +333,7 @@ pub async fn download_blob(
 
 /// Distribute blob chunks across the cluster for fault tolerance
 /// This provides redundancy without requiring logical sharding of the collection
-async fn distribute_blob_chunks_across_cluster(
+pub async fn distribute_blob_chunks_across_cluster(
     coordinator: &crate::sharding::coordinator::ShardCoordinator,
     db_name: &str,
     coll_name: &str,

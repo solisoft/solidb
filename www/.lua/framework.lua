@@ -126,30 +126,40 @@ end
 -- Controller cache (managed by .init.lua via clear_caches)
 local controllers = {}
 
--- Load a controller by name (DB-first, then filesystem)
+-- Load a controller by name (cached, DB-first, then filesystem)
 local function load_controller(name)
+  local cached = controllers[name]
+  if cached then return cached end
+
   -- Try DB first
   local DbLoader = require("dbloader")
   local db_controller = DbLoader.load_controller(name)
   if db_controller then
+    controllers[name] = db_controller
     return db_controller
   end
 
   -- Fallback to filesystem
   local ok, controller = pcall(require, name .. "_controller")
   if ok then
+    controllers[name] = controller
     return controller
   end
   return nil, "Controller not found: " .. name .. " (" .. tostring(controller) .. ")"
 end
 
-function Framework.handle_request()
+-- Reusable request table (avoid allocation per request)
+local _reuse_request = { method = nil, path = nil }
+
+-- Cache global middleware state at module load time (framework.lua is reloaded in dev mode)
+local _mw_stats = Middleware.stats()
+local _has_any_global_mw = _mw_stats.before > 0 or _mw_stats.after > 0
+
+function Framework.handle_request(req_path)
   local method = GetMethod()
-  local path = GetPath()
+  local path = req_path or GetPath()
 
-  -- 1. Static file handling moved to .init.lua for performance
-
-  -- 2. Handle method override for forms
+  -- Handle method override for forms
   if method == "POST" then
     local override = GetParam("_method")
     if override then
@@ -157,53 +167,59 @@ function Framework.handle_request()
     end
   end
 
-  -- 3. Create middleware context
-  local ctx = Middleware.create_context(method, path)
+  -- Match route FIRST (before any table allocation)
+  local route, params = router.match(method, path)
 
-  -- 4. Run global before middleware
-  if not Middleware.run_before(ctx) then
-    Middleware.send_response(ctx)
-    return
-  end
-
-  -- 5. Try to match a route
-  local matched, result = router.dispatch(method, path)
-
-  if not matched then
-    -- No route matched, try redbean's built-in routing
+  if not route then
     if Route() then
       return
     end
-    -- 404 Not Found
     SetStatus(404)
     SetHeader("Content-Type", "text/html; charset=utf-8")
-    local content = view.render("errors/404", {}, { layout = false })
-    Write(content)
+    Write(view.render("errors/404", {}, { layout = false }))
     return
   end
 
-  -- 6. Run route-specific middleware
-  if result.middleware then
-    ctx.route = result
-    if not Middleware.run_route(ctx, result.middleware) then
+  -- Create middleware context only when needed (lazy)
+  local ctx
+  if _has_any_global_mw or route.middleware then
+    ctx = Middleware.create_context(method, path)
+    if not Middleware.run_before(ctx) then
       Middleware.send_response(ctx)
       return
     end
+    if route.middleware then
+      ctx.route = route
+      if not Middleware.run_route(ctx, route.middleware) then
+        Middleware.send_response(ctx)
+        return
+      end
+    end
   end
 
-  -- Handle function handlers
-  if result.fn then
-    local response = result.fn(result.params, ctx)
+  -- Handle function handlers (pre-parsed on route object, or parse now)
+  local route_fn = route.fn
+  local route_controller = route.controller
+  local route_action = route.action
+
+  -- If route wasn't pre-parsed (old router version), parse handler now
+  if not route_fn and not route_controller and route.handler then
+    if type(route.handler) == "function" then
+      route_fn = route.handler
+    else
+      route_controller, route_action = route.handler:match("^([%w_/]+)#([%w_]+)$")
+    end
+  end
+
+  if route_fn then
+    local response = route_fn(params, ctx)
     if response then
       SetStatus(response.status or 200)
-      
-      -- Set headers if provided
       if response.headers then
         for k, v in pairs(response.headers) do
           SetHeader(k, v)
         end
       end
-
       if response.json then
         SetHeader("Content-Type", "application/json")
         Write(EncodeJson(response.json))
@@ -211,13 +227,12 @@ function Framework.handle_request()
         Write(response.body)
       end
     end
-    -- Run global after middleware
-    Middleware.run_after(ctx)
+    if ctx then Middleware.run_after(ctx) end
     return
   end
 
   -- Handle controller#action
-  local controller_class, err = load_controller(result.controller)
+  local controller_class, err = load_controller(route_controller)
   if not controller_class then
     SetStatus(500)
     SetHeader("Content-Type", "text/plain")
@@ -226,85 +241,87 @@ function Framework.handle_request()
   end
 
   -- Build parameter table
-  local raw_params = result.params or {}
+  local raw_params = params
 
-  -- Merge Query String params
-  local i = 0
-  while true do
-    local key, value = GetParam(i)
-    if key == nil then break end
-    raw_params[key] = value
-    i = i + 1
-  end
-
-  -- GetParam(index) can miss params in some builds, so also check by name
-  -- for params commonly used in query strings across the app
-  for _, name in ipairs({"service", "channel", "page", "search", "q", "filter", "sort"}) do
-    if not raw_params[name] then
-      local val = GetParam(name)
-      if val then raw_params[name] = val end
+  -- Merge Query String params (only if there are any)
+  local qkey, qval = GetParam(0)
+  if qkey then
+    -- Copy params if needed (exact-match routes share a frozen empty table)
+    if not next(raw_params) then
+      raw_params = { [qkey] = qval }
+    else
+      raw_params[qkey] = qval
+    end
+    local i = 1
+    while true do
+      qkey, qval = GetParam(i)
+      if qkey == nil then break end
+      raw_params[qkey] = qval
+      i = i + 1
     end
   end
 
-  -- Merge POST body params
-  local body_params = Framework.parse_request_body()
-  for k, v in pairs(body_params) do
-    raw_params[k] = v
+  -- Merge POST/PUT/PATCH body params (skip for GET/DELETE)
+  if method == "POST" or method == "PUT" or method == "PATCH" then
+    local body_params = Framework.parse_request_body()
+    for k, v in pairs(body_params) do
+      raw_params[k] = v
+    end
   end
 
-  -- Parse nested parameters
-  local nested_params = Framework.parse_params(raw_params)
+  -- Parse nested parameters only if there are bracket keys
+  local has_nested = false
+  for k in pairs(raw_params) do
+    if type(k) == "string" and k:find("[", 1, true) then
+      has_nested = true
+      break
+    end
+  end
+  if has_nested then
+    raw_params = Framework.parse_params(raw_params)
+  end
 
-  -- Build request context (include middleware data)
-  local request_context = {
-    params = nested_params,
-    request = {
-      method = method,
-      path = path
-    },
-    middleware_data = ctx.data  -- Pass middleware data to controller
-  }
+  -- Reuse request table instead of allocating
+  _reuse_request.method = method
+  _reuse_request.path = path
 
-  -- Create controller instance
-  local controller = controller_class:new(request_context)
+  -- Create controller instance (minimal context)
+  local ctrl = controller_class:new(raw_params, _reuse_request, ctx and ctx.data)
 
   -- Run before action
-  controller:before_action()
-  if controller:rendered() then
-    controller:send_response()
-    Middleware.run_after(ctx)
+  ctrl:before_action()
+  if ctrl._rendered then
+    ctrl:send_response()
+    if ctx then Middleware.run_after(ctx) end
     return
   end
 
-  -- Run the action
-  local action = result.action
-  if not controller[action] then
+  -- Run the action (pcall without closure allocation)
+  local action_fn = ctrl[route_action]
+  if not action_fn then
     SetStatus(500)
     SetHeader("Content-Type", "text/plain")
-    Write("Error: Action '" .. action .. "' not found in " .. result.controller .. " controller")
+    Write("Error: Action '" .. route_action .. "' not found in " .. route_controller .. " controller")
     return
   end
 
-  local ok, action_err = pcall(function()
-    controller[action](controller)
-  end)
+  local ok, action_err = pcall(action_fn, ctrl)
 
   if not ok then
     SetStatus(500)
     SetHeader("Content-Type", "text/html; charset=utf-8")
     Write("<h1>Error</h1><pre>" .. EscapeHtml(tostring(action_err)) .. "</pre>")
-    Middleware.run_after(ctx)
+    if ctx then Middleware.run_after(ctx) end
     return
   end
 
   -- Run after action
-  controller:after_action()
+  ctrl:after_action()
 
-  -- Run global after middleware
-  Middleware.run_after(ctx)
+  if ctx then Middleware.run_after(ctx) end
 
   -- Send response
-  controller:send_response()
+  ctrl:send_response()
 end
 
 return Framework

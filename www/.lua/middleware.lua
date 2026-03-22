@@ -12,78 +12,72 @@ local named_middleware = {} -- Named middleware for route-scoped use
 -- Context Object
 -- ============================================================================
 
+-- Context methods defined once via metatable (not per-request closures)
+local ContextMethods = {}
+ContextMethods.__index = ContextMethods
+
+function ContextMethods:get_header(name)
+  return GetHeader(name)
+end
+
+function ContextMethods:set_header(name, value)
+  self.response_headers[name] = value
+end
+
+function ContextMethods:halt(status, body)
+  self.halted = true
+  self.status = status or 200
+  self.response_body = body or ""
+end
+
+function ContextMethods:redirect(url, status)
+  self.halted = true
+  self.status = status or 302
+  self.response_headers["Location"] = url
+  self.response_body = ""
+end
+
+function ContextMethods:json(data, status)
+  self.halted = true
+  self.status = status or 200
+  self.response_headers["Content-Type"] = "application/json"
+  self.response_body = EncodeJson(data)
+end
+
+function ContextMethods:text(content, status)
+  self.halted = true
+  self.status = status or 200
+  self.response_headers["Content-Type"] = "text/plain"
+  self.response_body = content
+end
+
+function ContextMethods:html(content, status)
+  self.halted = true
+  self.status = status or 200
+  self.response_headers["Content-Type"] = "text/html; charset=utf-8"
+  self.response_body = content
+end
+
 ---Create a new middleware context
 ---@param method string HTTP method
 ---@param path string Request path
 ---@return table Context object
 function Middleware.create_context(method, path)
-  local ctx = {
-    -- Request info
+  return setmetatable({
     method = method,
     path = path,
     params = {},
     headers = {},
     body = nil,
-
-    -- Response (set by middleware to halt)
     status = nil,
     response_headers = {},
     response_body = nil,
     halted = false,
-
-    -- Shared data between middleware and controller
     data = {},
-
-    -- Route info (set after dispatch)
     route = nil,
     controller = nil,
     action = nil
-  }
-
-  -- Helper methods
-  function ctx:get_header(name)
-    return GetHeader(name)
-  end
-
-  function ctx:set_header(name, value)
-    self.response_headers[name] = value
-  end
-
-  function ctx:halt(status, body)
-    self.halted = true
-    self.status = status or 200
-    self.response_body = body or ""
-  end
-
-  function ctx:redirect(url, status)
-    self.halted = true
-    self.status = status or 302
-    self.response_headers["Location"] = url
-    self.response_body = ""
-  end
-
-  function ctx:json(data, status)
-    self.halted = true
-    self.status = status or 200
-    self.response_headers["Content-Type"] = "application/json"
-    self.response_body = EncodeJson(data)
-  end
-
-  function ctx:text(content, status)
-    self.halted = true
-    self.status = status or 200
-    self.response_headers["Content-Type"] = "text/plain"
-    self.response_body = content
-  end
-
-  function ctx:html(content, status)
-    self.halted = true
-    self.status = status or 200
-    self.response_headers["Content-Type"] = "text/html; charset=utf-8"
-    self.response_body = content
-  end
-
-  return ctx
+  }, ContextMethods)
 end
 
 -- ============================================================================
@@ -189,6 +183,7 @@ end
 ---@param ctx table Context object
 ---@return boolean True if should continue, false if halted
 function Middleware.run_before(ctx)
+  if #global_before == 0 then return true end
   local chain = build_chain(global_before)
   chain(ctx)
   return not ctx.halted
@@ -208,14 +203,8 @@ function Middleware.run_route(ctx, route_middleware)
     local fn = Middleware.resolve(name_or_fn)
     if fn then
       table.insert(resolved, fn)
-    else
-      -- Debug: middleware not found - log to file
-      local f = io.open("debug.log", "a")
-      if f then
-        f:write(string.format("[%s] Middleware '%s' not found in registry\n", os.date(), tostring(name_or_fn)))
-        f:close()
-      end
     end
+    -- Debug logging removed - too slow for production
   end
 
   local chain = build_chain(resolved)
@@ -226,6 +215,7 @@ end
 ---Run global after middleware (in reverse order)
 ---@param ctx table Context object
 function Middleware.run_after(ctx)
+  if #global_after == 0 then return end
   -- Run in reverse order
   local reversed = {}
   for i = #global_after, 1, -1 do

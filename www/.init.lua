@@ -6,9 +6,6 @@ package.path = package.path .. ";.lua/?.lua;.lua/db/?.lua;app/?.lua;app/controll
 
 ProgramMaxPayloadSize(10485760 * 10) -- 100 MB
 
--- Environment (default to development)
-BEANS_ENV = os.getenv("BEANS_ENV") or "development"
-
 function RefreshPageForDevMode()
 	if BEANS_ENV == "development" then
 		return [[<script src="/live_reload.js"></script>]]
@@ -198,6 +195,45 @@ function OnError(status, message, details)
   Write(content)
 end
 
+-- Static file extension lookup (hoisted, created once)
+local static_exts = {
+  css=true, js=true, json=true, html=true, htm=true,
+  png=true, jpg=true, jpeg=true, gif=true, svg=true,
+  ico=true, webp=true, woff=true, woff2=true, ttf=true,
+  eot=true, otf=true, mp4=true, webm=true, mp3=true,
+  wav=true, pdf=true, zip=true, wasm=true
+}
+
+-- Content type mapping (hoisted, created once)
+local content_types = {
+  css = "text/css; charset=utf-8",
+  js = "application/javascript; charset=utf-8",
+  json = "application/json; charset=utf-8",
+  html = "text/html; charset=utf-8",
+  htm = "text/html; charset=utf-8",
+  xml = "application/xml; charset=utf-8",
+  txt = "text/plain; charset=utf-8",
+  png = "image/png",
+  jpg = "image/jpeg",
+  jpeg = "image/jpeg",
+  gif = "image/gif",
+  svg = "image/svg+xml",
+  ico = "image/x-icon",
+  webp = "image/webp",
+  woff = "font/woff",
+  woff2 = "font/woff2",
+  ttf = "font/ttf",
+  eot = "application/vnd.ms-fontobject",
+  otf = "font/otf",
+  mp4 = "video/mp4",
+  webm = "video/webm",
+  mp3 = "audio/mpeg",
+  wav = "audio/wav",
+  pdf = "application/pdf",
+  zip = "application/zip",
+  wasm = "application/wasm"
+}
+
 function OnHttpRequest()
   -- Hot reload routes and middleware in development mode
   if BEANS_ENV == "development" then
@@ -206,57 +242,23 @@ function OnHttpRequest()
     load_routes()      -- Then routes can reference middleware by name
   end
 
-  SetHeader("X-Framework-Version", "2.0-reload-test")
-  -- 1. First, try to serve static files from public/ folder
+  -- 1. Only check for static files if path looks like a static asset
   local path = GetPath()
-  local public_path = "public" .. path
-  local file_content = nil
 
-  -- Try zip asset if not found in filesystem
-  local file_content = LoadAsset("/public" .. path)
-
-  if file_content then
-    -- Determine content type based on extension
-    local ext = path:match("%.([^%.]+)$")
-    local content_types = {
-      css = "text/css; charset=utf-8",
-      js = "application/javascript; charset=utf-8",
-      json = "application/json; charset=utf-8",
-      html = "text/html; charset=utf-8",
-      htm = "text/html; charset=utf-8",
-      xml = "application/xml; charset=utf-8",
-      txt = "text/plain; charset=utf-8",
-      png = "image/png",
-      jpg = "image/jpeg",
-      jpeg = "image/jpeg",
-      gif = "image/gif",
-      svg = "image/svg+xml",
-      ico = "image/x-icon",
-      webp = "image/webp",
-      woff = "font/woff",
-      woff2 = "font/woff2",
-      ttf = "font/ttf",
-      eot = "application/vnd.ms-fontobject",
-      otf = "font/otf",
-      mp4 = "video/mp4",
-      webm = "video/webm",
-      mp3 = "audio/mpeg",
-      wav = "audio/wav",
-      pdf = "application/pdf",
-      zip = "application/zip",
-      wasm = "application/wasm"
-    }
-
-    local content_type = content_types[ext] or "application/octet-stream"
-    SetStatus(200)
-    SetHeader("Content-Type", content_type)
-    -- Cache static assets for 1 year
-    SetHeader("Cache-Control", "public, max-age=31536000, immutable")
-    Write(file_content)
-    return
+  local ext = path:match("%.(%w+)$")
+  if ext and static_exts[ext:lower()] then
+    local file_content = LoadAsset("/public" .. path)
+    if file_content then
+      local content_type = content_types[ext] or "application/octet-stream"
+      SetStatus(200)
+      SetHeader("Content-Type", content_type)
+      SetHeader("Cache-Control", "public, max-age=31536000, immutable")
+      Write(file_content)
+      return
+    end
   end
 
   -- 2. Handle the request via the reloadable framework module
   local framework = require("framework")
-  framework.handle_request()
+  framework.handle_request(path)
 end

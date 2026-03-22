@@ -2600,6 +2600,9 @@ pub fn setup_lua_globals(
         .set("context", request)
         .map_err(|e| DbError::InternalError(format!("Failed to set context global: {}", e)))?;
 
+    // Setup db object (query, query_json, collection, etc.)
+    setup_db_object(engine, lua, db_name)?;
+
     // Create 'response' helper table
     let response = lua
         .create_table()

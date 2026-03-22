@@ -83,6 +83,106 @@ impl Collection {
         Ok(())
     }
 
+    // ==================== Resumable Upload Operations ====================
+
+    /// Store a temporary blob chunk for a resumable upload
+    pub fn put_blob_chunk_tmp(
+        &self,
+        upload_id: &str,
+        chunk_index: u32,
+        data: &[u8],
+    ) -> DbResult<()> {
+        if *self.collection_type.read().unwrap() != "blob" {
+            return Err(DbError::OperationNotSupported(
+                "Blob operations only supported on blob collections".to_string(),
+            ));
+        }
+
+        let db = &self.db;
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        let key = format!("{}{}:{}", BLO_TMP_PREFIX, upload_id, chunk_index);
+        db.put_cf(cf, key.as_bytes(), data).map_err(|e| {
+            DbError::InternalError(format!("Failed to store temp blob chunk: {}", e))
+        })?;
+
+        Ok(())
+    }
+
+    /// Finalize a resumable upload: copy temp chunks to permanent blob storage and delete temps.
+    /// Uses a WriteBatch for atomicity.
+    pub fn finalize_blob_upload(
+        &self,
+        upload_id: &str,
+        blob_key: &str,
+        total_chunks: u32,
+    ) -> DbResult<()> {
+        let db = &self.db;
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        let mut batch = rocksdb::WriteBatch::default();
+
+        for i in 0..total_chunks {
+            let tmp_key = format!("{}{}:{}", BLO_TMP_PREFIX, upload_id, i);
+            let data = db
+                .get_cf(cf, tmp_key.as_bytes())
+                .map_err(|e| DbError::InternalError(format!("Failed to read temp chunk: {}", e)))?
+                .ok_or_else(|| {
+                    DbError::InternalError(format!(
+                        "Missing temp chunk {} for upload {}",
+                        i, upload_id
+                    ))
+                })?;
+
+            let perm_key = Self::blo_chunk_key(blob_key, i as usize);
+            batch.put_cf(cf, &perm_key, &data);
+            batch.delete_cf(cf, tmp_key.as_bytes());
+        }
+
+        db.write(batch).map_err(|e| {
+            DbError::InternalError(format!("Failed to finalize blob upload: {}", e))
+        })?;
+
+        self.chunk_count
+            .fetch_add(total_chunks as usize, Ordering::Relaxed);
+        self.count_dirty.store(true, Ordering::Relaxed);
+
+        Ok(())
+    }
+
+    /// Delete all temporary chunks for a given upload session (used by cleanup task)
+    pub fn delete_upload_chunks(&self, upload_id: &str) -> DbResult<()> {
+        let db = &self.db;
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        let prefix = format!("{}{}:", BLO_TMP_PREFIX, upload_id);
+        let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+        let mut batch = rocksdb::WriteBatch::default();
+        let mut count = 0;
+
+        for result in iter.flatten() {
+            let (k, _) = result;
+            if !k.starts_with(prefix.as_bytes()) {
+                break;
+            }
+            batch.delete_cf(cf, k);
+            count += 1;
+        }
+
+        if count > 0 {
+            db.write(batch)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
     /// Get blob statistics for this collection
     pub fn blob_stats(&self) -> DbResult<(usize, u64)> {
         if *self.collection_type.read().unwrap() != "blob" {

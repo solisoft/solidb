@@ -271,9 +271,34 @@ function QueueController:cancel_job()
 
   if status == 200 or status == 204 then
     SetHeader("HX-Trigger", '{"showToast": {"message": "Job cancelled successfully", "type": "success"}, "refreshStats": true}')
-    self:html("")
+    self:jobs()
   else
     local err_msg = "Failed to cancel job"
+    local ok, err_data = pcall(DecodeJson, body)
+    if ok and err_data and err_data.error then
+      err_msg = err_data.error
+    end
+    SetHeader("HX-Trigger", '{"showToast": {"message": "' .. err_msg:gsub('"', '\\"') .. '", "type": "error"}}')
+    self:html("")
+  end
+end
+
+-- Run now job action
+function QueueController:run_now()
+  local db = self:get_db()
+  local job_id = self.params.job_id
+  local status_filter = self.params.status_filter or GetParam("status_filter") or "all"
+
+  local status, _, body = self:fetch_api("/_api/database/" .. db .. "/queues/jobs/" .. job_id .. "/run-now", {
+    method = "POST"
+  })
+
+  if status == 200 or status == 204 then
+    SetHeader("HX-Trigger", '{"showToast": {"message": "Job scheduled to run now", "type": "success"}, "refreshStats": true}')
+    -- Return updated jobs list
+    self:jobs()
+  else
+    local err_msg = "Failed to run job"
     local ok, err_data = pcall(DecodeJson, body)
     if ok and err_data and err_data.error then
       err_msg = err_data.error

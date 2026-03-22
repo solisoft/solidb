@@ -11,6 +11,9 @@ I18n.fallback_locale = "en"
 I18n.translations = {}
 I18n.loaded_locales = {}
 
+-- Cache for parsed translation keys to avoid repeated string splitting
+local key_cache = {}
+
 -- Load a locale file
 function I18n:load_locale(locale)
   if self.loaded_locales[locale] then
@@ -60,16 +63,22 @@ function I18n:available_locales()
 end
 
 -- Deep get a value from a nested table using dot notation
+-- Uses cache to avoid repeated string parsing
 local function deep_get(tbl, key)
   if not tbl then return nil end
   
-  local parts = {}
-  for part in string.gmatch(key, "[^%.]+") do
-    table.insert(parts, part)
+  -- Check cache first
+  local cached_parts = key_cache[key]
+  if not cached_parts then
+    cached_parts = {}
+    for part in string.gmatch(key, "[^%.]+") do
+      table.insert(cached_parts, part)
+    end
+    key_cache[key] = cached_parts
   end
   
   local current = tbl
-  for _, part in ipairs(parts) do
+  for _, part in ipairs(cached_parts) do
     if type(current) ~= "table" then
       return nil
     end

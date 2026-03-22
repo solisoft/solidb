@@ -3,6 +3,10 @@
 
 local Router = {}
 Router.routes = {}
+Router.routes_by_method = { GET = {}, POST = {}, PUT = {}, PATCH = {}, DELETE = {} }
+
+-- Exact-match index: method -> path -> route (for static routes with no params)
+Router.exact_routes = { GET = {}, POST = {}, PUT = {}, PATCH = {}, DELETE = {} }
 
 -- HTTP method helpers
 local METHODS = { "GET", "POST", "PUT", "PATCH", "DELETE" }
@@ -137,14 +141,37 @@ local function add_route(method, pattern, handler, options)
   local regex_pattern, params = compile_pattern(pattern)
   local middleware = collect_middleware(options.middleware)
 
-  table.insert(Router.routes, {
+  -- Pre-parse handler to avoid per-request string matching
+  local controller_name, action_name, fn_handler
+  if type(handler) == "function" then
+    fn_handler = handler
+  elseif type(handler) == "string" then
+    controller_name, action_name = handler:match("^([%w_/]+)#([%w_]+)$")
+  end
+
+  local route = {
     method = method,
     pattern = pattern,
     regex = regex_pattern,
     params = params,
     handler = handler,
-    middleware = middleware
-  })
+    middleware = middleware,
+    controller = controller_name,
+    action = action_name,
+    fn = fn_handler
+  }
+
+  table.insert(Router.routes, route)
+
+  -- Index by method for faster lookup
+  if Router.routes_by_method[method] then
+    table.insert(Router.routes_by_method[method], route)
+  end
+
+  -- Index exact (static) routes for O(1) lookup
+  if #params == 0 and Router.exact_routes[method] then
+    Router.exact_routes[method][pattern] = route
+  end
 end
 
 -- Route definition methods
@@ -261,23 +288,40 @@ function Router.member(fn)
   fn()
 end
 
+-- Shared empty params table for exact-match routes (no allocations)
+local _empty_params = {}
+
 -- Match a request against registered routes
 -- Returns: matched_route, params_table or nil
 function Router.match(method, path)
-  for _, route in ipairs(Router.routes) do
-    if route.method == method then
-      -- For routes without params, match returns the full match or nil
-      -- For routes with params, match returns captures
-      local match_start, match_end, c1, c2, c3, c4, c5 = path:find(route.regex)
-      if match_start then
-        -- Build params table from captures
-        local params = {}
-        local captures = {c1, c2, c3, c4, c5}
-        for i, param_name in ipairs(route.params) do
-          params[param_name] = captures[i]
-        end
-        return route, params
-      end
+  -- Fast path: exact match for static routes (O(1) lookup, zero alloc)
+  local exact = Router.exact_routes[method]
+  if exact then
+    local route = exact[path]
+    if route then
+      return route, _empty_params
+    end
+  end
+
+  -- Slow path: regex match only against routes for this method
+  local method_routes = Router.routes_by_method[method]
+  if not method_routes then
+    return nil, nil
+  end
+
+  for _, route in ipairs(method_routes) do
+    local match_start, match_end, c1, c2, c3, c4, c5 = path:find(route.regex)
+    if match_start then
+      -- Build params table from captures (avoid captures table allocation)
+      local params = {}
+      local rparams = route.params
+      local n = #rparams
+      if n >= 1 then params[rparams[1]] = c1 end
+      if n >= 2 then params[rparams[2]] = c2 end
+      if n >= 3 then params[rparams[3]] = c3 end
+      if n >= 4 then params[rparams[4]] = c4 end
+      if n >= 5 then params[rparams[5]] = c5 end
+      return route, params
     end
   end
   return nil, nil
@@ -294,32 +338,21 @@ function Router.parse_handler(handler)
 end
 
 -- Dispatch a request to the appropriate controller/action
+-- Returns: route, params (route has .controller, .action, .fn, .middleware pre-parsed)
+-- Returns nil, nil if no match
 function Router.dispatch(method, path)
   local route, params = Router.match(method, path)
-
   if not route then
-    return false, nil
+    return nil, nil
   end
-
-  local controller_name, action, fn = Router.parse_handler(route.handler)
-
-  if fn then
-    -- Direct function handler
-    return true, { fn = fn, params = params, middleware = route.middleware }
-  else
-    -- Controller#action handler
-    return true, {
-      controller = controller_name,
-      action = action,
-      params = params,
-      middleware = route.middleware
-    }
-  end
+  return route, params
 end
 
 -- Clear all routes (useful for testing)
 function Router.clear()
   Router.routes = {}
+  Router.routes_by_method = { GET = {}, POST = {}, PUT = {}, PATCH = {}, DELETE = {} }
+  Router.exact_routes = { GET = {}, POST = {}, PUT = {}, PATCH = {}, DELETE = {} }
 end
 
 return Router

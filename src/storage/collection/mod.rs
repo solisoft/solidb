@@ -42,6 +42,7 @@ pub const SHARD_CONFIG_KEY: &str = "_stats:shard_config"; // Sharding configurat
 pub const SHARD_TABLE_KEY: &str = "_stats:shard_table"; // Sharding assignment table
 pub const COLLECTION_TYPE_KEY: &str = "_stats:type"; // Collection type (document, edge)
 pub const BLO_PREFIX: &str = "blo:"; // Blob chunk prefix
+pub const BLO_TMP_PREFIX: &str = "blo_tmp:"; // Temp blob chunk prefix (resumable uploads)
 pub const TTL_META_PREFIX: &str = "ttl_meta:"; // TTL index metadata
 pub const TTL_EXPIRY_PREFIX: &str = "ttl_exp:"; // TTL expiry index (expiry_timestamp -> doc_key)
 

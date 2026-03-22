@@ -2,6 +2,7 @@ use crate::scripting::engine::{LuaPool, ScriptCache, ScriptIndex};
 use crate::scripting::ScriptStats;
 use crate::server::cursor_store::CursorStore;
 use crate::server::service_cache::ServiceCache;
+use crate::server::upload_session::UploadSessionStore;
 use crate::storage::StorageEngine;
 use axum::response::Json;
 use serde_json::Value;
@@ -93,6 +94,8 @@ pub struct AppState {
     pub service_cache: Arc<ServiceCache>,
     // Blob rebalance worker for cluster maintenance
     pub blob_rebalance_worker: Option<Arc<crate::sharding::BlobRebalanceWorker>>,
+    // Resumable blob upload session store
+    pub upload_session_store: UploadSessionStore,
 }
 
 impl AppState {

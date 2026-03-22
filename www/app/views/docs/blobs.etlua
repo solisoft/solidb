@@ -144,6 +144,96 @@
         </div>
       </section>
 
+      <!-- Resumable Chunked Upload Section -->
+      <section id="chunked-upload" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+               Resumable Chunked Uploads
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              For large files, use the chunked upload API. Files are split into chunks (default 1MB) that can be uploaded in any order and resumed after network interruptions. Sessions expire after 24 hours of inactivity.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-orange-400 font-bold mb-2 flex items-center"><i class="fas fa-redo mr-2"></i> Resumable</h3>
+                <p class="text-sm text-gray-400">If a connection drops, check the upload status to see which chunks were received, then resume from where you left off.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-orange-400 font-bold mb-2 flex items-center"><i class="fas fa-random mr-2"></i> Out-of-Order</h3>
+                <p class="text-sm text-gray-400">Chunks can be uploaded in any order and even in parallel from multiple connections.</p>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mb-3">Workflow</h3>
+            <div class="space-y-4 mb-8">
+              <div class="flex items-start gap-3">
+                <span class="flex-shrink-0 w-7 h-7 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs font-bold">1</span>
+                <div>
+                  <p class="text-gray-300 text-sm font-medium">Create an upload session</p>
+                  <p class="text-gray-500 text-xs">Returns an <code>upload_id</code>, <code>blob_key</code>, and the number of chunks expected.</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-3">
+                <span class="flex-shrink-0 w-7 h-7 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs font-bold">2</span>
+                <div>
+                  <p class="text-gray-300 text-sm font-medium">Upload each chunk</p>
+                  <p class="text-gray-500 text-xs">POST raw binary data for each chunk index. Each response lists missing chunks.</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-3">
+                <span class="flex-shrink-0 w-7 h-7 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs font-bold">3</span>
+                <div>
+                  <p class="text-gray-300 text-sm font-medium">Complete the upload</p>
+                  <p class="text-gray-500 text-xs">Promotes temp chunks to permanent storage and creates the metadata document.</p>
+                </div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mb-3">Example</h3>
+            <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-4">
+              <span class="text-gray-500"># Step 1: Create session</span><br>
+              <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/blob/_system/videos/upload \<br>
+              <span class="pl-4">-H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span> \</span><br>
+              <span class="pl-4">-H <span class="text-green-400">"Content-Type: application/json"</span> \</span><br>
+              <span class="pl-4">-d <span class="text-yellow-300">'{"total_size": 3145728, "file_name": "clip.mp4", "mime_type": "video/mp4"}'</span></span><br>
+              <br>
+              <span class="text-gray-500"># Step 2: Upload chunks (0, 1, 2)</span><br>
+              <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/blob/_system/videos/upload/$UPLOAD_ID/0 \<br>
+              <span class="pl-4">-H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span> \</span><br>
+              <span class="pl-4">--data-binary <span class="text-green-400">@chunk_0.bin</span></span><br>
+              <br>
+              <span class="text-gray-500"># Step 3: Complete</span><br>
+              <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/blob/_system/videos/upload/$UPLOAD_ID/complete \<br>
+              <span class="pl-4">-H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span></span><br>
+              <br>
+              <span class="text-gray-500"># Check status (resume after disconnect)</span><br>
+              <span class="text-purple-400">curl</span> http://localhost:6745/_api/blob/_system/videos/upload/$UPLOAD_ID/status \<br>
+              <span class="pl-4">-H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span></span><br>
+              <br>
+              <span class="text-gray-500"># Abort if needed</span><br>
+              <span class="text-purple-400">curl</span> -X DELETE http://localhost:6745/_api/blob/_system/videos/upload/$UPLOAD_ID/abort \<br>
+              <span class="pl-4">-H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span></span>
+            </div>
+
+            <div class="bg-indigo-900/10 border border-indigo-500/30 rounded-xl p-4 flex items-start">
+               <svg class="w-6 h-6 text-indigo-500 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+               <div>
+                 <h4 class="text-indigo-400 font-bold text-sm mb-1">API Reference</h4>
+                 <p class="text-indigo-200/80 text-sm leading-relaxed">
+                   See the full endpoint details in the <a href="/docs/api-blobs#chunked-upload" class="underline hover:text-white">Blobs API Reference</a>.
+                 </p>
+               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Downloading Section -->
       <section id="downloading" class="scroll-mt-24">
          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">

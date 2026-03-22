@@ -56,10 +56,10 @@ impl QueueWorker {
                 loop {
                     tokio::select! {
                         _ = rx.recv() => {
-                            // Woke up by notification
+                            tracing::debug!("Queue Worker {} woke up by notification", i);
                         }
                         _ = tokio::time::sleep(Duration::from_secs(5)) => {
-                            // Periodic fallback check (jobs enqueued via notifier wake instantly)
+                            tracing::debug!("Queue Worker {} periodic check", i);
                         }
                     }
 

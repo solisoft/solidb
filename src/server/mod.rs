@@ -19,6 +19,7 @@ pub mod service_cache;
 pub mod sql_handlers;
 pub mod transaction_handlers;
 pub mod trigger_handlers;
+pub mod upload_session;
 
 pub use authorization::{
     AuthorizationService, Permission, PermissionAction, PermissionScope, Role, UserRole,

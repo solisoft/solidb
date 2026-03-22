@@ -8,12 +8,19 @@ Session.COOKIE_NAME = "luaonbeans_session"
 Session.FLASH_COOKIE_NAME = "luaonbeans_flash"
 Session.DEFAULT_TTL = 60 * 24 * 7 -- 1 week in minutes
 
--- Get secret key with validation
+-- Cache secret key and production check (avoid ENV lookups on every request)
+local _cached_secret_key = nil
+local _is_production = nil
+
 local function get_secret_key()
+  if _cached_secret_key then
+    return _cached_secret_key
+  end
   local key = _G.ENV["SECRET_KEY"]
   if not key or key == "" then
     error("SECRET_KEY environment variable is required for sessions")
   end
+  _cached_secret_key = key
   return key
 end
 
@@ -32,10 +39,13 @@ local function secure_compare(a, b)
   return result == 0
 end
 
--- Check if running in production
+-- Check if running in production (cached)
 local function is_production()
-  local env = os.getenv("BEANS_ENV") or "development"
-  return env == "production"
+  if _is_production == nil then
+    local env = os.getenv("BEANS_ENV") or "development"
+    _is_production = (env == "production")
+  end
+  return _is_production
 end
 
 ---Create a signed session object

@@ -142,6 +142,57 @@ pub async fn cancel_job_handler(
     Ok(Json(serde_json::json!({ "success": true })))
 }
 
+pub async fn run_now_job_handler(
+    State(state): State<AppState>,
+    Path((db_name, job_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let jobs_coll = db.get_collection("_jobs")?;
+
+    let doc = jobs_coll.get(&job_id)?;
+    let mut job: Job = serde_json::from_value(doc.to_value())
+        .map_err(|_| DbError::InternalError("Corrupted job data".to_string()))?;
+
+    tracing::info!(
+        "Run now request for job {} in db {}, current status: {:?}",
+        job_id,
+        db_name,
+        job.status
+    );
+
+    if job.status == JobStatus::Running {
+        return Err(DbError::BadRequest("Cannot run a running job".to_string()));
+    }
+
+    if job.status == JobStatus::Completed {
+        return Err(DbError::BadRequest(
+            "Cannot run a completed job".to_string(),
+        ));
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    job.status = JobStatus::Pending;
+    job.run_at = now;
+    job.last_error = None;
+
+    let rev = job.revision.clone().unwrap_or_default();
+    let doc_val = serde_json::to_value(&job).unwrap();
+    jobs_coll.update_with_rev(&job_id, &rev, doc_val)?;
+
+    tracing::info!("Job {} updated to pending, run_at set to {}", job_id, now);
+
+    if let Some(ref worker) = state.queue_worker {
+        tracing::info!("Sending notification to queue worker");
+        let _ = worker.notifier().send(());
+    }
+
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct EnqueueRequest {
     pub script: String,
