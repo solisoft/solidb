@@ -47,10 +47,10 @@ local sections = {
       { slug = "nl-queries", label = "Natural Language", icon = "fa-magic", color = "accent" },
     }
   },
-  {
+    {
     title = "Core Features",
     items = {
-      { slug = "transactions", label = "ACID Transactions", icon = "fa-shield-alt", color = "warning" },
+      { slug = "transactions", label = "ACID & Distributed Transactions", icon = "fa-shield-alt", color = "warning" },
       { slug = "indexes", label = "Indexes", icon = "fa-list-ol", color = "success" },
       { slug = "vector-search", label = "Vector Search", icon = "fa-brain", color = "accent" },
       { slug = "hybrid-search", label = "Hybrid Search", icon = "fa-layer-group", color = "warning" },

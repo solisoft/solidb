@@ -1203,6 +1203,7 @@
               <td class="py-4 px-6 text-gray-300">
                 <div class="flex flex-wrap gap-2">
                   <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">ACID Transactions</span>
+                  <span class="px-2 py-1 bg-emerald-900/30 text-emerald-300 rounded border border-emerald-500/20">Distributed Transactions (2PC)</span>
                   <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Master-Master Replication</span>
                   <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Auto-Sharding</span>
                   <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Distributed Job Queues</span>
