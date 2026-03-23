@@ -747,8 +747,75 @@ impl<'a> QueryExecutor<'a> {
                                 continue;
                             }
 
-                            // Find connected vertices
-                            let edges = edge_collection.scan(None);
+                            // Find connected vertices using indexed lookup (O(1) per edge) instead of scan (O(E))
+                            let current_id_str = current_id.clone();
+                            let current_value = Value::String(current_id_str.clone());
+
+                            // Use index lookup on _from/_to field if available, fallback to scan
+                            let edges: Vec<_> = match gt.direction {
+                                EdgeDirection::Outbound => {
+                                    // Look up edges where _from = current_id
+                                    edge_collection
+                                        .index_lookup_eq("_from", &current_value)
+                                        .unwrap_or_else(|| {
+                                            // Fallback to scan if no index
+                                            let current_str = current_id_str.as_str();
+                                            edge_collection
+                                                .scan(None)
+                                                .into_iter()
+                                                .filter(|e| match e.get("_from") {
+                                                    Some(serde_json::Value::String(s)) => {
+                                                        s.as_str() == current_str
+                                                    }
+                                                    _ => false,
+                                                })
+                                                .collect()
+                                        })
+                                }
+                                EdgeDirection::Inbound => {
+                                    // Look up edges where _to = current_id
+                                    edge_collection
+                                        .index_lookup_eq("_to", &current_value)
+                                        .unwrap_or_else(|| {
+                                            // Fallback to scan if no index
+                                            let current_str = current_id_str.as_str();
+                                            edge_collection
+                                                .scan(None)
+                                                .into_iter()
+                                                .filter(|e| match e.get("_to") {
+                                                    Some(serde_json::Value::String(s)) => {
+                                                        s.as_str() == current_str
+                                                    }
+                                                    _ => false,
+                                                })
+                                                .collect()
+                                        })
+                                }
+                                EdgeDirection::Any => {
+                                    // For ANY direction, need to scan (or union of both lookups)
+                                    let current_str = current_id_str.as_str();
+                                    edge_collection
+                                        .scan(None)
+                                        .into_iter()
+                                        .filter(|e| {
+                                            let from_match = match e.get("_from") {
+                                                Some(serde_json::Value::String(s)) => {
+                                                    s.as_str() == current_str
+                                                }
+                                                _ => false,
+                                            };
+                                            let to_match = match e.get("_to") {
+                                                Some(serde_json::Value::String(s)) => {
+                                                    s.as_str() == current_str
+                                                }
+                                                _ => false,
+                                            };
+                                            from_match || to_match
+                                        })
+                                        .collect()
+                                }
+                            };
+
                             for edge_doc in edges {
                                 let edge_val = edge_doc.to_value();
                                 let from = edge_val.get("_from").and_then(|v| v.as_str());
@@ -756,23 +823,18 @@ impl<'a> QueryExecutor<'a> {
 
                                 let next_id = match gt.direction {
                                     EdgeDirection::Outbound => {
-                                        if from == Some(current_id.as_str()) {
-                                            to.map(|s| s.to_string())
-                                        } else {
-                                            None
-                                        }
+                                        // Already filtered by _from, so just get _to
+                                        to.map(|s| s.to_string())
                                     }
                                     EdgeDirection::Inbound => {
-                                        if to == Some(current_id.as_str()) {
-                                            from.map(|s| s.to_string())
-                                        } else {
-                                            None
-                                        }
+                                        // Already filtered by _to, so just get _from
+                                        from.map(|s| s.to_string())
                                     }
                                     EdgeDirection::Any => {
-                                        if from == Some(current_id.as_str()) {
+                                        // Need to determine direction
+                                        if from == Some(&current_id_str) {
                                             to.map(|s| s.to_string())
-                                        } else if to == Some(current_id.as_str()) {
+                                        } else if to == Some(&current_id_str) {
                                             from.map(|s| s.to_string())
                                         } else {
                                             None
