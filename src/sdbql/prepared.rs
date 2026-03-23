@@ -1,8 +1,8 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::debug;
 
 use crate::sdbql::ast::Query;
 use crate::sdbql::parser;
@@ -19,8 +19,8 @@ pub struct PreparedStatementCache {
     cache: RwLock<HashMap<String, Arc<PreparedStatement>>>,
     max_entries: usize,
     ttl: Duration,
-    hits: RwLock<u64>,
-    misses: RwLock<u64>,
+    hits: AtomicU64,
+    misses: AtomicU64,
 }
 
 impl PreparedStatementCache {
@@ -29,8 +29,8 @@ impl PreparedStatementCache {
             cache: RwLock::new(HashMap::new()),
             max_entries,
             ttl: Duration::from_secs(ttl_secs),
-            hits: RwLock::new(0),
-            misses: RwLock::new(0),
+            hits: AtomicU64::new(0),
+            misses: AtomicU64::new(0),
         }
     }
 
@@ -40,17 +40,8 @@ impl PreparedStatementCache {
 
         if let Some(stmt) = cache.get(&hash) {
             if stmt.created_at.elapsed() < self.ttl {
-                debug!(
-                    "Prepared statement cache HIT for query hash: {}",
-                    &hash[..16]
-                );
-                *self.hits.write().await += 1;
+                self.hits.fetch_add(1, Ordering::Relaxed);
                 return Some(stmt.clone());
-            } else {
-                debug!(
-                    "Prepared statement cache EXPIRED for query hash: {}",
-                    &hash[..16]
-                );
             }
         }
         None
@@ -70,18 +61,12 @@ impl PreparedStatementCache {
         if cache.len() >= self.max_entries {
             let keys_to_remove: Vec<String> =
                 cache.keys().take(self.max_entries / 2).cloned().collect();
-            let evicted_count = keys_to_remove.len();
             for key in keys_to_remove {
                 cache.remove(&key);
             }
-            debug!(
-                "Evicted {} entries from prepared statement cache",
-                evicted_count
-            );
         }
 
         cache.insert(hash.clone(), stmt.clone());
-        debug!("Prepared statement cached with hash: {}", &hash[..16]);
         stmt
     }
 
@@ -92,7 +77,7 @@ impl PreparedStatementCache {
         if let Some(stmt) = self.get(query_text).await {
             Ok(stmt)
         } else {
-            *self.misses.write().await += 1;
+            self.misses.fetch_add(1, Ordering::Relaxed);
             let query = parser::parse(query_text)?;
             Ok(self.put(query_text, query).await)
         }
@@ -108,8 +93,8 @@ impl PreparedStatementCache {
     }
 
     pub async fn stats(&self) -> (u64, u64, usize) {
-        let hits = *self.hits.read().await;
-        let misses = *self.misses.read().await;
+        let hits = self.hits.load(Ordering::Relaxed);
+        let misses = self.misses.load(Ordering::Relaxed);
         let size = self.cache.read().await.len();
         (hits, misses, size)
     }
@@ -117,8 +102,8 @@ impl PreparedStatementCache {
     pub async fn invalidate_all(&self) {
         let mut cache = self.cache.write().await;
         cache.clear();
-        *self.hits.write().await = 0;
-        *self.misses.write().await = 0;
+        self.hits.store(0, Ordering::Relaxed);
+        self.misses.store(0, Ordering::Relaxed);
     }
 
     pub async fn invalidate_collection(&self, collection_name: &str) {
