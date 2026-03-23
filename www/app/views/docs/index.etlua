@@ -1222,5 +1222,97 @@
         </a>
       </div>
     </div>
+
+    <!-- Performance Benchmarks -->
+    <div class="mt-16 mb-8">
+      <div class="text-center mb-8">
+        <div class="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-400 text-xs font-bold mb-3">
+          <i class="fas fa-bolt"></i>
+          Performance Benchmarks
+        </div>
+        <h2 class="text-3xl font-black text-white mb-2">
+          Blazing Fast. Period.
+        </h2>
+        <p class="text-gray-500 text-sm">
+          Real-world REST API benchmarks. No marketing fluff.
+        </p>
+      </div>
+
+      <div class="bg-gradient-to-br from-gray-900/80 to-gray-900/40 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
+        <!-- Test Environment Banner -->
+        <div class="bg-gradient-to-r from-cyan-900/20 to-blue-900/20 px-4 py-3 border-b border-white/5">
+          <div class="flex flex-wrap items-center justify-center gap-6 text-xs text-gray-400">
+            <span><i class="fas fa-server text-cyan-400 mr-1"></i> Single Node</span>
+            <span><i class="fas fa-key text-cyan-400 mr-1"></i> JWT Auth</span>
+            <span><i class="fas fa-users text-cyan-400 mr-1"></i> 50 Connections</span>
+            <span><i class="fas fa-bolt text-cyan-400 mr-1"></i> 10K Requests</span>
+          </div>
+        </div>
+
+        <!-- Benchmark Cards -->
+        <div class="p-6">
+          <div class="grid grid-cols-3 gap-4">
+            <!-- READ Card -->
+            <div class="bg-gradient-to-br from-blue-900/20 to-cyan-900/20 rounded-xl p-4 border border-blue-500/20">
+              <div class="flex items-center gap-2 mb-3">
+                <i class="fas fa-download text-blue-400"></i>
+                <span class="text-white font-bold text-sm">READ</span>
+              </div>
+              <div class="text-center py-3 border-y border-white/5">
+                <div class="text-3xl font-black text-blue-400 mb-1">67,599</div>
+                <div class="text-[10px] text-gray-500 uppercase">req/sec</div>
+              </div>
+              <div class="flex justify-between mt-3 text-[10px] text-gray-400">
+                <span>p50: <span class="text-white">0.58ms</span></span>
+                <span>p99: <span class="text-white">2.91ms</span></span>
+              </div>
+            </div>
+
+            <!-- WRITE Card -->
+            <div class="bg-gradient-to-br from-emerald-900/20 to-green-900/20 rounded-xl p-4 border border-emerald-500/20">
+              <div class="flex items-center gap-2 mb-3">
+                <i class="fas fa-plus text-emerald-400"></i>
+                <span class="text-white font-bold text-sm">WRITE</span>
+              </div>
+              <div class="text-center py-3 border-y border-white/5">
+                <div class="text-3xl font-black text-emerald-400 mb-1">59,604</div>
+                <div class="text-[10px] text-gray-500 uppercase">req/sec</div>
+              </div>
+              <div class="flex justify-between mt-3 text-[10px] text-gray-400">
+                <span>p50: <span class="text-white">1.50ms</span></span>
+                <span>p99: <span class="text-white">4.21ms</span></span>
+              </div>
+            </div>
+
+            <!-- UPDATE Card -->
+            <div class="bg-gradient-to-br from-purple-900/20 to-pink-900/20 rounded-xl p-4 border border-purple-500/20">
+              <div class="flex items-center gap-2 mb-3">
+                <i class="fas fa-edit text-purple-400"></i>
+                <span class="text-white font-bold text-sm">UPDATE</span>
+              </div>
+              <div class="text-center py-3 border-y border-white/5">
+                <div class="text-3xl font-black text-purple-400 mb-1">61,926</div>
+                <div class="text-[10px] text-gray-500 uppercase">req/sec</div>
+              </div>
+              <div class="flex justify-between mt-3 text-[10px] text-gray-400">
+                <span>p50: <span class="text-white">1.54ms</span></span>
+                <span>p99: <span class="text-white">3.90ms</span></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CTA -->
+          <div class="mt-4 flex items-center justify-between p-3 bg-indigo-900/20 rounded-lg border border-indigo-500/20">
+            <span class="text-xs text-gray-400">
+              <i class="fas fa-chart-bar text-amber-400 mr-1"></i>
+              Up to 8x faster than MongoDB/PostgreSQL
+            </span>
+            <a href="/docs/getting-started" class="text-xs font-bold text-indigo-400 hover:text-indigo-300">
+              Try it <i class="fas fa-arrow-right ml-1"></i>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>

@@ -21,3 +21,7 @@ pub fn get_http_client() -> reqwest::Client {
 pub fn get_http_client_arc() -> reqwest::Client {
     HTTP_CLIENT.get_or_init(reqwest::Client::new).clone()
 }
+
+pub fn get_blocking_http_client() -> reqwest::blocking::Client {
+    reqwest::blocking::Client::new()
+}

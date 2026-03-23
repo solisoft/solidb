@@ -28,9 +28,23 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 const MAX_LOGIN_ATTEMPTS: usize = 20;
 const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 
+/// Basic auth cache TTL in seconds (avoid repeated Argon2 verification)
+const BASIC_AUTH_CACHE_TTL_SECS: u64 = 60;
+
+/// Cache entry for Basic auth results
+struct AuthCacheEntry {
+    claims: Claims,
+    expires_at: Instant,
+}
+
 /// In-memory rate limiter for login attempts
 /// Tracks attempts per IP address with automatic cleanup
 static LOGIN_RATE_LIMITER: Lazy<RwLock<HashMap<String, Vec<Instant>>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// Cache for Basic auth results to avoid repeated Argon2 verification
+/// Key: base64(username:password_hash), Value: Claims + expiry
+static BASIC_AUTH_CACHE: Lazy<RwLock<HashMap<String, AuthCacheEntry>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
 /// Check if an IP is rate limited, return error if too many attempts
@@ -60,6 +74,32 @@ pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
     attempts.push(now);
 
     Ok(())
+}
+
+/// Get cached Basic auth claims if still valid
+fn get_cached_basic_auth(cache_key: &str) -> Option<Claims> {
+    let cache = BASIC_AUTH_CACHE.read().ok()?;
+    if let Some(entry) = cache.get(cache_key) {
+        if Instant::now() < entry.expires_at {
+            return Some(entry.claims.clone());
+        }
+    }
+    None
+}
+
+/// Cache a successful Basic auth result
+fn cache_basic_auth(cache_key: String, claims: Claims) {
+    if let Ok(mut cache) = BASIC_AUTH_CACHE.write() {
+        cache.retain(|_, v| Instant::now() < v.expires_at);
+        cache.insert(
+            cache_key,
+            AuthCacheEntry {
+                claims,
+                expires_at: Instant::now()
+                    + std::time::Duration::from_secs(BASIC_AUTH_CACHE_TTL_SECS),
+            },
+        );
+    }
 }
 
 const ADMIN_DB: &str = "_system";
@@ -817,6 +857,19 @@ pub async fn auth_middleware(
             {
                 if let Ok(credentials) = String::from_utf8(decoded) {
                     if let Some((username, password)) = credentials.split_once(':') {
+                        // Create cache key from credentials hash
+                        use std::collections::hash_map::DefaultHasher;
+                        use std::hash::{Hash, Hasher};
+                        let mut hasher = DefaultHasher::new();
+                        credentials.hash(&mut hasher);
+                        let cache_key = format!("{}:{}", username, hasher.finish());
+
+                        // Check cache first to avoid expensive Argon2 verification
+                        if let Some(claims) = get_cached_basic_auth(&cache_key) {
+                            req.extensions_mut().insert(claims);
+                            return Ok(next.run(req).await);
+                        }
+
                         // Validate against _admins collection
                         if let Ok(db) = state.storage.get_database("_system") {
                             if let Ok(collection) = db.get_collection("_admins") {
@@ -839,6 +892,8 @@ pub async fn auth_middleware(
                                                 roles,
                                                 scoped_databases: None,
                                             };
+                                            // Cache the successful auth result
+                                            cache_basic_auth(cache_key, claims.clone());
                                             req.extensions_mut().insert(claims);
                                             return Ok(next.run(req).await);
                                         }

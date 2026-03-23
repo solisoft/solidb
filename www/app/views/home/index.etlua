@@ -266,7 +266,97 @@ GROUP BY 1</pre>
                </div>
             </div>
 
-         </div>
+          </div>
+       </div>
+    </div>
+  </div>
+
+  <!-- Performance Benchmarks -->
+  <div class="py-16 bg-gray-900/50 border-t border-gray-800">
+    <div class="max-w-6xl mx-auto px-4">
+      <div class="text-center mb-8">
+        <div class="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-400 text-xs font-bold mb-3">
+          <i class="fas fa-bolt"></i>
+          Performance Benchmarks
+        </div>
+        <h2 class="text-2xl font-black text-white mb-2">
+          Blazing Fast. Period.
+        </h2>
+        <p class="text-gray-500 text-sm">
+          Real-world REST API benchmarks on commodity hardware.
+        </p>
+      </div>
+
+      <div class="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur border border-gray-700/50 rounded-2xl overflow-hidden">
+        <!-- Test Environment -->
+        <div class="px-4 py-2 bg-gradient-to-r from-cyan-900/20 to-blue-900/20 border-b border-gray-700/50">
+          <div class="flex flex-wrap items-center justify-center gap-4 text-[10px] text-gray-400">
+            <span><i class="fas fa-server text-cyan-400 mr-1"></i> 16 Cores</span>
+            <span><i class="fas fa-memory text-cyan-400 mr-1"></i> 27Gi RAM</span>
+            <span><i class="fas fa-key text-cyan-400 mr-1"></i> JWT Auth</span>
+            <span><i class="fas fa-bolt text-cyan-400 mr-1"></i> 10K Requests</span>
+          </div>
+        </div>
+
+        <!-- Benchmark Cards -->
+        <div class="p-4">
+          <div class="grid grid-cols-3 gap-3">
+            <!-- READ -->
+            <div class="bg-gradient-to-br from-blue-900/20 to-cyan-900/20 rounded-lg p-3 border border-blue-500/20">
+              <div class="flex items-center gap-2 mb-2">
+                <i class="fas fa-download text-blue-400 text-xs"></i>
+                <span class="text-white font-bold text-xs">READ</span>
+              </div>
+              <div class="text-center py-2 border-y border-white/5">
+                <div class="text-2xl font-black text-blue-400">67,599</div>
+                <div class="text-[9px] text-gray-500 uppercase">req/sec</div>
+              </div>
+              <div class="flex justify-between mt-2 text-[9px] text-gray-400">
+                <span>p50: <span class="text-white">0.58ms</span></span>
+                <span>p99: <span class="text-white">2.91ms</span></span>
+              </div>
+            </div>
+
+            <!-- WRITE -->
+            <div class="bg-gradient-to-br from-emerald-900/20 to-green-900/20 rounded-lg p-3 border border-emerald-500/20">
+              <div class="flex items-center gap-2 mb-2">
+                <i class="fas fa-plus text-emerald-400 text-xs"></i>
+                <span class="text-white font-bold text-xs">WRITE</span>
+              </div>
+              <div class="text-center py-2 border-y border-white/5">
+                <div class="text-2xl font-black text-emerald-400">59,604</div>
+                <div class="text-[9px] text-gray-500 uppercase">req/sec</div>
+              </div>
+              <div class="flex justify-between mt-2 text-[9px] text-gray-400">
+                <span>p50: <span class="text-white">1.50ms</span></span>
+                <span>p99: <span class="text-white">4.21ms</span></span>
+              </div>
+            </div>
+
+            <!-- UPDATE -->
+            <div class="bg-gradient-to-br from-purple-900/20 to-pink-900/20 rounded-lg p-3 border border-purple-500/20">
+              <div class="flex items-center gap-2 mb-2">
+                <i class="fas fa-edit text-purple-400 text-xs"></i>
+                <span class="text-white font-bold text-xs">UPDATE</span>
+              </div>
+              <div class="text-center py-2 border-y border-white/5">
+                <div class="text-2xl font-black text-purple-400">61,926</div>
+                <div class="text-[9px] text-gray-500 uppercase">req/sec</div>
+              </div>
+              <div class="flex justify-between mt-2 text-[9px] text-gray-400">
+                <span>p50: <span class="text-white">1.54ms</span></span>
+                <span>p99: <span class="text-white">3.90ms</span></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CTA -->
+          <div class="mt-3 flex items-center justify-center p-2 bg-indigo-900/20 rounded-lg border border-indigo-500/20">
+            <a href="/docs/getting-started" class="text-[10px] font-bold text-indigo-400 hover:text-indigo-300">
+              Benchmark your workload <i class="fas fa-arrow-right ml-1"></i>
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   </div>

@@ -6,11 +6,13 @@
 //! - get_collection: Collection lookup with database context
 
 use serde_json::Value;
+use std::collections::HashSet;
 
 use super::types::Context;
 use super::QueryExecutor;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::ForClause;
+use crate::storage::http_client::get_blocking_http_client;
 
 impl<'a> QueryExecutor<'a> {
     pub(super) fn get_collection(&self, name: &str) -> DbResult<crate::storage::Collection> {
@@ -101,7 +103,6 @@ impl<'a> QueryExecutor<'a> {
             DbError::ExecutionError("No database context for scatter-gather".to_string())
         })?;
 
-        // Get shard table to know which node owns each shard
         let Some(table) = coordinator.get_shard_table(db_name, collection_name) else {
             tracing::debug!(
                 "[SCATTER-GATHER] No shard table found for {}, falling back to local scan",
@@ -116,29 +117,20 @@ impl<'a> QueryExecutor<'a> {
         };
 
         let my_node_id = coordinator.my_node_id();
-        let mut all_docs: Vec<Value> = Vec::new();
-        let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-        // Build client for remote queries
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .connect_timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap_or_else(|_| reqwest::blocking::Client::new());
         let cluster_secret = coordinator.cluster_secret();
+        let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
 
-        // Query each shard's primary node
+        // Process local shards first (sequential, but fast)
+        let mut local_docs: Vec<(String, Value)> = Vec::new();
         for shard_id in 0..table.num_shards {
             let physical_coll = format!("{}_s{}", collection_name, shard_id);
 
             if let Some(assignment) = table.assignments.get(&shard_id) {
-                // Check if we have this shard locally (either as primary or replica)
                 let is_primary =
                     assignment.primary_node == my_node_id || assignment.primary_node == "local";
                 let is_replica = assignment.replica_nodes.contains(&my_node_id);
 
                 if is_primary || is_replica {
-                    // This shard is local - scan it directly
                     if let Ok(coll) = self
                         .storage
                         .get_database(db_name)
@@ -147,35 +139,74 @@ impl<'a> QueryExecutor<'a> {
                         for doc in coll.scan(limit) {
                             let value = doc.into_value();
                             if let Some(key) = value.get("_key").and_then(|k| k.as_str()) {
-                                if seen_keys.insert(key.to_string()) {
-                                    all_docs.push(value);
-                                }
+                                local_docs.push((key.to_string(), value));
                             }
                         }
                     }
-                } else {
-                    // This shard is remote - try primary first, then replicas
-                    let mut nodes_to_try = vec![assignment.primary_node.clone()];
-                    nodes_to_try.extend(assignment.replica_nodes.clone());
+                }
+            }
+        }
 
+        // Prepare remote shard queries for parallel execution
+        let remote_queries: Vec<_> = {
+            let mut queries = Vec::new();
+            for shard_id in 0..table.num_shards {
+                let physical_coll = format!("{}_s{}", collection_name, shard_id);
+
+                if let Some(assignment) = table.assignments.get(&shard_id) {
+                    let is_primary =
+                        assignment.primary_node == my_node_id || assignment.primary_node == "local";
+                    let is_replica = assignment.replica_nodes.contains(&my_node_id);
+
+                    if !is_primary && !is_replica {
+                        let mut nodes_to_try = vec![assignment.primary_node.clone()];
+                        nodes_to_try.extend(assignment.replica_nodes.clone());
+
+                        let query = if let Some(n) = limit {
+                            format!("FOR doc IN `{}` LIMIT {} RETURN doc", physical_coll, n)
+                        } else {
+                            format!("FOR doc IN `{}` RETURN doc", physical_coll)
+                        };
+
+                        queries.push((
+                            shard_id,
+                            nodes_to_try,
+                            query,
+                            scheme.clone(),
+                            db_name.clone(),
+                            cluster_secret.clone(),
+                        ));
+                    }
+                }
+            }
+            queries
+        };
+
+        // Execute remote queries in parallel using rayon
+        // Clone client for each parallel task since reqwest::blocking::Client is not Sync
+        let remote_results: Vec<Vec<Value>> = if remote_queries.is_empty() {
+            Vec::new()
+        } else {
+            use rayon::prelude::*;
+            let client = get_blocking_http_client();
+            remote_queries
+                .into_par_iter()
+                .map(|(shard_id, nodes_to_try, query, scheme, db_name, cluster_secret)| {
+                    let client = client.clone();
+                    let mut all_values = Vec::new();
                     let mut found = false;
-                    for node_id in &nodes_to_try {
-                        if let Some(addr) = coordinator.get_node_api_address(node_id) {
-                            // Query physical shard collection directly via SDBQL
-                            let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME")
-                                .unwrap_or_else(|_| "http".to_string());
-                            let url =
-                                format!("{}://{}/_api/database/{}/cursor", scheme, addr, db_name);
-                            let query = if let Some(n) = limit {
-                                format!("FOR doc IN `{}` LIMIT {} RETURN doc", physical_coll, n)
-                            } else {
-                                format!("FOR doc IN `{}` RETURN doc", physical_coll)
-                            };
+
+                    for node_id in nodes_to_try {
+                        if let Some(addr) = coordinator.get_node_api_address(&node_id) {
+                            let url = format!(
+                                "{}://{}/_api/database/{}/cursor",
+                                scheme, addr, db_name
+                            );
 
                             let response = client
                                 .post(&url)
                                 .header("X-Scatter-Gather", "true")
-                                .header("X-Cluster-Secret", &cluster_secret)
+                                .header("X-Cluster-Secret", cluster_secret.clone())
                                 .json(&serde_json::json!({ "query": query }))
                                 .send();
 
@@ -186,35 +217,56 @@ impl<'a> QueryExecutor<'a> {
                                             body.get("result").and_then(|r| r.as_array())
                                         {
                                             for doc in results {
-                                                if let Some(key) =
-                                                    doc.get("_key").and_then(|k| k.as_str())
-                                                {
-                                                    if seen_keys.insert(key.to_string()) {
-                                                        all_docs.push(doc.clone());
-                                                    }
-                                                }
+                                                all_values.push(doc.clone());
                                             }
                                             found = true;
-                                            break; // Got data, no need to try other nodes
+                                            break;
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::warn!("[SCATTER-GATHER] Failed to query shard {} from {}: {}, trying next",
-                                        shard_id, node_id, e);
+                                    tracing::warn!(
+                                        "[SCATTER-GATHER] Failed to query shard {} from {}: {}",
+                                        shard_id,
+                                        node_id,
+                                        e
+                                    );
                                 }
                             }
                         }
                     }
 
                     if !found {
-                        tracing::error!("[SCATTER-GATHER] CRITICAL: Could not get data for shard {} from any node. Data may be missing!", shard_id);
+                        tracing::error!(
+                            "[SCATTER-GATHER] CRITICAL: Could not get data for shard {} from any node",
+                            shard_id
+                        );
+                    }
+                    all_values
+                })
+                .collect()
+        };
+
+        // Combine local and remote results with deduplication
+        let mut seen_keys: HashSet<String> = HashSet::new();
+        let mut all_docs: Vec<Value> = Vec::new();
+
+        for (key, value) in local_docs {
+            if seen_keys.insert(key) {
+                all_docs.push(value);
+            }
+        }
+
+        for remote_batch in remote_results {
+            for doc in remote_batch {
+                if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
+                    if seen_keys.insert(key.to_string()) {
+                        all_docs.push(doc);
                     }
                 }
             }
         }
 
-        // Apply final limit
         if let Some(n) = limit {
             if all_docs.len() > n {
                 all_docs.truncate(n);
