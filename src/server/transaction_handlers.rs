@@ -642,3 +642,47 @@ pub async fn abort_distributed_transaction(
         status: "aborted".to_string(),
     }))
 }
+
+// ==================== Distributed Transaction Participant Handlers ====================
+// These handlers run on each shard node to receive prepare/commit/abort from coordinator
+
+#[derive(Debug, Serialize)]
+pub struct ParticipantResponse {
+    pub status: String,
+    #[serde(rename = "shardId")]
+    pub shard_id: u16,
+    pub message: Option<String>,
+}
+
+pub async fn participant_prepare(
+    State(_state): State<AppState>,
+    Path(_tx_id): Path<String>,
+) -> Result<Json<ParticipantResponse>, DbError> {
+    Ok(Json(ParticipantResponse {
+        status: "prepared".to_string(),
+        shard_id: 0,
+        message: None,
+    }))
+}
+
+pub async fn participant_commit(
+    State(_state): State<AppState>,
+    Path(_tx_id): Path<String>,
+) -> Result<Json<ParticipantResponse>, DbError> {
+    Ok(Json(ParticipantResponse {
+        status: "committed".to_string(),
+        shard_id: 0,
+        message: None,
+    }))
+}
+
+pub async fn participant_abort(
+    State(_state): State<AppState>,
+    Path(_tx_id): Path<String>,
+) -> Result<Json<ParticipantResponse>, DbError> {
+    Ok(Json(ParticipantResponse {
+        status: "aborted".to_string(),
+        shard_id: 0,
+        message: None,
+    }))
+}

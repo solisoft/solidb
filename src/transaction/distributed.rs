@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::error::DbError;
 
@@ -130,6 +130,149 @@ impl DistributedTransactionCoordinator {
             .ok_or_else(|| DbError::InternalError(format!("Transaction {} not found", tx_id)))
     }
 
+    async fn send_prepare_to_participant(
+        &self,
+        participant: &ShardParticipantInfo,
+        tx_id: &str,
+    ) -> Result<(), DbError> {
+        let url = format!(
+            "http://{}/_api/distributed/participant/prepare/{}",
+            participant.address, tx_id
+        );
+
+        let client = crate::storage::http_client::get_http_client();
+        match client
+            .post(&url)
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                info!(
+                    "Prepare succeeded on shard {} ({})",
+                    participant.shard_id, participant.node_id
+                );
+                Ok(())
+            }
+            Ok(resp) => {
+                error!(
+                    "Prepare failed on shard {} ({}) - status: {}",
+                    participant.shard_id,
+                    participant.node_id,
+                    resp.status()
+                );
+                Err(DbError::InternalError(format!(
+                    "Prepare failed on shard {}: status {}",
+                    participant.shard_id,
+                    resp.status()
+                )))
+            }
+            Err(e) => {
+                error!(
+                    "Prepare failed on shard {} ({}): {}",
+                    participant.shard_id, participant.node_id, e
+                );
+                Err(DbError::InternalError(format!(
+                    "Prepare failed on shard {}: {}",
+                    participant.shard_id, e
+                )))
+            }
+        }
+    }
+
+    async fn send_commit_to_participant(
+        &self,
+        participant: &ShardParticipantInfo,
+        tx_id: &str,
+    ) -> Result<(), DbError> {
+        let url = format!(
+            "http://{}/_api/distributed/participant/commit/{}",
+            participant.address, tx_id
+        );
+
+        let client = crate::storage::http_client::get_http_client();
+        match client
+            .post(&url)
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                info!(
+                    "Commit succeeded on shard {} ({})",
+                    participant.shard_id, participant.node_id
+                );
+                Ok(())
+            }
+            Ok(resp) => {
+                error!(
+                    "Commit failed on shard {} ({}) - status: {}",
+                    participant.shard_id,
+                    participant.node_id,
+                    resp.status()
+                );
+                Err(DbError::InternalError(format!(
+                    "Commit failed on shard {}: status {}",
+                    participant.shard_id,
+                    resp.status()
+                )))
+            }
+            Err(e) => {
+                error!(
+                    "Commit failed on shard {} ({}): {}",
+                    participant.shard_id, participant.node_id, e
+                );
+                Err(DbError::InternalError(format!(
+                    "Commit failed on shard {}: {}",
+                    participant.shard_id, e
+                )))
+            }
+        }
+    }
+
+    async fn send_abort_to_participant(
+        &self,
+        participant: &ShardParticipantInfo,
+        tx_id: &str,
+    ) -> Result<(), DbError> {
+        let url = format!(
+            "http://{}/_api/distributed/participant/abort/{}",
+            participant.address, tx_id
+        );
+
+        let client = crate::storage::http_client::get_http_client();
+        match client
+            .post(&url)
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                info!(
+                    "Abort succeeded on shard {} ({})",
+                    participant.shard_id, participant.node_id
+                );
+                Ok(())
+            }
+            Ok(resp) => {
+                warn!(
+                    "Abort failed on shard {} ({}) - status: {}",
+                    participant.shard_id,
+                    participant.node_id,
+                    resp.status()
+                );
+                Ok(())
+            }
+            Err(e) => {
+                warn!(
+                    "Abort failed on shard {} ({}): {} (continuing)",
+                    participant.shard_id, participant.node_id, e
+                );
+                Ok(())
+            }
+        }
+    }
+
     pub async fn prepare(&self, tx_id: &DistributedTransactionId) -> Result<bool, DbError> {
         let tx_arc = self.get_transaction(tx_id).await?;
         let mut tx = tx_arc.write().await;
@@ -148,14 +291,42 @@ impl DistributedTransactionCoordinator {
             tx.participants.len()
         );
 
-        for participant in &tx.participants {
-            info!(
-                "Would send prepare to shard {} on node {}",
-                participant.shard_id, participant.node_id
-            );
+        let participants = tx.participants.clone();
+        drop(tx);
+
+        let mut all_success = true;
+        for participant in &participants {
+            if let Err(e) = self
+                .send_prepare_to_participant(participant, &tx_id.0)
+                .await
+            {
+                error!(
+                    "Prepare failed on participant {}: {}",
+                    participant.node_id, e
+                );
+                all_success = false;
+                break;
+            }
         }
 
-        tx.state = DistributedTransactionState::Prepared;
+        let tx_arc = self.get_transaction(tx_id).await?;
+        let mut tx = tx_arc.write().await;
+        if all_success {
+            tx.state = DistributedTransactionState::Prepared;
+        } else {
+            tx.state = DistributedTransactionState::Aborting;
+            drop(tx);
+            for participant in &participants {
+                let _ = self.send_abort_to_participant(participant, &tx_id.0).await;
+            }
+            let tx_arc = self.get_transaction(tx_id).await?;
+            let mut tx = tx_arc.write().await;
+            tx.state = DistributedTransactionState::Aborted;
+            return Err(DbError::InternalError(
+                "Prepare failed on one or more participants".to_string(),
+            ));
+        }
+
         Ok(true)
     }
 
@@ -179,13 +350,20 @@ impl DistributedTransactionCoordinator {
         tx.state = DistributedTransactionState::Committing;
         info!("Distributed transaction {} committing", tx_id);
 
-        for participant in &tx.participants {
-            info!(
-                "Would send commit to shard {} on node {}",
-                participant.shard_id, participant.node_id
-            );
+        let participants = tx.participants.clone();
+        drop(tx);
+
+        for participant in &participants {
+            if let Err(e) = self.send_commit_to_participant(participant, &tx_id.0).await {
+                error!(
+                    "Commit failed on participant {}: {}",
+                    participant.node_id, e
+                );
+            }
         }
 
+        let tx_arc = self.get_transaction(tx_id).await?;
+        let mut tx = tx_arc.write().await;
         tx.state = DistributedTransactionState::Committed;
 
         {
@@ -204,13 +382,15 @@ impl DistributedTransactionCoordinator {
         tx.state = DistributedTransactionState::Aborting;
         info!("Distributed transaction {} aborting", tx_id);
 
-        for participant in &tx.participants {
-            info!(
-                "Would send abort to shard {} on node {}",
-                participant.shard_id, participant.node_id
-            );
+        let participants = tx.participants.clone();
+        drop(tx);
+
+        for participant in &participants {
+            let _ = self.send_abort_to_participant(participant, &tx_id.0).await;
         }
 
+        let tx_arc = self.get_transaction(tx_id).await?;
+        let mut tx = tx_arc.write().await;
         tx.state = DistributedTransactionState::Aborted;
 
         {
