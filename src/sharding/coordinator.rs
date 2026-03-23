@@ -2635,7 +2635,15 @@ impl ShardCoordinator {
             crate::error::DbError::InternalError("Shard table not found".to_string())
         })?;
 
-        // TODO: Handle custom shard_keys. For now assume _key
+        // For custom shard keys, we can't directly route by _key since the shard
+        // is determined by the custom shard key value, not the _key.
+        // We must try all shards in this case.
+        if table.shard_key != "_key" {
+            return self
+                .get_from_all_shards(database, collection, key, &table)
+                .await;
+        }
+
         let shard_id = ShardRouter::route(key, table.num_shards);
         let physical_coll = format!("{}_s{}", collection, shard_id);
 
@@ -2730,6 +2738,72 @@ impl ShardCoordinator {
                 "All nodes failed for shard read".to_string(),
             ))
         }
+    }
+
+    /// Get a document by trying all shards (used when custom shard keys make direct routing impossible)
+    async fn get_from_all_shards(
+        &self,
+        database: &str,
+        collection: &str,
+        key: &str,
+        table: &ShardTable,
+    ) -> Result<serde_json::Value, crate::error::DbError> {
+        let client = get_http_client();
+        let secret = self.cluster_secret();
+        let local_id = if let Some(mgr) = &self.cluster_manager {
+            mgr.local_node_id()
+        } else {
+            "local".to_string()
+        };
+
+        // Try each shard
+        for (shard_id, assignment) in &table.assignments {
+            let physical_coll = format!("{}_s{}", collection, shard_id);
+            let primary_node = &assignment.primary_node;
+
+            if primary_node == &local_id || primary_node == "local" {
+                // Try local first
+                if let Ok(db) = self.storage.get_database(database) {
+                    if let Ok(coll) = db.get_collection(&physical_coll) {
+                        if let Ok(doc) = coll.get(key) {
+                            return Ok(doc.to_value());
+                        }
+                    }
+                }
+            } else {
+                // Try remote node
+                if let Some(mgr) = &self.cluster_manager {
+                    if let Some(addr) = mgr.get_node_api_address(primary_node) {
+                        let url = format!(
+                            "http://{}/_api/database/{}/document/{}/{}",
+                            addr, database, physical_coll, key
+                        );
+
+                        let res = client
+                            .get(&url)
+                            .header("X-Shard-Direct", "true")
+                            .header("X-Cluster-Secret", &secret)
+                            .timeout(std::time::Duration::from_secs(5))
+                            .send()
+                            .await;
+
+                        match res {
+                            Ok(r) if r.status().is_success() => {
+                                return r.json().await.map_err(|e| {
+                                    crate::error::DbError::InternalError(format!(
+                                        "Invalid response: {}",
+                                        e
+                                    ))
+                                });
+                            }
+                            _ => continue,
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(crate::error::DbError::DocumentNotFound(key.to_string()))
     }
 
     /// Get replica nodes for a given key
