@@ -42,9 +42,12 @@ impl<'a> QueryExecutor<'a> {
         }
 
         // Evaluate CTEs (Common Table Expressions) and store results in initial_bindings
+        // CTEs are evaluated sequentially so later CTEs can reference earlier ones
         if let Some(ref with_clause) = query.with_clause {
             for cte in &with_clause.ctes {
-                let cte_results = self.execute(&cte.query)?;
+                // Execute CTE query with access to previously computed CTEs
+                let cte_results = self.execute_cte_with_context(&cte.query, &initial_bindings)?;
+                tracing::debug!("CTE '{}' returned {} results", cte.name, cte_results.len());
                 // Store CTE results as an array in the context so FOR ... IN cte_name can iterate
                 initial_bindings.insert(cte.name.clone(), Value::Array(cte_results));
             }
@@ -326,5 +329,36 @@ impl<'a> QueryExecutor<'a> {
             results,
             mutations: mutation_stats,
         })
+    }
+
+    /// Execute a CTE query with access to a provided context (for CTE chaining)
+    fn execute_cte_with_context(
+        &self,
+        query: &Query,
+        initial_bindings: &Context,
+    ) -> DbResult<Vec<Value>> {
+        // CTEs don't support nested CTEs, so we just use the provided context
+        // Evaluate LET clauses first
+        let mut ctx = initial_bindings.clone();
+        for let_clause in &query.let_clauses {
+            let value = self.evaluate_expr_with_context(&let_clause.expression, &ctx)?;
+            ctx.insert(let_clause.variable.clone(), value);
+        }
+
+        // Execute body clauses
+        let (rows, _) = self.execute_body_clauses(&query.body_clauses, &ctx, None)?;
+
+        // Apply RETURN projection
+        let results = if let Some(ref return_clause) = query.return_clause {
+            let results: DbResult<Vec<Value>> = rows
+                .iter()
+                .map(|r| self.evaluate_expr_with_context(&return_clause.expression, r))
+                .collect();
+            results?
+        } else {
+            vec![]
+        };
+
+        Ok(results)
     }
 }

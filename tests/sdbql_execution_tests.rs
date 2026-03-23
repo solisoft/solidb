@@ -671,3 +671,123 @@ fn test_graph_outbound_traversal() {
     assert!(results.contains(&json!("B")));
     assert!(results.contains(&json!("C")));
 }
+
+#[test]
+fn test_cte_simple() {
+    let (engine, _tmp_dir) = create_seeded_engine();
+
+    // Simple CTE - filter active users and return them
+    // Active users: Alice, Bob, Diana, Eve (Charlie is NOT active)
+    let results = execute_query(
+        &engine,
+        "WITH active AS (FOR u IN users FILTER u.active == true RETURN u) FOR a IN active RETURN a.name",
+    );
+    assert_eq!(results.len(), 4);
+    assert!(results.contains(&json!("Alice")));
+    assert!(results.contains(&json!("Bob")));
+    assert!(results.contains(&json!("Diana")));
+    assert!(results.contains(&json!("Eve")));
+    assert!(!results.contains(&json!("Charlie"))); // Charlie is not active
+}
+
+#[test]
+fn test_cte_multiple() {
+    let (engine, _tmp_dir) = create_seeded_engine();
+
+    // Multiple CTEs - cross product of paris_users x london_users
+    // Paris users: Alice, Charlie (2)
+    // London users: Bob, Eve (2)
+    // Cross product: 2 x 2 = 4
+    let results = execute_query(
+        &engine,
+        "WITH paris_users AS (FOR u IN users FILTER u.city == 'Paris' RETURN u), london_users AS (FOR u IN users FILTER u.city == 'London' RETURN u) FOR p IN paris_users FOR l IN london_users RETURN {paris: p.name, london: l.name}",
+    );
+    assert_eq!(results.len(), 4);
+    assert!(results.contains(&json!({"paris": "Alice", "london": "Bob"})));
+    assert!(results.contains(&json!({"paris": "Alice", "london": "Eve"})));
+    assert!(results.contains(&json!({"paris": "Charlie", "london": "Bob"})));
+    assert!(results.contains(&json!({"paris": "Charlie", "london": "Eve"})));
+}
+
+#[test]
+fn test_cte_iterate_multiple_times() {
+    let (engine, _tmp_dir) = create_seeded_engine();
+
+    // CTE can be iterated multiple times in the same query
+    let results = execute_query(
+        &engine,
+        "WITH nums AS (FOR i IN [1, 2, 3] RETURN i) FOR a IN nums FOR b IN nums RETURN {a: a, b: b}",
+    );
+    // 3 x 3 = 9 combinations
+    assert_eq!(results.len(), 9);
+}
+
+#[test]
+fn test_cte_with_aggregation() {
+    let (engine, _tmp_dir) = create_seeded_engine();
+
+    // CTE - aggregate within the CTE itself
+    let results = execute_query(
+        &engine,
+        "WITH active_cities AS (FOR u IN users FILTER u.active == true COLLECT city = u.city AGGREGATE count = COUNT() RETURN {city: city, count: count}) FOR c IN active_cities RETURN c",
+    );
+    assert_eq!(results.len(), 3);
+    // London (Bob, Eve), Paris (Alice), Berlin (Diana)
+    assert!(results.contains(&json!({"city": "London", "count": 2})));
+    assert!(results.contains(&json!({"city": "Paris", "count": 1})));
+    assert!(results.contains(&json!({"city": "Berlin", "count": 1})));
+}
+
+#[test]
+fn test_cte_with_columns() {
+    let (engine, _tmp_dir) = create_seeded_engine();
+
+    // CTE with column specification
+    let results = execute_query(
+        &engine,
+        "WITH summary(name, age) AS (FOR u IN users RETURN {name: u.name, age: u.age, extra: 'ignored'}) FOR s IN summary RETURN s.name",
+    );
+    assert_eq!(results.len(), 4);
+    assert!(results.contains(&json!("Alice")));
+    assert!(results.contains(&json!("Bob")));
+    assert!(results.contains(&json!("Charlie")));
+    assert!(results.contains(&json!("Diana")));
+}
+
+#[test]
+fn test_cte_reference_earlier_cte() {
+    let (engine, _tmp_dir) = create_seeded_engine();
+
+    // Second CTE can reference the first CTE
+    let results = execute_query(
+        &engine,
+        "WITH active_users AS (FOR u IN users FILTER u.active == true RETURN u), active_paris AS (FOR u IN active_users FILTER u.city == 'Paris' RETURN u) FOR a IN active_paris RETURN a.name",
+    );
+    // Alice is active and in Paris (Bob/Eve are in London, Diana is in Berlin)
+    assert_eq!(results.len(), 1);
+    assert!(results.contains(&json!("Alice")));
+}
+
+#[test]
+fn test_cte_empty_result() {
+    let (engine, _tmp_dir) = create_seeded_engine();
+
+    // CTE with no matching results
+    let results = execute_query(
+        &engine,
+        "WITH no_active AS (FOR u IN users FILTER u.active == false AND u.city == 'Tokyo' RETURN u) FOR n IN no_active RETURN n.name",
+    );
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn test_no_cte_still_works() {
+    let (engine, _tmp_dir) = create_seeded_engine();
+
+    // Verify queries without CTE still work
+    let results = execute_query(&engine, "FOR u IN users FILTER u.age > 28 RETURN u.name");
+    assert_eq!(results.len(), 3);
+    assert!(results.contains(&json!("Alice")));
+    assert!(results.contains(&json!("Charlie")));
+    assert!(results.contains(&json!("Eve")));
+}

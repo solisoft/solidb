@@ -55,10 +55,18 @@ impl<'a> QueryExecutor<'a> {
             .as_ref()
             .unwrap_or(&for_clause.collection);
 
+        tracing::debug!(
+            "get_for_source_docs: source_name='{}', collection='{}'",
+            source_name,
+            for_clause.collection
+        );
+
         // Check if source is a LET variable in current context
         if let Some(value) = ctx.get(source_name) {
+            tracing::debug!("Found source '{}' in context: {:?}", source_name, value);
             return match value {
                 Value::Array(arr) => {
+                    tracing::debug!("Returning {} items from array", arr.len());
                     if let Some(n) = limit {
                         Ok(arr.iter().take(n).cloned().collect())
                     } else {
@@ -67,6 +75,11 @@ impl<'a> QueryExecutor<'a> {
                 }
                 other => Ok(vec![other.clone()]),
             };
+        } else {
+            tracing::debug!(
+                "Source '{}' NOT found in context, checking if it's a collection",
+                source_name
+            );
         }
 
         // Otherwise it's a collection - use scan with limit for optimization

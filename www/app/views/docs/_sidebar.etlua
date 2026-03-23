@@ -10,7 +10,7 @@ local sections = {
         { slug = "api-collections", label = "Collections" },
         { slug = "api-documents", label = "Documents" },
         { slug = "api-queries", label = "Queries" },
-        { slug = "api-cte", label = "CTEs" },
+
         { slug = "api-indexes", label = "Indexes" },
         { slug = "api-vector", label = "Vector Search" },
         { slug = "api-scripting", label = "Scripting" },
@@ -34,6 +34,7 @@ local sections = {
         { slug = "sdbql-mutations", label = "Data Mutations" },
         { slug = "sdbql-graphs", label = "Graph Queries" },
         { slug = "sdbql-aggregations", label = "Aggregations" },
+        { slug = "sdbql-cte", label = "CTEs (WITH)" },
         { slug = "sdbql-functions-string", label = "String Functions" },
         { slug = "sdbql-functions-date", label = "Date Functions" },
         { slug = "sdbql-functions-array", label = "Array Functions" },

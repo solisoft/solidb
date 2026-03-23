@@ -1,10 +1,10 @@
 <div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
   <div class="mb-8">
-    <a href="/docs/api" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
       <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
       </svg>
-      Back to API Reference
+      Back to SDBQL Reference
     </a>
   </div>
 
@@ -12,30 +12,26 @@
     <main class="lg:col-span-12 space-y-12">
 
       <section id="cte" class="scroll-mt-24">
-         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
           <div class="p-8 border-b border-white/5 bg-white/5">
             <h2 class="text-2xl font-bold text-white flex items-center">
               <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path></svg>
-               Common Table Expressions (CTE)
+              Common Table Expressions (CTE)
             </h2>
           </div>
           <div class="divide-y divide-white/5">
-
             <div class="p-6">
               <h3 class="text-lg font-bold text-white mb-4">Overview</h3>
               <p class="text-gray-400 mb-4">
-                Common Table Expressions (CTEs) allow you to define named temporary result sets that can be referenced within your query. They improve query readability and enable recursive data structures like trees and hierarchies.
+                Common Table Expressions (CTEs) allow you to define named temporary result sets that can be referenced within your query. They improve query readability and enable recursive data structures.
               </p>
-              <p class="text-gray-400 mb-4">
+              <p class="text-gray-400">
                 CTEs are defined using the <code class="text-orange-400">WITH</code> clause and can be referenced like collections using <code class="text-orange-400">FOR ... IN</code>.
               </p>
             </div>
 
             <div class="p-6">
               <h3 class="text-lg font-bold text-white mb-4">Simple CTE</h3>
-              <p class="text-gray-400 mb-4">
-                Define a CTE to pre-compute a result set that you can iterate over multiple times.
-              </p>
               <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
                 <div class="bg-black/20 px-4 py-2 border-b border-white/5">
                   <span class="text-xs text-gray-400">Example Query</span>
@@ -55,9 +51,6 @@ FOR u IN active_users
 
             <div class="p-6">
               <h3 class="text-lg font-bold text-white mb-4">Multiple CTEs</h3>
-              <p class="text-gray-400 mb-4">
-                Define multiple CTEs separated by commas to break complex queries into readable chunks.
-              </p>
               <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
                 <div class="bg-black/20 px-4 py-2 border-b border-white/5">
                   <span class="text-xs text-gray-400">Example Query</span>
@@ -84,9 +77,6 @@ FOR o IN high_value_orders
 
             <div class="p-6">
               <h3 class="text-lg font-bold text-white mb-4">CTE with Column Names</h3>
-              <p class="text-gray-400 mb-4">
-                Optionally specify column names for the CTE result set.
-              </p>
               <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
                 <div class="bg-black/20 px-4 py-2 border-b border-white/5">
                   <span class="text-xs text-gray-400">Example Query</span>
@@ -142,28 +132,6 @@ FOR s IN summary
                   </tbody>
                 </table>
               </div>
-            </div>
-
-            <div class="p-6">
-              <h3 class="text-lg font-bold text-white mb-4">Use Cases</h3>
-              <ul class="text-gray-400 space-y-2">
-                <li class="flex items-start">
-                  <span class="text-green-400 mr-2">✓</span>
-                  <span>Simplifying complex queries by breaking them into named steps</span>
-                </li>
-                <li class="flex items-start">
-                  <span class="text-green-400 mr-2">✓</span>
-                  <span>Reusing the same computed result multiple times in a query</span>
-                </li>
-                <li class="flex items-start">
-                  <span class="text-green-400 mr-2">✓</span>
-                  <span>Creating hierarchical/organizational structures</span>
-                </li>
-                <li class="flex items-start">
-                  <span class="text-green-400 mr-2">✓</span>
-                  <span>Building complex joins with readable intermediate steps</span>
-                </li>
-              </ul>
             </div>
 
             <div class="p-6">

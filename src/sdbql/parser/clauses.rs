@@ -452,31 +452,39 @@ impl Parser {
                     self.expect(Token::Assign)?;
 
                     // Parse function call: FUNC(expr)
-                    if let Token::Identifier(func_name) = self.current_token() {
-                        let func = func_name.to_uppercase();
-                        self.advance();
+                    let func = match self.current_token() {
+                        Token::Identifier(name) => {
+                            let func = name.to_uppercase();
+                            self.advance();
+                            func
+                        }
+                        Token::Count => {
+                            self.advance();
+                            "COUNT".to_string()
+                        }
+                        _ => {
+                            return Err(DbError::ParseError(
+                                "Expected aggregate function name".to_string(),
+                            ));
+                        }
+                    };
 
-                        self.expect(Token::LeftParen)?;
+                    self.expect(Token::LeftParen)?;
 
-                        // Parse optional argument
-                        let arg = if matches!(self.current_token(), Token::RightParen) {
-                            None
-                        } else {
-                            Some(self.parse_expression()?)
-                        };
-
-                        self.expect(Token::RightParen)?;
-
-                        aggregates.push(AggregateExpr {
-                            variable: var,
-                            function: func,
-                            argument: arg,
-                        });
+                    // Parse optional argument
+                    let arg = if matches!(self.current_token(), Token::RightParen) {
+                        None
                     } else {
-                        return Err(DbError::ParseError(
-                            "Expected aggregate function name".to_string(),
-                        ));
-                    }
+                        Some(self.parse_expression()?)
+                    };
+
+                    self.expect(Token::RightParen)?;
+
+                    aggregates.push(AggregateExpr {
+                        variable: var,
+                        function: func,
+                        argument: arg,
+                    });
 
                     // Check for comma for more aggregates
                     if matches!(self.current_token(), Token::Comma) {
