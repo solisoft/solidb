@@ -423,7 +423,11 @@ pub async fn execute_query(
     }
 
     // Non-transactional execution (existing logic)
-    let query = parse(&req.query)?;
+    // Use prepared statement cache to avoid re-parsing frequently executed queries
+    let prepared = crate::sdbql::get_prepared_statement_cache()
+        .parse_if_needed(&req.query)
+        .await?;
+    let query = (*prepared.query).clone();
 
     // Check if query is cacheable (read-only with no mutations)
     let is_read_only = !query.body_clauses.iter().any(|clause| {
