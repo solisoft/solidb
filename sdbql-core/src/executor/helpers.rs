@@ -9,12 +9,19 @@
 //! - compare_values: Compare two JSON values for ordering
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 
 use regex::Regex;
 use serde_json::Value;
 
 use crate::ast::{BinaryOperator, UnaryOperator};
 use crate::error::{SdbqlError, SdbqlResult};
+
+static REGEX_CACHE: LazyLock<Mutex<HashMap<String, Regex>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+const REGEX_CACHE_SIZE: usize = 1000;
 
 /// Extract a nested field value from a JSON document.
 ///
@@ -56,20 +63,31 @@ pub fn number_from_f64(n: f64) -> serde_json::Number {
 }
 
 /// Safely compile a regex with size limits to prevent ReDoS attacks.
-///
-/// # Arguments
-/// * `pattern` - The regex pattern to compile
-///
-/// # Returns
-/// Compiled regex or error
+/// Uses a global cache to avoid recompiling frequently used patterns.
 pub fn safe_regex(pattern: &str) -> Result<Regex, regex::Error> {
-    // Limit pattern length to prevent very complex patterns
     if pattern.len() > 1000 {
         return Err(regex::Error::Syntax(
             "Pattern too long (max 1000 chars)".to_string(),
         ));
     }
-    Regex::new(pattern)
+
+    if let Ok(mut cache) = REGEX_CACHE.lock() {
+        if let Some(cached) = cache.get(pattern) {
+            return Ok(cached.clone());
+        }
+
+        match Regex::new(pattern) {
+            Ok(re) => {
+                if cache.len() < REGEX_CACHE_SIZE {
+                    cache.insert(pattern.to_string(), re.clone());
+                }
+                Ok(re)
+            }
+            Err(e) => Err(e),
+        }
+    } else {
+        Regex::new(pattern)
+    }
 }
 
 /// Evaluate a binary operation on two values.

@@ -105,12 +105,22 @@ fn bench_string_functions(c: &mut Criterion) {
         b.iter(|| black_box("hello world world".rfind("world")));
     });
 
-    // REGEX_TEST
-    group.bench_function("REGEX_TEST_hit", |b| {
+    // REGEX_TEST - Uncached (recompile each time - SLOW)
+    group.bench_function("REGEX_TEST_hit_uncached", |b| {
         b.iter(|| black_box(regex::Regex::new(r"^\w+$").unwrap().is_match("hello")));
     });
-    group.bench_function("REGEX_TEST_miss", |b| {
+    group.bench_function("REGEX_TEST_miss_uncached", |b| {
         b.iter(|| black_box(regex::Regex::new(r"^\d+$").unwrap().is_match("hello")));
+    });
+
+    // REGEX_TEST - Cached (reuse compiled regex - FAST)
+    let cached_regex = regex::Regex::new(r"^\w+$").unwrap();
+    group.bench_function("REGEX_TEST_hit_cached", |b| {
+        b.iter(|| black_box(cached_regex.is_match("hello")));
+    });
+    let cached_regex_miss = regex::Regex::new(r"^\d+$").unwrap();
+    group.bench_function("REGEX_TEST_miss_cached", |b| {
+        b.iter(|| black_box(cached_regex_miss.is_match("hello")));
     });
 
     // Long string operations
