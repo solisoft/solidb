@@ -6,9 +6,26 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// A single Common Table Expression (CTE)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CteClause {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub recursive: bool,
+    pub query: Box<Query>,
+}
+
+/// WITH clause containing one or more CTEs
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WithClause {
+    pub ctes: Vec<CteClause>,
+}
+
 /// AST node for a complete SDBQL query
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Query {
+    /// Optional WITH clause for CTEs (Common Table Expressions)
+    pub with_clause: Option<WithClause>,
     /// LET clauses for variable bindings (executed first, before any FOR)
     pub let_clauses: Vec<LetClause>,
     /// Multiple FOR clauses for JOINs (nested loops)

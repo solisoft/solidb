@@ -182,3 +182,53 @@ fn test_any_satisfies_syntax() {
         query.err()
     );
 }
+
+#[test]
+fn test_cte_simple() {
+    let query = parse("WITH temp AS (FOR doc IN coll RETURN doc) FOR t IN temp RETURN t");
+    assert!(query.is_ok(), "Failed to parse CTE: {:?}", query.err());
+    let query = query.unwrap();
+    assert!(query.with_clause.is_some());
+    let with = query.with_clause.unwrap();
+    assert_eq!(with.ctes.len(), 1);
+    assert_eq!(with.ctes[0].name, "temp");
+}
+
+#[test]
+fn test_cte_multiple() {
+    let query = parse(
+        "WITH a AS (FOR x IN coll RETURN x), b AS (FOR y IN coll2 RETURN y) FOR t IN a RETURN t",
+    );
+    assert!(
+        query.is_ok(),
+        "Failed to parse multiple CTEs: {:?}",
+        query.err()
+    );
+    let query = query.unwrap();
+    assert!(query.with_clause.is_some());
+    let with = query.with_clause.unwrap();
+    assert_eq!(with.ctes.len(), 2);
+    assert_eq!(with.ctes[0].name, "a");
+    assert_eq!(with.ctes[1].name, "b");
+}
+
+#[test]
+fn test_cte_with_columns() {
+    let query =
+        parse("WITH temp(col1, col2) AS (FOR doc IN coll RETURN doc) FOR t IN temp RETURN t");
+    assert!(
+        query.is_ok(),
+        "Failed to parse CTE with columns: {:?}",
+        query.err()
+    );
+    let query = query.unwrap();
+    assert!(query.with_clause.is_some());
+    let with = query.with_clause.unwrap();
+    assert_eq!(with.ctes[0].columns, vec!["col1", "col2"]);
+}
+
+#[test]
+fn test_no_cte() {
+    let query = parse("FOR doc IN coll RETURN doc").unwrap();
+    assert!(query.with_clause.is_none());
+}

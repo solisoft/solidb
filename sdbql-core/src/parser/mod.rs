@@ -248,6 +248,7 @@ impl Parser {
             .collect();
 
         Ok(Query {
+            with_clause: None,
             create_stream_clause,
             create_materialized_view_clause: create_mv_clause,
             refresh_materialized_view_clause: refresh_mv_clause,

@@ -10,6 +10,7 @@ local sections = {
         { slug = "api-collections", label = "Collections" },
         { slug = "api-documents", label = "Documents" },
         { slug = "api-queries", label = "Queries" },
+        { slug = "api-cte", label = "CTEs" },
         { slug = "api-indexes", label = "Indexes" },
         { slug = "api-vector", label = "Vector Search" },
         { slug = "api-scripting", label = "Scripting" },

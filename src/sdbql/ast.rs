@@ -1,9 +1,30 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// A single Common Table Expression (CTE)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CteClause {
+    /// CTE name (e.g., "temp" in "WITH temp AS (...)")
+    pub name: String,
+    /// Optional column names: WITH temp(col1, col2) AS (...)
+    pub columns: Vec<String>,
+    /// Whether this is a recursive CTE
+    pub recursive: bool,
+    /// The CTE body query
+    pub query: Box<Query>,
+}
+
+/// WITH clause containing one or more CTEs
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WithClause {
+    pub ctes: Vec<CteClause>,
+}
+
 /// AST node for a complete SDBQL query
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Query {
+    /// Optional WITH clause for CTEs (Common Table Expressions)
+    pub with_clause: Option<WithClause>,
     /// LET clauses for variable bindings (executed first, before any FOR)
     pub let_clauses: Vec<LetClause>,
     /// Multiple FOR clauses for JOINs (nested loops)
@@ -584,6 +605,7 @@ mod tests {
     #[test]
     fn test_query_default() {
         let query = Query {
+            with_clause: None,
             let_clauses: vec![],
             for_clauses: vec![],
             join_clauses: vec![],

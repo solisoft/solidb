@@ -95,6 +95,13 @@ impl Parser {
             None
         };
 
+        // Parse optional WITH clause for CTEs (Common Table Expressions)
+        let with_clause = if matches!(self.current_token(), Token::With) {
+            Some(self.parse_with_clause()?)
+        } else {
+            None
+        };
+
         // Parse initial LET clauses (before any FOR - these are evaluated once)
         // Supports multiple comma-separated bindings: LET a = 1, b = 2, c = 3
         let mut let_clauses = Vec::new();
@@ -249,6 +256,7 @@ impl Parser {
             .collect();
 
         Ok(Query {
+            with_clause,
             create_stream_clause,
             create_materialized_view_clause: create_mv_clause,
             refresh_materialized_view_clause: refresh_mv_clause,

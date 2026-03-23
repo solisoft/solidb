@@ -32,6 +32,7 @@ pub enum Token {
     Update,
     Upsert,
     With,
+    Recursive,
     Remove,
     Replace,
 
@@ -390,6 +391,7 @@ impl Lexer {
             "UPDATE" => Token::Update,
             "UPSERT" => Token::Upsert,
             "WITH" => Token::With,
+            "RECURSIVE" => Token::Recursive,
             "REMOVE" => Token::Remove,
             "REPLACE" => Token::Replace,
             // Graph traversal keywords

@@ -498,6 +498,72 @@ impl Parser {
         })
     }
 
+    /// Parse WITH clause for CTEs: WITH cte_name [(col1, col2, ...)] AS (query) [, cte_name AS (query)]*
+    /// Example: WITH temp AS (SELECT 1), temp2 AS (SELECT 2) SELECT * FROM temp
+    pub(crate) fn parse_with_clause(&mut self) -> DbResult<WithClause> {
+        self.expect(Token::With)?;
+
+        let mut ctes = Vec::new();
+
+        loop {
+            // Parse CTE name
+            let cte_name = if let Token::Identifier(name) = self.current_token() {
+                let name = name.clone();
+                self.advance();
+                name
+            } else {
+                return Err(DbError::ParseError(
+                    "Expected CTE name after WITH".to_string(),
+                ));
+            };
+
+            // Parse optional column list: WITH temp(col1, col2) AS (...)
+            let mut columns = Vec::new();
+            if matches!(self.current_token(), Token::LeftParen) {
+                self.advance(); // consume '('
+                while !matches!(self.current_token(), Token::RightParen) {
+                    if let Token::Identifier(name) = self.current_token() {
+                        columns.push(name.clone());
+                        self.advance();
+                    } else {
+                        return Err(DbError::ParseError(
+                            "Expected column name in CTE column list".to_string(),
+                        ));
+                    }
+                    if matches!(self.current_token(), Token::Comma) {
+                        self.advance();
+                    }
+                }
+                self.expect(Token::RightParen)?;
+            }
+
+            // Parse AS (query)
+            self.expect(Token::As)?;
+            self.expect(Token::LeftParen)?;
+
+            // Parse the CTE query - this can reference earlier CTEs in the same WITH clause
+            let cte_query = self.parse_query(false)?;
+
+            self.expect(Token::RightParen)?;
+
+            ctes.push(CteClause {
+                name: cte_name,
+                columns,
+                recursive: false, // RECURSIVE is parsed at the WITH level, not per-CTE
+                query: Box::new(cte_query),
+            });
+
+            // Check for comma (multiple CTEs)
+            if matches!(self.current_token(), Token::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        Ok(WithClause { ctes })
+    }
+
     /// Parse graph traversal: FOR v[, e] IN [min..max] OUTBOUND|INBOUND|ANY start_vertex edge_collection
     pub(crate) fn parse_graph_traversal_clause(
         &mut self,

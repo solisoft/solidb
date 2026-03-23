@@ -41,6 +41,15 @@ impl<'a> QueryExecutor<'a> {
             initial_bindings.insert(format!("@{}", key), value.clone());
         }
 
+        // Evaluate CTEs (Common Table Expressions) and store results in initial_bindings
+        if let Some(ref with_clause) = query.with_clause {
+            for cte in &with_clause.ctes {
+                let cte_results = self.execute(&cte.query)?;
+                // Store CTE results as an array in the context so FOR ... IN cte_name can iterate
+                initial_bindings.insert(cte.name.clone(), Value::Array(cte_results));
+            }
+        }
+
         for let_clause in &query.let_clauses {
             let value =
                 self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
