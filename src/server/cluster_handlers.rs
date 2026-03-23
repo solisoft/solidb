@@ -216,25 +216,28 @@ pub(crate) fn generate_cluster_status(
             "cluster-ready".to_string()
         };
 
-        let peers: Vec<PeerStatusResponse> = member_list
-            .into_iter()
-            .filter(|m| m.node.id != manager.local_node_id())
-            .map(|m| PeerStatusResponse {
-                address: m.node.address,
-                is_connected: m.status == crate::cluster::state::NodeStatus::Active,
-                last_seen_secs_ago: (chrono::Utc::now().timestamp_millis() as u64
-                    - m.last_heartbeat)
-                    / 1000,
-                replication_lag: 0, // TODO: track actual lag
-                stats: m.stats.clone(),
-            })
-            .collect();
-
         let (current_seq, count) = if let Some(log) = &state.replication_log {
             (log.current_sequence(), log.current_sequence())
         } else {
             (0, 0)
         };
+
+        let peers: Vec<PeerStatusResponse> = member_list
+            .into_iter()
+            .filter(|m| m.node.id != manager.local_node_id())
+            .map(|m| {
+                let replication_lag = current_seq.saturating_sub(m.last_sequence);
+                PeerStatusResponse {
+                    address: m.node.address,
+                    is_connected: m.status == crate::cluster::state::NodeStatus::Active,
+                    last_seen_secs_ago: (chrono::Utc::now().timestamp_millis() as u64
+                        - m.last_heartbeat)
+                        / 1000,
+                    replication_lag,
+                    stats: m.stats.clone(),
+                }
+            })
+            .collect();
 
         ClusterStatusResponse {
             node_id: manager.local_node_id(),

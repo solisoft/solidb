@@ -147,6 +147,30 @@ pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse
             "solidb_cluster_info{{node_id=\"{}\"}} 1\n\n",
             local_node
         ));
+
+        // Replication lag for each peer
+        let members = cluster_manager.state().get_all_members();
+        let current_seq = if let Some(log) = &state.replication_log {
+            log.current_sequence()
+        } else {
+            0
+        };
+
+        if current_seq > 0 {
+            for member in members {
+                if member.node.id != local_node {
+                    let lag = current_seq.saturating_sub(member.last_sequence);
+                    output.push_str(
+                        "# HELP solidb_replication_lag_replicas Sequence lag for replicated data\n",
+                    );
+                    output.push_str("# TYPE solidb_replication_lag_replicas gauge\n");
+                    output.push_str(&format!(
+                        "solidb_replication_lag_replicas{{node_id=\"{}\",address=\"{}\"}} {}\n\n",
+                        member.node.id, member.node.address, lag
+                    ));
+                }
+            }
+        }
     }
 
     // Shard Coordinator Stats (if sharding is enabled)
