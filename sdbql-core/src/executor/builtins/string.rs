@@ -179,7 +179,7 @@ pub fn call(name: &str, args: &[Value]) -> SdbqlResult<Option<Value>> {
             let pattern = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
             let replace = args.get(2).and_then(|v| v.as_str()).unwrap_or("");
 
-            match regex::Regex::new(pattern) {
+            match crate::executor::helpers::safe_regex(pattern) {
                 Ok(re) => Some(Value::String(re.replace_all(s, replace).into_owned())),
                 Err(_) => Some(Value::String(s.to_string())),
             }
@@ -189,7 +189,7 @@ pub fn call(name: &str, args: &[Value]) -> SdbqlResult<Option<Value>> {
             let s = args.first().and_then(|v| v.as_str()).unwrap_or("");
             let pattern = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
 
-            match regex::Regex::new(pattern) {
+            match crate::executor::helpers::safe_regex(pattern) {
                 Ok(re) => Some(Value::Bool(re.is_match(s))),
                 Err(_) => Some(Value::Bool(false)),
             }
@@ -199,7 +199,7 @@ pub fn call(name: &str, args: &[Value]) -> SdbqlResult<Option<Value>> {
             let s = args.first().and_then(|v| v.as_str()).unwrap_or("");
             let pattern = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
 
-            match regex::Regex::new(pattern) {
+            match crate::executor::helpers::safe_regex(pattern) {
                 Ok(re) => {
                     let matches: Vec<Value> = re
                         .find_iter(s)
