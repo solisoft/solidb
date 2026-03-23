@@ -44,6 +44,7 @@ local sections = {
         { slug = "sdbql-functions-search", label = "Search Functions" },
         { slug = "sdbql-functions-crypto", label = "Crypto Functions" },
         { slug = "sdbql-functions-misc", label = "Other Functions" },
+        { slug = "sdbql-benchmarks", label = "Benchmarks" },
       }},
       { slug = "sql", label = "SQL Compatibility", icon = "fa-database", color = "info" },
       { slug = "nl-queries", label = "Natural Language", icon = "fa-magic", color = "accent" },

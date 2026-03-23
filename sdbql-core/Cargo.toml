@@ -28,3 +28,8 @@ basic-builtins = []
 full-builtins = ["basic-builtins"]
 
 [dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "bench_builtins"
+harness = false
