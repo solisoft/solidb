@@ -36,7 +36,7 @@
                 <div class="bg-black/20 px-4 py-2 border-b border-white/5">
                   <span class="text-xs text-gray-400">Example Query</span>
                 </div>
-                <pre class="p-4 text-sm text-gray-300 overflow-x-auto"><code>-- Define a CTE to get active users
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Define a CTE to get active users
 WITH active_users AS (
   FOR u IN users
     FILTER u.active == true
@@ -45,7 +45,8 @@ WITH active_users AS (
 -- Now iterate over the CTE like a collection
 FOR u IN active_users
   SORT u.name ASC
-  RETURN u</code></pre>
+  RETURN u
+</code></pre>
               </div>
             </div>
 
@@ -55,7 +56,7 @@ FOR u IN active_users
                 <div class="bg-black/20 px-4 py-2 border-b border-white/5">
                   <span class="text-xs text-gray-400">Example Query</span>
                 </div>
-                <pre class="p-4 text-sm text-gray-300 overflow-x-auto"><code>-- Get high-value orders with customer details
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Get high-value orders with customer details
 WITH 
   high_value_orders AS (
     FOR o IN orders
@@ -81,7 +82,7 @@ FOR o IN high_value_orders
                 <div class="bg-black/20 px-4 py-2 border-b border-white/5">
                   <span class="text-xs text-gray-400">Example Query</span>
                 </div>
-                <pre class="p-4 text-sm text-gray-300 overflow-x-auto"><code>WITH summary(id, name, total) AS (
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">WITH summary(id, name, total) AS (
   FOR o IN orders
     FILTER o.status == 'completed'
     RETURN {id: o._key, name: o.customer_name, total: o.total}
@@ -137,7 +138,7 @@ FOR s IN summary
             <div class="p-6">
               <h3 class="text-lg font-bold text-white mb-4">Syntax</h3>
               <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
-                <pre class="p-4 text-sm text-gray-300 overflow-x-auto"><code>WITH
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">WITH
   cte_name [(col1, col2, ...)] AS ( query ),
   cte_name2 [(col1, col2, ...)] AS ( query )
 query_body</code></pre>
