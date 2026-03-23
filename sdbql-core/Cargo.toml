@@ -28,6 +28,7 @@ basic-builtins = []
 full-builtins = ["basic-builtins"]
 
 [dev-dependencies]
+base64 = "0.22"
 criterion = "0.5"
 
 [[bench]]
