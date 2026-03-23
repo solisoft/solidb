@@ -48,6 +48,10 @@ thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Observability - OpenTelemetry trace context propagation
+opentelemetry = { version = "0.17", features = ["trace"] }
+tracing-opentelemetry = "0.17"
+
 # CLI
 clap = { version = "4.4", features = ["derive"] }
 dotenvy = "0.15"

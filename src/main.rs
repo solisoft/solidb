@@ -50,6 +50,11 @@ struct Args {
     /// Optional keyfile for cluster node authentication
     #[arg(long)]
     keyfile: Option<String>,
+
+    /// OpenTelemetry OTLP endpoint (e.g., http://localhost:4317)
+    /// If not set, tracing is disabled
+    #[arg(long)]
+    otlp_endpoint: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]

@@ -1207,6 +1207,7 @@
                   <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Auto-Sharding</span>
                   <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Distributed Job Queues</span>
                   <span class="px-2 py-1 bg-gray-800 rounded border border-white/10">Lua Scripting</span>
+                  <span class="px-2 py-1 bg-emerald-900/30 text-emerald-300 rounded border border-emerald-500/20">OpenTelemetry Tracing</span>
                 </div>
               </td>
             </tr>
@@ -1259,12 +1260,12 @@
                 <span class="text-white font-bold text-sm">READ</span>
               </div>
               <div class="text-center py-3 border-y border-white/5">
-                <div class="text-3xl font-black text-blue-400 mb-1">67,599</div>
+                <div class="text-3xl font-black text-blue-400 mb-1">70,000</div>
                 <div class="text-[10px] text-gray-500 uppercase">req/sec</div>
               </div>
               <div class="flex justify-between mt-3 text-[10px] text-gray-400">
-                <span>p50: <span class="text-white">0.58ms</span></span>
-                <span>p99: <span class="text-white">2.91ms</span></span>
+                <span>p50: <span class="text-white">0.19ms</span></span>
+                <span>p99: <span class="text-white">0.39ms</span></span>
               </div>
             </div>
 
@@ -1275,12 +1276,12 @@
                 <span class="text-white font-bold text-sm">WRITE</span>
               </div>
               <div class="text-center py-3 border-y border-white/5">
-                <div class="text-3xl font-black text-emerald-400 mb-1">59,604</div>
+                <div class="text-3xl font-black text-emerald-400 mb-1">35,000</div>
                 <div class="text-[10px] text-gray-500 uppercase">req/sec</div>
               </div>
               <div class="flex justify-between mt-3 text-[10px] text-gray-400">
-                <span>p50: <span class="text-white">1.50ms</span></span>
-                <span>p99: <span class="text-white">4.21ms</span></span>
+                <span>p50: <span class="text-white">0.43ms</span></span>
+                <span>p99: <span class="text-white">1.01ms</span></span>
               </div>
             </div>
 
@@ -1288,15 +1289,15 @@
             <div class="bg-gradient-to-br from-purple-900/20 to-pink-900/20 rounded-xl p-4 border border-purple-500/20">
               <div class="flex items-center gap-2 mb-3">
                 <i class="fas fa-edit text-purple-400"></i>
-                <span class="text-white font-bold text-sm">UPDATE</span>
+                <span class="text-white font-bold text-sm">BATCH INSERT</span>
               </div>
               <div class="text-center py-3 border-y border-white/5">
-                <div class="text-3xl font-black text-purple-400 mb-1">61,926</div>
-                <div class="text-[10px] text-gray-500 uppercase">req/sec</div>
+                <div class="text-3xl font-black text-purple-400 mb-1">762,000</div>
+                <div class="text-[10px] text-gray-500 uppercase">docs/sec</div>
               </div>
               <div class="flex justify-between mt-3 text-[10px] text-gray-400">
-                <span>p50: <span class="text-white">1.54ms</span></span>
-                <span>p99: <span class="text-white">3.90ms</span></span>
+                <span>p50: <span class="text-white">0.43ms</span></span>
+                <span>p99: <span class="text-white">1.01ms</span></span>
               </div>
             </div>
           </div>
@@ -1305,7 +1306,7 @@
           <div class="mt-4 flex items-center justify-between p-3 bg-indigo-900/20 rounded-lg border border-indigo-500/20">
             <span class="text-xs text-gray-400">
               <i class="fas fa-chart-bar text-amber-400 mr-1"></i>
-              Up to 8x faster than MongoDB/PostgreSQL
+              Batch insert: 500 docs/request for 23x throughput
             </span>
             <a href="/docs/getting-started" class="text-xs font-bold text-indigo-400 hover:text-indigo-300">
               Try it <i class="fas fa-arrow-right ml-1"></i>

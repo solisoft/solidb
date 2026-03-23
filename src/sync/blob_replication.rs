@@ -95,8 +95,13 @@ pub async fn replicate_blob_to_node(
         form = form.part(format!("chunk_{}", index), part);
     }
 
-    let response = client
-        .post(&url)
+    let mut req_builder = client.post(&url);
+
+    if let Some(trace_ctx) = crate::observability::get_current_trace_context() {
+        req_builder = req_builder.header("traceparent", trace_ctx.to_header());
+    }
+
+    let response = req_builder
         // .bearer_auth(auth_token) // TODO: Internal auth
         .multipart(form)
         .send()

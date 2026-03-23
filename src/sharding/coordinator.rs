@@ -2398,20 +2398,22 @@ impl ShardCoordinator {
                     // Get Cluster Secret
                     let secret = self.cluster_secret();
 
-                    let res = client
+                    let mut req_builder = client
                         .post(&url)
                         .header("X-Shard-Direct", "true")
                         .header("X-Cluster-Secret", &secret)
-                        .timeout(std::time::Duration::from_secs(60)) // Longer timeout for blob uploads
-                        .multipart(form)
-                        .send()
-                        .await
-                        .map_err(|e| {
-                            crate::error::DbError::InternalError(format!(
-                                "Blob upload forwarding failed: {}",
-                                e
-                            ))
-                        })?;
+                        .timeout(std::time::Duration::from_secs(60));
+
+                    if let Some(trace_ctx) = crate::observability::get_current_trace_context() {
+                        req_builder = req_builder.header("traceparent", trace_ctx.to_header());
+                    }
+
+                    let res = req_builder.multipart(form).send().await.map_err(|e| {
+                        crate::error::DbError::InternalError(format!(
+                            "Blob upload forwarding failed: {}",
+                            e
+                        ))
+                    })?;
 
                     let status = res.status();
                     if status.is_success() {

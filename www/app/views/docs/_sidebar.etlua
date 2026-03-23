@@ -103,6 +103,7 @@ local sections = {
     title = "Reference",
     items = {
       { slug = "architecture", label = "Architecture", icon = "fa-layer-group", color = "info" },
+      { slug = "observability", label = "Observability", icon = "fa-signal", color = "info" },
       { slug = "security", label = "Security", icon = "fa-shield-alt", color = "error" },
       { slug = "tooling", label = "CLI Tools", icon = "fa-wrench", color = "warning" },
       { slug = "clients", label = "Official Clients", icon = "fa-laptop-code", color = "primary", subitems = {

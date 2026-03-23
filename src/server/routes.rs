@@ -26,6 +26,28 @@ async fn request_counter_middleware(
     next.run(request).await
 }
 
+/// Middleware to extract and store trace context from incoming requests
+async fn trace_context_middleware(request: Request<Body>, next: Next) -> Response {
+    use crate::observability::propagation::{extract_trace_context, TRACEPARENT_HEADER};
+
+    let trace_ctx = extract_trace_context(&request);
+
+    let mut req = request;
+    if let Some(ctx) = trace_ctx {
+        req.extensions_mut().insert(ctx);
+    }
+
+    let span = tracing::info_span!(
+        "http_request",
+        http.method = %req.method(),
+        http.url = %req.uri(),
+        traceparent = req.headers().get(TRACEPARENT_HEADER).map(|h| h.to_str().unwrap_or("")).unwrap_or("")
+    );
+    span.follows_from(tracing::Span::current());
+
+    next.run(req).await
+}
+
 use super::handlers::*;
 use super::nl_handlers;
 use crate::scripting::engine::{LuaPool, ScriptCache, ScriptIndex};
@@ -963,6 +985,10 @@ pub fn create_router(
             crate::server::auth::permissive_auth_middleware,
         ))
         .merge(api_routes)
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            trace_context_middleware,
+        ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             request_counter_middleware,
