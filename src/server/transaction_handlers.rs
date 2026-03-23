@@ -511,3 +511,134 @@ pub async fn execute_transactional_sdbql(
         "message": format!("{} operation(s) staged in transaction. Commit to apply changes.", mutation_count)
     })))
 }
+
+// ==================== Distributed Transaction Handlers ====================
+
+use crate::transaction::distributed::{
+    DistributedTransactionCoordinator, DistributedTransactionId, ShardParticipantInfo,
+};
+
+pub struct DistributedTxState {
+    pub coordinator: std::sync::Arc<tokio::sync::RwLock<DistributedTransactionCoordinator>>,
+}
+
+impl DistributedTxState {
+    pub fn new() -> Self {
+        Self {
+            coordinator: std::sync::Arc::new(tokio::sync::RwLock::new(
+                DistributedTransactionCoordinator::new(),
+            )),
+        }
+    }
+}
+
+impl Default for DistributedTxState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BeginDistributedTransactionRequest {
+    pub participants: Vec<ParticipantRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ParticipantRequest {
+    #[serde(rename = "shardId")]
+    pub shard_id: u16,
+    #[serde(rename = "nodeId")]
+    pub node_id: String,
+    pub address: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BeginDistributedTransactionResponse {
+    pub id: String,
+    pub status: String,
+    #[serde(rename = "participantCount")]
+    pub participant_count: usize,
+}
+
+pub async fn begin_distributed_transaction(
+    State(_state): State<AppState>,
+    Json(req): Json<BeginDistributedTransactionRequest>,
+) -> Result<Json<BeginDistributedTransactionResponse>, DbError> {
+    let participants: Vec<ShardParticipantInfo> = req
+        .participants
+        .into_iter()
+        .map(|p| ShardParticipantInfo {
+            shard_id: p.shard_id,
+            node_id: p.node_id,
+            address: p.address,
+        })
+        .collect();
+
+    let coordinator = DistributedTransactionCoordinator::new();
+    let tx_id = coordinator.begin_transaction(participants.clone()).await?;
+
+    Ok(Json(BeginDistributedTransactionResponse {
+        id: tx_id.to_string(),
+        status: "active".to_string(),
+        participant_count: participants.len(),
+    }))
+}
+
+#[derive(Debug, Serialize)]
+pub struct PrepareDistributedTransactionResponse {
+    pub id: String,
+    pub status: String,
+    pub success: bool,
+}
+
+pub async fn prepare_distributed_transaction(
+    State(_state): State<AppState>,
+    Path(tx_id): Path<String>,
+) -> Result<Json<PrepareDistributedTransactionResponse>, DbError> {
+    let coordinator = DistributedTransactionCoordinator::new();
+    let dtx_id = DistributedTransactionId(tx_id);
+
+    let success = coordinator.prepare(&dtx_id).await?;
+
+    Ok(Json(PrepareDistributedTransactionResponse {
+        id: dtx_id.to_string(),
+        status: "prepared".to_string(),
+        success,
+    }))
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommitDistributedTransactionResponse {
+    pub id: String,
+    pub status: String,
+}
+
+pub async fn commit_distributed_transaction(
+    State(_state): State<AppState>,
+    Path(tx_id): Path<String>,
+) -> Result<Json<CommitDistributedTransactionResponse>, DbError> {
+    let coordinator = DistributedTransactionCoordinator::new();
+    let dtx_id = DistributedTransactionId(tx_id);
+
+    coordinator.commit(&dtx_id).await?;
+
+    Ok(Json(CommitDistributedTransactionResponse {
+        id: dtx_id.to_string(),
+        status: "committed".to_string(),
+    }))
+}
+
+pub async fn abort_distributed_transaction(
+    State(_state): State<AppState>,
+    Path(tx_id): Path<String>,
+) -> Result<Json<CommitDistributedTransactionResponse>, DbError> {
+    let coordinator = DistributedTransactionCoordinator::new();
+    let dtx_id = DistributedTransactionId(tx_id);
+
+    coordinator.abort(&dtx_id).await?;
+
+    Ok(Json(CommitDistributedTransactionResponse {
+        id: dtx_id.to_string(),
+        status: "aborted".to_string(),
+    }))
+}

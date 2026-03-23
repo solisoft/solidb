@@ -565,6 +565,23 @@ pub fn create_router(
             "/_api/database/{db}/transaction/{tx_id}/query",
             post(super::transaction_handlers::execute_transactional_sdbql),
         )
+        // Distributed transaction routes
+        .route(
+            "/_api/distributed/transaction/begin",
+            post(super::transaction_handlers::begin_distributed_transaction),
+        )
+        .route(
+            "/_api/distributed/transaction/{tx_id}/prepare",
+            post(super::transaction_handlers::prepare_distributed_transaction),
+        )
+        .route(
+            "/_api/distributed/transaction/{tx_id}/commit",
+            post(super::transaction_handlers::commit_distributed_transaction),
+        )
+        .route(
+            "/_api/distributed/transaction/{tx_id}/abort",
+            post(super::transaction_handlers::abort_distributed_transaction),
+        )
         // Cluster routes
         .route("/_api/cluster/status", get(cluster_status))
         .route("/_api/cluster/info", get(cluster_info))
