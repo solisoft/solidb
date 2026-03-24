@@ -1,6 +1,9 @@
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "linker=clang", "-C", "force-unwind-tables=no"]
 
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "linker=aarch64-linux-gnu-gcc"]
+
 [net]
 git-fetch-with-cli = true
 
