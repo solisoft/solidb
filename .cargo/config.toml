@@ -1,6 +1,9 @@
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "linker=clang", "-C", "force-unwind-tables=no"]
 
+[net]
+git-fetch-with-cli = true
+
 [profile.release]
 # Optimize for size
 opt-level = "z"
