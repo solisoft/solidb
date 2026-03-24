@@ -224,38 +224,48 @@ impl<'a> QueryExecutor<'a> {
                     if let Some(ref return_clause) = query.return_clause {
                         if let Expression::Variable(ref var) = return_clause.expression {
                             if var == &for_clause.variable {
-                                let scan_limit = query.limit_clause.as_ref().map(|l| {
-                                    let offset = self
-                                        .evaluate_expr_with_context(&l.offset, &initial_bindings)
-                                        .ok()
-                                        .and_then(|v| v.as_u64())
-                                        .map(|n| n as usize)
-                                        .unwrap_or(0);
-                                    let count = self
-                                        .evaluate_expr_with_context(&l.count, &initial_bindings)
-                                        .ok()
-                                        .and_then(|v| v.as_u64())
-                                        .map(|n| n as usize)
-                                        .unwrap_or(0);
-                                    (offset, count)
-                                });
+                                let source_name = for_clause
+                                    .source_variable
+                                    .as_ref()
+                                    .unwrap_or(&for_clause.collection);
 
-                                let collection = self.get_collection(&for_clause.collection)?;
-                                let total = scan_limit.map(|(o, c)| o + c);
-                                let docs: Vec<Value> = collection.scan_values(total);
+                                if !initial_bindings.contains_key(source_name) {
+                                    let scan_limit = query.limit_clause.as_ref().map(|l| {
+                                        let offset = self
+                                            .evaluate_expr_with_context(
+                                                &l.offset,
+                                                &initial_bindings,
+                                            )
+                                            .ok()
+                                            .and_then(|v| v.as_u64())
+                                            .map(|n| n as usize)
+                                            .unwrap_or(0);
+                                        let count = self
+                                            .evaluate_expr_with_context(&l.count, &initial_bindings)
+                                            .ok()
+                                            .and_then(|v| v.as_u64())
+                                            .map(|n| n as usize)
+                                            .unwrap_or(0);
+                                        (offset, count)
+                                    });
 
-                                let results = if let Some((offset, count)) = scan_limit {
-                                    let start = offset.min(docs.len());
-                                    let end = (start + count).min(docs.len());
-                                    docs[start..end].to_vec()
-                                } else {
-                                    docs
-                                };
+                                    let collection = self.get_collection(&for_clause.collection)?;
+                                    let total = scan_limit.map(|(o, c)| o + c);
+                                    let docs: Vec<Value> = collection.scan_values(total);
 
-                                return Ok(QueryExecutionResult {
-                                    results,
-                                    mutations: MutationStats::new(),
-                                });
+                                    let results = if let Some((offset, count)) = scan_limit {
+                                        let start = offset.min(docs.len());
+                                        let end = (start + count).min(docs.len());
+                                        docs[start..end].to_vec()
+                                    } else {
+                                        docs
+                                    };
+
+                                    return Ok(QueryExecutionResult {
+                                        results,
+                                        mutations: MutationStats::new(),
+                                    });
+                                }
                             }
                         }
                     }
