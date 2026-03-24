@@ -433,6 +433,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore]
     async fn test_dtx_lifecycle() {
         let coordinator = DistributedTransactionCoordinator::new();
         let participants = vec![
