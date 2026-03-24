@@ -201,5 +201,4 @@ tag-message = "{{tag_name}}"
 tag-name = "v{{version}}"
 pre-release-replacements = []
 publish = false
-skip-git-check = true
 
