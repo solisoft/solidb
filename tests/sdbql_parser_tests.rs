@@ -452,13 +452,25 @@ fn test_collect_with_into() {
 }
 
 #[test]
-fn test_collect_with_count() {
-    // COLLECT WITH COUNT INTO syntax
-    let query = "FOR doc IN orders COLLECT WITH COUNT INTO total RETURN total";
+fn test_parse_collect_aggregate_simple() {
+    // Simple COLLECT without any group vars - just COLLECT AGGREGATE
+    let query = "FOR u IN users COLLECT AGGREGATE count = COUNT() RETURN count";
     let result = parse(query);
     assert!(
         result.is_ok(),
-        "Failed to parse COLLECT WITH COUNT: {:?}",
+        "Failed to parse COLLECT AGGREGATE COUNT: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn test_parse_collect_with_group_var_and_aggregate() {
+    // COLLECT with group var and AGGREGATE
+    let query = "FOR u IN users COLLECT city = u.city AGGREGATE cnt = COUNT() RETURN {city, cnt}";
+    let result = parse(query);
+    assert!(
+        result.is_ok(),
+        "Failed to parse COLLECT with group var and AGGREGATE: {:?}",
         result.err()
     );
 }

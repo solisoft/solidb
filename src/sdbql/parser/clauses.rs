@@ -452,15 +452,12 @@ impl Parser {
                     self.expect(Token::Assign)?;
 
                     // Parse function call: FUNC(expr)
+                    // Note: COUNT is handled as Identifier with uppercase conversion
                     let func = match self.current_token() {
                         Token::Identifier(name) => {
                             let func = name.to_uppercase();
                             self.advance();
                             func
-                        }
-                        Token::Count => {
-                            self.advance();
-                            "COUNT".to_string()
                         }
                         _ => {
                             return Err(DbError::ParseError(

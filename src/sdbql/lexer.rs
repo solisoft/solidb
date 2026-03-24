@@ -413,7 +413,9 @@ impl Lexer {
             // Aggregation keywords
             "COLLECT" => Token::Collect,
             "AGGREGATE" => Token::Aggregate,
-            "COUNT" => Token::Count,
+            // Note: COUNT is NOT a keyword here - it's handled as a special identifier
+            // in aggregate function parsing. This allows 'count' (lowercase) to be used
+            // as a variable name while still recognizing COUNT() as a function call.
             "SATISFIES" => Token::Satisfies,
 
             // Stream Processing

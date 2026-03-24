@@ -232,3 +232,16 @@ fn test_no_cte() {
     let query = parse("FOR doc IN coll RETURN doc").unwrap();
     assert!(query.with_clause.is_none());
 }
+
+#[test]
+fn test_parse_collect_with_aggregate_count() {
+    let query =
+        parse("FOR u IN users COLLECT city = u.city AGGREGATE count = COUNT() RETURN count");
+    assert!(query.is_ok(), "Failed to parse: {:?}", query.err());
+}
+
+#[test]
+fn test_parse_collect_aggregate_no_group_var() {
+    let query = parse("FOR u IN users COLLECT AGGREGATE count = COUNT() RETURN count");
+    assert!(query.is_ok(), "Failed to parse: {:?}", query.err());
+}

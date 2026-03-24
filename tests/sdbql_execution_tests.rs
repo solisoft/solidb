@@ -747,11 +747,12 @@ fn test_cte_with_columns() {
         &engine,
         "WITH summary(name, age) AS (FOR u IN users RETURN {name: u.name, age: u.age, extra: 'ignored'}) FOR s IN summary RETURN s.name",
     );
-    assert_eq!(results.len(), 4);
+    assert_eq!(results.len(), 5);
     assert!(results.contains(&json!("Alice")));
     assert!(results.contains(&json!("Bob")));
     assert!(results.contains(&json!("Charlie")));
     assert!(results.contains(&json!("Diana")));
+    assert!(results.contains(&json!("Eve")));
 }
 
 #[test]

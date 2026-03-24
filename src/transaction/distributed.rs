@@ -459,5 +459,4 @@ mod tests {
 
         coordinator.abort(&tx_id).await.unwrap();
     }
-
 }
