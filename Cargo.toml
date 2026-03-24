@@ -196,9 +196,10 @@ sign-commit = false
 sign-tag = false
 push-remote = "origin"
 consolidate-commits = true
-pre-release-commit-message = "chore: release version {{version}}"
+pre-release-commit-message = "chore: release v{{version}}"
 tag-message = "{{tag_name}}"
 tag-name = "v{{version}}"
 pre-release-replacements = []
 publish = false
+skip-git-check = true
 
