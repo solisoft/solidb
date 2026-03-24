@@ -191,3 +191,14 @@ required-features = ["fuse"]
 name = "solidb-repl"
 path = "src/bin/solidb-repl.rs"
 
+[workspace.metadata.release]
+sign-commit = false
+sign-tag = false
+push-remote = "origin"
+consolidate-commits = true
+pre-release-commit-message = "chore: release version {{version}}"
+tag-message = "{{tag_name}}"
+tag-name = "v{{version}}"
+pre-release-replacements = []
+publish = false
+
