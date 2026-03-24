@@ -160,6 +160,58 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
+        // Optimization: Use index for SORT (without LIMIT) if available
+        // Check if query is: FOR var IN collection SORT var.field RETURN ...
+        if let Some(sort) = &query.sort_clause {
+            if query.limit_clause.is_none() && query.body_clauses.len() == 1 {
+                if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
+                    if sort.fields.len() == 1 {
+                        let (sort_expr, sort_asc) = &sort.fields[0];
+
+                        if let Expression::FieldAccess(base, field) = sort_expr {
+                            if let Expression::Variable(var) = base.as_ref() {
+                                if var == &for_clause.variable {
+                                    if let Ok(collection) =
+                                        self.get_collection(&for_clause.collection)
+                                    {
+                                        if let Some(docs) =
+                                            collection.index_sorted(field, *sort_asc, None)
+                                        {
+                                            let results = if let Some(ref return_clause) =
+                                                query.return_clause
+                                            {
+                                                let results: DbResult<Vec<Value>> = docs
+                                                    .iter()
+                                                    .map(|doc| {
+                                                        let mut ctx = initial_bindings.clone();
+                                                        ctx.insert(
+                                                            for_clause.variable.clone(),
+                                                            doc.to_value(),
+                                                        );
+                                                        self.evaluate_expr_with_context(
+                                                            &return_clause.expression,
+                                                            &ctx,
+                                                        )
+                                                    })
+                                                    .collect();
+                                                results?
+                                            } else {
+                                                docs.iter().map(|doc| doc.to_value()).collect()
+                                            };
+                                            return Ok(QueryExecutionResult {
+                                                results,
+                                                mutations: MutationStats::new(),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Optimization: Direct scan for simple FOR + [LIMIT] + RETURN var
         // Pattern: FOR var IN collection [LIMIT n] RETURN var
         // Skips the entire Context/HashMap machinery

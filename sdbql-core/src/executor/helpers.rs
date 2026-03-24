@@ -407,6 +407,7 @@ pub fn to_bool(value: &Value) -> bool {
 /// Compare two JSON values for ordering.
 ///
 /// Null < Bool < Number < String < Array < Object
+/// Arrays are compared lexicographically element-by-element.
 #[inline]
 pub fn compare_values(a: &Value, b: &Value) -> Ordering {
     match (a, b) {
@@ -420,8 +421,20 @@ pub fn compare_values(a: &Value, b: &Value) -> Ordering {
             a_f64.partial_cmp(&b_f64).unwrap_or(Ordering::Equal)
         }
         (Value::String(a), Value::String(b)) => a.cmp(b),
+        (Value::Array(a), Value::Array(b)) => compare_arrays(a, b),
         _ => Ordering::Equal,
     }
+}
+
+fn compare_arrays(a: &[Value], b: &[Value]) -> Ordering {
+    let min_len = a.len().min(b.len());
+    for i in 0..min_len {
+        let cmp = compare_values(&a[i], &b[i]);
+        if cmp != Ordering::Equal {
+            return cmp;
+        }
+    }
+    a.len().cmp(&b.len())
 }
 
 /// Calculate Levenshtein distance between two strings.

@@ -31,7 +31,7 @@ SDBQL queries are composed of high-level clauses that can be chained together.
 | `RETURN` | Projects the result | `RETURN user.name` |
 | `FILTER` | Filters results based on condition | `FILTER user.age >= 18` |
 | `LET` | Defines a variable | `LET full_name = CONCAT(user.first, " ", user.last)` |
-| `SORT` | Sorts results | `SORT user.age DESC` |
+| `SORT` | Sorts results (stable, index-optimized) | `SORT user.age DESC, user.name ASC` |
 | `LIMIT` | Limits the number of results | `LIMIT 10` |
 | `COLLECT` | Groups results (Aggregation) | `COLLECT city = user.city WITH COUNT INTO n` |
 | `WINDOW` | Performs window functions | `WINDOW w AS (PARTITION BY city ORDER BY age)` |
@@ -104,6 +104,55 @@ FOR product IN products
 When a document has multiple matches in the joined collection, all matches are grouped into an array:
 - `{user: {...}, orders: [{order1}, {order2}, {order3}]}` - User with 3 orders
 - `{user: {...}, orders: []}` - User with no orders (LEFT JOIN only)
+
+### SORT Operations
+
+The `SORT` clause orders results by one or more fields. SDBQL's SORT is **stable** — elements with equal sort keys preserve their original order.
+
+**Syntax:**
+```sql
+FOR variable IN collection
+  SORT expression [ASC|DESC] [, expression [ASC|DESC] ...]
+  RETURN expression
+```
+
+**Features:**
+- **Stable Sort**: Preserves original order of equal elements (useful for secondary sorts or deterministic pagination)
+- **Multi-field Sort**: Sort by multiple fields, each with independent ASC/DESC direction
+- **Expression Support**: Sort by any expression — field access, function calls (e.g., `LENGTH(doc.tags)`), or computed values
+- **Index Optimization**: When sorting by an indexed field, SDBQL uses the index directly (O(n) vs O(n log n) comparison sort)
+- **Type-aware Comparison**: Null < Bool < Number < String < Array; arrays compared lexicographically element-by-element
+
+**Examples:**
+```sql
+-- Single field ascending (default)
+FOR user IN users SORT user.age RETURN user
+
+-- Single field descending
+FOR user IN users SORT user.age DESC RETURN user
+
+-- Multi-field sort: by city (ascending), then by age within each city (descending)
+FOR user IN users SORT user.city ASC, user.age DESC RETURN user
+
+-- Sort by computed value (array length)
+FOR doc IN articles SORT LENGTH(doc.tags) DESC RETURN doc
+
+-- Stable sort: equal elements preserve insertion order
+FOR item IN items SORT item.category, item.priority ASC RETURN item
+```
+
+**Index Utilization:**
+For simple `FOR ... SORT field` queries, SoliDB automatically uses an existing index on the sort field when available:
+- With `LIMIT`: Uses index to return pre-sorted, limited results
+- Without `LIMIT`: Uses index for full collection scan in sorted order
+
+```sql
+-- Uses users.name index if available (indexed field sort optimization)
+FOR user IN users SORT user.name ASC RETURN user
+
+-- With LIMIT: very efficient - index provides pre-sorted, limited results
+FOR user IN users SORT user.created_at DESC LIMIT 10 RETURN user
+```
 
 ### Pipeline Operator `|>`
 Passes the result of the left expression as the first argument to the right function.
@@ -296,7 +345,7 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `INTERSECTION` | Set intersection | `INTERSECTION([1,2],[2,3])` → `[2]` |
 | `MINUS(arr1, arr2)` | Set difference | `MINUS([1,2],[2])` → `[1]` |
 | `UNIQUE(arr)` | Deduplicate | `UNIQUE([1,1,2])` → `[1,2]` |
-| `SORTED(arr)` | Sort values | `SORTED([2,1])` → `[1,2]` |
+| `SORTED(arr)` | Sort values (stable, element-by-element) | `SORTED([2,1])` → `[1,2]` |
 | `REVERSE(arr)` | Reverse array | `REVERSE([1,2])` → `[2,1]` |
 | `FLATTEN(arr, depth)` | Flatten nested | `FLATTEN([[1],2])` → `[1,2]` |
 | `RANGE(start, end, step)` | Generate range | `RANGE(1,3)` → `[1,2,3]` |

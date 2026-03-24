@@ -126,6 +126,14 @@
     });
   </script>
   <script>
+    // Scroll active sidebar item into view
+    document.addEventListener('DOMContentLoaded', function() {
+      var activeItem = document.querySelector('aside a[href="' + location.pathname + '"]');
+      if (activeItem) {
+        activeItem.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    });
+
     // Apply syntax highlighting to all code blocks and add copy buttons
     var etluaOpen = '<' + '%';
     var etluaClose = '%' + '>';

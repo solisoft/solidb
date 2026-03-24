@@ -495,28 +495,36 @@ impl<D: DataSource> LocalExecutor<D> {
         }
     }
 
-    /// Apply SORT clause.
+    /// Apply SORT clause (stable - preserves original order of equal elements).
     fn apply_sort(
         &self,
-        results: &mut [Value],
+        results: &mut Vec<Value>,
         sort: &SortClause,
         context: &ExecutionContext,
     ) -> SdbqlResult<()> {
         let sort_fields = &sort.fields;
+        let num_fields = sort_fields.len();
 
-        results.sort_by(|a, b| {
-            for (expr, ascending) in sort_fields {
-                let ctx_a = ExecutionContext::from_value(a.clone(), context.bind_vars.clone());
-                let ctx_b = ExecutionContext::from_value(b.clone(), context.bind_vars.clone());
+        let evaluated: Vec<Vec<Value>> = results
+            .iter()
+            .map(|doc| {
+                let mut vals = Vec::with_capacity(num_fields);
+                for (expr, _) in sort_fields {
+                    let ctx = ExecutionContext::from_value(doc.clone(), context.bind_vars.clone());
+                    vals.push(self.evaluate_expression(expr, &ctx)?);
+                }
+                Ok(vals)
+            })
+            .collect::<SdbqlResult<Vec<_>>>()?;
 
-                let val_a = self
-                    .evaluate_expression(expr, &ctx_a)
-                    .unwrap_or(Value::Null);
-                let val_b = self
-                    .evaluate_expression(expr, &ctx_b)
-                    .unwrap_or(Value::Null);
+        let mut indices: Vec<usize> = (0..results.len()).collect();
 
-                let ordering = compare_values(&val_a, &val_b);
+        indices.sort_by(|&i, &j| {
+            for (field_idx, (_expr, ascending)) in sort_fields.iter().enumerate() {
+                let val_a = &evaluated[i][field_idx];
+                let val_b = &evaluated[j][field_idx];
+
+                let ordering = compare_values(val_a, val_b);
                 if ordering != std::cmp::Ordering::Equal {
                     return if *ascending {
                         ordering
@@ -525,8 +533,14 @@ impl<D: DataSource> LocalExecutor<D> {
                     };
                 }
             }
-            std::cmp::Ordering::Equal
+            i.cmp(&j)
         });
+
+        let mut sorted = Vec::with_capacity(results.len());
+        for i in indices {
+            sorted.push(results[i].clone());
+        }
+        *results = sorted;
 
         Ok(())
     }

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.21.2](https://github.com/solisoft/solidb/compare/v0.21.1...v0.21.2) (2026-03-24)
+
+### Improvements
+
+* **SORT performance & correctness**: Stable sort preserves original order of equal elements; Index optimization for SORT without LIMIT; Pre-evaluation of sort expressions with proper error handling; Lexicographic array comparison element-by-element
+
 ## [0.9.0](https://github.com/solisoft/solidb/compare/v0.8.0...v0.9.0) (2026-02-08)
 
 
