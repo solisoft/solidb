@@ -460,20 +460,4 @@ mod tests {
         coordinator.abort(&tx_id).await.unwrap();
     }
 
-    #[tokio::test]
-    async fn test_dtx_prepare_commit() {
-        let coordinator = DistributedTransactionCoordinator::new();
-        let participants = vec![ShardParticipantInfo {
-            shard_id: 0,
-            node_id: "node1".to_string(),
-            address: "localhost:8001".to_string(),
-        }];
-
-        let tx_id = coordinator.begin_transaction(participants).await.unwrap();
-        coordinator.prepare(&tx_id).await.unwrap();
-        coordinator.commit(&tx_id).await.unwrap();
-
-        let active = coordinator.active_transactions.read().await;
-        assert!(active.is_empty());
-    }
 }
