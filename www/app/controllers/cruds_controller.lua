@@ -48,6 +48,9 @@ function CrudsController:create_datatype()
   local description = self.params.description or ""
   local collection_name = self.params.collection_name
   if collection_name == "" then collection_name = nil end
+  local sortable_param = self.params.sortable
+  if type(sortable_param) == "table" then sortable_param = sortable_param[#sortable_param] end
+  local sortable = sortable_param == "true" or sortable_param == "1"
 
   -- Parse fields JSON
   local fields = {}
@@ -73,7 +76,8 @@ function CrudsController:create_datatype()
     description = description,
     collection_name = collection_name,
     fields = fields,
-    relations = relations
+    relations = relations,
+    sortable = sortable
   })
 
   -- Generate JSON schema
@@ -137,6 +141,9 @@ function CrudsController:update_datatype()
   local description = self.params.description or ""
   local collection_name = self.params.collection_name
   if collection_name == "" then collection_name = nil end
+  local sortable_param = self.params.sortable
+  if type(sortable_param) == "table" then sortable_param = sortable_param[#sortable_param] end
+  local sortable = sortable_param == "true" or sortable_param == "1"
 
   -- Parse fields JSON
   local fields = {}
@@ -162,7 +169,8 @@ function CrudsController:update_datatype()
     description = description,
     collection_name = collection_name,
     fields = fields,
-    relations = relations
+    relations = relations,
+    sortable = sortable
   }
 
   -- Regenerate JSON schema
@@ -288,8 +296,22 @@ function CrudsController:data_index()
 
   local page = tonumber(self.params.page) or 1
   local per_page = tonumber(self.params.per_page) or 30
+  local dt = datatype.data or datatype
+  local sort_field = self.params.sort_field
+  local sort_dir = self.params.sort_dir or "ASC"
 
-  local records = datatype:get_records({ page = page, per_page = per_page })
+  -- When sortable and no explicit sort requested, sort by order
+  if dt.sortable and not sort_field then
+    sort_field = "order"
+    sort_dir = "ASC"
+  end
+
+  local records = datatype:get_records({ 
+    page = page, 
+    per_page = per_page,
+    sort_field = sort_field,
+    sort_dir = sort_dir
+  })
   local total = datatype:records_count()
   local total_pages = math.ceil(total / per_page)
 
@@ -301,7 +323,9 @@ function CrudsController:data_index()
     page = page,
     per_page = per_page,
     total = total,
-    total_pages = total_pages
+    total_pages = total_pages,
+    sort_field = sort_field,
+    sort_dir = sort_dir
   })
 end
 
@@ -598,6 +622,47 @@ function CrudsController:data_delete()
     showToast = { message = "Record deleted successfully", type = "success" }
   }))
   self:html("")
+end
+
+-- Reorder records (batch update order field)
+function CrudsController:data_reorder()
+  local slug = self.params.datatype_slug
+  local datatype = Datatype.find_by_slug(slug)
+
+  if not datatype then
+    return self:json({ error = "Datatype not found" }, 404)
+  end
+
+  -- Parse JSON body manually if orders not in params
+  local orders = self.params.orders
+  if not orders then
+    local body = GetBody()
+    if body and body ~= "" then
+      local ok, parsed = pcall(DecodeJson, body)
+      if ok and parsed then
+        orders = parsed.orders
+      end
+    end
+  end
+
+  if not orders or type(orders) ~= "table" then
+    return self:json({ error = "Invalid request" }, 400)
+  end
+
+  local collection = datatype:target_collection()
+
+  for _, item in ipairs(orders) do
+    local key = item.key
+    local order = tonumber(item.order)
+    if key and order then
+      Sdb:Sdbql(
+        "FOR doc IN `" .. collection .. "` FILTER doc._key == @key UPDATE doc WITH { order: @order } IN `" .. collection .. "`",
+        { key = key, order = order }
+      )
+    end
+  end
+
+  return self:json({ success = true })
 end
 
 -- Get upload config for JavaScript

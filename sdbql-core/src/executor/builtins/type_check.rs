@@ -127,6 +127,26 @@ pub fn call(name: &str, args: &[Value]) -> SdbqlResult<Option<Value>> {
             Some(found)
         }
 
+        "IS_SAME_COLLECTION" => {
+            check_args(name, args, 2)?;
+            let extract_collection = |val: &Value| -> Option<String> {
+                match val {
+                    Value::String(s) => s.split('/').next().map(|c| c.to_string()),
+                    Value::Object(obj) => obj
+                        .get("_id")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.split('/').next().map(|c| c.to_string())),
+                    _ => None,
+                }
+            };
+            let col1 = extract_collection(&args[0]);
+            let col2 = extract_collection(&args[1]);
+            match (col1, col2) {
+                (Some(c1), Some(c2)) => Some(Value::Bool(c1 == c2)),
+                _ => Some(Value::Bool(false)),
+            }
+        }
+
         _ => None,
     };
 
@@ -227,6 +247,46 @@ mod tests {
         assert_eq!(
             call("NOT_NULL", &[Value::Null, Value::Null]).unwrap(),
             Some(Value::Null)
+        );
+    }
+
+    #[test]
+    fn test_is_same_collection() {
+        assert_eq!(
+            call(
+                "IS_SAME_COLLECTION",
+                &[json!("users/123"), json!("users/456")]
+            )
+            .unwrap(),
+            Some(json!(true))
+        );
+        assert_eq!(
+            call(
+                "IS_SAME_COLLECTION",
+                &[json!("users/123"), json!("orders/456")]
+            )
+            .unwrap(),
+            Some(json!(false))
+        );
+        assert_eq!(
+            call(
+                "IS_SAME_COLLECTION",
+                &[json!({"_id": "users/123"}), json!("users/456")]
+            )
+            .unwrap(),
+            Some(json!(true))
+        );
+        assert_eq!(
+            call(
+                "IS_SAME_COLLECTION",
+                &[json!("users/123"), json!("Users/456")]
+            )
+            .unwrap(),
+            Some(json!(true))
+        );
+        assert_eq!(
+            call("IS_SAME_COLLECTION", &[json!(123), json!("users/456")]).unwrap(),
+            Some(json!(false))
         );
     }
 }

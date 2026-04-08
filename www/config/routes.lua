@@ -607,6 +607,7 @@ router.scope("/cruds", { middleware = { "dashboard_auth" } }, function()
   router.get("/data/:datatype_slug/:key/edit", "cruds#data_edit")
   router.put("/data/:datatype_slug/:key", "cruds#data_update")
   router.delete("/data/:datatype_slug/:key", "cruds#data_delete")
+  router.post("/data/:datatype_slug/reorder", "cruds#data_reorder")
 
   -- File uploads
   router.get("/upload/config", "cruds#upload_config")

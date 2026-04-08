@@ -3,7 +3,7 @@ local Model = require("model")
 local Datatype = Model.create("datatypes", {
   permitted_fields = {
     "name", "slug", "description", "collection_name",
-    "fields", "relations", "json_schema"
+    "fields", "relations", "json_schema", "sortable"
   },
   validations = {
     name = { presence = true, length = { between = {1, 100} } },
@@ -130,25 +130,31 @@ function Datatype:get_records(options)
   local collection = self:target_collection()
   local slug = self.slug or (self.data and self.data.slug)
 
+  local sort_field = options.sort_field or "created_at"
+  local sort_dir = options.sort_dir or "DESC"
+  if sort_field ~= "order" then
+    sort_dir = "DESC"
+  end
+
   local query
   local params = { offset = offset, per_page = options.per_page }
 
   if collection == "datasets" then
-    query = [[
+    query = string.format([[
       FOR doc IN datasets
         FILTER doc._type == @type
-        SORT doc.created_at DESC
+        SORT doc["%s"] %s
         LIMIT @offset, @per_page
         RETURN doc
-    ]]
+    ]], sort_field, sort_dir)
     params.type = slug
   else
     query = string.format([[
       FOR doc IN `%s`
-        SORT doc.created_at DESC
+        SORT doc["%s"] %s
         LIMIT @offset, @per_page
         RETURN doc
-    ]], collection)
+    ]], collection, sort_field, sort_dir)
   end
 
   local result = Sdb:Sdbql(query, params)

@@ -17,10 +17,10 @@ cargo build --release          # Release build
 ./target/release/solidb --port 6745 --data-dir ./data
 
 # Testing
-cargo test                     # All tests (592 tests across 54 test files)
-cargo test --test <name>       # Specific test file (e.g., cargo test --test http_api_test)
-cargo test <pattern>           # Tests matching pattern (e.g., cargo test sdbql)
-cargo test -- --nocapture      # Show test output
+cargo test --release                          # All tests (592 tests across 54 test files)
+cargo test --release --test <name>            # Specific test file (e.g., cargo test --release --test http_api_test)
+cargo test --release <pattern>                # Tests matching pattern (e.g., cargo test --release sdbql)
+cargo test --release -- --nocapture           # Show test output
 
 # Code quality (required before commits)
 cargo fmt -- --check           # Check formatting

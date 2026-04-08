@@ -651,6 +651,62 @@ fn test_function_is_object() {
 }
 
 #[test]
+fn test_function_is_same_collection() {
+    let (engine, _tmp) = create_test_engine();
+
+    assert_eq!(
+        execute_query(
+            &engine,
+            "RETURN IS_SAME_COLLECTION('users/123', 'users/456')"
+        ),
+        json!(true)
+    );
+    assert_eq!(
+        execute_query(
+            &engine,
+            "RETURN IS_SAME_COLLECTION('users/123', 'orders/456')"
+        ),
+        json!(false)
+    );
+    assert_eq!(
+        execute_query(
+            &engine,
+            "RETURN IS_SAME_COLLECTION({_id: 'users/123'}, 'users/456')"
+        ),
+        json!(true)
+    );
+    assert_eq!(
+        execute_query(
+            &engine,
+            "RETURN IS_SAME_COLLECTION('users/123', {_id: 'users/456'})"
+        ),
+        json!(true)
+    );
+    assert_eq!(
+        execute_query(
+            &engine,
+            "RETURN IS_SAME_COLLECTION({_id: 'users/123'}, {_id: 'users/456'})"
+        ),
+        json!(true)
+    );
+    assert_eq!(
+        execute_query(
+            &engine,
+            "RETURN IS_SAME_COLLECTION({_id: 'users/123'}, {_id: 'orders/456'})"
+        ),
+        json!(false)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN IS_SAME_COLLECTION('users/123', 456)"),
+        json!(false)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN IS_SAME_COLLECTION(null, 'users/456')"),
+        json!(false)
+    );
+}
+
+#[test]
 fn test_function_typename() {
     let (engine, _tmp) = create_test_engine();
 

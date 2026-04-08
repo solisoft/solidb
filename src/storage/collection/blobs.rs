@@ -1,5 +1,6 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use rust_rocksdb::WriteBatch;
 use std::sync::atomic::Ordering;
 
 impl Collection {
@@ -61,7 +62,7 @@ impl Collection {
 
         let prefix = format!("{}{}:", BLO_PREFIX, key);
         let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
-        let mut batch = rocksdb::WriteBatch::default();
+        let mut batch = WriteBatch::default();
         let mut count = 0;
 
         for result in iter.flatten() {
@@ -74,7 +75,7 @@ impl Collection {
         }
 
         if count > 0 {
-            db.write(batch)
+            db.write(&batch)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
             self.chunk_count.fetch_sub(count, Ordering::Relaxed);
             self.count_dirty.store(true, Ordering::Relaxed);
@@ -124,7 +125,7 @@ impl Collection {
             .cf_handle(&self.name)
             .expect("Column family should exist");
 
-        let mut batch = rocksdb::WriteBatch::default();
+        let mut batch = WriteBatch::default();
 
         for i in 0..total_chunks {
             let tmp_key = format!("{}{}:{}", BLO_TMP_PREFIX, upload_id, i);
@@ -143,7 +144,7 @@ impl Collection {
             batch.delete_cf(cf, tmp_key.as_bytes());
         }
 
-        db.write(batch).map_err(|e| {
+        db.write(&batch).map_err(|e| {
             DbError::InternalError(format!("Failed to finalize blob upload: {}", e))
         })?;
 
@@ -163,7 +164,7 @@ impl Collection {
 
         let prefix = format!("{}{}:", BLO_TMP_PREFIX, upload_id);
         let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
-        let mut batch = rocksdb::WriteBatch::default();
+        let mut batch = WriteBatch::default();
         let mut count = 0;
 
         for result in iter.flatten() {
@@ -176,7 +177,7 @@ impl Collection {
         }
 
         if count > 0 {
-            db.write(batch)
+            db.write(&batch)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 

@@ -1,6 +1,7 @@
 use solidb::storage::columnar::{ColumnDef, ColumnType, ColumnarCollection, CompressionType};
 
-use rocksdb::DB;
+use rust_rocksdb::Options;
+use rust_rocksdb::DB;
 use solidb::sdbql::{parse, QueryExecutor};
 use solidb::storage::engine::StorageEngine;
 use std::sync::{Arc, RwLock};
@@ -45,9 +46,7 @@ fn test_explain_columnar_query() {
         if db_arc.cf_handle(cf_name).is_none() {
             let db_ptr = Arc::as_ptr(&db_arc) as *mut DB;
             unsafe {
-                (*db_ptr)
-                    .create_cf(cf_name, &rocksdb::Options::default())
-                    .unwrap();
+                (*db_ptr).create_cf(cf_name, &Options::default()).unwrap();
             }
         }
     }

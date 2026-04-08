@@ -75,10 +75,21 @@
                        class="w-full px-4 py-3 bg-bg-dark/50 border border-white/10 rounded-xl focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-white placeholder:text-text-dim shadow-inner font-mono text-sm">
                 <p class="text-[10px] text-text-muted mt-1.5 ml-1">Advanced usage: Custom collection name for this datatype.</p>
               </div>
+
+              <div class="md:col-span-2 flex items-center gap-3">
+                <input type="hidden" name="sortable" value="false">
+                <input type="checkbox" name="sortable" id="sortable-cb" value="true"
+                       <%= dt.sortable and 'checked' or '' %>
+                       class="w-4 h-4 rounded border-white/10 bg-bg-dark text-primary focus:ring-primary focus:ring-offset-bg-dark">
+                <div>
+                  <label for="sortable-cb" class="text-xs font-bold text-text-muted cursor-pointer">Enable Manual Ordering</label>
+                  <p class="text-[10px] text-text-muted">When enabled, records can be sorted via the <code>order</code> field.</p>
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- Structure Builder -->
+        <!-- Structure Builder -->
           <div class="bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl p-8">
             <div class="flex items-center justify-between mb-8">
               <h2 class="text-sm font-bold text-text-dim uppercase tracking-widest flex items-center gap-2">

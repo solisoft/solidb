@@ -101,6 +101,7 @@
     // Update service cards to show selected state
     document.querySelectorAll('[data-service-key]').forEach(function(card) {
       if (card.dataset.serviceKey === key) {
+        card.classList.remove('opacity-50');
         card.classList.add('ring-2', 'ring-indigo-500', 'bg-indigo-500/10');
       } else {
         card.classList.remove('ring-2', 'ring-indigo-500', 'bg-indigo-500/10');
@@ -147,7 +148,15 @@
   // Load scripts for a service
   function loadScripts(service) {
     var url = '/database/' + db + '/scripts/table?service=' + encodeURIComponent(service);
-    htmx.ajax('GET', url, {target: '#scripts-table', swap: 'innerHTML'});
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.onload = function() {
+      if (xhr.status === 200) {
+        document.getElementById('scripts-table').innerHTML = xhr.responseText;
+        htmx.process(document.getElementById('scripts-table'));
+      }
+    };
+    xhr.send();
   }
 
   // Setup refresh button

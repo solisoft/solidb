@@ -1,5 +1,7 @@
 use dashmap::DashMap;
-use rocksdb::{ColumnFamilyDescriptor, Options, DB};
+use rust_rocksdb::{
+    BlockBasedOptions, Cache, ColumnFamilyDescriptor, DBCompressionType, Options, DB,
+};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -66,7 +68,7 @@ impl StorageEngine {
         let mut opts = Options::default();
 
         // Enable LZ4 compression for this column family
-        opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+        opts.set_compression_type(DBCompressionType::Lz4);
 
         // Level compaction is the default and works well for most workloads
         // Optimize for SSD storage with fast sequential I/O
@@ -95,13 +97,13 @@ impl StorageEngine {
 
         // Compression settings - use LZ4 for fast compression/decompression
         // Reduces storage size by ~40-60% and improves I/O performance
-        opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+        opts.set_compression_type(DBCompressionType::Lz4);
         opts.set_compression_options(-14, -1, 0, 0);
 
         // Block cache - use 512MB or 30% of available memory
         // Improves read performance by caching frequently accessed blocks
-        let cache = rocksdb::Cache::new_lru_cache(512 * 1024 * 1024);
-        let mut block_opts = rocksdb::BlockBasedOptions::default();
+        let cache = Cache::new_lru_cache(512 * 1024 * 1024);
+        let mut block_opts = BlockBasedOptions::default();
         block_opts.set_block_cache(&cache);
         // Enable bloom filter for faster point lookups
         block_opts.set_bloom_filter(10.0, false);

@@ -78,6 +78,16 @@
               </div>
               <p class="text-[11px] text-text-dim ml-1">If empty, documents are stored in 'datasets' with a <code>_type</code> field.</p>
             </div>
+
+            <div class="md:col-span-2 flex items-center gap-3">
+              <input type="hidden" name="sortable" value="false">
+              <input type="checkbox" name="sortable" id="sortable-cb" value="true"
+                     class="w-4 h-4 rounded border-white/10 bg-bg-dark text-primary focus:ring-primary focus:ring-offset-bg-dark">
+              <div>
+                <label for="sortable-cb" class="text-sm font-bold text-text-muted cursor-pointer">Enable Manual Ordering</label>
+                <p class="text-[11px] text-text-dim">When enabled, records can be sorted via the <code>order</code> field.</p>
+              </div>
+            </div>
           </div>
         </div>
 

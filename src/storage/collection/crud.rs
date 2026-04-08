@@ -2,7 +2,7 @@ use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::document_cache::get_document_cache;
 use crate::storage::serializer::{deserialize_doc, deserialize_doc_as_value, serialize_doc};
-use rocksdb::WriteBatch;
+use rust_rocksdb::{Direction, IteratorMode, ReadOptions, WriteBatch};
 use serde_json::Value;
 use std::sync::atomic::Ordering;
 
@@ -122,7 +122,7 @@ impl Collection {
         }
 
         // Atomic write: document + indexes together
-        db.write(batch)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
 
         // Invalidate document cache for this key
@@ -236,7 +236,7 @@ impl Collection {
         }
 
         // Atomic write: document + all index updates together
-        db.write(batch)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
 
         // Update vector indexes in-memory (separate from WriteBatch)
@@ -340,7 +340,7 @@ impl Collection {
         }
 
         // Atomic write: document + all index updates together
-        db.write(batch)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
 
         // Invalidate document cache for this key
@@ -406,7 +406,7 @@ impl Collection {
         }
 
         // Atomic write: document deletion + index removals together
-        db.write(batch)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to delete document: {}", e)))?;
 
         // Invalidate document cache for this key
@@ -500,7 +500,7 @@ impl Collection {
         let count = batch.len();
 
         // Write all documents in one batch operation
-        db.write(batch)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch upsert: {}", e)))?;
 
         // Update document count (only for new inserts)
@@ -599,7 +599,7 @@ impl Collection {
         }
 
         // Commit batch atomically: all document deletions + index removals together
-        db.write(batch)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch delete: {}", e)))?;
 
         // Update count
@@ -747,7 +747,7 @@ impl Collection {
         }
 
         // Commit batch atomically: all document updates + index updates together
-        db.write(batch)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch update: {}", e)))?;
 
         // Send Change Events
@@ -871,7 +871,7 @@ impl Collection {
         }
 
         // Atomic write: all documents + indexes together
-        db.write(batch)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch insert: {}", e)))?;
 
         // Update vector indexes in-memory (separate from WriteBatch)
@@ -945,7 +945,7 @@ impl Collection {
         let prefix = DOC_PREFIX.as_bytes();
 
         // Scale readahead to limit: small reads get minimal readahead
-        let mut read_opts = rocksdb::ReadOptions::default();
+        let mut read_opts = ReadOptions::default();
         read_opts.set_prefix_same_as_start(true);
         let readahead = match limit {
             Some(n) if n <= 10 => 0,          // Small reads: no readahead
@@ -959,7 +959,7 @@ impl Collection {
         let iter = db.iterator_cf_opt(
             cf,
             read_opts,
-            rocksdb::IteratorMode::From(prefix, rocksdb::Direction::Forward),
+            IteratorMode::From(prefix, Direction::Forward),
         );
 
         let capacity = limit.unwrap_or(128);

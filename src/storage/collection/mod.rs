@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use rocksdb::DB;
+use rust_rocksdb::DB;
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::sync::atomic::{AtomicBool, AtomicUsize};

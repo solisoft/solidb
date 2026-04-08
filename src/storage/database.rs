@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use rocksdb::DB;
+use rust_rocksdb::{Options, DB};
 use std::sync::{Arc, RwLock};
 
 use super::collection::Collection;
@@ -64,7 +64,7 @@ impl Database {
             let db_ptr = Arc::as_ptr(&self.db) as *mut DB;
             unsafe {
                 (*db_ptr)
-                    .create_cf(&cf_name, &rocksdb::Options::default())
+                    .create_cf(&cf_name, &Options::default())
                     .map_err(|e| {
                         DbError::InternalError(format!("Failed to create collection: {}", e))
                     })?;
@@ -115,8 +115,7 @@ impl Database {
 
         // Iterate through all column families (lock-free, DB::list_cf is thread-safe)
         let mut collections = Vec::new();
-        for cf_name in DB::list_cf(&rocksdb::Options::default(), self.db.path()).unwrap_or_default()
-        {
+        for cf_name in DB::list_cf(&Options::default(), self.db.path()).unwrap_or_default() {
             if cf_name.starts_with(&prefix) {
                 if let Some(name) = cf_name.strip_prefix(&prefix) {
                     collections.push(name.to_string());

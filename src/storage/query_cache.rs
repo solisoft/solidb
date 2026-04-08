@@ -3,6 +3,7 @@
 //! This module provides caching for query results to improve read performance.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
@@ -26,7 +27,7 @@ impl Default for QueryCacheConfig {
 
 /// A cached query result with metadata
 pub struct CachedQueryResult {
-    pub result: Vec<serde_json::Value>,
+    pub result: Arc<Vec<serde_json::Value>>,
     pub cached_at: Instant,
 }
 
@@ -51,7 +52,7 @@ impl QueryCache {
     }
 
     /// Get a cached query result
-    pub async fn get(&self, query_hash: &str) -> Option<Vec<serde_json::Value>> {
+    pub async fn get(&self, query_hash: &str) -> Option<Arc<Vec<serde_json::Value>>> {
         let cache = self.cache.read().await;
         if let Some(cached) = cache.get(query_hash) {
             // Check if expired
@@ -78,7 +79,7 @@ impl QueryCache {
         cache.insert(
             query_hash,
             CachedQueryResult {
-                result,
+                result: Arc::new(result),
                 cached_at: Instant::now(),
             },
         );

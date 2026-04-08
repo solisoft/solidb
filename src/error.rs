@@ -90,8 +90,8 @@ impl serde::Serialize for DbError {
     }
 }
 
-impl From<rocksdb::Error> for DbError {
-    fn from(err: rocksdb::Error) -> Self {
+impl From<rust_rocksdb::Error> for DbError {
+    fn from(err: rust_rocksdb::Error) -> Self {
         DbError::InternalError(err.into())
     }
 }

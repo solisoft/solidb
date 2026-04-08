@@ -2,7 +2,7 @@ use super::*;
 use crate::error::{DbError, DbResult};
 use dashmap::DashMap;
 use hex;
-use rocksdb::DB;
+use rust_rocksdb::DB;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 

@@ -3,7 +3,7 @@ use crate::error::{DbError, DbResult};
 use crate::storage::index::{
     extract_field_value, generate_ngrams, levenshtein_distance, tokenize, FulltextMatch,
 };
-use rocksdb::WriteBatch;
+use rust_rocksdb::WriteBatch;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -119,7 +119,7 @@ impl Collection {
             }
 
             if count > 1000 {
-                db.write(batch).map_err(|e| {
+                db.write(&batch).map_err(|e| {
                     DbError::InternalError(format!("Failed to build fulltext index: {}", e))
                 })?;
                 batch = WriteBatch::default();
@@ -128,7 +128,7 @@ impl Collection {
         }
 
         if count > 0 {
-            db.write(batch).map_err(|e| {
+            db.write(&batch).map_err(|e| {
                 DbError::InternalError(format!("Failed to build fulltext index: {}", e))
             })?;
         }
@@ -170,7 +170,7 @@ impl Collection {
                 }
             }
             if count > 1000 {
-                db.write(batch).map_err(|e| {
+                db.write(&batch).map_err(|e| {
                     DbError::InternalError(format!("Failed to drop fulltext entries: {}", e))
                 })?;
                 batch = WriteBatch::default();
@@ -191,7 +191,7 @@ impl Collection {
                 }
             }
             if count > 1000 {
-                db.write(batch).map_err(|e| {
+                db.write(&batch).map_err(|e| {
                     DbError::InternalError(format!("Failed to drop fulltext entries: {}", e))
                 })?;
                 batch = WriteBatch::default();
@@ -200,7 +200,7 @@ impl Collection {
         }
 
         if count > 0 {
-            db.write(batch).map_err(|e| {
+            db.write(&batch).map_err(|e| {
                 DbError::InternalError(format!("Failed to drop fulltext entries: {}", e))
             })?;
         }
@@ -247,7 +247,7 @@ impl Collection {
             }
         }
 
-        db.write(batch)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update fulltext index: {}", e)))
     }
 
@@ -290,7 +290,7 @@ impl Collection {
             }
         }
 
-        db.write(batch)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update fulltext index: {}", e)))
     }
 

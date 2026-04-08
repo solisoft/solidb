@@ -8,7 +8,7 @@
 
 use fastbloom::BloomFilter;
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
-use rocksdb::DB;
+use rust_rocksdb::{ColumnFamily, DB};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -1551,7 +1551,7 @@ impl ColumnarCollection {
     fn append_row_to_index(
         &self,
         db: &DB,
-        cf: &rocksdb::ColumnFamily,
+        cf: &ColumnFamily,
         idx_key: &str,
         row_id: u64,
     ) -> DbResult<()> {
@@ -1574,7 +1574,7 @@ impl ColumnarCollection {
     fn append_row_to_bitmap_index(
         &self,
         db: &DB,
-        cf: &rocksdb::ColumnFamily,
+        cf: &ColumnFamily,
         idx_key: &str,
         row_id: u64,
         _compression: &CompressionType,
@@ -1608,7 +1608,7 @@ impl ColumnarCollection {
     fn update_bloom_index(
         &self,
         db: &DB,
-        cf: &rocksdb::ColumnFamily,
+        cf: &ColumnFamily,
         column: &str,
         value: &Value,
         row_id: u64,
@@ -1635,7 +1635,7 @@ impl ColumnarCollection {
     fn update_minmax_index(
         &self,
         db: &DB,
-        cf: &rocksdb::ColumnFamily,
+        cf: &ColumnFamily,
         column: &str,
         value: &Value,
         row_id: u64,
@@ -1674,7 +1674,7 @@ impl ColumnarCollection {
     fn update_indexes_for_row_uuid(
         &self,
         db: &DB,
-        cf: &rocksdb::ColumnFamily,
+        cf: &ColumnFamily,
         columns: &[ColumnDef],
         row: &serde_json::Map<String, Value>,
         row_uuid: &str,
@@ -1709,7 +1709,7 @@ impl ColumnarCollection {
     fn append_uuid_to_index(
         &self,
         db: &DB,
-        cf: &rocksdb::ColumnFamily,
+        cf: &ColumnFamily,
         idx_key: &str,
         row_uuid: &str,
     ) -> DbResult<()> {

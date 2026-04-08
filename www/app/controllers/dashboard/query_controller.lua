@@ -318,12 +318,30 @@ end
 function QueryController:scripts_table()
   local db = self:get_db()
   local selected_service = self.params.service or ""
-
-  -- Fallback to GetParam for query string
+  -- Fallback: try GetParam by name
   if selected_service == "" then
     selected_service = GetParam("service") or ""
   end
-  Log(kLogInfo, "scripts_table called with service filter: '" .. selected_service .. "'")
+  -- Fallback: iterate all params
+  if selected_service == "" then
+    local i = 0
+    while true do
+      local k, v = GetParam(i)
+      if k == nil then break end
+      if k == "service" then selected_service = v or ""; break end
+      i = i + 1
+    end
+  end
+  -- Debug: log what we got
+  local debug_params = {}
+  local j = 0
+  while true do
+    local k, v = GetParam(j)
+    if k == nil then break end
+    debug_params[k] = v
+    j = j + 1
+  end
+  Log(kLogInfo, "scripts_table: selected_service='" .. selected_service .. "' self.params=" .. EncodeJson(self.params) .. " GetParam_all=" .. EncodeJson(debug_params))
   local status, _, body = self:fetch_api("/_api/database/" .. db .. "/scripts")
 
   local scripts = {}
@@ -331,10 +349,6 @@ function QueryController:scripts_table()
     local ok, data = pcall(DecodeJson, body)
     if ok and data then
       scripts = data.scripts or {}
-      Log(kLogInfo, "Loaded " .. #scripts .. " scripts from API")
-      for i, s in ipairs(scripts) do
-        Log(kLogInfo, "Script " .. i .. ": " .. (s.name or "?") .. " service=" .. tostring(s.service))
-      end
     end
   end
 
@@ -343,12 +357,10 @@ function QueryController:scripts_table()
     local filtered = {}
     for _, script in ipairs(scripts) do
       local script_service = script.service or "default"
-      Log(kLogInfo, "Checking script '" .. (script.name or "?") .. "' service='" .. script_service .. "' against filter='" .. selected_service .. "'")
       if script_service == selected_service then
         table.insert(filtered, script)
       end
     end
-    Log(kLogInfo, "After filter: " .. #filtered .. " scripts")
     scripts = filtered
   end
 
@@ -408,19 +420,7 @@ end
 -- Scripts create modal
 function QueryController:scripts_modal_create()
   local db = self:get_db()
-  -- Try multiple ways to get the service parameter
-  local preselected_service = self.params.service
-  Log(kLogInfo, "scripts_modal_create: self.params.service = '" .. tostring(preselected_service) .. "'")
-  Log(kLogInfo, "scripts_modal_create: all params = " .. EncodeJson(self.params))
-
-  -- If params doesn't have it, try query string
-  if not preselected_service or preselected_service == "" then
-    local query = GetParam("service")
-    if query then
-      preselected_service = query
-      Log(kLogInfo, "scripts_modal_create: GetParam('service') = '" .. tostring(preselected_service) .. "'")
-    end
-  end
+  local preselected_service = self.params.service or GetParam("service") or ""
 
   self:render_partial("dashboard/_modal_script", {
     db = db,
@@ -440,8 +440,6 @@ function QueryController:scripts_modal_edit()
   if status == 200 then
     local ok, script = pcall(DecodeJson, body)
     if ok and script then
-      Log(kLogInfo, "Loaded script for edit: " .. EncodeJson(script))
-
       -- Fetch available services (for reference even in edit mode)
       local services = {}
       local s_status, _, s_body = self:fetch_api("/_api/database/" .. db .. "/services")
@@ -473,7 +471,6 @@ function QueryController:create_script()
 
   local service = self.params.service or "default"
   if service == "" then service = "default" end
-  Log(kLogInfo, "create_script: service param = '" .. tostring(self.params.service) .. "', using service = '" .. service .. "'")
 
   local request_body = {
     name = self.params.name or "",
@@ -483,7 +480,6 @@ function QueryController:create_script()
     code = self.params.code or "",
     description = self.params.description
   }
-  Log(kLogInfo, "create_script: request_body = " .. EncodeJson(request_body))
 
   -- Parse methods from form checkboxes
   for _, method in ipairs({"GET", "POST", "PUT", "DELETE", "WS"}) do

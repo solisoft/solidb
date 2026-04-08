@@ -1,7 +1,7 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::{extract_field_value, TtlIndex, TtlIndexStats};
-use rocksdb::WriteBatch;
+use rust_rocksdb::WriteBatch;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 type TtlExpiryEntry = (Vec<u8>, Vec<u8>);
@@ -300,7 +300,7 @@ impl Collection {
             }
 
             let db = &self.db;
-            db.write(batch)?;
+            db.write(&batch)?;
         }
 
         Ok(deleted_count)

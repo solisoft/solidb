@@ -1107,6 +1107,13 @@
       "url": "/docs/sdbql-functions-misc#fn-IS_EMPTY"
     },
     {
+      "name": "IS_SAME_COLLECTION",
+      "description": "Returns true if both values reference the same collection (case-insensitive)",
+      "category": "misc",
+      "signature": "IS_SAME_COLLECTION(val1, val2)",
+      "url": "/docs/sdbql-functions-misc#fn-IS_SAME_COLLECTION"
+    },
+    {
       "name": "IS_BLANK",
       "description": "Returns true if string is blank (whitespace only)",
       "category": "misc",

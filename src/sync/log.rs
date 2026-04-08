@@ -6,7 +6,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
-use rocksdb::{IteratorMode, Options, DB};
+use rust_rocksdb::{Direction, IteratorMode, Options, WriteBatch, DB};
 use serde::{Deserialize, Serialize};
 
 use super::protocol::{Operation, SyncEntry};
@@ -107,7 +107,7 @@ impl SyncLog {
 
         let iter = self
             .db
-            .iterator(IteratorMode::From(LOG_PREFIX, rocksdb::Direction::Forward));
+            .iterator(IteratorMode::From(LOG_PREFIX, Direction::Forward));
         let mut count = 0;
 
         for (key, value) in iter.flatten() {
@@ -164,7 +164,7 @@ impl SyncLog {
         }
 
         let mut seq = self.sequence.write().unwrap();
-        let mut batch = rocksdb::WriteBatch::default();
+        let mut batch = WriteBatch::default();
 
         for entry in &mut entries {
             *seq += 1;
@@ -180,7 +180,7 @@ impl SyncLog {
         }
 
         batch.put(SEQ_KEY, seq.to_be_bytes());
-        if let Err(e) = self.db.write(batch) {
+        if let Err(e) = self.db.write(&batch) {
             tracing::error!("SyncLog: Failed to write batch ending at {}: {}", *seq, e);
         }
 
@@ -216,10 +216,9 @@ impl SyncLog {
 
         // Fall back to disk
         let start_key = format!("sync_log:{:020}", after_sequence + 1);
-        let iter = self.db.iterator(IteratorMode::From(
-            start_key.as_bytes(),
-            rocksdb::Direction::Forward,
-        ));
+        let iter = self
+            .db
+            .iterator(IteratorMode::From(start_key.as_bytes(), Direction::Forward));
 
         let mut entries = Vec::new();
         for (key, value) in iter.flatten() {

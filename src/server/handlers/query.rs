@@ -2,7 +2,7 @@ use super::documents::get_transaction_id;
 use super::system::AppState;
 use crate::{
     error::DbError,
-    sdbql::{parse, BodyClause, Query, QueryExecutor},
+    sdbql::{BodyClause, Query, QueryExecutor},
     server::response::ApiResponse,
     storage::{query_cache, StorageEngine},
 };
@@ -69,13 +69,31 @@ pub struct ExecuteQueryResponse {
 #[inline]
 fn is_long_running_query(query: &Query) -> bool {
     query.body_clauses.iter().any(|clause| match clause {
-        BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_) => true,
+        BodyClause::Insert(_)
+        | BodyClause::Update(_)
+        | BodyClause::Remove(_)
+        | BodyClause::Upsert(_) => true,
         // All FOR loops should use spawn_blocking because:
         // 1. Range expressions (source_expression.is_some()) can be large
         // 2. Collection scans might trigger scatter-gather with blocking HTTP calls
         BodyClause::For(_) => true,
         _ => false,
     })
+}
+
+/// Get collection names affected by mutation clauses for targeted cache invalidation.
+fn mutated_collections(query: &Query) -> std::collections::HashSet<&str> {
+    query
+        .body_clauses
+        .iter()
+        .filter_map(|clause| match clause {
+            BodyClause::Insert(c) => Some(c.collection.as_str()),
+            BodyClause::Update(c) => Some(c.collection.as_str()),
+            BodyClause::Remove(c) => Some(c.collection.as_str()),
+            BodyClause::Upsert(c) => Some(c.collection.as_str()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Log slow query to _slow_queries collection (async, non-blocking)
@@ -167,7 +185,10 @@ pub async fn execute_query(
         // Execute transactional SDBQL query
         use crate::sdbql::ast::BodyClause;
 
-        let query = parse(&req.query)?;
+        let prepared = crate::sdbql::get_prepared_statement_cache()
+            .parse_if_needed(&req.query)
+            .await?;
+        let query = prepared.query.as_ref();
 
         // Get transaction manager
         let tx_manager = state.storage.transaction_manager()?;
@@ -195,7 +216,7 @@ pub async fn execute_query(
                 QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
             };
 
-            let results = executor.execute(&query)?;
+            let results = executor.execute(query)?;
             return Ok(ApiResponse::new(
                 ExecuteQueryResponse {
                     result: results.clone(),
@@ -427,13 +448,16 @@ pub async fn execute_query(
     let prepared = crate::sdbql::get_prepared_statement_cache()
         .parse_if_needed(&req.query)
         .await?;
-    let query = (*prepared.query).clone();
+    let query = prepared.query.as_ref();
 
     // Check if query is cacheable (read-only with no mutations)
     let is_read_only = !query.body_clauses.iter().any(|clause| {
         matches!(
             clause,
-            BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_)
+            BodyClause::Insert(_)
+                | BodyClause::Update(_)
+                | BodyClause::Remove(_)
+                | BodyClause::Upsert(_)
         )
     });
 
@@ -454,7 +478,7 @@ pub async fn execute_query(
             );
             return Ok(ApiResponse::new(
                 ExecuteQueryResponse {
-                    result: result.clone(),
+                    result: result.as_ref().clone(),
                     count: result.len(),
                     has_more: false,
                     id: None,
@@ -472,7 +496,7 @@ pub async fn execute_query(
     // Handle CREATE STREAM clause
     if let Some(ref _create_stream) = query.create_stream_clause {
         if let Some(manager) = &state.stream_manager {
-            match manager.create_stream(&db_name, query) {
+            match manager.create_stream(&db_name, (*query).clone()) {
                 Ok(_name) => {
                     return Ok(ApiResponse::new(
                         ExecuteQueryResponse {
@@ -506,12 +530,13 @@ pub async fn execute_query(
 
     // Only use spawn_blocking for potentially long-running queries
     // (mutations or range iterations). Simple reads run directly.
-    let (query_result, execution_time_ms) = if is_long_running_query(&query) {
+    let (query_result, execution_time_ms) = if is_long_running_query(query) {
         let storage = state.storage.clone();
         let bind_vars = req.bind_vars.clone();
         let replication_log = state.replication_log.clone();
         let shard_coordinator = state.shard_coordinator.clone();
         let is_scatter_gather = headers.contains_key("X-Scatter-Gather");
+        let query = (*query).clone();
 
         // Apply timeout to prevent DoS from long-running queries
         match tokio::time::timeout(
@@ -572,7 +597,7 @@ pub async fn execute_query(
         }
 
         let start = std::time::Instant::now();
-        let result = executor.execute_with_stats(&query)?;
+        let result = executor.execute_with_stats(query)?;
         let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
         (result, execution_time_ms)
     };
@@ -595,7 +620,16 @@ pub async fn execute_query(
 
     // Invalidate query cache when mutations occurred
     if mutations.has_mutations() {
-        query_cache::get_query_cache().invalidate_all().await;
+        let collections = mutated_collections(query);
+        if collections.is_empty() {
+            query_cache::get_query_cache().invalidate_all().await;
+        } else {
+            for collection in collections {
+                query_cache::get_query_cache()
+                    .invalidate_collection(collection)
+                    .await;
+            }
+        }
     }
 
     // Log slow query if it exceeds threshold (async, non-blocking)
@@ -636,7 +670,10 @@ pub async fn explain_query(
     headers: HeaderMap,
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<Json<crate::sdbql::QueryExplain>, DbError> {
-    let query = parse(&req.query)?;
+    let prepared = crate::sdbql::get_prepared_statement_cache()
+        .parse_if_needed(&req.query)
+        .await?;
+    let query = prepared.query.as_ref();
 
     // explain() is fast - no need for spawn_blocking
     let mut executor = if req.bind_vars.is_empty() {
@@ -652,7 +689,7 @@ pub async fn explain_query(
         }
     }
 
-    let explain = executor.explain(&query)?;
+    let explain = executor.explain(query)?;
 
     Ok(Json(explain))
 }

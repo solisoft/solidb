@@ -44,6 +44,9 @@
           <table class="w-full">
             <thead class="bg-white/5 border-b border-white/5">
               <tr>
+                <% if dt.sortable then %>
+                <th class="px-4 py-3 w-8"></th>
+                <% end %>
                 <% for i, field in ipairs(fields) do %>
                   <% if i <= 5 then %>
                   <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider whitespace-nowrap"><%= field.label or field.name %></th>
@@ -53,9 +56,14 @@
                 <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase tracking-wider whitespace-nowrap">Actions</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-white/5">
+            <tbody id="sortable-table" class="divide-y divide-white/5" data-datatype-slug="<%= dt.slug %>">
               <% for _, record in ipairs(records) do %>
-              <tr class="hover:bg-white/5 transition-colors group">
+              <tr class="hover:bg-white/5 transition-colors group" data-record-key="<%= record._key %>" data-order="<%= record.order or 9999 %>">
+                <% if dt.sortable then %>
+                <td class="px-2 py-3 w-8 cursor-grab text-text-dim hover:text-white">
+                  <i class="fas fa-grip-vertical text-xs"></i>
+                </td>
+                <% end %>
                 <% for i, field in ipairs(fields) do %>
                   <% if i <= 5 then %>
                   <td class="px-4 py-3 text-sm text-white/90">
@@ -126,26 +134,27 @@
 
         <!-- Pagination -->
         <% if total_pages > 1 then %>
+        <% local sort_q = sort_field and ("&sort_field=" .. sort_field .. "&sort_dir=" .. (sort_dir or "ASC")) or "" %>
         <div class="px-4 py-3 border-t border-white/5 flex items-center justify-between bg-white/[0.02]">
           <p class="text-xs text-text-dim">
             <%= (page - 1) * per_page + 1 %>-<%= math.min(page * per_page, total) %> of <%= total %>
           </p>
           <div class="flex items-center gap-1">
             <% if page > 1 then %>
-            <a href="/cruds/data/<%= dt.slug %>?page=<%= page - 1 %>" class="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-text-muted transition-colors">
+            <a href="/cruds/data/<%= dt.slug %>?page=<%= page - 1 %><%= sort_q %>" class="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-text-muted transition-colors">
               <i class="fas fa-chevron-left text-xs"></i>
             </a>
             <% end %>
 
             <% for p = math.max(1, page - 2), math.min(total_pages, page + 2) do %>
-            <a href="/cruds/data/<%= dt.slug %>?page=<%= p %>"
+            <a href="/cruds/data/<%= dt.slug %>?page=<%= p %><%= sort_q %>"
                class="min-w-[28px] h-7 flex items-center justify-center px-2 rounded text-xs transition-colors <%= p == page and 'bg-amber-500 text-white font-bold' or 'hover:bg-white/10 text-text-muted' %>">
               <%= p %>
             </a>
             <% end %>
 
             <% if page < total_pages then %>
-            <a href="/cruds/data/<%= dt.slug %>?page=<%= page + 1 %>" class="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-text-muted transition-colors">
+            <a href="/cruds/data/<%= dt.slug %>?page=<%= page + 1 %><%= sort_q %>" class="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-text-muted transition-colors">
               <i class="fas fa-chevron-right text-xs"></i>
             </a>
             <% end %>
@@ -165,6 +174,43 @@
           Create First Record
         </a>
       </div>
+      <% end %>
+
+      <% if dt.sortable then %>
+      <script>
+      (function() {
+        var tbody = document.getElementById('sortable-table');
+        if (!tbody || tbody._sortable) return;
+        
+        tbody._sortable = new Sortable(tbody, {
+          animation: 150,
+          handle: '.fa-grip-vertical',
+          ghostClass: 'bg-white/10',
+          onEnd: function(evt) {
+            var rows = tbody.querySelectorAll('tr[data-record-key]');
+            var orders = [];
+            rows.forEach(function(row, index) {
+              var key = row.getAttribute('data-record-key');
+              orders.push({ key: key, order: index + 1 });
+              row.setAttribute('data-order', index + 1);
+            });
+            
+            // Send batch update to server
+            fetch('/cruds/data/' + tbody.getAttribute('data-datatype-slug') + '/reorder', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ orders: orders })
+            }).then(function(response) {
+              if (!response.ok) {
+                console.error('Failed to save order');
+              }
+            }).catch(function(err) {
+              console.error('Error saving order:', err);
+            });
+          }
+        });
+      })();
+      </script>
       <% end %>
     </div>
   </div>

@@ -4,7 +4,7 @@ use crate::storage::serializer::serialize_doc;
 use crate::transaction::lock_manager::LockManager;
 use crate::transaction::wal::WalWriter;
 use crate::transaction::{Operation, Transaction, TransactionId};
-use rocksdb::WriteBatch;
+use rust_rocksdb::WriteBatch;
 use serde_json::Value;
 use uuid;
 
@@ -285,7 +285,7 @@ impl Collection {
         }
 
         // Commit batch atomically: all documents + indexes together
-        db.write(batch).map_err(|e| {
+        db.write(&batch).map_err(|e| {
             DbError::InternalError(format!("Failed to commit transaction batch: {}", e))
         })?;
 
