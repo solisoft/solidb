@@ -3,7 +3,7 @@ members = ["clients/rust-client", "sdbql-core", "benchmarks"]
 
 [package]
 name = "solidb"
-version = "0.22.6"
+version = "0.22.9"
 edition = "2021"
 default-run = "solidb"
 description = "A lightweight, high-performance structured database server written in Rust."
@@ -68,7 +68,7 @@ regex = "1.10"
 seahash = "4.1"  # Uniform hash distribution for sharding
 
 # Storage
-rocksdb = "0.24"
+rust-rocksdb = "0.46"
 cron = "0.15"
 
 # Authentication
