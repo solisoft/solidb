@@ -15,6 +15,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 ### Core Database
 - 🚀 **Fast & Efficient** — Built with Rust for maximum performance
 - 📄 **JSON Document Storage** — Store and query JSON documents with ease
+- 📊 **Columnar Storage** — Column-oriented storage for analytics workloads with LZ4 compression and specialized indexes (Sorted, Hash, Bitmap, MinMax, Bloom)
 - 🗃️ **Blob Storage** — Native support for storing and retrieving binary files
 - 💾 **RocksDB Storage** — Production-grade persistence with automatic crash recovery
 
@@ -23,6 +24,18 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 - 📊 **Indexing** — Hash, persistent, geo, and fulltext indexes
 - 🌍 **Geo Queries** — Spatial indexes and distance functions
 - 📝 **Graph Traversals** — Native graph queries and shortest path algorithms
+- 📋 **Common Table Expressions** — WITH clauses for composable, reusable subqueries
+- 📦 **COLLECT AGGREGATE** — GROUP BY with inline aggregations (COUNT, SUM, AVG, MIN, MAX)
+- ⚡ **Prepared Statement Cache** — Parse once, execute many with automatic LRU eviction
+
+### Time Series & Streaming
+- ⏱️ **Time Series** — TIME_BUCKET function for grouping temporal data into intervals (seconds, minutes, hours, days)
+- 🌊 **Stream Processing** — CREATE STREAM with tumbling/sliding WINDOW clauses for continuous aggregations
+
+### Vector Search
+- 🧠 **Vector Indexes** — Create and query vector indexes for ML/AI workloads
+- 🔗 **Hybrid Search** — Combined vector similarity + fulltext search in a single query
+- 📐 **Vector Functions** — VECTOR_DISTANCE, VECTOR_NORMALIZE, quantization/dequantization
 
 ### Real-time & Scripting
 - ⚡ **Live Queries** — Real-time subscriptions via WebSocket
@@ -34,6 +47,12 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 - 🧩 **Sharding** — Horizontal data partitioning with configurable shard count
 - ⚖️ **Auto-Rebalancing** — Automatic data redistribution when nodes change
 - ⚡ **Hybrid Logical Clocks** — Consistent ordering across distributed nodes
+- 🔀 **Distributed Transactions** — Two-phase commit (2PC) for ACID guarantees across shards
+- 📈 **Replication Lag Metrics** — Per-peer lag monitoring via Prometheus
+
+### Observability & Performance
+- 🔭 **OpenTelemetry Tracing** — W3C traceparent propagation for distributed tracing
+- ⚡ **Regex Caching** — Compiled regex patterns cached globally (~8000x speedup on repeated patterns)
 
 ### Security & Administration
 - 🔐 **JWT Authentication** — Secure API access with Bearer tokens
