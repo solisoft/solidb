@@ -59,6 +59,25 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             };
             Ok(Some(Value::Bool(is_empty)))
         }
+        "IS_SAME_COLLECTION" => {
+            check_args(name, args, 2)?;
+            let extract_collection = |val: &Value| -> Option<String> {
+                match val {
+                    Value::String(s) => s.split('/').next().map(|c| c.to_string()),
+                    Value::Object(obj) => obj
+                        .get("_id")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.split('/').next().map(|c| c.to_string())),
+                    _ => None,
+                }
+            };
+            let col1 = extract_collection(&args[0]);
+            let col2 = extract_collection(&args[1]);
+            match (col1, col2) {
+                (Some(c1), Some(c2)) => Ok(Some(Value::Bool(c1 == c2))),
+                _ => Ok(Some(Value::Bool(false))),
+            }
+        }
         _ => Ok(None),
     }
 }
