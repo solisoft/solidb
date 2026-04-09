@@ -53,14 +53,16 @@ impl Database {
         // Default to "document" if not specified
         let type_ = collection_type.unwrap_or_else(|| "document".to_string());
 
-        // Check if collection already exists (lock-free read)
-        if self.db.cf_handle(&cf_name).is_some() {
-            return Err(DbError::CollectionAlreadyExists(collection_name));
-        }
-
         // Create column family - requires exclusive lock
         {
             let _cf_guard = self.cf_lock.write().unwrap();
+
+            // Check inside lock to avoid TOCTOU race when multiple threads
+            // try to create the same collection concurrently
+            if self.db.cf_handle(&cf_name).is_some() {
+                return Err(DbError::CollectionAlreadyExists(collection_name));
+            }
+
             let db_ptr = Arc::as_ptr(&self.db) as *mut DB;
             unsafe {
                 (*db_ptr)

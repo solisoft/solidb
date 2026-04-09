@@ -390,11 +390,6 @@ impl StorageEngine {
 
     /// Create a new collection (column family)
     pub fn create_collection(&self, name: String, collection_type: Option<String>) -> DbResult<()> {
-        // Check if collection already exists
-        if self.db.cf_handle(&name).is_some() {
-            return Err(DbError::CollectionAlreadyExists(name));
-        }
-
         // Default to "document" if not specified
         let type_ = collection_type.unwrap_or_else(|| "document".to_string());
 
@@ -402,6 +397,13 @@ impl StorageEngine {
         let opts = Self::create_cf_options();
         {
             let _cf_guard = self.cf_lock.write().unwrap();
+
+            // Check inside lock to avoid TOCTOU race when multiple threads
+            // try to create the same collection concurrently
+            if self.db.cf_handle(&name).is_some() {
+                return Err(DbError::CollectionAlreadyExists(name));
+            }
+
             // Safety: We use cf_lock to ensure exclusive access for CF operations
             // This is a safe workaround for RocksDB's create_cf requiring &mut self
             let db_ptr = Arc::as_ptr(&self.db) as *mut DB;

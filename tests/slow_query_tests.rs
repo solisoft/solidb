@@ -314,10 +314,17 @@ async fn test_multiple_slow_queries_logged() {
         println!("Query execution time: {}ms", exec_time);
     }
 
-    // Wait for async logging
-    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-
-    let slow_queries = get_slow_queries(&app, &token, "multidb").await;
+    // Poll for async logging to complete (background tasks involve blocking RocksDB I/O
+    // which can take longer than a fixed sleep on slow CI machines)
+    let expected = slow_count.saturating_sub(1);
+    let mut slow_queries = Vec::new();
+    for _ in 0..20 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        slow_queries = get_slow_queries(&app, &token, "multidb").await;
+        if slow_queries.len() >= expected {
+            break;
+        }
+    }
     println!(
         "Expected {} slow queries, found {}",
         slow_count,
@@ -327,7 +334,7 @@ async fn test_multiple_slow_queries_logged() {
     // The number of logged slow queries should match queries that exceeded threshold
     // (with some tolerance for timing variations)
     assert!(
-        slow_queries.len() >= slow_count.saturating_sub(1),
+        slow_queries.len() >= expected,
         "Should log slow queries"
     );
 }
