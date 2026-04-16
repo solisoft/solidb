@@ -297,15 +297,13 @@ impl View for JobsView {
                     }
                 }
             }
-            KeyCode::Enter => {
-                if !self.focus_jobs {
-                    if let Some(selected) = self.queue_state.selected() {
-                        if selected < self.queues.len() {
-                            self.selected_queue = Some(self.queues[selected].name.clone());
-                            self.job_state.select(None);
-                            self.load_jobs(&ctx.client, &ctx.current_database);
-                            self.focus_jobs = true;
-                        }
+            KeyCode::Enter if !self.focus_jobs => {
+                if let Some(selected) = self.queue_state.selected() {
+                    if selected < self.queues.len() {
+                        self.selected_queue = Some(self.queues[selected].name.clone());
+                        self.job_state.select(None);
+                        self.load_jobs(&ctx.client, &ctx.current_database);
+                        self.focus_jobs = true;
                     }
                 }
             }

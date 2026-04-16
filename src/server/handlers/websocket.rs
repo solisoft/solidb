@@ -56,6 +56,7 @@ async fn handle_cluster_ws(mut socket: WebSocket, state: AppState) {
             msg = socket.recv() => {
                 match msg {
                     Some(Ok(Message::Close(_))) | None => break,
+                    #[allow(clippy::collapsible_match)]
                     Some(Ok(Message::Ping(data))) => {
                         // Respond to ping with pong
                         if socket.send(Message::Pong(data)).await.is_err() {

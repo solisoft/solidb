@@ -80,10 +80,8 @@ pub fn create_inspect_function(lua: &Lua) -> LuaResult<Function> {
 
                 // List keys
                 let keys = lua.create_table()?;
-                let mut idx = 1;
-                for (k, _) in t.clone().pairs::<LuaValue, LuaValue>().flatten() {
+                for (idx, (k, _)) in (1..).zip(t.clone().pairs::<LuaValue, LuaValue>().flatten()) {
                     keys.set(idx, format_value(&k, 0))?;
-                    idx += 1;
                 }
                 result.set("keys", keys)?;
             }
@@ -244,10 +242,8 @@ pub fn create_mock_function(lua: &Lua) -> LuaResult<Function> {
         let data_all = data.clone();
         let all_fn = lua.create_function(move |lua, _self: Table| {
             let result = lua.create_table()?;
-            let mut idx = 1;
-            for (_, v) in data_all.clone().pairs::<String, Table>().flatten() {
+            for (idx, (_, v)) in (1..).zip(data_all.clone().pairs::<String, Table>().flatten()) {
                 result.set(idx, v)?;
-                idx += 1;
             }
             Ok(result)
         })?;

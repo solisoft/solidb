@@ -42,15 +42,11 @@ pub fn metaphone(s: &str) -> String {
         }
 
         match c {
-            'A' | 'E' | 'I' | 'O' | 'U' => {
-                if i == 0 {
-                    result.push(c);
-                }
+            'A' | 'E' | 'I' | 'O' | 'U' if i == 0 => {
+                result.push(c);
             }
-            'B' => {
-                if !(prev == Some('M') && next.is_none()) {
-                    result.push('B');
-                }
+            'B' if !(prev == Some('M') && next.is_none()) => {
+                result.push('B');
             }
             'C' => {
                 if next == Some('H') {
@@ -87,21 +83,18 @@ pub fn metaphone(s: &str) -> String {
                     result.push('K');
                 }
             }
-            'H' => {
-                if !matches!(
-                    prev,
-                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
-                ) && matches!(
-                    next,
-                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
-                ) {
-                    result.push('H');
-                }
+            'H' if !matches!(
+                prev,
+                Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+            ) && matches!(
+                next,
+                Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+            ) =>
+            {
+                result.push('H');
             }
-            'K' => {
-                if prev != Some('C') {
-                    result.push('K');
-                }
+            'K' if prev != Some('C') => {
+                result.push('K');
             }
             'P' => {
                 if next == Some('H') {

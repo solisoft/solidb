@@ -267,7 +267,7 @@ impl FeedbackSystem {
             .collect();
 
         // Sort by captured_at descending (most recent first)
-        filtered.sort_by(|a, b| b.captured_at.cmp(&a.captured_at));
+        filtered.sort_by_key(|f| std::cmp::Reverse(f.captured_at));
 
         let total = filtered.len();
         let page = 0;

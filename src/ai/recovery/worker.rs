@@ -548,7 +548,7 @@ impl RecoveryWorker {
             .collect();
 
         // Sort by created_at descending
-        events.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        events.sort_by_key(|e| std::cmp::Reverse(e.created_at));
 
         events.truncate(limit);
         Ok(events)

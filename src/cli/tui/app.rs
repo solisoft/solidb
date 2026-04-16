@@ -211,11 +211,9 @@ impl App {
                 self.ctx.show_help = !self.ctx.show_help;
                 return true;
             }
-            KeyCode::Esc => {
-                if self.ctx.show_help {
-                    self.ctx.show_help = false;
-                    return true;
-                }
+            KeyCode::Esc if self.ctx.show_help => {
+                self.ctx.show_help = false;
+                return true;
             }
             KeyCode::Char('r') if modifiers.contains(KeyModifiers::CONTROL) => {
                 self.refresh_current_view();

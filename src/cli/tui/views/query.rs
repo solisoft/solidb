@@ -366,25 +366,21 @@ impl View for QueryView {
                 KeyCode::Char('i') => {
                     self.editing = true;
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if len > 0 {
-                        let i = self
-                            .result_table_state
-                            .selected()
-                            .map(|i| (i + 1) % len)
-                            .unwrap_or(0);
-                        self.result_table_state.select(Some(i));
-                    }
+                KeyCode::Down | KeyCode::Char('j') if len > 0 => {
+                    let i = self
+                        .result_table_state
+                        .selected()
+                        .map(|i| (i + 1) % len)
+                        .unwrap_or(0);
+                    self.result_table_state.select(Some(i));
                 }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if len > 0 {
-                        let i = self
-                            .result_table_state
-                            .selected()
-                            .map(|i| if i == 0 { len - 1 } else { i - 1 })
-                            .unwrap_or(0);
-                        self.result_table_state.select(Some(i));
-                    }
+                KeyCode::Up | KeyCode::Char('k') if len > 0 => {
+                    let i = self
+                        .result_table_state
+                        .selected()
+                        .map(|i| if i == 0 { len - 1 } else { i - 1 })
+                        .unwrap_or(0);
+                    self.result_table_state.select(Some(i));
                 }
                 KeyCode::Enter => {
                     if let Some(selected) = self.result_table_state.selected() {

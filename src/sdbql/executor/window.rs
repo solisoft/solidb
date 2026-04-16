@@ -229,7 +229,7 @@ impl<'a> QueryExecutor<'a> {
             let values = self.compute_window_function(&rows, &func_name, &args, &spec)?;
 
             // Inject computed values into row contexts
-            for (row, value) in rows.iter_mut().zip(values.into_iter()) {
+            for (row, value) in rows.iter_mut().zip(values) {
                 row.insert(var_name.clone(), value);
             }
         }

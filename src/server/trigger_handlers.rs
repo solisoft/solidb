@@ -98,7 +98,7 @@ pub async fn list_triggers_handler(
     }
 
     // Sort by created_at desc
-    triggers.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    triggers.sort_by_key(|t| std::cmp::Reverse(t.created_at));
 
     let total = triggers.len();
     Ok(Json(ListTriggersResponse { triggers, total }))
@@ -274,7 +274,7 @@ pub async fn list_collection_triggers_handler(
     }
 
     // Sort by created_at desc
-    triggers.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    triggers.sort_by_key(|t| std::cmp::Reverse(t.created_at));
 
     let total = triggers.len();
     Ok(Json(ListTriggersResponse { triggers, total }))

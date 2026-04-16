@@ -108,7 +108,7 @@ pub async fn list_jobs_handler(
     }
 
     // Sort by created_at desc
-    jobs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    jobs.sort_by_key(|j| std::cmp::Reverse(j.created_at));
 
     let total = jobs.len();
     let limit = query.limit.unwrap_or(50);

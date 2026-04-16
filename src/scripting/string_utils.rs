@@ -210,12 +210,10 @@ fn deep_merge_tables(_lua: &Lua, t1: &Table, t2: &Table) -> LuaResult<()> {
 pub fn create_keys_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|lua, t: Table| {
         let keys = lua.create_table()?;
-        let mut i = 1;
 
-        for pair in t.pairs::<LuaValue, LuaValue>() {
+        for (i, pair) in (1..).zip(t.pairs::<LuaValue, LuaValue>()) {
             let (key, _) = pair?;
             keys.set(i, key)?;
-            i += 1;
         }
 
         Ok(keys)
@@ -226,12 +224,10 @@ pub fn create_keys_function(lua: &Lua) -> LuaResult<Function> {
 pub fn create_values_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|lua, t: Table| {
         let values = lua.create_table()?;
-        let mut i = 1;
 
-        for pair in t.pairs::<LuaValue, LuaValue>() {
+        for (i, pair) in (1..).zip(t.pairs::<LuaValue, LuaValue>()) {
             let (_, value) = pair?;
             values.set(i, value)?;
-            i += 1;
         }
 
         Ok(values)
@@ -288,13 +284,11 @@ pub fn create_filter_function(lua: &Lua) -> LuaResult<Function> {
 pub fn create_map_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|lua, (t, transform): (Table, Function)| {
         let result = lua.create_table()?;
-        let mut i = 1;
 
-        for pair in t.pairs::<LuaValue, LuaValue>() {
+        for (i, pair) in (1..).zip(t.pairs::<LuaValue, LuaValue>()) {
             let (key, value) = pair?;
             let transformed: LuaValue = transform.call((value, key))?;
             result.set(i, transformed)?;
-            i += 1;
         }
 
         Ok(result)
