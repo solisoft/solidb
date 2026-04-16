@@ -117,34 +117,41 @@ fn log_slow_query(
     tokio::spawn(async move {
         let slow_query_coll = format!("{}:_slow_queries", db_name);
 
-        // Get or create the _slow_queries collection
+        // Get or create the _slow_queries collection.
+        // Concurrent slow queries may race to create it, so retry lookup briefly.
         let collection = match storage.get_collection(&slow_query_coll) {
             Ok(coll) => coll,
             Err(_) => {
-                // Collection doesn't exist, try to create it
                 if let Ok(db) = storage.get_database(&db_name) {
-                    if db
-                        .create_collection("_slow_queries".to_string(), None)
-                        .is_err()
-                    {
-                        // Might fail if another request created it concurrently, try again
-                        match storage.get_collection(&slow_query_coll) {
-                            Ok(coll) => coll,
-                            Err(e) => {
-                                tracing::warn!("Failed to get _slow_queries collection: {}", e);
-                                return;
-                            }
+                    let _ = db.create_collection("_slow_queries".to_string(), None);
+                } else {
+                    return;
+                }
+
+                let mut last_err = None;
+                let mut resolved = None;
+                for _ in 0..10 {
+                    match storage.get_collection(&slow_query_coll) {
+                        Ok(coll) => {
+                            resolved = Some(coll);
+                            break;
                         }
-                    } else {
-                        match storage.get_collection(&slow_query_coll) {
-                            Ok(coll) => coll,
-                            Err(e) => {
-                                tracing::warn!("Failed to get _slow_queries collection: {}", e);
-                                return;
-                            }
+                        Err(e) => {
+                            last_err = Some(e);
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                         }
                     }
+                }
+
+                if let Some(coll) = resolved {
+                    coll
                 } else {
+                    tracing::warn!(
+                        "Failed to get _slow_queries collection after retries: {}",
+                        last_err
+                            .map(|e| e.to_string())
+                            .unwrap_or_else(|| "unknown error".to_string())
+                    );
                     return;
                 }
             }
