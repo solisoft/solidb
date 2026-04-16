@@ -47,28 +47,31 @@ pub async fn create_database(
         let _ = log.append(entry);
     }
 
-    // Auto-create _scripts collection for the new database
+    // Auto-create system collections for the new database.
+    // _slow_queries is pre-created to avoid a race where concurrent slow-query
+    // log tasks attempt to create it simultaneously on first use.
     if let Ok(db) = state.storage.get_database(&req.name) {
-        if db.create_collection("_scripts".to_string(), None).is_ok() {
-            // Record _scripts creation to replication log
-            if let Some(ref log) = state.replication_log {
-                let metadata = serde_json::json!({
-                    "type": "document",
-                    "shardConfig": None::<serde_json::Value>
-                });
+        for system_coll in ["_scripts", "_slow_queries"] {
+            if db.create_collection(system_coll.to_string(), None).is_ok() {
+                if let Some(ref log) = state.replication_log {
+                    let metadata = serde_json::json!({
+                        "type": "document",
+                        "shardConfig": None::<serde_json::Value>
+                    });
 
-                let entry = LogEntry {
-                    sequence: 0,
-                    node_id: "".to_string(),
-                    database: req.name.clone(),
-                    collection: "_scripts".to_string(),
-                    operation: Operation::CreateCollection,
-                    key: "".to_string(),
-                    data: serde_json::to_vec(&metadata).ok(),
-                    timestamp: chrono::Utc::now().timestamp_millis() as u64,
-                    origin_sequence: None,
-                };
-                let _ = log.append(entry);
+                    let entry = LogEntry {
+                        sequence: 0,
+                        node_id: "".to_string(),
+                        database: req.name.clone(),
+                        collection: system_coll.to_string(),
+                        operation: Operation::CreateCollection,
+                        key: "".to_string(),
+                        data: serde_json::to_vec(&metadata).ok(),
+                        timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                        origin_sequence: None,
+                    };
+                    let _ = log.append(entry);
+                }
             }
         }
     }
