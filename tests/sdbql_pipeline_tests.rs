@@ -90,8 +90,8 @@ fn test_pipeline_chain_array() {
 #[test]
 fn test_pipeline_round_with_precision() {
     let (engine, _tmp) = create_test_engine();
-    let results = execute_query(&engine, "RETURN 3.14159 |> ROUND(2)");
-    assert_eq!(results, vec![json!(3.14)]);
+    let results = execute_query(&engine, "RETURN 1.236 |> ROUND(2)");
+    assert_eq!(results, vec![json!(1.24)]);
 }
 
 #[test]

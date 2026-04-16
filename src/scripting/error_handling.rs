@@ -346,7 +346,7 @@ mod tests {
         let assert_fn = create_assert_function(&lua).unwrap();
 
         let result: Result<bool, _> = assert_fn.call((true, "Should not fail".to_string()));
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
     }
 
     #[test]

@@ -134,12 +134,10 @@ fn test_hlc_from_string_key_invalid() {
 
 #[test]
 fn test_hlc_ordering() {
-    let mut hlcs = vec![
-        HybridLogicalClock::new(3000, 0, "a".to_string()),
+    let mut hlcs = [HybridLogicalClock::new(3000, 0, "a".to_string()),
         HybridLogicalClock::new(1000, 5, "b".to_string()),
         HybridLogicalClock::new(2000, 0, "c".to_string()),
-        HybridLogicalClock::new(1000, 0, "d".to_string()),
-    ];
+        HybridLogicalClock::new(1000, 0, "d".to_string())];
 
     hlcs.sort();
 

@@ -17,11 +17,11 @@ use tempfile::TempDir;
 
 /// Helper to execute a query and get the first result
 fn execute_query(engine: &StorageEngine, query_str: &str) -> serde_json::Value {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query = parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::new(engine);
     let results = executor
         .execute(&query)
-        .expect(&format!("Query failed: {}", query_str));
+        .unwrap_or_else(|_| panic!("Query failed: {}", query_str));
     if results.is_empty() {
         serde_json::Value::Null
     } else {
@@ -48,7 +48,7 @@ fn test_function_abs() {
     // ABS returns floating point
     assert_eq!(execute_query(&engine, "RETURN ABS(-5)"), json!(5.0));
     assert_eq!(execute_query(&engine, "RETURN ABS(5)"), json!(5.0));
-    assert_eq!(execute_query(&engine, "RETURN ABS(-3.14)"), json!(3.14));
+    assert_eq!(execute_query(&engine, "RETURN ABS(-3.5)"), json!(3.5));
     assert_eq!(execute_query(&engine, "RETURN ABS(0)"), json!(0.0));
 }
 
@@ -60,7 +60,7 @@ fn test_function_sqrt() {
     assert_eq!(execute_query(&engine, "RETURN SQRT(9)"), json!(3.0));
     assert_eq!(
         execute_query(&engine, "RETURN SQRT(2)"),
-        json!(1.4142135623730951)
+        json!(std::f64::consts::SQRT_2)
     );
 }
 
@@ -107,7 +107,7 @@ fn test_function_random() {
     let result = execute_query(&engine, "RETURN RANDOM()");
     let val = result.as_f64().expect("RANDOM should return a number");
     assert!(
-        val >= 0.0 && val < 1.0,
+        (0.0..1.0).contains(&val),
         "RANDOM should return value in [0, 1)"
     );
 }
@@ -756,10 +756,10 @@ fn test_function_to_number() {
     let result = execute_query(&engine, "RETURN TO_NUMBER('42')");
     assert!(result.as_f64().unwrap() == 42.0, "Should convert to 42");
 
-    let result = execute_query(&engine, "RETURN TO_NUMBER('3.14')");
+    let result = execute_query(&engine, "RETURN TO_NUMBER('3.5')");
     assert!(
-        (result.as_f64().unwrap() - 3.14).abs() < 0.001,
-        "Should convert to 3.14"
+        (result.as_f64().unwrap() - 3.5).abs() < 0.001,
+        "Should convert to 3.5"
     );
 }
 

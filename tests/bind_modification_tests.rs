@@ -25,19 +25,21 @@ fn execute_with_binds(
     query_str: &str,
     binds: HashMap<String, serde_json::Value>,
 ) -> Vec<serde_json::Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query =
+        parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::with_bind_vars(engine, binds);
     executor
         .execute(&query)
-        .expect(&format!("Query failed: {}", query_str))
+        .unwrap_or_else(|_| panic!("Query failed: {}", query_str))
 }
 
 fn execute_query(engine: &StorageEngine, query_str: &str) -> Vec<serde_json::Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query =
+        parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::new(engine);
     executor
         .execute(&query)
-        .expect(&format!("Query failed: {}", query_str))
+        .unwrap_or_else(|_| panic!("Query failed: {}", query_str))
 }
 
 // ============================================================================

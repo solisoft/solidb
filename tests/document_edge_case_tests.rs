@@ -284,8 +284,8 @@ fn test_document_with_float_values() {
 
     docs.insert(json!({
         "_key": "floats",
-        "pi": 3.14159265359,
-        "e": 2.71828182845,
+        "pi": std::f64::consts::PI,
+        "e": std::f64::consts::E,
         "tiny": 0.000001,
         "large": 999999999.999999
     }))
@@ -293,7 +293,7 @@ fn test_document_with_float_values() {
 
     let doc = docs.get("floats").unwrap();
     let pi = doc.get("pi").unwrap().as_f64().unwrap();
-    assert!((pi - 3.14159265359).abs() < 0.0001);
+    assert!((pi - std::f64::consts::PI).abs() < 0.0001);
 }
 
 #[test]

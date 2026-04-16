@@ -266,7 +266,7 @@ fn test_join_with_aggregation() -> DbResult<()> {
 #[test]
 fn test_join_empty_collection() -> DbResult<()> {
     let uuid = Uuid::new_v4();
-    let storage = StorageEngine::new(&format!("/tmp/test_join_empty_db_{}", uuid))?;
+    let storage = StorageEngine::new(format!("/tmp/test_join_empty_db_{}", uuid))?;
 
     let db_name = format!("empty_test_{}", uuid);
 
@@ -402,7 +402,7 @@ fn test_execute_full_outer_join() -> DbResult<()> {
 #[test]
 fn test_right_join_with_no_left_matches() -> DbResult<()> {
     let uuid = Uuid::new_v4();
-    let storage = StorageEngine::new(&format!("/tmp/test_right_join_db_{}", uuid))?;
+    let storage = StorageEngine::new(format!("/tmp/test_right_join_db_{}", uuid))?;
 
     let db_name = format!("right_test_{}", uuid);
 
@@ -431,7 +431,7 @@ fn test_right_join_with_no_left_matches() -> DbResult<()> {
 #[test]
 fn test_full_outer_join_comprehensive() -> DbResult<()> {
     let uuid = Uuid::new_v4();
-    let storage = StorageEngine::new(&format!("/tmp/test_full_outer_db_{}", uuid))?;
+    let storage = StorageEngine::new(format!("/tmp/test_full_outer_db_{}", uuid))?;
 
     let db_name = format!("full_test_{}", uuid);
 

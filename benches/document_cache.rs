@@ -42,7 +42,7 @@ fn main() {
     println!("2. Cache MISS (cold document lookup):");
     let start = Instant::now();
     for _ in 0..1000 {
-        let doc = cache.get("users:nonexistent");
+        let _doc = cache.get("users:nonexistent");
     }
     let elapsed = start.elapsed();
     println!("   Time: {:.2?}", elapsed);

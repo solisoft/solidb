@@ -7,7 +7,6 @@ mod common;
 use common::{create_test_engine, execute_query};
 use serde_json::json;
 use solidb::storage::StorageEngine;
-use tempfile::TempDir;
 
 fn setup_test_data(engine: &StorageEngine) {
     engine.create_collection("users".to_string(), None).unwrap();

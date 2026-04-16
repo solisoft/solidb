@@ -8,7 +8,6 @@ use common::{create_test_engine, execute_query};
 use serde_json::json;
 use solidb::storage::{StorageEngine, VectorIndexConfig, VectorMetric};
 use solidb::{parse, QueryExecutor};
-use tempfile::TempDir;
 
 /// Set up a test collection with vector and fulltext indexes
 fn setup_hybrid_collection(engine: &StorageEngine) {

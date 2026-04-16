@@ -20,11 +20,11 @@ use tempfile::TempDir;
 
 /// Execute a query and return results
 fn execute_query(engine: &StorageEngine, query_str: &str) -> Vec<serde_json::Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query = parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::new(engine);
     executor
         .execute(&query)
-        .expect(&format!("Query failed: {}", query_str))
+        .unwrap_or_else(|_| panic!("Query failed: {}", query_str))
 }
 
 /// Execute a query with bind variables
@@ -33,11 +33,11 @@ fn execute_with_binds(
     query_str: &str,
     binds: BindVars,
 ) -> Vec<serde_json::Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query = parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::with_bind_vars(engine, binds);
     executor
         .execute(&query)
-        .expect(&format!("Query failed: {}", query_str))
+        .unwrap_or_else(|_| panic!("Query failed: {}", query_str))
 }
 
 /// Execute a query with database context
@@ -46,11 +46,11 @@ fn execute_with_database(
     db_name: &str,
     query_str: &str,
 ) -> Vec<serde_json::Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query = parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::with_database(engine, db_name.to_string());
     executor
         .execute(&query)
-        .expect(&format!("Query failed: {}", query_str))
+        .unwrap_or_else(|_| panic!("Query failed: {}", query_str))
 }
 
 /// Execute a query with database and bind vars
@@ -60,20 +60,20 @@ fn execute_with_db_and_binds(
     query_str: &str,
     binds: BindVars,
 ) -> Vec<serde_json::Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query = parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::with_database_and_bind_vars(engine, db_name.to_string(), binds);
     executor
         .execute(&query)
-        .expect(&format!("Query failed: {}", query_str))
+        .unwrap_or_else(|_| panic!("Query failed: {}", query_str))
 }
 
 /// Execute explain
 fn explain_query(engine: &StorageEngine, query_str: &str) -> solidb::sdbql::QueryExplain {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query = parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::new(engine);
     executor
         .explain(&query)
-        .expect(&format!("Explain failed: {}", query_str))
+        .unwrap_or_else(|_| panic!("Explain failed: {}", query_str))
 }
 
 fn create_test_engine() -> (StorageEngine, TempDir) {
@@ -564,7 +564,7 @@ fn test_rand_function() {
     // RAND returns a random number between 0 and 1
     let results = execute_query(&engine, "RETURN RANDOM()");
     let rand_val = results[0].as_f64().unwrap();
-    assert!(rand_val >= 0.0 && rand_val < 1.0);
+    assert!((0.0..1.0).contains(&rand_val));
 }
 
 // ============================================================================

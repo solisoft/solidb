@@ -283,7 +283,7 @@ async fn test_cancel_pending_job() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(&format!("/_api/database/testdb/queues/jobs/{}", job_id))
+                .uri(format!("/_api/database/testdb/queues/jobs/{}", job_id))
                 .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
@@ -293,7 +293,7 @@ async fn test_cancel_pending_job() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let json = response_json(response).await;
-    assert_eq!(json["success"], true);
+    assert_eq!(json["success"], serde_json::Value::Bool(true));
 }
 
 #[tokio::test]
@@ -452,7 +452,7 @@ async fn test_update_cron_job() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri(&format!("/_api/database/testdb/cron/{}", job_id))
+                .uri(format!("/_api/database/testdb/cron/{}", job_id))
                 .header("Content-Type", "application/json")
                 .header("Authorization", auth_header(&token))
                 .body(Body::from(
@@ -501,7 +501,7 @@ async fn test_delete_cron_job() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(&format!("/_api/database/testdb/cron/{}", job_id))
+                .uri(format!("/_api/database/testdb/cron/{}", job_id))
                 .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),

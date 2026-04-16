@@ -218,7 +218,7 @@ async fn test_get_script() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(&format!("/_api/database/scriptdb/scripts/{}", script_id))
+                .uri(format!("/_api/database/scriptdb/scripts/{}", script_id))
                 .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
@@ -289,7 +289,7 @@ async fn test_update_script() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri(&format!("/_api/database/scriptdb/scripts/{}", script_id))
+                .uri(format!("/_api/database/scriptdb/scripts/{}", script_id))
                 .header("Content-Type", "application/json")
                 .header("Authorization", auth_header(&token))
                 .body(Body::from(
@@ -350,7 +350,7 @@ async fn test_delete_script() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(&format!("/_api/database/scriptdb/scripts/{}", script_id))
+                .uri(format!("/_api/database/scriptdb/scripts/{}", script_id))
                 .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
@@ -367,7 +367,7 @@ async fn test_delete_script() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(&format!("/_api/database/scriptdb/scripts/{}", script_id))
+                .uri(format!("/_api/database/scriptdb/scripts/{}", script_id))
                 .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),

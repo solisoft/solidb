@@ -85,7 +85,7 @@ fn test_column_type_inference_int() {
 #[test]
 fn test_column_type_inference_float() {
     assert_eq!(
-        ColumnType::infer_from_value(&json!(3.14)),
+        ColumnType::infer_from_value(&json!(3.5)),
         ColumnType::Float64
     );
     assert_eq!(

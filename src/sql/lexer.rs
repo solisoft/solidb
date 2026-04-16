@@ -530,7 +530,7 @@ mod tests {
     #[test]
     fn test_numbers() {
         assert_eq!(tokenize("123")[0], Token::Integer(123));
-        assert_eq!(tokenize("3.14")[0], Token::Float(3.14));
+        assert_eq!(tokenize("3.125")[0], Token::Float(3.125));
     }
 
     #[test]

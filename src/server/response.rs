@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn test_api_format_clone() {
         let format = ApiFormat::Json;
-        let cloned = format.clone();
+        let cloned = format;
         assert_eq!(format, cloned);
     }
 

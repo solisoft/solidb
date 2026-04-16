@@ -32,7 +32,7 @@ fn test_document_auto_generated_key() {
     let doc = col.insert(json!({"name": "Test"})).unwrap();
 
     assert!(!doc.key.is_empty(), "Should auto-generate a key");
-    assert!(doc.key.len() > 0);
+    assert!(!doc.key.is_empty());
 }
 
 #[test]
@@ -288,7 +288,7 @@ fn test_document_number_fields() {
     col.insert(json!({
         "_key": "nums",
         "integer": 42,
-        "float": 3.14,
+        "float": 3.5,
         "negative": -100,
         "zero": 0
     }))
@@ -296,7 +296,7 @@ fn test_document_number_fields() {
 
     let doc = col.get("nums").unwrap();
     assert_eq!(doc.get("integer"), Some(json!(42)));
-    assert_eq!(doc.get("float"), Some(json!(3.14)));
+    assert_eq!(doc.get("float"), Some(json!(3.5)));
     assert_eq!(doc.get("negative"), Some(json!(-100)));
     assert_eq!(doc.get("zero"), Some(json!(0)));
 }

@@ -1053,9 +1053,12 @@ mod tests {
     use std::collections::HashMap;
     use tempfile::tempdir;
 
+    type MigrationBatch = Vec<(String, Value)>;
+    type SentBatches = Arc<Mutex<Vec<MigrationBatch>>>;
+
     // Mock implementation of BatchSender for testing
     struct MockBatchSender {
-        pub sent_batches: Arc<Mutex<Vec<Vec<(String, Value)>>>>,
+        pub sent_batches: SentBatches,
         pub should_fail: bool,
         pub _processed_keys: Vec<String>,
     }
@@ -2279,7 +2282,7 @@ mod tests {
     // Helper structs for testing
 
     struct FailingThenSucceedingSender {
-        sent_batches: Arc<Mutex<Vec<Vec<(String, Value)>>>>,
+        sent_batches: SentBatches,
         fail_count: Arc<Mutex<usize>>,
     }
 
@@ -2306,7 +2309,7 @@ mod tests {
     }
 
     struct PartialFailureSender {
-        sent_batches: Arc<Mutex<Vec<Vec<(String, Value)>>>>,
+        sent_batches: SentBatches,
         fail_keys: Vec<String>,
     }
 

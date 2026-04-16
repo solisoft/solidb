@@ -16,10 +16,7 @@ use solidb_client::SoliDBClientBuilder;
 
 #[test]
 fn test_builder_new() {
-    let builder = SoliDBClientBuilder::new("localhost:6745");
-    // Builder should be created successfully
-    assert!(true);
-    let _ = builder; // Ensure builder is used
+    let _builder = SoliDBClientBuilder::new("localhost:6745");
 }
 
 #[test]

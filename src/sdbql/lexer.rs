@@ -780,7 +780,7 @@ mod tests {
 
     #[test]
     fn test_floats() {
-        assert_eq!(tokenize("3.14")[0], Token::Float(3.14));
+        assert_eq!(tokenize("3.125")[0], Token::Float(3.125));
         assert_eq!(tokenize("0.5")[0], Token::Float(0.5));
         assert_eq!(tokenize("100.0")[0], Token::Float(100.0));
     }

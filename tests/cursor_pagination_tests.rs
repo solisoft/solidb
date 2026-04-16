@@ -54,7 +54,7 @@ async fn test_cursor_batching() {
         .get_next_batch(&cursor_id)
         .expect("Should find cursor");
     assert_eq!(batch1.len(), 10);
-    assert_eq!(has_more1, true);
+    assert!(has_more1);
     assert_eq!(batch1[0], json!(0));
     assert_eq!(batch1[9], json!(9));
 
@@ -63,7 +63,7 @@ async fn test_cursor_batching() {
         .get_next_batch(&cursor_id)
         .expect("Should find cursor");
     assert_eq!(batch2.len(), 10);
-    assert_eq!(has_more2, true);
+    assert!(has_more2);
     assert_eq!(batch2[0], json!(10));
 }
 
@@ -92,7 +92,7 @@ async fn test_cursor_exhaustion() {
     // Batch 3 (20-24) - Last batch
     let (b3, more3) = cursor_store.get_next_batch(&cursor_id).unwrap();
     assert_eq!(b3.len(), 5);
-    assert_eq!(more3, false);
+    assert!(!more3);
 
     // Try getting next batch after exhaustion - should return None
     let res = cursor_store.get_next_batch(&cursor_id);
@@ -134,7 +134,7 @@ async fn test_empty_result_cursor() {
     // Getting batch from empty results
     let (batch, has_more) = cursor_store.get_next_batch(&cursor_id).unwrap();
     assert_eq!(batch.len(), 0);
-    assert_eq!(has_more, false);
+    assert!(!has_more);
 
     // Should be deleted now
     assert!(cursor_store.get_next_batch(&cursor_id).is_none());
@@ -153,5 +153,5 @@ async fn test_large_batch_size() {
 
     let (batch, has_more) = cursor_store.get_next_batch(&cursor_id).unwrap();
     assert_eq!(batch.len(), 100);
-    assert_eq!(has_more, false);
+    assert!(!has_more);
 }

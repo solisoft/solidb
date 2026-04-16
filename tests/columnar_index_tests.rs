@@ -64,7 +64,7 @@ async fn test_bitmap_index_correctness() {
 
     // Query Eq "active" -> Should match indices 0, 4, 8...
     let filter = ColumnFilter::Eq("status".to_string(), json!("active"));
-    let results = col.scan_filtered(&filter, &vec!["id"]).unwrap();
+    let results = col.scan_filtered(&filter, &["id"]).unwrap();
 
     assert_eq!(results.len(), 25);
     for row in results {
@@ -77,7 +77,7 @@ async fn test_bitmap_index_correctness() {
         "status".to_string(),
         vec![json!("active"), json!("pending")],
     );
-    let results = col.scan_filtered(&filter, &vec!["id"]).unwrap();
+    let results = col.scan_filtered(&filter, &["id"]).unwrap();
 
     assert_eq!(results.len(), 50);
 }
@@ -123,7 +123,7 @@ async fn test_minmax_index_correctness() {
     // Query Gt 1500. Should prune Chunk 0 completely (Max 999 < 1500).
     // Should scan Chunk 1 and filter.
     let filter = ColumnFilter::Gt("val".to_string(), json!(1500));
-    let results = col.scan_filtered(&filter, &vec!["val"]).unwrap();
+    let results = col.scan_filtered(&filter, &["val"]).unwrap();
 
     // Result count: 1999 - 1500 = 499 rows?
     // 1501..1999 -> 499 values. +1 if inclusive? Gt is exclusive. 1999-1500=499.
@@ -140,6 +140,6 @@ async fn test_minmax_index_correctness() {
     // Query Lt 500. Should prune Chunk 1 completely (Min 1000 > 500).
     // Should scan Chunk 0.
     let filter = ColumnFilter::Lt("val".to_string(), json!(500));
-    let results = col.scan_filtered(&filter, &vec!["val"]).unwrap();
+    let results = col.scan_filtered(&filter, &["val"]).unwrap();
     assert_eq!(results.len(), 500); // 0..499
 }

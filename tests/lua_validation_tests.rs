@@ -90,8 +90,8 @@ async fn test_validate_basic_schema() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("valid").unwrap().as_bool().unwrap(), true);
-    assert_eq!(body.get("invalid").unwrap().as_bool().unwrap(), false);
+    assert!(body.get("valid").unwrap().as_bool().unwrap());
+    assert!(!body.get("invalid").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -131,7 +131,7 @@ async fn test_validate_detailed_errors() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("valid").unwrap().as_bool().unwrap(), false);
+    assert!(!body.get("valid").unwrap().as_bool().unwrap());
     assert!(body.get("error_count").unwrap().as_i64().unwrap() > 0);
 }
 
@@ -270,7 +270,7 @@ async fn test_schema_storage_and_retrieval() {
     let body = result.body.as_object().unwrap();
 
     assert!(body.contains_key("stored_key"));
-    assert_eq!(body.get("schema_valid").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("schema_valid").unwrap().as_bool().unwrap());
     assert_eq!(
         body.get("schema_name").unwrap().as_str().unwrap(),
         "user_schema"
@@ -348,8 +348,8 @@ async fn test_validation_with_nested_objects() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("valid").unwrap().as_bool().unwrap(), true);
-    assert_eq!(body.get("invalid").unwrap().as_bool().unwrap(), false);
+    assert!(body.get("valid").unwrap().as_bool().unwrap());
+    assert!(!body.get("invalid").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -399,6 +399,6 @@ async fn test_array_validation() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("valid").unwrap().as_bool().unwrap(), true);
-    assert_eq!(body.get("invalid").unwrap().as_bool().unwrap(), false);
+    assert!(body.get("valid").unwrap().as_bool().unwrap());
+    assert!(!body.get("invalid").unwrap().as_bool().unwrap());
 }

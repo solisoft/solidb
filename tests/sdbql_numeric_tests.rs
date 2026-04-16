@@ -105,7 +105,7 @@ fn test_sqrt_non_perfect() {
 
     let result = execute_single(&engine, "RETURN SQRT(2)");
     let val = result.as_f64().unwrap();
-    assert!((val - 1.41421356).abs() < 0.0001);
+    assert!((val - std::f64::consts::SQRT_2).abs() < 0.0001);
 }
 
 #[test]

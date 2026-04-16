@@ -311,7 +311,7 @@ mod tests {
 
         let result: Result<bool, _> =
             cache_fn.call(("test_key".to_string(), LuaValue::Table(data), Some(60)));
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
     }
 
     #[test]

@@ -150,17 +150,16 @@ async fn test_find_one_single_document() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("laptop_found").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("laptop_found").unwrap().as_bool().unwrap());
     assert_eq!(body.get("laptop_name").unwrap().as_str().unwrap(), "Laptop");
-    assert_eq!(
-        body.get("out_of_stock_found").unwrap().as_bool().unwrap(),
-        true
+    assert!(
+        body.get("out_of_stock_found").unwrap().as_bool().unwrap()
     );
     assert_eq!(
         body.get("out_of_stock_name").unwrap().as_str().unwrap(),
         "Mouse"
     );
-    assert_eq!(body.get("not_found").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("not_found").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -200,7 +199,7 @@ async fn test_upsert_operation() {
 
     assert_eq!(body.get("first_count").unwrap().as_i64().unwrap(), 1);
     assert_eq!(body.get("second_count").unwrap().as_i64().unwrap(), 2);
-    assert_eq!(body.get("is_same_key").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("is_same_key").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -251,8 +250,7 @@ async fn test_bulk_insert_operation() {
     let logs = body.get("logs").unwrap().as_array().unwrap();
     assert_eq!(logs.len(), 4);
 
-    for i in 0..4 {
-        let log = &logs[i];
+    for log in logs.iter().take(4) {
         assert!(log.get("has_key").unwrap().as_bool().unwrap());
         assert!(log.get("level").unwrap().is_string());
         assert!(log.get("message").unwrap().is_string());

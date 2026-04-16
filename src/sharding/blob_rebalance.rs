@@ -552,20 +552,44 @@ struct ChunkInfo {
     size_bytes: u64,
 }
 
+// Helper function to calculate metrics (extracted for testing)
+#[allow(dead_code)]
+fn calculate_metrics_internal(node_stats: &[NodeBlobStats]) -> Result<DistributionMetrics, String> {
+    if node_stats.is_empty() {
+        return Err("No node statistics provided".to_string());
+    }
+
+    let _total_bytes: u64 = node_stats.iter().map(|n| n.total_bytes).sum();
+
+    let mean_chunks = if !node_stats.is_empty() {
+        node_stats.iter().map(|n| n.chunk_count).sum::<usize>() as f64 / node_stats.len() as f64
+    } else {
+        0.0
+    };
+
+    // Calculate standard deviation
+    let variance: f64 = node_stats
+        .iter()
+        .map(|n| {
+            let diff = n.chunk_count as f64 - mean_chunks;
+            diff * diff
+        })
+        .sum::<f64>()
+        / node_stats.len() as f64;
+
+    let std_dev = variance.sqrt();
+
+    Ok(DistributionMetrics {
+        total_chunks: node_stats.iter().map(|n| n.chunk_count).sum(),
+        mean_chunks,
+        std_dev,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
-
-    fn create_test_config() -> RebalanceConfig {
-        RebalanceConfig {
-            interval_secs: 3600,
-            imbalance_threshold: 0.2,
-            min_chunks_to_rebalance: 100,
-            batch_size: 50,
-            enabled: true,
-        }
-    }
 
     fn create_node_stats(node_id: &str, chunk_count: usize, total_bytes: u64) -> NodeBlobStats {
         NodeBlobStats {
@@ -803,38 +827,4 @@ mod tests {
 
         assert!(should_rebalance); // Should trigger rebalance
     }
-}
-
-// Helper function to calculate metrics (extracted for testing)
-#[allow(dead_code)]
-fn calculate_metrics_internal(node_stats: &[NodeBlobStats]) -> Result<DistributionMetrics, String> {
-    if node_stats.is_empty() {
-        return Err("No node statistics provided".to_string());
-    }
-
-    let _total_bytes: u64 = node_stats.iter().map(|n| n.total_bytes).sum();
-
-    let mean_chunks = if !node_stats.is_empty() {
-        node_stats.iter().map(|n| n.chunk_count).sum::<usize>() as f64 / node_stats.len() as f64
-    } else {
-        0.0
-    };
-
-    // Calculate standard deviation
-    let variance: f64 = node_stats
-        .iter()
-        .map(|n| {
-            let diff = n.chunk_count as f64 - mean_chunks;
-            diff * diff
-        })
-        .sum::<f64>()
-        / node_stats.len() as f64;
-
-    let std_dev = variance.sqrt();
-
-    Ok(DistributionMetrics {
-        total_chunks: node_stats.iter().map(|n| n.chunk_count).sum(),
-        mean_chunks,
-        std_dev,
-    })
 }

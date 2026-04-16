@@ -106,7 +106,7 @@ async fn test_cookie_setting() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("success").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("success").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -138,7 +138,7 @@ async fn test_cache_operations() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("cached").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("cached").unwrap().as_bool().unwrap());
     assert!(body.contains_key("user_data"));
 }
 
@@ -238,7 +238,7 @@ async fn test_file_download_response() {
         body.get("file_path").unwrap().as_str().unwrap(),
         "/tmp/test_file.txt"
     );
-    assert_eq!(body.get("success").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("success").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -271,7 +271,7 @@ async fn test_streaming_response() {
     let body = result.body.as_object().unwrap();
 
     assert_eq!(body.get("chunks_count").unwrap().as_i64().unwrap(), 3);
-    assert_eq!(body.get("success").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("success").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -327,9 +327,8 @@ async fn test_cookie_options_validation() {
     let results = body.get("results").unwrap().as_array().unwrap();
     assert_eq!(results.len(), 3);
 
-    for i in 0..3 {
-        let test_result = &results[i];
-        assert_eq!(test_result.get("success").unwrap().as_bool().unwrap(), true);
+    for test_result in results.iter().take(3) {
+        assert!(test_result.get("success").unwrap().as_bool().unwrap());
     }
 }
 
@@ -375,8 +374,7 @@ async fn test_cache_with_ttl_expiration() {
     let results = body.get("results").unwrap().as_array().unwrap();
     assert_eq!(results.len(), 4);
 
-    for i in 0..4 {
-        let test_result = &results[i];
-        assert_eq!(test_result.get("cached").unwrap().as_bool().unwrap(), true);
+    for test_result in results.iter().take(4) {
+        assert!(test_result.get("cached").unwrap().as_bool().unwrap());
     }
 }

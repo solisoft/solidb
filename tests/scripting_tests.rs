@@ -840,7 +840,7 @@ async fn test_db_enqueue_with_options() {
         .await
         .unwrap();
 
-    assert!(result.body["job_id"].as_str().unwrap().len() > 0);
+    assert!(!result.body["job_id"].as_str().unwrap().is_empty());
 
     // Verify job properties
     let db = engine.get_database("testdb").unwrap();
@@ -1299,7 +1299,7 @@ async fn test_lua_return_mixed_table() {
         return {
             string_val = "hello",
             number_val = 42,
-            float_val = 3.14,
+            float_val = 3.5,
             bool_val = true,
             nil_val = nil
         }
@@ -1314,7 +1314,7 @@ async fn test_lua_return_mixed_table() {
 
     assert_eq!(body["string_val"], "hello");
     assert_eq!(body["number_val"], 42);
-    assert!((body["float_val"].as_f64().unwrap() - 3.14).abs() < 0.001);
+    assert!((body["float_val"].as_f64().unwrap() - 3.5).abs() < 0.001);
     assert_eq!(body["bool_val"], true);
     assert!(body.get("nil_val").is_none() || body["nil_val"].is_null());
 }

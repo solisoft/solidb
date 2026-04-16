@@ -16,17 +16,17 @@ use tempfile::TempDir;
 
 /// Helper to execute a query
 fn execute_query(engine: &StorageEngine, query_str: &str) -> Vec<serde_json::Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query = parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::new(engine);
     executor
         .execute(&query)
-        .expect(&format!("Query failed: {}", query_str))
+        .unwrap_or_else(|_| panic!("Query failed: {}", query_str))
 }
 
 /// Helper to execute a query and expect an error
 #[allow(dead_code)]
 fn execute_query_expect_err(engine: &StorageEngine, query_str: &str) -> String {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query = parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::new(engine);
     executor.execute(&query).unwrap_err().to_string()
 }

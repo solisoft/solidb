@@ -325,13 +325,13 @@ mod tests {
         let complex_data = json!({
             "nested": {
                 "deeply": {
-                    "nested": {
-                        "value": "string",
-                        "number": 42,
-                        "float": 3.14159,
-                        "bool": false,
-                        "null": null
-                    }
+                        "nested": {
+                            "value": "string",
+                            "number": 42,
+                            "float": 3.5,
+                            "bool": false,
+                            "null": null
+                        }
                 }
             },
             "array_of_objects": [

@@ -106,7 +106,7 @@ async fn test_sdbql_transaction_commit() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(&format!("/_api/database/tx_db/transaction/{}/query", tx_id))
+                .uri(format!("/_api/database/tx_db/transaction/{}/query", tx_id))
                 .header("Content-Type", "application/json")
                 .header("Authorization", auth_header(&token))
                 .body(Body::from(
@@ -152,7 +152,7 @@ async fn test_sdbql_transaction_commit() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(&format!(
+                .uri(format!(
                     "/_api/database/tx_db/transaction/{}/commit",
                     tx_id
                 ))
@@ -245,7 +245,7 @@ async fn test_sdbql_transaction_rollback() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(&format!(
+                .uri(format!(
                     "/_api/database/tx_db_rb/transaction/{}/query",
                     tx_id
                 ))
@@ -269,7 +269,7 @@ async fn test_sdbql_transaction_rollback() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(&format!(
+                .uri(format!(
                     "/_api/database/tx_db_rb/transaction/{}/rollback",
                     tx_id
                 ))

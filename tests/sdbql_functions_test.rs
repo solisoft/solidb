@@ -55,12 +55,12 @@ async fn create_db(app: axum::Router, token: &str, name: &str) {
 
 async fn run_query(app: axum::Router, token: &str, db: &str, query: &str) -> Value {
     let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(&format!("/_api/database/{}/cursor", db))
-                .header("Content-Type", "application/json")
-                .header("Authorization", auth_header(token))
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(format!("/_api/database/{}/cursor", db))
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", auth_header(token))
                 .body(Body::from(json!({"query": query}).to_string()))
                 .unwrap(),
         )

@@ -144,7 +144,7 @@ async fn test_commit_transaction() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(&format!("/_api/database/txdb/transaction/{}/commit", tx_id))
+                .uri(format!("/_api/database/txdb/transaction/{}/commit", tx_id))
                 .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),
@@ -185,7 +185,7 @@ async fn test_rollback_transaction() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(&format!(
+                .uri(format!(
                     "/_api/database/txdb/transaction/{}/rollback",
                     tx_id
                 ))
@@ -246,7 +246,7 @@ async fn test_various_isolation_levels() {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&format!(
+                    .uri(format!(
                         "/_api/database/txdb/transaction/{}/rollback",
                         tx_id
                     ))
@@ -374,7 +374,7 @@ async fn test_multiple_transactions() {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&format!(
+                    .uri(format!(
                         "/_api/database/txdb/transaction/{}/rollback",
                         tx_id
                     ))

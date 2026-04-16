@@ -52,7 +52,7 @@ fn test_encode_number_integer() {
 
 #[test]
 fn test_encode_number_float() {
-    let encoded = encode_key(&json!(3.14));
+    let encoded = encode_key(&json!(3.5));
     assert_eq!(encoded[0], 0x03);
     assert_eq!(encoded.len(), 9);
 }
@@ -121,11 +121,11 @@ fn test_decode_number_integer() {
 
 #[test]
 fn test_decode_number_float() {
-    let original = json!(3.14);
+    let original = json!(3.5);
     let encoded = encode_key(&original);
     let decoded = decode_key(&encoded).unwrap();
 
-    let diff = (decoded.as_f64().unwrap() - 3.14).abs();
+    let diff = (decoded.as_f64().unwrap() - 3.5).abs();
     assert!(diff < 0.0001);
 }
 

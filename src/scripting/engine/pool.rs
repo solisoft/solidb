@@ -825,7 +825,7 @@ mod tests {
                     guard.with_lua(|lua| {
                         // Each thread executes a simple computation
                         let result: i32 = lua
-                            .load(&format!("return {} + 1", i))
+                            .load(format!("return {} + 1", i))
                             .eval()
                             .expect("Lua eval failed");
                         assert_eq!(result, i + 1);
@@ -857,7 +857,7 @@ mod tests {
 
             for name in &unsafe_globals {
                 let result: LuaValue = lua
-                    .load(&format!("return {}", name))
+                    .load(format!("return {}", name))
                     .eval()
                     .expect("Eval failed");
                 assert!(
@@ -988,7 +988,7 @@ mod tests {
             let guard = pool.acquire();
             // Each acquisition should work
             guard.with_lua(|lua| {
-                let result: i32 = lua.load(&format!("return {}", i)).eval().unwrap();
+                let result: i32 = lua.load(format!("return {}", i)).eval().unwrap();
                 assert_eq!(result, i);
             });
         }

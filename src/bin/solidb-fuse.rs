@@ -361,7 +361,7 @@ impl SolidBFS {
                 FileAttr {
                     ino,
                     size: meta.size,
-                    blocks: (meta.size + BLOCK_SIZE - 1) / BLOCK_SIZE,
+                    blocks: meta.size.div_ceil(BLOCK_SIZE),
                     atime: UNIX_EPOCH,
                     mtime: UNIX_EPOCH, // Could extract from UUID if desired
                     ctime: UNIX_EPOCH,
@@ -544,7 +544,7 @@ impl Filesystem for SolidBFS {
         reply.error(ENOENT);
     }
 
-    fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
+    fn getattr(&mut self, _req: &Request, ino: u64, _fh: Option<u64>, reply: ReplyAttr) {
         if let Some(attr) = self.get_file_attr(ino) {
             reply.attr(&TTL, &attr);
         } else {

@@ -120,7 +120,7 @@ async fn test_assertion_success() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("success").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("success").unwrap().as_bool().unwrap());
     assert_eq!(
         body.get("message").unwrap().as_str().unwrap(),
         "All assertions passed"
@@ -176,7 +176,7 @@ async fn test_try_catch_success_pattern() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("success").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("success").unwrap().as_bool().unwrap());
     assert_eq!(
         body.get("data").unwrap().as_str().unwrap(),
         "operation completed"
@@ -212,8 +212,8 @@ async fn test_try_catch_failure_pattern() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("success").unwrap().as_bool().unwrap(), false);
-    assert_eq!(body.get("handled").unwrap().as_bool().unwrap(), true);
+    assert!(!body.get("success").unwrap().as_bool().unwrap());
+    assert!(body.get("handled").unwrap().as_bool().unwrap());
     assert!(body.get("error_message").unwrap().is_string());
 }
 
@@ -367,8 +367,8 @@ async fn test_async_error_handling() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("error_caught").unwrap().as_bool().unwrap(), true);
-    assert_eq!(body.get("async_handled").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("error_caught").unwrap().as_bool().unwrap());
+    assert!(body.get("async_handled").unwrap().as_bool().unwrap());
     assert!(body.get("message").unwrap().is_string());
 }
 

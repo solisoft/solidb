@@ -82,7 +82,7 @@ async fn setup_db_and_collection(app: &axum::Router, token: &str, db_name: &str,
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(&format!("/_api/database/{}/collection", db_name))
+                .uri(format!("/_api/database/{}/collection", db_name))
                 .header("Content-Type", "application/json")
                 .header("Authorization", auth_header(token))
                 .body(Body::from(json!({ "name": coll_name }).to_string()))

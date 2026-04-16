@@ -8,7 +8,6 @@
 mod common;
 use common::{create_test_engine, execute_query, execute_single};
 use serde_json::json;
-use solidb::storage::StorageEngine;
 
 // ============================================================================
 // FUZZY_MATCH Function Tests
@@ -324,7 +323,7 @@ fn test_similarity_unicode() {
     let sim = result.as_f64().unwrap();
     // Just verify it returns a valid similarity score
     assert!(
-        sim >= 0.0 && sim <= 1.0,
+        (0.0..=1.0).contains(&sim),
         "Expected valid similarity score, got {}",
         sim
     );

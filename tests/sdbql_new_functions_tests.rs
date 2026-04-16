@@ -20,7 +20,7 @@ fn test_log_natural() {
     let (engine, _tmp) = create_test_engine();
 
     // ln(e) = 1
-    let result = execute_single(&engine, "RETURN LOG(2.718281828)");
+    let result = execute_single(&engine, &format!("RETURN LOG({})", std::f64::consts::E));
     let val = result.as_f64().unwrap();
     assert!((val - 1.0).abs() < 0.001);
 }
@@ -64,7 +64,7 @@ fn test_exp() {
     // e^1 ≈ 2.718
     let result = execute_single(&engine, "RETURN EXP(1)");
     let val = result.as_f64().unwrap();
-    assert!((val - 2.718281828).abs() < 0.001);
+    assert!((val - std::f64::consts::E).abs() < 0.001);
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn test_pi() {
 
     let result = execute_single(&engine, "RETURN PI()");
     let val = result.as_f64().unwrap();
-    assert!((val - 3.14159265).abs() < 0.0001);
+    assert!((val - std::f64::consts::PI).abs() < 0.0001);
 }
 
 #[test]

@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn test_db_result_type() {
         let ok_result: DbResult<i32> = Ok(42);
-        assert_eq!(ok_result.unwrap(), 42);
+        assert!(matches!(ok_result, Ok(42)));
 
         let err_result: DbResult<i32> = Err(DbError::InternalError("test".to_string()));
         assert!(err_result.is_err());

@@ -614,7 +614,7 @@ mod tests {
         // With 10 shards and 5 nodes, each node should have ~2 primaries
         for (node, count) in primary_count {
             assert!(
-                (count >= 1 && count <= 3),
+                (1..=3).contains(&count),
                 "Node {} primary count {} is unreasonable",
                 node,
                 count
@@ -708,7 +708,7 @@ mod tests {
         // With 3 nodes: each should have ~3 assignments
         for (node, load) in total_assignments_per_node {
             assert!(
-                (load >= 2 && load <= 4),
+                (2..=4).contains(&load),
                 "Node {} load {} is not well balanced",
                 node,
                 load
@@ -827,7 +827,7 @@ mod tests {
         let assignments = compute_assignments(&nodes, 4, 1, None).unwrap();
 
         let mut counts = HashMap::new();
-        for (_, a) in &assignments {
+        for a in assignments.values() {
             *counts.entry(a.primary_node.clone()).or_insert(0) += 1;
         }
 
@@ -866,7 +866,7 @@ mod tests {
         // Replicas should also prefer unused nodes, but since D is primary,
         // it should pick from remaining unused nodes first, then used ones
         // With only A,B,C used and D as primary, should pick from A,B,C for replicas
-        assert!(shard_2.replica_nodes.len() >= 1);
+        assert!(!shard_2.replica_nodes.is_empty());
     }
 
     #[test]
@@ -922,7 +922,7 @@ mod tests {
     #[test]
     fn test_promotion_prefers_non_primary_replicas() {
         // Test that when promoting replicas to primary, prefer replicas that are not already primaries for other shards
-        let _nodes = vec![
+        let _nodes = [
             "A".to_string(),
             "B".to_string(),
             "C".to_string(),
@@ -993,7 +993,7 @@ mod tests {
 
         // 1. Primary should be one of the old replicas (6746 or 6747) to save data
         assert!(
-            vec!["6746", "6747"].contains(&s0.primary_node.as_str()),
+            ["6746", "6747"].contains(&s0.primary_node.as_str()),
             "Should promote existing replica"
         );
 
@@ -1100,7 +1100,7 @@ mod tests {
         // Since A and B are replicas, one of them should be promoted
         // But if A is already primary elsewhere, B should be preferred
         assert!(
-            vec!["A", "B", "D"].contains(&s0.primary_node.as_str()),
+            ["A", "B", "D"].contains(&s0.primary_node.as_str()),
             "Primary should be one of the available nodes: A, B, or D"
         );
 

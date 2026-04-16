@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Common test utilities for SDBQL tests
 //!
 //! Provides shared helper functions for:
@@ -73,11 +75,12 @@ pub fn create_seeded_engine() -> (StorageEngine, TempDir) {
 }
 
 pub fn execute_query(engine: &StorageEngine, query_str: &str) -> Vec<Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query =
+        parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::new(engine);
     executor
         .execute(&query)
-        .expect(&format!("Failed to execute: {}", query_str))
+        .unwrap_or_else(|_| panic!("Failed to execute: {}", query_str))
 }
 
 pub fn execute_single(engine: &StorageEngine, query_str: &str) -> Value {
@@ -86,11 +89,12 @@ pub fn execute_single(engine: &StorageEngine, query_str: &str) -> Value {
 }
 
 pub fn execute_with_binds(engine: &StorageEngine, query_str: &str, binds: BindVars) -> Vec<Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query =
+        parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::with_bind_vars(engine, binds);
     executor
         .execute(&query)
-        .expect(&format!("Failed to execute: {}", query_str))
+        .unwrap_or_else(|_| panic!("Failed to execute: {}", query_str))
 }
 
 pub fn execute_with_binds_single(
@@ -103,11 +107,12 @@ pub fn execute_with_binds_single(
 }
 
 pub fn execute_with_database(engine: &StorageEngine, db_name: &str, query_str: &str) -> Vec<Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query =
+        parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::with_database(engine, db_name.to_string());
     executor
         .execute(&query)
-        .expect(&format!("Failed to execute: {}", query_str))
+        .unwrap_or_else(|_| panic!("Failed to execute: {}", query_str))
 }
 
 pub fn execute_with_db_and_binds(
@@ -116,23 +121,26 @@ pub fn execute_with_db_and_binds(
     query_str: &str,
     binds: BindVars,
 ) -> Vec<Value> {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query =
+        parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::with_database_and_bind_vars(engine, db_name.to_string(), binds);
     executor
         .execute(&query)
-        .expect(&format!("Failed to execute: {}", query_str))
+        .unwrap_or_else(|_| panic!("Failed to execute: {}", query_str))
 }
 
 pub fn explain_query(engine: &StorageEngine, query_str: &str) -> solidb::sdbql::QueryExplain {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query =
+        parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::new(engine);
     executor
         .explain(&query)
-        .expect(&format!("Failed to explain: {}", query_str))
+        .unwrap_or_else(|_| panic!("Failed to explain: {}", query_str))
 }
 
 pub fn execute_query_expect_err(engine: &StorageEngine, query_str: &str) -> String {
-    let query = parse(query_str).expect(&format!("Failed to parse: {}", query_str));
+    let query =
+        parse(query_str).unwrap_or_else(|_| panic!("Failed to parse: {}", query_str));
     let executor = QueryExecutor::new(engine);
     match executor.execute(&query) {
         Ok(_) => panic!("Expected error but query succeeded"),

@@ -190,11 +190,11 @@ async fn test_lua_security() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("has_os").unwrap().as_bool().unwrap(), false);
-    assert_eq!(body.get("has_io").unwrap().as_bool().unwrap(), false);
-    assert_eq!(body.get("has_debug").unwrap().as_bool().unwrap(), false);
-    assert_eq!(body.get("has_package").unwrap().as_bool().unwrap(), false);
-    assert_eq!(body.get("has_dofile").unwrap().as_bool().unwrap(), false);
+    assert!(!body.get("has_os").unwrap().as_bool().unwrap());
+    assert!(!body.get("has_io").unwrap().as_bool().unwrap());
+    assert!(!body.get("has_debug").unwrap().as_bool().unwrap());
+    assert!(!body.get("has_package").unwrap().as_bool().unwrap());
+    assert!(!body.get("has_dofile").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -225,5 +225,5 @@ async fn test_lua_regex_replace() {
         body.get("replaced").unwrap().as_str().unwrap(),
         "The quick red fox"
     );
-    assert_eq!(body.get("match_result").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("match_result").unwrap().as_bool().unwrap());
 }

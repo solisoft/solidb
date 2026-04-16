@@ -163,8 +163,8 @@ async fn test_lua_crypto_password() {
         .as_str()
         .unwrap()
         .starts_with("$argon2"));
-    assert_eq!(body.get("valid").unwrap().as_bool().unwrap(), true);
-    assert_eq!(body.get("invalid").unwrap().as_bool().unwrap(), false);
+    assert!(body.get("valid").unwrap().as_bool().unwrap());
+    assert!(!body.get("invalid").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -199,7 +199,7 @@ async fn test_lua_crypto_jwt() {
     assert!(token.split('.').count() == 3);
 
     assert_eq!(body.get("decoded_sub").unwrap().as_str().unwrap(), "123");
-    assert_eq!(body.get("decoded_admin").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("decoded_admin").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]
@@ -238,6 +238,6 @@ async fn test_lua_crypto_curve25519() {
         .unwrap();
     let body = result.body.as_object().unwrap();
 
-    assert_eq!(body.get("match").unwrap().as_bool().unwrap(), true);
+    assert!(body.get("match").unwrap().as_bool().unwrap());
     assert_eq!(body.get("len").unwrap().as_i64().unwrap(), 32);
 }

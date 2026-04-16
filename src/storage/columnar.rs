@@ -2120,7 +2120,7 @@ mod tests {
             ColumnType::Int64
         );
         assert_eq!(
-            ColumnType::infer_from_value(&serde_json::json!(3.14)),
+            ColumnType::infer_from_value(&serde_json::json!(3.5)),
             ColumnType::Float64
         );
         assert_eq!(
