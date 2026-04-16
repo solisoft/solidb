@@ -333,8 +333,5 @@ async fn test_multiple_slow_queries_logged() {
 
     // The number of logged slow queries should match queries that exceeded threshold
     // (with some tolerance for timing variations)
-    assert!(
-        slow_queries.len() >= expected,
-        "Should log slow queries"
-    );
+    assert!(slow_queries.len() >= expected, "Should log slow queries");
 }

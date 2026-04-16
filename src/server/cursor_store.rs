@@ -1,5 +1,6 @@
 use dashmap::DashMap;
 use serde_json::Value;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -12,8 +13,7 @@ pub struct CursorStore {
 }
 
 struct StoredCursor {
-    results: Vec<Value>,
-    position: usize,
+    remaining_results: VecDeque<Value>,
     created_at: Instant,
     batch_size: usize,
 }
@@ -31,8 +31,7 @@ impl CursorStore {
     pub fn store(&self, results: Vec<Value>, batch_size: usize) -> String {
         let cursor_id = Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
         let cursor = StoredCursor {
-            results,
-            position: 0,
+            remaining_results: VecDeque::from(results),
             created_at: Instant::now(),
             batch_size,
         };
@@ -50,21 +49,19 @@ impl CursorStore {
         results: Vec<Value>,
         batch_size: usize,
     ) -> (Option<String>, Vec<Value>, bool) {
-        let total = results.len();
-        let end = batch_size.min(total);
-        let has_more = end < total;
+        let mut iter = results.into_iter();
+        let first_batch: Vec<Value> = iter.by_ref().take(batch_size).collect();
+        let mut remaining_results: VecDeque<Value> = iter.collect();
+        let has_more = !remaining_results.is_empty();
 
         if !has_more {
             // All results fit in one batch, no cursor needed
-            return (None, results, false);
+            return (None, first_batch, false);
         }
 
         let cursor_id = Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
-        let first_batch = results[..end].to_vec();
-
         let cursor = StoredCursor {
-            results,
-            position: end,
+            remaining_results: std::mem::take(&mut remaining_results),
             created_at: Instant::now(),
             batch_size,
         };
@@ -87,20 +84,17 @@ impl CursorStore {
             return None;
         }
 
-        let start = cursor.position;
-        let end = (start + cursor.batch_size).min(cursor.results.len());
-
-        if start >= cursor.results.len() {
+        if cursor.remaining_results.is_empty() {
             // No more results
             drop(entry);
             self.cursors.remove(cursor_id);
             return Some((vec![], false));
         }
 
-        let batch = cursor.results[start..end].to_vec();
-        cursor.position = end;
+        let take = cursor.batch_size.min(cursor.remaining_results.len());
+        let batch: Vec<Value> = cursor.remaining_results.drain(0..take).collect();
 
-        let has_more = end < cursor.results.len();
+        let has_more = !cursor.remaining_results.is_empty();
 
         if !has_more {
             // Remove cursor if no more results

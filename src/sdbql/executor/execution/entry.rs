@@ -250,15 +250,10 @@ impl<'a> QueryExecutor<'a> {
                                     });
 
                                     let collection = self.get_collection(&for_clause.collection)?;
-                                    let total = scan_limit.map(|(o, c)| o + c);
-                                    let docs: Vec<Value> = collection.scan_values(total);
-
                                     let results = if let Some((offset, count)) = scan_limit {
-                                        let start = offset.min(docs.len());
-                                        let end = (start + count).min(docs.len());
-                                        docs[start..end].to_vec()
+                                        collection.scan_values_range(offset, Some(count))
                                     } else {
-                                        docs
+                                        collection.scan_values(None)
                                     };
 
                                     return Ok(QueryExecutionResult {
@@ -372,7 +367,10 @@ impl<'a> QueryExecutor<'a> {
 
             let start = offset.min(rows.len());
             let end = (start + count).min(rows.len());
-            rows = rows[start..end].to_vec();
+            if start > 0 {
+                rows.drain(0..start);
+            }
+            rows.truncate(end - start);
         }
 
         // Apply RETURN projection (if present)

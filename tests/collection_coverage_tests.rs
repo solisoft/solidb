@@ -242,6 +242,22 @@ fn test_scan_with_limit() {
 }
 
 #[test]
+fn test_scan_values_range_zero_limit() {
+    let (engine, _tmp) = create_test_engine();
+    engine
+        .create_collection("scan_zero_limit".to_string(), None)
+        .unwrap();
+    let collection = engine.get_collection("scan_zero_limit").unwrap();
+
+    for i in 0..10 {
+        collection.insert(json!({"index": i})).unwrap();
+    }
+
+    let docs = collection.scan_values_range(0, Some(0));
+    assert!(docs.is_empty());
+}
+
+#[test]
 fn test_scan_all() {
     let (engine, _tmp) = create_test_engine();
     engine

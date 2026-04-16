@@ -938,6 +938,16 @@ impl Collection {
     /// Scan documents and return directly as serde_json::Value, skipping intermediate Document.
     /// Faster for queries that just need the JSON value (e.g., FOR doc IN coll RETURN doc).
     pub fn scan_values(&self, limit: Option<usize>) -> Vec<Value> {
+        self.scan_values_range(0, limit)
+    }
+
+    /// Scan a range of documents as serde_json::Value with offset + optional limit.
+    /// Skips `offset` documents and then returns up to `limit` documents.
+    pub fn scan_values_range(&self, offset: usize, limit: Option<usize>) -> Vec<Value> {
+        if matches!(limit, Some(0)) {
+            return Vec::new();
+        }
+
         let db = &self.db;
         let cf = db
             .cf_handle(&self.name)
@@ -945,9 +955,10 @@ impl Collection {
         let prefix = DOC_PREFIX.as_bytes();
 
         // Scale readahead to limit: small reads get minimal readahead
+        let requested = limit.map(|n| n.saturating_add(offset));
         let mut read_opts = ReadOptions::default();
         read_opts.set_prefix_same_as_start(true);
-        let readahead = match limit {
+        let readahead = match requested {
             Some(n) if n <= 10 => 0,          // Small reads: no readahead
             Some(n) if n <= 100 => 16 * 1024, // Medium: 16KB
             _ => 256 * 1024,                  // Large/unlimited: 256KB
@@ -964,12 +975,17 @@ impl Collection {
 
         let capacity = limit.unwrap_or(128);
         let mut results = Vec::with_capacity(capacity);
+        let mut skipped = 0usize;
 
         for (key, value) in iter.flatten() {
             if !key.starts_with(prefix) {
                 break;
             }
             if let Ok(val) = deserialize_doc_as_value(&value) {
+                if skipped < offset {
+                    skipped += 1;
+                    continue;
+                }
                 results.push(val);
                 if let Some(n) = limit {
                     if results.len() >= n {
