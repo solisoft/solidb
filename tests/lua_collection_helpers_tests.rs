@@ -152,9 +152,7 @@ async fn test_find_one_single_document() {
 
     assert!(body.get("laptop_found").unwrap().as_bool().unwrap());
     assert_eq!(body.get("laptop_name").unwrap().as_str().unwrap(), "Laptop");
-    assert!(
-        body.get("out_of_stock_found").unwrap().as_bool().unwrap()
-    );
+    assert!(body.get("out_of_stock_found").unwrap().as_bool().unwrap());
     assert_eq!(
         body.get("out_of_stock_name").unwrap().as_str().unwrap(),
         "Mouse"

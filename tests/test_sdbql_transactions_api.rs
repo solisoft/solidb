@@ -152,10 +152,7 @@ async fn test_sdbql_transaction_commit() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!(
-                    "/_api/database/tx_db/transaction/{}/commit",
-                    tx_id
-                ))
+                .uri(format!("/_api/database/tx_db/transaction/{}/commit", tx_id))
                 .header("Authorization", auth_header(&token))
                 .body(Body::empty())
                 .unwrap(),

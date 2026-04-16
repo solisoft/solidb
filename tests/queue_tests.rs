@@ -176,7 +176,10 @@ async fn test_cron_scheduling() {
 
     // 3. Verify Job Spawned
     let spawned_jobs = jobs.scan(None);
-    assert!(!spawned_jobs.is_empty(), "Cron job should have spawned a job");
+    assert!(
+        !spawned_jobs.is_empty(),
+        "Cron job should have spawned a job"
+    );
 
     let job_doc = &spawned_jobs[0];
     assert_eq!(job_doc.data["cron_job_id"], "cron_1");
