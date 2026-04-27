@@ -1,6 +1,7 @@
 use super::system::AppState;
 use crate::{
     error::DbError,
+    storage::query_cache,
     sync::{LogEntry, Operation},
 };
 use axum::{
@@ -312,6 +313,11 @@ pub async fn complete_upload(
 
     // Remove session
     state.upload_session_store.remove(&upload_id);
+
+    // Invalidate cached listings so the new file is immediately visible.
+    query_cache::get_query_cache()
+        .invalidate_collection(&coll_name)
+        .await;
 
     Ok(Json(doc_value))
 }

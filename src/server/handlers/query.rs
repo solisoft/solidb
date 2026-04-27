@@ -468,9 +468,14 @@ pub async fn execute_query(
         )
     });
 
-    // Try to get cached result for read-only queries (unless cache is disabled)
+    // Try to get cached result for read-only queries (unless cache is disabled).
+    // Include db_name so queries on different databases don't share cache entries.
     let cache_key = if is_read_only && req.cache {
-        Some(query_cache::hash_query(&req.query, &req.bind_vars))
+        Some(query_cache::hash_query(
+            &db_name,
+            &req.query,
+            &req.bind_vars,
+        ))
     } else {
         None
     };

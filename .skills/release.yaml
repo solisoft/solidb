@@ -1,0 +1,68 @@
+name: release
+description: Run release process for soli-db - checks (fmt, clippy, tests), bump version, create tag and push
+
+parameters:
+  - name: bump
+    type: string
+    required: false
+    default: auto
+    description: |
+      Version bump type: 'auto' (default), 'patch', 'minor', or 'major'.
+      'auto' detects from commits: feat=minor, fix=patch, BREAKING=major.
+
+steps:
+  - name: Run all checks and release
+    command: |
+      set -e
+
+      # Run checks
+      cargo fmt
+      cargo clippy -- -D warnings
+      cargo test
+
+      # Get current version
+      CURRENT=$(grep '^version = ' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
+      echo "Current version: $CURRENT"
+
+      # Determine bump type
+      FINAL_BUMP="$BUMP"
+      if [ "$BUMP" = "auto" ]; then
+        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        if [ -z "$LAST_TAG" ]; then
+          FINAL_BUMP=patch
+        else
+          COMMITS=$(git log ${LAST_TAG}..HEAD --oneline 2>/dev/null || echo "")
+          if echo "$COMMITS" | grep -qiE "!:|BREAKING"; then
+            FINAL_BUMP=major
+          elif echo "$COMMITS" | grep -qiE "feat:"; then
+            FINAL_BUMP=minor
+          else
+            FINAL_BUMP=patch
+          fi
+        fi
+      fi
+      echo "Bump type: $FINAL_BUMP"
+
+      # Calculate new version
+      IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+      case $FINAL_BUMP in
+        major) NEW="$((MAJOR+1)).0.0" ;;
+        minor) NEW="${MAJOR}.$((MINOR+1)).0" ;;
+        patch) NEW="${MAJOR}.${MINOR}.$((PATCH+1))" ;;
+      esac
+      echo "New version: $NEW"
+
+      # Update Cargo.toml
+      sed -i "s/^version = \".*\"/version = \"$NEW\"/" Cargo.toml
+      cargo check --quiet 2>/dev/null || true
+
+      # Commit and tag
+      git add Cargo.toml Cargo.lock
+      git commit -m "chore: Release soli-db version $NEW"
+      git tag "v$NEW"
+
+      # Push
+      git push origin main
+      git push origin "v$NEW"
+
+      echo "Released v$NEW"

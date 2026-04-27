@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoliDB - Investor Pitch Deck</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reveal.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/theme/black.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/highlight/monokai.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-card: rgba(22, 30, 46, 0.65);
+            --accent: #3b82f6;
+            --accent-bright: #60a5fa;
+            --accent-green: #22c55e;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+            --text-primary: #f1f5f9;
+            --text-muted: #b0bec5;
+            --text-dim: #8899a6;
+            --border: rgba(148, 163, 184, 0.12);
+            --glow: rgba(59, 130, 246, 0.15);
+        }
+
+        .reveal-viewport {
+            background: var(--bg-primary);
+            background-image:
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.08), transparent),
+                radial-gradient(ellipse 60% 40% at 80% 100%, rgba(139, 92, 246, 0.05), transparent);
+        }
+
+        .reveal {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+        }
+
+        .reveal h1 {
+            font-size: 3.2em;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+            background: linear-gradient(135deg, #fff 0%, var(--accent-bright) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.2em;
+        }
+
+        .reveal h2 {
+            font-size: 1.8em;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.3em;
+        }
+
+        .reveal h3 {
+            font-size: 1em;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: -0.01em;
+            margin-bottom: 0.2em;
+        }
+
+        .reveal p, .reveal li {
+            font-size: 0.82em;
+            line-height: 1.5;
+            color: var(--text-primary);
+        }
+
+        .reveal ul { list-style: none; padding: 0; }
+        .reveal li {
+            padding: 0.2em 0;
+            padding-left: 1.4em;
+            position: relative;
+        }
+        .reveal li::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0.62em;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+        }
+
+        .reveal strong { color: #fff; font-weight: 600; }
+
+        .reveal code {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-bright);
+            font-size: 0.9em;
+        }
+
+        .reveal pre {
+            width: 92%;
+            margin: 0.5em auto;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: rgba(15, 20, 30, 0.8) !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.03);
+        }
+        .reveal pre code {
+            font-size: 0.6em;
+            line-height: 1.5;
+            padding: 0.8em 1em !important;
+            color: var(--text-primary);
+        }
+
+        .reveal blockquote {
+            background: var(--bg-card);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 10px 10px 0;
+            padding: 0.6em 1.2em;
+            font-style: italic;
+            color: var(--text-muted);
+            width: 85%;
+            margin: 0.6em auto;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+        }
+
+        /* ---- Stat cards ---- */
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 1.2em;
+            margin: 0.8em 0;
+        }
+        .stat {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 0.9em 1.5em;
+            min-width: 160px;
+            text-align: center;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .stat:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.12), inset 0 1px 0 rgba(255,255,255,0.06);
+        }
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            background: linear-gradient(135deg, var(--accent-bright), #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.2;
+        }
+        .stat-label {
+            font-size: 0.7em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+            margin-top: 0.3em;
+        }
+
+        /* ---- Tables ---- */
+        .reveal table {
+            width: 90%;
+            margin: 0.5em auto;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 0.68em;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+        }
+        .reveal table thead th {
+            background: rgba(59, 130, 246, 0.12);
+            color: var(--accent-bright);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 0.85em;
+            padding: 0.6em 0.8em;
+            border-bottom: 1px solid var(--border);
+        }
+        .reveal table td {
+            padding: 0.5em 0.8em;
+            border-bottom: 1px solid var(--border);
+            color: #e2e8f0;
+        }
+        .reveal table tr:last-child td { border-bottom: none; }
+        .reveal table tr:hover td { background: rgba(59, 130, 246, 0.04); }
+
+        /* ---- Cover/CTA styling ---- */
+        .logo-hex {
+            font-size: 4em;
+            display: inline-block;
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 30px rgba(59, 130, 246, 0.3));
+            margin-bottom: 0.1em;
+            line-height: 1;
+        }
+
+        .tagline {
+            font-size: 1.2em;
+            color: var(--text-muted);
+            font-weight: 300;
+            margin-bottom: 0.8em;
+            letter-spacing: -0.01em;
+        }
+
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--accent), #7c3aed);
+            color: #fff !important;
+            padding: 0.8em 2.4em;
+            border-radius: 50px;
+            text-decoration: none !important;
+            font-weight: 600;
+            font-size: 0.9em;
+            letter-spacing: 0.02em;
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.35);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(59, 130, 246, 0.45);
+        }
+
+        /* ---- Feature grid ---- */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5em;
+            width: 90%;
+            margin: 0.5em auto;
+        }
+        .feature-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.6em 0.9em;
+            text-align: left;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+        }
+        .feature-card .icon {
+            font-size: 1.2em;
+            margin-bottom: 0.15em;
+        }
+        .feature-card .title {
+            font-weight: 600;
+            font-size: 0.75em;
+            color: #fff;
+            margin-bottom: 0.1em;
+        }
+        .feature-card .desc {
+            font-size: 0.65em;
+            color: var(--text-muted);
+            line-height: 1.3;
+        }
+
+        /* ---- Check/cross marks ---- */
+        .check { color: var(--accent-green); }
+        .cross { color: var(--accent-rose); opacity: 0.7; }
+        .win { color: var(--accent-green); font-weight: 600; }
+
+        /* ---- Two-column layout ---- */
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5em;
+            width: 92%;
+            margin: 0 auto;
+            text-align: left;
+        }
+
+        /* ---- Timeline ---- */
+        .timeline {
+            display: flex;
+            gap: 0.7em;
+            width: 92%;
+            margin: 0.6em auto;
+        }
+        .timeline-item {
+            flex: 1;
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.7em;
+            text-align: left;
+            position: relative;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            top: -1px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            border-radius: 12px 12px 0 0;
+            background: linear-gradient(90deg, var(--accent), #8b5cf6);
+        }
+        .timeline-label {
+            font-size: 0.62em;
+            font-weight: 700;
+            color: var(--accent-bright);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.3em;
+        }
+        .timeline-goal {
+            font-size: 0.72em;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 0.2em;
+        }
+        .timeline-detail {
+            font-size: 0.62em;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        /* ---- Allocation bar ---- */
+        .alloc-bar {
+            display: flex;
+            width: 90%;
+            margin: 0.5em auto 0.4em;
+            border-radius: 8px;
+            overflow: hidden;
+            height: 26px;
+        }
+        .alloc-segment {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.62em;
+            font-weight: 700;
+            color: #fff;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        }
+
+        /* ---- Pill badges ---- */
+        .pill {
+            display: inline-block;
+            padding: 0.25em 0.7em;
+            border-radius: 20px;
+            font-size: 0.68em;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
+        .pill-blue { background: rgba(59,130,246,0.15); color: var(--accent-bright); }
+        .pill-green { background: rgba(34,197,94,0.15); color: var(--accent-green); }
+        .pill-amber { background: rgba(245,158,11,0.15); color: var(--accent-amber); }
+
+        /* ---- Slide-specific overrides ---- */
+        .reveal .slide-background { transition: background 0.6s ease; }
+        .reveal section { text-align: center; }
+
+        /* Fragment animations */
+        .reveal .fragment.grow-in {
+            opacity: 0;
+            transform: scale(0.9);
+            transition: all 0.4s ease;
+        }
+        .reveal .fragment.grow-in.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* Subtle grid background */
+        .reveal .slides > section::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(148, 163, 184, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* No-wrap for key elements */
+        .stat-value,
+        .stat-label,
+        .feature-card .title,
+        .timeline-label,
+        .timeline-goal,
+        .alloc-segment,
+        .pill,
+        .cta-button { white-space: nowrap; }
+
+        .feature-card .desc,
+        .timeline-detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .reveal li,
+        .reveal blockquote p,
+        .reveal h3 { white-space: nowrap; }
+
+        /* Progress bar */
+        .reveal .progress { height: 3px; }
+        .reveal .progress span { background: linear-gradient(90deg, var(--accent), #8b5cf6); }
+
+        /* Slide number */
+        .reveal .slide-number {
+            font-family: 'Inter', sans-serif;
+            font-size: 0.55em;
+            color: var(--text-dim);
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+    <div class="reveal">
+        <div class="slides">
+
+            <!-- ============ SLIDE 1: COVER ============ -->
+            <section>
+                <div class="logo-hex">&#x2B21;</div>
+                <h1>SoliDB</h1>
+                <p class="tagline">The Logic of Intelligent Data</p>
+                <p style="font-size: 0.8em; color: var(--text-muted); max-width: 600px; margin: 0 auto 1.5em;">
+                    A lightweight, high-performance multi-document database written in Rust
+                </p>
+                <a href="https://solidb.solisoft.net" class="cta-button">solidb.solisoft.net</a>
+            </section>
+
+            <!-- ============ SLIDE 2: PROBLEM ============ -->
+            <section>
+                <h2>The Modern Stack is Broken</h2>
+                <div class="stats">
+                    <div class="stat fragment" data-fragment-index="1">
+                        <div class="stat-value">5-6</div>
+                        <div class="stat-label">Databases per app</div>
+                    </div>
+                    <div class="stat fragment" data-fragment-index="2">
+                        <div class="stat-value">$50K+</div>
+                        <div class="stat-label">Monthly DB costs</div>
+                    </div>
+                    <div class="stat fragment" data-fragment-index="3">
+                        <div class="stat-value">40%</div>
+                        <div class="stat-label">Eng. time on integration</div>
+                    </div>
+                </div>
+                <h3 style="margin-top: 0.6em;">Current reality: MongoDB + Redis + Elasticsearch + Kafka + Celery + ...</h3>
+            </section>
+
+            <!-- ============ SLIDE 3: PAIN POINTS ============ -->
+            <section>
+                <h2>Data Fragmentation Kills Velocity</h2>
+                <div class="two-col" style="margin-top: 1em;">
+                    <div style="text-align: left;">
+                        <ul>
+                            <li><strong>Operational overhead</strong> managing multiple databases</li>
+                            <li><strong>Integration complexity</strong> between systems</li>
+                            <li><strong>Vendor lock-in</strong> with proprietary protocols</li>
+                        </ul>
+                    </div>
+                    <div style="text-align: left;">
+                        <ul>
+                            <li><strong>Cost explosion</strong> as scale grows</li>
+                            <li><strong>Latency penalties</strong> from cross-service hops</li>
+                            <li><strong>Maintenance burden</strong> keeping everything in sync</li>
+                        </ul>
+                    </div>
+                </div>
+                <blockquote style="margin-top: 0.6em;">
+                    "We spent more time integrating databases than building our product."
+                </blockquote>
+            </section>
+
+            <!-- ============ SLIDE 4: SOLUTION ============ -->
+            <section>
+                <h2>One Database. All Workloads.</h2>
+                <p style="font-size: 0.82em; color: var(--text-muted); margin-bottom: 0.5em;">
+                    SoliDB replaces your entire data stack with a single, unified database.
+                </p>
+                <div class="feature-grid" style="grid-template-columns: repeat(3, 1fr);">
+                    <div class="feature-card fragment">
+                        <div class="title">&#128451; Document Store</div>
+                        <div class="desc">MongoDB replacement &mdash; flexible JSON documents</div>
+                    </div>
+                    <div class="feature-card fragment">
+                        <div class="title">&#9889; Key-Value Cache</div>
+                        <div class="desc">Redis replacement &mdash; sub-ms reads with TTL</div>
+                    </div>
+                    <div class="feature-card fragment">
+                        <div class="title">&#128269; Full-Text Search</div>
+                        <div class="desc">Elasticsearch replacement &mdash; built-in indexing</div>
+                    </div>
+                    <div class="feature-card fragment">
+                        <div class="title">&#129302; Vector Search</div>
+                        <div class="desc">Pinecone replacement &mdash; HNSW with quantization</div>
+                    </div>
+                    <div class="feature-card fragment">
+                        <div class="title">&#128736; Job Queue</div>
+                        <div class="desc">Celery replacement &mdash; priorities &amp; cron</div>
+                    </div>
+                    <div class="feature-card fragment">
+                        <div class="title">&#128200; Time-Series</div>
+                        <div class="desc">InfluxDB replacement &mdash; native time support</div>
+                    </div>
+                </div>
+                <p style="margin-top: 0.5em; font-size: 0.72em; color: var(--text-dim);">
+                    Built with <strong style="color: var(--accent-amber);">Rust</strong> &mdash; Zero GC, Maximum Performance
+                </p>
+            </section>
+
+            <!-- ============ SLIDE 5: PRODUCT ============ -->
+            <section>
+                <h2>Developer-Friendly by Design</h2>
+                <h3>SDBQL &mdash; The query language developers love</h3>
+                <pre><code data-trim data-noescape class="language-sql">
+FOR doc IN users
+  FILTER doc.age > 25 AND doc.status == "active"
+  SORT doc.created_at DESC
+  LIMIT 20
+  RETURN { name: doc.name, email: doc.email, score: doc.score }
+                </code></pre>
+                <div class="feature-grid" style="grid-template-columns: repeat(3, 1fr);">
+                    <div class="feature-card" style="padding: 0.5em 0.7em;">
+                        <div class="title" style="font-size: 0.7em;">&#128752; Live Queries</div>
+                        <div class="desc">Real-time WebSocket subscriptions</div>
+                    </div>
+                    <div class="feature-card" style="padding: 0.5em 0.7em;">
+                        <div class="title" style="font-size: 0.7em;">&#127760; Embedded Lua 5.4</div>
+                        <div class="desc">API endpoints inside the database</div>
+                    </div>
+                    <div class="feature-card" style="padding: 0.5em 0.7em;">
+                        <div class="title" style="font-size: 0.7em;">&#128274; ACID Transactions</div>
+                        <div class="desc">Configurable isolation levels</div>
+                    </div>
+                    <div class="feature-card" style="padding: 0.5em 0.7em;">
+                        <div class="title" style="font-size: 0.7em;">&#129518; HNSW Vectors</div>
+                        <div class="desc">AI-ready embeddings storage</div>
+                    </div>
+                    <div class="feature-card" style="padding: 0.5em 0.7em;">
+                        <div class="title" style="font-size: 0.7em;">&#128640; Native Sharding</div>
+                        <div class="desc">Horizontal scaling out of the box</div>
+                    </div>
+                    <div class="feature-card" style="padding: 0.5em 0.7em;">
+                        <div class="title" style="font-size: 0.7em;">&#128230; 8 Client SDKs</div>
+                        <div class="desc">Rust, Go, Python, Node, PHP, Ruby, Elixir</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============ SLIDE 6: TRACTION ============ -->
+            <section>
+                <h2>Production-Proven Performance</h2>
+                <h3>Benchmark &mdash; 16 cores, 27 GiB RAM</h3>
+                <div class="stats" style="margin-top: 0.6em;">
+                    <div class="stat">
+                        <div class="stat-value">67,599</div>
+                        <div class="stat-label">Reads / sec</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">59,604</div>
+                        <div class="stat-label">Writes / sec</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">0.58ms</div>
+                        <div class="stat-label">p50 latency</div>
+                    </div>
+                </div>
+                <div class="two-col" style="margin-top: 0.8em; font-size: 0.75em;">
+                    <div style="text-align: left;">
+                        <p style="font-weight: 600; color: #fff; margin-bottom: 0.2em;">Technical Validation</p>
+                        <ul>
+                            <li><strong>592 tests</strong> across 54 test files</li>
+                            <li><strong>v0.22.6</strong> stable release</li>
+                            <li><strong>8 official client libraries</strong></li>
+                            <li><strong>5 built-in apps</strong> on the platform</li>
+                        </ul>
+                    </div>
+                    <div style="text-align: left;">
+                        <p style="font-weight: 600; color: #fff; margin-bottom: 0.2em;">Recent Milestones</p>
+                        <ul>
+                            <li>HNSW vector search with quantization</li>
+                            <li>JOIN operations (INNER, LEFT, RIGHT, FULL)</li>
+                            <li>SQL compatibility layer</li>
+                            <li>Gemini LLM integration</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============ SLIDE 7: COMPETITIVE LANDSCAPE ============ -->
+            <section>
+                <h2>Competitive Landscape</h2>
+                <table style="font-size: 0.58em;">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th style="color: var(--accent-green);">SoliDB</th>
+                            <th>MongoDB</th>
+                            <th>ArangoDB</th>
+                            <th>SurrealDB</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Language</td>
+                            <td class="win">Rust</td>
+                            <td>C++</td>
+                            <td>C++</td>
+                            <td>Rust</td>
+                        </tr>
+                        <tr>
+                            <td>ACID Transactions</td>
+                            <td><span class="check">&#10003;</span></td>
+                            <td><span class="check">&#10003;</span></td>
+                            <td>Limited</td>
+                            <td><span class="check">&#10003;</span></td>
+                        </tr>
+                        <tr>
+                            <td>Native Scripting</td>
+                            <td class="win">Lua 5.4</td>
+                            <td><span class="cross">&#10007;</span></td>
+                            <td>JS (Foxx)</td>
+                            <td>JS</td>
+                        </tr>
+                        <tr>
+                            <td>Vector Search</td>
+                            <td class="win">HNSW</td>
+                            <td>Atlas (paid)</td>
+                            <td>Native</td>
+                            <td>Native</td>
+                        </tr>
+                        <tr>
+                            <td>Real-time</td>
+                            <td class="win">WebSocket</td>
+                            <td>Change Streams</td>
+                            <td>Foxx</td>
+                            <td>WebSocket</td>
+                        </tr>
+                        <tr>
+                            <td>Self-hosted</td>
+                            <td class="win">Full-featured</td>
+                            <td>Limited</td>
+                            <td>Full</td>
+                            <td>Full</td>
+                        </tr>
+                        <tr>
+                            <td>License</td>
+                            <td class="win">O'Saasy</td>
+                            <td>SSPL</td>
+                            <td>Apache 2</td>
+                            <td>Apache 2</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p style="margin-top: 0.5em; font-size: 0.68em;">
+                    <strong>Differentiation:</strong> "Database-in-a-Box" &mdash; One DB, one query language, one deployment, all workloads.
+                </p>
+            </section>
+
+            <!-- ============ SLIDE 8: MARKET ============ -->
+            <section>
+                <h2>Market Opportunity</h2>
+                <h3>Total Addressable Market: <strong style="color: var(--accent-bright);">$100B+</strong></h3>
+                <div class="stats" style="margin-top: 0.5em; gap: 0.8em;">
+                    <div class="stat" style="min-width: 130px; padding: 0.6em 1em;">
+                        <div class="stat-value" style="font-size: 1.5em;">$70B</div>
+                        <div class="stat-label">General DB <span class="pill pill-green" style="margin-left:0.3em;">12% CAGR</span></div>
+                    </div>
+                    <div class="stat" style="min-width: 130px; padding: 0.6em 1em;">
+                        <div class="stat-value" style="font-size: 1.5em;">$3.5B</div>
+                        <div class="stat-label">Vector DB <span class="pill pill-green" style="margin-left:0.3em;">35% CAGR</span></div>
+                    </div>
+                    <div class="stat" style="min-width: 130px; padding: 0.6em 1em;">
+                        <div class="stat-value" style="font-size: 1.5em;">$7B</div>
+                        <div class="stat-label">Time-Series <span class="pill pill-green" style="margin-left:0.3em;">10% CAGR</span></div>
+                    </div>
+                    <div class="stat" style="min-width: 130px; padding: 0.6em 1em;">
+                        <div class="stat-value" style="font-size: 1.5em;">$20B</div>
+                        <div class="stat-label">Real-time <span class="pill pill-green" style="margin-left:0.3em;">25% CAGR</span></div>
+                    </div>
+                </div>
+                <div class="two-col" style="margin-top: 0.6em; font-size: 0.72em;">
+                    <div style="text-align: left;">
+                        <p style="font-weight: 600; color: #fff; margin-bottom: 0.2em;">Key Trends Favoring SoliDB</p>
+                        <ul>
+                            <li><strong>AI Explosion</strong> &mdash; Every app needs vector search</li>
+                            <li><strong>Cost Pressure</strong> &mdash; Teams want simpler stacks</li>
+                        </ul>
+                    </div>
+                    <div style="text-align: left;">
+                        <p style="font-weight: 600; color: #fff; margin-bottom: 0.2em;">&nbsp;</p>
+                        <ul>
+                            <li><strong>Rust Adoption</strong> &mdash; Zero-GC for infrastructure</li>
+                            <li><strong>Edge Computing</strong> &mdash; Lightweight distributed DB</li>
+                        </ul>
+                    </div>
+                </div>
+                <p style="font-size: 0.7em; color: var(--text-dim); margin-top: 0.4em;">
+                    Beachhead: <strong>Developer tools &amp; AI startups</strong>
+                </p>
+            </section>
+
+            <!-- ============ SLIDE 9: BUSINESS MODEL ============ -->
+            <section>
+                <h2>Business Model: Open-Core</h2>
+                <table style="width: 70%;">
+                    <thead>
+                        <tr>
+                            <th>Tier</th>
+                            <th>License</th>
+                            <th>Price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Self-Hosted</strong></td>
+                            <td>O'Saasy License</td>
+                            <td><span class="win">Free</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Cloud</strong></td>
+                            <td>Subscription</td>
+                            <td>$99/mo per node</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Enterprise</strong></td>
+                            <td>Custom</td>
+                            <td>Contact us</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="two-col" style="margin-top: 0.6em; font-size: 0.72em;">
+                    <div style="text-align: left;">
+                        <p style="font-weight: 600; color: #fff; margin-bottom: 0.2em;">Revenue Streams</p>
+                        <ul>
+                            <li><strong>Managed Cloud</strong> &mdash; Fully hosted, zero ops</li>
+                            <li><strong>Enterprise Support</strong> &mdash; SLA, dedicated support</li>
+                            <li><strong>Custom Integrations</strong> &mdash; AI bindings, features</li>
+                        </ul>
+                    </div>
+                    <div style="text-align: left;">
+                        <p style="font-weight: 600; color: #fff; margin-bottom: 0.2em;">Target Customers</p>
+                        <ul>
+                            <li>Startups building modern web/mobile apps</li>
+                            <li>Scale-ups needing cost-effective scaling</li>
+                            <li>Enterprises requiring self-hosted AI-ready DB</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============ SLIDE 10: GTM ============ -->
+            <section>
+                <h2>Go-to-Market Strategy</h2>
+                <div class="timeline">
+                    <div class="timeline-item fragment">
+                        <div class="timeline-label">Phase 1 &mdash; Now</div>
+                        <div class="timeline-goal">Developer Community</div>
+                        <div class="timeline-detail">
+                            Open source on GitHub<br>
+                            8 client libraries<br>
+                            Hackathons &amp; meetups<br>
+                            Content marketing
+                        </div>
+                    </div>
+                    <div class="timeline-item fragment">
+                        <div class="timeline-label">Phase 2 &mdash; Q2 2026</div>
+                        <div class="timeline-goal">Early Adopters</div>
+                        <div class="timeline-detail">
+                            10 paying customers<br>
+                            Cloud beta launch<br>
+                            Integration partners<br>
+                            $50K ARR
+                        </div>
+                    </div>
+                    <div class="timeline-item fragment">
+                        <div class="timeline-label">Phase 3 &mdash; Q4 2026</div>
+                        <div class="timeline-goal">Scale</div>
+                        <div class="timeline-detail">
+                            Enterprise sales team<br>
+                            AWS / GCP / Azure listings<br>
+                            AI partnerships<br>
+                            $500K ARR
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top: 0.6em;">
+                    <h3>Why Developers Love SoliDB</h3>
+                    <p style="font-size: 0.72em; color: var(--text-muted); max-width: 700px; margin: 0.3em auto 0;">
+                        Single binary, zero dependencies &bull; Familiar SDBQL syntax &bull; Built-in dashboard &amp; REPL &bull; No config files needed
+                    </p>
+                </div>
+            </section>
+
+            <!-- ============ SLIDE 11: TEAM ============ -->
+            <section>
+                <h2>Team</h2>
+                <p style="font-size: 0.78em; color: var(--text-muted); margin-bottom: 0.5em;">
+                    <span class="pill pill-amber">Founded 2024</span>
+                </p>
+                <div class="two-col" style="font-size: 0.65em; gap: 1em;">
+                    <div style="text-align: left;">
+                        <p style="font-weight: 600; color: #fff; margin-bottom: 0.15em;">Core Team</p>
+                        <ul>
+                            <li><strong>solisoft</strong> &mdash; Core maintainer, 15+ years database experience</li>
+                            <li>Growing open source community on GitHub</li>
+                        </ul>
+                        <p style="font-weight: 600; color: #fff; margin-top: 0.4em; margin-bottom: 0.15em;">Advisors</p>
+                        <ul>
+                            <li>Database industry veterans</li>
+                            <li>Distributed systems experts</li>
+                            <li>Former FAANG engineers</li>
+                        </ul>
+                    </div>
+                    <div style="text-align: left;">
+                        <p style="font-weight: 600; color: #fff; margin-bottom: 0.15em;">Why Rust?</p>
+                        <ul>
+                            <li><strong>Memory safety</strong> without garbage collection</li>
+                            <li><strong>Zero-cost abstractions</strong> for max performance</li>
+                            <li><strong>Fearless concurrency</strong> for distributed workloads</li>
+                            <li><strong>Production proven</strong> at AWS, Google, Microsoft</li>
+                        </ul>
+                        <p style="font-weight: 600; color: #fff; margin-top: 0.4em; margin-bottom: 0.15em;">We're Looking For</p>
+                        <ul>
+                            <li>Senior Rust engineers who love databases</li>
+                            <li>Industry advisors who believe in the vision</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============ SLIDE 12: USE OF FUNDS ============ -->
+            <section>
+                <h2>Raising: $2.5M Seed Round</h2>
+                <div class="alloc-bar" style="height: 22px; margin: 0.3em auto;">
+                    <div class="alloc-segment" style="flex: 60; background: linear-gradient(90deg, var(--accent), #6366f1); font-size: 0.55em;">Engineering 60%</div>
+                    <div class="alloc-segment" style="flex: 16; background: #8b5cf6; font-size: 0.55em;">Cloud 16%</div>
+                    <div class="alloc-segment" style="flex: 14; background: #a78bfa; font-size: 0.55em;">Mktg 14%</div>
+                    <div class="alloc-segment" style="flex: 10; background: #c4b5fd; color: #1e1b4b; text-shadow: none; font-size: 0.55em;">Ops 10%</div>
+                </div>
+                <table style="width: 80%; margin-top: 0.2em; font-size: 0.6em;">
+                    <thead>
+                        <tr><th>Category</th><th>Amount</th><th>Purpose</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>Engineering</strong></td><td>$1.5M</td><td>Hire 3 senior Rust engineers</td></tr>
+                        <tr><td><strong>Cloud Infrastructure</strong></td><td>$400K</td><td>Build &amp; scale managed offering</td></tr>
+                        <tr><td><strong>Marketing</strong></td><td>$350K</td><td>Developer outreach, content, events</td></tr>
+                        <tr><td><strong>Operations</strong></td><td>$250K</td><td>Legal, admin, misc</td></tr>
+                    </tbody>
+                </table>
+                <h3 style="margin-top: 0.3em; margin-bottom: 0.2em;">18-Month Milestones</h3>
+                <div class="timeline" style="gap: 0.5em; margin: 0.3em auto;">
+                    <div class="timeline-item" style="padding: 0.5em 0.6em;">
+                        <div class="timeline-label" style="font-size: 0.58em;">Q1</div>
+                        <div class="timeline-detail" style="font-size: 0.56em;">Cloud beta launch<br>500 GitHub stars</div>
+                    </div>
+                    <div class="timeline-item" style="padding: 0.5em 0.6em;">
+                        <div class="timeline-label" style="font-size: 0.58em;">Q2</div>
+                        <div class="timeline-detail" style="font-size: 0.56em;">10 paying customers<br>$50K ARR</div>
+                    </div>
+                    <div class="timeline-item" style="padding: 0.5em 0.6em;">
+                        <div class="timeline-label" style="font-size: 0.58em;">Q3</div>
+                        <div class="timeline-detail" style="font-size: 0.56em;">5-person team<br>Enterprise deal #1</div>
+                    </div>
+                    <div class="timeline-item" style="padding: 0.5em 0.6em;">
+                        <div class="timeline-label" style="font-size: 0.58em;">Q4</div>
+                        <div class="timeline-detail" style="font-size: 0.56em;">$500K ARR<br>Series A ready</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============ SLIDE 13: CTA ============ -->
+            <section>
+                <div class="logo-hex" style="font-size: 2.8em;">&#x2B21;</div>
+                <h1 style="font-size: 2.4em; margin-bottom: 0.1em;">SoliDB</h1>
+                <p class="tagline" style="font-size: 1em; margin-bottom: 0.5em;">One database. All workloads. Any scale.</p>
+                <div style="display: flex; justify-content: center; gap: 0.6em; margin: 0.4em 0; font-size: 0.68em;">
+                    <div class="stat" style="min-width: auto; padding: 0.4em 0.8em;">
+                        <div style="font-weight: 600; color: #fff; font-size: 0.8em;">&#127760; Website</div>
+                        <div style="color: var(--accent-bright); font-size: 0.72em;">solidb.solisoft.net</div>
+                    </div>
+                    <div class="stat" style="min-width: auto; padding: 0.4em 0.8em;">
+                        <div style="font-weight: 600; color: #fff; font-size: 0.8em;">&#128187; GitHub</div>
+                        <div style="color: var(--accent-bright); font-size: 0.72em;">github.com/solisoft/solidb</div>
+                    </div>
+                    <div class="stat" style="min-width: auto; padding: 0.4em 0.8em;">
+                        <div style="font-weight: 600; color: #fff; font-size: 0.8em;">&#9993; Contact</div>
+                        <div style="color: var(--accent-bright); font-size: 0.72em;">solidb@solisoft.net</div>
+                    </div>
+                </div>
+                <div style="font-size: 0.62em; color: var(--text-muted); margin: 0 auto 0.5em; line-height: 1.6; white-space: nowrap;">
+                    <span class="check">&#10003;</span> <strong>Database-in-a-Box</strong> &mdash; Replace 5-6 databases with one<br>
+                    <span class="check">&#10003;</span> <strong>Rust-powered</strong> &mdash; Zero GC, maximum performance<br>
+                    <span class="check">&#10003;</span> <strong>AI-ready</strong> &mdash; Built-in vector search &amp; LLM integration<br>
+                    <span class="check">&#10003;</span> <strong>Open-core</strong> &mdash; Permissive license, community-driven<br>
+                    <span class="check">&#10003;</span> <strong>$2.5M raise</strong> &mdash; Scaling engineering and cloud
+                </div>
+                <a href="https://solidb.solisoft.net" class="cta-button" style="font-size: 0.8em; padding: 0.6em 2em;">Try SoliDB Today</a>
+            </section>
+
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reveal.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/markdown/markdown.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/highlight/highlight.js"></script>
+    <script>
+        Reveal.initialize({
+            plugins: [RevealMarkdown, RevealHighlight],
+            hash: true,
+            transition: 'slide',
+            transitionSpeed: 'default',
+            backgroundTransition: 'fade',
+            width: 1280,
+            height: 720,
+            margin: 0.06,
+            slideNumber: 'c/t',
+            showSlideNumber: 'all',
+            center: true,
+            controlsTutorial: false,
+        });
+    </script>
+</body>
+</html>

@@ -2,6 +2,7 @@ use super::system::AppState;
 use crate::{
     error::DbError,
     storage::http_client::get_http_client,
+    storage::query_cache,
     sync::blob_replication::replicate_blob_to_node,
     sync::{LogEntry, Operation},
 };
@@ -132,6 +133,9 @@ pub async fn upload_blob(
                         chunks_buffer,
                     )
                     .await?;
+                query_cache::get_query_cache()
+                    .invalidate_collection(&coll_name)
+                    .await;
                 return Ok(Json(doc));
             } else {
                 return Err(DbError::InternalError(
@@ -194,6 +198,11 @@ pub async fn upload_blob(
         let _ = log.append(entry);
     }
 
+    // Invalidate cached listings so the new file is immediately visible.
+    query_cache::get_query_cache()
+        .invalidate_collection(&coll_name)
+        .await;
+
     Ok(Json(doc_value))
 }
 
@@ -233,40 +242,22 @@ pub async fn download_blob(
 
     // Only reach here for non-sharded collections
     // For blob collections, chunks may be distributed across the cluster
-    // First check if metadata exists locally
-    if collection.get(&key).is_err() {
-        return Err(DbError::DocumentNotFound(format!(
-            "Blob not found: {}",
-            key
-        )));
-    }
+    let doc = collection
+        .get(&key)
+        .map_err(|_| DbError::DocumentNotFound(format!("Blob not found: {}", key)))?;
 
-    let content_type = if let Ok(doc) = collection.get(&key) {
-        if let Some(v) = doc.get("type") {
-            if let Some(s) = v.as_str() {
-                s.to_string()
-            } else {
-                "application/octet-stream".to_string()
-            }
-        } else {
-            "application/octet-stream".to_string()
-        }
-    } else {
-        "application/octet-stream".to_string()
-    };
+    let content_type = doc
+        .get("type")
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| "application/octet-stream".to_string());
 
-    let file_name = if let Ok(doc) = collection.get(&key) {
-        if let Some(v) = doc.get("name") {
-            v.as_str().map(|s| s.to_string())
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let file_name = doc.get("name").and_then(|v| v.as_str().map(str::to_string));
 
-    // Create a stream that yields chunks
-    // We need to move ownership of required data into the stream
+    let total_chunks = doc.get("chunks").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+    let total_size = doc.get("size").and_then(|v| v.as_u64());
+
+    // Drive the stream off the known chunk count so a missing chunk raises a
+    // hard error rather than silently truncating the response.
     let db_name_clone = db_name.clone();
     let coll_name_clone = coll_name.clone();
     let key_clone = key.clone();
@@ -274,46 +265,43 @@ pub async fn download_blob(
     let coordinator_clone = state.shard_coordinator.clone();
 
     let stream = async_stream::stream! {
-        let mut chunk_idx = 0;
-        loop {
-            // First try local storage
-            match collection_clone.get_blob_chunk(&key_clone, chunk_idx) {
-                Ok(data) => {
-                    yield Ok::<_, std::io::Error>(axum::body::Bytes::from(data.unwrap_or_default()));
-                    chunk_idx += 1;
-                }
-                Err(_) => {
-                    // Not found locally (or end of file)
-                    // If we have a cluster coordinator, check other nodes
-                    if let Some(ref coordinator) = coordinator_clone {
-                        match fetch_blob_chunk_from_cluster(
-                            coordinator,
-                            &db_name_clone,
-                            &coll_name_clone,
-                            &key_clone,
-                            chunk_idx
-                        ).await {
-                            Ok(Some(data)) => {
-                                // Found on another node
-                                yield Ok(axum::body::Bytes::from(data));
-                                chunk_idx += 1;
-                            }
-                            Ok(None) => {
-                                // Not found anywhere - assume end of file
-                                break;
-                            }
-                            Err(e) => {
-                                // Error fetching
-                                tracing::error!("Error fetching blob chunk: {}", e);
-                                break;
-                            }
-                        }
-                    } else {
-                        // No cluster to check, must be EOF
-                        break;
+        for chunk_idx in 0..total_chunks {
+            // Prefer local storage, fall back to the cluster.
+            let local = collection_clone.get_blob_chunk(&key_clone, chunk_idx);
+            if let Ok(Some(data)) = local {
+                yield Ok::<_, std::io::Error>(axum::body::Bytes::from(data));
+                continue;
+            }
+
+            if let Some(ref coordinator) = coordinator_clone {
+                match fetch_blob_chunk_from_cluster(
+                    coordinator,
+                    &db_name_clone,
+                    &coll_name_clone,
+                    &key_clone,
+                    chunk_idx,
+                ).await {
+                    Ok(Some(data)) => {
+                        yield Ok(axum::body::Bytes::from(data));
+                        continue;
+                    }
+                    Ok(None) => {
+                        tracing::error!(
+                            "Blob {} chunk {} missing on all nodes",
+                            key_clone, chunk_idx
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!("Error fetching blob chunk {}: {}", chunk_idx, e);
                     }
                 }
             }
+
+            yield Err(std::io::Error::other(format!(
+                "blob chunk {} of {} missing",
+                chunk_idx, total_chunks
+            )));
+            return;
         }
     };
 
@@ -321,6 +309,9 @@ pub async fn download_blob(
 
     let mut builder = Response::builder();
     builder = builder.header("Content-Type", content_type);
+    if let Some(size) = total_size {
+        builder = builder.header("Content-Length", size);
+    }
     if let Some(name) = file_name {
         builder = builder.header(
             "Content-Disposition",

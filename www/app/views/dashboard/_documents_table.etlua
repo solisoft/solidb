@@ -102,20 +102,33 @@ end
           end
         end
 
-        -- For blobs, get metadata
-        local filename = doc.filename or doc._key or "unknown"
-        local content_type = doc.content_type or "application/octet-stream"
+        -- For blobs, get metadata (handler stores: name, type, size, chunks, created)
+        local filename = doc.name or doc.filename or doc._key or "unknown"
+        local content_type = doc.type or doc.content_type or "application/octet-stream"
         local file_size = doc.size or doc.file_size or 0
         local file_icon = get_file_icon(content_type)
+        local is_image = type(content_type) == "string" and content_type:match("^image/") ~= nil
+        local blob_url = api_url .. "/_api/blob/" .. db .. "/" .. collection .. "/" .. doc._key
       %>
       <tr class="hover:bg-white/5 transition-colors group">
         <% if is_blob then %>
-        <!-- Blob: File name with icon -->
+        <!-- Blob: File name with icon (or image thumbnail for image/*) -->
         <td class="px-6 py-4">
           <div class="flex items-center gap-3">
+            <% if is_image then %>
+            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              <img data-blob-thumb
+                   data-blob-url="<%= blob_url %>"
+                   alt="<%= filename %>"
+                   class="w-10 h-10 object-cover opacity-0 transition-opacity"
+                   loading="lazy">
+              <i class="fas <%= file_icon %> text-primary-light thumb-fallback"></i>
+            </div>
+            <% else %>
             <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
               <i class="fas <%= file_icon %> text-primary-light"></i>
             </div>
+            <% end %>
             <div class="min-w-0">
               <p class="font-medium text-text truncate max-w-xs" title="<%= filename %>"><%= filename %></p>
               <p class="text-xs text-text-dim font-mono"><%= doc._key %></p>
@@ -139,12 +152,23 @@ end
         <td class="px-6 py-4 text-right">
           <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <% if is_blob then %>
-            <!-- Download button for blobs -->
-            <a href="<%= api_url %>/_api/blob/<%= db %>/<%= collection %>/<%= doc._key %>"
-               download="<%= filename %>"
-               class="p-1.5 rounded hover:bg-success/10 text-text-muted hover:text-success transition-colors"
-               title="Download">
+            <!-- Download button for blobs (fetch with Bearer token, save via object URL) -->
+            <button type="button"
+                    data-blob-download
+                    data-blob-url="<%= api_url %>/_api/blob/<%= db %>/<%= collection %>/<%= doc._key %>"
+                    data-blob-name="<%= filename %>"
+                    class="p-1.5 rounded hover:bg-success/10 text-text-muted hover:text-success transition-colors"
+                    title="Download">
               <i class="fas fa-download"></i>
+            </button>
+            <!-- Edit metadata button for blobs -->
+            <a href="#"
+               hx-get="/database/<%= db %>/documents/<%= collection %>/<%= doc._key %>/edit"
+               hx-target="#modal-container"
+               hx-swap="innerHTML"
+               class="p-1.5 rounded hover:bg-primary/10 text-text-muted hover:text-primary-light transition-colors"
+               title="Edit metadata">
+              <i class="fas fa-pen"></i>
             </a>
             <% else %>
             <!-- Edit button for documents -->
@@ -203,6 +227,93 @@ end
   var progressText = document.getElementById('upload-progress-text');
 
   if (!dropZone) return;
+
+  function getAuthToken() {
+    var cookies = document.cookie.split(';');
+    for (var i = 0; i < cookies.length; i++) {
+      var cookie = cookies[i].trim();
+      if (cookie.indexOf('sdb_token=') === 0) {
+        return cookie.substring('sdb_token='.length);
+      }
+    }
+    return '';
+  }
+
+  // Authenticated image thumbnails: fetch blob, swap icon for inline preview.
+  function loadThumbnails(root) {
+    var scope = root || dropZone;
+    var imgs = scope.querySelectorAll('img[data-blob-thumb]');
+    if (!imgs.length) return;
+    var token = getAuthToken();
+    imgs.forEach(function(img) {
+      if (img.dataset.thumbLoaded) return;
+      img.dataset.thumbLoaded = '1';
+      var url = img.getAttribute('data-blob-url');
+      fetch(url, {
+        headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+      })
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.blob();
+      })
+      .then(function(blob) {
+        var objectUrl = URL.createObjectURL(blob);
+        img.addEventListener('load', function() {
+          img.classList.remove('opacity-0');
+          var fallback = img.parentNode && img.parentNode.querySelector('.thumb-fallback');
+          if (fallback) fallback.remove();
+        }, { once: true });
+        img.src = objectUrl;
+      })
+      .catch(function() {
+        // Leave the fallback icon in place.
+      });
+    });
+  }
+  loadThumbnails();
+
+  // Delegated handler: authenticated blob download via fetch + object URL
+  dropZone.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-blob-download]');
+    if (!btn) return;
+    e.preventDefault();
+
+    var url = btn.getAttribute('data-blob-url');
+    var name = btn.getAttribute('data-blob-name') || 'download';
+    var token = getAuthToken();
+
+    var icon = btn.querySelector('i');
+    var originalIcon = icon ? icon.className : '';
+    if (icon) icon.className = 'fas fa-spinner fa-spin';
+    btn.disabled = true;
+
+    fetch(url, {
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+    })
+    .then(function(resp) {
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.blob();
+    })
+    .then(function(blob) {
+      var objectUrl = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(objectUrl); }, 1000);
+    })
+    .catch(function(err) {
+      document.body.dispatchEvent(new CustomEvent('showToast', {
+        detail: { message: 'Download failed: ' + err.message, type: 'error' }
+      }));
+    })
+    .finally(function() {
+      if (icon) icon.className = originalIcon;
+      btn.disabled = false;
+    });
+  });
 
   // File input change
   fileInput.addEventListener('change', function(e) {

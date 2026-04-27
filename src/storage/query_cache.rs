@@ -139,10 +139,14 @@ pub fn get_query_cache() -> &'static QueryCache {
     QUERY_CACHE.get_or_init(QueryCache::default)
 }
 
-/// Generate a cache key for a query that includes collection names for targeted invalidation.
+/// Generate a cache key for a query that includes the database name and
+/// collection names for targeted invalidation.
 ///
-/// The key format is `"coll1,coll2:hash"` so that `invalidate_collection` can match by name.
+/// The key format is `"db/coll1,coll2:hash"` so the cache is partitioned per
+/// database (same query text on different databases must not collide) and
+/// `invalidate_collection` can still match by collection name.
 pub fn hash_query(
+    db_name: &str,
     query: &str,
     bind_vars: &std::collections::HashMap<String, serde_json::Value>,
 ) -> String {
@@ -150,6 +154,7 @@ pub fn hash_query(
     use std::hash::{Hash, Hasher};
 
     let mut hasher = DefaultHasher::new();
+    db_name.hash(&mut hasher);
     query.hash(&mut hasher);
 
     // Include bind vars in hash
@@ -177,8 +182,8 @@ pub fn hash_query(
     collections.dedup();
 
     if collections.is_empty() {
-        format!("{:x}", hasher.finish())
+        format!("{}/:{:x}", db_name, hasher.finish())
     } else {
-        format!("{}:{:x}", collections.join(","), hasher.finish())
+        format!("{}/{}:{:x}", db_name, collections.join(","), hasher.finish())
     }
 }
