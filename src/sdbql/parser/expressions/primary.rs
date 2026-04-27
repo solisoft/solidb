@@ -45,9 +45,12 @@ impl Parser {
             self.advance();
             Ok(Expression::FieldAccess(Box::new(base), field_name))
         } else {
-            Err(DbError::ParseError(
-                "Expected field name after '.'".to_string(),
-            ))
+            Err(DbError::ParseError(format!(
+                "Expected field name after '.', found {:?}. \
+                 If the field name conflicts with a reserved word, \
+                 use bracket notation: doc[\"field\"].",
+                self.current_token()
+            )))
         }
     }
 
@@ -59,9 +62,12 @@ impl Parser {
             self.advance();
             Ok(Expression::OptionalFieldAccess(Box::new(base), field_name))
         } else {
-            Err(DbError::ParseError(
-                "Expected field name after '?.'".to_string(),
-            ))
+            Err(DbError::ParseError(format!(
+                "Expected field name after '?.', found {:?}. \
+                 If the field name conflicts with a reserved word, \
+                 use bracket notation: doc[\"field\"].",
+                self.current_token()
+            )))
         }
     }
 
@@ -104,8 +110,7 @@ impl Parser {
             let mut path = String::new();
             while matches!(self.current_token(), Token::Dot) {
                 self.advance();
-                if let Token::Identifier(name) = self.current_token() {
-                    let name = name.clone();
+                if let Some(name) = Self::token_to_field_name(self.current_token()) {
                     if !path.is_empty() {
                         path.push('.');
                     }

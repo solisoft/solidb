@@ -607,3 +607,81 @@ fn test_error_unclosed_string() {
     let result = parse(query);
     assert!(result.is_err(), "Should fail with unclosed string");
 }
+
+// ============================================================================
+// Reserved keywords as field names
+// ============================================================================
+
+#[test]
+fn test_field_access_reserved_size() {
+    let query = "FOR d IN files RETURN d.size";
+    let result = parse(query);
+    assert!(
+        result.is_ok(),
+        "Failed to parse d.size with reserved SIZE keyword: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn test_field_access_reserved_join_window_left() {
+    for q in [
+        "FOR d IN x RETURN d.join",
+        "FOR d IN x RETURN d.window",
+        "FOR d IN x RETURN d.left",
+        "FOR d IN x RETURN d.right",
+        "FOR d IN x RETURN d.stream",
+        "FOR d IN x RETURN d.graph",
+        "FOR d IN x RETURN d.view",
+        "FOR d IN x RETURN d.on",
+        "FOR d IN x RETURN d.as",
+    ] {
+        let result = parse(q);
+        assert!(
+            result.is_ok(),
+            "Failed to parse reserved-keyword field access {:?}: {:?}",
+            q,
+            result.err()
+        );
+    }
+}
+
+#[test]
+fn test_optional_field_access_reserved_keyword() {
+    let query = "FOR d IN files RETURN d?.size";
+    let result = parse(query);
+    assert!(
+        result.is_ok(),
+        "Failed to parse d?.size with reserved SIZE keyword: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn test_array_spread_reserved_keyword() {
+    let query = "FOR d IN files RETURN d.children[*].size";
+    let result = parse(query);
+    assert!(
+        result.is_ok(),
+        "Failed to parse array spread with reserved SIZE keyword: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn test_field_access_error_mentions_token_and_hint() {
+    let query = "FOR d IN files RETURN d.+";
+    let result = parse(query);
+    assert!(result.is_err(), "Should fail with malformed field access");
+    let msg = format!("{:?}", result.err().unwrap());
+    assert!(
+        msg.contains("Plus"),
+        "Error should mention the offending token, got: {}",
+        msg
+    );
+    assert!(
+        msg.contains("bracket notation"),
+        "Error should hint at bracket notation, got: {}",
+        msg
+    );
+}
