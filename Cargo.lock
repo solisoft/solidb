@@ -4674,7 +4674,7 @@ dependencies = [
 
 [[package]]
 name = "solidb"
-version = "0.24.1"
+version = "0.24.2"
 dependencies = [
  "anyhow",
  "argon2",
