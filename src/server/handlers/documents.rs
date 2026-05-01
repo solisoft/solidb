@@ -46,7 +46,24 @@ pub async fn insert_document(
     Json(data): Json<Value>,
 ) -> Result<Json<Value>, DbError> {
     let database = state.storage.get_database(&db_name)?;
-    let collection = database.get_collection(&coll_name)?;
+    // Auto-create document collection on first insert, mirroring the blob
+    // pattern in `blobs.rs` / `blob_upload.rs`. Indexes / unique constraints
+    // still have to be added by an explicit migration; this only handles
+    // the bare collection so the first `Model.create(...)` doesn't 404 on a
+    // fresh database.
+    let collection = match database.get_collection(&coll_name) {
+        Ok(coll) => coll,
+        Err(DbError::CollectionNotFound(_)) => {
+            tracing::info!(
+                "Auto-creating document collection {}/{}",
+                db_name,
+                coll_name
+            );
+            database.create_collection(coll_name.clone(), None)?;
+            database.get_collection(&coll_name)?
+        }
+        Err(e) => return Err(e),
+    };
 
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {

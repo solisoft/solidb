@@ -544,6 +544,66 @@ async fn test_insert_document_with_key() {
 }
 
 #[tokio::test]
+async fn test_insert_document_auto_creates_collection() {
+    let (_tmp, app, token) = create_test_app();
+
+    // Create the DB but NOT the collection — exercise the auto-create branch.
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/_api/database")
+                .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
+                .body(Body::from(json!({ "name": "autodb" }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/_api/database/autodb/document/widgets")
+                .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(&token))
+                .body(Body::from(json!({ "name": "Widget" }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    assert!(json["_key"].is_string());
+
+    // Confirm the collection now shows up in the listing.
+    let list = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/_api/database/autodb/collection")
+                .header("Authorization", auth_header(&token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(list.status(), StatusCode::OK);
+    let listing = response_json(list).await;
+    let names: Vec<String> = listing["collections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["name"].as_str().unwrap().to_string())
+        .collect();
+    assert!(names.contains(&"widgets".to_string()), "got: {:?}", names);
+}
+
+#[tokio::test]
 async fn test_get_document() {
     let (_tmp, app, token) = create_test_app();
 

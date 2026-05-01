@@ -184,6 +184,11 @@ pub fn hash_query(
     if collections.is_empty() {
         format!("{}/:{:x}", db_name, hasher.finish())
     } else {
-        format!("{}/{}:{:x}", db_name, collections.join(","), hasher.finish())
+        format!(
+            "{}/{}:{:x}",
+            db_name,
+            collections.join(","),
+            hasher.finish()
+        )
     }
 }
