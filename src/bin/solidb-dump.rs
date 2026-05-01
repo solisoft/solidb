@@ -212,6 +212,11 @@ async fn dump_collection_jsonl(
     // Check collection type to decide dump method
     let collection_type = collection_info["type"].as_str().unwrap_or("document");
 
+    // Export index definitions before documents so they exist by the time
+    // documents are imported back (and so they can be applied even if a
+    // collection is empty)
+    dump_collection_indexes(client, base_url, database, collection, output).await?;
+
     if collection_type == "blob" {
         eprintln!("  Using streaming export for blob collection...");
         let export_url = format!(
@@ -280,6 +285,148 @@ async fn dump_collection_jsonl(
     }
 
     pb.finish_with_message("Done");
+
+    Ok(())
+}
+
+/// Dump index definitions for a collection as `_type: "index"` records.
+///
+/// Covers all index kinds exposed by the HTTP API: regular (hash, persistent,
+/// fulltext, bloom, cuckoo), geo, vector, and TTL. Each record includes the
+/// minimum fields needed to recreate the index via the matching POST endpoint.
+async fn dump_collection_indexes(
+    client: &reqwest::Client,
+    base_url: &str,
+    database: &str,
+    collection: &str,
+    output: &mut dyn Write,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Regular indexes (hash, persistent, fulltext, bloom, cuckoo)
+    let url = format!(
+        "{}/_api/database/{}/index/{}",
+        base_url, database, collection
+    );
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(body) = resp.json::<Value>().await {
+                if let Some(arr) = body["indexes"].as_array() {
+                    for idx in arr {
+                        // Server-side IndexType is serialized with PascalCase
+                        // ("Persistent", "Hash", ...). Lowercase it for the
+                        // create endpoint, which expects strings like
+                        // "persistent", "hash", "fulltext".
+                        let kind = idx["index_type"]
+                            .as_str()
+                            .map(|s| s.to_lowercase())
+                            .unwrap_or_else(|| "persistent".to_string());
+                        let mut record = serde_json::json!({
+                            "_type": "index",
+                            "_database": database,
+                            "_collection": collection,
+                            "_index_kind": kind,
+                            "name": idx.get("name").cloned().unwrap_or(Value::Null),
+                            "fields": idx.get("fields").cloned().unwrap_or_else(|| Value::Array(vec![])),
+                            "unique": idx.get("unique").cloned().unwrap_or(Value::Bool(false)),
+                        });
+                        if let Some(field) = idx.get("field") {
+                            record["field"] = field.clone();
+                        }
+                        writeln!(output, "{}", serde_json::to_string(&record)?)?;
+                    }
+                }
+            }
+        }
+    }
+
+    // Geo indexes
+    let url = format!("{}/_api/database/{}/geo/{}", base_url, database, collection);
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(body) = resp.json::<Value>().await {
+                if let Some(arr) = body["indexes"].as_array() {
+                    for idx in arr {
+                        let record = serde_json::json!({
+                            "_type": "index",
+                            "_database": database,
+                            "_collection": collection,
+                            "_index_kind": "geo",
+                            "name": idx.get("name").cloned().unwrap_or(Value::Null),
+                            "field": idx.get("field").cloned().unwrap_or(Value::Null),
+                        });
+                        writeln!(output, "{}", serde_json::to_string(&record)?)?;
+                    }
+                }
+            }
+        }
+    }
+
+    // TTL indexes
+    let url = format!("{}/_api/database/{}/ttl/{}", base_url, database, collection);
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(body) = resp.json::<Value>().await {
+                if let Some(arr) = body["indexes"].as_array() {
+                    for idx in arr {
+                        let record = serde_json::json!({
+                            "_type": "index",
+                            "_database": database,
+                            "_collection": collection,
+                            "_index_kind": "ttl",
+                            "name": idx.get("name").cloned().unwrap_or(Value::Null),
+                            "field": idx.get("field").cloned().unwrap_or(Value::Null),
+                            "expire_after_seconds": idx.get("expire_after_seconds").cloned().unwrap_or(Value::Null),
+                        });
+                        writeln!(output, "{}", serde_json::to_string(&record)?)?;
+                    }
+                }
+            }
+        }
+    }
+
+    // Vector indexes
+    let url = format!(
+        "{}/_api/database/{}/vector/{}",
+        base_url, database, collection
+    );
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(body) = resp.json::<Value>().await {
+                if let Some(arr) = body["indexes"].as_array() {
+                    for idx in arr {
+                        // VectorMetric serializes as PascalCase ("Cosine", "Euclidean", "DotProduct")
+                        // but the create endpoint expects lowercase ("cosine", "euclidean", "dot")
+                        let metric = idx
+                            .get("metric")
+                            .and_then(|v| v.as_str())
+                            .map(|s| match s.to_lowercase().as_str() {
+                                "dotproduct" => "dot".to_string(),
+                                other => other.to_string(),
+                            })
+                            .unwrap_or_else(|| "cosine".to_string());
+                        let quantization = idx
+                            .get("quantization")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_lowercase())
+                            .unwrap_or_else(|| "none".to_string());
+                        let record = serde_json::json!({
+                            "_type": "index",
+                            "_database": database,
+                            "_collection": collection,
+                            "_index_kind": "vector",
+                            "name": idx.get("name").cloned().unwrap_or(Value::Null),
+                            "field": idx.get("field").cloned().unwrap_or(Value::Null),
+                            "dimension": idx.get("dimension").cloned().unwrap_or(Value::Null),
+                            "metric": metric,
+                            "m": idx.get("m").cloned().unwrap_or(Value::Null),
+                            "ef_construction": idx.get("ef_construction").cloned().unwrap_or(Value::Null),
+                            "quantization": quantization,
+                        });
+                        writeln!(output, "{}", serde_json::to_string(&record)?)?;
+                    }
+                }
+            }
+        }
+    }
 
     Ok(())
 }

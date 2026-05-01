@@ -254,12 +254,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Try parse JSON
             match serde_json::from_slice::<Value>(line_slice) {
                 Ok(doc) => {
+                    let record_type = doc.get("_type").and_then(|t| t.as_str()).map(String::from);
+
+                    // Index definition record: must be applied after the
+                    // collection exists but before mass-imports finish so
+                    // newly inserted documents are indexed as they arrive.
+                    // Flush the current batch first to keep ordering sane.
+                    if record_type.as_deref() == Some("index") {
+                        if let Some((db, coll)) = current_batch_meta.clone() {
+                            flush_batch(
+                                &mut current_batch,
+                                &mut current_batch_size,
+                                &client,
+                                &base_url,
+                                &db,
+                                &coll,
+                                &mut total_imported,
+                                &mut total_failed,
+                            )
+                            .await?;
+                        }
+                        process_index_record(
+                            doc,
+                            &args,
+                            &client,
+                            &base_url,
+                            &mut initialized_collections,
+                            &mut total_imported,
+                            &mut total_failed,
+                        )
+                        .await?;
+                        buffer.clear();
+                        continue;
+                    }
+
                     // Check for Blob Chunk Header
-                    let is_blob_chunk = doc
-                        .get("_type")
-                        .and_then(|t| t.as_str())
-                        .map(|t| t == "blob_chunk")
-                        .unwrap_or(false);
+                    let is_blob_chunk = record_type.as_deref() == Some("blob_chunk");
 
                     if is_blob_chunk {
                         if let Some(data_len) = doc.get("_data_length").and_then(|v| v.as_u64()) {
@@ -369,6 +399,137 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 use std::io::Read; // Needed for read_exact
+
+/// Recreate an index from a `_type: "index"` record produced by solidb-dump.
+///
+/// Routes to the appropriate create endpoint based on `_index_kind`:
+/// regular indexes → `/index`, geo → `/geo`, ttl → `/ttl`, vector → `/vector`.
+/// Existing indexes (409) are tolerated; other errors are counted as failed.
+#[allow(clippy::too_many_arguments)]
+async fn process_index_record(
+    record: Value,
+    args: &Args,
+    client: &reqwest::Client,
+    base_url: &str,
+    initialized_cols: &mut HashMap<String, bool>,
+    total_imported: &mut u64,
+    total_failed: &mut u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db = record
+        .get("_database")
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| args.database.clone())
+        .ok_or("No database specified in index record or args")?;
+
+    let coll = record
+        .get("_collection")
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| args.collection.clone())
+        .ok_or("No collection specified in index record or args")?;
+
+    // Make sure DB and collection exist before posting the index
+    let key = format!("{}/{}", db, coll);
+    if let std::collections::hash_map::Entry::Vacant(entry) = initialized_cols.entry(key) {
+        if args.create_database {
+            create_database_if_not_exists(client, base_url, &db).await?;
+        }
+        ensure_collection_exists(client, base_url, &db, &coll, None, None, args.drop).await?;
+        entry.insert(true);
+    }
+
+    let kind = record
+        .get("_index_kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("persistent");
+
+    let (url, payload) = match kind {
+        "geo" => {
+            let url = format!("{}/_api/database/{}/geo/{}", base_url, db, coll);
+            let payload = serde_json::json!({
+                "name": record.get("name").cloned().unwrap_or(Value::Null),
+                "field": record.get("field").cloned().unwrap_or(Value::Null),
+            });
+            (url, payload)
+        }
+        "ttl" => {
+            let url = format!("{}/_api/database/{}/ttl/{}", base_url, db, coll);
+            let payload = serde_json::json!({
+                "name": record.get("name").cloned().unwrap_or(Value::Null),
+                "field": record.get("field").cloned().unwrap_or(Value::Null),
+                "expire_after_seconds": record
+                    .get("expire_after_seconds")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+            });
+            (url, payload)
+        }
+        "vector" => {
+            let url = format!("{}/_api/database/{}/vector/{}", base_url, db, coll);
+            let mut payload = serde_json::json!({
+                "name": record.get("name").cloned().unwrap_or(Value::Null),
+                "field": record.get("field").cloned().unwrap_or(Value::Null),
+                "dimension": record.get("dimension").cloned().unwrap_or(Value::Null),
+            });
+            if let Some(metric) = record.get("metric") {
+                payload["metric"] = metric.clone();
+            }
+            if let Some(m) = record.get("m") {
+                if !m.is_null() {
+                    payload["m"] = m.clone();
+                }
+            }
+            if let Some(ef) = record.get("ef_construction") {
+                if !ef.is_null() {
+                    payload["ef_construction"] = ef.clone();
+                }
+            }
+            if let Some(q) = record.get("quantization") {
+                payload["quantization"] = q.clone();
+            }
+            (url, payload)
+        }
+        // hash / persistent / fulltext / bloom / cuckoo
+        other => {
+            let url = format!("{}/_api/database/{}/index/{}", base_url, db, coll);
+            let mut payload = serde_json::json!({
+                "name": record.get("name").cloned().unwrap_or(Value::Null),
+                "type": other,
+                "unique": record.get("unique").cloned().unwrap_or(Value::Bool(false)),
+            });
+            if let Some(fields) = record.get("fields") {
+                payload["fields"] = fields.clone();
+            }
+            if let Some(field) = record.get("field") {
+                payload["field"] = field.clone();
+            }
+            (url, payload)
+        }
+    };
+
+    let response = client.post(&url).json(&payload).send().await?;
+    let status = response.status();
+    if status.is_success() || status.as_u16() == 409 {
+        *total_imported += 1;
+    } else {
+        let body = response.text().await.unwrap_or_default();
+        eprintln!(
+            "  Failed to create {} index '{}' on {}/{}: {} {}",
+            kind,
+            record
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("<unknown>"),
+            db,
+            coll,
+            status,
+            body
+        );
+        *total_failed += 1;
+    }
+    Ok(())
+}
 
 #[allow(clippy::too_many_arguments)]
 async fn process_blob_chunk(
@@ -550,8 +711,18 @@ async fn process_doc(
         *batch_meta = Some((db.clone(), coll.clone()));
     }
 
+    // Strip restore metadata fields so they don't end up persisted as
+    // document fields. The dump tool adds these as routing hints, not data.
+    let mut clean_doc = doc;
+    if let Some(obj) = clean_doc.as_object_mut() {
+        obj.remove("_database");
+        obj.remove("_collection");
+        obj.remove("_shardConfig");
+        obj.remove("_collectionType");
+    }
+
     // Add doc to batch (Pre-serialize to avoid double serialization)
-    let doc_bytes = serde_json::to_vec(&doc)?;
+    let doc_bytes = serde_json::to_vec(&clean_doc)?;
     *batch_size += doc_bytes.len();
     batch.push(doc_bytes);
 
@@ -615,7 +786,13 @@ async fn flush_batch(
         *total_failed += batch.len() as u64;
     } else {
         let result: Value = response.json().await?;
-        *total_imported += result["imported"].as_u64().unwrap_or(0);
+        // Server returns `count` for imported documents; older versions used `imported`
+        let imported = result
+            .get("count")
+            .and_then(|v| v.as_u64())
+            .or_else(|| result.get("imported").and_then(|v| v.as_u64()))
+            .unwrap_or(0);
+        *total_imported += imported;
         *total_failed += result["failed"].as_u64().unwrap_or(0);
     }
 
