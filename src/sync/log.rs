@@ -64,11 +64,25 @@ pub struct SyncLog {
     sequence: Arc<RwLock<u64>>,
     cache: Arc<RwLock<VecDeque<LogEntry>>>,
     max_cache_size: usize,
+    /// When true, append/append_batch are no-ops. Used in standalone mode
+    /// to avoid the disk overhead of a replication log no peer will ever read.
+    disabled: bool,
 }
 
 impl SyncLog {
-    /// Create a new sync log
+    /// Create a new sync log (writes enabled).
     pub fn new(node_id: String, data_dir: &str, max_cache_size: usize) -> Result<Self, String> {
+        Self::new_with_options(node_id, data_dir, max_cache_size, false)
+    }
+
+    /// Create a new sync log with explicit options.
+    /// `disabled = true` makes append/append_batch no-ops (still readable).
+    pub fn new_with_options(
+        node_id: String,
+        data_dir: &str,
+        max_cache_size: usize,
+        disabled: bool,
+    ) -> Result<Self, String> {
         let log_path = format!("{}/sync_log", data_dir);
 
         let mut opts = Options::default();
@@ -94,6 +108,7 @@ impl SyncLog {
             sequence: Arc::new(RwLock::new(sequence)),
             cache: Arc::new(RwLock::new(VecDeque::with_capacity(max_cache_size))),
             max_cache_size,
+            disabled,
         };
 
         log.load_cache();
@@ -128,6 +143,10 @@ impl SyncLog {
 
     /// Append an entry to the log
     pub fn append(&self, mut entry: LogEntry) -> u64 {
+        if self.disabled {
+            return self.current_sequence();
+        }
+
         let mut seq = self.sequence.write().unwrap();
         *seq += 1;
         entry.sequence = *seq;
@@ -159,7 +178,7 @@ impl SyncLog {
 
     /// Append multiple entries atomically
     pub fn append_batch(&self, mut entries: Vec<LogEntry>) -> u64 {
-        if entries.is_empty() {
+        if self.disabled || entries.is_empty() {
             return self.current_sequence();
         }
 
@@ -194,6 +213,107 @@ impl SyncLog {
         }
 
         *seq
+    }
+
+    /// Returns true if append/append_batch are no-ops.
+    pub fn is_disabled(&self) -> bool {
+        self.disabled
+    }
+
+    /// Returns the sequence of the oldest retained entry, or None if the log is empty.
+    pub fn oldest_sequence(&self) -> Option<u64> {
+        let iter = self
+            .db
+            .iterator(IteratorMode::From(LOG_PREFIX, Direction::Forward));
+        for (key, _) in iter.flatten() {
+            if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
+                continue;
+            }
+            // Key format: "sync_log:{:020}" — sequence starts at byte 9
+            if key.len() >= LOG_PREFIX.len() + 20 {
+                let seq_bytes = &key[LOG_PREFIX.len()..LOG_PREFIX.len() + 20];
+                if let Ok(s) = std::str::from_utf8(seq_bytes) {
+                    if let Ok(seq) = s.parse::<u64>() {
+                        return Some(seq);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Approximate count of entries currently retained on disk.
+    /// Walks the entire keyspace, so callers should not use this in hot paths.
+    pub fn entry_count(&self) -> u64 {
+        let iter = self
+            .db
+            .iterator(IteratorMode::From(LOG_PREFIX, Direction::Forward));
+        let mut count = 0u64;
+        for (key, _) in iter.flatten() {
+            if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
+                continue;
+            }
+            count += 1;
+        }
+        count
+    }
+
+    /// Delete every log entry with `sequence < before_sequence`.
+    ///
+    /// Returns the number of entries removed.
+    ///
+    /// Safety: the caller is responsible for choosing `before_sequence` such
+    /// that every peer has already pulled entries up to that point.
+    pub fn prune_before(&self, before_sequence: u64) -> Result<u64, String> {
+        if before_sequence == 0 {
+            return Ok(0);
+        }
+
+        let start_key = format!("sync_log:{:020}", 0u64);
+        let end_key = format!("sync_log:{:020}", before_sequence);
+
+        // Walk the to-be-pruned range, building a WriteBatch of explicit
+        // deletes. This is portable across rocksdb wrappers and gives an
+        // exact removed count for reporting.
+        let mut batch = WriteBatch::default();
+        let mut removed = 0u64;
+        let iter = self
+            .db
+            .iterator(IteratorMode::From(start_key.as_bytes(), Direction::Forward));
+        for (key, _) in iter.flatten() {
+            if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
+                continue;
+            }
+            if key.as_ref() >= end_key.as_bytes() {
+                break;
+            }
+            batch.delete(&key);
+            removed += 1;
+        }
+
+        if removed == 0 {
+            return Ok(0);
+        }
+
+        self.db.write(&batch).map_err(|e| e.to_string())?;
+
+        // Compact the deleted range so SST files actually shrink on disk.
+        self.db
+            .compact_range(Some(start_key.as_bytes()), Some(end_key.as_bytes()));
+
+        // Drop matching entries from in-memory cache.
+        {
+            let mut cache = self.cache.write().unwrap();
+            cache.retain(|e| e.sequence >= before_sequence);
+        }
+
+        tracing::info!(
+            "SyncLog::prune_before({}): removed {} entries",
+            before_sequence,
+            removed
+        );
+
+        Ok(removed)
     }
 
     /// Get entries after a sequence number
@@ -281,6 +401,7 @@ impl Clone for SyncLog {
             sequence: self.sequence.clone(),
             cache: self.cache.clone(),
             max_cache_size: self.max_cache_size,
+            disabled: self.disabled,
         }
     }
 }
@@ -457,5 +578,88 @@ mod tests {
 
         let entries = log.get_entries_after(0, 1);
         assert_eq!(entries[0].node_id, "my_node");
+    }
+
+    #[test]
+    fn test_prune_before_removes_older_entries() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+
+        for _ in 0..10 {
+            log.append(create_test_entry(0));
+        }
+        assert_eq!(log.current_sequence(), 10);
+        assert_eq!(log.entry_count(), 10);
+        assert_eq!(log.oldest_sequence(), Some(1));
+
+        // Prune everything strictly before sequence 6 (keeps 6..=10).
+        let removed = log.prune_before(6).unwrap();
+        assert_eq!(removed, 5);
+        assert_eq!(log.entry_count(), 5);
+        assert_eq!(log.oldest_sequence(), Some(6));
+        // current_sequence is unchanged — append_only counter.
+        assert_eq!(log.current_sequence(), 10);
+
+        // Surviving entries are reachable via get_entries_after.
+        let entries = log.get_entries_after(0, 100);
+        assert_eq!(entries.len(), 5);
+        assert_eq!(entries.first().unwrap().sequence, 6);
+        assert_eq!(entries.last().unwrap().sequence, 10);
+    }
+
+    #[test]
+    fn test_prune_before_zero_is_noop() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+        for _ in 0..3 {
+            log.append(create_test_entry(0));
+        }
+        assert_eq!(log.prune_before(0).unwrap(), 0);
+        assert_eq!(log.entry_count(), 3);
+    }
+
+    #[test]
+    fn test_prune_before_when_empty() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+        assert_eq!(log.prune_before(100).unwrap(), 0);
+        assert_eq!(log.oldest_sequence(), None);
+        assert_eq!(log.entry_count(), 0);
+    }
+
+    #[test]
+    fn test_disabled_log_appends_are_noops() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new_with_options(
+            "node1".to_string(),
+            tmp.path().to_str().unwrap(),
+            100,
+            true, // disabled
+        )
+        .unwrap();
+
+        assert!(log.is_disabled());
+        let seq = log.append(create_test_entry(0));
+        assert_eq!(seq, 0);
+        assert_eq!(log.current_sequence(), 0);
+        assert_eq!(log.entry_count(), 0);
+
+        let seq = log.append_batch(vec![create_test_entry(0), create_test_entry(0)]);
+        assert_eq!(seq, 0);
+        assert_eq!(log.entry_count(), 0);
+    }
+
+    #[test]
+    fn test_oldest_sequence_tracks_first_entry() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+        assert_eq!(log.oldest_sequence(), None);
+        log.append(create_test_entry(0));
+        assert_eq!(log.oldest_sequence(), Some(1));
+        for _ in 0..4 {
+            log.append(create_test_entry(0));
+        }
+        log.prune_before(3).unwrap();
+        assert_eq!(log.oldest_sequence(), Some(3));
     }
 }

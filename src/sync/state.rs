@@ -94,6 +94,14 @@ impl SyncState {
                         }
                     }
                 }
+                if let Some(sent) = data.get("sent_sequences").and_then(|v| v.as_object()) {
+                    let mut map = self.sent_sequences.write().unwrap();
+                    for (k, v) in sent {
+                        if let Some(seq) = v.as_u64() {
+                            map.insert(k.clone(), seq);
+                        }
+                    }
+                }
             }
         }
 
@@ -151,11 +159,13 @@ impl SyncState {
 
         let seq = *self.local_sequence.read().unwrap();
         let origins: HashMap<String, u64> = self.origin_sequences.read().unwrap().clone();
+        let sent: HashMap<String, u64> = self.sent_sequences.read().unwrap().clone();
 
         let state_doc = serde_json::json!({
             "_key": Self::STATE_KEY,
             "sequence": seq,
             "origin_sequences": origins,
+            "sent_sequences": sent,
         });
 
         // Delete and insert to upsert
@@ -236,6 +246,18 @@ impl SyncState {
             .get(peer)
             .copied()
             .unwrap_or(0)
+    }
+
+    /// Minimum across all tracked peers of the highest sequence they have
+    /// already pulled. Returns `None` if no peer has ever pulled — caller
+    /// must decide what fallback to use (typically: do nothing).
+    pub fn min_sent_sequence(&self) -> Option<u64> {
+        self.sent_sequences.read().unwrap().values().copied().min()
+    }
+
+    /// Snapshot of per-peer sent sequences (for diagnostics / admin endpoints).
+    pub fn all_sent_sequences(&self) -> HashMap<String, u64> {
+        self.sent_sequences.read().unwrap().clone()
     }
 
     /// Record heartbeat from a peer

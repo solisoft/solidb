@@ -6,6 +6,75 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+// ==================== Sync Log Admin ====================
+
+#[derive(Debug, Serialize)]
+pub struct SyncLogStatsResponse {
+    pub disabled: bool,
+    pub current_sequence: u64,
+    pub oldest_sequence: Option<u64>,
+    pub entry_count: u64,
+}
+
+/// Returns size and watermarks for the local sync log.
+///
+/// Useful before deciding what `before_sequence` to pass to the prune
+/// endpoint. `entry_count` walks the keyspace and is therefore O(N).
+pub async fn sync_log_stats(
+    State(state): State<AppState>,
+) -> Result<Json<SyncLogStatsResponse>, DbError> {
+    let log = state
+        .replication_log
+        .as_ref()
+        .ok_or_else(|| DbError::InternalError("Replication log not available".to_string()))?;
+
+    Ok(Json(SyncLogStatsResponse {
+        disabled: log.is_disabled(),
+        current_sequence: log.current_sequence(),
+        oldest_sequence: log.oldest_sequence(),
+        entry_count: log.entry_count(),
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncLogPruneRequest {
+    /// Delete every entry with `sequence < before_sequence`.
+    pub before_sequence: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyncLogPruneResponse {
+    pub removed: u64,
+    pub current_sequence: u64,
+    pub oldest_sequence: Option<u64>,
+}
+
+/// Manually prune the sync log up to the given sequence.
+///
+/// Caller is responsible for ensuring no peer still needs entries with
+/// `sequence < before_sequence`. Use `GET /_api/cluster/sync-log/stats`
+/// to see the current head; a safe-by-default prune is also performed
+/// periodically by the SyncWorker when peer high-watermarks are known.
+pub async fn sync_log_prune(
+    State(state): State<AppState>,
+    Json(req): Json<SyncLogPruneRequest>,
+) -> Result<Json<SyncLogPruneResponse>, DbError> {
+    let log = state
+        .replication_log
+        .as_ref()
+        .ok_or_else(|| DbError::InternalError("Replication log not available".to_string()))?;
+
+    let removed = log
+        .prune_before(req.before_sequence)
+        .map_err(|e| DbError::InternalError(format!("prune failed: {}", e)))?;
+
+    Ok(Json(SyncLogPruneResponse {
+        removed,
+        current_sequence: log.current_sequence(),
+        oldest_sequence: log.oldest_sequence(),
+    }))
+}
+
 // ==================== Cluster Info ====================
 
 #[derive(Debug, Serialize)]

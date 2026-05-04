@@ -55,6 +55,12 @@ struct Args {
     /// If not set, tracing is disabled
     #[arg(long)]
     otlp_endpoint: Option<String>,
+
+    /// Disable the sync log entirely. Useful for single-node dev setups
+    /// where there are no peers — avoids doubling write storage.
+    /// WARNING: never set this on a node that participates in replication.
+    #[arg(long)]
+    no_sync_log: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -241,13 +247,19 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     // Replication Log (Create BEFORE Manager)
     // Replication Log (Create BEFORE Manager)
     let replication_log = Arc::new(
-        solidb::sync::log::SyncLog::new(
+        solidb::sync::log::SyncLog::new_with_options(
             node_id.clone(),
             &args.data_dir,
             1000, // cache size
+            args.no_sync_log,
         )
         .map_err(|e| anyhow::anyhow!("Failed to init replication log: {}", e))?,
     );
+    if args.no_sync_log {
+        tracing::warn!(
+            "Sync log is DISABLED via --no-sync-log; do not use this flag on a node participating in replication"
+        );
+    }
 
     // Cluster Manager
     let cluster_manager = Arc::new(solidb::cluster::manager::ClusterManager::new(

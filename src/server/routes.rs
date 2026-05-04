@@ -602,6 +602,8 @@ pub fn create_router(
         .route("/_api/cluster/rebalance", post(cluster_rebalance))
         .route("/_api/cluster/blob-distribution", get(blob_distribution))
         .route("/_api/cluster/blob-rebalance", post(blob_rebalance))
+        .route("/_api/cluster/sync-log/stats", get(sync_log_stats))
+        .route("/_api/cluster/sync-log/prune", post(sync_log_prune))
         // WebSocket routes (moved to public router)
         // .route("/_api/ws/changefeed", get(ws_changefeed_handler))
         // Auth management

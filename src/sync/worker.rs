@@ -28,6 +28,11 @@ pub struct SyncConfig {
     pub max_batch_bytes: u32,
     /// Sync interval (how often to check for updates)
     pub sync_interval: Duration,
+    /// How often to prune the sync log. Set to None to disable auto-prune.
+    pub prune_interval: Option<Duration>,
+    /// Minimum number of entries to retain even if every peer is caught up.
+    /// Acts as a buffer for peers that briefly fall behind.
+    pub prune_retain_buffer: u64,
 }
 
 impl Default for SyncConfig {
@@ -37,6 +42,8 @@ impl Default for SyncConfig {
             dead_node_timeout: Duration::from_secs(15),
             max_batch_bytes: 1024 * 1024, // 1 MB
             sync_interval: Duration::from_millis(1000),
+            prune_interval: Some(Duration::from_secs(300)), // 5 minutes
+            prune_retain_buffer: 10_000,
         }
     }
 }
@@ -245,6 +252,16 @@ impl SyncWorker {
         let mut sync_interval = tokio::time::interval(self.config.sync_interval);
         let mut heartbeat_interval = tokio::time::interval(self.config.heartbeat_interval);
         let mut health_check_interval = tokio::time::interval(self.config.dead_node_timeout / 2);
+        // Prune ticker is created even when prune is disabled — we just skip
+        // the body in that case. Defaulting to a long interval keeps the
+        // select! arm cheap.
+        let prune_period = self
+            .config
+            .prune_interval
+            .unwrap_or(Duration::from_secs(3600));
+        let mut prune_interval_ticker = tokio::time::interval(prune_period);
+        // Skip the immediate fire of `interval()` so we don't prune on startup.
+        prune_interval_ticker.tick().await;
 
         loop {
             tokio::select! {
@@ -284,6 +301,13 @@ impl SyncWorker {
                 // Health check
                 _ = health_check_interval.tick() => {
                     self.check_dead_nodes().await;
+                }
+
+                // Periodic prune of the sync log
+                _ = prune_interval_ticker.tick() => {
+                    if self.config.prune_interval.is_some() {
+                        self.prune_sync_log();
+                    }
                 }
             }
         }
@@ -975,6 +999,51 @@ impl SyncWorker {
         Ok(())
     }
 
+    /// Periodic prune of the sync log up to the highest sequence safely
+    /// confirmed-received by every known peer.
+    ///
+    /// Decision rules:
+    /// - If peers exist but none have ever pulled from us, we cannot know
+    ///   what they need — do nothing (defensive).
+    /// - If peers exist and have pulled, prune up to `min(sent_sequences)`,
+    ///   capped at `current_sequence - retain_buffer`.
+    /// - If no peers are configured at all, the log is dead weight — prune
+    ///   everything older than `current_sequence - retain_buffer`.
+    fn prune_sync_log(&self) {
+        let current = self.sync_log.current_sequence();
+        let retain = self.config.prune_retain_buffer;
+        let upper_bound = current.saturating_sub(retain);
+        if upper_bound == 0 {
+            return;
+        }
+
+        let configured_peers = self.state.get_peers();
+        let safe_seq = match self.state.min_sent_sequence() {
+            Some(min_sent) => min_sent.min(upper_bound),
+            None if configured_peers.is_empty() => upper_bound,
+            None => {
+                debug!("prune_sync_log: peers configured but none have pulled yet; skipping");
+                return;
+            }
+        };
+
+        // prune_before(N) deletes entries with sequence < N. We want to KEEP
+        // up to and including safe_seq, so we pass safe_seq + 1.
+        let before = safe_seq.saturating_add(1);
+        match self.sync_log.prune_before(before) {
+            Ok(0) => {}
+            Ok(n) => {
+                info!(
+                    "Sync log auto-prune: removed {} entries (kept >= seq {})",
+                    n, before
+                );
+            }
+            Err(e) => {
+                warn!("Sync log auto-prune failed: {}", e);
+            }
+        }
+    }
+
     /// Send heartbeats to all peers
     async fn send_heartbeats(&mut self) {
         let peers = self.state.get_peers();
@@ -1140,17 +1209,26 @@ impl SyncWorker {
                     }
                 }
                 SyncMessage::IncrementalSyncRequest {
-                    from_node: _,
+                    from_node,
                     after_sequence,
                     max_batch_bytes,
                 } => {
+                    // Record what this peer has confirmed receipt of: by asking
+                    // for entries strictly after `after_sequence`, they prove
+                    // they already hold every entry with sequence <= that
+                    // value. This is the high-watermark used by prune logic.
+                    if !from_node.is_empty() {
+                        state.update_sent_sequence(&from_node, after_sequence);
+                    }
+
                     // Fetch entries from log
                     let limit = (max_batch_bytes / 1024).max(100) as usize; // Rough estimate
                     let log_entries = sync_log.get_entries_after(after_sequence, limit);
                     let current_seq = sync_log.current_sequence();
 
                     debug!(
-                        "IncrementalSyncRequest: after_seq={}, current_seq={}, found {} entries",
+                        "IncrementalSyncRequest: from={} after_seq={}, current_seq={}, found {} entries",
+                        from_node,
                         after_sequence,
                         current_seq,
                         log_entries.len()
