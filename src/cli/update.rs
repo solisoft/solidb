@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-const GITHUB_API_LATEST: &str = "https://api.github.com/repos/solisoft/solidb/releases/latest";
+const GITHUB_API_RELEASES: &str = "https://api.github.com/repos/solisoft/solidb/releases";
 
 pub fn execute() -> anyhow::Result<()> {
     let current_version = env!("CARGO_PKG_VERSION");
@@ -12,9 +12,13 @@ pub fn execute() -> anyhow::Result<()> {
         .user_agent("solidb-updater")
         .build()?;
 
-    let release: serde_json::Value = client.get(GITHUB_API_LATEST).send()?.json()?;
+    let releases: Vec<serde_json::Value> = client.get(GITHUB_API_RELEASES).send()?.json()?;
 
-    let tag = release["tag_name"]
+    let latest_release = releases
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("No releases found"))?;
+
+    let tag = latest_release["tag_name"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Could not read tag_name from release"))?;
 
@@ -25,10 +29,18 @@ pub fn execute() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    println!("New version available: v{}", latest_version);
+    let is_prerelease = latest_release["prerelease"].as_bool().unwrap_or(false);
+    if is_prerelease {
+        println!(
+            "Warning: Latest version v{} is a pre-release",
+            latest_version
+        );
+    } else {
+        println!("New version available: v{}", latest_version);
+    }
 
     let asset_name = get_asset_name()?;
-    let download_url = release["assets"]
+    let download_url = latest_release["assets"]
         .as_array()
         .and_then(|assets| {
             assets.iter().find_map(|a| {
