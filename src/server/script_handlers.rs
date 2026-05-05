@@ -107,21 +107,13 @@ pub async fn create_script_handler(
     let collection = db.get_collection(SCRIPTS_COLLECTION)?;
 
     // Generate unique ID based on db/service/collection/path
+    let path_key = sanitize_path_to_key(&req.path).ok_or_else(|| {
+        DbError::BadRequest("Script path may not contain parent-dir traversal".to_string())
+    })?;
     let id = if let Some(col) = &req.collection {
-        format!(
-            "{}_{}_{}_{}",
-            db_name,
-            req.service,
-            col,
-            sanitize_path_to_key(&req.path)
-        )
+        format!("{}_{}_{}_{}", db_name, req.service, col, path_key)
     } else {
-        format!(
-            "{}_{}_{}",
-            db_name,
-            req.service,
-            sanitize_path_to_key(&req.path)
-        )
+        format!("{}_{}_{}", db_name, req.service, path_key)
     };
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -371,15 +363,18 @@ pub async fn get_script_stats_handler(
 
 // ==================== Helper Functions ====================
 
-/// Convert a URL path to a valid document key
-fn sanitize_path_to_key(path: &str) -> String {
-    // Security: reject paths with traversal patterns before sanitization
-    let normalized = path.replace(['/', ':', '*'], "_");
-    if normalized.contains("..") {
-        // Invalid path with traversal attempt
-        return String::new();
+/// Convert a URL path to a valid document key.
+/// Returns `None` when the path contains parent-dir traversal so callers
+/// can reject with a 400 instead of producing a colliding empty/degenerate key.
+fn sanitize_path_to_key(path: &str) -> Option<String> {
+    let p = std::path::Path::new(path);
+    if p
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return None;
     }
-    normalized.trim_matches('_').to_string()
+    Some(path.replace(['/', ':', '*'], "_").trim_matches('_').to_string())
 }
 
 /// Check if a script path pattern matches the actual path
@@ -1277,8 +1272,16 @@ mod tests {
 
     #[test]
     fn test_sanitize_path() {
-        assert_eq!(sanitize_path_to_key("hello"), "hello");
-        assert_eq!(sanitize_path_to_key("users/:id"), "users__id");
-        assert_eq!(sanitize_path_to_key("/api/test"), "api_test");
+        assert_eq!(sanitize_path_to_key("hello").as_deref(), Some("hello"));
+        assert_eq!(
+            sanitize_path_to_key("users/:id").as_deref(),
+            Some("users__id")
+        );
+        assert_eq!(
+            sanitize_path_to_key("/api/test").as_deref(),
+            Some("api_test")
+        );
+        assert_eq!(sanitize_path_to_key("foo/../bar"), None);
+        assert_eq!(sanitize_path_to_key("../etc/passwd"), None);
     }
 }

@@ -187,19 +187,9 @@ pub async fn execute_query(
         .query_counter
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-    // Security: Validate JWT token before executing query
-    if let Some(token) = headers.get("authorization").and_then(|h| h.to_str().ok()) {
-        let token = token.trim_start_matches("Bearer ");
-        if crate::server::auth::AuthService::validate_token(token).is_err() {
-            return Err(DbError::Unauthorized(
-                "Valid authentication token required".to_string(),
-            ));
-        }
-    } else {
-        return Err(DbError::Unauthorized(
-            "Authentication token required".to_string(),
-        ));
-    }
+    // Auth is enforced by `auth_middleware` on the route layer (routes.rs).
+    // No per-handler token validation needed here — would only drift from the
+    // middleware (API keys, Basic auth, cluster-internal bypass).
 
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {

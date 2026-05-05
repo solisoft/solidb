@@ -18,6 +18,46 @@ use std::sync::Arc;
 /// Maximum WebSocket message size (1 MB) - prevents OOM attacks
 const MAX_WS_MESSAGE_SIZE: usize = 1024 * 1024;
 
+/// Validate the `Origin` header against `SOLIDB_CORS_ALLOWED_ORIGINS`.
+/// Mirrors the HTTP CORS policy in `routes.rs`: empty allowlist = deny any
+/// cross-origin request. Non-browser clients (no `Origin` header) are allowed.
+/// Returns Ok(()) when the request may proceed, Err(()) to reject with 403.
+fn validate_ws_origin(headers: &HeaderMap) -> Result<(), ()> {
+    let origin = match headers.get("origin").and_then(|o| o.to_str().ok()) {
+        Some(o) => o,
+        None => return Ok(()), // No Origin header — non-browser client.
+    };
+    let allowed_raw = std::env::var("SOLIDB_CORS_ALLOWED_ORIGINS").unwrap_or_default();
+    if allowed_raw == "*" {
+        return Ok(());
+    }
+    if allowed_raw.is_empty() {
+        tracing::warn!(
+            "WebSocket: rejecting Origin '{}' — SOLIDB_CORS_ALLOWED_ORIGINS not set",
+            origin
+        );
+        return Err(());
+    }
+    let allowed = allowed_raw
+        .split(',')
+        .map(str::trim)
+        .any(|a| a == origin || a == "*");
+    if allowed {
+        Ok(())
+    } else {
+        tracing::warn!("WebSocket: rejecting disallowed Origin '{}'", origin);
+        Err(())
+    }
+}
+
+fn forbidden_response() -> Response {
+    Response::builder()
+        .status(StatusCode::FORBIDDEN)
+        .body(Body::empty())
+        .expect("Valid status code should not fail")
+        .into_response()
+}
+
 // ==================== Cluster Status WebSocket ====================
 
 /// WebSocket handler for real-time cluster status updates
@@ -89,25 +129,8 @@ pub async fn monitor_ws_handler(
             .into_response();
     }
 
-    // Security: Validate origin header if present
-    // Get allowed origins from environment or default to restrictive
-    let allowed_origins = std::env::var("SOLIDB_CORS_ALLOWED_ORIGINS").unwrap_or_default();
-    if !allowed_origins.is_empty() && allowed_origins != "*" {
-        if let Some(origin) = headers.get("origin").and_then(|o| o.to_str().ok()) {
-            let origin_clean = origin.trim().trim_matches('"');
-            let valid = allowed_origins.split(',').any(|allowed| {
-                let allowed = allowed.trim();
-                allowed == origin_clean || allowed == "*"
-            });
-            if !valid {
-                tracing::warn!("WebSocket origin '{}' not allowed", origin_clean);
-                return Response::builder()
-                    .status(StatusCode::FORBIDDEN)
-                    .body(Body::empty())
-                    .expect("Valid status code should not fail")
-                    .into_response();
-            }
-        }
+    if validate_ws_origin(&headers).is_err() {
+        return forbidden_response();
     }
 
     ws.on_upgrade(|socket| handle_monitor_socket(socket, state))
@@ -218,24 +241,8 @@ pub async fn ws_changefeed_handler(
             .into_response();
     }
 
-    // Security: Validate origin header if present and CORS is configured
-    let allowed_origins = std::env::var("SOLIDB_CORS_ALLOWED_ORIGINS").unwrap_or_default();
-    if !allowed_origins.is_empty() && allowed_origins != "*" {
-        if let Some(origin) = headers.get("origin").and_then(|o| o.to_str().ok()) {
-            let origin_clean = origin.trim().trim_matches('"');
-            let valid = allowed_origins.split(',').any(|allowed| {
-                let allowed = allowed.trim();
-                allowed == origin_clean || allowed == "*"
-            });
-            if !valid {
-                tracing::warn!("WebSocket changefeed origin '{}' not allowed", origin_clean);
-                return Response::builder()
-                    .status(StatusCode::FORBIDDEN)
-                    .body(Body::empty())
-                    .expect("Valid status code should not fail")
-                    .into_response();
-            }
-        }
+    if validate_ws_origin(&headers).is_err() {
+        return forbidden_response();
     }
 
     // Check if HTMX mode is requested

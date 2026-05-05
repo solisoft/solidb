@@ -206,34 +206,22 @@ pub fn create_upload_function(
             chunk_index += 1;
         }
 
-        // Build path (directory/filename or just filename)
-        // Security: Prevent directory traversal attacks
+        // Build path (directory/filename or just filename).
+        // Reject anything that resolves to a parent-dir component or absolute
+        // path. Component-based check avoids substring false-positives
+        // (e.g. legitimate filename `v1..2.bin`) while still catching
+        // `..`, `foo/../bar`, `\..\bar`, and absolute paths.
         let path = if let Some(ref dir) = directory {
-            // First, normalize the directory path
-            let normalized = dir
-                .replace("\\", "/")
-                .replace("//", "/")
-                .replace("/./", "/");
-
-            // Check for path traversal patterns after normalization
-            let normalized_lower = normalized.to_lowercase();
-            if normalized_lower.contains("..")
-                || normalized_lower.contains("%2e")
-                || normalized_lower.contains("%252e")
-            {
+            let normalized = dir.replace('\\', "/");
+            let p = std::path::Path::new(&normalized);
+            let bad_component = p
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::RootDir));
+            if bad_component || p.is_absolute() {
                 return Err(mlua::Error::RuntimeError(
                     "upload: directory path contains invalid traversal patterns".to_string(),
                 ));
             }
-
-            // Also check the cleaned path for .. (double encoding bypass)
-            let cleaned = normalized.replace("..", "");
-            if cleaned != normalized {
-                return Err(mlua::Error::RuntimeError(
-                    "upload: directory path contains invalid traversal patterns".to_string(),
-                ));
-            }
-
             format!("{}/{}", normalized.trim_matches('/'), safe_filename)
         } else {
             safe_filename.clone()

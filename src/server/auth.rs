@@ -343,10 +343,7 @@ impl AuthService {
                         tracing::warn!(
                             "║                                                                  ║"
                         );
-                        tracing::warn!(
-                            "║  ⚠️  PASSWORD SAVED TO: {}.admin_password              ║",
-                            data_dir
-                        );
+                        tracing::warn!("║  ⚠️  PASSWORD SAVED TO: {}", password_file);
                         tracing::warn!(
                             "║                                                                  ║"
                         );

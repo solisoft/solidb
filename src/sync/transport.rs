@@ -566,24 +566,24 @@ impl SyncServer {
             }
         };
 
-        // Verify HMAC using constant-time comparison to prevent timing attacks
-        // HMAC is computed over challenge + timestamp + nonce
+        // The 32-byte random challenge already prevents replay; timestamp here
+        // bounds how long the handshake may take (clients that delay past this
+        // window are rejected, limiting slow-loris on the auth path).
+        const HANDSHAKE_MAX_AGE_MS: u64 = 30_000;
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        if now_ms.saturating_sub(timestamp) > HANDSHAKE_MAX_AGE_MS {
+            return Err(TransportError::AuthFailed(
+                "Auth handshake timed out".to_string(),
+            ));
+        }
+
         let expected_hmac =
             Self::compute_hmac_with_timestamp(&challenge, timestamp, &nonce, keyfile_path)?;
 
-        // Use constant-time comparison to prevent timing attacks
-        // Import the same function used in HTTP handlers for consistency
-        fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-            if a.len() != b.len() {
-                return false;
-            }
-            a.iter()
-                .zip(b.iter())
-                .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-                == 0
-        }
-
-        if constant_time_eq(&client_hmac, &expected_hmac) {
+        if crate::server::auth::constant_time_eq(&client_hmac, &expected_hmac) {
             let _ = ConnectionPool::write_message(
                 &mut stream,
                 &SyncMessage::AuthResult {

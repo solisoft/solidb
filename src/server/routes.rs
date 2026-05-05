@@ -18,17 +18,10 @@ use tower_http::trace::TraceLayer;
 /// Defaults to restrictive (no cross-origin) if not set.
 /// Security: Empty string or wildcard in production is discouraged.
 fn get_cors_allowed_origins() -> Vec<String> {
-    let env_value = std::env::var("SOLIDB_CORS_ALLOWED_ORIGINS").unwrap_or_else(|_| {
-        // Default to no origins for strict security
-        // Explicitly set SOLIDB_CORS_ALLOWED_ORIGINS in production
-        String::new()
-    });
-
+    let env_value = std::env::var("SOLIDB_CORS_ALLOWED_ORIGINS").unwrap_or_default();
     if env_value.is_empty() {
         return vec![];
     }
-
-    // Handle wildcard for development (not recommended for production)
     if env_value == "*" || env_value == "*:*" {
         tracing::warn!(
             "CORS configured with wildcard '*'. This allows ANY origin. \
@@ -36,22 +29,53 @@ fn get_cors_allowed_origins() -> Vec<String> {
         );
         return vec!["*".to_string()];
     }
-
     env_value
         .split(',')
         .filter_map(|origin| {
             let origin = origin.trim();
-            if origin.is_empty() {
-                return None;
-            }
-            // Validate URL format
-            if origin.parse::<axum::http::Uri>().is_err() {
-                tracing::warn!("Invalid CORS origin '{}' - skipping", origin);
+            if origin.is_empty() || !is_valid_origin(origin) {
+                if !origin.is_empty() {
+                    tracing::warn!("Invalid CORS origin '{}' - skipping", origin);
+                }
                 return None;
             }
             Some(origin.to_string())
         })
         .collect()
+}
+
+/// An origin must look like `scheme://host[:port]` with no path/query/fragment.
+/// `axum::http::Uri::parse` accepts paths and bare strings, which CORS shouldn't.
+fn is_valid_origin(s: &str) -> bool {
+    let parsed = match url::Url::parse(s) {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return false;
+    }
+    if parsed.host_str().is_none() {
+        return false;
+    }
+    // Must be exactly an origin: empty path, no query, no fragment.
+    if parsed.path() != "/" && !parsed.path().is_empty() {
+        return false;
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return false;
+    }
+    // url::Url stringifies origins with a trailing "/" — accept either form
+    // but reject inputs that contained extra structure beyond host[:port].
+    let canonical_no_slash = format!(
+        "{}://{}{}",
+        parsed.scheme(),
+        parsed.host_str().unwrap(),
+        parsed
+            .port()
+            .map(|p| format!(":{}", p))
+            .unwrap_or_default()
+    );
+    s == canonical_no_slash || s == format!("{}/", canonical_no_slash)
 }
 
 /// Middleware to count incoming requests
@@ -1086,6 +1110,11 @@ pub fn create_router(
             use tower_http::cors::AllowOrigin;
 
             let allowed_origins = get_cors_allowed_origins();
+            let is_wildcard = allowed_origins == ["*"];
+
+            // Browsers reject `Access-Control-Allow-Origin: *` combined with
+            // `Access-Control-Allow-Credentials: true`. Drop credentials in
+            // wildcard mode rather than emit a config that browsers ignore.
             let mut cors = CorsLayer::new()
                 .allow_methods([
                     Method::GET,
@@ -1096,41 +1125,36 @@ pub fn create_router(
                 ])
                 .allow_headers(AllowHeaders::any())
                 .expose_headers([header::ACCEPT, header::CONTENT_TYPE])
-                .allow_credentials(true)
                 .max_age(Duration::from_secs(86400));
+            if !is_wildcard {
+                cors = cors.allow_credentials(true);
+            }
 
             if allowed_origins.is_empty() {
-                // No explicit origins - deny all cross-origin (secure default)
-                // Use predicate that always returns false
+                // No explicit origins — deny any cross-origin request.
                 cors = cors.allow_origin(AllowOrigin::predicate(|_, _| false));
-            } else if allowed_origins.len() == 1 {
-                let origin = &allowed_origins[0];
-                if origin == "*" {
-                    tracing::warn!("CORS wildcard mode - allowing any origin");
-                    cors = cors.allow_origin(AllowOrigin::any());
-                } else {
-                    // Single specific origin
-                    if let Ok(val) = origin.parse::<axum::http::header::HeaderValue>() {
-                        cors = cors.allow_origin(AllowOrigin::exact(val));
-                    } else {
-                        tracing::warn!(
-                            "Failed to parse CORS origin '{}' - denying cross-origin",
-                            origin
-                        );
-                        // Deny cross-origin instead of allowing any
-                        cors = cors.allow_origin(AllowOrigin::predicate(|_, _| false));
-                    }
-                }
+            } else if is_wildcard {
+                tracing::warn!("CORS wildcard mode - allowing any origin");
+                cors = cors.allow_origin(AllowOrigin::any());
             } else {
-                // Multiple origins
                 let origins: Vec<axum::http::header::HeaderValue> = allowed_origins
                     .iter()
-                    .filter_map(|o| o.parse().ok())
+                    .filter_map(|o| {
+                        o.parse().ok().or_else(|| {
+                            tracing::warn!("Failed to parse CORS origin '{}' - skipping", o);
+                            None
+                        })
+                    })
                     .collect();
-                if !origins.is_empty() {
-                    cors = cors.allow_origin(AllowOrigin::list(origins));
+                if origins.is_empty() {
+                    // Every configured origin was unparseable: deny rather than
+                    // silently fall back to wildcard.
+                    tracing::warn!(
+                        "All configured CORS origins failed to parse - denying cross-origin"
+                    );
+                    cors = cors.allow_origin(AllowOrigin::predicate(|_, _| false));
                 } else {
-                    cors = cors.allow_origin(AllowOrigin::any());
+                    cors = cors.allow_origin(AllowOrigin::list(origins));
                 }
             }
             cors

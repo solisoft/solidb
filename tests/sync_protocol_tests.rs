@@ -207,14 +207,22 @@ fn test_node_stats_with_values() {
 fn test_sync_message_auth_challenge() {
     let msg = SyncMessage::AuthChallenge {
         challenge: vec![1, 2, 3, 4, 5, 6, 7, 8],
+        timestamp: 1_700_000_000_000,
+        nonce: vec![9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6],
     };
 
     let encoded = msg.encode();
     let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
 
     match decoded {
-        SyncMessage::AuthChallenge { challenge } => {
+        SyncMessage::AuthChallenge {
+            challenge,
+            timestamp,
+            nonce,
+        } => {
             assert_eq!(challenge.len(), 8);
+            assert_eq!(timestamp, 1_700_000_000_000);
+            assert_eq!(nonce.len(), 16);
         }
         _ => panic!("Wrong message type"),
     }
