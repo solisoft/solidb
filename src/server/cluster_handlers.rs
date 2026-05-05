@@ -574,7 +574,12 @@ pub async fn cluster_cleanup(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !secret.is_empty() && request_secret != secret {
+    if !secret.is_empty()
+        && !crate::server::auth::constant_time_eq(
+            request_secret.as_bytes(),
+            secret.as_bytes(),
+        )
+    {
         return Err(DbError::BadRequest("Invalid cluster secret".to_string()));
     }
 
@@ -625,7 +630,12 @@ pub async fn cluster_reshard(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !secret.is_empty() && request_secret != secret {
+    if !secret.is_empty()
+        && !crate::server::auth::constant_time_eq(
+            request_secret.as_bytes(),
+            secret.as_bytes(),
+        )
+    {
         return Err(DbError::BadRequest("Invalid cluster secret".to_string()));
     }
 
