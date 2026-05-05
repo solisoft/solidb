@@ -171,6 +171,15 @@ pub fn create_response_html_function(_lua: &Lua) -> LuaResult<Function> {
 pub fn create_response_file_function(_lua: &Lua) -> LuaResult<Function> {
     let lua_ref = _lua;
     lua_ref.create_function(move |lua, path: String| {
+        // Security: Validate path to prevent path traversal
+        // Only allow relative paths within an uploads directory
+        if path.starts_with('/') || path.contains("..") {
+            let file_info = lua.create_table()?;
+            file_info.set("error", "Invalid path: absolute paths and '..' are not allowed")?;
+            file_info.set("exists", false)?;
+            return Ok(LuaValue::Table(file_info));
+        }
+
         // Check if file exists and get its metadata
         match std::fs::metadata(&path) {
             Ok(metadata) => {
