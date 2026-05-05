@@ -1113,8 +1113,9 @@ pub fn create_router(
                     if let Ok(val) = origin.parse::<axum::http::header::HeaderValue>() {
                         cors = cors.allow_origin(AllowOrigin::exact(val));
                     } else {
-                        tracing::warn!("Failed to parse origin '{}', allowing any", origin);
-                        cors = cors.allow_origin(AllowOrigin::any());
+                        tracing::warn!("Failed to parse CORS origin '{}' - denying cross-origin", origin);
+                        // Deny cross-origin instead of allowing any
+                        cors = cors.allow_origin(AllowOrigin::predicate(|_, _| false));
                     }
                 }
             } else {
