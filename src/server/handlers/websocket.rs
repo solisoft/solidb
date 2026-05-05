@@ -15,6 +15,9 @@ use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::sync::Arc;
 
+/// Maximum WebSocket message size (1 MB) - prevents OOM attacks
+const MAX_WS_MESSAGE_SIZE: usize = 1024 * 1024;
+
 // ==================== Cluster Status WebSocket ====================
 
 /// WebSocket handler for real-time cluster status updates
@@ -277,6 +280,33 @@ async fn handle_socket(socket: WebSocket, state: AppState, use_htmx: bool) {
 
     // Main Receiver Loop
     while let Some(Ok(msg)) = receiver.next().await {
+        // Security: Check message size to prevent OOM attacks
+        let msg_len = match &msg {
+            Message::Text(text) => text.len(),
+            Message::Binary(data) => data.len(),
+            Message::Ping(data) => data.len(),
+            Message::Pong(data) => data.len(),
+            _ => 0,
+        };
+
+        if msg_len > MAX_WS_MESSAGE_SIZE {
+            tracing::warn!(
+                "[WS] Message size {} exceeds limit {}, closing connection",
+                msg_len,
+                MAX_WS_MESSAGE_SIZE
+            );
+            let _ = tx
+                .send(Message::Text(
+                    serde_json::json!({
+                        "error": "Message too large"
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await;
+            break;
+        }
+
         match msg {
             Message::Text(text) => {
                 let req_result = serde_json::from_str::<ChangefeedRequest>(&text);
