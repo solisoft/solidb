@@ -373,9 +373,13 @@ pub async fn get_script_stats_handler(
 
 /// Convert a URL path to a valid document key
 fn sanitize_path_to_key(path: &str) -> String {
-    path.replace(['/', ':', '*'], "_")
-        .trim_matches('_')
-        .to_string()
+    // Security: reject paths with traversal patterns before sanitization
+    let normalized = path.replace(['/', ':', '*'], "_");
+    if normalized.contains("..") {
+        // Invalid path with traversal attempt
+        return String::new();
+    }
+    normalized.trim_matches('_').to_string()
 }
 
 /// Check if a script path pattern matches the actual path
