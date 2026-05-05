@@ -115,9 +115,15 @@ pub struct NodeStats {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncMessage {
     // === Authentication ===
-    /// Server sends challenge
-    AuthChallenge { challenge: Vec<u8> },
-    /// Client responds with HMAC
+    /// Server sends challenge with timestamp to prevent replay attacks
+    AuthChallenge {
+        challenge: Vec<u8>,
+        /// Unix timestamp when challenge was generated (milliseconds)
+        timestamp: u64,
+        /// Nonce to prevent replay (random bytes)
+        nonce: Vec<u8>,
+    },
+    /// Client responds with HMAC (computes HMAC over challenge + timestamp + nonce)
     AuthResponse { hmac: Vec<u8> },
     /// Server confirms auth result
     AuthResult { success: bool, message: String },

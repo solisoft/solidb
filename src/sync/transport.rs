@@ -185,10 +185,14 @@ impl ConnectionPool {
             }
         };
 
-        let challenge = match msg {
-            SyncMessage::AuthChallenge { challenge } => {
+        let (challenge, timestamp, nonce) = match msg {
+            SyncMessage::AuthChallenge {
+                challenge,
+                timestamp,
+                nonce,
+            } => {
                 debug!("authenticate_client: got challenge");
-                challenge
+                (challenge, timestamp, nonce)
             }
             _ => {
                 return Err(TransportError::AuthFailed(
@@ -197,8 +201,8 @@ impl ConnectionPool {
             }
         };
 
-        // Compute HMAC response
-        let hmac = self.compute_hmac(&challenge)?;
+        // Compute HMAC response including timestamp and nonce
+        let hmac = self.compute_hmac_with_timestamp(&challenge, timestamp, &nonce)?;
 
         // Send response
         debug!("authenticate_client: sending response");
@@ -226,8 +230,13 @@ impl ConnectionPool {
         }
     }
 
-    /// Compute HMAC of data using keyfile
-    fn compute_hmac(&self, data: &[u8]) -> Result<Vec<u8>, TransportError> {
+    /// Compute HMAC of data with timestamp and nonce using keyfile
+    fn compute_hmac_with_timestamp(
+        &self,
+        data: &[u8],
+        timestamp: u64,
+        nonce: &[u8],
+    ) -> Result<Vec<u8>, TransportError> {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
 
@@ -237,6 +246,8 @@ impl ConnectionPool {
         let mut mac = Hmac::<Sha256>::new_from_slice(&key)
             .map_err(|e| TransportError::AuthFailed(format!("Invalid key: {}", e)))?;
         mac.update(data);
+        mac.update(&timestamp.to_be_bytes());
+        mac.update(nonce);
 
         Ok(mac.finalize().into_bytes().to_vec())
     }
@@ -515,14 +526,21 @@ impl SyncServer {
             debug!("authenticate_standalone: skip magic (multiplexed)");
         }
 
-        // Generate random challenge
+        // Generate random challenge with timestamp and nonce to prevent replay attacks
         use rand::Rng;
         let challenge: Vec<u8> = rand::thread_rng().gen::<[u8; 32]>().to_vec();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let nonce: Vec<u8> = rand::thread_rng().gen::<[u8; 16]>().to_vec();
 
-        // Send challenge
+        // Send challenge with timestamp and nonce
         debug!("authenticate_standalone: sending challenge");
         let challenge_msg = SyncMessage::AuthChallenge {
             challenge: challenge.clone(),
+            timestamp,
+            nonce: nonce.clone(),
         };
         ConnectionPool::write_message(&mut stream, &challenge_msg).await?;
         debug!("authenticate_standalone: waiting for response");
@@ -549,7 +567,9 @@ impl SyncServer {
         };
 
         // Verify HMAC using constant-time comparison to prevent timing attacks
-        let expected_hmac = Self::compute_hmac_static(&challenge, keyfile_path)?;
+        // HMAC is computed over challenge + timestamp + nonce
+        let expected_hmac =
+            Self::compute_hmac_with_timestamp(&challenge, timestamp, &nonce, keyfile_path)?;
 
         // Use constant-time comparison to prevent timing attacks
         // Import the same function used in HTTP handlers for consistency
@@ -578,7 +598,12 @@ impl SyncServer {
         }
     }
 
-    fn compute_hmac_static(data: &[u8], keyfile_path: &str) -> Result<Vec<u8>, TransportError> {
+    fn compute_hmac_with_timestamp(
+        data: &[u8],
+        timestamp: u64,
+        nonce: &[u8],
+        keyfile_path: &str,
+    ) -> Result<Vec<u8>, TransportError> {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
 
@@ -589,6 +614,8 @@ impl SyncServer {
         let mut mac = Hmac::<Sha256>::new_from_slice(&key)
             .map_err(|e| TransportError::AuthFailed(format!("Invalid key: {}", e)))?;
         mac.update(data);
+        mac.update(&timestamp.to_be_bytes());
+        mac.update(nonce);
 
         Ok(mac.finalize().into_bytes().to_vec())
     }
