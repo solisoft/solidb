@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use subtle::ConstantTimeEq;
 
 /// Rate limiting configuration
 const MAX_LOGIN_ATTEMPTS: usize = 20;
@@ -783,11 +784,11 @@ impl AuthService {
 }
 
 /// Constant-time comparison to prevent timing attacks
+/// Uses subtle::ConstantTimeEq for proper constant-time comparison
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter().zip(b.iter()).fold(0, |acc, (x, y)| acc | (x ^ y)) == 0
+    // subtle::ConstantTimeEq::ct_eq returns a Choice, we convert to bool
+    // Note: ct_eq on slices short-circuits on length mismatch (but that's still constant-time)
+    a.ct_eq(b).unwrap_u8() == 1
 }
 
 /// Axum Middleware for Authentication

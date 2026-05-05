@@ -82,6 +82,7 @@ sha2 = "0.10"
 hmac = "0.12"
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 md5 = "0.8"
+subtle = "2.6"
 
 # Temp directories (needed by benchmark)
 tempfile = "3.10"
