@@ -461,7 +461,20 @@ impl SyncServer {
 
         // If no keyfile provided or it doesn't exist, skip authentication (for dev/test)
         if keyfile_path.is_empty() || !std::path::Path::new(keyfile_path).exists() {
-            debug!("authenticate_standalone: no keyfile found, skipping authentication");
+            // Security: Check if keyfile is required via environment variable
+            let require_keyfile = std::env::var("SOLIDB_REQUIRE_KEYFILE")
+                .map(|v| v.to_lowercase() == "true")
+                .unwrap_or(false);
+
+            if require_keyfile {
+                warn!("authenticate_standalone: SOLIDB_REQUIRE_KEYFILE=true but no keyfile found");
+                return Err(TransportError::AuthFailed(
+                    "Cluster keyfile required but not found (set SOLIDB_REQUIRE_KEYFILE=false to disable)".to_string(),
+                ));
+            }
+
+            warn!("authenticate_standalone: no keyfile found, skipping authentication");
+            warn!("WARNING: Inter-node communication is unauthenticated. Set SOLIDB_REQUIRE_KEYFILE=true to enforce authentication.");
 
             // Still need to handle magic header if not skipped
             if !skip_magic {
