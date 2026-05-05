@@ -11,8 +11,48 @@ use axum::{
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::compression::CompressionLayer;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowHeaders, CorsLayer};
 use tower_http::trace::TraceLayer;
+
+/// Parse CORS allowed origins from environment variable.
+/// Defaults to restrictive (no cross-origin) if not set.
+/// Security: Empty string or wildcard in production is discouraged.
+fn get_cors_allowed_origins() -> Vec<String> {
+    let env_value = std::env::var("SOLIDB_CORS_ALLOWED_ORIGINS").unwrap_or_else(|_| {
+        // Default to no origins for strict security
+        // Explicitly set SOLIDB_CORS_ALLOWED_ORIGINS in production
+        String::new()
+    });
+
+    if env_value.is_empty() {
+        return vec![];
+    }
+
+    // Handle wildcard for development (not recommended for production)
+    if env_value == "*" || env_value == "*:*" {
+        tracing::warn!(
+            "CORS configured with wildcard '*'. This allows ANY origin. \
+            Set SOLIDB_CORS_ALLOWED_ORIGINS to specific origins in production."
+        );
+        return vec!["*".to_string()];
+    }
+
+    env_value
+        .split(',')
+        .filter_map(|origin| {
+            let origin = origin.trim();
+            if origin.is_empty() {
+                return None;
+            }
+            // Validate URL format
+            if origin.parse::<axum::http::Uri>().is_err() {
+                tracing::warn!("Invalid CORS origin '{}' - skipping", origin);
+                return None;
+            }
+            Some(origin.to_string())
+        })
+        .collect()
+}
 
 /// Middleware to count incoming requests
 async fn request_counter_middleware(
@@ -1042,15 +1082,55 @@ pub fn create_router(
                 .no_deflate(),
         )
         .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods([
-                    Method::GET,
-                    Method::POST,
-                    Method::PUT,
-                    Method::DELETE,
-                    Method::OPTIONS,
-                ])
-                .allow_headers(Any),
+            {
+                use axum::http::header;
+                use tower_http::cors::AllowOrigin;
+
+                let allowed_origins = get_cors_allowed_origins();
+                let mut cors = CorsLayer::new()
+                    .allow_methods([
+                        Method::GET,
+                        Method::POST,
+                        Method::PUT,
+                        Method::DELETE,
+                        Method::OPTIONS,
+                    ])
+                    .allow_headers(AllowHeaders::any())
+                    .expose_headers([header::ACCEPT, header::CONTENT_TYPE])
+                    .allow_credentials(true)
+                    .max_age(Duration::from_secs(86400));
+
+                if allowed_origins.is_empty() {
+                    // No explicit origins - deny all cross-origin (secure default)
+                    // Use predicate that always returns false
+                    cors = cors.allow_origin(AllowOrigin::predicate(|_, _| false));
+                } else if allowed_origins.len() == 1 {
+                    let origin = &allowed_origins[0];
+                    if origin == "*" {
+                        tracing::warn!("CORS wildcard mode - allowing any origin");
+                        cors = cors.allow_origin(AllowOrigin::any());
+                    } else {
+                        // Single specific origin
+                        if let Ok(val) = origin.parse::<axum::http::header::HeaderValue>() {
+                            cors = cors.allow_origin(AllowOrigin::exact(val));
+                        } else {
+                            tracing::warn!("Failed to parse origin '{}', allowing any", origin);
+                            cors = cors.allow_origin(AllowOrigin::any());
+                        }
+                    }
+                } else {
+                    // Multiple origins
+                    let origins: Vec<axum::http::header::HeaderValue> = allowed_origins
+                        .iter()
+                        .filter_map(|o| o.parse().ok())
+                        .collect();
+                    if !origins.is_empty() {
+                        cors = cors.allow_origin(AllowOrigin::list(origins));
+                    } else {
+                        cors = cors.allow_origin(AllowOrigin::any());
+                    }
+                }
+                cors
+            },
         )
 }
