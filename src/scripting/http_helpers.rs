@@ -60,6 +60,35 @@ impl HttpCache {
 /// Create solidb.redirect(url) -> error with redirect status function
 pub fn create_redirect_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|_, url: String| {
+        // Security: Validate redirect URL against allowed origins
+        let allowed_origins = std::env::var("SOLIDB_ALLOWED_REDIRECT_ORIGINS").unwrap_or_default();
+        let allowed_list: Vec<&str> = allowed_origins
+            .split(',')
+            .filter_map(|o| {
+                let o = o.trim();
+                if o.is_empty() {
+                    None
+                } else {
+                    Some(o)
+                }
+            })
+            .collect();
+
+        // If no allowlist configured, only allow relative paths (safe)
+        if !allowed_list.is_empty() {
+            // Check if URL is absolute (http/https) and not in allowlist
+            if url.starts_with("http://") || url.starts_with("https://") {
+                let is_allowed = allowed_list.iter().any(|origin| {
+                    url.starts_with(origin) || url.starts_with(&format!("https://{}", origin))
+                });
+                if !is_allowed {
+                    return Err(mlua::Error::RuntimeError(
+                        "REDIRECT: Forbidden - redirect to untrusted domain".to_string(),
+                    ));
+                }
+            }
+        }
+
         Err::<LuaValue, mlua::Error>(mlua::Error::RuntimeError(format!("REDIRECT:{}", url)))
     })
 }
