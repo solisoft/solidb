@@ -76,6 +76,7 @@ pub async fn monitor_ws_handler(
     ws: WebSocketUpgrade,
     AxumQuery(params): AxumQuery<AuthParams>,
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Response {
     if crate::server::auth::AuthService::validate_token(&params.token).is_err() {
         return Response::builder()
@@ -83,6 +84,27 @@ pub async fn monitor_ws_handler(
             .body(Body::empty())
             .expect("Valid status code should not fail")
             .into_response();
+    }
+
+    // Security: Validate origin header if present
+    // Get allowed origins from environment or default to restrictive
+    let allowed_origins = std::env::var("SOLIDB_CORS_ALLOWED_ORIGINS").unwrap_or_default();
+    if !allowed_origins.is_empty() && allowed_origins != "*" {
+        if let Some(origin) = headers.get("origin").and_then(|o| o.to_str().ok()) {
+            let origin_clean = origin.trim().trim_matches('"');
+            let valid = allowed_origins.split(',').any(|allowed| {
+                let allowed = allowed.trim();
+                allowed == origin_clean || allowed == "*"
+            });
+            if !valid {
+                tracing::warn!("WebSocket origin '{}' not allowed", origin_clean);
+                return Response::builder()
+                    .status(StatusCode::FORBIDDEN)
+                    .body(Body::empty())
+                    .expect("Valid status code should not fail")
+                    .into_response();
+            }
+        }
     }
 
     ws.on_upgrade(|socket| handle_monitor_socket(socket, state))
@@ -191,6 +213,26 @@ pub async fn ws_changefeed_handler(
             .body(Body::empty())
             .expect("Valid status code should not fail")
             .into_response();
+    }
+
+    // Security: Validate origin header if present and CORS is configured
+    let allowed_origins = std::env::var("SOLIDB_CORS_ALLOWED_ORIGINS").unwrap_or_default();
+    if !allowed_origins.is_empty() && allowed_origins != "*" {
+        if let Some(origin) = headers.get("origin").and_then(|o| o.to_str().ok()) {
+            let origin_clean = origin.trim().trim_matches('"');
+            let valid = allowed_origins.split(',').any(|allowed| {
+                let allowed = allowed.trim();
+                allowed == origin_clean || allowed == "*"
+            });
+            if !valid {
+                tracing::warn!("WebSocket changefeed origin '{}' not allowed", origin_clean);
+                return Response::builder()
+                    .status(StatusCode::FORBIDDEN)
+                    .body(Body::empty())
+                    .expect("Valid status code should not fail")
+                    .into_response();
+            }
+        }
     }
 
     // Check if HTMX mode is requested
