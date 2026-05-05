@@ -1044,6 +1044,8 @@ pub async fn permissive_auth_middleware(
     }
 
     // No auth header present - proceed as anonymous (no claims injected)
+    // Security: Log when scripts allow anonymous access for audit trail
+    tracing::debug!("permissive_auth: no auth header, proceeding as anonymous");
     Ok(next.run(req).await)
 }
 
