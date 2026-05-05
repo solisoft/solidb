@@ -207,9 +207,34 @@ pub fn create_upload_function(
         }
 
         // Build path (directory/filename or just filename)
+        // Security: Prevent directory traversal attacks
         let path = if let Some(ref dir) = directory {
-            let safe_dir = dir.replace("..", "").replace("//", "/");
-            format!("{}/{}", safe_dir.trim_matches('/'), safe_filename)
+            // First, normalize the directory path
+            let normalized = dir
+                .replace("\\", "/")
+                .replace("//", "/")
+                .replace("/./", "/");
+
+            // Check for path traversal patterns after normalization
+            let normalized_lower = normalized.to_lowercase();
+            if normalized_lower.contains("..")
+                || normalized_lower.contains("%2e")
+                || normalized_lower.contains("%252e")
+            {
+                return Err(mlua::Error::RuntimeError(
+                    "upload: directory path contains invalid traversal patterns".to_string(),
+                ));
+            }
+
+            // Also check the cleaned path for .. (double encoding bypass)
+            let cleaned = normalized.replace("..", "");
+            if cleaned != normalized {
+                return Err(mlua::Error::RuntimeError(
+                    "upload: directory path contains invalid traversal patterns".to_string(),
+                ));
+            }
+
+            format!("{}/{}", normalized.trim_matches('/'), safe_filename)
         } else {
             safe_filename.clone()
         };
