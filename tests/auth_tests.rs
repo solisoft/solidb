@@ -162,7 +162,7 @@ fn test_validate_api_key_without_keys() {
     let (engine, _tmp) = create_test_engine();
 
     // Initialize auth (creates _system database)
-    let _ = AuthService::init(&engine, None);
+    let _ = AuthService::init(&engine, None, engine.data_dir());
 
     // Try to validate a non-existent key
     let result = AuthService::validate_api_key(&engine, "sdb_nonexistent_key");

@@ -202,7 +202,14 @@ pub struct AuthService;
 impl AuthService {
     /// Initialize authentication system
     /// Checks if admin user exists, if not creates default
-    pub fn init(storage: &StorageEngine, replication_log: Option<&SyncLog>) -> Result<(), DbError> {
+    /// Security: Admin passwords are never logged to stdout/stderr.
+    /// Instead, they are saved to a file with restricted permissions (600).
+    /// The file path is shown in the console message to the operator.
+    pub fn init(
+        storage: &StorageEngine,
+        replication_log: Option<&SyncLog>,
+        data_dir: &str,
+    ) -> Result<(), DbError> {
         // Force JWT_SECRET initialization to show warning at startup if not configured
         let _ = JWT_SECRET.len();
 
@@ -302,10 +309,24 @@ impl AuthService {
                     }
 
                     if is_override {
-                        tracing::warn!(
+                        tracing::info!(
                             "Admin user created with password from SOLIDB_ADMIN_PASSWORD env var"
                         );
                     } else {
+                        let password_file = format!("{}/.admin_password", data_dir);
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let mut file = std::fs::File::create(&password_file)?;
+                            let perms = std::fs::Permissions::from_mode(0o600);
+                            file.set_permissions(perms)?;
+                            use std::io::Write;
+                            writeln!(file, "{}", password)?;
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            std::fs::write(&password_file, format!("{}\n", password))?;
+                        }
                         tracing::warn!(
                             "╔══════════════════════════════════════════════════════════════════╗"
                         );
@@ -318,7 +339,12 @@ impl AuthService {
                         tracing::warn!(
                             "║  Username: admin                                                 ║"
                         );
-                        tracing::warn!("║  Password: {}                             ║", password);
+                        tracing::warn!(
+                            "║                                                                  ║"
+                        );
+                        tracing::warn!(
+                            "║  ⚠️  PASSWORD SAVED TO: {}.admin_password              ║", data_dir
+                        );
                         tracing::warn!(
                             "║                                                                  ║"
                         );

@@ -75,7 +75,12 @@ pub fn create_router(
     // The previous logic checked cluster_config.peers.
     // New ClusterManager handles joining.
     // For now we pass replication_log to auth init.
-    if let Err(e) = crate::server::auth::AuthService::init(&storage, replication_log.as_deref()) {
+    // Security: data_dir is passed to save admin password to a file instead of logging it
+    if let Err(e) = crate::server::auth::AuthService::init(
+        &storage,
+        replication_log.as_deref(),
+        storage.data_dir(),
+    ) {
         tracing::error!("Failed to initialize authentication: {}", e);
     } else {
         tracing::info!("Authentication initialized successfully");

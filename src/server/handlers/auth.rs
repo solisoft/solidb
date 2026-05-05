@@ -307,6 +307,7 @@ pub async fn login_handler(
             crate::server::auth::AuthService::init(
                 &state.storage,
                 state.replication_log.as_deref(),
+                state.storage.data_dir(),
             )?;
             db.get_collection("_admins")?
         }
@@ -316,7 +317,11 @@ pub async fn login_handler(
     // 3. Check if collection is empty (also create default admin)
     if collection.count() == 0 {
         tracing::warn!("_admins collection empty, creating default admin...");
-        crate::server::auth::AuthService::init(&state.storage, state.replication_log.as_deref())?;
+        crate::server::auth::AuthService::init(
+            &state.storage,
+            state.replication_log.as_deref(),
+            state.storage.data_dir(),
+        )?;
     }
 
     // 4. Get user document
