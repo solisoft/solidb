@@ -548,10 +548,19 @@ impl SyncServer {
             }
         };
 
-        // Verify HMAC
+        // Verify HMAC using constant-time comparison to prevent timing attacks
         let expected_hmac = Self::compute_hmac_static(&challenge, keyfile_path)?;
 
-        if client_hmac == expected_hmac {
+        // Use constant-time comparison to prevent timing attacks
+        // Import the same function used in HTTP handlers for consistency
+        fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+            if a.len() != b.len() {
+                return false;
+            }
+            a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+        }
+
+        if constant_time_eq(&client_hmac, &expected_hmac) {
             let _ = ConnectionPool::write_message(
                 &mut stream,
                 &SyncMessage::AuthResult {
