@@ -557,7 +557,10 @@ impl SyncServer {
             if a.len() != b.len() {
                 return false;
             }
-            a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+            a.iter()
+                .zip(b.iter())
+                .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+                == 0
         }
 
         if constant_time_eq(&client_hmac, &expected_hmac) {

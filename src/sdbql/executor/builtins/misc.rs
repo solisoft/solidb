@@ -1,6 +1,6 @@
 //! Miscellaneous utility functions for SDBQL.
 //!
-//! UUID, SLEEP, TYPEOF, COALESCE, etc.
+//! UUID, TYPEOF, COALESCE, etc.
 
 use crate::error::{DbError, DbResult};
 use serde_json::Value;
@@ -62,14 +62,6 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 return Err(DbError::ExecutionError(format!("ASSERT: {}", msg)));
             }
             Ok(Some(Value::Bool(true)))
-        }
-        "SLEEP" => {
-            check_args(name, args, 1)?;
-            let ms = args[0].as_u64().ok_or_else(|| {
-                DbError::ExecutionError("SLEEP: argument must be a number".to_string())
-            })?;
-            std::thread::sleep(std::time::Duration::from_millis(ms));
-            Ok(Some(Value::Null))
         }
         "RANGE" => {
             if args.is_empty() || args.len() > 3 {

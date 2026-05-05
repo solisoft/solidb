@@ -175,7 +175,10 @@ pub fn create_response_file_function(_lua: &Lua) -> LuaResult<Function> {
         // Only allow relative paths within an uploads directory
         if path.starts_with('/') || path.contains("..") {
             let file_info = lua.create_table()?;
-            file_info.set("error", "Invalid path: absolute paths and '..' are not allowed")?;
+            file_info.set(
+                "error",
+                "Invalid path: absolute paths and '..' are not allowed",
+            )?;
             file_info.set("exists", false)?;
             return Ok(LuaValue::Table(file_info));
         }

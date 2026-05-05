@@ -1081,56 +1081,54 @@ pub fn create_router(
                 .no_br()
                 .no_deflate(),
         )
-        .layer(
-            {
-                use axum::http::header;
-                use tower_http::cors::AllowOrigin;
+        .layer({
+            use axum::http::header;
+            use tower_http::cors::AllowOrigin;
 
-                let allowed_origins = get_cors_allowed_origins();
-                let mut cors = CorsLayer::new()
-                    .allow_methods([
-                        Method::GET,
-                        Method::POST,
-                        Method::PUT,
-                        Method::DELETE,
-                        Method::OPTIONS,
-                    ])
-                    .allow_headers(AllowHeaders::any())
-                    .expose_headers([header::ACCEPT, header::CONTENT_TYPE])
-                    .allow_credentials(true)
-                    .max_age(Duration::from_secs(86400));
+            let allowed_origins = get_cors_allowed_origins();
+            let mut cors = CorsLayer::new()
+                .allow_methods([
+                    Method::GET,
+                    Method::POST,
+                    Method::PUT,
+                    Method::DELETE,
+                    Method::OPTIONS,
+                ])
+                .allow_headers(AllowHeaders::any())
+                .expose_headers([header::ACCEPT, header::CONTENT_TYPE])
+                .allow_credentials(true)
+                .max_age(Duration::from_secs(86400));
 
-                if allowed_origins.is_empty() {
-                    // No explicit origins - deny all cross-origin (secure default)
-                    // Use predicate that always returns false
-                    cors = cors.allow_origin(AllowOrigin::predicate(|_, _| false));
-                } else if allowed_origins.len() == 1 {
-                    let origin = &allowed_origins[0];
-                    if origin == "*" {
-                        tracing::warn!("CORS wildcard mode - allowing any origin");
-                        cors = cors.allow_origin(AllowOrigin::any());
-                    } else {
-                        // Single specific origin
-                        if let Ok(val) = origin.parse::<axum::http::header::HeaderValue>() {
-                            cors = cors.allow_origin(AllowOrigin::exact(val));
-                        } else {
-                            tracing::warn!("Failed to parse origin '{}', allowing any", origin);
-                            cors = cors.allow_origin(AllowOrigin::any());
-                        }
-                    }
+            if allowed_origins.is_empty() {
+                // No explicit origins - deny all cross-origin (secure default)
+                // Use predicate that always returns false
+                cors = cors.allow_origin(AllowOrigin::predicate(|_, _| false));
+            } else if allowed_origins.len() == 1 {
+                let origin = &allowed_origins[0];
+                if origin == "*" {
+                    tracing::warn!("CORS wildcard mode - allowing any origin");
+                    cors = cors.allow_origin(AllowOrigin::any());
                 } else {
-                    // Multiple origins
-                    let origins: Vec<axum::http::header::HeaderValue> = allowed_origins
-                        .iter()
-                        .filter_map(|o| o.parse().ok())
-                        .collect();
-                    if !origins.is_empty() {
-                        cors = cors.allow_origin(AllowOrigin::list(origins));
+                    // Single specific origin
+                    if let Ok(val) = origin.parse::<axum::http::header::HeaderValue>() {
+                        cors = cors.allow_origin(AllowOrigin::exact(val));
                     } else {
+                        tracing::warn!("Failed to parse origin '{}', allowing any", origin);
                         cors = cors.allow_origin(AllowOrigin::any());
                     }
                 }
-                cors
-            },
-        )
+            } else {
+                // Multiple origins
+                let origins: Vec<axum::http::header::HeaderValue> = allowed_origins
+                    .iter()
+                    .filter_map(|o| o.parse().ok())
+                    .collect();
+                if !origins.is_empty() {
+                    cors = cors.allow_origin(AllowOrigin::list(origins));
+                } else {
+                    cors = cors.allow_origin(AllowOrigin::any());
+                }
+            }
+            cors
+        })
 }
