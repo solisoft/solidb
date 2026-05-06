@@ -295,6 +295,7 @@ impl ConnectionPool {
         peer_addr: &str,
         max_attempts: u32,
     ) -> Result<(), TransportError> {
+        use rand::Rng;
         let mut delay = Duration::from_millis(100);
 
         for attempt in 1..=max_attempts {
@@ -308,6 +309,8 @@ impl ConnectionPool {
                     if attempt < max_attempts {
                         tokio::time::sleep(delay).await;
                         delay = std::cmp::min(delay * 2, Duration::from_secs(30));
+                        let jitter: u64 = rand::rngs::OsRng.gen_range(0..25);
+                        delay += Duration::from_millis(jitter);
                     }
                 }
             }

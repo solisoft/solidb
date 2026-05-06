@@ -154,6 +154,12 @@ impl<'a> QueryExecutor<'a> {
                                     f
                                 )));
                             }
+                            if !f.is_finite() {
+                                return Err(DbError::ExecutionError(format!(
+                                    "Array index must be finite, got: {}",
+                                    f
+                                )));
+                            }
                             f as usize
                         } else {
                             return Err(DbError::ExecutionError(format!(
@@ -270,12 +276,19 @@ impl<'a> QueryExecutor<'a> {
 
                 let start = match &start_val {
                     Value::Number(n) => {
-                        // Try integer first, then fall back to truncating float
-                        n.as_i64()
-                            .or_else(|| n.as_f64().map(|f| f as i64))
-                            .ok_or_else(|| {
-                                DbError::ExecutionError("Range start must be a number".to_string())
-                            })?
+                        if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            if !f.is_finite() {
+                                return Err(DbError::ExecutionError(format!(
+                                    "Range start must be finite, got: {}",
+                                    f
+                                )));
+                            }
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError("Range start must be a number".to_string()));
+                        }
                     }
                     _ => {
                         return Err(DbError::ExecutionError(format!(
@@ -287,12 +300,19 @@ impl<'a> QueryExecutor<'a> {
 
                 let end = match &end_val {
                     Value::Number(n) => {
-                        // Try integer first, then fall back to truncating float
-                        n.as_i64()
-                            .or_else(|| n.as_f64().map(|f| f as i64))
-                            .ok_or_else(|| {
-                                DbError::ExecutionError("Range end must be a number".to_string())
-                            })?
+                        if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            if !f.is_finite() {
+                                return Err(DbError::ExecutionError(format!(
+                                    "Range end must be finite, got: {}",
+                                    f
+                                )));
+                            }
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError("Range end must be a number".to_string()));
+                        }
                     }
                     _ => {
                         return Err(DbError::ExecutionError(format!(
@@ -301,6 +321,15 @@ impl<'a> QueryExecutor<'a> {
                         )))
                     }
                 };
+
+                const MAX_RANGE_SIZE: i64 = 10_000_000;
+                let range_size = (end - start).abs();
+                if range_size > MAX_RANGE_SIZE {
+                    return Err(DbError::ExecutionError(format!(
+                        "Range size {} exceeds maximum allowed size of {}",
+                        range_size, MAX_RANGE_SIZE
+                    )));
+                }
 
                 // Generate array from start to end (inclusive)
                 let arr: Vec<Value> = (start..=end)
