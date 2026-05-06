@@ -1,4 +1,4 @@
-use super::system::AppState;
+use super::system::{sanitize_filename, AppState};
 use crate::{
     error::DbError,
     storage::http_client::get_http_client,
@@ -102,7 +102,7 @@ pub async fn upload_blob(
     let mut metadata = serde_json::Map::new();
     metadata.insert("_key".to_string(), Value::String(blob_key.clone()));
     if let Some(fn_str) = file_name {
-        metadata.insert("name".to_string(), Value::String(fn_str));
+        metadata.insert("name".to_string(), Value::String(sanitize_filename(&fn_str)));
     }
     if let Some(mt_str) = mime_type {
         metadata.insert("type".to_string(), Value::String(mt_str));
@@ -313,9 +313,10 @@ pub async fn download_blob(
         builder = builder.header("Content-Length", size);
     }
     if let Some(name) = file_name {
+        let safe_name = sanitize_filename(&name);
         builder = builder.header(
             "Content-Disposition",
-            format!("attachment; filename=\"{}\"", name),
+            format!("attachment; filename=\"{}\"", safe_name),
         );
     }
 
