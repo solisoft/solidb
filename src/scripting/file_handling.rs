@@ -19,6 +19,12 @@ const CHUNK_SIZE: usize = 1024 * 1024;
 /// Files collection name
 const FILES_COLLECTION: &str = "_files";
 
+/// Maximum image dimension (width or height) to prevent memory exhaustion
+const MAX_IMAGE_DIMENSION: u32 = 8192;
+
+/// Maximum image buffer size (64 MiB) to prevent memory exhaustion
+const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
+
 /// Detect MIME type from file extension
 fn mime_from_extension(ext: &str) -> &'static str {
     match ext.to_lowercase().as_str() {
@@ -252,7 +258,7 @@ pub fn create_upload_function(
 
         // Add image dimensions if applicable
         if mime_type.starts_with("image/") {
-            if let Ok(img) = image::load_from_memory(&bytes) {
+            if let Ok(img) = load_image_with_limits(&bytes) {
                 let (width, height) = img.dimensions();
                 metadata.insert("width".to_string(), JsonValue::Number(width.into()));
                 metadata.insert("height".to_string(), JsonValue::Number(height.into()));
@@ -575,12 +581,27 @@ pub fn create_image_process_function(
     })
 }
 
+/// Load image with decompression bomb protection
+#[allow(deprecated)]
+fn load_image_with_limits(bytes: &[u8]) -> Result<DynamicImage, mlua::Error> {
+    use image::Limits;
+    let mut reader = image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| mlua::Error::RuntimeError(format!("failed to guess image format: {}", e)))?;
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_DIMENSION);
+    limits.max_image_height = Some(MAX_IMAGE_DIMENSION);
+    limits.max_alloc = Some(MAX_IMAGE_BYTES as u64);
+    reader.limits(limits);
+    let img = reader
+        .decode()
+        .map_err(|e| mlua::Error::RuntimeError(format!("failed to decode image: {}", e)))?;
+    Ok(img)
+}
+
 /// Process image with given operations
 fn process_image(lua: &Lua, bytes: Vec<u8>, operations: Table) -> LuaResult<Table> {
-    // Load image
-    let mut img = image::load_from_memory(&bytes).map_err(|e| {
-        mlua::Error::RuntimeError(format!("image_process: failed to load image: {}", e))
-    })?;
+    let mut img = load_image_with_limits(&bytes)?;
 
     // Apply operations
     // Resize
