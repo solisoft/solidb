@@ -762,17 +762,6 @@ impl AuthService {
         }
 
         if roles.is_empty() {
-            // TEMPORARY: If there's only one admin user and no roles assigned,
-            // automatically grant admin role. This will be removed later.
-            if let Ok(admins_coll) = db.get_collection(ADMIN_COLL) {
-                if admins_coll.count() == 1 {
-                    tracing::info!(
-                        "Single admin user '{}' detected - auto-granting admin role",
-                        username
-                    );
-                    return Some(vec!["admin".to_string()]);
-                }
-            }
             None
         } else {
             Some(roles)

@@ -347,8 +347,13 @@ pub async fn login_handler(
         return Err(DbError::BadRequest("Invalid credentials".to_string()));
     }
 
-    // 7. Generate Token
-    let token = crate::server::auth::AuthService::create_jwt(&user.username)?;
+    // 7. Generate Token with roles
+    let roles = crate::server::auth::AuthService::get_user_roles(&state.storage, &user.username);
+    let token = crate::server::auth::AuthService::create_jwt_with_roles(
+        &user.username,
+        roles,
+        None,
+    )?;
 
     Ok(Json(LoginResponse { token }))
 }

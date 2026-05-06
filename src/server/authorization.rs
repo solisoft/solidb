@@ -279,11 +279,7 @@ impl AuthorizationService {
         // Get role names from claims
         let role_names = claims.roles.clone().unwrap_or_default();
         if role_names.is_empty() {
-            // No roles assigned - grant admin to all authenticated users for backward compatibility
-            // This will only happen during migration period
-            let mut permissions = HashSet::new();
-            permissions.insert(Permission::global_admin());
-            return Ok(permissions);
+            return Ok(HashSet::new());
         }
 
         // Load roles from DB or cache
