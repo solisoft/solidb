@@ -790,14 +790,26 @@ fn main() -> anyhow::Result<()> {
             match std::fs::read_to_string(&args.pid_file) {
                 Ok(pid_str) => {
                     if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                        let mut sys = System::new_all();
+                        sys.refresh_all();
+
+                        let sys_pid = Pid::from(pid as usize);
+                        if let Some(proc) = sys.process(sys_pid) {
+                            let proc_name = proc.name().to_string_lossy();
+                            if proc_name != "solidb-fuse" && proc_name != "solidb" {
+                                eprintln!("SECURITY ERROR: Process with PID {} is named '{}', not 'solidb-fuse'. Refusing to kill potential mismatch.", pid, proc_name);
+                                return Ok(());
+                            }
+                        }
+
                         eprintln!(
                             "Found existing FUSE process with PID {}. Stopping it...",
                             pid
                         );
-                        // Send SIGTERM to gracefully stop the process
                         unsafe {
                             libc::kill(pid, libc::SIGTERM);
                         }
+                    }
                         // Give it a moment to cleanup mounts
                         std::thread::sleep(Duration::from_millis(500));
                         let _ = std::fs::remove_file(&args.pid_file);
