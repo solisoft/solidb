@@ -815,10 +815,16 @@ pub async fn auth_middleware(
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
 
-        // Only bypass if secrets match and secret is not empty
-        if !cluster_secret.is_empty()
-            && constant_time_eq(cluster_secret.as_bytes(), provided_secret.as_bytes())
-        {
+        // Fail closed: if no keyfile configured, reject internal requests
+        if cluster_secret.is_empty() {
+            tracing::warn!(
+                "CLUSTER AUTH REJECTED: Internal request but no keyfile configured on this node."
+            );
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
+        }
+
+        // Only bypass if secrets match
+        if constant_time_eq(cluster_secret.as_bytes(), provided_secret.as_bytes()) {
             let claims = Claims {
                 sub: "cluster-internal".to_string(),
                 exp: usize::MAX,
