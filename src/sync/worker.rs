@@ -1183,7 +1183,13 @@ impl SyncWorker {
             }
 
             let payload = if compressed {
-                lz4_flex::decompress_size_prepended(&data).unwrap_or_default()
+                match lz4_flex::decompress_size_prepended(&data) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::error!("Decompression failed: {}, closing connection", e);
+                        break;
+                    }
+                }
             } else {
                 data
             };
