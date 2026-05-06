@@ -17,7 +17,10 @@ pub struct Parser {
     pub(crate) tokens: Vec<Token>,
     pub(crate) position: usize,
     pub(crate) allow_in_operator: bool,
+    depth: usize,
 }
+
+const MAX_PARSE_DEPTH: usize = 64;
 
 impl Parser {
     /// Create a new parser from an input string
@@ -29,7 +32,24 @@ impl Parser {
             tokens,
             position: 0,
             allow_in_operator: true,
+            depth: 0,
         })
+    }
+
+    /// Check and increment depth, returning error if too deep
+    fn check_depth(&mut self) -> DbResult<()> {
+        if self.depth >= MAX_PARSE_DEPTH {
+            return Err(DbError::ParseError(
+                "Query nesting too deep (max 64)".to_string(),
+            ));
+        }
+        self.depth += 1;
+        Ok(())
+    }
+
+    /// Decrement depth when leaving a nested parse
+    fn leave_depth(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
     }
 
     /// Get the current token
@@ -72,6 +92,13 @@ impl Parser {
 
     /// Parse a query, optionally checking for trailing tokens (false for subqueries)
     pub(crate) fn parse_query(&mut self, check_trailing: bool) -> DbResult<Query> {
+        self.check_depth()?;
+        let result = self.parse_query_inner(check_trailing);
+        self.leave_depth();
+        result
+    }
+
+    pub(crate) fn parse_query_inner(&mut self, check_trailing: bool) -> DbResult<Query> {
         // Parse optional CREATE STREAM or CREATE MATERIALIZED VIEW
         let (create_stream_clause, create_mv_clause) =
             if matches!(self.current_token(), Token::Create) {

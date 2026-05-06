@@ -63,8 +63,22 @@ fn forbidden_response() -> Response {
 /// WebSocket handler for real-time cluster status updates
 pub async fn cluster_status_ws(
     ws: WebSocketUpgrade,
+    AxumQuery(params): AxumQuery<AuthParams>,
     State(state): State<AppState>,
-) -> impl IntoResponse {
+    headers: HeaderMap,
+) -> Response {
+    if crate::server::auth::AuthService::validate_token(&params.token).is_err() {
+        return Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body(Body::empty())
+            .expect("Valid status code should not fail")
+            .into_response();
+    }
+
+    if validate_ws_origin(&headers).is_err() {
+        return forbidden_response();
+    }
+
     ws.on_upgrade(|socket| handle_cluster_ws(socket, state))
 }
 

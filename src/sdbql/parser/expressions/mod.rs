@@ -19,7 +19,10 @@ use crate::sdbql::parser::Parser;
 impl Parser {
     /// Entry point for expression parsing
     pub(crate) fn parse_expression(&mut self) -> DbResult<Expression> {
-        self.parse_ternary_expression()
+        self.check_depth()?;
+        let result = self.parse_ternary_expression();
+        self.leave_depth();
+        result
     }
 }
 

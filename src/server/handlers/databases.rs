@@ -1,8 +1,9 @@
 use super::system::AppState;
 use crate::error::DbError;
+use crate::server::authorization::{AuthorizationService, PermissionAction};
 use crate::sync::{LogEntry, Operation};
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     response::Json,
 };
@@ -26,8 +27,10 @@ pub struct ListDatabasesResponse {
 
 pub async fn create_database(
     State(state): State<AppState>,
+    Extension(claims): Extension<crate::server::auth::Claims>,
     Json(req): Json<CreateDatabaseRequest>,
 ) -> Result<Json<CreateDatabaseResponse>, DbError> {
+    AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
     state.storage.create_database(req.name.clone())?;
 
     // Record to replication log

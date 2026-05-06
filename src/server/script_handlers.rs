@@ -468,9 +468,25 @@ pub struct ReplError {
 pub async fn repl_eval_handler(
     State(state): State<AppState>,
     Path(db_name): Path<String>,
-    axum::Extension(_claims): axum::Extension<crate::server::auth::Claims>,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
     Json(req): Json<ReplEvalRequest>,
 ) -> Result<Json<ReplEvalResponse>, DbError> {
+    // Reject livequery tokens - they have limited privileges
+    if claims.livequery == Some(true) {
+        return Err(DbError::Forbidden(
+            "REPL endpoint is not accessible with livequery tokens".to_string(),
+        ));
+    }
+
+    // Require admin permission on the target database
+    crate::server::authorization::AuthorizationService::check_permission(
+        &claims,
+        &state,
+        crate::server::authorization::PermissionAction::Write,
+        Some(&db_name),
+    )
+    .await?;
+
     use std::time::Instant;
 
     let start = Instant::now();

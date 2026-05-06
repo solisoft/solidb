@@ -59,7 +59,7 @@ pub async fn create_upload_session(
         body.mime_type,
         body.total_size,
         body.chunk_size,
-    );
+    )?;
 
     Ok(Json(serde_json::json!({
         "upload_id": info.upload_id,
