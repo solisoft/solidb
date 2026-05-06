@@ -691,23 +691,34 @@ pub async fn explain_query(
     let prepared = crate::sdbql::get_prepared_statement_cache()
         .parse_if_needed(&req.query)
         .await?;
-    let query = prepared.query.as_ref();
+    let query = (*prepared.query).clone();
+    let bind_vars = req.bind_vars.clone();
+    let storage = state.storage.clone();
+    let shard_coordinator = state.shard_coordinator.clone();
+    let is_scatter_gather = headers.contains_key("X-Scatter-Gather");
 
-    // explain() is fast - no need for spawn_blocking
-    let mut executor = if req.bind_vars.is_empty() {
-        QueryExecutor::with_database(&state.storage, db_name)
-    } else {
-        QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
+    let explain = {
+        let storage = storage.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut executor = if bind_vars.is_empty() {
+                QueryExecutor::with_database(&storage, db_name)
+            } else {
+                QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
+            };
+
+            if !is_scatter_gather {
+                if let Some(coordinator) = shard_coordinator {
+                    executor = executor.with_shard_coordinator(coordinator);
+                }
+            }
+
+            executor.explain(&query).map_err(|e| {
+                DbError::InternalError(format!("Task join error: {}", e))
+            })
+        })
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??
     };
-
-    // Inject shard coordinator for explain (if not already a sub-query)
-    if !headers.contains_key("X-Scatter-Gather") {
-        if let Some(coordinator) = state.shard_coordinator.clone() {
-            executor = executor.with_shard_coordinator(coordinator);
-        }
-    }
-
-    let explain = executor.explain(query)?;
 
     Ok(Json(explain))
 }
