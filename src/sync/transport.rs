@@ -528,12 +528,12 @@ impl SyncServer {
 
         // Generate random challenge with timestamp and nonce to prevent replay attacks
         use rand::Rng;
-        let challenge: Vec<u8> = rand::thread_rng().gen::<[u8; 32]>().to_vec();
+        let challenge: Vec<u8> = rand::rngs::OsRng.gen::<[u8; 32]>().to_vec();
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
-        let nonce: Vec<u8> = rand::thread_rng().gen::<[u8; 16]>().to_vec();
+        let nonce: Vec<u8> = rand::rngs::OsRng.gen::<[u8; 16]>().to_vec();
 
         // Send challenge with timestamp and nonce
         debug!("authenticate_standalone: sending challenge");

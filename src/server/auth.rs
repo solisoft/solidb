@@ -615,7 +615,7 @@ impl AuthService {
     ) -> Result<String, DbError> {
         let expiration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs() as usize
             + 24 * 3600; // 24 hours
 
@@ -641,7 +641,7 @@ impl AuthService {
     pub fn create_livequery_jwt() -> Result<String, DbError> {
         let expiration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs() as usize
             + 2; // 2 seconds - ultra short lived for file downloads!
 
@@ -863,6 +863,20 @@ pub async fn auth_middleware(
         if let Some(token) = header.strip_prefix("Bearer ") {
             match AuthService::validate_token(token) {
                 Ok(claims) => {
+                    if claims.livequery == Some(true) {
+                        let path = req.uri().path();
+                        let allowed_livequery_paths = [
+                            "/_api/ws/changefeed",
+                            "/_api/livequery",
+                        ];
+                        if !allowed_livequery_paths.iter().any(|p| path.starts_with(p)) {
+                            tracing::warn!(
+                                "livequery token used on non-whitelisted path: {}",
+                                path
+                            );
+                            return Err(StatusCode::FORBIDDEN);
+                        }
+                    }
                     req.extensions_mut().insert(claims);
                     return Ok(next.run(req).await);
                 }
