@@ -21,8 +21,10 @@ use std::sync::Arc;
 const QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Default slow query threshold in milliseconds (100ms)
-/// Queries taking longer than this will be logged to _slow_queries collection
 const SLOW_QUERY_THRESHOLD_MS: f64 = 100.0;
+
+/// Maximum batch size to prevent memory exhaustion
+const MAX_BATCH_SIZE: usize = 10_000;
 
 // ==================== Structs ====================
 
@@ -538,7 +540,7 @@ pub async fn execute_query(
         }
     }
 
-    let batch_size = req.batch_size;
+    let batch_size = req.batch_size.min(MAX_BATCH_SIZE);
 
     // Clone db_name and query text for slow query logging (before they're moved)
     let db_name_for_logging = db_name.clone();
