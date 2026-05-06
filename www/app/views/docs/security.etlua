@@ -152,6 +152,7 @@
               </tbody>
             </table>
          </div>
+      </section>
 
       <!-- Production Configuration -->
       <section id="production" class="scroll-mt-32">
@@ -182,7 +183,16 @@ export JWT_SECRET="your-secure-random-secret-here"
 
 # OPTIONAL: Set admin password (otherwise randomly generated)
 # Useful for automated deployments where you can't read logs
-export SOLIDB_ADMIN_PASSWORD="your-secure-password"</code></pre>
+export SOLIDB_ADMIN_PASSWORD="your-secure-password"
+
+# RECOMMENDED: Restrict browser origins allowed by CORS and WebSocket upgrades.
+# Comma-separated list of scheme://host[:port]. Default is deny-all when unset.
+# Use "*" only in development; the wildcard disables credentialed CORS.
+export SOLIDB_CORS_ALLOWED_ORIGINS="https://app.example.com,https://admin.example.com"
+
+# OPTIONAL: Allowlist for solidb.redirect() destinations from Lua scripts.
+# Comma-separated list of scheme://host[:port]. When unset, all redirects are allowed.
+export SOLIDB_ALLOWED_REDIRECT_ORIGINS="https://app.example.com"</code></pre>
           </div>
         </div>
 
@@ -221,12 +231,15 @@ chmod 600 solidb-keyfile
 # 2. Copy the keyfile to all nodes
 
 # 3. Start with keyfile authentication
-solidb --keyfile solidb-keyfile --peer node2:6746 --peer node3:6746</code></pre>
+solidb --keyfile solidb-keyfile --peer node2:6746 --peer node3:6746
+
+# 4. Enforce keyfile in production: refuse to start if missing.
+export SOLIDB_REQUIRE_KEYFILE=true</code></pre>
           </div>
         </div>
 
         <p class="text-gray-400">
-          The cluster communication protocol uses <strong>HMAC-SHA256</strong> to sign all handshake messages, ensuring that only nodes possessing the shared keyfile can join the cluster.
+          The cluster communication protocol uses <strong>HMAC-SHA256</strong> to sign all handshake messages, ensuring that only nodes possessing the shared keyfile can join the cluster. Set <code class="bg-gray-900 px-1 rounded">SOLIDB_REQUIRE_KEYFILE=true</code> so that nodes started without a keyfile fail closed instead of silently accepting unauthenticated peers.
         </p>
       </section>
 
@@ -265,6 +278,27 @@ solidb --keyfile solidb-keyfile --peer node2:6746 --peer node3:6746</code></pre>
             <h3 class="text-lg font-bold text-white mb-2">Timing Attack Protection</h3>
             <p class="text-gray-400 text-sm">
               API key validation uses constant-time string comparison algorithms to prevent side-channel timing attacks that could reveal key contents.
+            </p>
+          </div>
+
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
+            <h3 class="text-lg font-bold text-white mb-2">RBAC on Privileged Endpoints</h3>
+            <p class="text-gray-400 text-sm">
+              <code>DELETE /_api/database/{name}</code>, <code>GET /_api/auth/api-keys</code>, and the cluster <code>remove-node</code> / <code>rebalance</code> endpoints require the caller to hold the <strong>admin</strong> role. Viewer and editor tokens receive HTTP 403.
+            </p>
+          </div>
+
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
+            <h3 class="text-lg font-bold text-white mb-2">Anonymous Script Audit Log</h3>
+            <p class="text-gray-400 text-sm">
+              Anonymous calls into permissive script routes (<code>/api/{db}/{service}/...</code>) emit a <code>WARN</code>-level audit event with <code>method</code>, <code>path</code>, and <code>peer</code> fields under the <code>audit</code> tracing target.
+            </p>
+          </div>
+
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
+            <h3 class="text-lg font-bold text-white mb-2">Range &amp; Pagination Bounds</h3>
+            <p class="text-gray-400 text-sm">
+              SDBQL <code>a..b</code> ranges are capped at <strong>10M</strong> elements and overflow-safe. <code>LIMIT offset + count</code> is computed with checked arithmetic so 64-bit overflow yields an empty result instead of a panic.
             </p>
           </div>
         </div>

@@ -317,11 +317,15 @@ impl AuthService {
                         let password_file = format!("{}/.admin_password", data_dir);
                         #[cfg(unix)]
                         {
-                            use std::os::unix::fs::PermissionsExt;
-                            let mut file = std::fs::File::create(&password_file)?;
-                            let perms = std::fs::Permissions::from_mode(0o600);
-                            file.set_permissions(perms)?;
                             use std::io::Write;
+                            use std::os::unix::fs::OpenOptionsExt;
+                            // Atomically create the file with 0600 perms so the password
+                            // never lands in a world-readable inode (SEC-082 TOCTOU).
+                            let mut file = std::fs::OpenOptions::new()
+                                .write(true)
+                                .create_new(true)
+                                .mode(0o600)
+                                .open(&password_file)?;
                             writeln!(file, "{}", password)?;
                         }
                         #[cfg(not(unix))]
@@ -613,9 +617,11 @@ impl AuthService {
         roles: Option<Vec<String>>,
         scoped_databases: Option<Vec<String>>,
     ) -> Result<String, DbError> {
+        // Refuse to mint a token if the system clock predates UNIX_EPOCH —
+        // returning unwrap_or_default() would silently emit an already-expired token.
         let expiration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
+            .map_err(|_| DbError::InternalError("System clock before UNIX epoch".to_string()))?
             .as_secs() as usize
             + 24 * 3600; // 24 hours
 
@@ -641,7 +647,7 @@ impl AuthService {
     pub fn create_livequery_jwt() -> Result<String, DbError> {
         let expiration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
+            .map_err(|_| DbError::InternalError("System clock before UNIX epoch".to_string()))?
             .as_secs() as usize
             + 2; // 2 seconds - ultra short lived for file downloads!
 
@@ -1050,9 +1056,31 @@ pub async fn permissive_auth_middleware(
         }
     }
 
-    // No auth header present - proceed as anonymous (no claims injected)
-    // Security: Log when scripts allow anonymous access for audit trail
-    tracing::debug!("permissive_auth: no auth header, proceeding as anonymous");
+    // No auth header present - proceed as anonymous (no claims injected).
+    // Emit a structured audit event at WARN level so anonymous script access
+    // is captured by default log filters and not lost at DEBUG.
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    let peer = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
+        .or_else(|| {
+            req.headers()
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+    tracing::warn!(
+        target: "audit",
+        event = "anonymous_access",
+        method = %method,
+        path = %path,
+        peer = %peer,
+        "permissive_auth: anonymous request to script endpoint"
+    );
     Ok(next.run(req).await)
 }
 

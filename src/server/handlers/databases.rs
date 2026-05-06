@@ -92,8 +92,10 @@ pub async fn list_databases(State(state): State<AppState>) -> Json<ListDatabases
 
 pub async fn delete_database(
     State(state): State<AppState>,
+    Extension(claims): Extension<crate::server::auth::Claims>,
     Path(name): Path<String>,
 ) -> Result<StatusCode, DbError> {
+    AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
     state.storage.delete_database(&name)?;
 
     // Record to replication log

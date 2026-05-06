@@ -218,7 +218,9 @@ pub async fn create_api_key_handler(
 /// Handler for listing API keys (without the actual keys)
 pub async fn list_api_keys_handler(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<ListApiKeysResponse>, DbError> {
+    AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
     let db = state.storage.get_database("_system")?;
 
     // Return empty if collection doesn't exist

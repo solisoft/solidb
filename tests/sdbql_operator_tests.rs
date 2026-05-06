@@ -388,6 +388,22 @@ fn test_range_in_for() {
     assert_eq!(results[2], json!(6.0));
 }
 
+// SEC-131: oversize ranges must error rather than allocate / panic.
+#[test]
+fn test_range_rejects_oversize() {
+    use solidb::{parse, QueryExecutor};
+    let (engine, _tmp) = create_test_engine();
+    let exec = QueryExecutor::with_database(&engine, "test_db".to_string());
+    let parsed = parse("RETURN 0..100000000").expect("parse");
+    let err = exec.execute(&parsed).expect_err("should reject");
+    assert!(
+        format!("{}", err).contains("exceeds maximum"),
+        "unexpected error: {}",
+        err
+    );
+}
+
+
 // ============================================================================
 // Null Handling
 // ============================================================================

@@ -309,7 +309,10 @@ impl ConnectionPool {
                     if attempt < max_attempts {
                         tokio::time::sleep(delay).await;
                         delay = std::cmp::min(delay * 2, Duration::from_secs(30));
-                        let jitter: u64 = rand::rngs::OsRng.gen_range(0..25);
+                        // Add up to ±25% jitter so reconnect storms don't synchronize
+                        // (full jitter scales with current delay, not a fixed 25 ms).
+                        let quarter = (delay.as_millis() as u64 / 4).max(1);
+                        let jitter: u64 = rand::rngs::OsRng.gen_range(0..=quarter);
                         delay += Duration::from_millis(jitter);
                     }
                 }

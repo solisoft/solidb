@@ -1115,6 +1115,9 @@ pub fn create_router(
             // Browsers reject `Access-Control-Allow-Origin: *` combined with
             // `Access-Control-Allow-Credentials: true`. Drop credentials in
             // wildcard mode rather than emit a config that browsers ignore.
+            // tower-http likewise rejects `Access-Control-Allow-Headers: *`
+            // alongside credentials, so use an explicit allowlist when we
+            // need to emit credentials.
             let mut cors = CorsLayer::new()
                 .allow_methods([
                     Method::GET,
@@ -1123,11 +1126,22 @@ pub fn create_router(
                     Method::DELETE,
                     Method::OPTIONS,
                 ])
-                .allow_headers(AllowHeaders::any())
                 .expose_headers([header::ACCEPT, header::CONTENT_TYPE])
                 .max_age(Duration::from_secs(86400));
-            if !is_wildcard {
-                cors = cors.allow_credentials(true);
+            if is_wildcard {
+                cors = cors.allow_headers(AllowHeaders::any());
+            } else {
+                cors = cors
+                    .allow_headers([
+                        header::AUTHORIZATION,
+                        header::CONTENT_TYPE,
+                        header::ACCEPT,
+                        header::HeaderName::from_static("x-api-key"),
+                        header::HeaderName::from_static("x-cluster-secret"),
+                        header::HeaderName::from_static("x-shard-direct"),
+                        header::HeaderName::from_static("x-scatter-gather"),
+                    ])
+                    .allow_credentials(true);
             }
 
             if allowed_origins.is_empty() {

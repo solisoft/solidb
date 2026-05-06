@@ -699,25 +699,35 @@ pub async fn explain_query(
 
     let explain = {
         let storage = storage.clone();
-        tokio::task::spawn_blocking(move || {
-            let mut executor = if bind_vars.is_empty() {
-                QueryExecutor::with_database(&storage, db_name)
-            } else {
-                QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
-            };
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
+            tokio::task::spawn_blocking(move || {
+                let mut executor = if bind_vars.is_empty() {
+                    QueryExecutor::with_database(&storage, db_name)
+                } else {
+                    QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
+                };
 
-            if !is_scatter_gather {
-                if let Some(coordinator) = shard_coordinator {
-                    executor = executor.with_shard_coordinator(coordinator);
+                if !is_scatter_gather {
+                    if let Some(coordinator) = shard_coordinator {
+                        executor = executor.with_shard_coordinator(coordinator);
+                    }
                 }
-            }
 
-            executor.explain(&query).map_err(|e| {
-                DbError::InternalError(format!("Task join error: {}", e))
-            })
-        })
+                executor.explain(&query)
+            }),
+        )
         .await
-        .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??
+        {
+            Ok(join_result) => join_result
+                .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??,
+            Err(_) => {
+                return Err(DbError::BadRequest(format!(
+                    "Explain timeout: exceeded {} seconds",
+                    QUERY_TIMEOUT_SECS
+                )))
+            }
+        }
     };
 
     Ok(Json(explain))

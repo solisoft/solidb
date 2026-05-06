@@ -295,7 +295,7 @@ impl<'a> QueryExecutor<'a> {
                 .count();
 
             if for_count == 1 && filter_count == 0 {
-                query.limit_clause.as_ref().map(|l| {
+                query.limit_clause.as_ref().and_then(|l| {
                     let offset = self
                         .evaluate_expr_with_context(&l.offset, &initial_bindings)
                         .ok()
@@ -308,7 +308,7 @@ impl<'a> QueryExecutor<'a> {
                         .and_then(|v| v.as_u64())
                         .map(|n| n as usize)
                         .unwrap_or(0);
-                    offset + count
+                    offset.checked_add(count)
                 })
             } else {
                 None

@@ -323,7 +323,17 @@ impl<'a> QueryExecutor<'a> {
                 };
 
                 const MAX_RANGE_SIZE: i64 = 10_000_000;
-                let range_size = (end - start).abs();
+                // Use checked_sub so `start = i64::MIN` does not panic / wrap.
+                // Any subtraction overflow is itself proof the range exceeds MAX.
+                let range_size = end
+                    .checked_sub(start)
+                    .and_then(i64::checked_abs)
+                    .ok_or_else(|| {
+                        DbError::ExecutionError(format!(
+                            "Range size overflow (start={}, end={})",
+                            start, end
+                        ))
+                    })?;
                 if range_size > MAX_RANGE_SIZE {
                     return Err(DbError::ExecutionError(format!(
                         "Range size {} exceeds maximum allowed size of {}",

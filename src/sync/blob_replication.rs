@@ -12,19 +12,21 @@ use crate::server::handlers::AppState;
 ///
 /// These `/_internal/blob/*` routes are mounted on the public router with no
 /// user-auth middleware, so they MUST authenticate inter-node traffic via the
-/// cluster secret. Mirrors the pattern used by `cluster_cleanup`/`cluster_reshard`.
-/// The empty-secret bypass (when no keyfile is loaded) is tracked separately
-/// in SEC-123 and must be fixed uniformly across all such endpoints.
+/// cluster secret. Fails closed when no keyfile is configured to prevent the
+/// empty-secret bypass.
 fn verify_cluster_secret(state: &AppState, headers: &HeaderMap) -> Result<(), DbError> {
     let secret = state.cluster_secret();
+    if secret.is_empty() {
+        return Err(DbError::InternalError(
+            "Cluster keyfile not configured".to_string(),
+        ));
+    }
     let request_secret = headers
         .get("X-Cluster-Secret")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !secret.is_empty()
-        && !crate::server::auth::constant_time_eq(request_secret.as_bytes(), secret.as_bytes())
-    {
+    if !crate::server::auth::constant_time_eq(request_secret.as_bytes(), secret.as_bytes()) {
         return Err(DbError::BadRequest("Invalid cluster secret".to_string()));
     }
 
