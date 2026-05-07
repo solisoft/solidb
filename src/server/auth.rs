@@ -871,10 +871,7 @@ pub async fn auth_middleware(
                 Ok(claims) => {
                     if claims.livequery == Some(true) {
                         let path = req.uri().path();
-                        let allowed_livequery_paths = [
-                            "/_api/ws/changefeed",
-                            "/_api/livequery",
-                        ];
+                        let allowed_livequery_paths = ["/_api/ws/changefeed", "/_api/livequery"];
                         if !allowed_livequery_paths.iter().any(|p| path.starts_with(p)) {
                             tracing::warn!(
                                 "livequery token used on non-whitelisted path: {}",

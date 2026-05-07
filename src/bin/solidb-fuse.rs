@@ -809,7 +809,6 @@ fn main() -> anyhow::Result<()> {
                         unsafe {
                             libc::kill(pid, libc::SIGTERM);
                         }
-                    }
                         // Give it a moment to cleanup mounts
                         std::thread::sleep(Duration::from_millis(500));
                         let _ = std::fs::remove_file(&args.pid_file);

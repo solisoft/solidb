@@ -192,14 +192,16 @@ mod tests {
     #[test]
     fn test_create_session() {
         let store = UploadSessionStore::new(Duration::from_secs(300));
-        let info = store.create(
-            "testdb".into(),
-            "blobs".into(),
-            Some("test.bin".into()),
-            Some("application/octet-stream".into()),
-            1024 * 1024 * 5, // 5MB
-            None,
-        ).unwrap();
+        let info = store
+            .create(
+                "testdb".into(),
+                "blobs".into(),
+                Some("test.bin".into()),
+                Some("application/octet-stream".into()),
+                1024 * 1024 * 5, // 5MB
+                None,
+            )
+            .unwrap();
 
         assert_eq!(info.chunk_size, DEFAULT_CHUNK_SIZE);
         assert_eq!(info.total_chunks, 5);
@@ -209,7 +211,9 @@ mod tests {
     #[test]
     fn test_session_expiration() {
         let store = UploadSessionStore::new(Duration::from_millis(50));
-        let info = store.create("db".into(), "col".into(), None, None, 1024, None).unwrap();
+        let info = store
+            .create("db".into(), "col".into(), None, None, 1024, None)
+            .unwrap();
 
         std::thread::sleep(Duration::from_millis(100));
 
@@ -219,7 +223,9 @@ mod tests {
     #[test]
     fn test_remove_session() {
         let store = UploadSessionStore::new(Duration::from_secs(300));
-        let info = store.create("db".into(), "col".into(), None, None, 1024, None).unwrap();
+        let info = store
+            .create("db".into(), "col".into(), None, None, 1024, None)
+            .unwrap();
 
         assert!(store.remove(&info.upload_id).is_some());
         assert!(store.get(&info.upload_id).is_none());
@@ -230,22 +236,28 @@ mod tests {
         let store = UploadSessionStore::new(Duration::from_secs(300));
 
         // Exact multiple
-        let info = store.create("db".into(), "c".into(), None, None, 3 * 1024 * 1024, None).unwrap();
+        let info = store
+            .create("db".into(), "c".into(), None, None, 3 * 1024 * 1024, None)
+            .unwrap();
         assert_eq!(info.total_chunks, 3);
 
         // Not exact - rounds up
-        let info = store.create(
-            "db".into(),
-            "c".into(),
-            None,
-            None,
-            3 * 1024 * 1024 + 1,
-            None,
-        ).unwrap();
+        let info = store
+            .create(
+                "db".into(),
+                "c".into(),
+                None,
+                None,
+                3 * 1024 * 1024 + 1,
+                None,
+            )
+            .unwrap();
         assert_eq!(info.total_chunks, 4);
 
         // Zero size
-        let info = store.create("db".into(), "c".into(), None, None, 0, None).unwrap();
+        let info = store
+            .create("db".into(), "c".into(), None, None, 0, None)
+            .unwrap();
         assert_eq!(info.total_chunks, 0);
     }
 }

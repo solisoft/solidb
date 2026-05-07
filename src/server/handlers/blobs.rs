@@ -102,7 +102,10 @@ pub async fn upload_blob(
     let mut metadata = serde_json::Map::new();
     metadata.insert("_key".to_string(), Value::String(blob_key.clone()));
     if let Some(fn_str) = file_name {
-        metadata.insert("name".to_string(), Value::String(sanitize_filename(&fn_str)));
+        metadata.insert(
+            "name".to_string(),
+            Value::String(sanitize_filename(&fn_str)),
+        );
     }
     if let Some(mt_str) = mime_type {
         metadata.insert("type".to_string(), Value::String(mt_str));

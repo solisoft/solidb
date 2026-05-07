@@ -368,13 +368,16 @@ pub async fn get_script_stats_handler(
 /// can reject with a 400 instead of producing a colliding empty/degenerate key.
 fn sanitize_path_to_key(path: &str) -> Option<String> {
     let p = std::path::Path::new(path);
-    if p
-        .components()
+    if p.components()
         .any(|c| matches!(c, std::path::Component::ParentDir))
     {
         return None;
     }
-    Some(path.replace(['/', ':', '*'], "_").trim_matches('_').to_string())
+    Some(
+        path.replace(['/', ':', '*'], "_")
+            .trim_matches('_')
+            .to_string(),
+    )
 }
 
 /// Check if a script path pattern matches the actual path

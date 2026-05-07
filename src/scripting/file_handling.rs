@@ -220,9 +220,12 @@ pub fn create_upload_function(
         let path = if let Some(ref dir) = directory {
             let normalized = dir.replace('\\', "/");
             let p = std::path::Path::new(&normalized);
-            let bad_component = p
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::RootDir));
+            let bad_component = p.components().any(|c| {
+                matches!(
+                    c,
+                    std::path::Component::ParentDir | std::path::Component::RootDir
+                )
+            });
             if bad_component || p.is_absolute() {
                 return Err(mlua::Error::RuntimeError(
                     "upload: directory path contains invalid traversal patterns".to_string(),

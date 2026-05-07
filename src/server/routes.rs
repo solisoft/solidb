@@ -70,10 +70,7 @@ fn is_valid_origin(s: &str) -> bool {
         "{}://{}{}",
         parsed.scheme(),
         parsed.host_str().unwrap(),
-        parsed
-            .port()
-            .map(|p| format!(":{}", p))
-            .unwrap_or_default()
+        parsed.port().map(|p| format!(":{}", p)).unwrap_or_default()
     );
     s == canonical_no_slash || s == format!("{}/", canonical_no_slash)
 }

@@ -287,7 +287,9 @@ impl<'a> QueryExecutor<'a> {
                             }
                             f as i64
                         } else {
-                            return Err(DbError::ExecutionError("Range start must be a number".to_string()));
+                            return Err(DbError::ExecutionError(
+                                "Range start must be a number".to_string(),
+                            ));
                         }
                     }
                     _ => {
@@ -311,7 +313,9 @@ impl<'a> QueryExecutor<'a> {
                             }
                             f as i64
                         } else {
-                            return Err(DbError::ExecutionError("Range end must be a number".to_string()));
+                            return Err(DbError::ExecutionError(
+                                "Range end must be a number".to_string(),
+                            ));
                         }
                     }
                     _ => {
