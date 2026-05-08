@@ -284,7 +284,16 @@ pub async fn get_role(
         .get(&role_name)
         .map_err(|_| DbError::RoleNotFound(role_name.clone()))?;
 
-    let role: Role = serde_json::from_value(doc.data)?;
+    // `Role.name` is serde-renamed to `_key`; `doc.data` doesn't include the
+    // key so we merge it back before deserializing.
+    let mut data = doc.data;
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert(
+            "_key".to_string(),
+            serde_json::Value::String(doc.key.clone()),
+        );
+    }
+    let role: Role = serde_json::from_value(data)?;
     Ok(Json(RoleResponse::from(&role)))
 }
 
@@ -305,7 +314,14 @@ pub async fn update_role(
         .get(&role_name)
         .map_err(|_| DbError::RoleNotFound(role_name.clone()))?;
 
-    let mut role: Role = serde_json::from_value(doc.data)?;
+    let mut data = doc.data;
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert(
+            "_key".to_string(),
+            serde_json::Value::String(doc.key.clone()),
+        );
+    }
+    let mut role: Role = serde_json::from_value(data)?;
 
     // Cannot modify builtin roles
     if role.is_builtin {
@@ -368,7 +384,14 @@ pub async fn delete_role(
         .get(&role_name)
         .map_err(|_| DbError::RoleNotFound(role_name.clone()))?;
 
-    let role: Role = serde_json::from_value(doc.data)?;
+    let mut data = doc.data;
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert(
+            "_key".to_string(),
+            serde_json::Value::String(doc.key.clone()),
+        );
+    }
+    let role: Role = serde_json::from_value(data)?;
 
     // Cannot delete builtin roles
     if role.is_builtin {
@@ -889,7 +912,17 @@ pub async fn delete_user(
     let user_roles: Vec<UserRole> = user_roles_coll
         .scan(None)
         .into_iter()
-        .filter_map(|doc| serde_json::from_value::<UserRole>(doc.data).ok())
+        .filter_map(|doc| {
+            // UserRole.id is serde-renamed to _key; merge before deserializing
+            let mut data = doc.data;
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert(
+                    "_key".to_string(),
+                    serde_json::Value::String(doc.key.clone()),
+                );
+            }
+            serde_json::from_value::<UserRole>(data).ok()
+        })
         .filter(|ur| ur.username == username)
         .collect();
 
