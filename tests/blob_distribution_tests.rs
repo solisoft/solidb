@@ -13,6 +13,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use serde_json::{json, Value};
+use solidb::cluster::ClusterConfig;
 use solidb::scripting::ScriptStats;
 use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
@@ -21,10 +22,22 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
+const TEST_CLUSTER_SECRET: &str = "test-cluster-secret";
+
 fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
-        .expect("Failed to create storage engine");
+    let cluster_config = ClusterConfig {
+        node_id: "test-node".to_string(),
+        peers: vec![],
+        replication_port: 6746,
+        keyfile: Some(TEST_CLUSTER_SECRET.to_string()),
+    };
+    let engine =
+        StorageEngine::with_cluster_config(tmp_dir.path().to_str().unwrap(), cluster_config)
+            .expect("Failed to create storage engine");
+    engine
+        .initialize()
+        .expect("Failed to initialize storage engine");
 
     let script_stats = Arc::new(ScriptStats::default());
 
@@ -121,6 +134,7 @@ async fn test_upload_and_retrieve_blob() {
                     "Content-Type",
                     format!("multipart/form-data; boundary={}", boundary),
                 )
+                .header("X-Cluster-Secret", TEST_CLUSTER_SECRET)
                 .body(Body::from(body_bytes))
                 .unwrap(),
         )
@@ -139,6 +153,7 @@ async fn test_upload_and_retrieve_blob() {
             Request::builder()
                 .method("GET")
                 .uri("/_internal/blob/replicate/blob_db/images/test_image.png/chunk/0")
+                .header("X-Cluster-Secret", TEST_CLUSTER_SECRET)
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -209,6 +224,7 @@ async fn test_blob_replication_endpoint() {
                     "Content-Type",
                     format!("multipart/form-data; boundary={}", boundary),
                 )
+                .header("X-Cluster-Secret", TEST_CLUSTER_SECRET)
                 .body(Body::from(body_bytes))
                 .unwrap(),
         )
@@ -319,6 +335,7 @@ async fn test_blob_distribution_with_data() {
                     "Content-Type",
                     format!("multipart/form-data; boundary={}", boundary),
                 )
+                .header("X-Cluster-Secret", TEST_CLUSTER_SECRET)
                 .body(Body::from(body_bytes))
                 .unwrap(),
         )

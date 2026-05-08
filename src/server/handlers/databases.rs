@@ -30,6 +30,11 @@ pub async fn create_database(
     Extension(claims): Extension<crate::server::auth::Claims>,
     Json(req): Json<CreateDatabaseRequest>,
 ) -> Result<Json<CreateDatabaseResponse>, DbError> {
+    if req.name.is_empty() {
+        return Err(DbError::BadRequest(
+            "Database name cannot be empty".to_string(),
+        ));
+    }
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
     state.storage.create_database(req.name.clone())?;
 
