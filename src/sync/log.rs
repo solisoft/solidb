@@ -89,6 +89,8 @@ impl SyncLog {
         opts.create_if_missing(true);
         opts.set_max_write_buffer_number(4);
         opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB
+        opts.set_keep_log_file_num(5);
+        opts.set_recycle_log_file_num(3);
 
         let db = DB::open(&opts, &log_path).map_err(|e| e.to_string())?;
         let db = Arc::new(db);

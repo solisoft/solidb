@@ -6,6 +6,15 @@ use uuid::Uuid;
 /// Default chunk size: 1MB
 const DEFAULT_CHUNK_SIZE: u32 = 1024 * 1024;
 
+/// Maximum total upload size: 10 GiB
+const MAX_TOTAL_SIZE: u64 = 10 * 1024 * 1024 * 1024;
+
+/// Minimum chunk size: 64 KiB
+const MIN_CHUNK_SIZE: u32 = 64 * 1024;
+
+/// Maximum chunk size: 16 MiB
+const MAX_CHUNK_SIZE: u32 = 16 * 1024 * 1024;
+
 /// Stores in-progress resumable blob upload sessions
 #[derive(Clone)]
 pub struct UploadSessionStore {
@@ -46,10 +55,30 @@ impl UploadSessionStore {
         mime_type: Option<String>,
         total_size: u64,
         chunk_size: Option<u32>,
-    ) -> UploadSessionInfo {
+    ) -> Result<UploadSessionInfo, crate::error::DbError> {
+        if total_size > MAX_TOTAL_SIZE {
+            return Err(crate::error::DbError::BadRequest(format!(
+                "total_size {} exceeds maximum allowed size of {}",
+                total_size, MAX_TOTAL_SIZE
+            )));
+        }
+
+        let chunk_size = chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE);
+        if chunk_size < MIN_CHUNK_SIZE {
+            return Err(crate::error::DbError::BadRequest(format!(
+                "chunk_size {} is below minimum allowed size of {}",
+                chunk_size, MIN_CHUNK_SIZE
+            )));
+        }
+        if chunk_size > MAX_CHUNK_SIZE {
+            return Err(crate::error::DbError::BadRequest(format!(
+                "chunk_size {} exceeds maximum allowed size of {}",
+                chunk_size, MAX_CHUNK_SIZE
+            )));
+        }
+
         let upload_id = Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
         let blob_key = Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
-        let chunk_size = chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE);
         let total_chunks = if total_size == 0 {
             0
         } else {
@@ -74,12 +103,12 @@ impl UploadSessionStore {
 
         self.sessions.insert(upload_id.clone(), session);
 
-        UploadSessionInfo {
+        Ok(UploadSessionInfo {
             upload_id,
             blob_key,
             chunk_size,
             total_chunks,
-        }
+        })
     }
 
     /// Get a reference to a session for reading
@@ -163,14 +192,16 @@ mod tests {
     #[test]
     fn test_create_session() {
         let store = UploadSessionStore::new(Duration::from_secs(300));
-        let info = store.create(
-            "testdb".into(),
-            "blobs".into(),
-            Some("test.bin".into()),
-            Some("application/octet-stream".into()),
-            1024 * 1024 * 5, // 5MB
-            None,
-        );
+        let info = store
+            .create(
+                "testdb".into(),
+                "blobs".into(),
+                Some("test.bin".into()),
+                Some("application/octet-stream".into()),
+                1024 * 1024 * 5, // 5MB
+                None,
+            )
+            .unwrap();
 
         assert_eq!(info.chunk_size, DEFAULT_CHUNK_SIZE);
         assert_eq!(info.total_chunks, 5);
@@ -180,7 +211,9 @@ mod tests {
     #[test]
     fn test_session_expiration() {
         let store = UploadSessionStore::new(Duration::from_millis(50));
-        let info = store.create("db".into(), "col".into(), None, None, 1024, None);
+        let info = store
+            .create("db".into(), "col".into(), None, None, 1024, None)
+            .unwrap();
 
         std::thread::sleep(Duration::from_millis(100));
 
@@ -190,7 +223,9 @@ mod tests {
     #[test]
     fn test_remove_session() {
         let store = UploadSessionStore::new(Duration::from_secs(300));
-        let info = store.create("db".into(), "col".into(), None, None, 1024, None);
+        let info = store
+            .create("db".into(), "col".into(), None, None, 1024, None)
+            .unwrap();
 
         assert!(store.remove(&info.upload_id).is_some());
         assert!(store.get(&info.upload_id).is_none());
@@ -201,22 +236,28 @@ mod tests {
         let store = UploadSessionStore::new(Duration::from_secs(300));
 
         // Exact multiple
-        let info = store.create("db".into(), "c".into(), None, None, 3 * 1024 * 1024, None);
+        let info = store
+            .create("db".into(), "c".into(), None, None, 3 * 1024 * 1024, None)
+            .unwrap();
         assert_eq!(info.total_chunks, 3);
 
         // Not exact - rounds up
-        let info = store.create(
-            "db".into(),
-            "c".into(),
-            None,
-            None,
-            3 * 1024 * 1024 + 1,
-            None,
-        );
+        let info = store
+            .create(
+                "db".into(),
+                "c".into(),
+                None,
+                None,
+                3 * 1024 * 1024 + 1,
+                None,
+            )
+            .unwrap();
         assert_eq!(info.total_chunks, 4);
 
         // Zero size
-        let info = store.create("db".into(), "c".into(), None, None, 0, None);
+        let info = store
+            .create("db".into(), "c".into(), None, None, 0, None)
+            .unwrap();
         assert_eq!(info.total_chunks, 0);
     }
 }

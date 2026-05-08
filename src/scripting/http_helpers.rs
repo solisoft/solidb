@@ -57,9 +57,86 @@ impl HttpCache {
     }
 }
 
+/// Parse an origin entry from `SOLIDB_ALLOWED_REDIRECT_ORIGINS` into
+/// (scheme, host, port). Accepts forms `host`, `scheme://host`, `scheme://host:port`.
+/// `host`-only entries match either http or https.
+fn parse_allowed_origin(entry: &str) -> Option<(Option<String>, String, Option<u16>)> {
+    let entry = entry.trim();
+    if entry.is_empty() {
+        return None;
+    }
+    if entry.contains("://") {
+        let parsed = url::Url::parse(entry).ok()?;
+        let host = parsed.host_str()?.to_lowercase();
+        Some((Some(parsed.scheme().to_string()), host, parsed.port()))
+    } else {
+        // Bare host (and optional :port)
+        let (host, port) = match entry.rsplit_once(':') {
+            Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => {
+                (h.to_lowercase(), p.parse::<u16>().ok())
+            }
+            _ => (entry.to_lowercase(), None),
+        };
+        Some((None, host, port))
+    }
+}
+
+/// Returns true iff `url` matches one of the configured allowed origins.
+/// Match is by exact (scheme, host, port) — never substring.
+fn redirect_url_allowed(url_str: &str, allowed: &[&str]) -> bool {
+    let parsed = match url::Url::parse(url_str) {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+    let url_host = match parsed.host_str() {
+        Some(h) => h.to_lowercase(),
+        None => return false,
+    };
+    let url_scheme = parsed.scheme();
+    let url_port = parsed.port_or_known_default();
+
+    allowed.iter().any(|raw| {
+        let (allowed_scheme, allowed_host, allowed_port) = match parse_allowed_origin(raw) {
+            Some(t) => t,
+            None => return false,
+        };
+        if allowed_host != url_host {
+            return false;
+        }
+        if let Some(scheme) = &allowed_scheme {
+            if scheme != url_scheme {
+                return false;
+            }
+        }
+        if let Some(port) = allowed_port {
+            if Some(port) != url_port {
+                return false;
+            }
+        }
+        true
+    })
+}
+
 /// Create solidb.redirect(url) -> error with redirect status function
 pub fn create_redirect_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|_, url: String| {
+        let allowed_origins = std::env::var("SOLIDB_ALLOWED_REDIRECT_ORIGINS").unwrap_or_default();
+        let allowed_list: Vec<&str> = allowed_origins
+            .split(',')
+            .map(str::trim)
+            .filter(|o| !o.is_empty())
+            .collect();
+
+        // Absolute URLs are checked against the allowlist when one is configured.
+        // Relative paths and (when no allowlist is set) absolute URLs are passed through —
+        // SEC-095 made the allowlist opt-in.
+        let is_absolute = url.starts_with("http://") || url.starts_with("https://");
+        if is_absolute && !allowed_list.is_empty() && !redirect_url_allowed(&url, &allowed_list) {
+            return Err(mlua::Error::RuntimeError(
+                "REDIRECT: Forbidden - redirect to untrusted domain".to_string(),
+            ));
+        }
+
         Err::<LuaValue, mlua::Error>(mlua::Error::RuntimeError(format!("REDIRECT:{}", url)))
     })
 }
@@ -171,6 +248,23 @@ pub fn create_response_html_function(_lua: &Lua) -> LuaResult<Function> {
 pub fn create_response_file_function(_lua: &Lua) -> LuaResult<Function> {
     let lua_ref = _lua;
     lua_ref.create_function(move |lua, path: String| {
+        // Security: reject absolute paths and any ParentDir component.
+        // Component-based check avoids false positives on legit names like `v1.2..md`
+        // and false negatives on tricks substring-matching would miss.
+        let p = std::path::Path::new(&path);
+        let has_parent_dir = p
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir));
+        if p.is_absolute() || has_parent_dir {
+            let file_info = lua.create_table()?;
+            file_info.set(
+                "error",
+                "Invalid path: absolute paths and parent-dir traversal are not allowed",
+            )?;
+            file_info.set("exists", false)?;
+            return Ok(LuaValue::Table(file_info));
+        }
+
         // Check if file exists and get its metadata
         match std::fs::metadata(&path) {
             Ok(metadata) => {

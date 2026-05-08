@@ -162,7 +162,7 @@ fn test_validate_api_key_without_keys() {
     let (engine, _tmp) = create_test_engine();
 
     // Initialize auth (creates _system database)
-    let _ = AuthService::init(&engine, None);
+    let _ = AuthService::init(&engine, None, engine.data_dir());
 
     // Try to validate a non-existent key
     let result = AuthService::validate_api_key(&engine, "sdb_nonexistent_key");
@@ -181,7 +181,7 @@ fn test_auth_init() {
     engine.create_database("_system".to_string()).unwrap();
 
     // Initialize auth
-    let result = AuthService::init(&engine, None);
+    let result = AuthService::init(&engine, None, engine.data_dir());
     assert!(
         result.is_ok(),
         "Auth init should succeed: {:?}",
@@ -197,9 +197,9 @@ fn test_auth_init_idempotent() {
     engine.create_database("_system".to_string()).unwrap();
 
     // Initialize multiple times
-    let result1 = AuthService::init(&engine, None);
-    let result2 = AuthService::init(&engine, None);
-    let result3 = AuthService::init(&engine, None);
+    let result1 = AuthService::init(&engine, None, engine.data_dir());
+    let result2 = AuthService::init(&engine, None, engine.data_dir());
+    let result3 = AuthService::init(&engine, None, engine.data_dir());
 
     assert!(result1.is_ok());
     assert!(result2.is_ok());

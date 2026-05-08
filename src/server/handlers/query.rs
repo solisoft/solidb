@@ -21,8 +21,10 @@ use std::sync::Arc;
 const QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Default slow query threshold in milliseconds (100ms)
-/// Queries taking longer than this will be logged to _slow_queries collection
 const SLOW_QUERY_THRESHOLD_MS: f64 = 100.0;
+
+/// Maximum batch size to prevent memory exhaustion
+const MAX_BATCH_SIZE: usize = 10_000;
 
 // ==================== Structs ====================
 
@@ -186,6 +188,10 @@ pub async fn execute_query(
     state
         .query_counter
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    // Auth is enforced by `auth_middleware` on the route layer (routes.rs).
+    // No per-handler token validation needed here — would only drift from the
+    // middleware (API keys, Basic auth, cluster-internal bypass).
 
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {
@@ -534,7 +540,7 @@ pub async fn execute_query(
         }
     }
 
-    let batch_size = req.batch_size;
+    let batch_size = req.batch_size.min(MAX_BATCH_SIZE);
 
     // Clone db_name and query text for slow query logging (before they're moved)
     let db_name_for_logging = db_name.clone();
@@ -685,23 +691,44 @@ pub async fn explain_query(
     let prepared = crate::sdbql::get_prepared_statement_cache()
         .parse_if_needed(&req.query)
         .await?;
-    let query = prepared.query.as_ref();
+    let query = (*prepared.query).clone();
+    let bind_vars = req.bind_vars.clone();
+    let storage = state.storage.clone();
+    let shard_coordinator = state.shard_coordinator.clone();
+    let is_scatter_gather = headers.contains_key("X-Scatter-Gather");
 
-    // explain() is fast - no need for spawn_blocking
-    let mut executor = if req.bind_vars.is_empty() {
-        QueryExecutor::with_database(&state.storage, db_name)
-    } else {
-        QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
-    };
+    let explain = {
+        let storage = storage.clone();
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
+            tokio::task::spawn_blocking(move || {
+                let mut executor = if bind_vars.is_empty() {
+                    QueryExecutor::with_database(&storage, db_name)
+                } else {
+                    QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
+                };
 
-    // Inject shard coordinator for explain (if not already a sub-query)
-    if !headers.contains_key("X-Scatter-Gather") {
-        if let Some(coordinator) = state.shard_coordinator.clone() {
-            executor = executor.with_shard_coordinator(coordinator);
+                if !is_scatter_gather {
+                    if let Some(coordinator) = shard_coordinator {
+                        executor = executor.with_shard_coordinator(coordinator);
+                    }
+                }
+
+                executor.explain(&query)
+            }),
+        )
+        .await
+        {
+            Ok(join_result) => join_result
+                .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??,
+            Err(_) => {
+                return Err(DbError::BadRequest(format!(
+                    "Explain timeout: exceeded {} seconds",
+                    QUERY_TIMEOUT_SECS
+                )))
+            }
         }
-    }
-
-    let explain = executor.explain(query)?;
+    };
 
     Ok(Json(explain))
 }

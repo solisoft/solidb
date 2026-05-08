@@ -266,6 +266,19 @@ pub async fn create_cron_job_handler(
         .unwrap()
         .as_secs();
 
+    let script_path = req.script;
+    if script_path.len() > 512 {
+        return Err(DbError::BadRequest(
+            "Script path exceeds maximum length of 512 characters".to_string(),
+        ));
+    }
+    let re = regex::Regex::new(r"^[A-Za-z0-9_/\-.]+$").unwrap();
+    if !re.is_match(&script_path) {
+        return Err(DbError::BadRequest(
+            "Script path contains invalid characters".to_string(),
+        ));
+    }
+
     let cron_job = crate::queue::CronJob {
         id: uuid::Uuid::new_v4().to_string(),
         revision: None,
@@ -274,7 +287,7 @@ pub async fn create_cron_job_handler(
         queue: req.queue.unwrap_or_else(|| "default".to_string()),
         priority: req.priority.unwrap_or(0),
         max_retries: req.max_retries.unwrap_or(3),
-        script_path: req.script,
+        script_path,
         params: req.params.unwrap_or(JsonValue::Null),
         last_run: None,
         next_run: None, // Will be calculated by worker
@@ -311,6 +324,17 @@ pub async fn update_cron_job_handler(
         cron_job.next_run = None;
     }
     if let Some(script) = req.script {
+        if script.len() > 512 {
+            return Err(DbError::BadRequest(
+                "Script path exceeds maximum length of 512 characters".to_string(),
+            ));
+        }
+        let re = regex::Regex::new(r"^[A-Za-z0-9_/\-.]+$").unwrap();
+        if !re.is_match(&script) {
+            return Err(DbError::BadRequest(
+                "Script path contains invalid characters".to_string(),
+            ));
+        }
         cron_job.script_path = script;
     }
     if let Some(params) = req.params {
@@ -355,13 +379,26 @@ pub async fn enqueue_job_handler(
         .unwrap()
         .as_secs();
 
+    let script_path = req.script;
+    if script_path.len() > 512 {
+        return Err(DbError::BadRequest(
+            "Script path exceeds maximum length of 512 characters".to_string(),
+        ));
+    }
+    let re = regex::Regex::new(r"^[A-Za-z0-9_/\-.]+$").unwrap();
+    if !re.is_match(&script_path) {
+        return Err(DbError::BadRequest(
+            "Script path contains invalid characters".to_string(),
+        ));
+    }
+
     let job_id = uuid::Uuid::new_v4().to_string();
     let job = Job {
         id: job_id.clone(),
         revision: None,
         queue: queue_name,
         priority: req.priority.unwrap_or(0),
-        script_path: req.script,
+        script_path,
         params: req.params.unwrap_or(JsonValue::Null),
         status: JobStatus::Pending,
         retry_count: 0,

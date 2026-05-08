@@ -4,6 +4,26 @@ use crate::scripting::ScriptEngine;
 use crate::storage::StorageEngine;
 use std::sync::Arc;
 
+fn validate_script_path(script_path: &str) -> Result<(), crate::error::DbError> {
+    if script_path.is_empty() {
+        return Err(crate::error::DbError::BadRequest(
+            "Script path cannot be empty".to_string(),
+        ));
+    }
+    if script_path.len() > 512 {
+        return Err(crate::error::DbError::BadRequest(
+            "Script path exceeds maximum length of 512 characters".to_string(),
+        ));
+    }
+    let re = regex::Regex::new(r"^[A-Za-z0-9_/\-.]+$").unwrap();
+    if !re.is_match(script_path) {
+        return Err(crate::error::DbError::BadRequest(
+            "Script path contains invalid characters".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 impl QueueWorker {
     pub async fn check_jobs(&self) {
         let _lock = match self.claiming_lock.try_lock() {
@@ -164,19 +184,27 @@ impl QueueWorker {
         job: &Job,
         db_name: &str,
     ) -> Result<(), crate::error::DbError> {
+        validate_script_path(&job.script_path)?;
+
         tracing::info!("Executing job {} with script {}", job.id, job.script_path);
 
         let _db = storage.get_database(db_name)?;
 
-        // Find script by path
-        let query_str = format!(
-            "FOR s IN _scripts FILTER s.path == '{}' RETURN s",
-            job.script_path
-        );
-        let query_ast = crate::sdbql::parse(&query_str)
+        let query_str = "FOR s IN _scripts FILTER s.path == @script_path RETURN s";
+        let query_ast = crate::sdbql::parse(query_str)
             .map_err(|e| crate::error::DbError::BadRequest(e.to_string()))?;
 
-        let executor = crate::sdbql::QueryExecutor::with_database(storage, db_name.to_string());
+        let mut bind_vars = crate::sdbql::BindVars::new();
+        bind_vars.insert(
+            "script_path".to_string(),
+            serde_json::json!(job.script_path),
+        );
+
+        let executor = crate::sdbql::QueryExecutor::with_database_and_bind_vars(
+            storage,
+            db_name.to_string(),
+            bind_vars,
+        );
         let result = executor.execute(&query_ast)?;
 
         let script_val = result.first().ok_or_else(|| {

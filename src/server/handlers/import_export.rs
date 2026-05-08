@@ -11,6 +11,8 @@ use base64::{engine::general_purpose, Engine as _};
 use futures::stream::StreamExt;
 use serde_json::Value;
 
+const MAX_BLOB_CHUNK_SIZE: usize = 16 * 1024 * 1024; // 16 MiB
+
 pub async fn export_collection(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
@@ -304,6 +306,13 @@ pub async fn import_collection(
                                     if let Some(data_len) =
                                         doc.get("_data_length").and_then(|v| v.as_u64())
                                     {
+                                        if data_len > MAX_BLOB_CHUNK_SIZE as u64 {
+                                            return Err(DbError::BadRequest(format!(
+                                                "Blob chunk size {} exceeds maximum allowed size of {}",
+                                                data_len,
+                                                MAX_BLOB_CHUNK_SIZE
+                                            )));
+                                        }
                                         let required_len = data_len as usize;
                                         let total_required = required_len + 1; // +1 for trailing newline
 

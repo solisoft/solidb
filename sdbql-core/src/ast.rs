@@ -606,6 +606,7 @@ mod tests {
     #[test]
     fn test_query_default() {
         let query = Query {
+            with_clause: None,
             let_clauses: vec![],
             for_clauses: vec![],
             join_clauses: vec![],

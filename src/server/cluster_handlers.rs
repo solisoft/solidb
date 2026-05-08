@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cluster::stats::NodeBasicStats;
 use crate::error::DbError;
+use crate::server::authorization::{AuthorizationService, PermissionAction};
 
 use super::handlers::{AppState, AuthParams};
 
@@ -513,8 +514,10 @@ pub struct RemoveNodeResponse {
 /// Remove a node from the cluster and trigger rebalancing
 pub async fn cluster_remove_node(
     State(state): State<AppState>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::server::auth::Claims>,
     Json(req): Json<RemoveNodeRequest>,
 ) -> Result<Json<RemoveNodeResponse>, DbError> {
+    AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
     let node_addr = req.node_address;
 
     // Get the shard coordinator
@@ -547,7 +550,9 @@ pub struct RebalanceResponse {
 /// Trigger cluster rebalancing
 pub async fn cluster_rebalance(
     State(state): State<AppState>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::server::auth::Claims>,
 ) -> Result<Json<RebalanceResponse>, DbError> {
+    AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
     let coordinator = state.shard_coordinator.as_ref().ok_or_else(|| {
         DbError::InternalError("Shard coordinator not available - not in cluster mode".to_string())
     })?;
@@ -574,7 +579,15 @@ pub async fn cluster_cleanup(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !secret.is_empty() && request_secret != secret {
+    if secret.is_empty() {
+        return Err(DbError::InternalError(
+            "Cluster keyfile not configured".to_string(),
+        ));
+    }
+    if !crate::server::auth::constant_time_eq(
+        request_secret.as_bytes(),
+        secret.as_bytes(),
+    ) {
         return Err(DbError::BadRequest("Invalid cluster secret".to_string()));
     }
 
@@ -625,7 +638,15 @@ pub async fn cluster_reshard(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !secret.is_empty() && request_secret != secret {
+    if secret.is_empty() {
+        return Err(DbError::InternalError(
+            "Cluster keyfile not configured".to_string(),
+        ));
+    }
+    if !crate::server::auth::constant_time_eq(
+        request_secret.as_bytes(),
+        secret.as_bytes(),
+    ) {
         return Err(DbError::BadRequest("Invalid cluster secret".to_string()));
     }
 

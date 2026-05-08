@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Maximum allowed clock skew between nodes (60 seconds in ms)
+const MAX_CLOCK_SKEW_MS: u64 = 60_000;
+
 /// Hybrid Logical Clock for distributed ordering of events.
 /// Combines physical time with a logical counter to ensure unique, ordered timestamps
 /// even when wall clocks are out of sync.
@@ -58,8 +61,11 @@ impl HybridLogicalClock {
 
     /// Update this clock after receiving a message with another clock.
     /// Returns a new clock that is greater than both self and the received clock.
+    /// Remote times beyond MAX_CLOCK_SKEW_MS in the future are clamped to prevent
+    /// a malicious peer from permanently wedging the clock.
     pub fn receive(&self, other: &HybridLogicalClock, node_id: &str) -> Self {
         let now = current_time_ms();
+        let max_allowed_time = now.saturating_add(MAX_CLOCK_SKEW_MS);
 
         let (physical, logical) = if now > self.physical_time && now > other.physical_time {
             // Wall clock is ahead of both, reset counter
@@ -72,8 +78,9 @@ impl HybridLogicalClock {
                 (self.physical_time, self.logical_counter + 1)
             }
         } else if other.physical_time > self.physical_time {
-            // Remote clock is ahead
-            (other.physical_time, other.logical_counter + 1)
+            // Remote clock is ahead - clamp to prevent unbounded skew attack
+            let clamped_remote = other.physical_time.min(max_allowed_time);
+            (clamped_remote, other.logical_counter + 1)
         } else {
             // Same physical time, take max logical and increment
             (

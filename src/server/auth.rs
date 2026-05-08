@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use subtle::ConstantTimeEq;
 
 /// Rate limiting configuration
 const MAX_LOGIN_ATTEMPTS: usize = 20;
@@ -202,7 +203,14 @@ pub struct AuthService;
 impl AuthService {
     /// Initialize authentication system
     /// Checks if admin user exists, if not creates default
-    pub fn init(storage: &StorageEngine, replication_log: Option<&SyncLog>) -> Result<(), DbError> {
+    /// Security: Admin passwords are never logged to stdout/stderr.
+    /// Instead, they are saved to a file with restricted permissions (600).
+    /// The file path is shown in the console message to the operator.
+    pub fn init(
+        storage: &StorageEngine,
+        replication_log: Option<&SyncLog>,
+        data_dir: &str,
+    ) -> Result<(), DbError> {
         // Force JWT_SECRET initialization to show warning at startup if not configured
         let _ = JWT_SECRET.len();
 
@@ -302,10 +310,28 @@ impl AuthService {
                     }
 
                     if is_override {
-                        tracing::warn!(
+                        tracing::info!(
                             "Admin user created with password from SOLIDB_ADMIN_PASSWORD env var"
                         );
                     } else {
+                        let password_file = format!("{}/.admin_password", data_dir);
+                        #[cfg(unix)]
+                        {
+                            use std::io::Write;
+                            use std::os::unix::fs::OpenOptionsExt;
+                            // Atomically create the file with 0600 perms so the password
+                            // never lands in a world-readable inode (SEC-082 TOCTOU).
+                            let mut file = std::fs::OpenOptions::new()
+                                .write(true)
+                                .create_new(true)
+                                .mode(0o600)
+                                .open(&password_file)?;
+                            writeln!(file, "{}", password)?;
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            std::fs::write(&password_file, format!("{}\n", password))?;
+                        }
                         tracing::warn!(
                             "╔══════════════════════════════════════════════════════════════════╗"
                         );
@@ -318,7 +344,10 @@ impl AuthService {
                         tracing::warn!(
                             "║  Username: admin                                                 ║"
                         );
-                        tracing::warn!("║  Password: {}                             ║", password);
+                        tracing::warn!(
+                            "║                                                                  ║"
+                        );
+                        tracing::warn!("║  ⚠️  PASSWORD SAVED TO: {}", password_file);
                         tracing::warn!(
                             "║                                                                  ║"
                         );
@@ -588,9 +617,11 @@ impl AuthService {
         roles: Option<Vec<String>>,
         scoped_databases: Option<Vec<String>>,
     ) -> Result<String, DbError> {
+        // Refuse to mint a token if the system clock predates UNIX_EPOCH —
+        // returning unwrap_or_default() would silently emit an already-expired token.
         let expiration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .map_err(|_| DbError::InternalError("System clock before UNIX epoch".to_string()))?
             .as_secs() as usize
             + 24 * 3600; // 24 hours
 
@@ -616,7 +647,7 @@ impl AuthService {
     pub fn create_livequery_jwt() -> Result<String, DbError> {
         let expiration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .map_err(|_| DbError::InternalError("System clock before UNIX epoch".to_string()))?
             .as_secs() as usize
             + 2; // 2 seconds - ultra short lived for file downloads!
 
@@ -737,17 +768,6 @@ impl AuthService {
         }
 
         if roles.is_empty() {
-            // TEMPORARY: If there's only one admin user and no roles assigned,
-            // automatically grant admin role. This will be removed later.
-            if let Ok(admins_coll) = db.get_collection(ADMIN_COLL) {
-                if admins_coll.count() == 1 {
-                    tracing::info!(
-                        "Single admin user '{}' detected - auto-granting admin role",
-                        username
-                    );
-                    return Some(vec!["admin".to_string()]);
-                }
-            }
             None
         } else {
             Some(roles)
@@ -756,11 +776,11 @@ impl AuthService {
 }
 
 /// Constant-time comparison to prevent timing attacks
+/// Uses subtle::ConstantTimeEq for proper constant-time comparison
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter().zip(b.iter()).fold(0, |acc, (x, y)| acc | (x ^ y)) == 0
+    // subtle::ConstantTimeEq::ct_eq returns a Choice, we convert to bool
+    // Note: ct_eq on slices short-circuits on length mismatch (but that's still constant-time)
+    a.ct_eq(b).unwrap_u8() == 1
 }
 
 /// Axum Middleware for Authentication
@@ -790,10 +810,16 @@ pub async fn auth_middleware(
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
 
-        // Only bypass if secrets match and secret is not empty
-        if !cluster_secret.is_empty()
-            && constant_time_eq(cluster_secret.as_bytes(), provided_secret.as_bytes())
-        {
+        // Fail closed: if no keyfile configured, reject internal requests
+        if cluster_secret.is_empty() {
+            tracing::warn!(
+                "CLUSTER AUTH REJECTED: Internal request but no keyfile configured on this node."
+            );
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
+        }
+
+        // Only bypass if secrets match
+        if constant_time_eq(cluster_secret.as_bytes(), provided_secret.as_bytes()) {
             let claims = Claims {
                 sub: "cluster-internal".to_string(),
                 exp: usize::MAX,
@@ -843,6 +869,17 @@ pub async fn auth_middleware(
         if let Some(token) = header.strip_prefix("Bearer ") {
             match AuthService::validate_token(token) {
                 Ok(claims) => {
+                    if claims.livequery == Some(true) {
+                        let path = req.uri().path();
+                        let allowed_livequery_paths = ["/_api/ws/changefeed", "/_api/livequery"];
+                        if !allowed_livequery_paths.iter().any(|p| path.starts_with(p)) {
+                            tracing::warn!(
+                                "livequery token used on non-whitelisted path: {}",
+                                path
+                            );
+                            return Err(StatusCode::FORBIDDEN);
+                        }
+                    }
                     req.extensions_mut().insert(claims);
                     return Ok(next.run(req).await);
                 }
@@ -1016,7 +1053,31 @@ pub async fn permissive_auth_middleware(
         }
     }
 
-    // No auth header present - proceed as anonymous (no claims injected)
+    // No auth header present - proceed as anonymous (no claims injected).
+    // Emit a structured audit event at WARN level so anonymous script access
+    // is captured by default log filters and not lost at DEBUG.
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    let peer = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
+        .or_else(|| {
+            req.headers()
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+    tracing::warn!(
+        target: "audit",
+        event = "anonymous_access",
+        method = %method,
+        path = %path,
+        peer = %peer,
+        "permissive_auth: anonymous request to script endpoint"
+    );
     Ok(next.run(req).await)
 }
 

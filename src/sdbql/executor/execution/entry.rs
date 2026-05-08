@@ -107,6 +107,17 @@ impl<'a> QueryExecutor<'a> {
                         .map(|n| n as usize)
                         .unwrap_or(0);
 
+                    // Check for overflow in limit_offset + limit_count
+                    let max_fetch = match limit_offset.checked_add(limit_count) {
+                        Some(sum) => sum,
+                        None => {
+                            return Ok(QueryExecutionResult {
+                                results: vec![],
+                                mutations: MutationStats::new(),
+                            });
+                        }
+                    };
+
                     // Check if the sort field is on the loop variable
                     // Check if sort expression is a simple field access on the loop variable
                     if let Expression::FieldAccess(base, field) = sort_expr {
@@ -115,14 +126,16 @@ impl<'a> QueryExecutor<'a> {
                                 // Try to get collection and check for index
                                 if let Ok(collection) = self.get_collection(&for_clause.collection)
                                 {
-                                    if let Some(docs) = collection.index_sorted(
-                                        field,
-                                        *sort_asc,
-                                        Some(limit_offset + limit_count),
-                                    ) {
+                                    if let Some(docs) =
+                                        collection.index_sorted(field, *sort_asc, Some(max_fetch))
+                                    {
                                         // Got sorted documents from index! Apply offset and build result
                                         let start = limit_offset.min(docs.len());
-                                        let end = (start + limit_count).min(docs.len());
+                                        // Check for overflow in start + limit_count
+                                        let end = match start.checked_add(limit_count) {
+                                            Some(sum) => sum.min(docs.len()),
+                                            None => docs.len(),
+                                        };
                                         let docs = &docs[start..end];
 
                                         let results =
@@ -282,7 +295,7 @@ impl<'a> QueryExecutor<'a> {
                 .count();
 
             if for_count == 1 && filter_count == 0 {
-                query.limit_clause.as_ref().map(|l| {
+                query.limit_clause.as_ref().and_then(|l| {
                     let offset = self
                         .evaluate_expr_with_context(&l.offset, &initial_bindings)
                         .ok()
@@ -295,7 +308,7 @@ impl<'a> QueryExecutor<'a> {
                         .and_then(|v| v.as_u64())
                         .map(|n| n as usize)
                         .unwrap_or(0);
-                    offset + count
+                    offset.checked_add(count)
                 })
             } else {
                 None

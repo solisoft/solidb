@@ -15,13 +15,70 @@ use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::sync::Arc;
 
+/// Maximum WebSocket message size (1 MB) - prevents OOM attacks
+const MAX_WS_MESSAGE_SIZE: usize = 1024 * 1024;
+
+/// Validate the `Origin` header against `SOLIDB_CORS_ALLOWED_ORIGINS`.
+/// Mirrors the HTTP CORS policy in `routes.rs`: empty allowlist = deny any
+/// cross-origin request. Non-browser clients (no `Origin` header) are allowed.
+/// Returns Ok(()) when the request may proceed, Err(()) to reject with 403.
+fn validate_ws_origin(headers: &HeaderMap) -> Result<(), ()> {
+    let origin = match headers.get("origin").and_then(|o| o.to_str().ok()) {
+        Some(o) => o,
+        None => return Ok(()), // No Origin header — non-browser client.
+    };
+    let allowed_raw = std::env::var("SOLIDB_CORS_ALLOWED_ORIGINS").unwrap_or_default();
+    if allowed_raw == "*" {
+        return Ok(());
+    }
+    if allowed_raw.is_empty() {
+        tracing::warn!(
+            "WebSocket: rejecting Origin '{}' — SOLIDB_CORS_ALLOWED_ORIGINS not set",
+            origin
+        );
+        return Err(());
+    }
+    let allowed = allowed_raw
+        .split(',')
+        .map(str::trim)
+        .any(|a| a == origin || a == "*");
+    if allowed {
+        Ok(())
+    } else {
+        tracing::warn!("WebSocket: rejecting disallowed Origin '{}'", origin);
+        Err(())
+    }
+}
+
+fn forbidden_response() -> Response {
+    Response::builder()
+        .status(StatusCode::FORBIDDEN)
+        .body(Body::empty())
+        .expect("Valid status code should not fail")
+        .into_response()
+}
+
 // ==================== Cluster Status WebSocket ====================
 
 /// WebSocket handler for real-time cluster status updates
 pub async fn cluster_status_ws(
     ws: WebSocketUpgrade,
+    AxumQuery(params): AxumQuery<AuthParams>,
     State(state): State<AppState>,
-) -> impl IntoResponse {
+    headers: HeaderMap,
+) -> Response {
+    if crate::server::auth::AuthService::validate_token(&params.token).is_err() {
+        return Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body(Body::empty())
+            .expect("Valid status code should not fail")
+            .into_response();
+    }
+
+    if validate_ws_origin(&headers).is_err() {
+        return forbidden_response();
+    }
+
     ws.on_upgrade(|socket| handle_cluster_ws(socket, state))
 }
 
@@ -76,6 +133,7 @@ pub async fn monitor_ws_handler(
     ws: WebSocketUpgrade,
     AxumQuery(params): AxumQuery<AuthParams>,
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Response {
     if crate::server::auth::AuthService::validate_token(&params.token).is_err() {
         return Response::builder()
@@ -83,6 +141,10 @@ pub async fn monitor_ws_handler(
             .body(Body::empty())
             .expect("Valid status code should not fail")
             .into_response();
+    }
+
+    if validate_ws_origin(&headers).is_err() {
+        return forbidden_response();
     }
 
     ws.on_upgrade(|socket| handle_monitor_socket(socket, state))
@@ -193,6 +255,10 @@ pub async fn ws_changefeed_handler(
             .into_response();
     }
 
+    if validate_ws_origin(&headers).is_err() {
+        return forbidden_response();
+    }
+
     // Check if HTMX mode is requested
     let use_htmx = params.htmx.map(|s| s == "true").unwrap_or(false);
 
@@ -235,6 +301,33 @@ async fn handle_socket(socket: WebSocket, state: AppState, use_htmx: bool) {
 
     // Main Receiver Loop
     while let Some(Ok(msg)) = receiver.next().await {
+        // Security: Check message size to prevent OOM attacks
+        let msg_len = match &msg {
+            Message::Text(text) => text.len(),
+            Message::Binary(data) => data.len(),
+            Message::Ping(data) => data.len(),
+            Message::Pong(data) => data.len(),
+            _ => 0,
+        };
+
+        if msg_len > MAX_WS_MESSAGE_SIZE {
+            tracing::warn!(
+                "[WS] Message size {} exceeds limit {}, closing connection",
+                msg_len,
+                MAX_WS_MESSAGE_SIZE
+            );
+            let _ = tx
+                .send(Message::Text(
+                    serde_json::json!({
+                        "error": "Message too large"
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await;
+            break;
+        }
+
         match msg {
             Message::Text(text) => {
                 let req_result = serde_json::from_str::<ChangefeedRequest>(&text);

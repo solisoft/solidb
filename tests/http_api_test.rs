@@ -24,6 +24,9 @@ fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
+    engine
+        .initialize()
+        .expect("Failed to initialize storage engine");
 
     // Create minimal dependencies
     let script_stats = Arc::new(ScriptStats::default());

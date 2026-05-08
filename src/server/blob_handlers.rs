@@ -382,6 +382,7 @@ pub(crate) async fn distribute_blob_chunks_across_cluster(
     // For each chunk, replicate to multiple nodes for redundancy
     // We'll use a simple round-robin distribution with replication factor of min(3, node_count)
     let replication_factor = std::cmp::min(3, node_addresses.len());
+    let cluster_secret = coordinator.cluster_secret();
 
     for (chunk_idx, chunk_data) in chunks {
         // Select target nodes for this chunk using round-robin
@@ -405,7 +406,7 @@ pub(crate) async fn distribute_blob_chunks_across_cluster(
                 blob_key,
                 &[(*chunk_idx, chunk_data.clone())],
                 None, // No metadata for individual chunks
-                "",   // No auth needed for internal replication
+                &cluster_secret,
             )
             .await
             {

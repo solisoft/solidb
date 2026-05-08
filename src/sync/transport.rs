@@ -185,10 +185,14 @@ impl ConnectionPool {
             }
         };
 
-        let challenge = match msg {
-            SyncMessage::AuthChallenge { challenge } => {
+        let (challenge, timestamp, nonce) = match msg {
+            SyncMessage::AuthChallenge {
+                challenge,
+                timestamp,
+                nonce,
+            } => {
                 debug!("authenticate_client: got challenge");
-                challenge
+                (challenge, timestamp, nonce)
             }
             _ => {
                 return Err(TransportError::AuthFailed(
@@ -197,8 +201,8 @@ impl ConnectionPool {
             }
         };
 
-        // Compute HMAC response
-        let hmac = self.compute_hmac(&challenge)?;
+        // Compute HMAC response including timestamp and nonce
+        let hmac = self.compute_hmac_with_timestamp(&challenge, timestamp, &nonce)?;
 
         // Send response
         debug!("authenticate_client: sending response");
@@ -226,8 +230,13 @@ impl ConnectionPool {
         }
     }
 
-    /// Compute HMAC of data using keyfile
-    fn compute_hmac(&self, data: &[u8]) -> Result<Vec<u8>, TransportError> {
+    /// Compute HMAC of data with timestamp and nonce using keyfile
+    fn compute_hmac_with_timestamp(
+        &self,
+        data: &[u8],
+        timestamp: u64,
+        nonce: &[u8],
+    ) -> Result<Vec<u8>, TransportError> {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
 
@@ -237,6 +246,8 @@ impl ConnectionPool {
         let mut mac = Hmac::<Sha256>::new_from_slice(&key)
             .map_err(|e| TransportError::AuthFailed(format!("Invalid key: {}", e)))?;
         mac.update(data);
+        mac.update(&timestamp.to_be_bytes());
+        mac.update(nonce);
 
         Ok(mac.finalize().into_bytes().to_vec())
     }
@@ -284,6 +295,7 @@ impl ConnectionPool {
         peer_addr: &str,
         max_attempts: u32,
     ) -> Result<(), TransportError> {
+        use rand::Rng;
         let mut delay = Duration::from_millis(100);
 
         for attempt in 1..=max_attempts {
@@ -297,6 +309,11 @@ impl ConnectionPool {
                     if attempt < max_attempts {
                         tokio::time::sleep(delay).await;
                         delay = std::cmp::min(delay * 2, Duration::from_secs(30));
+                        // Add up to ±25% jitter so reconnect storms don't synchronize
+                        // (full jitter scales with current delay, not a fixed 25 ms).
+                        let quarter = (delay.as_millis() as u64 / 4).max(1);
+                        let jitter: u64 = rand::rngs::OsRng.gen_range(0..=quarter);
+                        delay += Duration::from_millis(jitter);
                     }
                 }
             }
@@ -461,7 +478,20 @@ impl SyncServer {
 
         // If no keyfile provided or it doesn't exist, skip authentication (for dev/test)
         if keyfile_path.is_empty() || !std::path::Path::new(keyfile_path).exists() {
-            debug!("authenticate_standalone: no keyfile found, skipping authentication");
+            // Security: Check if keyfile is required via environment variable
+            let require_keyfile = std::env::var("SOLIDB_REQUIRE_KEYFILE")
+                .map(|v| v.to_lowercase() == "true")
+                .unwrap_or(false);
+
+            if require_keyfile {
+                warn!("authenticate_standalone: SOLIDB_REQUIRE_KEYFILE=true but no keyfile found");
+                return Err(TransportError::AuthFailed(
+                    "Cluster keyfile required but not found (set SOLIDB_REQUIRE_KEYFILE=false to disable)".to_string(),
+                ));
+            }
+
+            warn!("authenticate_standalone: no keyfile found, skipping authentication");
+            warn!("WARNING: Inter-node communication is unauthenticated. Set SOLIDB_REQUIRE_KEYFILE=true to enforce authentication.");
 
             // Still need to handle magic header if not skipped
             if !skip_magic {
@@ -502,14 +532,21 @@ impl SyncServer {
             debug!("authenticate_standalone: skip magic (multiplexed)");
         }
 
-        // Generate random challenge
+        // Generate random challenge with timestamp and nonce to prevent replay attacks
         use rand::Rng;
-        let challenge: Vec<u8> = rand::thread_rng().gen::<[u8; 32]>().to_vec();
+        let challenge: Vec<u8> = rand::rngs::OsRng.gen::<[u8; 32]>().to_vec();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let nonce: Vec<u8> = rand::rngs::OsRng.gen::<[u8; 16]>().to_vec();
 
-        // Send challenge
+        // Send challenge with timestamp and nonce
         debug!("authenticate_standalone: sending challenge");
         let challenge_msg = SyncMessage::AuthChallenge {
             challenge: challenge.clone(),
+            timestamp,
+            nonce: nonce.clone(),
         };
         ConnectionPool::write_message(&mut stream, &challenge_msg).await?;
         debug!("authenticate_standalone: waiting for response");
@@ -535,10 +572,24 @@ impl SyncServer {
             }
         };
 
-        // Verify HMAC
-        let expected_hmac = Self::compute_hmac_static(&challenge, keyfile_path)?;
+        // The 32-byte random challenge already prevents replay; timestamp here
+        // bounds how long the handshake may take (clients that delay past this
+        // window are rejected, limiting slow-loris on the auth path).
+        const HANDSHAKE_MAX_AGE_MS: u64 = 30_000;
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        if now_ms.saturating_sub(timestamp) > HANDSHAKE_MAX_AGE_MS {
+            return Err(TransportError::AuthFailed(
+                "Auth handshake timed out".to_string(),
+            ));
+        }
 
-        if client_hmac == expected_hmac {
+        let expected_hmac =
+            Self::compute_hmac_with_timestamp(&challenge, timestamp, &nonce, keyfile_path)?;
+
+        if crate::server::auth::constant_time_eq(&client_hmac, &expected_hmac) {
             let _ = ConnectionPool::write_message(
                 &mut stream,
                 &SyncMessage::AuthResult {
@@ -553,7 +604,12 @@ impl SyncServer {
         }
     }
 
-    fn compute_hmac_static(data: &[u8], keyfile_path: &str) -> Result<Vec<u8>, TransportError> {
+    fn compute_hmac_with_timestamp(
+        data: &[u8],
+        timestamp: u64,
+        nonce: &[u8],
+        keyfile_path: &str,
+    ) -> Result<Vec<u8>, TransportError> {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
 
@@ -564,6 +620,8 @@ impl SyncServer {
         let mut mac = Hmac::<Sha256>::new_from_slice(&key)
             .map_err(|e| TransportError::AuthFailed(format!("Invalid key: {}", e)))?;
         mac.update(data);
+        mac.update(&timestamp.to_be_bytes());
+        mac.update(nonce);
 
         Ok(mac.finalize().into_bytes().to_vec())
     }

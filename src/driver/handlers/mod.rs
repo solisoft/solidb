@@ -129,6 +129,21 @@ impl DriverHandler {
 
     /// Execute a command and return a response
     async fn execute_command(&mut self, command: Command) -> Response {
+        // Gate every command behind authentication. Only Ping and Auth are
+        // allowed before the connection has authenticated. Batch is allowed
+        // through here so its inner commands are re-checked individually
+        // (an Auth inside a batch will set state for subsequent entries).
+        if self.authenticated_db.is_none() {
+            match &command {
+                Command::Ping | Command::Auth { .. } | Command::Batch { .. } => {}
+                _ => {
+                    return Response::error(DriverError::AuthError(
+                        "Authentication required".to_string(),
+                    ));
+                }
+            }
+        }
+
         match command {
             // ==================== Auth & Utility ====================
             Command::Ping => Response::pong(),

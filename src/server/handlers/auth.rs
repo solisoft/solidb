@@ -1,8 +1,10 @@
 use super::system::AppState;
 use crate::error::DbError;
+use crate::server::auth::Claims;
+use crate::server::authorization::{AuthorizationService, PermissionAction};
 use crate::sync::{LogEntry, Operation};
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::HeaderMap,
     response::Json,
 };
@@ -139,8 +141,10 @@ pub async fn change_password_handler(
 /// Handler for creating a new API key
 pub async fn create_api_key_handler(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Json(req): Json<CreateApiKeyRequest>,
 ) -> Result<Json<CreateApiKeyResponse>, DbError> {
+    AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
     // Generate key
     let (raw_key, key_hash) = crate::server::auth::AuthService::generate_api_key();
 
@@ -214,7 +218,9 @@ pub async fn create_api_key_handler(
 /// Handler for listing API keys (without the actual keys)
 pub async fn list_api_keys_handler(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<ListApiKeysResponse>, DbError> {
+    AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
     let db = state.storage.get_database("_system")?;
 
     // Return empty if collection doesn't exist
@@ -246,8 +252,10 @@ pub async fn list_api_keys_handler(
 /// Handler for deleting an API key
 pub async fn delete_api_key_handler(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Path(key_id): Path<String>,
 ) -> Result<Json<DeleteApiKeyResponse>, DbError> {
+    AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
     let db = state.storage.get_database("_system")?;
     let collection = db.get_collection(crate::server::auth::API_KEYS_COLL)?;
 
@@ -307,6 +315,7 @@ pub async fn login_handler(
             crate::server::auth::AuthService::init(
                 &state.storage,
                 state.replication_log.as_deref(),
+                state.storage.data_dir(),
             )?;
             db.get_collection("_admins")?
         }
@@ -316,7 +325,11 @@ pub async fn login_handler(
     // 3. Check if collection is empty (also create default admin)
     if collection.count() == 0 {
         tracing::warn!("_admins collection empty, creating default admin...");
-        crate::server::auth::AuthService::init(&state.storage, state.replication_log.as_deref())?;
+        crate::server::auth::AuthService::init(
+            &state.storage,
+            state.replication_log.as_deref(),
+            state.storage.data_dir(),
+        )?;
     }
 
     // 4. Get user document
@@ -342,8 +355,10 @@ pub async fn login_handler(
         return Err(DbError::BadRequest("Invalid credentials".to_string()));
     }
 
-    // 7. Generate Token
-    let token = crate::server::auth::AuthService::create_jwt(&user.username)?;
+    // 7. Generate Token with roles
+    let roles = crate::server::auth::AuthService::get_user_roles(&state.storage, &user.username);
+    let token =
+        crate::server::auth::AuthService::create_jwt_with_roles(&user.username, roles, None)?;
 
     Ok(Json(LoginResponse { token }))
 }

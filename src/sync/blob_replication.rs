@@ -1,5 +1,6 @@
 use axum::{
     extract::{Multipart, Path, State},
+    http::HeaderMap,
     response::Json,
 };
 use serde_json::Value;
@@ -7,12 +8,40 @@ use serde_json::Value;
 use crate::error::DbError;
 use crate::server::handlers::AppState;
 
+/// Verify the X-Cluster-Secret header matches the configured keyfile.
+///
+/// These `/_internal/blob/*` routes are mounted on the public router with no
+/// user-auth middleware, so they MUST authenticate inter-node traffic via the
+/// cluster secret. Fails closed when no keyfile is configured to prevent the
+/// empty-secret bypass.
+fn verify_cluster_secret(state: &AppState, headers: &HeaderMap) -> Result<(), DbError> {
+    let secret = state.cluster_secret();
+    if secret.is_empty() {
+        return Err(DbError::InternalError(
+            "Cluster keyfile not configured".to_string(),
+        ));
+    }
+    let request_secret = headers
+        .get("X-Cluster-Secret")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !crate::server::auth::constant_time_eq(request_secret.as_bytes(), secret.as_bytes()) {
+        return Err(DbError::BadRequest("Invalid cluster secret".to_string()));
+    }
+
+    Ok(())
+}
+
 /// Fetch a specific blob chunk from this node
 /// GET /_internal/blob/replicate/:db/:collection/:key/chunk/:chunk_idx
 pub async fn get_blob_chunk(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((db_name, coll_name, blob_key, chunk_idx_str)): Path<(String, String, String, String)>,
 ) -> Result<axum::body::Bytes, DbError> {
+    verify_cluster_secret(&state, &headers)?;
+
     let chunk_idx = chunk_idx_str
         .parse::<u32>()
         .map_err(|_| DbError::BadRequest("Invalid chunk index".to_string()))?;
@@ -48,7 +77,7 @@ pub async fn replicate_blob_to_node(
     blob_key: &str,
     chunks: &[(u32, Vec<u8>)],
     metadata: Option<&Value>,
-    _auth_token: &str, // Ignored for internal trusted cluster traffic for now
+    cluster_secret: &str, // sent as X-Cluster-Secret to authenticate inter-node traffic
 ) -> Result<(), DbError> {
     // Skip if no chunks to replicate AND no metadata
     if chunks.is_empty() && metadata.is_none() {
@@ -95,14 +124,13 @@ pub async fn replicate_blob_to_node(
         form = form.part(format!("chunk_{}", index), part);
     }
 
-    let mut req_builder = client.post(&url);
+    let mut req_builder = client.post(&url).header("X-Cluster-Secret", cluster_secret);
 
     if let Some(trace_ctx) = crate::observability::get_current_trace_context() {
         req_builder = req_builder.header("traceparent", trace_ctx.to_header());
     }
 
     let response = req_builder
-        // .bearer_auth(auth_token) // TODO: Internal auth
         .multipart(form)
         .send()
         .await
@@ -124,9 +152,12 @@ pub async fn replicate_blob_to_node(
 /// POST /_internal/blob/replicate/:db/:collection/:key
 pub async fn receive_blob_replication(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((db_name, coll_name, blob_key)): Path<(String, String, String)>,
     mut multipart: Multipart,
 ) -> Result<Json<Value>, DbError> {
+    verify_cluster_secret(&state, &headers)?;
+
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
@@ -162,6 +193,18 @@ pub async fn receive_blob_replication(
                 .await
                 .map_err(|e| DbError::BadRequest(e.to_string()))?;
             if let Ok(doc_value) = serde_json::from_str::<Value>(&text) {
+                // Reject metadata whose `_key` does not match the URL path: the
+                // URL is the authoritative key (mirrors how chunks are stored),
+                // and trusting the body lets a caller insert documents under a
+                // different key than the chunks they uploaded.
+                if let Some(meta_key) = doc_value.get("_key").and_then(|k| k.as_str()) {
+                    if meta_key != blob_key {
+                        return Err(DbError::BadRequest(format!(
+                            "Metadata _key '{}' does not match URL path '{}'",
+                            meta_key, blob_key
+                        )));
+                    }
+                }
                 tracing::info!("Inserting replicated metadata for blob {}", blob_key);
                 // Insert metadata document
                 // Note: This insert is local to this shard (Primary).
@@ -225,9 +268,12 @@ pub async fn receive_blob_replication(
 /// POST /_internal/blob/upload/:db/:collection
 pub async fn receive_blob_upload(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((db_name, coll_name)): Path<(String, String)>,
     mut multipart: Multipart,
 ) -> Result<Json<Value>, DbError> {
+    verify_cluster_secret(&state, &headers)?;
+
     let database = state.storage.get_database(&db_name)?;
 
     // Auto-create the physical shard blob collection if it doesn't exist

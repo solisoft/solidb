@@ -276,13 +276,14 @@ mod tests {
             .unwrap(),
             Some(json!(true))
         );
+        // Collection names are case-sensitive (ArangoDB-compatible)
         assert_eq!(
             call(
                 "IS_SAME_COLLECTION",
                 &[json!("users/123"), json!("Users/456")]
             )
             .unwrap(),
-            Some(json!(true))
+            Some(json!(false))
         );
         assert_eq!(
             call("IS_SAME_COLLECTION", &[json!(123), json!("users/456")]).unwrap(),
