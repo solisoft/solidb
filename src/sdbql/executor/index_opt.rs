@@ -125,6 +125,13 @@ impl<'a> QueryExecutor<'a> {
         collection: &Collection,
         condition: &IndexableCondition,
     ) -> Option<Vec<crate::storage::Document>> {
+        // Fast-path: `_key` is the primary key, served by a direct RocksDB get()
+        // instead of a full prefix scan + in-memory filter.
+        // TODO(_id fast-path): handle `doc._id == "coll/key"` similarly.
+        if condition.field == "_key" {
+            return self.key_fast_path(collection, condition);
+        }
+
         // Normalize the value for index lookup
         // If it's a float that's actually an integer (e.g., 30.0), convert to integer
         // This handles the case where SDBQL parses "30" as 30.0 but data has integer 30
@@ -168,6 +175,30 @@ impl<'a> QueryExecutor<'a> {
                 collection.index_lookup_lte(&condition.field, &normalized_value)
             }
             _ => None,
+        }
+    }
+
+    /// Primary-key point-lookup for `doc._key == <literal>`.
+    /// Returns `Some(Vec)` for equality (treated as an indexed lookup so the
+    /// scan path is skipped) and `None` for non-equality ops so range filters
+    /// fall through to the scan path.
+    fn key_fast_path(
+        &self,
+        collection: &Collection,
+        condition: &IndexableCondition,
+    ) -> Option<Vec<crate::storage::Document>> {
+        if !matches!(condition.op, BinaryOperator::Equal) {
+            return None;
+        }
+        // `_key` is always a string at insert time; a non-string literal
+        // cannot match any document.
+        let Some(key) = condition.value.as_str() else {
+            return Some(Vec::new());
+        };
+        match collection.get(key) {
+            Ok(doc) => Some(vec![doc]),
+            Err(DbError::DocumentNotFound(_)) => Some(Vec::new()),
+            Err(_) => None,
         }
     }
 }

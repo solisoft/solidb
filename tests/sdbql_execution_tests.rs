@@ -230,6 +230,38 @@ fn test_filter_in_array() {
     assert_eq!(results.len(), 3);
 }
 
+#[test]
+fn test_key_fast_path_point_lookup() {
+    let (engine, _tmp) = create_seeded_engine();
+
+    // Hit: existing key resolves to exactly one document via the primary-key
+    // fast-path (no secondary index on `_key` exists).
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc._key == 'alice' RETURN doc",
+    );
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].get("name"), Some(&json!("Alice")));
+
+    // Hit with LIMIT 1: still returns the document.
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc._key == 'alice' LIMIT 1 RETURN doc",
+    );
+    assert_eq!(results.len(), 1);
+
+    // Miss: non-existent key returns an empty result (not an error).
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc._key == 'zzz_nonexistent' RETURN doc",
+    );
+    assert_eq!(results.len(), 0);
+
+    // Non-string literal: cannot match any document key (keys are strings).
+    let results = execute_query(&engine, "FOR doc IN users FILTER doc._key == 42 RETURN doc");
+    assert_eq!(results.len(), 0);
+}
+
 // ============================================================================
 // SORT Operations
 // ============================================================================
