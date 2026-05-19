@@ -231,31 +231,26 @@ fn expression_references_var(expr: &Expression, var_name: &str) -> bool {
             expression_references_var(base, var_name)
         }
         Expression::DynamicFieldAccess(base, key) => {
-            expression_references_var(base, var_name)
-                || expression_references_var(key, var_name)
+            expression_references_var(base, var_name) || expression_references_var(key, var_name)
         }
         Expression::ArrayAccess(base, idx) => {
-            expression_references_var(base, var_name)
-                || expression_references_var(idx, var_name)
+            expression_references_var(base, var_name) || expression_references_var(idx, var_name)
         }
         Expression::ArraySpreadAccess(base, _) => expression_references_var(base, var_name),
         Expression::BinaryOp { left, right, .. } => {
-            expression_references_var(left, var_name)
-                || expression_references_var(right, var_name)
+            expression_references_var(left, var_name) || expression_references_var(right, var_name)
         }
         Expression::UnaryOp { operand, .. } => expression_references_var(operand, var_name),
         Expression::Object(fields) => fields
             .iter()
             .any(|(_, e)| expression_references_var(e, var_name)),
-        Expression::Array(items) => items
-            .iter()
-            .any(|e| expression_references_var(e, var_name)),
+        Expression::Array(items) => items.iter().any(|e| expression_references_var(e, var_name)),
         Expression::Range(a, b) => {
             expression_references_var(a, var_name) || expression_references_var(b, var_name)
         }
-        Expression::FunctionCall { args, .. } => args
-            .iter()
-            .any(|e| expression_references_var(e, var_name)),
+        Expression::FunctionCall { args, .. } => {
+            args.iter().any(|e| expression_references_var(e, var_name))
+        }
         Expression::Subquery(_) => {
             // Conservative: assume any subquery may correlate on var_name.
             true
@@ -277,19 +272,15 @@ fn expression_references_var(expr: &Expression, var_name: &str) -> bool {
             operand
                 .as_deref()
                 .is_some_and(|e| expression_references_var(e, var_name))
-                || when_clauses
-                    .iter()
-                    .any(|(c, r)| {
-                        expression_references_var(c, var_name)
-                            || expression_references_var(r, var_name)
-                    })
+                || when_clauses.iter().any(|(c, r)| {
+                    expression_references_var(c, var_name) || expression_references_var(r, var_name)
+                })
                 || else_clause
                     .as_deref()
                     .is_some_and(|e| expression_references_var(e, var_name))
         }
         Expression::Pipeline { left, right } => {
-            expression_references_var(left, var_name)
-                || expression_references_var(right, var_name)
+            expression_references_var(left, var_name) || expression_references_var(right, var_name)
         }
         Expression::Lambda { body, .. } => expression_references_var(body, var_name),
         Expression::WindowFunctionCall {

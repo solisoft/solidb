@@ -133,10 +133,7 @@ impl<'a> QueryExecutor<'a> {
                                     // an empty one) — sufficient for the
                                     // structural decision of whether an index
                                     // would be used at runtime.
-                                    let probe_ctx = rows
-                                        .first()
-                                        .cloned()
-                                        .unwrap_or_default();
+                                    let probe_ctx = rows.first().cloned().unwrap_or_default();
                                     if let Some(condition) = self.extract_indexable_condition(
                                         &filter_clause.expression,
                                         &for_clause.variable,

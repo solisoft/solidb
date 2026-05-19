@@ -106,10 +106,7 @@ impl<'a> QueryExecutor<'a> {
             if sort.fields.len() == 1 {
                 let body = query.body_clauses.as_slice();
                 let head_is_for = matches!(body.first(), Some(BodyClause::For(_)));
-                let tail_is_lets = body
-                    .iter()
-                    .skip(1)
-                    .all(|c| matches!(c, BodyClause::Let(_)));
+                let tail_is_lets = body.iter().skip(1).all(|c| matches!(c, BodyClause::Let(_)));
                 if head_is_for && tail_is_lets {
                     if let Some(BodyClause::For(for_clause)) = body.first() {
                         // Only when the FOR iterates a collection (no source_expression)
