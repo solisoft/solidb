@@ -59,6 +59,18 @@ impl<'a> QueryExecutor<'a> {
             initial_bindings.insert(let_clause.variable.clone(), value);
         }
 
+        self.execute_with_initial_bindings(query, initial_bindings)
+    }
+
+    /// Execute the optimization + body-clause + sort/limit/return pipeline against a
+    /// fully-built initial binding set. Shared by top-level `execute_with_stats` and
+    /// the subquery executor so that subqueries get the same fast paths
+    /// (e.g. the `_key` index-sorted shortcut for SORT+LIMIT).
+    pub(super) fn execute_with_initial_bindings(
+        &self,
+        query: &Query,
+        initial_bindings: Context,
+    ) -> DbResult<QueryExecutionResult> {
         // Optimization: Streaming bulk INSERT for range-based FOR loops
         // Pattern: FOR i IN start..end INSERT {...} INTO collection [RETURN ...]
         // This avoids materializing millions of row contexts in memory
@@ -85,85 +97,126 @@ impl<'a> QueryExecutor<'a> {
         }
 
         // Optimization: Use index for SORT + LIMIT if available
-        // Check if query is: FOR var IN collection SORT var.field LIMIT n RETURN ...
+        // Pattern: FOR var IN collection [LET v = ...]* SORT var.field LIMIT n RETURN ...
+        // The body must be a single FOR (on a real collection) optionally followed by
+        // LET clauses. LET clauses are evaluated *after* limiting so a per-row
+        // correlated subquery (e.g. `LET org = (FOR ... FILTER ... RETURN ...)`)
+        // runs at most `offset + count` times instead of once per document.
         if let (Some(sort), Some(limit)) = (&query.sort_clause, &query.limit_clause) {
-            // Check if we have a simple FOR loop on a collection
-            // Only optimize single field sort for now
-            if query.body_clauses.len() == 1 && sort.fields.len() == 1 {
-                if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
-                    let (sort_expr, sort_asc) = &sort.fields[0];
+            if sort.fields.len() == 1 {
+                let body = query.body_clauses.as_slice();
+                let head_is_for = matches!(body.first(), Some(BodyClause::For(_)));
+                let tail_is_lets = body
+                    .iter()
+                    .skip(1)
+                    .all(|c| matches!(c, BodyClause::Let(_)));
+                if head_is_for && tail_is_lets {
+                    if let Some(BodyClause::For(for_clause)) = body.first() {
+                        // Only when the FOR iterates a collection (no source_expression)
+                        // and matches against a real collection name (not a LET-bound array).
+                        let iterates_collection = for_clause.source_expression.is_none()
+                            && for_clause
+                                .source_variable
+                                .as_ref()
+                                .is_none_or(|s| s == &for_clause.collection)
+                            && !initial_bindings.contains_key(&for_clause.collection);
 
-                    // Evaluate limit expressions
-                    let limit_offset = self
-                        .evaluate_expr_with_context(&limit.offset, &initial_bindings)
-                        .ok()
-                        .and_then(|v| v.as_u64())
-                        .map(|n| n as usize)
-                        .unwrap_or(0);
-                    let limit_count = self
-                        .evaluate_expr_with_context(&limit.count, &initial_bindings)
-                        .ok()
-                        .and_then(|v| v.as_u64())
-                        .map(|n| n as usize)
-                        .unwrap_or(0);
+                        let (sort_expr, sort_asc) = &sort.fields[0];
+                        if iterates_collection {
+                            // Evaluate limit expressions
+                            let limit_offset = self
+                                .evaluate_expr_with_context(&limit.offset, &initial_bindings)
+                                .ok()
+                                .and_then(|v| v.as_u64())
+                                .map(|n| n as usize)
+                                .unwrap_or(0);
+                            let limit_count = self
+                                .evaluate_expr_with_context(&limit.count, &initial_bindings)
+                                .ok()
+                                .and_then(|v| v.as_u64())
+                                .map(|n| n as usize)
+                                .unwrap_or(0);
 
-                    // Check for overflow in limit_offset + limit_count
-                    let max_fetch = match limit_offset.checked_add(limit_count) {
-                        Some(sum) => sum,
-                        None => {
-                            return Ok(QueryExecutionResult {
-                                results: vec![],
-                                mutations: MutationStats::new(),
-                            });
-                        }
-                    };
+                            // Check for overflow in limit_offset + limit_count
+                            let max_fetch = match limit_offset.checked_add(limit_count) {
+                                Some(sum) => sum,
+                                None => {
+                                    return Ok(QueryExecutionResult {
+                                        results: vec![],
+                                        mutations: MutationStats::new(),
+                                    });
+                                }
+                            };
 
-                    // Check if the sort field is on the loop variable
-                    // Check if sort expression is a simple field access on the loop variable
-                    if let Expression::FieldAccess(base, field) = sort_expr {
-                        if let Expression::Variable(var) = base.as_ref() {
-                            if var == &for_clause.variable {
-                                // Try to get collection and check for index
-                                if let Ok(collection) = self.get_collection(&for_clause.collection)
-                                {
-                                    if let Some(docs) =
-                                        collection.index_sorted(field, *sort_asc, Some(max_fetch))
-                                    {
-                                        // Got sorted documents from index! Apply offset and build result
-                                        let start = limit_offset.min(docs.len());
-                                        // Check for overflow in start + limit_count
-                                        let end = match start.checked_add(limit_count) {
-                                            Some(sum) => sum.min(docs.len()),
-                                            None => docs.len(),
-                                        };
-                                        let docs = &docs[start..end];
+                            // Check if sort expression is a simple field access on the loop variable
+                            if let Expression::FieldAccess(base, field) = sort_expr {
+                                if let Expression::Variable(var) = base.as_ref() {
+                                    if var == &for_clause.variable {
+                                        if let Ok(collection) =
+                                            self.get_collection(&for_clause.collection)
+                                        {
+                                            if let Some(docs) = collection.index_sorted(
+                                                field,
+                                                *sort_asc,
+                                                Some(max_fetch),
+                                            ) {
+                                                let start = limit_offset.min(docs.len());
+                                                let end = match start.checked_add(limit_count) {
+                                                    Some(sum) => sum.min(docs.len()),
+                                                    None => docs.len(),
+                                                };
+                                                let docs = &docs[start..end];
 
-                                        let results =
-                                            if let Some(ref return_clause) = query.return_clause {
-                                                let results: DbResult<Vec<Value>> = docs
+                                                // Collect trailing LET clauses (already
+                                                // validated above as the only non-FOR body
+                                                // entries).
+                                                let lets: Vec<&LetClause> = body
                                                     .iter()
-                                                    .map(|doc| {
-                                                        let mut ctx = initial_bindings.clone();
-                                                        ctx.insert(
-                                                            for_clause.variable.clone(),
-                                                            doc.to_value(),
-                                                        );
-                                                        self.evaluate_expr_with_context(
-                                                            &return_clause.expression,
-                                                            &ctx,
-                                                        )
+                                                    .skip(1)
+                                                    .filter_map(|c| match c {
+                                                        BodyClause::Let(l) => Some(l),
+                                                        _ => None,
                                                     })
                                                     .collect();
-                                                results?
-                                            } else {
-                                                // No RETURN clause - return empty array
-                                                vec![]
-                                            };
-                                        // Index-sorted optimization is read-only, no mutations
-                                        return Ok(QueryExecutionResult {
-                                            results,
-                                            mutations: MutationStats::new(),
-                                        });
+
+                                                let results = if let Some(ref return_clause) =
+                                                    query.return_clause
+                                                {
+                                                    let results: DbResult<Vec<Value>> = docs
+                                                        .iter()
+                                                        .map(|doc| {
+                                                            let mut ctx = initial_bindings.clone();
+                                                            ctx.insert(
+                                                                for_clause.variable.clone(),
+                                                                doc.to_value(),
+                                                            );
+                                                            for let_clause in &lets {
+                                                                let v = self
+                                                                    .evaluate_expr_with_context(
+                                                                        &let_clause.expression,
+                                                                        &ctx,
+                                                                    )?;
+                                                                ctx.insert(
+                                                                    let_clause.variable.clone(),
+                                                                    v,
+                                                                );
+                                                            }
+                                                            self.evaluate_expr_with_context(
+                                                                &return_clause.expression,
+                                                                &ctx,
+                                                            )
+                                                        })
+                                                        .collect();
+                                                    results?
+                                                } else {
+                                                    vec![]
+                                                };
+                                                return Ok(QueryExecutionResult {
+                                                    results,
+                                                    mutations: MutationStats::new(),
+                                                });
+                                            }
+                                        }
                                     }
                                 }
                             }

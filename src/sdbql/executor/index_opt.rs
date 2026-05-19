@@ -7,7 +7,7 @@
 
 use serde_json::Value;
 
-use super::types::IndexableCondition;
+use super::types::{Context, IndexableCondition};
 use super::QueryExecutor;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
@@ -18,6 +18,7 @@ impl<'a> QueryExecutor<'a> {
         &self,
         expr: &Expression,
         var_name: &str,
+        ctx: &Context,
     ) -> Option<IndexableCondition> {
         if let Expression::BinaryOp { left, op, right } = expr {
             match op {
@@ -26,15 +27,9 @@ impl<'a> QueryExecutor<'a> {
                 | BinaryOperator::LessThanOrEqual
                 | BinaryOperator::GreaterThan
                 | BinaryOperator::GreaterThanOrEqual => {
-                    // Try left = field access, right = literal OR bind param
+                    // Try left = field access, right = value-side expression
                     if let Some(field) = self.extract_field_path(left, var_name) {
-                        let value_opt = match right.as_ref() {
-                            Expression::Literal(v) => Some(v.clone()),
-                            Expression::BindVariable(name) => self.bind_vars.get(name).cloned(),
-                            _ => None,
-                        };
-
-                        if let Some(value) = value_opt {
+                        if let Some(value) = self.extract_indexable_value(right, var_name, ctx) {
                             return Some(IndexableCondition {
                                 field,
                                 op: op.clone(),
@@ -42,15 +37,9 @@ impl<'a> QueryExecutor<'a> {
                             });
                         }
                     }
-                    // Try right = field access, left = literal OR bind param
+                    // Try right = field access, left = value-side expression
                     if let Some(field) = self.extract_field_path(right, var_name) {
-                        let value_opt = match left.as_ref() {
-                            Expression::Literal(v) => Some(v.clone()),
-                            Expression::BindVariable(name) => self.bind_vars.get(name).cloned(),
-                            _ => None,
-                        };
-
-                        if let Some(value) = value_opt {
+                        if let Some(value) = self.extract_indexable_value(left, var_name, ctx) {
                             let reversed_op = match op {
                                 BinaryOperator::LessThan => BinaryOperator::GreaterThan,
                                 BinaryOperator::LessThanOrEqual => {
@@ -71,15 +60,43 @@ impl<'a> QueryExecutor<'a> {
                     }
                 }
                 BinaryOperator::And => {
-                    if let Some(cond) = self.extract_indexable_condition(left, var_name) {
+                    if let Some(cond) = self.extract_indexable_condition(left, var_name, ctx) {
                         return Some(cond);
                     }
-                    return self.extract_indexable_condition(right, var_name);
+                    return self.extract_indexable_condition(right, var_name, ctx);
                 }
                 _ => {}
             }
         }
         None
+    }
+
+    /// Extract a concrete value from the non-field side of a comparison.
+    ///
+    /// Accepts literals, bind variables, and any expression that can be
+    /// evaluated against `ctx` without referencing `var_name` (the FOR-loop
+    /// variable being filtered). This is what allows correlated subqueries
+    /// like `FILTER rel._key == doc.organisation_id` to use an index lookup:
+    /// `doc.organisation_id` evaluates fine against the parent context, and
+    /// the result is fed to the index path.
+    fn extract_indexable_value(
+        &self,
+        expr: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Option<Value> {
+        match expr {
+            Expression::Literal(v) => Some(v.clone()),
+            Expression::BindVariable(name) => self.bind_vars.get(name).cloned(),
+            _ => {
+                // Don't evaluate expressions that reference the FOR variable
+                // (those depend on the row being filtered, not on parent state).
+                if expression_references_var(expr, var_name) {
+                    return None;
+                }
+                self.evaluate_expr_with_context(expr, ctx).ok()
+            }
+        }
     }
 
     /// Extract field path from an expression
@@ -178,7 +195,7 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
-    /// Primary-key point-lookup for `doc._key == <literal>`.
+    /// Primary-key point-lookup for `doc._key == <expr>`.
     /// Returns `Some(Vec)` for equality (treated as an indexed lookup so the
     /// scan path is skipped) and `None` for non-equality ops so range filters
     /// fall through to the scan path.
@@ -200,5 +217,101 @@ impl<'a> QueryExecutor<'a> {
             Err(DbError::DocumentNotFound(_)) => Some(Vec::new()),
             Err(_) => None,
         }
+    }
+}
+
+/// Returns true if `expr` references `var_name` anywhere (conservative: lambda
+/// parameter shadowing is ignored, which only ever produces false positives — at
+/// worst, we forgo the index optimization and fall back to a scan).
+fn expression_references_var(expr: &Expression, var_name: &str) -> bool {
+    match expr {
+        Expression::Variable(name) => name == var_name,
+        Expression::BindVariable(_) | Expression::Literal(_) => false,
+        Expression::FieldAccess(base, _) | Expression::OptionalFieldAccess(base, _) => {
+            expression_references_var(base, var_name)
+        }
+        Expression::DynamicFieldAccess(base, key) => {
+            expression_references_var(base, var_name)
+                || expression_references_var(key, var_name)
+        }
+        Expression::ArrayAccess(base, idx) => {
+            expression_references_var(base, var_name)
+                || expression_references_var(idx, var_name)
+        }
+        Expression::ArraySpreadAccess(base, _) => expression_references_var(base, var_name),
+        Expression::BinaryOp { left, right, .. } => {
+            expression_references_var(left, var_name)
+                || expression_references_var(right, var_name)
+        }
+        Expression::UnaryOp { operand, .. } => expression_references_var(operand, var_name),
+        Expression::Object(fields) => fields
+            .iter()
+            .any(|(_, e)| expression_references_var(e, var_name)),
+        Expression::Array(items) => items
+            .iter()
+            .any(|e| expression_references_var(e, var_name)),
+        Expression::Range(a, b) => {
+            expression_references_var(a, var_name) || expression_references_var(b, var_name)
+        }
+        Expression::FunctionCall { args, .. } => args
+            .iter()
+            .any(|e| expression_references_var(e, var_name)),
+        Expression::Subquery(_) => {
+            // Conservative: assume any subquery may correlate on var_name.
+            true
+        }
+        Expression::Ternary {
+            condition,
+            true_expr,
+            false_expr,
+        } => {
+            expression_references_var(condition, var_name)
+                || expression_references_var(true_expr, var_name)
+                || expression_references_var(false_expr, var_name)
+        }
+        Expression::Case {
+            operand,
+            when_clauses,
+            else_clause,
+        } => {
+            operand
+                .as_deref()
+                .is_some_and(|e| expression_references_var(e, var_name))
+                || when_clauses
+                    .iter()
+                    .any(|(c, r)| {
+                        expression_references_var(c, var_name)
+                            || expression_references_var(r, var_name)
+                    })
+                || else_clause
+                    .as_deref()
+                    .is_some_and(|e| expression_references_var(e, var_name))
+        }
+        Expression::Pipeline { left, right } => {
+            expression_references_var(left, var_name)
+                || expression_references_var(right, var_name)
+        }
+        Expression::Lambda { body, .. } => expression_references_var(body, var_name),
+        Expression::WindowFunctionCall {
+            arguments,
+            over_clause,
+            ..
+        } => {
+            arguments
+                .iter()
+                .any(|e| expression_references_var(e, var_name))
+                || over_clause
+                    .partition_by
+                    .iter()
+                    .any(|e| expression_references_var(e, var_name))
+                || over_clause
+                    .order_by
+                    .iter()
+                    .any(|(e, _)| expression_references_var(e, var_name))
+        }
+        Expression::TemplateString { parts } => parts.iter().any(|p| match p {
+            TemplateStringPart::Expression(e) => expression_references_var(e, var_name),
+            TemplateStringPart::Literal(_) => false,
+        }),
     }
 }
