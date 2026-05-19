@@ -183,6 +183,7 @@ end
                     hx-confirm="Delete <%= is_blob and 'file' or 'document' %>?"
                     hx-target="#documents-table"
                     hx-swap="innerHTML"
+                    hx-include="#filters-json"
                     class="p-1.5 rounded hover:bg-error/10 text-text-muted hover:text-error transition-colors"
                     title="Delete">
               <i class="fas fa-trash"></i>

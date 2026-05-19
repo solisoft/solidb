@@ -252,14 +252,25 @@ function CollectionsController:documents_with_edit()
   })
 end
 
+-- Helper: escape single quotes for SDBQL string literals
+local function sqlesc(val)
+  return val:gsub("'", "''")
+end
+
+-- Helper: format a filter value for SDBQL (auto-detect numbers)
+local function fmt_val(val)
+  local trimmed = val:match("^%s*(.-)%s*$")
+  if tonumber(trimmed) ~= nil then
+    return trimmed
+  end
+  return "'" .. sqlesc(trimmed) .. "'"
+end
+
 -- Documents table partial (HTMX)
 function CollectionsController:documents_table()
   local db = self:get_db()
   local collection = self.params.collection
-  local page = tonumber(self.params.page) or 1
   local limit = tonumber(self.params.limit) or 25
-  local offset = (page - 1) * limit
-  local search = self.params.search
 
   -- Get API server URL from cookie
   local api_server = GetCookie("sdb_server") or "http://localhost:6745"
@@ -280,10 +291,49 @@ function CollectionsController:documents_table()
     end
   end
 
+  -- Parse filters from JSON parameter
+  local filter_clauses = {}
+  local filters_json = self.params.filters or ""
+  if filters_json ~= "" then
+    local ok, filters = pcall(DecodeJson, filters_json)
+    if ok and type(filters) == "table" then
+      for _, f in ipairs(filters) do
+        local attr = f.attr or ""
+        local action = f.action or ""
+        local val = f.value or ""
+        if attr ~= "" and val ~= "" then
+          local clause
+          if action == "equals" then
+            clause = "doc." .. attr .. " == " .. fmt_val(val)
+          elseif action == "not_equals" then
+            clause = "doc." .. attr .. " != " .. fmt_val(val)
+          elseif action == "contains" then
+            clause = "CONTAINS(doc." .. attr .. ", '" .. sqlesc(val) .. "')"
+          elseif action == "starts_with" then
+            clause = "STARTS_WITH(doc." .. attr .. ", '" .. sqlesc(val) .. "')"
+          elseif action == "ends_with" then
+            clause = "ENDS_WITH(doc." .. attr .. ", '" .. sqlesc(val) .. "')"
+          elseif action == "gt" then
+            clause = "doc." .. attr .. " > " .. fmt_val(val)
+          elseif action == "gte" then
+            clause = "doc." .. attr .. " >= " .. fmt_val(val)
+          elseif action == "lt" then
+            clause = "doc." .. attr .. " < " .. fmt_val(val)
+          elseif action == "lte" then
+            clause = "doc." .. attr .. " <= " .. fmt_val(val)
+          end
+          if clause then
+            table.insert(filter_clauses, clause)
+          end
+        end
+      end
+    end
+  end
+
   -- Construct SDBQL query (ArangoDB-like syntax)
   local query = "FOR doc IN " .. collection
-  if search and search ~= "" then
-    query = query .. " FILTER CONTAINS(doc._key, '" .. search .. "')"
+  if #filter_clauses > 0 then
+    query = query .. " FILTER " .. table.concat(filter_clauses, " AND ")
   end
   query = query .. " LIMIT " .. limit .. " RETURN doc"
 
