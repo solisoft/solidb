@@ -41,8 +41,8 @@ impl<'a> QueryExecutor<'a> {
                     // non-field side against the row context, so a correlated
                     // FILTER (e.g. `rel._key == doc.organisation_id`) can still
                     // hit the index even though it isn't a literal.
-                    let next_is_filter = i + 1 < clauses.len()
-                        && matches!(&clauses[i + 1], BodyClause::Filter(_));
+                    let next_is_filter =
+                        i + 1 < clauses.len() && matches!(&clauses[i + 1], BodyClause::Filter(_));
                     let is_collection = if let Some(src) = &for_clause.source_variable {
                         src == &for_clause.collection
                     } else {
@@ -82,10 +82,8 @@ impl<'a> QueryExecutor<'a> {
                                     };
                                     for doc in docs {
                                         let mut new_ctx = ctx.clone();
-                                        new_ctx.insert(
-                                            for_clause.variable.clone(),
-                                            doc.into_value(),
-                                        );
+                                        new_ctx
+                                            .insert(for_clause.variable.clone(), doc.into_value());
                                         new_rows.push(new_ctx);
                                     }
                                 }
@@ -94,6 +92,19 @@ impl<'a> QueryExecutor<'a> {
                             }
 
                             if all_rows_indexable {
+                                // `extract_indexable_condition` only pulls ONE conjunct
+                                // out of `FILTER a AND b ...` for the index lookup; the
+                                // remaining conjuncts (e.g. `doc._key != @key`) are not
+                                // applied by the index path. Re-evaluate the full FILTER
+                                // expression against the index-loaded rows so multi-term
+                                // filters return correct results.
+                                new_rows.retain(|ctx| {
+                                    self.evaluate_filter_with_context(
+                                        &filter_clause.expression,
+                                        ctx,
+                                    )
+                                    .unwrap_or(false)
+                                });
                                 rows = new_rows;
                                 i += 2; // Skip both FOR and FILTER
                                 continue;

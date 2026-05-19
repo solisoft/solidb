@@ -595,6 +595,53 @@ fn test_create_and_use_index() {
     assert_eq!(results.len(), 2);
 }
 
+/// Regression: with an index on the equality field, `FILTER a == x AND b != y`
+/// must still apply the second conjunct. Previously the index path consumed
+/// the whole FILTER clause and silently dropped any non-indexed conjuncts,
+/// so uniqueness checks of the form `email == @val AND _key != @key`
+/// matched the very record they were trying to exclude.
+#[test]
+fn test_filter_and_with_indexed_field_applies_all_conjuncts() {
+    let (engine, _tmp) = create_seeded_engine();
+
+    let users = engine.get_collection("users").unwrap();
+    users
+        .create_index(
+            "city_idx".to_string(),
+            vec!["city".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+
+    // Paris has two users: alice and charlie. Excluding alice via `_key != ...`
+    // must return only charlie.
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc.city == 'Paris' AND doc._key != 'alice' RETURN doc.name",
+    );
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Charlie"));
+
+    // Symmetric case: both conjuncts on indexed-ish field paths still narrow
+    // correctly when the second one excludes the matched record entirely.
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc.city == 'Paris' AND doc._key == 'alice' RETURN doc.name",
+    );
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
+
+    // Three-conjunct chain: `city == 'Paris' AND active == true AND age > 25`
+    // — only Alice matches (Charlie is inactive).
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc.city == 'Paris' AND doc.active == true AND doc.age > 25 RETURN doc.name",
+    );
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
+}
+
 #[test]
 fn test_unique_index_creation() {
     let tmp_dir = TempDir::new().unwrap();
