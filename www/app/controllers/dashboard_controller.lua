@@ -48,20 +48,9 @@ function DashboardController:do_login()
      if ok and response and response.token then
        Log(kLogInfo, "Login successful, token found. Setting cookies...")
 
-       self:set_cookie("sdb_token", response.token, {
-        path = "/",
-        http_only = true,
-        same_site = "Lax",
-        max_age = 3600 * 24 * 30 -- 30 days
-       })
-
-       self:set_cookie("sdb_server", server_url, {
-        path = "/",
-        http_only = true,
-        same_site = "Lax",
-        max_age = 3600 * 24 * 30 -- 30 days
-       })
-
+       -- Set cookies via raw Set-Cookie header (avoids Redbean SetCookie issues)
+       SetHeader("Set-Cookie", string.format("sdb_token=%s; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=%d", response.token, 3600 * 24 * 30))
+       SetHeader("Set-Cookie", string.format("sdb_server=%s; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=%d", server_url, 3600 * 24 * 30))
        self:redirect(redirect_to)
      else
        Log(kLogWarn, "Login failed: Invalid response or missing token. Response: " .. EncodeJson(response or {}))

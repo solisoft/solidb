@@ -28,6 +28,17 @@ function DashboardBaseController:fetch_api(path, options)
 
   local status, headers, body = Fetch(server_url .. path, options)
 
+  -- If request fails with auth error and we have a known remote URL from middleware, try it
+  if status == 401 and server_url ~= _G._sdb_remote_server and _G._sdb_remote_server then
+    Log(kLogInfo, "[fetch_api] Local server failed, trying remote: " .. tostring(_G._sdb_remote_server))
+    local remote_status, remote_headers, remote_body = Fetch(_G._sdb_remote_server .. path, options)
+    if remote_status and remote_status < 500 then
+      status, headers, body = remote_status, remote_headers, remote_body
+      Log(kLogInfo, "[fetch_api] Remote successful, fixing cookie")
+      SetHeader("Set-Cookie", "sdb_server=" .. _G._sdb_remote_server .. "; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=" .. (3600 * 24 * 30))
+    end
+  end
+
   local elapsed_ms = (GetTime() - start_time) / 1000
   P(string.format("[TIMING] Fetch %s took %.2fms (status: %d)", path, elapsed_ms, status or 0))
 

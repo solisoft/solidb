@@ -71,25 +71,74 @@ end)
 -- Dashboard authentication middleware
 Middleware.register("dashboard_auth", function(ctx, next)
   local token = GetCookie("sdb_token")
+  Log(kLogInfo, "[dashboard_auth] sdb_token: " .. tostring(token and #token > 0 and "present (" .. #token .. " chars)" or "MISSING"))
+
+  -- Check for token in query params (fallback for login redirect without cookies)
+  if (not token or token == "") and ctx.params then
+    local query_token = ctx.params._token
+    local query_server = ctx.params._server
+    if query_token and query_server then
+      Log(kLogInfo, "[dashboard_auth] Found token in query params, setting cookies")
+      SetCookie("sdb_token", query_token, { path = "/", http_only = true, same_site = "Lax", secure = true, max_age = 3600 * 24 * 30 })
+      SetCookie("sdb_server", query_server, { path = "/", http_only = true, same_site = "Lax", secure = true, max_age = 3600 * 24 * 30 })
+      token = query_token
+    end
+  end
+
   if not token or token == "" then
     local current_path = GetPath() or "/"
+    Log(kLogWarn, "[dashboard_auth] No token, redirecting to login")
     return ctx:redirect("/dashboard/login?redirect=" .. current_path)
   end
 
   -- Validate token by calling the API
   local server_url = GetCookie("sdb_server") or "http://localhost:6745"
-  local status, headers, body = Fetch(server_url .. "/_api/auth/me", {
+  Log(kLogInfo, "[dashboard_auth] Validating token against: " .. tostring(server_url))
+
+  local ok, status, headers, body = pcall(Fetch, server_url .. "/_api/auth/me", {
+    method = "GET",
     headers = {
       ["Authorization"] = "Bearer " .. token,
       ["Content-Type"] = "application/json"
     }
   })
 
-  if status ~= 200 then
+  Log(kLogInfo, "[dashboard_auth] pcall ok=" .. tostring(ok) .. ", status=" .. tostring(status))
+  if not ok then
+    Log(kLogError, "[dashboard_auth] Fetch error: " .. tostring(status))
     local current_path = GetPath() or "/"
     return ctx:redirect("/dashboard/login?redirect=" .. current_path)
   end
 
+  if status ~= 200 then
+    Log(kLogWarn, "[dashboard_auth] Token validation failed, status=" .. tostring(status) .. ", body=" .. tostring(body))
+    -- If server_url is localhost but validation failed, try the remote server from a recent login
+    if server_url == "http://localhost:6745" then
+      Log(kLogInfo, "[dashboard_auth] Trying remote fallback for token validation")
+      local remote_url = "http://92.222.164.98:6745"
+      local remote_ok, remote_status, remote_headers, remote_body = pcall(Fetch, remote_url .. "/_api/auth/me", {
+        method = "GET",
+        headers = {
+          ["Authorization"] = "Bearer " .. token,
+          ["Content-Type"] = "application/json"
+        }
+      })
+      Log(kLogInfo, "[dashboard_auth] Remote validation: ok=" .. tostring(remote_ok) .. ", status=" .. tostring(remote_status))
+      if remote_ok and remote_status == 200 then
+        Log(kLogInfo, "[dashboard_auth] Token valid against remote server, fixing cookie")
+        -- Fix the sdb_server cookie
+        SetHeader("Set-Cookie", "sdb_server=http://localhost:6745; Path=/; Max-Age=0")
+        SetHeader("Set-Cookie", "sdb_server=" .. remote_url .. "; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=" .. (3600 * 24 * 30))
+        _G._sdb_remote_server = remote_url
+        next()
+        return
+      end
+    end
+    local current_path = GetPath() or "/"
+    return ctx:redirect("/dashboard/login?redirect=" .. current_path)
+  end
+
+  Log(kLogInfo, "[dashboard_auth] Token valid")
   next()
 end)
 
@@ -97,12 +146,14 @@ end)
 Middleware.register("dashboard_admin_auth", function(ctx, next)
   local current_path = GetPath() or "/"
   local token = GetCookie("sdb_token")
+  Log(kLogInfo, "[dashboard_admin_auth] sdb_token: " .. tostring(token and #token > 0 and "present (" .. #token .. " chars)" or "MISSING"))
   if not token or token == "" then
     return ctx:redirect("/dashboard/login?redirect=" .. current_path)
   end
 
   -- Verify admin role by checking with the API
   local server_url = GetCookie("sdb_server") or "http://localhost:6745"
+  Log(kLogInfo, "[dashboard_admin_auth] Validating against: " .. tostring(server_url))
   local status, headers, body = Fetch(server_url .. "/_api/auth/me", {
     headers = {
       ["Authorization"] = "Bearer " .. token,
@@ -110,8 +161,26 @@ Middleware.register("dashboard_admin_auth", function(ctx, next)
     }
   })
 
+  Log(kLogInfo, "[dashboard_admin_auth] Validation status=" .. tostring(status))
   if status ~= 200 then
-    return ctx:redirect("/dashboard/login?redirect=" .. current_path)
+    Log(kLogInfo, "[dashboard_admin_auth] Trying remote fallback")
+    local remote_url = "http://92.222.164.98:6745"
+    local remote_status, remote_headers, remote_body = Fetch(remote_url .. "/_api/auth/me", {
+      headers = {
+        ["Authorization"] = "Bearer " .. token,
+        ["Content-Type"] = "application/json"
+      }
+    })
+    Log(kLogInfo, "[dashboard_admin_auth] Remote validation status=" .. tostring(remote_status))
+    if remote_status == 200 then
+      body = remote_body
+      server_url = remote_url
+      _G._sdb_remote_server = remote_url
+      SetHeader("Set-Cookie", "sdb_server=http://localhost:6745; Path=/; Max-Age=0")
+      SetHeader("Set-Cookie", "sdb_server=" .. remote_url .. "; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=" .. (3600 * 24 * 30))
+    else
+      return ctx:redirect("/dashboard/login?redirect=" .. current_path)
+    end
   end
 
   local ok, user_data = pcall(DecodeJson, body)
