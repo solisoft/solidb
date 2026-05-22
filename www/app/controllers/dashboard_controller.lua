@@ -48,15 +48,24 @@ function DashboardController:do_login()
      if ok and response and response.token then
        Log(kLogInfo, "Login successful, token found. Setting cookies...")
 
-       local cookie_opts = {
+       local is_https = GetScheme() == "https"
+       -- sdb_token must be JS-readable: dashboard JS attaches it as a Bearer
+       -- header for direct-to-API calls (blob upload, doc delete, monitoring,
+       -- activity chart, CRUDs). HttpOnly would hide it from document.cookie.
+       self:set_cookie("sdb_token", response.token, {
+         Path = "/",
+         HttpOnly = false,
+         SameSite = "Lax",
+         Secure = is_https,
+         MaxAge = 3600 * 24 * 30
+       })
+       self:set_cookie("sdb_server", server_url, {
          Path = "/",
          HttpOnly = true,
          SameSite = "Lax",
-         Secure = GetScheme() == "https",
+         Secure = is_https,
          MaxAge = 3600 * 24 * 30
-       }
-       self:set_cookie("sdb_token", response.token, cookie_opts)
-       self:set_cookie("sdb_server", server_url, cookie_opts)
+       })
        self:redirect(redirect_to)
      else
        Log(kLogWarn, "Login failed: Invalid response or missing token. Response: " .. EncodeJson(response or {}))

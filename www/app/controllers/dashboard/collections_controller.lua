@@ -523,6 +523,74 @@ function CollectionsController:blob_upload_modal()
   })
 end
 
+-- Proxy a multipart blob upload to the SoliDB API.
+-- The browser POSTs same-origin to the dashboard; the dashboard adds the
+-- Bearer token (read server-side from the sdb_token cookie) and forwards
+-- the raw multipart body to the API. Avoids CORS and lets sdb_token stay
+-- HttpOnly when we later harden that.
+function CollectionsController:blob_upload()
+  local server_url = GetCookie("sdb_server") or "http://localhost:6745"
+  if server_url:sub(-1) == "/" then server_url = server_url:sub(1, -2) end
+  local token = GetCookie("sdb_token") or ""
+  local db = self:get_db()
+  local collection = self.params.collection
+
+  local body = GetBody()
+  local content_type = GetHeader("Content-Type") or "application/octet-stream"
+
+  local status, _, response_body = Fetch(
+    server_url .. "/_api/blob/" .. db .. "/" .. collection,
+    {
+      method = "POST",
+      body = body,
+      headers = {
+        ["Authorization"] = "Bearer " .. token,
+        ["Content-Type"] = content_type,
+      }
+    }
+  )
+
+  self:set_header("Content-Type", "application/json")
+  self.response.status = status or 502
+  self.response.body = response_body or ""
+  self._rendered = true
+end
+
+-- Proxy a blob download from the SoliDB API.
+-- Streams the API response back to the browser with the original
+-- Content-Type / Content-Disposition / Content-Length headers.
+function CollectionsController:blob_download()
+  local server_url = GetCookie("sdb_server") or "http://localhost:6745"
+  if server_url:sub(-1) == "/" then server_url = server_url:sub(1, -2) end
+  local token = GetCookie("sdb_token") or ""
+  local db = self:get_db()
+  local collection = self.params.collection
+  local key = self.params.key
+
+  local status, resp_headers, response_body = Fetch(
+    server_url .. "/_api/blob/" .. db .. "/" .. collection .. "/" .. key,
+    {
+      method = "GET",
+      headers = {
+        ["Authorization"] = "Bearer " .. token,
+      }
+    }
+  )
+
+  if resp_headers then
+    for k, v in pairs(resp_headers) do
+      local lk = string.lower(k)
+      if lk == "content-type" or lk == "content-disposition" or lk == "content-length" then
+        self:set_header(k, v)
+      end
+    end
+  end
+
+  self.response.status = status or 502
+  self.response.body = response_body or ""
+  self._rendered = true
+end
+
 -- Columnar storage page
 function CollectionsController:columnar()
   self.layout = "dashboard"
