@@ -707,7 +707,11 @@ async fn handle_live_query_request(
                 if let Some(req_id) = &req.id {
                     response["id"] = serde_json::Value::String(req_id.clone());
                 }
-                if tx.send(Message::Text(response.to_string().into())).await.is_err() {
+                if tx
+                    .send(Message::Text(response.to_string().into()))
+                    .await
+                    .is_err()
+                {
                     return;
                 }
 
@@ -934,7 +938,9 @@ async fn execute_live_query_step(
             if let Some(id) = req_id {
                 response["id"] = serde_json::Value::String(id);
             }
-            tx.send(Message::Text(response.to_string().into())).await.is_ok()
+            tx.send(Message::Text(response.to_string().into()))
+                .await
+                .is_ok()
         }
         Err(e) => {
             let mut response = serde_json::json!({
@@ -944,7 +950,9 @@ async fn execute_live_query_step(
             if let Some(id) = req_id {
                 response["id"] = serde_json::Value::String(id);
             }
-            tx.send(Message::Text(response.to_string().into())).await.is_ok()
+            tx.send(Message::Text(response.to_string().into()))
+                .await
+                .is_ok()
         }
     }
 }

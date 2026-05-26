@@ -784,6 +784,7 @@ fn main() -> anyhow::Result<()> {
         use std::fs::File;
         use std::path::Path;
         use std::time::Duration;
+        use sysinfo::{Pid, System};
 
         // Check if PID file exists and kill existing process
         if Path::new(&args.pid_file).exists() {
