@@ -164,7 +164,7 @@ function CollectionsController:documents()
   local collection = self.params.collection
 
   -- Get API server URL from cookie
-  local api_server = GetCookie("sdb_server") or "http://localhost:6745"
+  local api_server = self:get_server_url()
 
   -- Fetch collection type from list endpoint
   local collection_type = "document"
@@ -211,7 +211,7 @@ function CollectionsController:documents_with_edit()
   local edit_key = self.params.edit_key
 
   -- Get API server URL from cookie
-  local api_server = GetCookie("sdb_server") or "http://localhost:6745"
+  local api_server = self:get_server_url()
 
   -- Fetch collection type from list endpoint
   local collection_type = "document"
@@ -273,7 +273,7 @@ function CollectionsController:documents_table()
   local limit = tonumber(self.params.limit) or 25
 
   -- Get API server URL from cookie
-  local api_server = GetCookie("sdb_server") or "http://localhost:6745"
+  local api_server = self:get_server_url()
 
   -- Fetch collection type from list endpoint
   local collection_type = "document"
@@ -515,7 +515,7 @@ end
 
 -- Blob upload modal
 function CollectionsController:blob_upload_modal()
-  local api_server = GetCookie("sdb_server") or "http://localhost:6745"
+  local api_server = self:get_server_url()
   self:render_partial("dashboard/_modal_blob_upload", {
     db = self:get_db(),
     collection = self.params.collection,
@@ -529,7 +529,7 @@ end
 -- the raw multipart body to the API. Avoids CORS and lets sdb_token stay
 -- HttpOnly when we later harden that.
 function CollectionsController:blob_upload()
-  local server_url = GetCookie("sdb_server") or "http://localhost:6745"
+  local server_url = self:get_server_url()
   if server_url:sub(-1) == "/" then server_url = server_url:sub(1, -2) end
   local token = GetCookie("sdb_token") or ""
   local db = self:get_db()
@@ -560,7 +560,7 @@ end
 -- Streams the API response back to the browser with the original
 -- Content-Type / Content-Disposition / Content-Length headers.
 function CollectionsController:blob_download()
-  local server_url = GetCookie("sdb_server") or "http://localhost:6745"
+  local server_url = self:get_server_url()
   if server_url:sub(-1) == "/" then server_url = server_url:sub(1, -2) end
   local token = GetCookie("sdb_token") or ""
   local db = self:get_db()

@@ -68,6 +68,22 @@ Middleware.register("session_auth", function(ctx, next)
   next()
 end)
 
+-- Read the sdb_server cookie, decoding the base64 wrapper set by the login
+-- controller. Falls back to the raw cookie value for legacy unencoded
+-- cookies still sitting in users' browsers, then to localhost as a last
+-- resort.
+local function read_sdb_server_cookie()
+  local raw = GetCookie("sdb_server")
+  if not raw or raw == "" then
+    return nil, raw
+  end
+  local ok, decoded = pcall(DecodeBase64, raw)
+  if ok and decoded and decoded:match("^https?://") then
+    return decoded, raw
+  end
+  return raw, raw
+end
+
 -- Dashboard authentication middleware
 Middleware.register("dashboard_auth", function(ctx, next)
   local token = GetCookie("sdb_token")
@@ -92,7 +108,9 @@ Middleware.register("dashboard_auth", function(ctx, next)
   end
 
   -- Validate token by calling the API
-  local server_url = GetCookie("sdb_server") or "http://localhost:6745"
+  local server_url, raw_server = read_sdb_server_cookie()
+  Log(kLogInfo, "[dashboard_auth] sdb_server raw=" .. tostring(raw_server) .. " decoded=" .. tostring(server_url))
+  server_url = server_url or "http://localhost:6745"
   Log(kLogInfo, "[dashboard_auth] Validating token against: " .. tostring(server_url))
 
   local ok, status, headers, body = pcall(Fetch, server_url .. "/_api/auth/me", {
@@ -130,7 +148,9 @@ Middleware.register("dashboard_admin_auth", function(ctx, next)
   end
 
   -- Verify admin role by checking with the API
-  local server_url = GetCookie("sdb_server") or "http://localhost:6745"
+  local server_url, raw_server = read_sdb_server_cookie()
+  Log(kLogInfo, "[dashboard_admin_auth] sdb_server raw=" .. tostring(raw_server) .. " decoded=" .. tostring(server_url))
+  server_url = server_url or "http://localhost:6745"
   Log(kLogInfo, "[dashboard_admin_auth] Validating against: " .. tostring(server_url))
   local status, headers, body = Fetch(server_url .. "/_api/auth/me", {
     headers = {

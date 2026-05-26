@@ -6,7 +6,7 @@ local QueryController = DashboardBaseController:extend()
 -- Query editor page
 function QueryController:index()
   self.layout = "dashboard"
-  local api_url = GetCookie("sdb_server") or "http://localhost:6745"
+  local api_url = self:get_server_url()
   -- Ensure no trailing slash
   api_url = api_url:gsub("/$", "")
 
@@ -601,7 +601,7 @@ function QueryController:live_query()
   end
 
   -- Determine API URL for WS
-  local api_url = GetCookie("sdb_server") or "http://localhost:6745"
+  local api_url = self:get_server_url()
   -- Remove protocol and trailing slash
   local ws_host = api_url:gsub("https?://", ""):gsub("/$", "")
   local ws_protocol = api_url:match("^https") and "wss" or "ws"
@@ -631,7 +631,7 @@ function QueryController:live_events()
   end
 
   -- Determine API URL for WS
-  local api_url = GetCookie("sdb_server") or "http://localhost:6745"
+  local api_url = self:get_server_url()
   local ws_host = api_url:gsub("https?://", ""):gsub("/$", "")
   local ws_protocol = api_url:match("^https") and "wss" or "ws"
   local ws_url = ws_protocol .. "://" .. ws_host .. "/_api/ws/changefeed"

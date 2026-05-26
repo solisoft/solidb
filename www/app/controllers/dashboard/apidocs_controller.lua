@@ -56,8 +56,8 @@ function ApiDocsController:index()
     end
   end
 
-  -- Get API server URL from cookie
-  local api_server = GetCookie("sdb_server") or "http://localhost:6745"
+  -- Get API server URL (decodes the base64-wrapped sdb_server cookie)
+  local api_server = self:get_server_url()
 
   self:render("dashboard/apidocs", {
     title = "API Documentation - " .. db,
