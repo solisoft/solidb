@@ -646,17 +646,26 @@ pub async fn update_document(
     // Get old document for trigger (before update)
     let old_doc_value = collection.get(&key).ok().map(|d| d.to_value());
 
+    // Conditional update via If-Match (optimistic CAS on _rev).
+    let if_match = headers
+        .get(axum::http::header::IF_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim_matches('"').to_string());
+
     // Try update, or insert if upsert=true and document not found
-    let (doc, was_upsert) = match collection.update(&key, data.clone()) {
-        Ok(doc) => (doc, false),
-        Err(DbError::DocumentNotFound(_)) if upsert => {
-            // Ensure _key is set for insert
-            if let Value::Object(ref mut obj) = data {
-                obj.insert("_key".to_string(), Value::String(key.clone()));
+    let (doc, was_upsert) = match if_match {
+        Some(rev) => (collection.update_with_rev(&key, &rev, data.clone())?, false),
+        None => match collection.update(&key, data.clone()) {
+            Ok(doc) => (doc, false),
+            Err(DbError::DocumentNotFound(_)) if upsert => {
+                // Ensure _key is set for insert
+                if let Value::Object(ref mut obj) = data {
+                    obj.insert("_key".to_string(), Value::String(key.clone()));
+                }
+                (collection.insert(data)?, true)
             }
-            (collection.insert(data)?, true)
-        }
-        Err(e) => return Err(e),
+            Err(e) => return Err(e),
+        },
     };
 
     // Record to replication log ONLY for non-sharded collections

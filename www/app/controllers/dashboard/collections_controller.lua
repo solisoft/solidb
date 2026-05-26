@@ -164,7 +164,7 @@ function CollectionsController:documents()
   local collection = self.params.collection
 
   -- Get API server URL from cookie
-  local api_server = GetCookie("sdb_server") or "http://localhost:6745"
+  local api_server = self:get_server_url()
 
   -- Fetch collection type from list endpoint
   local collection_type = "document"
@@ -211,7 +211,7 @@ function CollectionsController:documents_with_edit()
   local edit_key = self.params.edit_key
 
   -- Get API server URL from cookie
-  local api_server = GetCookie("sdb_server") or "http://localhost:6745"
+  local api_server = self:get_server_url()
 
   -- Fetch collection type from list endpoint
   local collection_type = "document"
@@ -252,17 +252,28 @@ function CollectionsController:documents_with_edit()
   })
 end
 
+-- Helper: escape single quotes for SDBQL string literals
+local function sqlesc(val)
+  return val:gsub("'", "''")
+end
+
+-- Helper: format a filter value for SDBQL (auto-detect numbers)
+local function fmt_val(val)
+  local trimmed = val:match("^%s*(.-)%s*$")
+  if tonumber(trimmed) ~= nil then
+    return trimmed
+  end
+  return "'" .. sqlesc(trimmed) .. "'"
+end
+
 -- Documents table partial (HTMX)
 function CollectionsController:documents_table()
   local db = self:get_db()
   local collection = self.params.collection
-  local page = tonumber(self.params.page) or 1
   local limit = tonumber(self.params.limit) or 25
-  local offset = (page - 1) * limit
-  local search = self.params.search
 
   -- Get API server URL from cookie
-  local api_server = GetCookie("sdb_server") or "http://localhost:6745"
+  local api_server = self:get_server_url()
 
   -- Fetch collection type from list endpoint
   local collection_type = "document"
@@ -280,10 +291,49 @@ function CollectionsController:documents_table()
     end
   end
 
+  -- Parse filters from JSON parameter
+  local filter_clauses = {}
+  local filters_json = self.params.filters or ""
+  if filters_json ~= "" then
+    local ok, filters = pcall(DecodeJson, filters_json)
+    if ok and type(filters) == "table" then
+      for _, f in ipairs(filters) do
+        local attr = f.attr or ""
+        local action = f.action or ""
+        local val = f.value or ""
+        if attr ~= "" and val ~= "" then
+          local clause
+          if action == "equals" then
+            clause = "doc." .. attr .. " == " .. fmt_val(val)
+          elseif action == "not_equals" then
+            clause = "doc." .. attr .. " != " .. fmt_val(val)
+          elseif action == "contains" then
+            clause = "CONTAINS(doc." .. attr .. ", '" .. sqlesc(val) .. "')"
+          elseif action == "starts_with" then
+            clause = "STARTS_WITH(doc." .. attr .. ", '" .. sqlesc(val) .. "')"
+          elseif action == "ends_with" then
+            clause = "ENDS_WITH(doc." .. attr .. ", '" .. sqlesc(val) .. "')"
+          elseif action == "gt" then
+            clause = "doc." .. attr .. " > " .. fmt_val(val)
+          elseif action == "gte" then
+            clause = "doc." .. attr .. " >= " .. fmt_val(val)
+          elseif action == "lt" then
+            clause = "doc." .. attr .. " < " .. fmt_val(val)
+          elseif action == "lte" then
+            clause = "doc." .. attr .. " <= " .. fmt_val(val)
+          end
+          if clause then
+            table.insert(filter_clauses, clause)
+          end
+        end
+      end
+    end
+  end
+
   -- Construct SDBQL query (ArangoDB-like syntax)
   local query = "FOR doc IN " .. collection
-  if search and search ~= "" then
-    query = query .. " FILTER CONTAINS(doc._key, '" .. search .. "')"
+  if #filter_clauses > 0 then
+    query = query .. " FILTER " .. table.concat(filter_clauses, " AND ")
   end
   query = query .. " LIMIT " .. limit .. " RETURN doc"
 
@@ -465,12 +515,80 @@ end
 
 -- Blob upload modal
 function CollectionsController:blob_upload_modal()
-  local api_server = GetCookie("sdb_server") or "http://localhost:6745"
+  local api_server = self:get_server_url()
   self:render_partial("dashboard/_modal_blob_upload", {
     db = self:get_db(),
     collection = self.params.collection,
     api_server = api_server
   })
+end
+
+-- Proxy a multipart blob upload to the SoliDB API.
+-- The browser POSTs same-origin to the dashboard; the dashboard adds the
+-- Bearer token (read server-side from the sdb_token cookie) and forwards
+-- the raw multipart body to the API. Avoids CORS and lets sdb_token stay
+-- HttpOnly when we later harden that.
+function CollectionsController:blob_upload()
+  local server_url = self:get_server_url()
+  if server_url:sub(-1) == "/" then server_url = server_url:sub(1, -2) end
+  local token = GetCookie("sdb_token") or ""
+  local db = self:get_db()
+  local collection = self.params.collection
+
+  local body = GetBody()
+  local content_type = GetHeader("Content-Type") or "application/octet-stream"
+
+  local status, _, response_body = Fetch(
+    server_url .. "/_api/blob/" .. db .. "/" .. collection,
+    {
+      method = "POST",
+      body = body,
+      headers = {
+        ["Authorization"] = "Bearer " .. token,
+        ["Content-Type"] = content_type,
+      }
+    }
+  )
+
+  self:set_header("Content-Type", "application/json")
+  self.response.status = status or 502
+  self.response.body = response_body or ""
+  self._rendered = true
+end
+
+-- Proxy a blob download from the SoliDB API.
+-- Streams the API response back to the browser with the original
+-- Content-Type / Content-Disposition / Content-Length headers.
+function CollectionsController:blob_download()
+  local server_url = self:get_server_url()
+  if server_url:sub(-1) == "/" then server_url = server_url:sub(1, -2) end
+  local token = GetCookie("sdb_token") or ""
+  local db = self:get_db()
+  local collection = self.params.collection
+  local key = self.params.key
+
+  local status, resp_headers, response_body = Fetch(
+    server_url .. "/_api/blob/" .. db .. "/" .. collection .. "/" .. key,
+    {
+      method = "GET",
+      headers = {
+        ["Authorization"] = "Bearer " .. token,
+      }
+    }
+  )
+
+  if resp_headers then
+    for k, v in pairs(resp_headers) do
+      local lk = string.lower(k)
+      if lk == "content-type" or lk == "content-disposition" or lk == "content-length" then
+        self:set_header(k, v)
+      end
+    end
+  end
+
+  self.response.status = status or 502
+  self.response.body = response_body or ""
+  self._rendered = true
 end
 
 -- Columnar storage page

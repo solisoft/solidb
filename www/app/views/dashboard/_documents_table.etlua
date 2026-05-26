@@ -108,7 +108,7 @@ end
         local file_size = doc.size or doc.file_size or 0
         local file_icon = get_file_icon(content_type)
         local is_image = type(content_type) == "string" and content_type:match("^image/") ~= nil
-        local blob_url = api_url .. "/_api/blob/" .. db .. "/" .. collection .. "/" .. doc._key
+        local blob_url = "/database/" .. db .. "/documents/" .. collection .. "/blob_download/" .. doc._key
       %>
       <tr class="hover:bg-white/5 transition-colors group">
         <% if is_blob then %>
@@ -155,7 +155,7 @@ end
             <!-- Download button for blobs (fetch with Bearer token, save via object URL) -->
             <button type="button"
                     data-blob-download
-                    data-blob-url="<%= api_url %>/_api/blob/<%= db %>/<%= collection %>/<%= doc._key %>"
+                    data-blob-url="/database/<%= db %>/documents/<%= collection %>/blob_download/<%= doc._key %>"
                     data-blob-name="<%= filename %>"
                     class="p-1.5 rounded hover:bg-success/10 text-text-muted hover:text-success transition-colors"
                     title="Download">
@@ -183,6 +183,7 @@ end
                     hx-confirm="Delete <%= is_blob and 'file' or 'document' %>?"
                     hx-target="#documents-table"
                     hx-swap="innerHTML"
+                    hx-include="#filters-json"
                     class="p-1.5 rounded hover:bg-error/10 text-text-muted hover:text-error transition-colors"
                     title="Delete">
               <i class="fas fa-trash"></i>
@@ -218,7 +219,6 @@ end
 (function() {
   var db = '<%= db %>';
   var collection = '<%= collection %>';
-  var apiServer = '<%= api_url %>';
   var dropZone = document.getElementById('blob-drop-zone');
   var dropOverlay = document.getElementById('drop-overlay');
   var fileInput = document.getElementById('hidden-file-input');
@@ -228,30 +228,18 @@ end
 
   if (!dropZone) return;
 
-  function getAuthToken() {
-    var cookies = document.cookie.split(';');
-    for (var i = 0; i < cookies.length; i++) {
-      var cookie = cookies[i].trim();
-      if (cookie.indexOf('sdb_token=') === 0) {
-        return cookie.substring('sdb_token='.length);
-      }
-    }
-    return '';
-  }
-
   // Authenticated image thumbnails: fetch blob, swap icon for inline preview.
+  // Same-origin dashboard proxy handles auth server-side, so no Authorization
+  // header is needed here.
   function loadThumbnails(root) {
     var scope = root || dropZone;
     var imgs = scope.querySelectorAll('img[data-blob-thumb]');
     if (!imgs.length) return;
-    var token = getAuthToken();
     imgs.forEach(function(img) {
       if (img.dataset.thumbLoaded) return;
       img.dataset.thumbLoaded = '1';
       var url = img.getAttribute('data-blob-url');
-      fetch(url, {
-        headers: token ? { 'Authorization': 'Bearer ' + token } : {}
-      })
+      fetch(url)
       .then(function(resp) {
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         return resp.blob();
@@ -280,16 +268,13 @@ end
 
     var url = btn.getAttribute('data-blob-url');
     var name = btn.getAttribute('data-blob-name') || 'download';
-    var token = getAuthToken();
 
     var icon = btn.querySelector('i');
     var originalIcon = icon ? icon.className : '';
     if (icon) icon.className = 'fas fa-spinner fa-spin';
     btn.disabled = true;
 
-    fetch(url, {
-      headers: token ? { 'Authorization': 'Bearer ' + token } : {}
-    })
+    fetch(url)
     .then(function(resp) {
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       return resp.blob();
@@ -368,17 +353,6 @@ end
     progressBar.style.width = '0%';
     progressText.textContent = '0 / ' + total + ' files';
 
-    // Get auth token from sdb_token cookie
-    var token = '';
-    var cookies = document.cookie.split(';');
-    for (var i = 0; i < cookies.length; i++) {
-      var cookie = cookies[i].trim();
-      if (cookie.startsWith('sdb_token=')) {
-        token = cookie.substring('sdb_token='.length);
-        break;
-      }
-    }
-
     // Upload each file sequentially
     function uploadNext(index) {
       if (index >= files.length) {
@@ -399,11 +373,9 @@ end
       formData.append('file', file);
 
       var xhr = new XMLHttpRequest();
-      // Use full API server URL for upload
-      xhr.open('POST', apiServer + '/_api/blob/' + db + '/' + collection, true);
-      if (token) {
-        xhr.setRequestHeader('Authorization', 'Bearer ' + token);
-      }
+      // Same-origin dashboard proxy: avoids CORS and lets the server attach
+      // the Bearer token from the sdb_token cookie.
+      xhr.open('POST', '/database/' + db + '/documents/' + collection + '/blob_upload', true);
 
       xhr.upload.onprogress = function(e) {
         if (e.lengthComputable) {

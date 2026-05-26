@@ -707,7 +707,9 @@ async fn handle_live_query_request(
                 if let Some(req_id) = &req.id {
                     response["id"] = serde_json::Value::String(req_id.clone());
                 }
-                let _ = tx.send(Message::Text(response.to_string().into())).await;
+                if tx.send(Message::Text(response.to_string().into())).await.is_err() {
+                    return;
+                }
 
                 // 2. Setup aggregated change channel for dependencies
                 let (dep_tx, mut dep_rx) =
@@ -823,7 +825,7 @@ async fn handle_live_query_request(
                 drop(dep_tx); // Close original sender
 
                 // 5. Initial Execution
-                execute_live_query_step(
+                if !execute_live_query_step(
                     &tx,
                     state.storage.clone(),
                     query_str.clone(),
@@ -831,12 +833,18 @@ async fn handle_live_query_request(
                     state.shard_coordinator.clone(),
                     req.id.clone(),
                 )
-                .await;
+                .await
+                {
+                    return;
+                }
 
                 // 6. Reactive Loop
                 while dep_rx.recv().await.is_some() {
-                    // On ANY change to ANY dependency, re-run query
-                    execute_live_query_step(
+                    // On ANY change to ANY dependency, re-run query.
+                    // If the client is gone, the send returns an error and we
+                    // bail so the forwarder tasks above can shut down (they
+                    // break once dep_rx is dropped here).
+                    if !execute_live_query_step(
                         &tx,
                         state.storage.clone(),
                         query_str.clone(),
@@ -844,7 +852,10 @@ async fn handle_live_query_request(
                         state.shard_coordinator.clone(),
                         req.id.clone(),
                     )
-                    .await;
+                    .await
+                    {
+                        break;
+                    }
                 }
             }
             Err(e) => {
@@ -872,7 +883,9 @@ async fn handle_live_query_request(
     }
 }
 
-// Helper for live query execution
+// Helper for live query execution. Returns false if the client channel has
+// been closed (so the caller should stop the reactive loop and let the
+// forwarder tasks shut down).
 async fn execute_live_query_step(
     tx: &tokio::sync::mpsc::Sender<Message>,
     storage: Arc<StorageEngine>,
@@ -880,7 +893,7 @@ async fn execute_live_query_step(
     db_name: String,
     shard_coordinator: Option<Arc<crate::sharding::ShardCoordinator>>,
     req_id: Option<String>,
-) {
+) -> bool {
     // Execute SDBQL
     let exec_result = tokio::task::spawn_blocking(move || {
         match crate::sdbql::parser::parse(&query_str) {
@@ -921,7 +934,7 @@ async fn execute_live_query_step(
             if let Some(id) = req_id {
                 response["id"] = serde_json::Value::String(id);
             }
-            let _ = tx.send(Message::Text(response.to_string().into())).await;
+            tx.send(Message::Text(response.to_string().into())).await.is_ok()
         }
         Err(e) => {
             let mut response = serde_json::json!({
@@ -931,7 +944,7 @@ async fn execute_live_query_step(
             if let Some(id) = req_id {
                 response["id"] = serde_json::Value::String(id);
             }
-            let _ = tx.send(Message::Text(response.to_string().into())).await;
+            tx.send(Message::Text(response.to_string().into())).await.is_ok()
         }
     }
 }

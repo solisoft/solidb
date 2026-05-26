@@ -34,6 +34,7 @@
             hx-put="/database/<%= db %>/documents/<%= collection %>/<%= key %>"
             hx-target="#documents-table"
             hx-swap="innerHTML"
+            hx-include="#filters-json"
             hx-on--after-request="if(event.detail.successful) closeModal()"
             class="flex flex-col flex-1 min-h-0">
       <% else %>
@@ -41,6 +42,7 @@
             hx-post="/database/<%= db %>/documents/<%= collection %>"
             hx-target="#documents-table"
             hx-swap="innerHTML"
+            hx-include="#filters-json"
             hx-on--after-request="if(event.detail.successful) closeModal()"
             class="flex flex-col flex-1 min-h-0">
       <% end %>

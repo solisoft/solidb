@@ -48,20 +48,35 @@ function DashboardController:do_login()
      if ok and response and response.token then
        Log(kLogInfo, "Login successful, token found. Setting cookies...")
 
+       local is_https = GetScheme() == "https"
+       -- sdb_token must be JS-readable: dashboard JS attaches it as a Bearer
+       -- header for direct-to-API calls (blob upload, doc delete, monitoring,
+       -- activity chart, CRUDs). HttpOnly would hide it from document.cookie.
        self:set_cookie("sdb_token", response.token, {
-        path = "/",
-        http_only = true,
-        same_site = "Lax",
-        max_age = 3600 * 24 * 30 -- 30 days
+         Path = "/",
+         HttpOnly = false,
+         SameSite = "Lax",
+         Secure = is_https,
+         MaxAge = 3600 * 24 * 30
        })
-
-       self:set_cookie("sdb_server", server_url, {
-        path = "/",
-        http_only = true,
-        same_site = "Lax",
-        max_age = 3600 * 24 * 30 -- 30 days
+       -- Base64-encode the URL: redbean's SetCookie silently drops values
+       -- containing "://" (the cookie reaches the browser but GetCookie
+       -- returns nil on the next request). Base64 keeps the value in the
+       -- a-z/A-Z/0-9/+/= range that round-trips cleanly.
+       local encoded_server = EncodeBase64(server_url)
+       self:set_cookie("sdb_server", encoded_server, {
+         Path = "/",
+         HttpOnly = true,
+         SameSite = "Lax",
+         Secure = is_https,
+         MaxAge = 3600 * 24 * 30
        })
-
+       Log(kLogInfo, "Cookies queued: sdb_token=" .. #response.token .. " chars, sdb_server=" .. encoded_server .. " (is_https=" .. tostring(is_https) .. ")")
+       -- Also emit Set-Cookie via raw SetHeader as a belt-and-suspenders
+       -- fallback in case the framework's self:set_cookie path is dropping
+       -- one of them. Browser will simply see two Set-Cookie lines for the
+       -- same name and keep the later one.
+       SetHeader("Set-Cookie", "sdb_server=" .. encoded_server .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. (3600 * 24 * 30))
        self:redirect(redirect_to)
      else
        Log(kLogWarn, "Login failed: Invalid response or missing token. Response: " .. EncodeJson(response or {}))

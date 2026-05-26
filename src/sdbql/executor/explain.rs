@@ -129,9 +129,15 @@ impl<'a> QueryExecutor<'a> {
                             if is_collection {
                                 if let Ok(collection) = self.get_collection(&for_clause.collection)
                                 {
+                                    // EXPLAIN uses the first row's context (or
+                                    // an empty one) — sufficient for the
+                                    // structural decision of whether an index
+                                    // would be used at runtime.
+                                    let probe_ctx = rows.first().cloned().unwrap_or_default();
                                     if let Some(condition) = self.extract_indexable_condition(
                                         &filter_clause.expression,
                                         &for_clause.variable,
+                                        &probe_ctx,
                                     ) {
                                         if let Some(docs) =
                                             self.use_index_for_condition(&collection, &condition)

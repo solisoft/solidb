@@ -3,7 +3,7 @@ members = ["clients/rust-client", "sdbql-core", "benchmarks"]
 
 [package]
 name = "solidb"
-version = "0.24.2"
+version = "0.24.4"
 edition = "2021"
 default-run = "solidb"
 description = "A lightweight, high-performance structured database server written in Rust."
@@ -73,7 +73,7 @@ cron = "0.15"
 
 # Authentication
 argon2 = "0.5"
-jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
+jsonwebtoken = { version = "10.3", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 once_cell = "1.19"
 rand_core = "0.6"
 rand = "0.8"

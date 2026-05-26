@@ -10,9 +10,31 @@ function DashboardBaseController:get_db()
   return self.params.db or "_system"
 end
 
+-- Read the sdb_server cookie. The login controller base64-encodes the URL
+-- because redbean's SetCookie silently drops values containing "://". Fall
+-- back to the raw value for legacy unencoded cookies still in browsers, and
+-- to localhost only as a last resort.
+local function read_sdb_server_cookie()
+  local raw = GetCookie("sdb_server")
+  if not raw or raw == "" then
+    return nil
+  end
+  local ok, decoded = pcall(DecodeBase64, raw)
+  if ok and decoded and decoded:match("^https?://") then
+    return decoded
+  end
+  return raw
+end
+
+-- Public accessor for callers that build URLs themselves (WebSocket targets,
+-- API docs server field, raw Fetch calls outside fetch_api).
+function DashboardBaseController:get_server_url()
+  return read_sdb_server_cookie() or "http://localhost:6745"
+end
+
 -- Helper to make authenticated API calls to SoliDB backend
 function DashboardBaseController:fetch_api(path, options)
-  local server_url = GetCookie("sdb_server") or "http://localhost:6745"
+  local server_url = self:get_server_url()
   local token = GetCookie("sdb_token")
 
   -- Ensure no double slashes

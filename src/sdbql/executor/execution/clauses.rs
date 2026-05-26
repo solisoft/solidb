@@ -35,77 +35,76 @@ impl<'a> QueryExecutor<'a> {
         while i < clauses.len() {
             match &clauses[i] {
                 BodyClause::For(for_clause) => {
-                    // Check if next clause is a FILTER that can use an index
-                    let use_index = if i + 1 < clauses.len() {
-                        if let BodyClause::Filter(filter_clause) = &clauses[i + 1] {
-                            // Check if this is a collection (not a LET variable)
-                            // source_variable might be None or Some(collection_name)
-                            let is_collection = if let Some(src) = &for_clause.source_variable {
-                                // If source_variable == collection, it's a collection
-                                src == &for_clause.collection
-                            } else {
-                                // If source_variable is None, it's definitely a collection
-                                true
-                            };
-
-                            if is_collection {
-                                // Try to extract indexable condition
-                                self.extract_indexable_condition(
-                                    &filter_clause.expression,
-                                    &for_clause.variable,
-                                )
-                                .is_some()
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        }
+                    // Check if next clause is a FILTER that can use an index.
+                    // Note: the indexable check is performed per-row inside the
+                    // loop below — `extract_indexable_condition` now evaluates the
+                    // non-field side against the row context, so a correlated
+                    // FILTER (e.g. `rel._key == doc.organisation_id`) can still
+                    // hit the index even though it isn't a literal.
+                    let next_is_filter =
+                        i + 1 < clauses.len() && matches!(&clauses[i + 1], BodyClause::Filter(_));
+                    let is_collection = if let Some(src) = &for_clause.source_variable {
+                        src == &for_clause.collection
                     } else {
-                        false
+                        true
                     };
 
-                    if use_index {
-                        // Try to use index lookup
+                    if next_is_filter && is_collection {
                         if let BodyClause::Filter(filter_clause) = &clauses[i + 1] {
-                            let mut used_index = false;
+                            // Index path only if *every* row's filter is
+                            // indexable — mixing index and scan per-row would
+                            // silently drop rows whose condition couldn't be
+                            // extracted. If any row fails, abandon and fall
+                            // through to the normal FOR + FILTER scan path.
                             let mut new_rows = Vec::new();
+                            let mut all_rows_indexable = true;
 
-                            for ctx in &rows {
-                                if let Ok(collection) = self.get_collection(&for_clause.collection)
-                                {
-                                    if let Some(condition) = self.extract_indexable_condition(
+                            if let Ok(collection) = self.get_collection(&for_clause.collection) {
+                                for ctx in &rows {
+                                    let Some(condition) = self.extract_indexable_condition(
                                         &filter_clause.expression,
                                         &for_clause.variable,
-                                    ) {
-                                        if let Some(docs) =
-                                            self.use_index_for_condition(&collection, &condition)
-                                        {
-                                            used_index = true;
-                                            if !docs.is_empty() {
-                                                // Apply scan_limit to index results
-                                                let docs: Vec<_> = if let Some(n) = scan_limit {
-                                                    docs.into_iter().take(n).collect()
-                                                } else {
-                                                    docs
-                                                };
-
-                                                for doc in docs {
-                                                    let mut new_ctx = ctx.clone();
-                                                    new_ctx.insert(
-                                                        for_clause.variable.clone(),
-                                                        doc.into_value(),
-                                                    );
-                                                    new_rows.push(new_ctx);
-                                                }
-                                            }
-                                        }
+                                        ctx,
+                                    ) else {
+                                        all_rows_indexable = false;
+                                        break;
+                                    };
+                                    let Some(docs) =
+                                        self.use_index_for_condition(&collection, &condition)
+                                    else {
+                                        all_rows_indexable = false;
+                                        break;
+                                    };
+                                    let docs: Vec<_> = if let Some(n) = scan_limit {
+                                        docs.into_iter().take(n).collect()
+                                    } else {
+                                        docs
+                                    };
+                                    for doc in docs {
+                                        let mut new_ctx = ctx.clone();
+                                        new_ctx
+                                            .insert(for_clause.variable.clone(), doc.into_value());
+                                        new_rows.push(new_ctx);
                                     }
                                 }
+                            } else {
+                                all_rows_indexable = false;
                             }
 
-                            // Only use index results if we actually found documents
-                            if used_index {
+                            if all_rows_indexable {
+                                // `extract_indexable_condition` only pulls ONE conjunct
+                                // out of `FILTER a AND b ...` for the index lookup; the
+                                // remaining conjuncts (e.g. `doc._key != @key`) are not
+                                // applied by the index path. Re-evaluate the full FILTER
+                                // expression against the index-loaded rows so multi-term
+                                // filters return correct results.
+                                new_rows.retain(|ctx| {
+                                    self.evaluate_filter_with_context(
+                                        &filter_clause.expression,
+                                        ctx,
+                                    )
+                                    .unwrap_or(false)
+                                });
                                 rows = new_rows;
                                 i += 2; // Skip both FOR and FILTER
                                 continue;

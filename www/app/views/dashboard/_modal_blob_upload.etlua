@@ -108,7 +108,6 @@ local api_url = api_server or "http://localhost:6745"
   var isUploading = false;
   var db = '<%= db %>';
   var collection = '<%= collection %>';
-  var apiServer = '<%= api_url %>';
 
   var dropZone = document.getElementById('drop-zone');
   var fileInput = document.getElementById('file-input');
@@ -208,19 +207,9 @@ local api_url = api_server or "http://localhost:6745"
     formData.append('file', selectedFile);
 
     var xhr = new XMLHttpRequest();
-    // Use full API server URL for upload
-    xhr.open('POST', apiServer + '/_api/blob/' + db + '/' + collection, true);
-
-    // Get auth token from sdb_token cookie
-    var cookies = document.cookie.split(';');
-    for (var i = 0; i < cookies.length; i++) {
-      var cookie = cookies[i].trim();
-      if (cookie.startsWith('sdb_token=')) {
-        var token = cookie.substring('sdb_token='.length);
-        xhr.setRequestHeader('Authorization', 'Bearer ' + token);
-        break;
-      }
-    }
+    // Same-origin proxy through the dashboard: avoids CORS and lets the
+    // server attach the Bearer token from the sdb_token cookie.
+    xhr.open('POST', '/database/' + db + '/documents/' + collection + '/blob_upload', true);
 
     xhr.upload.onprogress = function(e) {
       if (e.lengthComputable) {

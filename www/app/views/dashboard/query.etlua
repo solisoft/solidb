@@ -869,14 +869,16 @@ function executeQuery() {
   // SQL: Check end of string
   // SDBQL: Check before last RETURN or end of string
   if (limit) {
+    // Match LIMIT N or LIMIT offset, N (both numeric and @bindvar forms)
+    var limitArg = '(?:@?\\w+|\\d+)\\s*(?:,\\s*(?:@?\\w+|\\d+))?';
     if (currentQueryType === 'sql') {
-       if (!/\bLIMIT\s+\d+\s*$/i.test(finalQuery)) {
+       if (!new RegExp('\\bLIMIT\\s+' + limitArg + '\\s*$', 'i').test(finalQuery)) {
           finalQuery += ' LIMIT ' + limit;
        }
     } else {
        // SDBQL: Insert LIMIT before the final RETURN
        // Check if there's already a LIMIT before the final RETURN
-       var hasLimit = /\bLIMIT\s+\d+\s*(\bRETURN\b)(?![\s\S]*\bRETURN\b)/i.test(finalQuery);
+       var hasLimit = new RegExp('\\bLIMIT\\s+' + limitArg + '\\s*\\bRETURN\\b(?![\\s\\S]*\\bRETURN\\b)', 'i').test(finalQuery);
 
        if (!hasLimit) {
            var newQuery = finalQuery.replace(/(\bRETURN\b)(?![\s\S]*\bRETURN\b)/i, ' LIMIT ' + limit + ' $1');

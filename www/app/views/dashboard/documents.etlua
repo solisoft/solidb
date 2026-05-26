@@ -39,6 +39,7 @@ local is_blob = collection_type == "blob"
               hx-delete="/database/<%= db %>/documents/<%= collection %>/truncate"
               hx-target="#documents-table"
               hx-swap="innerHTML"
+              hx-include="#filters-json"
               hx-confirm="Are you sure you want to delete ALL <%= is_blob and 'files' or 'documents' %> in this collection? This cannot be undone."
               class="inline-flex items-center gap-2 px-4 py-2 border border-error/50 hover:bg-error/10 text-error font-medium rounded-lg transition-colors">
         <i class="fas fa-trash-alt"></i>
@@ -66,27 +67,26 @@ local is_blob = collection_type == "blob"
     </div>
   </div>
 
-  <!-- Search and Pagination -->
+  <!-- Filters and Pagination -->
   <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 mb-6">
     <div class="flex flex-col sm:flex-row gap-4">
-      <div class="flex-1 relative">
-        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-text-dim"></i>
-        <input type="text"
-               name="search"
-               placeholder="Search documents..."
-               class="w-full pl-10 pr-4 py-2 bg-bg border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary/50"
-               hx-get="/database/<%= db %>/documents/<%= collection %>/table"
-               hx-trigger="keyup changed delay:300ms"
-               hx-target="#documents-table">
-      </div>
       <div class="flex items-center gap-2">
+        <button type="button"
+                id="toggle-filters"
+                class="inline-flex items-center gap-2 px-3 py-2 border border-border/50 hover:border-primary/50 text-text-muted hover:text-text font-medium rounded-lg transition-colors text-sm">
+          <i class="fas fa-filter"></i>
+          <span>Filters</span>
+          <i class="fas fa-chevron-down text-xs transition-transform" id="filters-chevron"></i>
+        </button>
+      </div>
+      <div class="flex items-center gap-2 ml-auto">
         <span class="text-sm text-text-muted">Show</span>
         <select name="limit"
                 class="px-3 py-2 bg-bg border border-border/50 rounded-lg text-text text-sm focus:outline-none focus:border-primary/50"
                 hx-get="/database/<%= db %>/documents/<%= collection %>/table"
                 hx-trigger="change"
                 hx-target="#documents-table"
-                hx-include="[name='search']">
+                hx-include="#filters-json">
           <option value="10">10</option>
           <option value="25" selected>25</option>
           <option value="50">50</option>
@@ -95,6 +95,28 @@ local is_blob = collection_type == "blob"
         <span class="text-sm text-text-muted">per page</span>
       </div>
     </div>
+
+    <!-- Advanced Filters -->
+    <div id="filter-builder" class="hidden mt-4 pt-4 border-t border-border/30">
+      <div id="filter-rows" class="space-y-2"></div>
+      <div class="mt-3 flex items-center gap-3">
+        <button type="button"
+                id="add-filter"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-dashed border-border/50 hover:border-primary/50 text-text-muted hover:text-primary-light rounded-lg transition-colors">
+          <i class="fas fa-plus text-xs"></i>
+          <span>Add filter</span>
+        </button>
+        <button type="button"
+                id="apply-filters"
+                class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+          <i class="fas fa-search text-xs"></i>
+          <span>Apply</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Hidden JSON payload for filters -->
+    <input type="hidden" name="filters" id="filters-json" value="">
   </div>
 
   <!-- Documents Table -->
@@ -112,9 +134,129 @@ local is_blob = collection_type == "blob"
   </div>
 </div>
 
+<!-- Filter builder JavaScript -->
+<script>
+(function() {
+  var db = '<%= db %>';
+  var collection = '<%= collection %>';
+  var filterRows = document.getElementById('filter-rows');
+  var addBtn = document.getElementById('add-filter');
+  var applyBtn = document.getElementById('apply-filters');
+  var toggleBtn = document.getElementById('toggle-filters');
+  var filterBuilder = document.getElementById('filter-builder');
+  var chevron = document.getElementById('filters-chevron');
+  var filtersJson = document.getElementById('filters-json');
+  var filters = [];
+
+  var actionOptions = [
+    { value: 'equals', label: 'equals' },
+    { value: 'not_equals', label: 'not equals' },
+    { value: 'contains', label: 'contains' },
+    { value: 'starts_with', label: 'starts with' },
+    { value: 'ends_with', label: 'ends with' },
+    { value: 'gt', label: '>' },
+    { value: 'gte', label: '>=' },
+    { value: 'lt', label: '<' },
+    { value: 'lte', label: '<=' }
+  ];
+
+  function serialize() {
+    var arr = [];
+    var rows = filterRows.querySelectorAll('.filter-row');
+    rows.forEach(function(row) {
+      var attr = row.querySelector('.filter-attr').value.trim();
+      var action = row.querySelector('.filter-action').value;
+      var val = row.querySelector('.filter-val').value.trim();
+      if (attr && val) {
+        arr.push({ attr: attr, action: action, value: val });
+      }
+    });
+    filtersJson.value = JSON.stringify(arr);
+  }
+
+  function renderRows() {
+    filterRows.innerHTML = '';
+    filters.forEach(function(f, idx) {
+      var row = document.createElement('div');
+      row.className = 'filter-row flex flex-col sm:flex-row items-stretch sm:items-center gap-2';
+
+      var attrInput = document.createElement('input');
+      attrInput.type = 'text';
+      attrInput.placeholder = 'Attribute';
+      attrInput.className = 'filter-attr flex-1 min-w-[120px] px-3 py-1.5 bg-bg border border-border/50 rounded-lg text-text text-sm placeholder-text-dim focus:outline-none focus:border-primary/50';
+      attrInput.value = f.attr || '';
+      attrInput.addEventListener('input', function() { filters[idx].attr = this.value; setDirty(); });
+
+      var actionSelect = document.createElement('select');
+      actionSelect.className = 'filter-action px-3 py-1.5 bg-bg border border-border/50 rounded-lg text-text text-sm focus:outline-none focus:border-primary/50';
+      actionOptions.forEach(function(o) {
+        var opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.label;
+        if (o.value === (f.action || 'contains')) opt.selected = true;
+        actionSelect.appendChild(opt);
+      });
+      actionSelect.addEventListener('change', function() { filters[idx].action = this.value; setDirty(); });
+
+      var valInput = document.createElement('input');
+      valInput.type = 'text';
+      valInput.placeholder = 'Value';
+      valInput.className = 'filter-val flex-1 min-w-[120px] px-3 py-1.5 bg-bg border border-border/50 rounded-lg text-text text-sm placeholder-text-dim focus:outline-none focus:border-primary/50';
+      valInput.value = f.value || '';
+      valInput.addEventListener('input', function() { filters[idx].value = this.value; setDirty(); });
+
+      var rmBtn = document.createElement('button');
+      rmBtn.type = 'button';
+      rmBtn.className = 'p-1.5 rounded hover:bg-error/10 text-text-muted hover:text-error transition-colors flex-shrink-0';
+      rmBtn.innerHTML = '<i class="fas fa-times"></i>';
+      rmBtn.addEventListener('click', function() {
+        filters.splice(idx, 1);
+        renderRows();
+        setDirty();
+        applyFilters();
+      });
+
+      row.appendChild(attrInput);
+      row.appendChild(actionSelect);
+      row.appendChild(valInput);
+      row.appendChild(rmBtn);
+      filterRows.appendChild(row);
+    });
+    serialize();
+  }
+
+  function setDirty() {
+    serialize();
+  }
+
+  function applyFilters() {
+    serialize();
+    htmx.trigger('[name="limit"]', 'change');
+  }
+
+  function addFilter() {
+    filters.push({ attr: '', action: 'contains', value: '' });
+    renderRows();
+    var rows = filterRows.querySelectorAll('.filter-row');
+    if (rows.length > 0) {
+      rows[rows.length - 1].querySelector('.filter-attr').focus();
+    }
+  }
+
+  if (addBtn) addBtn.addEventListener('click', addFilter);
+  if (applyBtn) applyBtn.addEventListener('click', applyFilters);
+
+  if (toggleBtn && filterBuilder) {
+    toggleBtn.addEventListener('click', function() {
+      var hidden = filterBuilder.classList.toggle('hidden');
+      chevron.style.transform = hidden ? '' : 'rotate(180deg)';
+    });
+  }
+})();
+</script>
+
 <% if edit_key then %>
 <script>
-  // Auto-open edit modal for document
   document.addEventListener('DOMContentLoaded', function() {
     htmx.ajax('GET', '/database/<%= db %>/documents/<%= collection %>/<%= edit_key %>/edit', {
       target: '#modal-container',

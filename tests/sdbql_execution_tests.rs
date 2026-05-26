@@ -230,6 +230,38 @@ fn test_filter_in_array() {
     assert_eq!(results.len(), 3);
 }
 
+#[test]
+fn test_key_fast_path_point_lookup() {
+    let (engine, _tmp) = create_seeded_engine();
+
+    // Hit: existing key resolves to exactly one document via the primary-key
+    // fast-path (no secondary index on `_key` exists).
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc._key == 'alice' RETURN doc",
+    );
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].get("name"), Some(&json!("Alice")));
+
+    // Hit with LIMIT 1: still returns the document.
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc._key == 'alice' LIMIT 1 RETURN doc",
+    );
+    assert_eq!(results.len(), 1);
+
+    // Miss: non-existent key returns an empty result (not an error).
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc._key == 'zzz_nonexistent' RETURN doc",
+    );
+    assert_eq!(results.len(), 0);
+
+    // Non-string literal: cannot match any document key (keys are strings).
+    let results = execute_query(&engine, "FOR doc IN users FILTER doc._key == 42 RETURN doc");
+    assert_eq!(results.len(), 0);
+}
+
 // ============================================================================
 // SORT Operations
 // ============================================================================
@@ -561,6 +593,53 @@ fn test_create_and_use_index() {
         "FOR doc IN users FILTER doc.city == 'Paris' RETURN doc.name",
     );
     assert_eq!(results.len(), 2);
+}
+
+/// Regression: with an index on the equality field, `FILTER a == x AND b != y`
+/// must still apply the second conjunct. Previously the index path consumed
+/// the whole FILTER clause and silently dropped any non-indexed conjuncts,
+/// so uniqueness checks of the form `email == @val AND _key != @key`
+/// matched the very record they were trying to exclude.
+#[test]
+fn test_filter_and_with_indexed_field_applies_all_conjuncts() {
+    let (engine, _tmp) = create_seeded_engine();
+
+    let users = engine.get_collection("users").unwrap();
+    users
+        .create_index(
+            "city_idx".to_string(),
+            vec!["city".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+
+    // Paris has two users: alice and charlie. Excluding alice via `_key != ...`
+    // must return only charlie.
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc.city == 'Paris' AND doc._key != 'alice' RETURN doc.name",
+    );
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Charlie"));
+
+    // Symmetric case: both conjuncts on indexed-ish field paths still narrow
+    // correctly when the second one excludes the matched record entirely.
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc.city == 'Paris' AND doc._key == 'alice' RETURN doc.name",
+    );
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
+
+    // Three-conjunct chain: `city == 'Paris' AND active == true AND age > 25`
+    // — only Alice matches (Charlie is inactive).
+    let results = execute_query(
+        &engine,
+        "FOR doc IN users FILTER doc.city == 'Paris' AND doc.active == true AND doc.age > 25 RETURN doc.name",
+    );
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
 }
 
 #[test]

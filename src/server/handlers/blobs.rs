@@ -148,41 +148,62 @@ pub async fn upload_blob(
         }
     }
 
-    // Only reach here for non-sharded collections
-    // For blob collections, distribute chunks across the cluster for fault tolerance
+    // Only reach here for non-sharded collections.
+    // Always persist chunks + metadata on the receiving node first. Cluster
+    // replication (when configured) is best-effort redundancy, not the primary
+    // store — if it were the primary store, a single-node deployment with no
+    // cluster keyfile (the common case) would silently lose every chunk while
+    // still inserting the metadata document.
+    for (idx, data) in &chunks_buffer {
+        collection.put_blob_chunk(&blob_key, *idx, data)?;
+    }
+    collection.insert(doc_value.clone())?;
+
     if collection.get_type() == "blob" {
-        if let Some(ref _coordinator) = state.shard_coordinator {
-            // Distribute blob chunks across available nodes
-            tracing::info!(
-                "Distributing {} blob chunks for {}/{} across cluster",
-                chunks_buffer.len(),
-                db_name,
-                coll_name
-            );
-            distribute_blob_chunks_across_cluster(
-                state.shard_coordinator.as_ref().unwrap(),
-                &db_name,
-                &coll_name,
-                &blob_key,
-                &chunks_buffer,
-                &doc_value,
-                &state.storage,
-            )
-            .await?;
-        } else {
-            // No coordinator available, store locally as fallback
-            tracing::warn!("No cluster coordinator available, storing blob chunks locally");
-            for (idx, data) in &chunks_buffer {
-                collection.put_blob_chunk(&blob_key, *idx, data)?;
+        if let Some(ref coordinator) = state.shard_coordinator {
+            let my_address = coordinator.my_address();
+            let peer_addresses: Vec<String> = coordinator
+                .get_node_addresses()
+                .into_iter()
+                .filter(|addr| addr != &my_address && addr != "local")
+                .collect();
+
+            if !peer_addresses.is_empty() {
+                let replication_factor = std::cmp::min(2, peer_addresses.len());
+                let cluster_secret = coordinator.cluster_secret();
+                tracing::info!(
+                    "Replicating {} blob chunks for {}/{} to {} peer(s)",
+                    chunks_buffer.len(),
+                    db_name,
+                    coll_name,
+                    replication_factor
+                );
+                for (chunk_idx, chunk_data) in &chunks_buffer {
+                    let start_node = (*chunk_idx as usize) % peer_addresses.len();
+                    for i in 0..replication_factor {
+                        let node_addr = &peer_addresses[(start_node + i) % peer_addresses.len()];
+                        if let Err(e) = replicate_blob_to_node(
+                            node_addr,
+                            &db_name,
+                            &coll_name,
+                            &blob_key,
+                            &[(*chunk_idx, chunk_data.clone())],
+                            None,
+                            &cluster_secret,
+                        )
+                        .await
+                        {
+                            tracing::warn!(
+                                "Failed to replicate chunk {} to {}: {} (chunk is safe locally)",
+                                chunk_idx,
+                                node_addr,
+                                e
+                            );
+                        }
+                    }
+                }
             }
-            collection.insert(doc_value.clone())?;
         }
-    } else {
-        // Regular document collection - store locally
-        for (idx, data) in &chunks_buffer {
-            collection.put_blob_chunk(&blob_key, *idx, data)?;
-        }
-        collection.insert(doc_value.clone())?;
     }
 
     // Log operation for replication (if enabled for other collections, keep logging for consistency)
