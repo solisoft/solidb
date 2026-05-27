@@ -275,8 +275,14 @@ async fn handle_socket(socket: WebSocket, state: AppState, use_htmx: bool) {
 
     // Spawn writer task that forwards messages from the channel to the WebSocket
     let send_task = tokio::spawn(async move {
-        // Heartbeat: Send a Ping every 30 seconds to keep the connection alive
-        let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        // Heartbeat: Send a Ping every 30 seconds to keep the connection alive.
+        // Start the interval 30s in the future — `tokio::time::interval` would
+        // otherwise fire its first tick immediately, racing the first response
+        // frame and surfacing a stray Ping to clients that only ever expect a
+        // reply to what they just sent.
+        let heartbeat = std::time::Duration::from_secs(30);
+        let mut heartbeat_interval =
+            tokio::time::interval_at(tokio::time::Instant::now() + heartbeat, heartbeat);
 
         loop {
             tokio::select! {
