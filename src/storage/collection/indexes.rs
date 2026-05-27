@@ -918,6 +918,34 @@ impl Collection {
         None
     }
 
+    /// Get a single-field index for a field. Used by equality and range
+    /// lookups that encode only one value into the lookup prefix: a compound
+    /// index `[a, b]` stores entries keyed by `<hex_a>_<hex_b>` joined by `_`,
+    /// so a prefix built from `<hex_a>` alone never matches its entries and
+    /// silently returns no results.
+    fn get_single_field_index_for_field(&self, field: &str) -> Option<Index> {
+        let db = &self.db;
+        let cf = db.cf_handle(&self.name)?;
+
+        let prefix = IDX_META_PREFIX.as_bytes();
+        let iter = db.prefix_iterator_cf(cf, prefix);
+
+        for result in iter.flatten() {
+            let (key, value) = result;
+            if !key.starts_with(prefix) {
+                break;
+            }
+            if let Ok(index) = serde_json::from_slice::<Index>(&value) {
+                if index.fields.len() == 1
+                    && index.fields.first().map(|s| s.as_str()) == Some(field)
+                {
+                    return Some(index);
+                }
+            }
+        }
+        None
+    }
+
     /// Lookup documents where field > value
     pub fn index_lookup_gt(&self, field: &str, value: &Value) -> Option<Vec<Document>> {
         self.index_range_scan(field, value, false, true)
@@ -945,7 +973,7 @@ impl Collection {
         inclusive: bool,
         forward: bool,
     ) -> Option<Vec<Document>> {
-        let index = self.get_index_for_field(field)?;
+        let index = self.get_single_field_index_for_field(field)?;
         let index_name = &index.name;
         let value_key = crate::storage::codec::encode_key(value);
         let value_str = hex::encode(value_key);
@@ -1022,7 +1050,13 @@ impl Collection {
 
     /// Lookup documents using index (equality)
     pub fn index_lookup_eq(&self, field: &str, value: &Value) -> Option<Vec<Document>> {
-        let index = self.get_index_for_field(field)?;
+        // Null values are skipped at insert time (see `if !field_values.iter().all(|v| v.is_null())`
+        // guards in the index insert paths), so `field == null` lookups must
+        // fall back to a full scan to find docs whose indexed field is null.
+        if value.is_null() {
+            return None;
+        }
+        let index = self.get_single_field_index_for_field(field)?;
 
         // Fast-path: Check Bloom/Cuckoo Filter if available
         if (index.index_type == IndexType::Bloom
@@ -1082,7 +1116,10 @@ impl Collection {
         value: &Value,
         limit: usize,
     ) -> Option<Vec<Document>> {
-        let index = self.get_index_for_field(field)?;
+        if value.is_null() {
+            return None;
+        }
+        let index = self.get_single_field_index_for_field(field)?;
         // Skip bloom check for limit query? No, same logic.
         // It's just a limit.
 
