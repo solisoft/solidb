@@ -61,17 +61,12 @@ impl<'a> QueryExecutor<'a> {
 
                             if let Ok(collection) = self.get_collection(&for_clause.collection) {
                                 for ctx in &rows {
-                                    let Some(condition) = self.extract_indexable_condition(
+                                    let Some((docs, _name, _ty)) = self.lookup_index_for_filter(
+                                        &collection,
                                         &filter_clause.expression,
                                         &for_clause.variable,
                                         ctx,
                                     ) else {
-                                        all_rows_indexable = false;
-                                        break;
-                                    };
-                                    let Some(docs) =
-                                        self.use_index_for_condition(&collection, &condition)
-                                    else {
                                         all_rows_indexable = false;
                                         break;
                                     };

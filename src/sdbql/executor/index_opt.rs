@@ -71,6 +71,83 @@ impl<'a> QueryExecutor<'a> {
         None
     }
 
+    /// Collect every top-level equality condition on `var_name` from an AND
+    /// chain. Used to pick a composite index when multiple AND'd `field == val`
+    /// terms are present (e.g. `FILTER doc.city == 'Paris' AND doc.age == 10`).
+    /// Non-equality terms are skipped — they can't extend a composite-equality
+    /// lookup prefix.
+    pub(super) fn extract_equality_conditions(
+        &self,
+        expr: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Vec<IndexableCondition> {
+        let mut out = Vec::new();
+        self.collect_equality_conditions(expr, var_name, ctx, &mut out);
+        out
+    }
+
+    fn collect_equality_conditions(
+        &self,
+        expr: &Expression,
+        var_name: &str,
+        ctx: &Context,
+        out: &mut Vec<IndexableCondition>,
+    ) {
+        if let Expression::BinaryOp {
+            left,
+            op: BinaryOperator::And,
+            right,
+        } = expr
+        {
+            self.collect_equality_conditions(left, var_name, ctx, out);
+            self.collect_equality_conditions(right, var_name, ctx, out);
+            return;
+        }
+        if let Some(cond) = self.extract_indexable_condition(expr, var_name, ctx) {
+            if matches!(cond.op, BinaryOperator::Equal) {
+                out.push(cond);
+            }
+        }
+    }
+
+    /// Resolve the best index for a FILTER expression: composite first (when
+    /// 2+ AND'd equality terms cover all of an index's fields), otherwise the
+    /// existing single-field path. Returns `(docs, index_name, index_type)` so
+    /// EXPLAIN and the executor can report what was used without re-scanning
+    /// the index list.
+    pub(super) fn lookup_index_for_filter(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Option<(Vec<crate::storage::Document>, String, String)> {
+        // 1. Composite path
+        let eq_conditions = self.extract_equality_conditions(filter, var_name, ctx);
+        if eq_conditions.len() >= 2 {
+            let pairs: Vec<(String, Value)> = eq_conditions
+                .iter()
+                .map(|c| (c.field.clone(), c.value.clone()))
+                .collect();
+            if let Some((index, docs)) = collection.index_lookup_eq_composite(&pairs) {
+                let type_str = format!("{:?}", index.index_type);
+                return Some((docs, index.name, type_str));
+            }
+        }
+
+        // 2. Single-field fallback
+        let cond = self.extract_indexable_condition(filter, var_name, ctx)?;
+        let docs = self.use_index_for_condition(collection, &cond)?;
+        let (name, type_str) = collection
+            .get_all_indexes()
+            .into_iter()
+            .find(|i| i.fields.len() == 1 && i.fields[0] == cond.field)
+            .map(|i| (i.name, format!("{:?}", i.index_type)))
+            .unwrap_or_default();
+        Some((docs, name, type_str))
+    }
+
     /// Extract a concrete value from the non-field side of a comparison.
     ///
     /// Accepts literals, bind variables, and any expression that can be

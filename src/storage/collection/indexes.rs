@@ -1109,6 +1109,94 @@ impl Collection {
         Some(docs)
     }
 
+    /// Composite-index equality lookup.
+    ///
+    /// Given a set of `(field, value)` equality conditions, find the multi-field
+    /// index whose `fields` list is fully covered by those conditions, build the
+    /// joined-hex prefix that matches `idx_entry_key`, and return all docs.
+    ///
+    /// Returns `(index, docs)` on a hit, or `None` if no multi-field index can
+    /// satisfy the conditions. Single-field indexes are intentionally ignored
+    /// here — they go through [`index_lookup_eq`].
+    pub fn index_lookup_eq_composite(
+        &self,
+        conditions: &[(String, Value)],
+    ) -> Option<(crate::storage::index::Index, Vec<Document>)> {
+        if conditions.len() < 2 {
+            return None;
+        }
+        // Skip if any value is null (composite index entries skip all-null rows
+        // and we'd have to fall back to a scan anyway).
+        if conditions.iter().any(|(_, v)| v.is_null()) {
+            return None;
+        }
+
+        // Pick the multi-field index whose fields are all covered by the
+        // provided conditions. Prefer the most selective (most fields covered).
+        let mut best: Option<crate::storage::index::Index> = None;
+        for index in self.get_all_indexes() {
+            if index.fields.len() < 2 {
+                continue;
+            }
+            let all_covered = index
+                .fields
+                .iter()
+                .all(|f| conditions.iter().any(|(cf, _)| cf == f));
+            if all_covered
+                && best
+                    .as_ref()
+                    .is_none_or(|b| b.fields.len() < index.fields.len())
+            {
+                best = Some(index);
+            }
+        }
+        let index = best?;
+
+        // Build value_part = hex(v1)_hex(v2)... in the index's field order
+        // (matching `idx_entry_key`).
+        let encoded: Vec<String> = index
+            .fields
+            .iter()
+            .map(|f| {
+                let v = conditions
+                    .iter()
+                    .find(|(cf, _)| cf == f)
+                    .map(|(_, v)| v)
+                    .expect("coverage check ensures field is present");
+                hex::encode(crate::storage::codec::encode_key(v))
+            })
+            .collect();
+        let value_part = encoded.join("_");
+
+        let db = &self.db;
+        let cf = db.cf_handle(&self.name)?;
+        let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_part);
+        let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+
+        let doc_keys: Vec<Vec<u8>> = iter
+            .filter_map(|r| r.ok())
+            .take_while(|(k, _)| k.starts_with(prefix.as_bytes()))
+            .map(|(_, v)| {
+                let key_str = String::from_utf8_lossy(&v);
+                Self::doc_key(&key_str)
+            })
+            .collect();
+
+        if doc_keys.is_empty() {
+            return Some((index, Vec::new()));
+        }
+
+        let results = db.multi_get_cf(doc_keys.iter().map(|k| (cf, k.as_slice())));
+        let docs: Vec<Document> = results
+            .into_iter()
+            .filter_map(|r| r.ok())
+            .flatten()
+            .filter_map(|bytes| deserialize_doc(&bytes).ok())
+            .collect();
+
+        Some((index, docs))
+    }
+
     /// Lookup documents using index (equality) with limit
     pub fn index_lookup_eq_limit(
         &self,

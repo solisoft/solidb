@@ -134,41 +134,30 @@ impl<'a> QueryExecutor<'a> {
                                     // structural decision of whether an index
                                     // would be used at runtime.
                                     let probe_ctx = rows.first().cloned().unwrap_or_default();
-                                    if let Some(condition) = self.extract_indexable_condition(
+                                    if let Some((docs, name, ty)) = self.lookup_index_for_filter(
+                                        &collection,
                                         &filter_clause.expression,
                                         &for_clause.variable,
                                         &probe_ctx,
                                     ) {
-                                        if let Some(docs) =
-                                            self.use_index_for_condition(&collection, &condition)
-                                        {
-                                            // Found index usage!
-                                            used_index = true;
-                                            // Identify index name
-                                            for idx in collection.list_indexes() {
-                                                if idx.field == condition.field {
-                                                    index_name = Some(idx.name.clone());
-                                                    index_type =
-                                                        Some(format!("{:?}", idx.index_type));
-                                                    break;
-                                                }
-                                            }
+                                        used_index = true;
+                                        index_name = Some(name);
+                                        index_type = Some(ty);
 
-                                            let mut new_rows = Vec::new();
-                                            for ctx in &rows {
-                                                for doc in &docs {
-                                                    let mut new_ctx = ctx.clone();
-                                                    new_ctx.insert(
-                                                        for_clause.variable.clone(),
-                                                        doc.to_value(),
-                                                    );
-                                                    new_rows.push(new_ctx);
-                                                }
+                                        let mut new_rows = Vec::new();
+                                        for ctx in &rows {
+                                            for doc in &docs {
+                                                let mut new_ctx = ctx.clone();
+                                                new_ctx.insert(
+                                                    for_clause.variable.clone(),
+                                                    doc.to_value(),
+                                                );
+                                                new_rows.push(new_ctx);
                                             }
-                                            rows = new_rows;
-                                            total_docs_scanned += docs.len();
-                                            i += 2; // Skip FOR and FILTER
                                         }
+                                        rows = new_rows;
+                                        total_docs_scanned += docs.len();
+                                        i += 2; // Skip FOR and FILTER
                                     }
                                 }
                             }
