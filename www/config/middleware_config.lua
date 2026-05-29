@@ -84,6 +84,16 @@ local function read_sdb_server_cookie()
   return raw, raw
 end
 
+-- Expire the auth cookies so an invalid/stale token self-heals on the next
+-- login instead of trapping the user in a redirect loop: the browser sends an
+-- old token, validation 401s, we bounce to /login, the old cookie is still
+-- there, repeat. Clearing here matches the host-only Path=/ cookies set by the
+-- login controller (dashboard_controller#do_login).
+local function clear_auth_cookies()
+  SetCookie("sdb_token", "", { MaxAge = 0, Path = "/" })
+  SetCookie("sdb_server", "", { MaxAge = 0, Path = "/" })
+end
+
 -- Dashboard authentication middleware
 Middleware.register("dashboard_auth", function(ctx, next)
   local token = GetCookie("sdb_token")
@@ -130,6 +140,9 @@ Middleware.register("dashboard_auth", function(ctx, next)
 
   if status ~= 200 then
     Log(kLogWarn, "[dashboard_auth] Token validation failed, status=" .. tostring(status) .. ", body=" .. tostring(body))
+    -- Token is present but rejected (expired/stale): drop it so the next login
+    -- isn't shadowed by the dead cookie.
+    clear_auth_cookies()
     local current_path = GetPath() or "/"
     return ctx:redirect("/dashboard/login?redirect=" .. current_path)
   end
@@ -161,11 +174,15 @@ Middleware.register("dashboard_admin_auth", function(ctx, next)
 
   Log(kLogInfo, "[dashboard_admin_auth] Validation status=" .. tostring(status))
   if status ~= 200 then
+    -- Token present but rejected (expired/stale): clear it so the user isn't
+    -- stuck re-submitting login behind a dead cookie.
+    clear_auth_cookies()
     return ctx:redirect("/dashboard/login?redirect=" .. current_path)
   end
 
   local ok, user_data = pcall(DecodeJson, body)
   if not ok or not user_data then
+    clear_auth_cookies()
     return ctx:redirect("/dashboard/login?redirect=" .. current_path)
   end
 
