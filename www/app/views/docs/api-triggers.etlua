@@ -114,8 +114,26 @@
                     <tr>
                       <td class="p-4 text-amber-400 font-mono">script_path</td>
                       <td class="p-4 font-mono">string</td>
-                      <td class="p-4"><span class="text-green-400">Yes</span></td>
-                      <td class="p-4">Path to Lua script in _scripts</td>
+                      <td class="p-4"><span class="text-amber-400">One of</span></td>
+                      <td class="p-4">Path to Lua script in <code class="text-indigo-400">_scripts</code>. Mutually exclusive with <code class="text-indigo-400">webhook_url</code>.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">webhook_url</td>
+                      <td class="p-4 font-mono">string</td>
+                      <td class="p-4"><span class="text-amber-400">One of</span></td>
+                      <td class="p-4">When set, the trigger spawns jobs that POST the event payload to this URL directly (no Lua script).</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">webhook_secret</td>
+                      <td class="p-4 font-mono">string</td>
+                      <td class="p-4"><span class="text-gray-500">No</span></td>
+                      <td class="p-4">Per-trigger HMAC-SHA256 key for <code class="text-indigo-400">X-Webhook-Signature</code> (falls back to <code class="text-indigo-400">SOLI_WEBHOOK_SECRET</code>).</td>
+                    </tr>
+                    <tr>
+                      <td class="p-4 text-amber-400 font-mono">webhook_headers</td>
+                      <td class="p-4 font-mono">object</td>
+                      <td class="p-4"><span class="text-gray-500">No</span></td>
+                      <td class="p-4">Extra HTTP headers attached to the outbound webhook request.</td>
                     </tr>
                     <tr>
                       <td class="p-4 text-amber-400 font-mono">queue</td>

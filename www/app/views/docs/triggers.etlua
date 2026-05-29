@@ -120,7 +120,22 @@
                   <tr>
                     <td class="p-4 text-amber-400 font-mono">script_path</td>
                     <td class="p-4 font-mono">string</td>
-                    <td class="p-4">Path to the Lua script in <code class="text-indigo-400">_scripts</code> collection</td>
+                    <td class="p-4">Path to the Lua script in <code class="text-indigo-400">_scripts</code> collection. <em>Mutually exclusive with <code>webhook_url</code> — set exactly one.</em></td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">webhook_url</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">When set, the trigger spawns a job whose worker POSTs the event payload (including <code class="text-indigo-400">trigger_name</code>, <code class="text-indigo-400">event</code>, <code class="text-indigo-400">collection</code>, <code class="text-indigo-400">key</code>, <code class="text-indigo-400">data</code>, <code class="text-indigo-400">old_data</code>) directly to this URL instead of running a Lua script.</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">webhook_secret</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">Per-trigger HMAC-SHA256 key for signing the webhook body via <code class="text-indigo-400">X-Webhook-Signature</code>. Falls back to <code class="text-indigo-400">SOLI_WEBHOOK_SECRET</code> / <code class="text-indigo-400">SOLI_JOBS_SECRET</code> env vars.</td>
+                  </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">webhook_headers</td>
+                    <td class="p-4 font-mono">object</td>
+                    <td class="p-4">Extra HTTP headers attached to the outbound webhook request.</td>
                   </tr>
                   <tr>
                     <td class="p-4 text-amber-400 font-mono">queue</td>
@@ -240,6 +255,19 @@
   },
   "old_data": null
 }</code></pre>
+            </div>
+
+            <div class="mt-6 bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 text-xs">
+              <p class="text-amber-200">
+                <strong>Webhook triggers</strong> (when <code class="text-amber-300">webhook_url</code> is set instead of <code class="text-amber-300">script_path</code>): the worker POSTs this exact JSON body to the configured URL with
+                <code class="text-amber-300">Content-Type: application/json</code>,
+                <code class="text-amber-300">X-Webhook-Event: job</code>,
+                <code class="text-amber-300">X-Webhook-Delivery: &lt;job-id&gt;</code>, and (when a secret is available)
+                <code class="text-amber-300">X-Webhook-Signature</code> = lowercase hex HMAC-SHA256 of the body. The signing key is resolved in order:
+                per-trigger <code class="text-amber-300">webhook_secret</code> → <code class="text-amber-300">SOLI_WEBHOOK_SECRET</code> env var → <code class="text-amber-300">SOLI_JOBS_SECRET</code> env var → unsigned.
+                See <a href="/docs/queues#configuration" class="underline hover:text-amber-100">Queues → Configuration</a> for the full env-var reference.
+                Any non-2xx response counts as failure and is retried per <code class="text-amber-300">max_retries</code>.
+              </p>
             </div>
           </div>
         </div>

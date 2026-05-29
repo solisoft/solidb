@@ -351,6 +351,16 @@ volumes:
                       <td class="p-3">Background job workers per node</td>
                     </tr>
                     <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLI_WEBHOOK_SECRET</td>
+                      <td class="p-3"><em>unset</em></td>
+                      <td class="p-3">Default HMAC-SHA256 key used to sign outbound webhook jobs &amp; triggers via <code>X-Webhook-Signature</code>. Per-target <code>webhook_secret</code> wins; if both are unset the signature header is omitted. See <a href="/docs/queues#configuration" class="text-cyan-400 hover:underline">Queues → Configuration</a>.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLI_JOBS_SECRET</td>
+                      <td class="p-3"><em>unset</em></td>
+                      <td class="p-3">Legacy fallback used only when <code>SOLI_WEBHOOK_SECRET</code> is unset. Prefer the latter for new setups.</td>
+                    </tr>
+                    <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLIDB_LUA_POOL_SIZE</td>
                       <td class="p-3"><em>CPU cores</em></td>
                       <td class="p-3">Number of Lua VM pool states</td>

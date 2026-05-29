@@ -1,3 +1,4 @@
+use super::signing;
 use super::types::{Job, JobStatus};
 use super::QueueWorker;
 use crate::scripting::ScriptEngine;
@@ -22,6 +23,80 @@ fn validate_script_path(script_path: &str) -> Result<(), crate::error::DbError> 
         ));
     }
     Ok(())
+}
+
+/// True when `url`'s host is reserved for development by RFC 6761 / 2606 —
+/// `.test`, `.localhost`, `.local`, or the literal `localhost`. Webhooks
+/// targeting such hosts skip TLS verification so dev setups using mkcert
+/// or a local reverse proxy don't need their root CA in SolidB's trust
+/// store. Public traffic still goes through the strict client.
+pub(crate) fn host_is_dev_tld(url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    let host = match parsed.host_str() {
+        Some(h) => h.to_ascii_lowercase(),
+        None => return false,
+    };
+    if host == "localhost" {
+        return true;
+    }
+    host.ends_with(".test") || host.ends_with(".localhost") || host.ends_with(".local")
+}
+
+pub fn validate_webhook_url(url: &str) -> Result<(), crate::error::DbError> {
+    if url.is_empty() {
+        return Err(crate::error::DbError::BadRequest(
+            "Webhook URL cannot be empty".to_string(),
+        ));
+    }
+    if url.len() > 2048 {
+        return Err(crate::error::DbError::BadRequest(
+            "Webhook URL exceeds maximum length of 2048 characters".to_string(),
+        ));
+    }
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|e| crate::error::DbError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => {
+            return Err(crate::error::DbError::BadRequest(format!(
+                "Webhook URL must use http or https, got '{}'",
+                other
+            )))
+        }
+    }
+    if parsed.username() != "" || parsed.password().is_some() {
+        return Err(crate::error::DbError::BadRequest(
+            "Webhook URL must not embed credentials".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// At enqueue time, exactly one of `script_path` or `webhook_url` must be set.
+pub fn validate_job_target(
+    script_path: &str,
+    webhook_url: Option<&str>,
+) -> Result<(), crate::error::DbError> {
+    let has_script = !script_path.is_empty();
+    let has_webhook = webhook_url.map(|s| !s.is_empty()).unwrap_or(false);
+    match (has_script, has_webhook) {
+        (true, true) => Err(crate::error::DbError::BadRequest(
+            "Job cannot have both script_path and webhook_url; set exactly one".to_string(),
+        )),
+        (false, false) => Err(crate::error::DbError::BadRequest(
+            "Job must have either script_path or webhook_url".to_string(),
+        )),
+        (true, false) => validate_script_path(script_path),
+        (false, true) => validate_webhook_url(webhook_url.unwrap()),
+    }
+}
+
+fn default_webhook_secret() -> Option<String> {
+    std::env::var("SOLI_WEBHOOK_SECRET")
+        .ok()
+        .or_else(|| std::env::var("SOLI_JOBS_SECRET").ok())
 }
 
 impl QueueWorker {
@@ -118,6 +193,8 @@ impl QueueWorker {
             // Execute
             let worker_storage = self.storage.clone();
             let worker_engine = self.script_engine.clone();
+            let worker_http = self.http_client.clone();
+            let worker_dev_http = self.dev_http_client.clone();
             let job_id = job.id.clone();
             let db_name_task = db_name.clone();
 
@@ -126,6 +203,8 @@ impl QueueWorker {
                 match Self::execute_job(
                     &worker_storage,
                     &worker_engine,
+                    &worker_http,
+                    &worker_dev_http,
                     &job_to_update,
                     &db_name_task,
                 )
@@ -179,6 +258,21 @@ impl QueueWorker {
     }
 
     pub(crate) async fn execute_job(
+        storage: &Arc<StorageEngine>,
+        engine: &Arc<ScriptEngine>,
+        http: &reqwest::Client,
+        dev_http: &reqwest::Client,
+        job: &Job,
+        db_name: &str,
+    ) -> Result<(), crate::error::DbError> {
+        if job.is_webhook() {
+            Self::execute_webhook(http, dev_http, job).await
+        } else {
+            Self::execute_script(storage, engine, job, db_name).await
+        }
+    }
+
+    async fn execute_script(
         storage: &Arc<StorageEngine>,
         engine: &Arc<ScriptEngine>,
         job: &Job,
@@ -245,5 +339,284 @@ impl QueueWorker {
         }
 
         Ok(())
+    }
+
+    async fn execute_webhook(
+        http: &reqwest::Client,
+        dev_http: &reqwest::Client,
+        job: &Job,
+    ) -> Result<(), crate::error::DbError> {
+        let url = job.webhook_url.as_deref().unwrap_or("");
+        validate_webhook_url(url)?;
+
+        // Use the permissive client only for development-reserved TLDs.
+        // Everything else stays on the strict client with full TLS checks.
+        let client = if host_is_dev_tld(url) {
+            tracing::debug!("Using permissive TLS client for dev host {}", url);
+            dev_http
+        } else {
+            http
+        };
+
+        tracing::info!("Firing webhook for job {} to {}", job.id, url);
+
+        let body_bytes = serde_json::to_vec(&job.params).map_err(|e| {
+            crate::error::DbError::InternalError(format!("Webhook payload serialize failed: {}", e))
+        })?;
+
+        let mut request = client
+            .post(url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header("X-Webhook-Event", "job")
+            .header("X-Webhook-Delivery", job.id.as_str());
+
+        let secret = job.webhook_secret.clone().or_else(default_webhook_secret);
+        if let Some(secret) = secret.as_deref() {
+            let sig = signing::sign(&body_bytes, secret);
+            request = request.header("X-Webhook-Signature", sig);
+        }
+
+        if let Some(headers) = &job.webhook_headers {
+            for (k, v) in headers.iter() {
+                request = request.header(k.as_str(), v.as_str());
+            }
+        }
+
+        let response = request.body(body_bytes).send().await.map_err(|e| {
+            crate::error::DbError::InternalError(format!("Webhook transport failed: {}", e))
+        })?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            let snippet: String = body.chars().take(200).collect();
+            return Err(crate::error::DbError::InternalError(format!(
+                "Webhook returned status {}: {}",
+                status.as_u16(),
+                snippet
+            )));
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::queue::{Job, JobStatus};
+    use std::collections::HashMap;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    fn make_job(url: Option<&str>, script: &str) -> Job {
+        Job {
+            id: "job-1".to_string(),
+            revision: None,
+            queue: "default".to_string(),
+            priority: 0,
+            script_path: script.to_string(),
+            webhook_url: url.map(|s| s.to_string()),
+            webhook_secret: None,
+            webhook_headers: None,
+            params: serde_json::json!({"hello": "world"}),
+            status: JobStatus::Pending,
+            retry_count: 0,
+            max_retries: 3,
+            last_error: None,
+            cron_job_id: None,
+            run_at: 0,
+            created_at: 0,
+            started_at: None,
+            completed_at: None,
+        }
+    }
+
+    /// Bind 127.0.0.1:0, accept one connection, read the request bytes until
+    /// headers+body received, send back the given response, and return the raw
+    /// request as a string for assertions.
+    async fn mock_once(
+        listener: TcpListener,
+        response: &'static str,
+    ) -> Result<String, std::io::Error> {
+        let (mut sock, _) = listener.accept().await?;
+        let mut buf = vec![0u8; 8192];
+        let mut total = Vec::new();
+        loop {
+            let n = sock.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            total.extend_from_slice(&buf[..n]);
+            // For Content-Length-style POSTs, we wait until the body is fully read.
+            if let Some(idx) = find_double_crlf(&total) {
+                let header_str = std::str::from_utf8(&total[..idx]).unwrap_or("");
+                let content_length = parse_content_length(header_str).unwrap_or(0);
+                if total.len() >= idx + 4 + content_length {
+                    break;
+                }
+            }
+        }
+        sock.write_all(response.as_bytes()).await?;
+        sock.flush().await?;
+        Ok(String::from_utf8_lossy(&total).to_string())
+    }
+
+    fn find_double_crlf(buf: &[u8]) -> Option<usize> {
+        buf.windows(4).position(|w| w == b"\r\n\r\n")
+    }
+
+    fn parse_content_length(headers: &str) -> Option<usize> {
+        for line in headers.split("\r\n") {
+            if let Some(rest) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                return rest.trim().parse().ok();
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn validate_target_rejects_both() {
+        let err = validate_job_target("some/script", Some("http://x.test/"))
+            .expect_err("both targets should fail");
+        assert!(format!("{}", err).contains("cannot have both"));
+    }
+
+    #[test]
+    fn validate_target_rejects_neither() {
+        let err = validate_job_target("", None).expect_err("no target should fail");
+        assert!(format!("{}", err).contains("must have either"));
+    }
+
+    #[test]
+    fn validate_target_accepts_script_only() {
+        validate_job_target("hello", None).expect("script-only is valid");
+    }
+
+    #[test]
+    fn validate_target_accepts_webhook_only() {
+        validate_job_target("", Some("https://example.test/hook")).expect("webhook-only is valid");
+    }
+
+    #[test]
+    fn host_is_dev_tld_recognises_reserved_dev_tlds() {
+        // Reserved-by-RFC dev TLDs all match.
+        assert!(super::host_is_dev_tld("https://bonfire.solisoft.test/hook"));
+        assert!(super::host_is_dev_tld("http://app.localhost/hook"));
+        assert!(super::host_is_dev_tld("http://localhost/hook"));
+        assert!(super::host_is_dev_tld("https://server.local/hook"));
+        // Public hosts stay strict.
+        assert!(!super::host_is_dev_tld("https://example.com/hook"));
+        assert!(!super::host_is_dev_tld("https://api.example.org/hook"));
+        // Garbage URLs default to strict (false).
+        assert!(!super::host_is_dev_tld("not-a-url"));
+    }
+
+    #[test]
+    fn validate_webhook_url_rejects_non_http() {
+        let err = validate_webhook_url("file:///etc/passwd").expect_err("file:// must fail");
+        assert!(format!("{}", err).contains("http or https"));
+    }
+
+    #[test]
+    fn validate_webhook_url_rejects_credentials_in_url() {
+        let err =
+            validate_webhook_url("http://user:pw@example.test/hook").expect_err("creds must fail");
+        assert!(format!("{}", err).contains("credentials"));
+    }
+
+    #[tokio::test]
+    async fn execute_webhook_posts_signed_payload() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let url = format!("http://127.0.0.1:{}/hook", port);
+
+        let mut job = make_job(Some(&url), "");
+        job.webhook_secret = Some("s3cret".to_string());
+        let mut headers = HashMap::new();
+        headers.insert("X-Custom".to_string(), "yes".to_string());
+        job.webhook_headers = Some(headers);
+
+        let server = tokio::spawn(async move {
+            mock_once(listener, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                .await
+                .unwrap()
+        });
+
+        let http = reqwest::Client::new();
+        let dev_http = reqwest::Client::new();
+        super::super::QueueWorker::execute_webhook(&http, &dev_http, &job)
+            .await
+            .expect("webhook should succeed");
+
+        let raw = server.await.unwrap();
+        assert!(raw.contains("POST /hook"), "request line, got:\n{}", raw);
+        assert!(
+            raw.to_ascii_lowercase()
+                .contains("content-type: application/json"),
+            "missing JSON content-type:\n{}",
+            raw
+        );
+        assert!(
+            raw.to_ascii_lowercase().contains("x-webhook-event: job"),
+            "missing event header:\n{}",
+            raw
+        );
+        assert!(
+            raw.to_ascii_lowercase()
+                .contains("x-webhook-delivery: job-1"),
+            "missing delivery id:\n{}",
+            raw
+        );
+        assert!(
+            raw.to_ascii_lowercase().contains("x-webhook-signature: "),
+            "missing signature header:\n{}",
+            raw
+        );
+        assert!(
+            raw.to_ascii_lowercase().contains("x-custom: yes"),
+            "missing custom header:\n{}",
+            raw
+        );
+        // Body present.
+        assert!(raw.contains(r#"{"hello":"world"}"#), "body wrong:\n{}", raw);
+
+        // Pull out the signature header and verify it matches HMAC of the body.
+        let sig_line = raw
+            .lines()
+            .find(|l| l.to_ascii_lowercase().starts_with("x-webhook-signature:"))
+            .unwrap();
+        let sig = sig_line.split_once(':').unwrap().1.trim();
+        let expected = super::signing::sign(br#"{"hello":"world"}"#, "s3cret");
+        assert_eq!(sig, expected, "signature mismatch");
+    }
+
+    #[tokio::test]
+    async fn execute_webhook_propagates_non_2xx_as_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let url = format!("http://127.0.0.1:{}/hook", port);
+
+        let job = make_job(Some(&url), "");
+        let server = tokio::spawn(async move {
+            mock_once(
+                listener,
+                "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 4\r\n\r\nboom",
+            )
+            .await
+            .unwrap()
+        });
+
+        let http = reqwest::Client::new();
+        let dev_http = reqwest::Client::new();
+        let err = super::super::QueueWorker::execute_webhook(&http, &dev_http, &job)
+            .await
+            .expect_err("500 should be an error");
+        let _ = server.await;
+        assert!(
+            format!("{}", err).contains("500"),
+            "expected error to mention 500, got: {}",
+            err
+        );
     }
 }

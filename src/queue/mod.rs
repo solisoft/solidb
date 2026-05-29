@@ -1,7 +1,9 @@
 mod cron;
 mod jobs;
+pub(crate) mod signing;
 mod types;
 
+pub use jobs::validate_job_target;
 pub use types::{CronJob, Job, JobStatus};
 
 use crate::scripting::{ScriptEngine, ScriptStats};
@@ -13,6 +15,16 @@ use tokio::sync::broadcast;
 pub struct QueueWorker {
     pub(crate) storage: Arc<StorageEngine>,
     pub(crate) script_engine: Arc<ScriptEngine>,
+    /// Strict client — full TLS verification. Used for any webhook target
+    /// on a real public host.
+    pub(crate) http_client: reqwest::Client,
+    /// Permissive client — accepts invalid/self-signed TLS certs. Used
+    /// **only** for webhook targets whose host falls under a reserved
+    /// development TLD (`.test`, `.localhost`, `.local`, or the literal
+    /// `localhost`). Lets dev setups behind mkcert / Caddy / a local
+    /// reverse proxy succeed without putting the root CA in SolidB's
+    /// trust store.
+    pub(crate) dev_http_client: reqwest::Client,
     worker_count: usize,
     notifier: broadcast::Sender<()>,
     pub(crate) claiming_lock: tokio::sync::Mutex<()>,
@@ -30,9 +42,23 @@ impl QueueWorker {
             .and_then(|v| v.parse().ok())
             .unwrap_or(4);
 
+        let http_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .expect("reqwest::Client builds with defaults");
+
+        let dev_http_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true)
+            .build()
+            .expect("reqwest::Client builds with permissive TLS");
+
         Self {
             storage,
             script_engine,
+            http_client,
+            dev_http_client,
             worker_count,
             notifier,
             claiming_lock: tokio::sync::Mutex::new(()),

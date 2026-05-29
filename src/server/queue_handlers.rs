@@ -11,6 +11,29 @@ use crate::error::DbError;
 use crate::queue::{Job, JobStatus};
 use std::str::FromStr;
 
+/// Parse a `run_at` value that may arrive as either:
+///  - a Unix-seconds integer (legacy, from the original REST contract), or
+///  - an ISO-8601/RFC-3339 string (what the Soli-lang client sends).
+fn parse_run_at(val: &JsonValue) -> Result<u64, DbError> {
+    if let Some(n) = val.as_u64() {
+        return Ok(n);
+    }
+    if let Some(s) = val.as_str() {
+        let parsed = chrono::DateTime::parse_from_rfc3339(s)
+            .map_err(|e| DbError::BadRequest(format!("Invalid run_at timestamp '{}': {}", s, e)))?;
+        let ts = parsed.timestamp();
+        if ts < 0 {
+            return Err(DbError::BadRequest(
+                "run_at must not be before the epoch".to_string(),
+            ));
+        }
+        return Ok(ts as u64);
+    }
+    Err(DbError::BadRequest(
+        "run_at must be a Unix-seconds integer or an RFC-3339 string".to_string(),
+    ))
+}
+
 #[derive(Debug, Serialize)]
 pub struct QueueStats {
     pub name: String,
@@ -195,11 +218,28 @@ pub async fn run_now_job_handler(
 
 #[derive(Debug, Deserialize)]
 pub struct EnqueueRequest {
-    pub script: String,
+    /// Lua script path inside the DB's `_scripts` collection. One of `script`
+    /// or `webhook_url` must be set, never both.
+    #[serde(default)]
+    pub script: Option<String>,
+    /// Outbound HTTP webhook URL. When set, the worker POSTs `params` to this
+    /// URL with `X-Webhook-Signature` (HMAC-SHA256) and standard event headers.
+    #[serde(default, alias = "callback_url")]
+    pub webhook_url: Option<String>,
+    /// Per-job webhook secret; overrides the `SOLI_WEBHOOK_SECRET` env var.
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
+    /// Extra HTTP headers to attach to the outbound webhook request.
+    #[serde(default)]
+    pub webhook_headers: Option<HashMap<String, String>>,
+    /// Accepted as an alias for `params` for compatibility with the Soli-lang
+    /// client, which historically sent `args`.
+    #[serde(default, alias = "args")]
     pub params: Option<JsonValue>,
     pub priority: Option<i32>,
     pub max_retries: Option<u32>,
-    pub run_at: Option<u64>,
+    /// Unix-seconds integer or RFC-3339 string.
+    pub run_at: Option<JsonValue>,
 }
 
 // CRON JOB HANDLERS
@@ -208,7 +248,15 @@ pub struct EnqueueRequest {
 pub struct CreateCronJobRequest {
     pub name: String,
     pub cron_expression: String,
-    pub script: String,
+    #[serde(default)]
+    pub script: Option<String>,
+    #[serde(default, alias = "callback_url")]
+    pub webhook_url: Option<String>,
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
+    #[serde(default)]
+    pub webhook_headers: Option<HashMap<String, String>>,
+    #[serde(default, alias = "args")]
     pub params: Option<JsonValue>,
     pub priority: Option<i32>,
     pub queue: Option<String>,
@@ -219,7 +267,15 @@ pub struct CreateCronJobRequest {
 pub struct UpdateCronJobRequest {
     pub name: Option<String>,
     pub cron_expression: Option<String>,
+    #[serde(default)]
     pub script: Option<String>,
+    #[serde(default, alias = "callback_url")]
+    pub webhook_url: Option<String>,
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
+    #[serde(default)]
+    pub webhook_headers: Option<HashMap<String, String>>,
+    #[serde(default, alias = "args")]
     pub params: Option<JsonValue>,
     pub priority: Option<i32>,
     pub queue: Option<String>,
@@ -266,18 +322,8 @@ pub async fn create_cron_job_handler(
         .unwrap()
         .as_secs();
 
-    let script_path = req.script;
-    if script_path.len() > 512 {
-        return Err(DbError::BadRequest(
-            "Script path exceeds maximum length of 512 characters".to_string(),
-        ));
-    }
-    let re = regex::Regex::new(r"^[A-Za-z0-9_/\-.]+$").unwrap();
-    if !re.is_match(&script_path) {
-        return Err(DbError::BadRequest(
-            "Script path contains invalid characters".to_string(),
-        ));
-    }
+    let script_path = req.script.unwrap_or_default();
+    crate::queue::validate_job_target(&script_path, req.webhook_url.as_deref())?;
 
     let cron_job = crate::queue::CronJob {
         id: uuid::Uuid::new_v4().to_string(),
@@ -288,6 +334,9 @@ pub async fn create_cron_job_handler(
         priority: req.priority.unwrap_or(0),
         max_retries: req.max_retries.unwrap_or(3),
         script_path,
+        webhook_url: req.webhook_url,
+        webhook_secret: req.webhook_secret,
+        webhook_headers: req.webhook_headers,
         params: req.params.unwrap_or(JsonValue::Null),
         last_run: None,
         next_run: None, // Will be calculated by worker
@@ -324,18 +373,24 @@ pub async fn update_cron_job_handler(
         cron_job.next_run = None;
     }
     if let Some(script) = req.script {
-        if script.len() > 512 {
-            return Err(DbError::BadRequest(
-                "Script path exceeds maximum length of 512 characters".to_string(),
-            ));
-        }
-        let re = regex::Regex::new(r"^[A-Za-z0-9_/\-.]+$").unwrap();
-        if !re.is_match(&script) {
-            return Err(DbError::BadRequest(
-                "Script path contains invalid characters".to_string(),
-            ));
-        }
+        // Switching to a script clears any prior webhook target.
+        crate::queue::validate_job_target(&script, None)?;
         cron_job.script_path = script;
+        cron_job.webhook_url = None;
+        cron_job.webhook_secret = None;
+        cron_job.webhook_headers = None;
+    }
+    if let Some(url) = req.webhook_url {
+        // Switching to a webhook clears the script target.
+        crate::queue::validate_job_target("", Some(&url))?;
+        cron_job.script_path = String::new();
+        cron_job.webhook_url = Some(url);
+        if req.webhook_secret.is_some() {
+            cron_job.webhook_secret = req.webhook_secret;
+        }
+        if req.webhook_headers.is_some() {
+            cron_job.webhook_headers = req.webhook_headers;
+        }
     }
     if let Some(params) = req.params {
         cron_job.params = params;
@@ -379,18 +434,13 @@ pub async fn enqueue_job_handler(
         .unwrap()
         .as_secs();
 
-    let script_path = req.script;
-    if script_path.len() > 512 {
-        return Err(DbError::BadRequest(
-            "Script path exceeds maximum length of 512 characters".to_string(),
-        ));
-    }
-    let re = regex::Regex::new(r"^[A-Za-z0-9_/\-.]+$").unwrap();
-    if !re.is_match(&script_path) {
-        return Err(DbError::BadRequest(
-            "Script path contains invalid characters".to_string(),
-        ));
-    }
+    let script_path = req.script.unwrap_or_default();
+    crate::queue::validate_job_target(&script_path, req.webhook_url.as_deref())?;
+
+    let run_at = match req.run_at {
+        Some(v) => parse_run_at(&v)?,
+        None => now,
+    };
 
     let job_id = uuid::Uuid::new_v4().to_string();
     let job = Job {
@@ -399,13 +449,16 @@ pub async fn enqueue_job_handler(
         queue: queue_name,
         priority: req.priority.unwrap_or(0),
         script_path,
+        webhook_url: req.webhook_url,
+        webhook_secret: req.webhook_secret,
+        webhook_headers: req.webhook_headers,
         params: req.params.unwrap_or(JsonValue::Null),
         status: JobStatus::Pending,
         retry_count: 0,
         max_retries: req.max_retries.unwrap_or(20) as i32,
         last_error: None,
         cron_job_id: None,
-        run_at: req.run_at.unwrap_or(now),
+        run_at,
         created_at: now,
         started_at: None,
         completed_at: None,

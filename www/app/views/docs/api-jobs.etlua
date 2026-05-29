@@ -45,11 +45,17 @@
                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                 <code class="text-gray-300">/_api/database/:db/queues/:name/enqueue</code>
               </div>
-              <p class="text-sm text-gray-400 mb-4">Add a job to a queue.</p>
+              <p class="text-sm text-gray-400 mb-4">
+                Add a job to a queue. Set <strong>either</strong> <code class="text-indigo-400">script</code> (run a Lua script) <strong>or</strong> <code class="text-indigo-400">webhook_url</code> (worker POSTs to this URL) — never both. See <a href="/docs/queues" class="text-indigo-400 hover:underline">Queues</a> for the full field list.
+              </p>
               <div class="mb-4">
-                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body — Script target</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300 mb-3">
+                  { "script": "send_email", "params": { "to": "user@example.com" }, "priority": 1 }
+                </div>
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body — Webhook target</h4>
                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
-                  { "payload": { "task": "send_email", "to": "user@example.com" }, "priority": 1 }
+                  { "webhook_url": "https://hooks.example.com/order", "params": { "order_id": 1234 }, "webhook_secret": "s3cret" }
                 </div>
               </div>
             </div>
@@ -92,11 +98,17 @@
                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                 <code class="text-gray-300">/_api/database/:db/cron</code>
               </div>
-              <p class="text-sm text-gray-400 mb-4">Create a cron job.</p>
+              <p class="text-sm text-gray-400 mb-4">
+                Create a cron job. Same script-or-webhook duality as <code class="text-indigo-400">/queues/:name/enqueue</code> — set <code class="text-indigo-400">script</code> for a Lua script target, or <code class="text-indigo-400">webhook_url</code> (+ optional <code class="text-indigo-400">webhook_secret</code> and <code class="text-indigo-400">webhook_headers</code>) for an outbound HTTP target. When the cron fires, every spawned job inherits the same target.
+              </p>
               <div class="mb-4">
-                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body — Script target</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300 mb-3">
+                  { "name": "daily_cleanup", "cron_expression": "0 0 * * * * *", "script": "cleanup_script" }
+                </div>
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body — Webhook target</h4>
                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
-                  { "name": "daily_cleanup", "schedule": "0 0 * * *", "script_id": "cleanup_script", "enabled": true }
+                  { "name": "nightly_partner_sync", "cron_expression": "0 0 2 * * * *", "webhook_url": "https://api.partner.test/sync", "webhook_secret": "s3cret" }
                 </div>
               </div>
             </div>

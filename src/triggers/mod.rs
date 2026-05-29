@@ -3,6 +3,7 @@ use crate::queue::{Job, JobStatus};
 use crate::storage::{Document, StorageEngine};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -38,8 +39,20 @@ pub struct Trigger {
     pub collection: String,
     /// Events that trigger execution (insert, update, delete)
     pub events: Vec<TriggerEvent>,
-    /// Path to the Lua script in _scripts collection
+    /// Path to the Lua script in _scripts collection. Empty when the trigger
+    /// dispatches via `webhook_url` instead.
+    #[serde(default)]
     pub script_path: String,
+    /// Outbound HTTP webhook URL. When set, the worker POSTs the trigger
+    /// payload to this URL instead of running a Lua script.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
+    /// Per-trigger webhook secret; overrides the `SOLI_WEBHOOK_SECRET` env var.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub webhook_secret: Option<String>,
+    /// Extra HTTP headers to attach to the outbound webhook request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub webhook_headers: Option<HashMap<String, String>>,
     /// Queue name for job execution
     #[serde(default = "default_queue")]
     pub queue: String,
@@ -93,6 +106,9 @@ impl Trigger {
             collection,
             events,
             script_path,
+            webhook_url: None,
+            webhook_secret: None,
+            webhook_headers: None,
             queue: default_queue(),
             priority: 0,
             max_retries: default_max_retries(),
@@ -267,6 +283,9 @@ impl TriggerManager {
             queue: trigger.queue.clone(),
             priority: trigger.priority,
             script_path: trigger.script_path.clone(),
+            webhook_url: trigger.webhook_url.clone(),
+            webhook_secret: trigger.webhook_secret.clone(),
+            webhook_headers: trigger.webhook_headers.clone(),
             params: serde_json::to_value(&params).unwrap_or(JsonValue::Null),
             status: JobStatus::Pending,
             retry_count: 0,

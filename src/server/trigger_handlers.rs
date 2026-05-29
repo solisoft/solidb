@@ -3,6 +3,7 @@ use axum::{
     response::Json,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use super::handlers::AppState;
 use crate::error::DbError;
@@ -19,7 +20,14 @@ pub struct CreateTriggerRequest {
     pub name: String,
     pub collection: String,
     pub events: Vec<String>, // "insert", "update", "delete"
-    pub script_path: String,
+    #[serde(default)]
+    pub script_path: Option<String>,
+    #[serde(default, alias = "callback_url")]
+    pub webhook_url: Option<String>,
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
+    #[serde(default)]
+    pub webhook_headers: Option<HashMap<String, String>>,
     #[serde(default)]
     pub queue: Option<String>,
     #[serde(default)]
@@ -42,6 +50,10 @@ pub struct UpdateTriggerRequest {
     pub collection: Option<String>,
     pub events: Option<Vec<String>>,
     pub script_path: Option<String>,
+    #[serde(default, alias = "callback_url")]
+    pub webhook_url: Option<String>,
+    pub webhook_secret: Option<String>,
+    pub webhook_headers: Option<HashMap<String, String>>,
     pub queue: Option<String>,
     pub priority: Option<i32>,
     pub max_retries: Option<i32>,
@@ -150,13 +162,19 @@ pub async fn create_trigger_handler(
         .unwrap()
         .as_secs();
 
+    let script_path = req.script_path.unwrap_or_default();
+    crate::queue::validate_job_target(&script_path, req.webhook_url.as_deref())?;
+
     let trigger = Trigger {
         id: uuid::Uuid::new_v4().to_string(),
         revision: None,
         name: req.name,
         collection: req.collection,
         events,
-        script_path: req.script_path,
+        script_path,
+        webhook_url: req.webhook_url,
+        webhook_secret: req.webhook_secret,
+        webhook_headers: req.webhook_headers,
         queue: req.queue.unwrap_or_else(|| "default".to_string()),
         priority: req.priority.unwrap_or(0),
         max_retries: req.max_retries.unwrap_or(5),
@@ -204,7 +222,22 @@ pub async fn update_trigger_handler(
         trigger.events = parse_events(&events)?;
     }
     if let Some(script_path) = req.script_path {
+        crate::queue::validate_job_target(&script_path, None)?;
         trigger.script_path = script_path;
+        trigger.webhook_url = None;
+        trigger.webhook_secret = None;
+        trigger.webhook_headers = None;
+    }
+    if let Some(url) = req.webhook_url {
+        crate::queue::validate_job_target("", Some(&url))?;
+        trigger.script_path = String::new();
+        trigger.webhook_url = Some(url);
+        if req.webhook_secret.is_some() {
+            trigger.webhook_secret = req.webhook_secret;
+        }
+        if req.webhook_headers.is_some() {
+            trigger.webhook_headers = req.webhook_headers;
+        }
     }
     if let Some(queue) = req.queue {
         trigger.queue = queue;
