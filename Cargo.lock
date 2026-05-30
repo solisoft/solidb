@@ -4442,6 +4442,7 @@ dependencies = [
  "hex",
  "hmac",
  "hostname",
+ "hyper-util",
  "image",
  "indicatif",
  "jsonschema",

@@ -42,6 +42,9 @@ pub enum DbError {
     #[error("Internal error: {0}")]
     InternalError(String),
 
+    #[error("Operation timed out: {0}")]
+    Timeout(String),
+
     #[error("Network error: {0}")]
     NetworkError(String),
 
@@ -114,6 +117,7 @@ impl IntoResponse for DbError {
             DbError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             DbError::OperationNotSupported(msg) => (StatusCode::NOT_IMPLEMENTED, msg.clone()),
             DbError::TransactionTimeout(_) => (StatusCode::REQUEST_TIMEOUT, self.to_string()),
+            DbError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.to_string()),
             // Default to 500
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };

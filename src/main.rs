@@ -540,14 +540,56 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         let (sync_tx, sync_rx) = mpsc::channel(100);
 
         // 1. Spawn HTTP Server
+        //
+        // Driven via hyper_util's auto Builder rather than `axum::serve` so we
+        // can set an HTTP/1 header-read timeout. Without it, a client that
+        // opens a keep-alive connection and then sends partial (or no) request
+        // headers parks a server task indefinitely — the keep-alive analogue of
+        // the unbounded protocol-sniff read bounded above. Graceful shutdown is
+        // preserved via `GracefulShutdown`.
         let channel_listener = ChannelListener::new(http_rx, local_addr);
+        let http_shutdown = shutdown_signal(shutdown_storage);
         tokio::spawn(async move {
-            if let Err(e) = axum::serve(channel_listener, app)
-                .with_graceful_shutdown(shutdown_signal(shutdown_storage))
-                .await
-            {
-                tracing::error!("HTTP server error: {}", e);
+            use axum::serve::Listener;
+            use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
+            use hyper_util::server::conn::auto::Builder as HttpConnBuilder;
+            use hyper_util::server::graceful::GracefulShutdown;
+            use hyper_util::service::TowerToHyperService;
+
+            let mut listener = channel_listener;
+            let graceful = GracefulShutdown::new();
+            tokio::pin!(http_shutdown);
+
+            loop {
+                let (io, _addr) = tokio::select! {
+                    conn = listener.accept() => conn,
+                    _ = &mut http_shutdown => {
+                        tracing::info!("HTTP server received shutdown signal, draining connections");
+                        break;
+                    }
+                };
+
+                let mut builder = HttpConnBuilder::new(TokioExecutor::new());
+                // Bound the time a connection may take to send a complete set
+                // of request headers (defends against slow/half-open clients).
+                // `header_read_timeout` requires a registered timer.
+                builder
+                    .http1()
+                    .timer(TokioTimer::new())
+                    .header_read_timeout(Duration::from_secs(30));
+                let service = TowerToHyperService::new(app.clone());
+                let conn = builder
+                    .serve_connection_with_upgrades(TokioIo::new(io), service)
+                    .into_owned();
+                let watched = graceful.watch(conn);
+                tokio::spawn(async move {
+                    if let Err(e) = watched.await {
+                        tracing::debug!("HTTP connection error: {}", e);
+                    }
+                });
             }
+
+            graceful.shutdown().await;
         });
 
         // 2. Spawn Sync Worker (background mode)
@@ -611,9 +653,32 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                     let connection_mgr = cluster_manager.clone();
 
                     tokio::spawn(async move {
-                        // Read initial bytes to determine protocol
+                        // Read initial bytes to determine protocol.
+                        //
+                        // Bound this read: a connection that is accepted but
+                        // never sends bytes (half-open keep-alive reuse, a
+                        // dead pooled connection, a port scanner) would
+                        // otherwise park this task forever holding the socket.
+                        // That unbounded wait is a primary source of the
+                        // intermittent "idle pending" stalls seen in prod.
                         let mut buf = vec![0u8; 14];
-                        let n = stream.read(&mut buf).await.unwrap_or(0);
+                        let n = match tokio::time::timeout(
+                            std::time::Duration::from_secs(10),
+                            stream.read(&mut buf),
+                        )
+                        .await
+                        {
+                            Ok(Ok(n)) => n,
+                            Ok(Err(_)) => 0,
+                            Err(_) => {
+                                tracing::warn!(
+                                    layer = "solidb_detect",
+                                    peer = %addr,
+                                    "protocol detection read timed out; dropping connection"
+                                );
+                                return;
+                            }
+                        };
 
                         let peeked_data = buf[..n].to_vec();
 
