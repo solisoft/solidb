@@ -1,9 +1,10 @@
 use dashmap::DashMap;
+use parking_lot::RwLock;
 use rust_rocksdb::DB;
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 pub use super::document::Document;
 pub use super::geo::{GeoIndex, GeoIndexStats};

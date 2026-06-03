@@ -99,12 +99,12 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        // Local scan - for non-sharded collections or when no coordinator
-        Ok(collection
-            .scan(limit)
-            .into_iter()
-            .map(|d| d.into_value())
-            .collect())
+        // Local scan - for non-sharded collections or when no coordinator.
+        // Use `scan_values` to skip the intermediate `Document` allocation and
+        // go straight from the stored bytes to a `serde_json::Value`. This
+        // is materially faster on large collections (no extra struct
+        // construction or re-merging of metadata).
+        Ok(collection.scan_values(limit))
     }
     pub(super) fn scatter_gather_docs(
         &self,
@@ -122,11 +122,7 @@ impl<'a> QueryExecutor<'a> {
                 collection_name
             );
             let collection = self.get_collection(collection_name)?;
-            return Ok(collection
-                .scan(limit)
-                .into_iter()
-                .map(|d| d.into_value())
-                .collect());
+            return Ok(collection.scan_values(limit));
         };
 
         let my_node_id = coordinator.my_node_id();
@@ -149,8 +145,7 @@ impl<'a> QueryExecutor<'a> {
                         .get_database(db_name)
                         .and_then(|db| db.get_collection(&physical_coll))
                     {
-                        for doc in coll.scan(limit) {
-                            let value = doc.into_value();
+                        for value in coll.scan_values(limit) {
                             if let Some(key) = value.get("_key").and_then(|k| k.as_str()) {
                                 local_docs.push((key.to_string(), value));
                             }

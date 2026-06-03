@@ -8,7 +8,7 @@ impl Collection {
 
     /// Store a blob chunk
     pub fn put_blob_chunk(&self, key: &str, chunk_index: u32, data: &[u8]) -> DbResult<()> {
-        if *self.collection_type.read().unwrap() != "blob" {
+        if self.collection_type.read().as_str() != "blob" {
             return Err(DbError::OperationNotSupported(
                 "Blob operations only supported on blob collections".to_string(),
             ));
@@ -93,7 +93,7 @@ impl Collection {
         chunk_index: u32,
         data: &[u8],
     ) -> DbResult<()> {
-        if *self.collection_type.read().unwrap() != "blob" {
+        if self.collection_type.read().as_str() != "blob" {
             return Err(DbError::OperationNotSupported(
                 "Blob operations only supported on blob collections".to_string(),
             ));
@@ -186,7 +186,7 @@ impl Collection {
 
     /// Get blob statistics for this collection
     pub fn blob_stats(&self) -> DbResult<(usize, u64)> {
-        if *self.collection_type.read().unwrap() != "blob" {
+        if self.collection_type.read().as_str() != "blob" {
             return Ok((0, 0));
         }
 

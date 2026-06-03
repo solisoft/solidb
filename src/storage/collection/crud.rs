@@ -48,7 +48,7 @@ impl Collection {
         update_indexes: bool,
     ) -> DbResult<Document> {
         // Validate edge documents
-        if *self.collection_type.read().unwrap() == "edge" {
+        if self.collection_type.read().as_str() == "edge" {
             self.validate_edge_document(&data)?;
         }
 
@@ -155,7 +155,7 @@ impl Collection {
 
     /// Update a document with atomic document + index writes
     pub fn update(&self, key: &str, data: Value) -> DbResult<Document> {
-        if *self.collection_type.read().unwrap() == "timeseries" {
+        if self.collection_type.read().as_str() == "timeseries" {
             return Err(DbError::OperationNotSupported(
                 "Update operations are not allowed on timeseries collections".to_string(),
             ));
@@ -170,7 +170,7 @@ impl Collection {
         let new_value = doc.to_value();
 
         // Validate edge documents after update
-        if *self.collection_type.read().unwrap() == "edge" {
+        if self.collection_type.read().as_str() == "edge" {
             self.validate_edge_document(&new_value)?;
         }
 
@@ -261,7 +261,7 @@ impl Collection {
         expected_rev: &str,
         data: Value,
     ) -> DbResult<Document> {
-        if *self.collection_type.read().unwrap() == "timeseries" {
+        if self.collection_type.read().as_str() == "timeseries" {
             return Err(DbError::OperationNotSupported(
                 "Update operations are not allowed on timeseries collections".to_string(),
             ));
@@ -419,7 +419,7 @@ impl Collection {
         }
 
         // If blob collection, delete chunks (separate from WriteBatch)
-        if *self.collection_type.read().unwrap() == "blob" {
+        if self.collection_type.read().as_str() == "blob" {
             self.delete_blob_data(key)?;
         }
 
@@ -448,7 +448,7 @@ impl Collection {
             return Ok(0);
         }
 
-        if *self.collection_type.read().unwrap() == "timeseries" {
+        if self.collection_type.read().as_str() == "timeseries" {
             return Err(DbError::OperationNotSupported(
                 "Upsert (update) operations are not allowed on timeseries collections. Use insert_batch instead.".to_string(),
             ));
@@ -576,7 +576,7 @@ impl Collection {
                     }
 
                     // Handle blobs (separate from WriteBatch)
-                    if *self.collection_type.read().unwrap() == "blob" {
+                    if self.collection_type.read().as_str() == "blob" {
                         let _ = self.delete_blob_data(key);
                     }
 
@@ -626,7 +626,7 @@ impl Collection {
         }
 
         // Check timeseries restriction
-        if *self.collection_type.read().unwrap() == "timeseries" {
+        if self.collection_type.read().as_str() == "timeseries" {
             return Err(DbError::OperationNotSupported(
                 "Update operations are not allowed on timeseries collections".to_string(),
             ));
@@ -654,7 +654,7 @@ impl Collection {
                 let new_value = doc.to_value();
 
                 // Validate edge documents after update
-                if *self.collection_type.read().unwrap() == "edge" {
+                if self.collection_type.read().as_str() == "edge" {
                     if let Err(e) = self.validate_edge_document(&new_value) {
                         tracing::warn!("Failed to validate edge for {}: {}", key, e);
                         continue;
@@ -769,7 +769,7 @@ impl Collection {
             return Ok(Vec::new());
         }
 
-        let is_edge = *self.collection_type.read().unwrap() == "edge";
+        let is_edge = self.collection_type.read().as_str() == "edge";
         let schema_validator = self.get_cached_schema_validator()?;
 
         let db = &self.db;

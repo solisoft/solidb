@@ -40,7 +40,7 @@ impl Collection {
         lock_manager: &Arc<LockManager>,
         mut data: Value,
     ) -> DbResult<Document> {
-        if *self.collection_type.read().unwrap() == "edge" {
+        if self.collection_type.read().as_str() == "edge" {
             self.validate_edge_document(&data)?;
         }
 
@@ -84,7 +84,7 @@ impl Collection {
         key: &str,
         data: Value,
     ) -> DbResult<Document> {
-        if *self.collection_type.read().unwrap() == "timeseries" {
+        if self.collection_type.read().as_str() == "timeseries" {
             return Err(DbError::OperationNotSupported(
                 "Update operations are not allowed on timeseries collections".to_string(),
             ));
@@ -98,7 +98,7 @@ impl Collection {
 
         doc.update(data);
 
-        if *self.collection_type.read().unwrap() == "edge" {
+        if self.collection_type.read().as_str() == "edge" {
             self.validate_edge_document(&doc.to_value())?;
         }
 

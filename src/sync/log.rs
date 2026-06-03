@@ -157,15 +157,19 @@ impl SyncLog {
             entry.node_id = self.node_id.clone();
         }
 
-        // Write to RocksDB
+        // Use a single WriteBatch so the entry and the bumped sequence go
+        // through one `db.write` (one fsync) instead of two independent
+        // `put` calls (two fsyncs). This roughly halves the per-write
+        // disk cost on hot insert/update paths.
         let key = format!("sync_log:{:020}", *seq);
         let value = serde_json::to_vec(&entry).unwrap();
 
-        if let Err(e) = self.db.put(key.as_bytes(), &value) {
+        let mut batch = WriteBatch::default();
+        batch.put(key.as_bytes(), &value);
+        batch.put(SEQ_KEY, seq.to_be_bytes());
+
+        if let Err(e) = self.db.write(&batch) {
             tracing::error!("SyncLog: Failed to write entry {}: {}", *seq, e);
-        }
-        if let Err(e) = self.db.put(SEQ_KEY, seq.to_be_bytes()) {
-            tracing::error!("SyncLog: Failed to write sequence {}: {}", *seq, e);
         }
 
         // Update cache

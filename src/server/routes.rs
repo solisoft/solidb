@@ -1100,7 +1100,36 @@ pub fn create_router(
                 .gzip(true)
                 .zstd(true)
                 .no_br()
-                .no_deflate(),
+                .no_deflate()
+                // NOTE: `compress_when` REPLACES the default predicate, so we
+                // explicitly AND our extra rules onto `DefaultPredicate`
+                // (which skips responses smaller than 32 bytes, gRPC, images,
+                // and SSE). The closure adds: don't bother gzip-ing 4xx/5xx
+                // replies (avoids the encode + Content-Length negotiation on
+                // every error), and skip already-compressed video/audio.
+                .compress_when({
+                    use tower_http::compression::predicate::{DefaultPredicate, Predicate};
+                    DefaultPredicate::new().and(
+                        |status: axum::http::StatusCode,
+                         _version: axum::http::Version,
+                         headers: &axum::http::HeaderMap,
+                         _extensions: &axum::http::Extensions| {
+                            if status.is_client_error() || status.is_server_error() {
+                                return false;
+                            }
+                            if let Some(ct) = headers.get(axum::http::header::CONTENT_TYPE) {
+                                if let Ok(s) = ct.to_str() {
+                                    // Already-compressed formats not covered
+                                    // by DefaultPredicate.
+                                    if s.starts_with("video/") || s.starts_with("audio/") {
+                                        return false;
+                                    }
+                                }
+                            }
+                            true
+                        },
+                    )
+                }),
         )
         .layer({
             use axum::http::header;

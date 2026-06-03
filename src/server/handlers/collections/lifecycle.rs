@@ -249,9 +249,7 @@ pub async fn delete_collection(
     database.delete_collection(&coll_name)?;
 
     // Invalidate query cache for this collection
-    query_cache::get_query_cache()
-        .invalidate_collection(&coll_name)
-        .await;
+    query_cache::get_query_cache().invalidate_collection(&coll_name);
 
     // Record to replication log
     if let Some(ref log) = state.replication_log {

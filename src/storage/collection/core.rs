@@ -2,9 +2,10 @@ use super::*;
 use crate::error::{DbError, DbResult};
 use dashmap::DashMap;
 use hex;
+use parking_lot::RwLock;
 use rust_rocksdb::DB;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 impl Collection {
     /// Create a new collection handle
@@ -68,7 +69,7 @@ impl Collection {
 
     /// Get collection type
     pub fn get_type(&self) -> String {
-        self.collection_type.read().unwrap().clone()
+        self.collection_type.read().clone()
     }
 
     /// Set collection type (persists to disk)
@@ -83,8 +84,7 @@ impl Collection {
             .map_err(|e| DbError::InternalError(format!("Failed to set collection type: {}", e)))?;
 
         // Update in-memory state
-        let mut mg = self.collection_type.write().unwrap();
-        *mg = type_.to_string();
+        *self.collection_type.write() = type_.to_string();
 
         Ok(())
     }
