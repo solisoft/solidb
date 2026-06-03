@@ -154,6 +154,10 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   router.get("/graph/modal/vertex", "dashboard/graph#modal_vertex")
   router.get("/graph/modal/edge", "dashboard/graph#modal_edge")
 
+  -- Relationships map (collections + inferred relations from index keys)
+  router.get("/relationships", "dashboard/relationships#index")
+  router.get("/relationships/data", "dashboard/relationships#data")
+
   -- Columnar routes
   router.get("/columnar", "dashboard/collections#columnar")
   router.get("/columnar/table", "dashboard/collections#columnar_table")
