@@ -6,7 +6,8 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
-use rust_rocksdb::{Direction, IteratorMode, Options, WriteBatch, DB};
+use crate::storage::RocksDb as DB;
+use rust_rocksdb::{Direction, IteratorMode, Options, WriteBatch};
 use serde::{Deserialize, Serialize};
 
 use super::protocol::{Operation, SyncEntry};

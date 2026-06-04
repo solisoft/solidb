@@ -1,9 +1,10 @@
+use super::RocksDb as DB;
 use dashmap::DashMap;
-use rust_rocksdb::{Options, DB};
 use std::sync::{Arc, RwLock};
 
 use super::collection::Collection;
 use super::columnar::*;
+use super::engine::tuned_cf_options;
 use crate::error::{DbError, DbResult};
 
 use serde_json::Value;
@@ -63,20 +64,20 @@ impl Database {
                 return Err(DbError::CollectionAlreadyExists(collection_name));
             }
 
-            let db_ptr = Arc::as_ptr(&self.db) as *mut DB;
-            unsafe {
-                (*db_ptr)
-                    .create_cf(&cf_name, &Options::default())
-                    .map_err(|e| {
-                        DbError::InternalError(format!("Failed to create collection: {}", e))
-                    })?;
-            }
+            // Use the shared tuned options so collections get LZ4 compression,
+            // the shared block cache, and bloom filters (Options::default()
+            // would silently skip all of that)
+            self.db
+                .create_cf(&cf_name, &tuned_cf_options())
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to create collection: {}", e))
+                })?;
         }
 
         // Persist collection type (lock-free, thread-safe)
         if let Some(cf) = self.db.cf_handle(&cf_name) {
             self.db
-                .put_cf(cf, "_stats:type".as_bytes(), type_.as_bytes())
+                .put_cf(&cf, "_stats:type".as_bytes(), type_.as_bytes())
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to set collection type: {}", e))
                 })?;
@@ -94,16 +95,10 @@ impl Database {
             return Err(DbError::CollectionNotFound(collection_name.to_string()));
         }
 
-        // Drop column family - requires exclusive lock
-        {
-            let _cf_guard = self.cf_lock.write().unwrap();
-            let db_ptr = Arc::as_ptr(&self.db) as *mut DB;
-            unsafe {
-                (*db_ptr).drop_cf(&cf_name).map_err(|e| {
-                    DbError::InternalError(format!("Failed to delete collection: {}", e))
-                })?;
-            }
-        }
+        // MultiThreaded mode: drop_cf takes &self and synchronizes internally
+        self.db
+            .drop_cf(&cf_name)
+            .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {}", e)))?;
 
         // Remove from cache
         self.collections.remove(collection_name);
@@ -115,13 +110,12 @@ impl Database {
     pub fn list_collections(&self) -> Vec<String> {
         let prefix = format!("{}:", self.name);
 
-        // Iterate through all column families (lock-free, DB::list_cf is thread-safe)
+        // Use the live in-memory CF list — DB::list_cf would re-read the
+        // MANIFEST from disk on every call
         let mut collections = Vec::new();
-        for cf_name in DB::list_cf(&Options::default(), self.db.path()).unwrap_or_default() {
-            if cf_name.starts_with(&prefix) {
-                if let Some(name) = cf_name.strip_prefix(&prefix) {
-                    collections.push(name.to_string());
-                }
+        for cf_name in self.db.cf_names() {
+            if let Some(name) = cf_name.strip_prefix(&prefix) {
+                collections.push(name.to_string());
             }
         }
         collections

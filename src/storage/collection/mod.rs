@@ -1,6 +1,6 @@
+use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use rust_rocksdb::DB;
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::sync::atomic::{AtomicBool, AtomicUsize};

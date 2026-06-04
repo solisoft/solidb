@@ -18,7 +18,7 @@ impl Collection {
             .expect("Column family should exist");
 
         let bytes = db
-            .get_cf(cf, Self::doc_key(key))
+            .get_cf(&cf, Self::doc_key(key))
             .map_err(|e| DbError::InternalError(format!("Failed to get document: {}", e)))?
             .ok_or_else(|| DbError::DocumentNotFound(key.to_string()))?;
 
@@ -94,7 +94,7 @@ impl Collection {
         let mut batch = WriteBatch::default();
 
         // Add document to batch
-        batch.put_cf(cf, Self::doc_key(&key), &doc_bytes);
+        batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
 
         // Add index entries to batch (if enabled)
         if update_indexes {
@@ -102,22 +102,22 @@ impl Collection {
             let (regular_entries, geo_entries) =
                 self.compute_index_entries_for_insert(&key, &doc_value)?;
             for (entry_key, entry_value) in regular_entries {
-                batch.put_cf(cf, entry_key, entry_value);
+                batch.put_cf(&cf, entry_key, entry_value);
             }
             for (entry_key, entry_value) in geo_entries {
-                batch.put_cf(cf, entry_key, entry_value);
+                batch.put_cf(&cf, entry_key, entry_value);
             }
 
             // Compute and add fulltext entries
             let fulltext_entries = self.compute_fulltext_entries_for_insert(&key, &doc_value);
             for (entry_key, entry_value) in fulltext_entries {
-                batch.put_cf(cf, entry_key, entry_value);
+                batch.put_cf(&cf, entry_key, entry_value);
             }
 
             // Compute and add TTL expiry entries
             let ttl_expiry_entries = self.compute_ttl_expiry_entries_for_insert(&key, &doc_value);
             for (entry_key, _entry_value) in ttl_expiry_entries {
-                batch.put_cf(cf, entry_key, Vec::new());
+                batch.put_cf(&cf, entry_key, Vec::new());
             }
         }
 
@@ -192,7 +192,7 @@ impl Collection {
         let mut batch = WriteBatch::default();
 
         // Update document in batch
-        batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
+        batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
 
         // Compute and apply index updates atomically
         let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
@@ -200,39 +200,39 @@ impl Collection {
 
         // Remove old index entries
         for key_to_remove in keys_to_remove {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_cf(&cf, key_to_remove);
         }
         for geo_key in geo_keys_to_remove {
-            batch.delete_cf(cf, geo_key);
+            batch.delete_cf(&cf, geo_key);
         }
 
         // Add new index entries
         for (entry_key, entry_value) in entries_to_add {
-            batch.put_cf(cf, entry_key, entry_value);
+            batch.put_cf(&cf, entry_key, entry_value);
         }
         for (entry_key, entry_value) in geo_entries_to_add {
-            batch.put_cf(cf, entry_key, entry_value);
+            batch.put_cf(&cf, entry_key, entry_value);
         }
 
         // Compute and apply fulltext updates
         let fulltext_keys_to_remove = self.compute_fulltext_entries_for_delete(key, &old_value);
         for key_to_remove in fulltext_keys_to_remove {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_cf(&cf, key_to_remove);
         }
 
         let fulltext_entries_to_add = self.compute_fulltext_entries_for_insert(key, &new_value);
         for (entry_key, entry_value) in fulltext_entries_to_add {
-            batch.put_cf(cf, entry_key, entry_value);
+            batch.put_cf(&cf, entry_key, entry_value);
         }
 
         // Compute and apply TTL expiry updates
         let (ttl_entries_to_add, ttl_keys_to_remove) =
             self.compute_ttl_expiry_entries_for_update(key, &old_value, &new_value);
         for key_to_remove in ttl_keys_to_remove {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_cf(&cf, key_to_remove);
         }
         for (entry_key, _entry_value) in ttl_entries_to_add {
-            batch.put_cf(cf, entry_key, Vec::new());
+            batch.put_cf(&cf, entry_key, Vec::new());
         }
 
         // Atomic write: document + all index updates together
@@ -296,7 +296,7 @@ impl Collection {
         let mut batch = WriteBatch::default();
 
         // Update document in batch
-        batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
+        batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
 
         // Compute and apply index updates atomically
         let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
@@ -304,39 +304,39 @@ impl Collection {
 
         // Remove old index entries
         for key_to_remove in keys_to_remove {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_cf(&cf, key_to_remove);
         }
         for geo_key in geo_keys_to_remove {
-            batch.delete_cf(cf, geo_key);
+            batch.delete_cf(&cf, geo_key);
         }
 
         // Add new index entries
         for (entry_key, entry_value) in entries_to_add {
-            batch.put_cf(cf, entry_key, entry_value);
+            batch.put_cf(&cf, entry_key, entry_value);
         }
         for (entry_key, entry_value) in geo_entries_to_add {
-            batch.put_cf(cf, entry_key, entry_value);
+            batch.put_cf(&cf, entry_key, entry_value);
         }
 
         // Compute and apply fulltext updates
         let fulltext_keys_to_remove = self.compute_fulltext_entries_for_delete(key, &old_value);
         for key_to_remove in fulltext_keys_to_remove {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_cf(&cf, key_to_remove);
         }
 
         let fulltext_entries_to_add = self.compute_fulltext_entries_for_insert(key, &new_value);
         for (entry_key, entry_value) in fulltext_entries_to_add {
-            batch.put_cf(cf, entry_key, entry_value);
+            batch.put_cf(&cf, entry_key, entry_value);
         }
 
         // Compute and apply TTL expiry updates
         let (ttl_entries_to_add, ttl_keys_to_remove) =
             self.compute_ttl_expiry_entries_for_update(key, &old_value, &new_value);
         for key_to_remove in ttl_keys_to_remove {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_cf(&cf, key_to_remove);
         }
         for (entry_key, _entry_value) in ttl_entries_to_add {
-            batch.put_cf(cf, entry_key, Vec::new());
+            batch.put_cf(&cf, entry_key, Vec::new());
         }
 
         // Atomic write: document + all index updates together
@@ -382,27 +382,27 @@ impl Collection {
         let mut batch = WriteBatch::default();
 
         // Delete document from batch
-        batch.delete_cf(cf, Self::doc_key(key));
+        batch.delete_cf(&cf, Self::doc_key(key));
 
         // Compute and remove regular + geo index entries
         let (regular_keys, geo_keys) = self.compute_index_entries_for_delete(key, &doc_value)?;
         for key_to_remove in regular_keys {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_cf(&cf, key_to_remove);
         }
         for key_to_remove in geo_keys {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_cf(&cf, key_to_remove);
         }
 
         // Compute and remove fulltext entries
         let fulltext_keys = self.compute_fulltext_entries_for_delete(key, &doc_value);
         for key_to_remove in fulltext_keys {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_cf(&cf, key_to_remove);
         }
 
         // Compute and remove TTL expiry entries
         let ttl_keys = self.compute_ttl_expiry_entries_for_delete(key, &doc_value);
         for key_to_remove in ttl_keys {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_cf(&cf, key_to_remove);
         }
 
         // Atomic write: document deletion + index removals together
@@ -471,10 +471,10 @@ impl Collection {
             }
 
             // Check if document exists to determine insert vs update
-            let exists = db.get_cf(cf, Self::doc_key(&key)).ok().flatten().is_some();
+            let exists = db.get_cf(&cf, Self::doc_key(&key)).ok().flatten().is_some();
 
             let doc = if exists {
-                if let Ok(Some(bytes)) = db.get_cf(cf, Self::doc_key(&key)) {
+                if let Ok(Some(bytes)) = db.get_cf(&cf, Self::doc_key(&key)) {
                     if let Ok(mut existing) = deserialize_doc(&bytes) {
                         existing.update(data);
                         existing
@@ -489,7 +489,7 @@ impl Collection {
             };
 
             if let Ok(doc_bytes) = serialize_doc(&doc) {
-                batch.put_cf(cf, Self::doc_key(&key), &doc_bytes);
+                batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
                 upserted_docs.push((key.clone(), doc.to_value()));
                 if !exists {
                     insert_count += 1;
@@ -540,12 +540,12 @@ impl Collection {
         // Prepare batch with document deletions and index removals atomically
         for key in &keys {
             // Get document first (needed for index cleanup and change events)
-            if let Ok(Some(bytes)) = db.get_cf(cf, Self::doc_key(key)) {
+            if let Ok(Some(bytes)) = db.get_cf(&cf, Self::doc_key(key)) {
                 if let Ok(doc) = deserialize_doc(&bytes) {
                     let doc_value = doc.to_value();
 
                     // Add document deletion to batch
-                    batch.delete_cf(cf, Self::doc_key(key));
+                    batch.delete_cf(&cf, Self::doc_key(key));
 
                     // Compute and add index key removals to batch
                     let (regular_keys, geo_keys) =
@@ -557,22 +557,22 @@ impl Collection {
                             }
                         };
                     for key_to_remove in regular_keys {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
                     for key_to_remove in geo_keys {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
 
                     // Compute and add fulltext key removals to batch
                     let fulltext_keys = self.compute_fulltext_entries_for_delete(key, &doc_value);
                     for key_to_remove in fulltext_keys {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
 
                     // Compute and add TTL expiry key removals to batch
                     let ttl_keys = self.compute_ttl_expiry_entries_for_delete(key, &doc_value);
                     for key_to_remove in ttl_keys {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
 
                     // Handle blobs (separate from WriteBatch)
@@ -672,7 +672,7 @@ impl Collection {
                 // Serialize document
                 if let Ok(doc_bytes) = serialize_doc(&doc) {
                     // Add document to batch
-                    batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
+                    batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
 
                     // Compute and add index updates to batch atomically
                     let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
@@ -690,41 +690,41 @@ impl Collection {
 
                     // Remove old index entries
                     for key_to_remove in keys_to_remove {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
                     for geo_key in geo_keys_to_remove {
-                        batch.delete_cf(cf, geo_key);
+                        batch.delete_cf(&cf, geo_key);
                     }
 
                     // Add new index entries
                     for (entry_key, entry_value) in entries_to_add {
-                        batch.put_cf(cf, entry_key, entry_value);
+                        batch.put_cf(&cf, entry_key, entry_value);
                     }
                     for (entry_key, entry_value) in geo_entries_to_add {
-                        batch.put_cf(cf, entry_key, entry_value);
+                        batch.put_cf(&cf, entry_key, entry_value);
                     }
 
                     // Compute and add fulltext updates to batch
                     let fulltext_keys_to_remove =
                         self.compute_fulltext_entries_for_delete(key, &old_value);
                     for key_to_remove in fulltext_keys_to_remove {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
 
                     let fulltext_entries_to_add =
                         self.compute_fulltext_entries_for_insert(key, &new_value);
                     for (entry_key, entry_value) in fulltext_entries_to_add {
-                        batch.put_cf(cf, entry_key, entry_value);
+                        batch.put_cf(&cf, entry_key, entry_value);
                     }
 
                     // Compute and apply TTL expiry updates
                     let (ttl_entries_to_add, ttl_keys_to_remove) =
                         self.compute_ttl_expiry_entries_for_update(key, &old_value, &new_value);
                     for key_to_remove in ttl_keys_to_remove {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
                     for (entry_key, _entry_value) in ttl_entries_to_add {
-                        batch.put_cf(cf, entry_key, Vec::new());
+                        batch.put_cf(&cf, entry_key, Vec::new());
                     }
 
                     // Update vector indexes in-memory (separate from WriteBatch)
@@ -821,7 +821,7 @@ impl Collection {
 
             // Check if document with this key already exists in the DB
             if db
-                .get_cf(cf, Self::doc_key(&key))
+                .get_cf(&cf, Self::doc_key(&key))
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to check existing key: {}", e))
                 })?
@@ -842,28 +842,28 @@ impl Collection {
             let doc_bytes = serialize_doc(&doc)?;
 
             // Add document to batch
-            batch.put_cf(cf, Self::doc_key(&key), &doc_bytes);
+            batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
 
             // Compute and add regular + geo index entries
             let (regular_entries, geo_entries) =
                 self.compute_index_entries_for_insert(&key, &doc_value)?;
             for (entry_key, entry_value) in regular_entries {
-                batch.put_cf(cf, entry_key, entry_value);
+                batch.put_cf(&cf, entry_key, entry_value);
             }
             for (entry_key, entry_value) in geo_entries {
-                batch.put_cf(cf, entry_key, entry_value);
+                batch.put_cf(&cf, entry_key, entry_value);
             }
 
             // Compute and add fulltext entries
             let fulltext_entries = self.compute_fulltext_entries_for_insert(&key, &doc_value);
             for (entry_key, entry_value) in fulltext_entries {
-                batch.put_cf(cf, entry_key, entry_value);
+                batch.put_cf(&cf, entry_key, entry_value);
             }
 
             // Compute and add TTL expiry entries
             let ttl_expiry_entries = self.compute_ttl_expiry_entries_for_insert(&key, &doc_value);
             for (entry_key, _entry_value) in ttl_expiry_entries {
-                batch.put_cf(cf, entry_key, Vec::new());
+                batch.put_cf(&cf, entry_key, Vec::new());
             }
 
             doc_values.push((key, doc_value));
@@ -916,7 +916,7 @@ impl Collection {
             .cf_handle(&self.name)
             .expect("Column family should exist");
         let prefix = DOC_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(cf, prefix);
+        let iter = db.prefix_iterator_cf(&cf, prefix);
 
         let iter = iter.filter_map(|result| {
             result.ok().and_then(|(key, value)| {
@@ -968,7 +968,7 @@ impl Collection {
         }
 
         let iter = db.iterator_cf_opt(
-            cf,
+            &cf,
             read_opts,
             IteratorMode::From(prefix, Direction::Forward),
         );
@@ -1007,7 +1007,7 @@ impl Collection {
         if let Some(cf) = db.cf_handle(&self.name) {
             let prefix = DOC_PREFIX.as_bytes();
             let count = db
-                .prefix_iterator_cf(cf, prefix)
+                .prefix_iterator_cf(&cf, prefix)
                 .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
                 .count();
 
@@ -1033,7 +1033,7 @@ impl Collection {
             let prefix = DOC_PREFIX.as_bytes();
             let actual_count = self
                 .db
-                .prefix_iterator_cf(cf, prefix)
+                .prefix_iterator_cf(&cf, prefix)
                 .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
                 .count();
 
@@ -1084,7 +1084,7 @@ impl Collection {
             .cf_handle(&self.name)
             .expect("Column family should exist");
         let prefix = DOC_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(cf, prefix);
+        let iter = db.prefix_iterator_cf(&cf, prefix);
 
         let mut keys_to_delete = Vec::new();
 

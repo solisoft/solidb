@@ -152,28 +152,28 @@ impl Collection {
                     // Serialize and add document to batch
                     let document = Document::with_key(&self.name, key.clone(), data.clone());
                     let doc_bytes = serialize_doc(&document)?;
-                    batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
+                    batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
 
                     // Compute and add index entries to batch
                     let (regular_entries, geo_entries) =
                         self.compute_index_entries_for_insert(key, data)?;
                     for (entry_key, entry_value) in regular_entries {
-                        batch.put_cf(cf, entry_key, entry_value);
+                        batch.put_cf(&cf, entry_key, entry_value);
                     }
                     for (entry_key, entry_value) in geo_entries {
-                        batch.put_cf(cf, entry_key, entry_value);
+                        batch.put_cf(&cf, entry_key, entry_value);
                     }
 
                     // Compute and add fulltext entries
                     let fulltext_entries = self.compute_fulltext_entries_for_insert(key, data);
                     for (entry_key, entry_value) in fulltext_entries {
-                        batch.put_cf(cf, entry_key, entry_value);
+                        batch.put_cf(&cf, entry_key, entry_value);
                     }
 
                     // Compute and add TTL expiry entries
                     let ttl_expiry_entries = self.compute_ttl_expiry_entries_for_insert(key, data);
                     for (entry_key, _entry_value) in ttl_expiry_entries {
-                        batch.put_cf(cf, entry_key, Vec::new());
+                        batch.put_cf(&cf, entry_key, Vec::new());
                     }
 
                     // Queue change event for after commit
@@ -193,7 +193,7 @@ impl Collection {
                     // Serialize and add document to batch
                     let document = Document::with_key(&self.name, key.clone(), new_data.clone());
                     let doc_bytes = serialize_doc(&document)?;
-                    batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
+                    batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
 
                     // Compute and apply index updates atomically
                     let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
@@ -201,41 +201,41 @@ impl Collection {
 
                     // Remove old index entries
                     for key_to_remove in keys_to_remove {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
                     for geo_key in geo_keys_to_remove {
-                        batch.delete_cf(cf, geo_key);
+                        batch.delete_cf(&cf, geo_key);
                     }
 
                     // Add new index entries
                     for (entry_key, entry_value) in entries_to_add {
-                        batch.put_cf(cf, entry_key, entry_value);
+                        batch.put_cf(&cf, entry_key, entry_value);
                     }
                     for (entry_key, entry_value) in geo_entries_to_add {
-                        batch.put_cf(cf, entry_key, entry_value);
+                        batch.put_cf(&cf, entry_key, entry_value);
                     }
 
                     // Compute and apply fulltext updates
                     let fulltext_keys_to_remove =
                         self.compute_fulltext_entries_for_delete(key, old_data);
                     for key_to_remove in fulltext_keys_to_remove {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
 
                     let fulltext_entries_to_add =
                         self.compute_fulltext_entries_for_insert(key, new_data);
                     for (entry_key, entry_value) in fulltext_entries_to_add {
-                        batch.put_cf(cf, entry_key, entry_value);
+                        batch.put_cf(&cf, entry_key, entry_value);
                     }
 
                     // Compute and apply TTL expiry updates
                     let (ttl_entries_to_add, ttl_keys_to_remove) =
                         self.compute_ttl_expiry_entries_for_update(key, old_data, new_data);
                     for key_to_remove in ttl_keys_to_remove {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
                     for (entry_key, _entry_value) in ttl_entries_to_add {
-                        batch.put_cf(cf, entry_key, Vec::new());
+                        batch.put_cf(&cf, entry_key, Vec::new());
                     }
 
                     // Queue change event for after commit
@@ -248,28 +248,28 @@ impl Collection {
                 }
                 Operation::Delete { key, old_data, .. } => {
                     // Delete document from batch
-                    batch.delete_cf(cf, Self::doc_key(key));
+                    batch.delete_cf(&cf, Self::doc_key(key));
 
                     // Compute and remove index entries
                     let (regular_keys, geo_keys) =
                         self.compute_index_entries_for_delete(key, old_data)?;
                     for key_to_remove in regular_keys {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
                     for key_to_remove in geo_keys {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
 
                     // Compute and remove fulltext entries
                     let fulltext_keys = self.compute_fulltext_entries_for_delete(key, old_data);
                     for key_to_remove in fulltext_keys {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
 
                     // Compute and remove TTL expiry entries
                     let ttl_keys = self.compute_ttl_expiry_entries_for_delete(key, old_data);
                     for key_to_remove in ttl_keys {
-                        batch.delete_cf(cf, key_to_remove);
+                        batch.delete_cf(&cf, key_to_remove);
                     }
 
                     // Queue change event for after commit

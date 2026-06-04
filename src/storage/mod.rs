@@ -1,3 +1,11 @@
+/// RocksDB handle type used throughout the codebase.
+///
+/// `MultiThreaded` mode synchronizes the column-family handle map internally
+/// (`create_cf`/`drop_cf` take `&self`), so CF creation/drop no longer needs
+/// `unsafe` mutable casts of `Arc<DB>` — which raced against the lock-free
+/// `cf_handle()` reads done all over the codebase.
+pub type RocksDb = rust_rocksdb::DBWithThreadMode<rust_rocksdb::MultiThreaded>;
+
 pub mod codec;
 pub mod collection;
 pub mod columnar;
