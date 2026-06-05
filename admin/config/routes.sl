@@ -7,6 +7,11 @@
 get("/", "home#index", name: "root")
 get("/health", "home#health")
 
+# --- Cluster monitoring ---
+get("/cluster", "cluster#show", name: "cluster")
+get("/cluster/panel", "cluster#panel")
+post("/cluster/sync-log/prune", "cluster#prune_sync_log")
+
 # --- Databases ---
 get("/databases", "databases#index", name: "databases")
 post("/databases", "databases#create")
@@ -74,6 +79,10 @@ get("/databases/:db/scripts/:id", "scripts#show")
 get("/databases/:db/scripts/:id/edit", "scripts#edit")
 put("/databases/:db/scripts/:id", "scripts#update")
 delete("/databases/:db/scripts/:id", "scripts#delete")
+
+# --- Lua REPL (db-scoped) ---
+get("/databases/:db/repl", "repl#show", name: "db_repl")
+post("/databases/:db/repl/eval", "repl#eval")
 
 # --- Queues & jobs (db-scoped) ---
 get("/databases/:db/queues", "queues#index", name: "db_queues")

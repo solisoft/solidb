@@ -27,10 +27,29 @@ def fmt_percent(value)
   return str((value * 10.0).round() / 10.0) + "%"
 end
 
+# Compact large counts for dashboard cards: 1385029 -> "1.39M".
+def fmt_count(value)
+  return "0" if value.nil?
+  return str(value) if value < 1000
+  thousands = value / 1000.0
+  return str((thousands * 100.0).round() / 100.0) + "k" if thousands < 1000
+  millions = thousands / 1000.0
+  return str((millions * 100.0).round() / 100.0) + "M" if millions < 1000
+  billions = millions / 1000.0
+  return str((billions * 100.0).round() / 100.0) + "B"
+end
+
 def json_compact(value)
   return "" if value.nil?
   compact = JSON.stringify(value) rescue ""
   return compact ?? ""
+end
+
+# Milliseconds (float, e.g. the cursor's executionTimeMs) -> µs / ms / s,
+# whichever reads best. 0.699755 -> "700 µs", 801.56 -> "801.56 ms".
+def fmt_ms(milliseconds)
+  return "-" if milliseconds.nil?
+  return fmt_us((milliseconds * 1000.0).round())
 end
 
 def fmt_us(microseconds)

@@ -8,7 +8,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use super::collection::Collection;
 use super::database::Database;
-use super::pending_drops::PendingCfDrops;
+use super::pending_drops::{Claim, PendingCfDrops};
 use crate::cluster::ClusterConfig;
 use crate::error::{DbError, DbResult};
 use crate::transaction::manager::TransactionManager;
@@ -385,6 +385,16 @@ impl StorageEngine {
         // Remove from cache
         self.databases.remove(name);
 
+        // Purge stale Collection handles for this database. A cached handle
+        // resolves its CF by name at use time, so once the background dropper
+        // removes the CF any holder of the cached handle panics ("Column
+        // family should exist") on its next operation — observed killing
+        // in-flight connections when a database is dropped and immediately
+        // recreated (e.g. test suites, CREATE MATERIALIZED VIEW on the
+        // recreated db touching the doomed `_views` CF).
+        self.collections
+            .retain(|cf_name, _| !cf_name.starts_with(&prefix));
+
         PendingCfDrops::spawn_dropper(self.db.clone(), self.pending_cf_drops.clone(), doomed);
 
         Ok(())
@@ -449,10 +459,37 @@ impl StorageEngine {
         {
             let _cf_guard = self.cf_lock.write().unwrap();
 
-            // Check inside lock to avoid TOCTOU race when multiple threads
-            // try to create the same collection concurrently
-            if self.db.cf_handle(&name).is_some() {
-                return Err(DbError::CollectionAlreadyExists(name));
+            // The CF may be a leftover from a dropped database still awaiting
+            // its background drop — claim it and recreate fresh instead of
+            // failing with "already exists" or, worse, leaving the new
+            // collection on a doomed CF the background dropper then removes.
+            // (Mirrors Database::create_collection.)
+            match self.pending_cf_drops.claim_for_recreate(&name) {
+                Claim::Claimed => {
+                    if self.db.cf_handle(&name).is_some() {
+                        if let Err(e) = self.db.drop_cf(&name) {
+                            self.pending_cf_drops.release_claim(&name);
+                            return Err(DbError::InternalError(format!(
+                                "Failed to reclaim pending collection: {}",
+                                e
+                            )));
+                        }
+                    }
+                    self.pending_cf_drops.complete(&self.db, &name);
+                }
+                Claim::InProgress => {
+                    // The background dropper is dropping this exact CF right
+                    // now — wait for it to finish, then create fresh below.
+                    self.pending_cf_drops
+                        .wait_until_dropped(&name, std::time::Duration::from_secs(30))?;
+                }
+                Claim::NotPending => {
+                    // Check inside lock to avoid TOCTOU race when multiple
+                    // threads try to create the same collection concurrently
+                    if self.db.cf_handle(&name).is_some() {
+                        return Err(DbError::CollectionAlreadyExists(name));
+                    }
+                }
             }
 
             // MultiThreaded mode: create_cf takes &self and synchronizes internally
@@ -460,6 +497,10 @@ impl StorageEngine {
                 DbError::InternalError(format!("Failed to create collection: {}", e))
             })?;
         }
+
+        // A cached handle from the pre-drop incarnation of this CF must not
+        // shadow the fresh one.
+        self.collections.remove(&name);
 
         // Persist collection type (lock-free, thread-safe)
         if let Some(cf) = self.db.cf_handle(&name) {
@@ -476,6 +517,14 @@ impl StorageEngine {
     /// Get a collection (legacy method - checks both database-prefixed and plain names)
     /// Uses cached collection handles for performance
     pub fn get_collection(&self, name: &str) -> DbResult<Collection> {
+        // A CF scheduled for background drop must read as already deleted —
+        // serving it (cached or fresh) hands out a handle whose CF can vanish
+        // mid-operation.
+        if self.pending_cf_drops.contains(name) {
+            self.collections.remove(name);
+            return Err(DbError::CollectionNotFound(name.to_string()));
+        }
+
         // Check cache first (DashMap allows concurrent read without locking)
         if let Some(collection) = self.collections.get(name) {
             return Ok(collection.clone());
@@ -487,6 +536,10 @@ impl StorageEngine {
         } else {
             // If not found, try prefixing with _system database
             let system_name = format!("_system:{}", name);
+            if self.pending_cf_drops.contains(&system_name) {
+                self.collections.remove(&system_name);
+                return Err(DbError::CollectionNotFound(name.to_string()));
+            }
             if self.db.cf_handle(&system_name).is_some() {
                 system_name
             } else {
@@ -516,6 +569,9 @@ impl StorageEngine {
         self.db
             .drop_cf(name)
             .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {}", e)))?;
+
+        // Drop the stale cached handle so a later same-name create starts fresh.
+        self.collections.remove(name);
 
         Ok(())
     }

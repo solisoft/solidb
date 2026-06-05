@@ -18,7 +18,8 @@
         <input id="db-name" name="name" type="text" placeholder="my_database"
                class="console-input mt-1 w-56 font-mono" autocomplete="off">
       </div>
-      <button type="submit" class="btn-primary">Create</button>
+      <%# py-2.5 matches the console-input height (py-2 text-sm). %>
+      <button type="submit" class="btn-primary py-2.5">Create</button>
     </form>
   </div>
 

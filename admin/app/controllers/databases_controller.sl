@@ -31,6 +31,7 @@ class DatabasesController < Controller
 
   def _load
     @database_names = AdminContext.database_names()
+    @databases = @database_names
   end
 
   # Reading an unset @field raises in Soli, so banner fields are always

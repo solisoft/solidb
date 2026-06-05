@@ -1,0 +1,109 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">db / <%= @db %></p>
+      <h2 class="mt-1">Lua REPL</h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        interactive Lua 5.4 against this database — variables persist between evals (server-side session),
+        print() output is captured, the last expression is the result. db API is available as in scripts
+      </p>
+    </div>
+    <div class="flex gap-2" x-data>
+      <button type="button" class="btn-ghost" x-on:click="document.getElementById('repl-help').classList.toggle('hidden')">API help</button>
+      <button type="button" id="repl-reset" class="btn-ghost">Reset session</button>
+    </div>
+  </div>
+
+  <%# Lua API cheatsheet -- click a snippet to load it into the editor. %>
+  <div id="repl-help" class="console-card hidden">
+    <div class="border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">lua api — click a snippet to load it into the editor</p>
+    </div>
+    <% help_snippets = [
+      ["run an SDBQL query", "local rows = db:query('FOR d IN users FILTER d.age > @min RETURN d', { min = 25 })\nreturn #rows"],
+      ["read a document by key", "local col = db:collection('users')\nreturn col:get('some_key')"],
+      ["insert a document", "local col = db:collection('users')\nreturn col:insert({ name = 'ada', active = true })"],
+      ["update / upsert / delete", "local col = db:collection('users')\ncol:update('some_key', { active = false })\ncol:upsert('some_key', { seen_at = time.now() })\ncol:delete('some_key')\nreturn 'done'"],
+      ["find with a filter", "local col = db:collection('users')\nlocal active_users = col:find({ active = true })\nreturn col:count({ active = true })"],
+      ["bulk insert", "local col = db:collection('events')\nreturn col:bulk_insert({ { kind = 'a' }, { kind = 'b' } })"],
+      ["read env vars (Env page)", "return env.STRIPE_API_KEY"],
+      ["json + print", "local encoded = json.encode({ a = 1 })\nprint(encoded)\nreturn json.decode(encoded).a"],
+      ["enqueue a background job", "return db:enqueue('default', 'my_script', { user_id = 42 })"]
+    ] %>
+    <div class="grid grid-cols-1 gap-px bg-zinc-800/60 sm:grid-cols-2 lg:grid-cols-3">
+      <% for snippet in help_snippets %>
+        <%# <%- not <%=: attr() already escapes for the attribute context, and
+            <%= would h()-escape AGAIN -- the browser only decodes one layer,
+            so quotes would reach the editor as literal &#x27;. %>
+        <button type="button" class="repl-snippet bg-zinc-950 px-4 py-3 text-left transition-colors hover:bg-zinc-900"
+                data-code="<%- attr(snippet[1]) %>">
+          <p class="console-label mb-1 text-teal-500"><%= snippet[0] %></p>
+          <pre class="overflow-x-auto font-mono text-[11px] leading-relaxed text-zinc-400"><%= snippet[1] %></pre>
+        </button>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="console-card">
+    <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">session log</p>
+      <p class="console-label">ctrl+enter runs</p>
+    </div>
+    <div id="repl-log" class="max-h-[50vh] overflow-y-auto">
+      <p id="repl-empty" class="px-4 py-6 text-center font-mono text-xs text-zinc-600">-- session is empty, run some Lua below</p>
+    </div>
+  </div>
+
+  <form id="repl-form" class="console-card space-y-3 p-4">
+    <input type="hidden" id="repl-session" name="session_id" value="">
+    <div>
+      <label class="console-label" for="repl-code">lua</label>
+      <textarea id="repl-code" name="code" rows="5" spellcheck="false"
+                placeholder="local docs = db:query('FOR d IN users LIMIT 3 RETURN d')&#10;return #docs"
+                class="console-input mt-1 resize-y font-mono text-[13px] leading-relaxed"></textarea>
+    </div>
+    <div class="flex justify-end">
+      <button type="button" id="repl-run-btn" class="btn-primary"
+              hx-post="<%= attr(db_repl_path(@db)) %>/eval" hx-include="#repl-form"
+              hx-target="#repl-log" hx-swap="beforeend scroll:#repl-log:bottom">
+        Run <span class="text-teal-600">⌃↵</span>
+      </button>
+    </div>
+  </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<script src="<%= public_path("js/admin-editor.js") %>"></script>
+<script>
+  AdminEditor.mount(document.getElementById("repl-code"), {
+    language: "lua",
+    height: "140px",
+    onCtrlEnter: function () {
+      window.htmx && htmx.trigger("#repl-run-btn", "click");
+    }
+  });
+
+  // A successful eval clears the input (classic REPL feel) and removes the
+  // empty-state placeholder.
+  document.body.addEventListener("htmx:afterSwap", function (evt) {
+    if (evt.detail && evt.detail.target && evt.detail.target.id === "repl-log") {
+      var empty = document.getElementById("repl-empty");
+      if (empty) empty.remove();
+      AdminEditor.setValue("repl-code", "");
+    }
+  });
+
+  document.querySelectorAll(".repl-snippet").forEach(function (snippetButton) {
+    snippetButton.addEventListener("click", function () {
+      AdminEditor.setValue("repl-code", snippetButton.dataset.code);
+    });
+  });
+
+  document.getElementById("repl-reset").addEventListener("click", function () {
+    document.getElementById("repl-session").value = "";
+    var log = document.getElementById("repl-log");
+    log.innerHTML = '<p id="repl-empty" class="px-4 py-6 text-center font-mono text-xs text-zinc-600">-- session reset, fresh state</p>';
+  });
+</script>

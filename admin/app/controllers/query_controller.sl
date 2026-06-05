@@ -86,7 +86,9 @@ class QueryController < Controller
       bind_vars = JSON.parse(bind_text) rescue nil
       return nil if bind_vars.nil?
     end
-    return { "query": params["query"] ?? "", "bindVars": bind_vars, "batchSize": 200 }
+    # cache: false -- the console is for inspecting live data and measuring
+    # real execution time; a cached result would silently lie about both.
+    return { "query": params["query"] ?? "", "bindVars": bind_vars, "batchSize": 200, "cache": false }
   end
 
   def _render_results(result)
@@ -114,11 +116,14 @@ class QueryController < Controller
   end
 
   # 0 when the _slow_queries collection is missing or the query fails --
-  # the badge just stays hidden.
+  # the badge just stays hidden. (COLLECT WITH COUNT INTO parses in the AST
+  # but the SDBQL parser rejects it at runtime; counting rows client-side
+  # with a cap is the portable form.)
   def _count_slow
-    statement = "FOR q IN _slow_queries COLLECT WITH COUNT INTO total RETURN total"
+    statement = "FOR q IN _slow_queries LIMIT 999 RETURN 1"
     result = SolidbClient.post_api(SolidbEndpoints.cursor(@db), { "query": statement })
-    counts = (result["data"] ?? {})["result"] ?? []
-    return counts[0] ?? 0
+    return 0 if !result["ok"]
+    rows = (result["data"] ?? {})["result"] ?? []
+    return rows.length()
   end
 end

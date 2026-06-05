@@ -160,7 +160,7 @@
             <td class="font-mono text-zinc-200">
               <%= trigger["name"] ?? "" %>
               <% if !filter_expr.blank? %>
-                <span class="ml-1 font-mono text-[10px] text-amber-500" title="filter: <%= attr(filter_expr) %>">⚲ filtered</span>
+                <span class="ml-1 font-mono text-[10px] text-amber-500" title="filter: <%- attr(filter_expr) %>">⚲ filtered</span>
               <% end %>
             </td>
             <td class="font-mono text-xs text-zinc-300"><%= trigger["collection"] ?? "" %></td>

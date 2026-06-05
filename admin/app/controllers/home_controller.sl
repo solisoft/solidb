@@ -14,6 +14,7 @@ class HomeController < Controller
     info_result = SolidbClient.get_api(SolidbEndpoints.cluster_info())
     @cluster = info_result["data"] ?? {}
     @database_names = AdminContext.database_names()
+    @databases = @database_names
     @flash_error = ""
     @flash_notice = ""
   end

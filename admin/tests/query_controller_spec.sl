@@ -17,7 +17,8 @@ describe("QueryController") do
       assert_eq(res_status(response), 200)
       body = res_body(response)
       assert_contains(body, "42")
-      assert_contains(body, "ms")
+      # timing renders in the best-fit unit: µs for sub-ms queries, else ms/s
+      assert_match(body, "(µs|ms)")
     end
 
     test("binds variables from the json textarea") do
@@ -42,6 +43,9 @@ describe("QueryController") do
 
   describe("slow query log") do
     before_all() do
+      # Drop first: an interrupted earlier run leaves the scratch db (and its
+      # _slow_queries rows) behind, inflating the badge count.
+      SolidbClient.delete_api(SolidbEndpoints.database("admin_spec_slow"))
       SolidbClient.post_api(SolidbEndpoints.database_create(), { "name": "admin_spec_slow" })
       # SoliDB pre-creates _slow_queries with the database; seed one entry the
       # way the server's slow-query logger writes them.
@@ -67,7 +71,7 @@ describe("QueryController") do
     test("badge fragment shows the count") do
       response = get("/databases/admin_spec_slow/query/slow/count")
       assert_eq(res_status(response), 200)
-      assert_contains(res_body(response), "1")
+      assert_contains(res_body(response), ">1</span>")
     end
 
     test("clear truncates the log and empties the badge") do
@@ -78,7 +82,7 @@ describe("QueryController") do
 
       response = get("/databases/admin_spec_slow/query/slow/count")
       assert_eq(res_status(response), 200)
-      assert_not(res_body(response).includes?("1"))
+      assert_not(res_body(response).includes?("text-red-400"))
     end
   end
 

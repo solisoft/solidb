@@ -14,6 +14,18 @@ class SolidbEndpoints
     return "/_api/cluster/info"
   end
 
+  static def cluster_status()
+    return "/_api/cluster/status"
+  end
+
+  static def sync_log_stats()
+    return "/_api/cluster/sync-log/stats"
+  end
+
+  static def sync_log_prune()
+    return "/_api/cluster/sync-log/prune"
+  end
+
   static def livequery_token()
     return "/_api/livequery/token"
   end
@@ -179,6 +191,11 @@ class SolidbEndpoints
 
   static def trigger_toggle(db, trigger_id)
     return SolidbEndpoints.trigger(db, trigger_id) + "/toggle"
+  end
+
+  # --- lua repl ---
+  static def repl(db)
+    return "/_api/database/" + db + "/repl"
   end
 
   # --- env vars ---

@@ -56,6 +56,8 @@ class UsersController < Controller
   end
 
   def _load
+    # Header db picker needs the database list on every render.
+    @databases = AdminContext.database_names()
     users_result = SolidbClient.get_api(SolidbEndpoints.users())
     @users = (users_result["data"] ?? {})["users"] ?? []
     roles_result = SolidbClient.get_api(SolidbEndpoints.roles())

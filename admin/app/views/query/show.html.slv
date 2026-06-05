@@ -9,7 +9,10 @@
       </p>
     </div>
     <div class="flex gap-2">
-      <a href="<%= attr(db_slow_queries_path(@db)) %>" class="btn-ghost">Slow queries</a>
+      <a href="<%= attr(db_slow_queries_path(@db)) %>" class="btn-ghost flex items-center gap-1.5">
+        Slow queries
+        <span hx-get="<%= attr(db_query_path(@db)) %>/slow/count" hx-trigger="load" hx-swap="innerHTML"></span>
+      </a>
       <button type="button" class="btn-ghost" x-on:click="open = !open; reload()">
         History <span class="text-zinc-600" x-text="'(' + items.length + ')'"></span>
       </button>

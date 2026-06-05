@@ -75,6 +75,10 @@ describe("SolidbEndpoints") do
     assert_eq(SolidbEndpoints.trigger_toggle("app", "t1"), "/_api/database/app/triggers/t1/toggle")
   end
 
+  test("repl path") do
+    assert_eq(SolidbEndpoints.repl("app"), "/_api/database/app/repl")
+  end
+
   test("env var paths") do
     assert_eq(SolidbEndpoints.env_vars("app"), "/_api/database/app/env")
     assert_eq(SolidbEndpoints.env_var("app", "API_KEY"), "/_api/database/app/env/API_KEY")

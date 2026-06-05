@@ -43,6 +43,8 @@ class ApiKeysController < Controller
   end
 
   def _load
+    # Header db picker needs the database list on every render.
+    @databases = AdminContext.database_names()
     result = SolidbClient.get_api(SolidbEndpoints.api_keys())
     @keys = (result["data"] ?? {})["keys"] ?? []
     if !result["ok"]

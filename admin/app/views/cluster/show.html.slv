@@ -1,0 +1,25 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">Server</p>
+      <h2 class="mt-1">Cluster</h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        live node health, peers and the replication sync log — refreshes every 3 seconds
+      </p>
+    </div>
+    <div class="flex items-center gap-2.5">
+      <span class="relative flex h-2.5 w-2.5">
+        <span class="absolute inline-flex h-full w-full animate-pulse-dot bg-teal-400"></span>
+      </span>
+      <span class="console-label">live</span>
+    </div>
+  </div>
+
+  <div id="cluster-panel" hx-get="<%= cluster_path() %>/panel" hx-trigger="every 3s" hx-swap="innerHTML">
+    <%- partial("cluster/panel", {
+      "cluster": @cluster, "node_stats": @node_stats, "peers": @peers, "sync_log": @sync_log
+    }) %>
+  </div>
+</div>

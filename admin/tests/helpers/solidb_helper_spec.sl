@@ -18,6 +18,24 @@ describe("solidb_helper") do
     end
   end
 
+  describe("fmt_ms") do
+    test("dash for nil") do
+      assert_eq(fmt_ms(nil), "-")
+    end
+
+    test("sub-millisecond shows microseconds") do
+      assert_eq(fmt_ms(0.699755), "700 µs")
+    end
+
+    test("milliseconds stay milliseconds") do
+      assert_eq(fmt_ms(250.5), "250.5 ms")
+    end
+
+    test("seconds above 1000ms") do
+      assert_eq(fmt_ms(2140.0), "2.14 s")
+    end
+  end
+
   describe("explain_expr") do
     test("empty for nil") do
       assert_eq(explain_expr(nil), "")
