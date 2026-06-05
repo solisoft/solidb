@@ -45,7 +45,7 @@
           <tr>
             <td class="w-px whitespace-nowrap font-mono text-xs text-zinc-500"><%= timestamp.substring(0, 19).replace("T", " ") %></td>
             <td class="w-px whitespace-nowrap text-right font-mono text-xs <%= duration_ms >= 1000 ? "text-red-400" : "text-amber-400" %>">
-              <%= duration_ms %> ms
+              <%= fmt_ms(duration_ms) %>
             </td>
             <td><code class="break-all font-mono text-xs text-zinc-300"><%= slow_query["query"] ?? "" %></code></td>
             <td class="text-right font-mono text-xs text-zinc-400"><%= slow_query["results_count"] ?? 0 %></td>

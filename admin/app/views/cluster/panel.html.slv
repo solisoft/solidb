@@ -1,0 +1,5 @@
+<%# Thin wrapper for the polled /cluster/panel fragment: render() can't
+    address underscore partials directly, so this view just includes it. %>
+<%- partial("cluster/panel", {
+  "cluster": @cluster, "node_stats": @node_stats, "peers": @peers, "sync_log": @sync_log
+}) %>

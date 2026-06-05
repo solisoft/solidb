@@ -1,0 +1,26 @@
+<%# One REPL log entry. Also swaps the session id back into the form
+    out-of-band so the next eval reuses the same server-side session. %>
+<div class="border-t border-zinc-800 px-4 py-3 font-mono text-xs">
+  <div class="flex items-start gap-2">
+    <span class="shrink-0 text-teal-500">&gt;</span>
+    <pre class="min-w-0 flex-1 whitespace-pre-wrap break-all text-zinc-300"><%= repl_code %></pre>
+    <span class="shrink-0 text-[10px] text-zinc-600"><%= fmt_ms(repl_time) %></span>
+  </div>
+  <% if !repl_transport_error.blank? %>
+    <p class="mt-1 pl-4 text-red-400"><%= repl_transport_error %></p>
+  <% elsif !repl_lua_error.nil? %>
+    <p class="mt-1 pl-4 text-red-400">
+      <%= repl_lua_error["message"] ?? "lua error" %>
+      <% line_number = repl_lua_error["line"] %>
+      <% if !line_number.nil? %>
+        <span class="text-red-600">(line <%= line_number %>)</span>
+      <% end %>
+    </p>
+  <% else %>
+    <% for output_line in repl_output %>
+      <p class="mt-0.5 pl-4 text-zinc-500"><%= output_line %></p>
+    <% end %>
+    <p class="mt-1 pl-4 text-teal-300">= <%= json_compact(repl_result) %></p>
+  <% end %>
+</div>
+<input type="hidden" id="repl-session" name="session_id" value="<%= attr(repl_session) %>" hx-swap-oob="true">

@@ -13,7 +13,9 @@
   </div>
 <% end %>
 
-<div class="space-y-5 animate-fade-up">
+<div class="space-y-5 animate-fade-up" x-data="{ creating: false }"
+     x-on:keydown.escape.window="creating = false"
+     x-effect="document.body.style.overflow = creating ? 'hidden' : ''">
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div>
       <p class="console-label">Access</p>
@@ -23,27 +25,51 @@
         the raw key is shown once at creation, store it somewhere safe
       </p>
     </div>
+    <button class="btn-primary" x-on:click="creating = true">New key</button>
+  </div>
 
-    <form hx-post="<%= api_keys_path() %>" hx-target="#content" hx-swap="innerHTML show:top"
-          class="flex flex-wrap items-end gap-2">
-      <div>
-        <label class="console-label" for="key-name">name</label>
-        <input id="key-name" name="name" type="text" placeholder="ci-deploy"
-               class="console-input mt-1 w-36 font-mono" autocomplete="off">
+  <%# Teleported to <body>: an ancestor with a retained transform/backdrop-filter
+      acts as containing block for position:fixed and crops the modal to the
+      content area. htmx.process() is required because htmx never initializes
+      <template> content. %>
+  <template x-teleport="body">
+  <div x-show="creating" x-cloak x-init="htmx.process($el)"
+       class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto overscroll-contain p-4 pt-16">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="creating = false"></div>
+    <%# Submit swaps #content out and destroys this Alpine scope -- close first
+        so the body scroll-lock is released before the swap. %>
+    <form class="relative w-full max-w-md border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+          x-on:submit="creating = false"
+          hx-post="<%= api_keys_path() %>" hx-target="#content" hx-swap="innerHTML show:top">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+        <p class="console-label">new api key</p>
+        <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                x-on:click="creating = false">×</button>
       </div>
-      <div>
-        <label class="console-label" for="key-roles">roles (csv)</label>
-        <input id="key-roles" name="roles" type="text" placeholder="editor,viewer"
-               class="console-input mt-1 w-36 font-mono">
+      <div class="space-y-3 px-5 py-4">
+        <div>
+          <label class="console-label" for="key-name">name</label>
+          <input id="key-name" name="name" type="text" placeholder="ci-deploy"
+                 class="console-input mt-1 font-mono" autocomplete="off">
+        </div>
+        <div>
+          <label class="console-label" for="key-roles">roles <span class="text-zinc-700">— comma-separated</span></label>
+          <input id="key-roles" name="roles" type="text" placeholder="editor,viewer"
+                 class="console-input mt-1 font-mono">
+        </div>
+        <div>
+          <label class="console-label" for="key-dbs">scoped databases <span class="text-zinc-700">— comma-separated, empty = all</span></label>
+          <input id="key-dbs" name="scoped_databases" type="text" placeholder="app1,app2"
+                 class="console-input mt-1 font-mono">
+        </div>
       </div>
-      <div>
-        <label class="console-label" for="key-dbs">scoped dbs (csv)</label>
-        <input id="key-dbs" name="scoped_databases" type="text" placeholder="app1,app2"
-               class="console-input mt-1 w-36 font-mono">
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+        <button type="button" class="btn-ghost" x-on:click="creating = false">Cancel</button>
+        <button type="submit" class="btn-primary">Create key</button>
       </div>
-      <button type="submit" class="btn-primary">Create</button>
     </form>
   </div>
+  </template>
 
   <div class="console-card">
     <table class="console-table">

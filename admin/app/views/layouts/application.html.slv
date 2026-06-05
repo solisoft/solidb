@@ -21,9 +21,6 @@
       <header class="flex h-14 items-center justify-between border-b border-zinc-800 bg-zinc-950/90 px-6">
         <div class="flex items-center gap-3">
           <h1 class="text-base font-medium tracking-tight text-zinc-200"><%= @title ?? "SoliDB Admin" %></h1>
-          <% if !(@db ?? "").blank? %>
-            <span class="console-label border border-zinc-800 px-2 py-0.5">db: <span class="text-teal-400"><%= @db %></span></span>
-          <% end %>
         </div>
         <%- partial("shared/db_picker", { "picker_db": @db ?? "", "picker_databases": @databases ?? [] }) %>
       </header>

@@ -1,9 +1,13 @@
-<% if !picker_db.blank? && picker_databases.length() > 0 %>
+<%# Always visible in the header: server-level pages fall back to _system so
+    the active db (and the switcher) is never out of reach. %>
+<% active_db = picker_db.blank? ? "_system" : picker_db %>
+<% if picker_databases.length() > 0 %>
   <div x-data="{ open: false, q: '' }" class="relative">
     <button @click="open = !open; q = ''; $nextTick(() => open && $refs.dbFilter.focus())"
             @click.outside="open = false"
             class="btn-ghost">
-      <span class="text-teal-400"><%= picker_db %></span>
+      <span class="text-zinc-600">db:</span>
+      <span class="text-teal-400"><%= active_db %></span>
       <span class="text-zinc-600">▾</span>
     </button>
     <div x-show="open" x-cloak x-transition.opacity.duration.120ms
@@ -18,7 +22,7 @@
           <a href="<%= attr(db_collections_path(db_name)) %>"
              data-db="<%= attr(db_name) %>"
              x-show="q === '' || $el.dataset.db.toLowerCase().includes(q.toLowerCase())"
-             class="block px-3 py-1.5 font-mono text-xs transition-colors <%= db_name == picker_db ? "bg-zinc-800 text-teal-300" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200" %>">
+             class="block px-3 py-1.5 font-mono text-xs transition-colors <%= db_name == active_db ? "bg-zinc-800 text-teal-300" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200" %>">
             <%= db_name %>
           </a>
         <% end %>

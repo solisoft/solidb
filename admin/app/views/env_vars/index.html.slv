@@ -68,12 +68,14 @@
           <tr>
             <td class="font-mono text-zinc-200"><%= row["key"] %></td>
             <td class="max-w-md">
-              <code class="block truncate font-mono text-xs text-zinc-400" title="<%= attr(row["value"]) %>"><%= row["value"] %></code>
+              <code class="block truncate font-mono text-xs text-zinc-400" title="<%- attr(row["value"]) %>"><%= row["value"] %></code>
             </td>
             <td class="w-px whitespace-nowrap text-right">
               <div class="flex justify-end gap-2">
+                <%# <%- not <%=: attr() output must not be h()-escaped again or
+                    quotes land in the edit form as literal &#x27;. %>
                 <button class="btn-ghost"
-                        data-key="<%= attr(row["key"]) %>" data-value="<%= attr(row["value"]) %>"
+                        data-key="<%- attr(row["key"]) %>" data-value="<%- attr(row["value"]) %>"
                         x-on:click="envKey = $el.dataset.key; envValue = $el.dataset.value; editing = true">
                   Edit
                 </button>

@@ -15,6 +15,7 @@ class RolesController < Controller
   # GET /roles/:name
   def show
     @title = "Role · " + (params["name"] ?? "")
+    @databases = AdminContext.database_names()
     this._reset_banners()
     result = SolidbClient.get_api(SolidbEndpoints.role(params["name"] ?? ""))
     @role = result["data"] ?? {}
@@ -72,6 +73,8 @@ class RolesController < Controller
   end
 
   def _load
+    # Header db picker needs the database list on every render.
+    @databases = AdminContext.database_names()
     result = SolidbClient.get_api(SolidbEndpoints.roles())
     @roles = result["data"] ?? []
     if !result["ok"]

@@ -1,0 +1,136 @@
+<%# Live cluster panel — swapped wholesale every 3s, so no Alpine state in
+    here (it would be reset on every poll). %>
+<% node_status = cluster["status"] ?? "unknown" %>
+<% status_ok = node_status == "cluster-ready" || node_status == "standalone" %>
+<% memory_used = node_stats["memory_used_mb"] ?? 0 %>
+<% memory_total = node_stats["memory_total_mb"] ?? 0 %>
+<% memory_ratio = memory_total > 0 ? (memory_used * 100 / memory_total) : 0 %>
+<div class="space-y-4">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="console-card p-5">
+      <p class="console-label">Node</p>
+      <div class="mt-3 flex items-center gap-2.5">
+        <span class="relative flex h-2.5 w-2.5">
+          <span class="absolute inline-flex h-full w-full animate-pulse-dot <%= status_ok ? "bg-teal-400" : "bg-amber-400" %>"></span>
+        </span>
+        <p class="font-mono text-lg <%= status_ok ? "text-teal-300" : "text-amber-300" %>"><%= node_status %></p>
+      </div>
+      <p class="mt-2 truncate font-mono text-xs text-zinc-500" title="<%- attr(cluster["node_id"] ?? "") %>">
+        id: <%= (str(cluster["node_id"] ?? "")).substring(0, 8) %>… · port <%= cluster["replication_port"] ?? "-" %>
+      </p>
+    </div>
+
+    <div class="console-card p-5">
+      <p class="console-label">Uptime</p>
+      <p class="mt-3 font-mono text-lg text-zinc-100"><%= fmt_uptime(node_stats["uptime_secs"]) %></p>
+      <p class="mt-2 font-mono text-xs text-zinc-500">load avg <%= node_stats["system_load_avg"] ?? "-" %></p>
+    </div>
+
+    <div class="console-card p-5">
+      <p class="console-label">CPU</p>
+      <p class="mt-3 font-mono text-lg text-zinc-100"><%= fmt_percent(node_stats["cpu_usage_percent"]) %></p>
+      <p class="mt-2 font-mono text-xs text-zinc-500">of one core — can exceed 100% on multi-core</p>
+    </div>
+
+    <div class="console-card p-5">
+      <p class="console-label">Memory</p>
+      <p class="mt-3 font-mono text-lg text-zinc-100">
+        <%= memory_used %> <span class="text-sm text-zinc-500">/ <%= memory_total %> MB</span>
+      </p>
+      <div class="mt-2 h-1 w-full bg-zinc-800">
+        <div class="h-1 <%= memory_ratio > 85 ? "bg-red-500" : "bg-teal-500" %>" style="width: <%= memory_ratio %>%"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="console-card p-5">
+      <p class="console-label">Data</p>
+      <p class="mt-3 font-mono text-lg text-zinc-100"><%= fmt_count(node_stats["document_count"]) %> <span class="text-sm text-zinc-500">docs</span></p>
+      <p class="mt-2 font-mono text-xs text-zinc-500">
+        <%= node_stats["database_count"] ?? 0 %> databases · <%= node_stats["collection_count"] ?? 0 %> collections
+      </p>
+    </div>
+
+    <div class="console-card p-5">
+      <p class="console-label">Storage</p>
+      <p class="mt-3 font-mono text-lg text-zinc-100"><%= fmt_bytes(node_stats["storage_bytes"]) %></p>
+      <p class="mt-2 font-mono text-xs text-zinc-500">
+        sst <%= fmt_bytes(node_stats["total_sst_size"]) %> · memtable <%= fmt_bytes(node_stats["total_memtable_size"]) %> · live <%= fmt_bytes(node_stats["total_live_size"]) %>
+      </p>
+    </div>
+
+    <div class="console-card p-5">
+      <p class="console-label">Traffic</p>
+      <p class="mt-3 font-mono text-lg text-zinc-100"><%= fmt_count(node_stats["request_count"]) %> <span class="text-sm text-zinc-500">requests</span></p>
+      <p class="mt-2 font-mono text-xs text-zinc-500">
+        <%= fmt_count(node_stats["query_count"] ?? 0) %> queries · <%= fmt_count(node_stats["write_count"] ?? 0) %> writes
+      </p>
+    </div>
+
+    <div class="console-card p-5">
+      <p class="console-label">Sync log</p>
+      <p class="mt-3 font-mono text-lg text-zinc-100"><%= fmt_count(sync_log["entry_count"] ?? 0) %> <span class="text-sm text-zinc-500">entries</span></p>
+      <p class="mt-2 font-mono text-xs text-zinc-500">
+        seq <%= cluster["current_sequence"] ?? 0 %> · oldest <%= sync_log["oldest_sequence"] ?? 0 %>
+        <% if sync_log["disabled"] %>
+          · <span class="text-amber-400">disabled</span>
+        <% end %>
+      </p>
+    </div>
+  </div>
+
+  <div class="console-card">
+    <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">peers <span class="text-zinc-700">(<%= peers.length() %>)</span></p>
+      <button class="btn-ghost py-0.5"
+              hx-post="<%= cluster_path() %>/sync-log/prune"
+              hx-target="#content" hx-swap="innerHTML show:top"
+              hx-confirm="Prune the replication sync log up to the current sequence? Peers that have not caught up past that point will need a full resync.">
+        Prune sync log
+      </button>
+    </div>
+    <% if peers.length() == 0 %>
+      <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">single node — no peers configured</p>
+    <% else %>
+      <table class="console-table">
+        <thead>
+          <tr>
+            <th>address</th>
+            <th>status</th>
+            <th class="text-right">last seen</th>
+            <th class="text-right">replication lag</th>
+            <th class="text-right">documents</th>
+            <th class="text-right">cpu</th>
+            <th class="text-right">memory</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for peer in peers %>
+            <% peer_connected = peer["is_connected"] ?? false %>
+            <% peer_stats = peer["stats"] ?? {} %>
+            <% peer_lag = peer["replication_lag"] ?? 0 %>
+            <tr>
+              <td class="font-mono text-zinc-200"><%= peer["address"] ?? "" %></td>
+              <td>
+                <span class="inline-flex items-center gap-2">
+                  <span class="inline-flex h-2 w-2 <%= peer_connected ? "bg-teal-400" : "bg-red-500" %>"></span>
+                  <span class="font-mono text-[10px] uppercase tracking-widest <%= peer_connected ? "text-teal-400" : "text-red-400" %>">
+                    <%= peer_connected ? "connected" : "offline" %>
+                  </span>
+                </span>
+              </td>
+              <td class="text-right font-mono text-xs text-zinc-400"><%= fmt_uptime(peer["last_seen_secs_ago"]) %> ago</td>
+              <td class="text-right font-mono text-xs <%= peer_lag > 1000 ? "text-red-400" : (peer_lag > 0 ? "text-amber-400" : "text-zinc-400") %>">
+                <%= peer_lag %>
+              </td>
+              <td class="text-right font-mono text-xs text-zinc-400"><%= fmt_count(peer_stats["document_count"] ?? 0) %></td>
+              <td class="text-right font-mono text-xs text-zinc-400"><%= fmt_percent(peer_stats["cpu_usage_percent"]) %></td>
+              <td class="text-right font-mono text-xs text-zinc-400"><%= peer_stats["memory_used_mb"] ?? 0 %> MB</td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% end %>
+  </div>
+</div>

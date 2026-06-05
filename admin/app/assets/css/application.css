@@ -36,6 +36,12 @@
         @apply font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500;
     }
 
+    /* Form labels stack above their input; element-scoped so console-label
+       badges on spans/buttons stay inline. */
+    label.console-label {
+        @apply block;
+    }
+
     /* No backdrop-blur here: backdrop-filter makes the card the containing
        block for position:fixed descendants, which would scope/crop the
        modals that live inside cards (e.g. per-row document edit). */

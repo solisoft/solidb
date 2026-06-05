@@ -7,7 +7,9 @@
   <div class="console-card animate-fade-up">
     <div class="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-zinc-800 px-4 py-2.5">
       <p class="console-label"><span class="text-teal-400"><%= rows.length() %></span> rows</p>
-      <p class="console-label"><span class="text-teal-400"><%= meta["executionTimeMs"] ?? 0 %></span> ms</p>
+      <%# normal-case: console-label is uppercase, which turns "µs" into the
+          Greek capital "ΜS" — unreadable as anything but "MS". %>
+      <p class="console-label"><span class="normal-case text-teal-400"><%= fmt_ms(meta["executionTimeMs"] ?? 0) %></span></p>
       <% if (meta["inserted"] ?? 0) > 0 %><p class="console-label"><span class="text-teal-400"><%= meta["inserted"] %></span> inserted</p><% end %>
       <% if (meta["updated"] ?? 0) > 0 %><p class="console-label"><span class="text-teal-400"><%= meta["updated"] %></span> updated</p><% end %>
       <% if (meta["deleted"] ?? 0) > 0 %><p class="console-label"><span class="text-teal-400"><%= meta["deleted"] %></span> deleted</p><% end %>
