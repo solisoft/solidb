@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= @title ?? "SoliDB Admin" %> · SoliDB Admin</title>
+
+  <!-- Tailwind CSS (compiled) -->
+  <link rel="stylesheet" href="<%= public_path("css/application.css") %>">
+
+  <!-- Google Fonts — same pairing as the kv app -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="min-h-full bg-zinc-950 text-zinc-100 font-sans antialiased">
+  <div class="flex min-h-screen">
+    <%- partial("shared/nav", { "nav_db": @db ?? "", "nav_path": current_path() }) %>
+
+    <div class="flex min-w-0 flex-1 flex-col">
+      <header class="flex h-14 items-center justify-between border-b border-zinc-800 bg-zinc-950/90 px-6">
+        <div class="flex items-center gap-3">
+          <h1 class="text-base font-medium tracking-tight text-zinc-200"><%= @title ?? "SoliDB Admin" %></h1>
+          <% if !(@db ?? "").blank? %>
+            <span class="console-label border border-zinc-800 px-2 py-0.5">db: <span class="text-teal-400"><%= @db %></span></span>
+          <% end %>
+        </div>
+        <%- partial("shared/db_picker", { "picker_db": @db ?? "", "picker_databases": @databases ?? [] }) %>
+      </header>
+
+      <main id="content" class="console-grid flex-1 overflow-x-auto p-6">
+        <%= yield %>
+      </main>
+    </div>
+  </div>
+
+  <%- partial("shared/confirm_modal", {}) %>
+
+  <!-- HTMx + Alpine.js (Soli's default client stack) -->
+  <script defer src="<%= public_path("js/htmx.min.js") %>"></script>
+  <script defer src="<%= public_path("js/alpine.min.js") %>"></script>
+  <script defer src="<%= public_path("js/admin-json.js") %>"></script>
+  <script defer src="<%= public_path("js/admin-drop.js") %>"></script>
+</body>
+</html>

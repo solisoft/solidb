@@ -1,0 +1,68 @@
+<%# Shared form for new/edit. Locals: form_script (hash), form_url, form_method. %>
+<form class="console-card space-y-4 p-5"
+      <% if form_method == "put" %>hx-put="<%= attr(form_url) %>"<% else %>hx-post="<%= attr(form_url) %>"<% end %>
+      hx-target="#content" hx-swap="innerHTML show:top">
+  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div>
+      <label class="console-label" for="script-name">name</label>
+      <input id="script-name" name="name" type="text" value="<%= attr(form_script["name"] ?? "") %>"
+             placeholder="hello_world" class="console-input mt-1 font-mono" autocomplete="off">
+    </div>
+    <div>
+      <label class="console-label" for="script-path">path</label>
+      <input id="script-path" name="path" type="text" value="<%= attr(form_script["path"] ?? "") %>"
+             placeholder="hello" class="console-input mt-1 font-mono" autocomplete="off">
+    </div>
+    <div>
+      <label class="console-label" for="script-service">service</label>
+      <input id="script-service" name="service" type="text" value="<%= attr(form_script["service"] ?? "") %>"
+             placeholder="default" class="console-input mt-1 font-mono">
+    </div>
+    <div>
+      <label class="console-label" for="script-desc">description</label>
+      <input id="script-desc" name="description" type="text" value="<%= attr(form_script["description"] ?? "") %>"
+             class="console-input mt-1">
+    </div>
+  </div>
+
+  <div>
+    <p class="console-label mb-1.5">methods</p>
+    <% script_methods = form_script["methods"] ?? [] %>
+    <div class="flex gap-4">
+      <label class="flex items-center gap-1.5 font-mono text-xs text-zinc-300">
+        <input type="checkbox" name="method_get" class="accent-teal-500"
+               <% if script_methods.includes?("GET") %>checked<% end %>> GET
+      </label>
+      <label class="flex items-center gap-1.5 font-mono text-xs text-zinc-300">
+        <input type="checkbox" name="method_post" class="accent-teal-500"
+               <% if script_methods.includes?("POST") %>checked<% end %>> POST
+      </label>
+      <label class="flex items-center gap-1.5 font-mono text-xs text-zinc-300">
+        <input type="checkbox" name="method_put" class="accent-teal-500"
+               <% if script_methods.includes?("PUT") %>checked<% end %>> PUT
+      </label>
+      <label class="flex items-center gap-1.5 font-mono text-xs text-zinc-300">
+        <input type="checkbox" name="method_delete" class="accent-teal-500"
+               <% if script_methods.includes?("DELETE") %>checked<% end %>> DELETE
+      </label>
+    </div>
+  </div>
+
+  <div>
+    <label class="console-label" for="script-code">lua code</label>
+    <textarea id="script-code" name="code" rows="16" spellcheck="false"
+              class="console-input mt-1 resize-y font-mono text-[13px] leading-relaxed"
+              placeholder="-- Your Lua code here&#10;&#10;return { message = 'Hello, World!' }"><%= form_script["code"] ?? "" %></textarea>
+  </div>
+
+  <div class="flex justify-end gap-2">
+    <a href="<%= attr(form_cancel_url) %>" class="btn-ghost">Cancel</a>
+    <button type="submit" class="btn-primary"><%= form_method == "put" ? "Save script" : "Create script" %></button>
+  </div>
+</form>
+
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<script src="<%= public_path("js/admin-editor.js") %>"></script>
+<script>
+  AdminEditor.mount(document.getElementById("script-code"), { language: "lua", height: "380px" });
+</script>

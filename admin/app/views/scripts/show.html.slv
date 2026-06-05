@@ -1,0 +1,25 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label"><a href="<%= attr(db_scripts_path(@db)) %>" class="hover:text-teal-400 transition-colors">Scripts</a> / <%= @db %></p>
+      <h2 class="mt-1 font-mono"><%= @script["name"] ?? "" %></h2>
+      <p class="mt-1 text-sm text-zinc-400"><%= @script["description"] ?? "" %></p>
+    </div>
+    <% script_id = @script["id"] ?? (@script["_key"] ?? "") %>
+    <a href="<%= attr(db_scripts_path(@db)) %>/<%= url(script_id) %>/edit" class="btn-primary">Edit</a>
+  </div>
+
+  <div class="console-card">
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">endpoint <span class="text-teal-400">/api/<%= @db %>/<%= @script["service"] ?? "" %>/<%= @script["path"] ?? "" %></span></p>
+      <div class="flex gap-1">
+        <% for method in (@script["methods"] ?? []) %>
+          <span class="border border-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-teal-400"><%= method %></span>
+        <% end %>
+      </div>
+    </div>
+    <pre class="max-h-[36rem] overflow-auto px-5 py-4 font-mono text-[13px] leading-relaxed text-zinc-200"><%= @script["code"] ?? "" %></pre>
+  </div>
+</div>

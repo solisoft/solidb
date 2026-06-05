@@ -1,0 +1,150 @@
+<% if !explain_error.blank? %>
+  <div class="console-card border-red-900 px-4 py-3 animate-fade-up">
+    <p class="console-label text-red-400">explain error</p>
+    <pre class="mt-2 overflow-x-auto font-mono text-xs text-red-200"><%= explain_error %></pre>
+  </div>
+<% else %>
+  <% timing = plan["timing"] ?? {} %>
+  <% total_us = timing["total_us"] ?? 0 %>
+  <div class="console-card animate-fade-up">
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">explain</p>
+      <p class="console-label"><span class="text-teal-400"><%= plan["documents_scanned"] ?? 0 %></span> scanned</p>
+      <p class="console-label"><span class="text-teal-400"><%= plan["documents_returned"] ?? 0 %></span> returned</p>
+      <p class="console-label"><span class="normal-case text-teal-400"><%= fmt_us(total_us) %></span> total</p>
+    </div>
+
+    <% warnings = plan["warnings"] ?? [] %>
+    <% if warnings.length() > 0 %>
+      <div class="border-b border-zinc-800 bg-amber-950/30 px-4 py-2">
+        <% for warning in warnings %>
+          <p class="font-mono text-xs text-amber-300">⚠ <%= json_compact(warning) %></p>
+        <% end %>
+      </div>
+    <% end %>
+
+    <%# --- collection access: the headline of any plan — full scan or index? --- %>
+    <% accesses = plan["collections"] ?? [] %>
+    <% if accesses.length() > 0 %>
+      <table class="console-table border-b border-zinc-800">
+        <thead>
+          <tr>
+            <th>collection</th>
+            <th>var</th>
+            <th>access</th>
+            <th>index</th>
+            <th class="text-right">docs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for access in accesses %>
+            <% uses_index = (access["access_type"] ?? "") == "index_lookup" %>
+            <tr>
+              <td class="font-mono text-zinc-200"><%= access["name"] ?? "" %></td>
+              <td class="font-mono text-zinc-500"><%= access["variable"] ?? "" %></td>
+              <td>
+                <% if uses_index %>
+                  <span class="console-label border border-teal-800 px-1.5 py-0.5 text-teal-400">index lookup</span>
+                <% else %>
+                  <span class="console-label border border-amber-800 px-1.5 py-0.5 text-amber-400">full scan</span>
+                <% end %>
+              </td>
+              <td class="font-mono text-zinc-300">
+                <% if uses_index %>
+                  <%= access["index_used"] ?? "" %> <span class="text-zinc-600">(<%= str(access["index_type"] ?? "").downcase() %>)</span>
+                <% else %>
+                  <span class="text-zinc-700">—</span>
+                <% end %>
+              </td>
+              <td class="text-right font-mono text-zinc-400"><%= access["documents_count"] ?? 0 %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% end %>
+
+    <%# --- filters: humanized expression + selectivity --- %>
+    <% filters = plan["filters"] ?? [] %>
+    <% if filters.length() > 0 %>
+      <div class="space-y-2 border-b border-zinc-800 px-4 py-3">
+        <p class="console-label">filters</p>
+        <% for filter in filters %>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <% if filter["can_use_index"] ?? false %>
+              <span class="console-label shrink-0 border border-teal-800 px-1.5 py-0.5 text-teal-400">indexed</span>
+            <% else %>
+              <span class="console-label shrink-0 border border-zinc-700 px-1.5 py-0.5 text-zinc-500">no index</span>
+            <% end %>
+            <code class="min-w-0 font-mono text-xs text-zinc-200"><%= explain_expr(filter["expression"] ?? "") %></code>
+            <span class="ml-auto shrink-0 font-mono text-[10px] text-zinc-500">
+              <%= filter["documents_before"] ?? 0 %> → <span class="text-zinc-300"><%= filter["documents_after"] ?? 0 %></span> docs
+              · <%= fmt_us(filter["time_us"] ?? 0) %>
+            </span>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+
+    <%# --- sort / limit chips --- %>
+    <% sort_info = plan["sort"] %>
+    <% limit_info = plan["limit"] %>
+    <% if !sort_info.nil? || !limit_info.nil? %>
+      <div class="flex flex-wrap gap-2 border-b border-zinc-800 px-4 py-2.5">
+        <% if !sort_info.nil? %>
+          <span class="console-label border border-violet-800 px-1.5 py-0.5 text-violet-400">
+            sort <span class="normal-case"><%= sort_info["field"] ?? "" %> <%= str(sort_info["direction"] ?? "").downcase() %>
+            · <%= fmt_us(sort_info["time_us"] ?? 0) %></span>
+          </span>
+        <% end %>
+        <% if !limit_info.nil? %>
+          <span class="console-label border border-rose-800 px-1.5 py-0.5 text-rose-400">
+            limit <%= limit_info["count"] ?? 0 %><% if (limit_info["offset"] ?? 0) > 0 %> offset <%= limit_info["offset"] %><% end %>
+          </span>
+        <% end %>
+      </div>
+    <% end %>
+
+    <%# --- timing breakdown bar --- %>
+    <% if total_us > 0 %>
+      <%# Literal class strings so the Tailwind scanner compiles them:
+          bg-teal-500 bg-amber-500 bg-violet-500 bg-sky-500 bg-rose-500 bg-zinc-500 %>
+      <% stages = [
+        { "key": "collection_scan_us",   "label": "scan",   "color": "bg-teal-500" },
+        { "key": "filter_us",            "label": "filter", "color": "bg-amber-500" },
+        { "key": "sort_us",              "label": "sort",   "color": "bg-violet-500" },
+        { "key": "let_clauses_us",       "label": "let",    "color": "bg-sky-500" },
+        { "key": "limit_us",             "label": "limit",  "color": "bg-rose-500" },
+        { "key": "return_projection_us", "label": "return", "color": "bg-zinc-500" }
+      ] %>
+      <div class="border-b border-zinc-800 px-4 py-3">
+        <p class="console-label mb-2">timing</p>
+        <div class="flex h-2 w-full overflow-hidden bg-zinc-900">
+          <% for stage in stages %>
+            <% stage_us = timing[stage["key"]] ?? 0 %>
+            <% if stage_us > 0 %>
+              <% stage_pct = ((stage_us * 10000.0) / total_us).round() / 100.0 %>
+              <div class="<%= stage["color"] %>" style="width: <%= stage_pct %>%"
+                   title="<%= attr(stage["label"]) %>: <%= attr(fmt_us(stage_us)) %>"></div>
+            <% end %>
+          <% end %>
+        </div>
+        <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+          <% for stage in stages %>
+            <% stage_us = timing[stage["key"]] ?? 0 %>
+            <% if stage_us > 0 %>
+              <span class="flex items-center gap-1.5 font-mono text-[10px] text-zinc-500">
+                <span class="inline-block h-2 w-2 <%= stage["color"] %>"></span>
+                <%= stage["label"] %> <%= fmt_us(stage_us) %>
+              </span>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
+    <details>
+      <summary class="console-label cursor-pointer px-4 py-2 transition-colors hover:text-zinc-300">raw plan</summary>
+      <pre class="json-view max-h-[28rem] overflow-auto px-4 pb-3 font-mono text-xs leading-relaxed"><%= json_compact(plan) %></pre>
+    </details>
+  </div>
+<% end %>

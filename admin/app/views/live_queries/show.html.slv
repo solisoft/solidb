@@ -1,0 +1,185 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up"
+     id="live-config"
+     data-token-url="<%= attr(db_live_path(@db)) %>/token"
+     data-db="<%= attr(@db) %>">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">db / <%= @db %></p>
+      <h2 class="mt-1">Live queries</h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        real-time changefeed — subscribe to a collection over WebSocket and watch inserts, updates
+        and deletes stream in as they happen
+      </p>
+    </div>
+    <div class="flex items-center gap-2.5">
+      <span class="relative flex h-2.5 w-2.5">
+        <span id="live-dot" class="absolute inline-flex h-full w-full bg-zinc-600"></span>
+      </span>
+      <span id="live-status" class="font-mono text-xs uppercase tracking-widest text-zinc-500">idle</span>
+    </div>
+  </div>
+
+  <div class="console-card space-y-3 p-4">
+    <div>
+      <label class="console-label" for="live-query">live query (sdbql)</label>
+      <% first_collection = @collections.length() > 0 ? (@collections[0]["name"] ?? "my_collection") : "my_collection" %>
+      <textarea id="live-query" rows="3" spellcheck="false"
+                class="console-input mt-1 resize-y font-mono text-[13px]"
+                placeholder="FOR doc IN <%= first_collection %> RETURN doc">FOR doc IN <%= first_collection %> RETURN doc</textarea>
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <p class="font-mono text-[10px] text-zinc-600">
+        events stream in below as documents change — the socket reconnects automatically
+      </p>
+      <div class="flex gap-2">
+        <button id="live-clear" type="button" class="btn-ghost">Clear</button>
+        <button id="live-stop" type="button" class="btn-ghost" disabled>Stop</button>
+        <button id="live-start" type="button" class="btn-primary">Subscribe</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="console-card">
+    <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">event stream</p>
+      <p class="console-label"><span id="live-count" class="text-teal-400">0</span> events</p>
+    </div>
+    <ol id="live-log" class="max-h-[30rem] divide-y divide-zinc-800/60 overflow-y-auto">
+      <li id="live-empty" class="px-4 py-6 text-center font-mono text-sm text-zinc-600">no events yet</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var cfg = document.getElementById("live-config");
+    if (!cfg) return;
+    var tokenUrl = cfg.dataset.tokenUrl;
+    var db = cfg.dataset.db;
+    var ws = null, closed = true, backoff = 500, count = 0;
+
+    var dot = document.getElementById("live-dot");
+    var status = document.getElementById("live-status");
+    var logEl = document.getElementById("live-log");
+    var countEl = document.getElementById("live-count");
+    var startBtn = document.getElementById("live-start");
+    var stopBtn = document.getElementById("live-stop");
+
+    function setStatus(label, cls) {
+      status.textContent = label;
+      dot.className = "absolute inline-flex h-full w-full " + cls;
+    }
+
+    function logEvent(kind, payload) {
+      var empty = document.getElementById("live-empty");
+      if (empty) empty.remove();
+      count += 1;
+      countEl.textContent = count;
+      var li = document.createElement("li");
+      li.className = "flex gap-3 px-4 py-2";
+      var time = document.createElement("span");
+      time.className = "shrink-0 select-none font-mono text-[10px] text-zinc-600";
+      time.textContent = new Date().toLocaleTimeString();
+      var kindEl = document.createElement("span");
+      kindEl.className = "shrink-0 font-mono text-[10px] uppercase tracking-widest " +
+        (kind === "error" ? "text-red-400" : "text-teal-400");
+      kindEl.textContent = kind;
+      var pre = document.createElement("pre");
+      pre.className = "overflow-x-auto font-mono text-xs leading-relaxed text-zinc-200";
+      pre.textContent = typeof payload === "string" ? payload : JSON.stringify(payload);
+      li.appendChild(time); li.appendChild(kindEl); li.appendChild(pre);
+      logEl.prepend(li);
+      while (logEl.children.length > 500) logEl.removeChild(logEl.lastChild);
+    }
+
+    function schedule() {
+      if (closed) return;
+      setStatus("reconnecting", "bg-amber-400 animate-pulse-dot");
+      setTimeout(connect, backoff);
+      backoff = Math.min(backoff * 2, 15000);
+    }
+
+    function connect() {
+      if (closed) return;
+      fetch(tokenUrl, { credentials: "same-origin", headers: { "Accept": "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (closed) return;
+          if (!d || !d.ok || !d.token) {
+            logEvent("error", (d && d.error) || "token endpoint failed");
+            schedule();
+            return;
+          }
+          open(d);
+        })
+        .catch(function () { schedule(); });
+    }
+
+    function open(d) {
+      try { ws = new WebSocket(d.ws_url + "?token=" + encodeURIComponent(d.token)); }
+      catch (e) { logEvent("error", "WebSocket failed: " + e); schedule(); return; }
+
+      ws.onopen = function () {
+        backoff = 500;
+        setStatus("streaming", "bg-teal-400 animate-pulse-dot");
+        var query = document.getElementById("live-query").value;
+        ws.send(JSON.stringify({ type: "live_query", database: db, id: "admin", query: query }));
+      };
+      ws.onmessage = function (ev) {
+        var msg;
+        try { msg = JSON.parse(ev.data); } catch (_) { return; }
+        if (msg && msg.error) { logEvent("error", msg.error); return; }
+        logEvent((msg && (msg.type || msg.event)) || "event", msg);
+      };
+      ws.onclose = function () { ws = null; if (!closed) schedule(); };
+      ws.onerror = function () { try { ws.close(); } catch (_) {} };
+    }
+
+    startBtn.addEventListener("click", function () {
+      if (ws) { try { ws.close(); } catch (_) {} ws = null; }
+      closed = false;
+      backoff = 500;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      setStatus("connecting", "bg-amber-400 animate-pulse-dot");
+      connect();
+    });
+
+    stopBtn.addEventListener("click", function () {
+      closed = true;
+      if (ws) { try { ws.close(); } catch (_) {} ws = null; }
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      setStatus("idle", "bg-zinc-600");
+    });
+
+    document.getElementById("live-clear").addEventListener("click", function () {
+      count = 0;
+      countEl.textContent = "0";
+      logEl.innerHTML = '<li id="live-empty" class="px-4 py-6 text-center font-mono text-sm text-zinc-600">no events yet</li>';
+    });
+
+    window.addEventListener("beforeunload", function () {
+      closed = true;
+      if (ws) { try { ws.close(); } catch (_) {} }
+    });
+  })();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<script src="<%= public_path("js/admin-editor.js") %>"></script>
+<script>
+  AdminEditor.setCollections(<%- json_compact(@collection_names) %>);
+  // The editor syncs back into the #live-query textarea, which the WS code
+  // reads on subscribe — so Subscribe keeps working unchanged.
+  AdminEditor.mount(document.getElementById("live-query"), {
+    language: "sdbql",
+    height: "110px",
+    onCtrlEnter: function () {
+      var startButton = document.getElementById("live-start");
+      if (startButton && !startButton.disabled) startButton.click();
+    }
+  });
+</script>

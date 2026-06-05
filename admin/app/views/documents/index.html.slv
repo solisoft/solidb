@@ -1,0 +1,217 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<% docs_base = db_collection_docs_path(@db, @collection_name) %>
+<% page_query = "?filter=" + url(@filter) + "&limit=" + str(@limit) %>
+
+<div class="space-y-5 animate-fade-up" x-data="{ creating: false }" x-on:keydown.escape.window="creating = false">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">
+        <a href="<%= attr(db_collections_path(@db)) %>" class="hover:text-teal-400 transition-colors">Collections</a>
+        / <%= @db %>
+      </p>
+      <h2 class="mt-1 font-mono"><%= @collection_name %></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        browse, create and edit the documents in this collection — filter takes an SDBQL condition on doc
+      </p>
+    </div>
+    <% if @collection_type == "blob" %>
+      <button class="btn-primary" x-on:click="creating = true">Upload file</button>
+    <% else %>
+      <button class="btn-primary"
+              x-on:click="creating = true; $nextTick(() => window.AdminEditor && AdminEditor.mountOnce($refs.newDoc, { language: 'json', height: '50vh' }))">
+        New document
+      </button>
+    <% end %>
+  </div>
+
+  <% if @collection_type == "blob" %>
+    <div x-show="creating" x-cloak class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-4 pt-16">
+      <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="creating = false"></div>
+      <form class="relative w-full max-w-xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+            hx-post="<%= attr(docs_base) %>/upload" hx-encoding="multipart/form-data"
+            hx-target="#content" hx-swap="innerHTML show:top">
+        <input type="hidden" name="filter" value="<%= attr(@filter) %>">
+        <input type="hidden" name="limit" value="<%= @limit %>">
+        <input type="hidden" name="offset" value="<%= @offset %>">
+        <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+          <p class="console-label">upload file · <span class="text-teal-500"><%= @collection_name %></span></p>
+          <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                  x-on:click="creating = false">×</button>
+        </div>
+        <div class="px-5 py-5">
+          <label class="console-label" for="blob-file">file</label>
+          <input id="blob-file" name="file" type="file"
+                 class="console-input mt-1 file:mr-3 file:border-0 file:bg-teal-500/10 file:px-3 file:py-1
+                        file:font-mono file:text-xs file:uppercase file:tracking-wider file:text-teal-300">
+          <p class="mt-2 font-mono text-[10px] text-zinc-600">stored via the binary driver protocol — bytes arrive exactly as sent</p>
+        </div>
+        <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+          <button type="button" class="btn-ghost" x-on:click="creating = false">Cancel</button>
+          <button type="submit" class="btn-primary">Upload</button>
+        </div>
+      </form>
+    </div>
+  <% end %>
+
+  <% if @collection_type != "blob" %>
+  <div x-show="creating" x-cloak class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-4 pt-10">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="creating = false"></div>
+    <form class="relative w-full max-w-4xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+          hx-post="<%= attr(docs_base) %>" hx-target="#content" hx-swap="innerHTML show:top">
+      <input type="hidden" name="filter" value="<%= attr(@filter) %>">
+      <input type="hidden" name="limit" value="<%= @limit %>">
+      <input type="hidden" name="offset" value="<%= @offset %>">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+        <p class="console-label">new document · <span class="text-teal-500"><%= @collection_name %></span></p>
+        <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                x-on:click="creating = false">×</button>
+      </div>
+      <div class="px-5 py-4">
+        <label class="console-label" for="new-doc">json</label>
+        <textarea id="new-doc" name="document" rows="8" spellcheck="false" x-ref="newDoc"
+                  placeholder='{ "name": "Alice", "age": 30 }'
+                  class="console-input mt-1 resize-y font-mono text-[13px]">{
+
+}</textarea>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+        <button type="button" class="btn-ghost" x-on:click="creating = false">Cancel</button>
+        <button type="submit" class="btn-primary">Insert</button>
+      </div>
+    </form>
+  </div>
+  <% end %>
+
+  <form method="get" action="<%= attr(docs_base) %>" class="console-card flex flex-wrap items-end gap-3 p-4">
+    <div class="min-w-72 flex-1">
+      <label class="console-label" for="docs-filter">filter <span class="text-zinc-700">— sdbql expression on `doc`</span></label>
+      <input id="docs-filter" name="filter" type="text" value="<%= attr(@filter) %>"
+             placeholder='doc.age > 25 AND doc.name LIKE "A%"'
+             class="console-input mt-1 font-mono text-[13px]">
+    </div>
+    <div>
+      <label class="console-label" for="docs-limit">per page</label>
+      <select id="docs-limit" name="limit" class="console-input mt-1 w-24">
+        <option value="25" <% if @limit == 25 %>selected<% end %>>25</option>
+        <option value="50" <% if @limit == 50 %>selected<% end %>>50</option>
+        <option value="100" <% if @limit == 100 %>selected<% end %>>100</option>
+      </select>
+    </div>
+    <button type="submit" class="btn-primary py-2.5">Apply</button>
+    <% if !@filter.blank? %>
+      <a href="<%= attr(docs_base) %>" class="btn-ghost py-2.5">Clear</a>
+    <% end %>
+  </form>
+
+  <% if !@query_error.blank? %>
+    <div class="console-card border-red-900 px-4 py-3">
+      <p class="console-label text-red-400">filter error</p>
+      <pre class="mt-2 overflow-x-auto font-mono text-xs text-red-200"><%= @query_error %></pre>
+    </div>
+  <% end %>
+
+  <div class="console-card" <% if @collection_type == "blob" %>data-drop-url="<%= attr(docs_base) %>/upload"<% end %>>
+    <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">
+        documents <%= @offset + 1 %>–<%= @offset + @documents.length() %>
+        <% if !@filter.blank? %><span class="text-teal-500">· filtered</span><% end %>
+        <% if @collection_type == "blob" %>
+          <span class="ml-2 border border-dashed border-zinc-800 px-1.5 py-0.5 text-zinc-600">⇣ drop files anywhere on the list</span>
+        <% end %>
+      </p>
+      <div class="flex gap-2">
+        <% if @offset > 0 %>
+          <% prev_offset = @offset - @limit %>
+          <% prev_offset = 0 if prev_offset < 0 %>
+          <a href="<%= attr(docs_base + page_query) %>&offset=<%= prev_offset %>" class="btn-ghost">← Prev</a>
+        <% end %>
+        <% if @has_more %>
+          <a href="<%= attr(docs_base + page_query) %>&offset=<%= @offset + @limit %>" class="btn-ghost">Next →</a>
+        <% end %>
+      </div>
+    </div>
+
+    <ol class="divide-y divide-zinc-800/60">
+      <% for doc in @documents %>
+        <% doc_key = doc["_key"] ?? "" %>
+        <% doc_content_type = doc["content_type"] ?? (doc["type"] ?? "") %>
+        <% doc_filename = doc["filename"] ?? (doc["name"] ?? "") %>
+        <% is_image = doc_content_type.starts_with("image/") %>
+        <li x-data="{ open: false, editing: false }" x-on:keydown.escape.window="editing = false">
+          <div class="flex items-center gap-3 px-4 py-2">
+            <button class="shrink-0 font-mono text-xs text-zinc-600 transition-colors hover:text-teal-400"
+                    x-on:click="open = !open" x-text="open ? '▾' : '▸'">▸</button>
+            <span class="shrink-0 font-mono text-xs text-teal-400"><%= doc_key %></span>
+            <% if @collection_type == "blob" %>
+              <span class="min-w-0 flex-1 truncate font-mono text-xs text-zinc-200"
+                    title="<%= attr(doc_filename) %>"><%= doc_filename %></span>
+              <span class="inline-block max-w-44 shrink-0 truncate console-label border border-zinc-800 px-1.5 py-0.5"
+                    title="<%= attr(doc_content_type) %>"><%= doc_content_type %></span>
+              <span class="shrink-0 font-mono text-xs text-zinc-500"><%= fmt_bytes(doc["size"]) %></span>
+            <% else %>
+              <code class="min-w-0 flex-1 truncate font-mono text-xs text-zinc-400"><%= truncate_text(json_compact(doc), 160, "…") %></code>
+            <% end %>
+            <div class="flex shrink-0 gap-2">
+              <% if @collection_type == "blob" %>
+                <a href="<%= attr(docs_base) %>/<%= url(doc_key) %>/blob?download=1" class="btn-ghost">Download</a>
+              <% else %>
+                <button class="btn-ghost"
+                        x-on:click="editing = true; $nextTick(() => window.AdminEditor && AdminEditor.mountOnce($refs.docEditor, { language: 'json', height: '60vh' }))">
+                  Edit
+                </button>
+              <% end %>
+              <button class="btn-danger"
+                      hx-delete="<%= attr(docs_base) %>/<%= url(doc_key) %>?filter=<%= url(@filter) %>&limit=<%= @limit %>&offset=<%= @offset %>"
+                      hx-target="#content" hx-swap="innerHTML show:top"
+                      hx-confirm="Delete document '<%= attr(doc_key) %>'?">
+                Delete
+              </button>
+            </div>
+          </div>
+          <div x-show="open" x-cloak class="border-t border-zinc-800/60 bg-zinc-950/70">
+            <% if is_image %>
+              <div class="px-12 pt-3">
+                <img src="<%= attr(docs_base) %>/<%= url(doc_key) %>/blob" loading="lazy"
+                     alt="<%= attr(doc_filename == "" ? doc_key : doc_filename) %>"
+                     class="max-h-72 border border-zinc-800">
+              </div>
+            <% end %>
+            <pre class="json-view overflow-x-auto px-12 py-3 font-mono text-xs leading-relaxed"><%= json_compact(doc) %></pre>
+          </div>
+
+          <div x-show="editing" x-cloak class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-4 pt-10">
+            <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="editing = false"></div>
+            <form class="relative w-full max-w-4xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60"
+                  hx-put="<%= attr(docs_base) %>/<%= url(doc_key) %>" hx-target="#content" hx-swap="innerHTML show:top">
+              <input type="hidden" name="filter" value="<%= attr(@filter) %>">
+              <input type="hidden" name="limit" value="<%= @limit %>">
+              <input type="hidden" name="offset" value="<%= @offset %>">
+              <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+                <p class="console-label">edit · <span class="text-teal-500"><%= doc_key %></span></p>
+                <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                        x-on:click="editing = false">×</button>
+              </div>
+              <div class="px-5 py-4">
+                <textarea name="document" rows="10" spellcheck="false" x-ref="docEditor"
+                          class="console-input resize-y font-mono text-[13px]"><%= json_compact(doc) %></textarea>
+              </div>
+              <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+                <button type="button" class="btn-ghost" x-on:click="editing = false">Cancel</button>
+                <button type="submit" class="btn-primary">Save</button>
+              </div>
+            </form>
+          </div>
+        </li>
+      <% end %>
+    </ol>
+    <% if @documents.length() == 0 %>
+      <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">
+        <%= @filter.blank? ? "no documents" : "no documents match the filter" %>
+      </p>
+    <% end %>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<script src="<%= public_path("js/admin-editor.js") %>"></script>

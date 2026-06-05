@@ -1,0 +1,28 @@
+<% if !picker_db.blank? && picker_databases.length() > 0 %>
+  <div x-data="{ open: false, q: '' }" class="relative">
+    <button @click="open = !open; q = ''; $nextTick(() => open && $refs.dbFilter.focus())"
+            @click.outside="open = false"
+            class="btn-ghost">
+      <span class="text-teal-400"><%= picker_db %></span>
+      <span class="text-zinc-600">▾</span>
+    </button>
+    <div x-show="open" x-cloak x-transition.opacity.duration.120ms
+         x-on:keydown.escape.stop="open = false"
+         class="absolute right-0 z-20 mt-1 w-56 border border-zinc-700 bg-zinc-900 shadow-xl shadow-black/50">
+      <div class="border-b border-zinc-800 p-2">
+        <input type="text" x-ref="dbFilter" x-model="q" placeholder="filter…"
+               class="console-input py-1 font-mono text-xs" autocomplete="off">
+      </div>
+      <div class="max-h-72 overflow-y-auto">
+        <% for db_name in picker_databases %>
+          <a href="<%= attr(db_collections_path(db_name)) %>"
+             data-db="<%= attr(db_name) %>"
+             x-show="q === '' || $el.dataset.db.toLowerCase().includes(q.toLowerCase())"
+             class="block px-3 py-1.5 font-mono text-xs transition-colors <%= db_name == picker_db ? "bg-zinc-800 text-teal-300" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200" %>">
+            <%= db_name %>
+          </a>
+        <% end %>
+      </div>
+    </div>
+  </div>
+<% end %>

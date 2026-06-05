@@ -1,0 +1,119 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up" x-data="{ creating: false }"
+     x-on:keydown.escape.window="creating = false"
+     x-effect="document.body.style.overflow = creating ? 'hidden' : ''">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">db / <%= @db %></p>
+      <h2 class="mt-1">Cron jobs <span class="font-mono text-sm text-zinc-500">(<%= @cron_jobs.length() %>)</span></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        scheduled jobs — a 6-field cron expression (seconds first, e.g. 0 0 2 * * * = daily at 02:00)
+        runs a Lua script on a queue
+      </p>
+    </div>
+    <button class="btn-primary" x-on:click="creating = true">New cron job</button>
+  </div>
+
+  <%# Teleported to <body>: an ancestor with a retained transform/backdrop-filter
+      acts as containing block for position:fixed and crops the modal to the
+      content area. htmx.process() is required because htmx never initializes
+      <template> content. %>
+  <template x-teleport="body">
+  <div x-show="creating" x-cloak x-init="htmx.process($el)"
+       class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto overscroll-contain p-4 pt-16">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="creating = false"></div>
+    <%# Submit swaps #content out and destroys this Alpine scope -- close first
+        so the body scroll-lock is released before the swap. %>
+    <form class="relative w-full max-w-xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+          x-on:submit="creating = false"
+          hx-post="<%= attr(db_cron_path(@db)) %>" hx-target="#content" hx-swap="innerHTML show:top">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+        <p class="console-label">new cron job · <span class="text-teal-500"><%= @db %></span></p>
+        <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                x-on:click="creating = false">×</button>
+      </div>
+      <div class="space-y-3 px-5 py-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label class="console-label" for="cron-name">name</label>
+            <input id="cron-name" name="cron_name" type="text" placeholder="daily_cleanup"
+                   class="console-input mt-1 font-mono">
+          </div>
+          <div>
+            <label class="console-label" for="cron-expr">cron expression</label>
+            <input id="cron-expr" name="cron_expression" type="text" placeholder="0 0 2 * * *"
+                   class="console-input mt-1 font-mono">
+          </div>
+          <div>
+            <label class="console-label" for="cron-script">script</label>
+            <input id="cron-script" name="script" type="text" placeholder="cleanup_old_records"
+                   class="console-input mt-1 font-mono">
+          </div>
+          <div>
+            <label class="console-label" for="cron-queue">queue</label>
+            <input id="cron-queue" name="queue" type="text" placeholder="default"
+                   class="console-input mt-1 font-mono">
+          </div>
+          <div>
+            <label class="console-label" for="cron-priority">priority</label>
+            <input id="cron-priority" name="priority" type="number" placeholder="0"
+                   class="console-input mt-1 font-mono">
+          </div>
+          <div>
+            <label class="console-label" for="cron-retries">max retries</label>
+            <input id="cron-retries" name="max_retries" type="number" placeholder="3"
+                   class="console-input mt-1 font-mono">
+          </div>
+        </div>
+        <div>
+          <label class="console-label" for="cron-params">params (json)</label>
+          <textarea id="cron-params" name="job_params" rows="3" spellcheck="false"
+                    placeholder='{ "days": 30 }'
+                    class="console-input mt-1 resize-y font-mono text-[13px]"></textarea>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+        <button type="button" class="btn-ghost" x-on:click="creating = false">Cancel</button>
+        <button type="submit" class="btn-primary">Create cron job</button>
+      </div>
+    </form>
+  </div>
+  </template>
+
+  <div class="console-card">
+    <table class="console-table">
+      <thead>
+        <tr>
+          <th>name</th>
+          <th>schedule</th>
+          <th>script</th>
+          <th>queue</th>
+          <th class="text-right">actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% for cron in @cron_jobs %>
+          <% cron_id = cron["_key"] ?? (cron["id"] ?? "") %>
+          <tr>
+            <td class="font-mono text-zinc-200"><%= cron["name"] ?? "" %></td>
+            <td class="font-mono text-xs text-teal-400"><%= cron["cron_expression"] ?? "" %></td>
+            <td class="font-mono text-xs text-zinc-300"><%= cron["script_path"] ?? (cron["script"] ?? "") %></td>
+            <td class="font-mono text-xs text-zinc-500"><%= cron["queue"] ?? "default" %></td>
+            <td class="w-px whitespace-nowrap text-right">
+              <button class="btn-danger"
+                      hx-delete="<%= attr(db_cron_path(@db)) %>/<%= url(cron_id) %>"
+                      hx-target="#content" hx-swap="innerHTML show:top"
+                      hx-confirm="Delete cron job '<%= attr(cron["name"] ?? "") %>'?">
+                Delete
+              </button>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <% if @cron_jobs.length() == 0 %>
+      <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no cron jobs in <%= @db %></p>
+    <% end %>
+  </div>
+</div>

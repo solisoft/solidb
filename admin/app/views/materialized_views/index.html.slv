@@ -1,0 +1,118 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up" x-data="{ creating: false }"
+     x-on:keydown.escape.window="creating = false"
+     x-effect="document.body.style.overflow = creating ? 'hidden' : ''">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">db / <%= @db %></p>
+      <h2 class="mt-1">Materialized views <span class="font-mono text-sm text-zinc-500">(<%= @views.length() %>)</span></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        a materialized view stores the <em>result</em> of an SDBQL query as a regular collection — reads are instant
+        because nothing is recomputed, but the data goes stale until you refresh it. good for expensive
+        aggregations and reports queried far more often than the source data changes
+      </p>
+    </div>
+    <button class="btn-primary" x-on:click="creating = true">New view</button>
+  </div>
+
+  <%# Teleported to <body>: an ancestor with a retained transform/backdrop-filter
+      acts as containing block for position:fixed and crops the modal to the
+      content area. htmx.process() is required because htmx never initializes
+      <template> content. %>
+  <template x-teleport="body">
+  <div x-show="creating" x-cloak x-init="htmx.process($el)"
+       class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto overscroll-contain p-4 pt-16">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="creating = false"></div>
+    <form class="relative w-full max-w-2xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+          x-on:submit="creating = false"
+          hx-post="<%= attr(db_views_path(@db)) %>" hx-target="#content" hx-swap="innerHTML show:top">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+        <p class="console-label">new materialized view · <span class="text-teal-500"><%= @db %></span></p>
+        <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                x-on:click="creating = false">×</button>
+      </div>
+
+      <div class="space-y-4 px-5 py-4">
+        <div>
+          <label class="console-label" for="view-name">name</label>
+          <input id="view-name" name="name" type="text" placeholder="active_users"
+                 class="console-input mt-1 font-mono" autocomplete="off">
+          <p class="mt-1 font-mono text-[10px] text-zinc-600">becomes a queryable collection with the same name</p>
+        </div>
+        <div>
+          <label class="console-label" for="view-query">query <span class="text-zinc-700">— the AS part, plain SDBQL</span></label>
+          <textarea id="view-query" name="query" rows="6" spellcheck="false"
+                    placeholder="FOR u IN users&#10;  FILTER u.active == true&#10;  RETURN { name: u.name, email: u.email }"
+                    class="console-input mt-1 resize-y font-mono text-[13px] leading-relaxed"></textarea>
+          <p class="mt-1 font-mono text-[10px] text-zinc-600">
+            runs once at creation to populate the view — data goes stale until you refresh it
+          </p>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+        <button type="button" class="btn-ghost" x-on:click="creating = false">Cancel</button>
+        <button type="submit" class="btn-primary">Create view</button>
+      </div>
+    </form>
+  </div>
+  </template>
+
+  <div class="console-card">
+    <table class="console-table">
+      <thead>
+        <tr>
+          <th>name</th>
+          <th>definition</th>
+          <th class="text-right">documents</th>
+          <th>created</th>
+          <th class="text-right">actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% for view in @views %>
+          <% view_name = view["name"] ?? "" %>
+          <% query_text = view["query_text"] ?? "" %>
+          <% created_at = str(view["created_at"] ?? "") %>
+          <tr>
+            <td class="font-mono text-zinc-200">
+              <a href="<%= attr(db_collection_docs_path(@db, view_name)) %>" class="hover:text-teal-300 transition-colors">
+                <%= view_name %>
+              </a>
+            </td>
+            <td class="max-w-md">
+              <% if query_text.blank? %>
+                <span class="font-mono text-xs text-zinc-700">created outside the admin — definition stored as AST</span>
+              <% else %>
+                <code class="block truncate font-mono text-xs text-zinc-400" title="<%= attr(query_text) %>"><%= query_text %></code>
+              <% end %>
+            </td>
+            <td class="text-right font-mono text-zinc-300"><%= @view_counts[view_name] ?? 0 %></td>
+            <td class="font-mono text-xs text-zinc-500"><%= created_at.substring(0, 19).replace("T", " ") %></td>
+            <td class="w-px whitespace-nowrap text-right">
+              <div class="flex justify-end gap-2">
+                <a href="<%= attr(db_collection_docs_path(@db, view_name)) %>" class="btn-ghost">Browse</a>
+                <button class="btn-ghost"
+                        hx-put="<%= attr(db_views_path(@db)) %>/<%= url(view_name) %>/refresh"
+                        hx-target="#content" hx-swap="innerHTML show:top"
+                        hx-confirm="Refresh '<%= attr(view_name) %>'? The view is truncated and repopulated from its query.">
+                  Refresh
+                </button>
+                <button class="btn-danger"
+                        hx-delete="<%= attr(db_views_path(@db)) %>/<%= url(view_name) %>"
+                        hx-target="#content" hx-swap="innerHTML show:top"
+                        hx-confirm="Drop materialized view '<%= attr(view_name) %>' and its data?">
+                  Drop
+                </button>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <% if @views.length() == 0 %>
+      <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no materialized views in <%= @db %></p>
+    <% end %>
+  </div>
+</div>

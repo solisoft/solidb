@@ -1,0 +1,58 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label"><a href="<%= roles_path() %>" class="hover:text-teal-400 transition-colors">Roles</a> /</p>
+      <h2 class="mt-1 font-mono"><%= @role["name"] ?? "" %>
+        <% if @role["is_builtin"] %>
+          <span class="console-label ml-2 border border-zinc-800 px-1.5 py-0.5 align-middle">builtin</span>
+        <% end %>
+      </h2>
+      <p class="mt-1 text-sm text-zinc-400"><%= @role["description"] ?? "" %></p>
+    </div>
+  </div>
+
+  <% if @role["is_builtin"] %>
+    <div class="console-card px-4 py-3">
+      <p class="font-mono text-xs text-zinc-500">builtin roles are read-only</p>
+    </div>
+  <% else %>
+    <form class="console-card space-y-3 p-4"
+          hx-put="<%= attr(role_path(@role["name"] ?? "")) %>" hx-target="#content" hx-swap="innerHTML show:top">
+      <div>
+        <label class="console-label" for="role-desc">description</label>
+        <input id="role-desc" name="description" type="text" value="<%= attr(@role["description"] ?? "") %>"
+               class="console-input mt-1">
+      </div>
+      <div>
+        <label class="console-label" for="role-perms">permissions (json array)</label>
+        <textarea id="role-perms" name="permissions" rows="6" spellcheck="false"
+                  class="console-input mt-1 resize-y font-mono text-[13px]"><%= json_compact(@role["permissions"] ?? []) %></textarea>
+      </div>
+      <div class="flex justify-end">
+        <button type="submit" class="btn-primary">Save role</button>
+      </div>
+    </form>
+  <% end %>
+
+  <div class="console-card">
+    <div class="border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">permissions</p>
+    </div>
+    <table class="console-table">
+      <thead>
+        <tr><th>action</th><th>scope</th><th>database</th></tr>
+      </thead>
+      <tbody>
+        <% for perm in (@role["permissions"] ?? []) %>
+          <tr>
+            <td class="font-mono text-teal-300"><%= perm["action"] ?? "" %></td>
+            <td class="font-mono text-zinc-300"><%= perm["scope"] ?? "" %></td>
+            <td class="font-mono text-zinc-500"><%= (perm["database"] ?? "").blank? ? "*" : perm["database"] %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</div>

@@ -1,0 +1,218 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<%# showSystem persists across visits (per-browser, like the query history). %>
+<div class="space-y-5 animate-fade-up"
+     x-data="{ q: '', creating: false, showSystem: localStorage.getItem('solidb-admin:show-system') === '1' }"
+     x-on:keydown.escape.window="creating = false"
+     x-effect="document.body.style.overflow = creating ? 'hidden' : '';
+               localStorage.setItem('solidb-admin:show-system', showSystem ? '1' : '0')">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">db / <%= @db %></p>
+      <h2 class="mt-1">Collections <span class="font-mono text-sm text-zinc-500">(<%= @collections.length() %>)</span></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        document stores inside this database — open one to browse documents, manage indexes or inspect stats
+      </p>
+    </div>
+    <button class="btn-primary" x-on:click="creating = true">New collection</button>
+  </div>
+
+  <%# Teleported to <body>: an ancestor with a retained transform/backdrop-filter
+      acts as containing block for position:fixed and crops the modal to the
+      content area. htmx.process() is required because htmx never initializes
+      <template> content. %>
+  <template x-teleport="body">
+  <div x-show="creating" x-cloak x-init="htmx.process($el)"
+       class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto overscroll-contain p-4 pt-16">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="creating = false"></div>
+    <form class="relative w-full max-w-2xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+          x-data="{ collType: 'document' }" x-on:submit="creating = false"
+          hx-post="<%= attr(db_collections_path(@db)) %>" hx-target="#content" hx-swap="innerHTML show:top">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+        <p class="console-label">new collection · <span class="text-teal-500"><%= @db %></span></p>
+        <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                x-on:click="creating = false">×</button>
+      </div>
+
+      <div class="space-y-4 px-5 py-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label class="console-label" for="coll-name">name</label>
+            <input id="coll-name" name="name" type="text" placeholder="my_collection"
+                   class="console-input mt-1 font-mono" autocomplete="off">
+          </div>
+          <div>
+            <label class="console-label" for="coll-type">type</label>
+            <select id="coll-type" name="type" x-model="collType" class="console-input mt-1">
+              <option value="document">document</option>
+              <option value="blob">blob</option>
+              <option value="edge">edge</option>
+              <option value="timeseries">timeseries</option>
+              <option value="columnar">columnar</option>
+            </select>
+          </div>
+        </div>
+
+        <div x-show="collType == 'columnar'" x-cloak class="border-t border-zinc-800 pt-3">
+          <p class="console-label mb-2">columns <span class="text-zinc-700">— required for columnar</span></p>
+          <textarea name="columns" rows="4" spellcheck="false"
+                    placeholder='[{ "name": "host", "type": "string" }, { "name": "value", "type": "float" }]'
+                    class="console-input resize-y font-mono text-[13px]"></textarea>
+          <p class="mt-1 font-mono text-[10px] text-zinc-600">types: int / float / string / bool / timestamp / json</p>
+        </div>
+
+        <div x-show="collType != 'columnar'" class="border-t border-zinc-800 pt-3">
+          <p class="console-label mb-2">sharding <span class="text-zinc-700">— optional</span></p>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label class="console-label" for="coll-shards">num shards</label>
+              <input id="coll-shards" name="num_shards" type="number" min="1" placeholder="4"
+                     class="console-input mt-1 font-mono">
+            </div>
+            <div>
+              <label class="console-label" for="coll-shard-key">shard key</label>
+              <input id="coll-shard-key" name="shard_key" type="text" placeholder="_key"
+                     class="console-input mt-1 font-mono">
+            </div>
+            <div>
+              <label class="console-label" for="coll-repl">replication factor</label>
+              <input id="coll-repl" name="replication_factor" type="number" min="1" placeholder="1"
+                     class="console-input mt-1 font-mono">
+            </div>
+          </div>
+        </div>
+
+        <div x-show="collType != 'columnar'" class="border-t border-zinc-800 pt-3">
+          <p class="console-label mb-2">validation <span class="text-zinc-700">— optional</span></p>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label class="console-label" for="coll-validation">mode</label>
+              <select id="coll-validation" name="validation_mode" class="console-input mt-1">
+                <option value="">none</option>
+                <option value="strict">strict</option>
+                <option value="moderate">moderate</option>
+              </select>
+            </div>
+            <div class="sm:col-span-3">
+              <label class="console-label" for="coll-schema">json schema</label>
+              <textarea id="coll-schema" name="schema" rows="4" spellcheck="false"
+                        placeholder='{ "type": "object", "properties": { "email": { "type": "string" } } }'
+                        class="console-input mt-1 resize-y font-mono text-[13px]"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+        <button type="button" class="btn-ghost" x-on:click="creating = false">Cancel</button>
+        <button type="submit" class="btn-primary">Create collection</button>
+      </div>
+    </form>
+  </div>
+  </template>
+
+  <div class="console-card">
+    <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">collection</p>
+      <div class="flex items-center gap-2">
+        <button type="button" class="btn-ghost py-1 text-xs"
+                x-on:click="showSystem = !showSystem"
+                x-text="showSystem ? 'Hide system' : 'Show system'"></button>
+        <input type="text" x-model="q" placeholder="filter…"
+               class="console-input w-48 py-1 font-mono text-xs">
+      </div>
+    </div>
+    <table class="console-table">
+      <thead>
+        <tr>
+          <th>name</th>
+          <th>type</th>
+          <th class="text-right">documents</th>
+          <th class="text-right">disk</th>
+          <th class="text-right">actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% for coll in @collections %>
+          <% coll_name = coll["name"] ?? "" %>
+          <% is_blob = (coll["type"] ?? "document") == "blob" %>
+          <%# System collections (_triggers, _env, ...) are hidden until the
+              "Show system" toggle flips showSystem. %>
+          <tr data-name="<%= attr(coll_name) %>"
+              x-show="$el.dataset.name.includes(q.toLowerCase()) && (showSystem || !$el.dataset.name.startsWith('_'))"
+              <% if is_blob %>data-drop-url="<%= attr(db_collection_docs_path(@db, coll_name)) %>/upload"<% end %>>
+            <td class="font-mono text-zinc-200">
+              <a href="<%= attr(db_collection_docs_path(@db, coll_name)) %>" class="hover:text-teal-300 transition-colors">
+                <%= coll_name %>
+              </a>
+              <% if is_blob %>
+                <span class="console-label ml-2 border border-dashed border-zinc-800 px-1.5 py-0.5 text-zinc-600">⇣ drop files</span>
+              <% end %>
+            </td>
+            <% coll_type = coll["type"] ?? "document" %>
+            <%# Literal class strings so the Tailwind scanner compiles them:
+                border-amber-800 text-amber-400 border-violet-800 text-violet-400
+                border-sky-800 text-sky-400 border-rose-800 text-rose-400
+                border-zinc-700 text-zinc-400 %>
+            <% type_badges = {
+              "blob": "border-amber-800 text-amber-400",
+              "edge": "border-violet-800 text-violet-400",
+              "columnar": "border-sky-800 text-sky-400",
+              "timeseries": "border-rose-800 text-rose-400",
+              "document": "border-zinc-700 text-zinc-400"
+            } %>
+            <td><span class="console-label border px-1.5 py-0.5 <%= type_badges[coll_type] ?? type_badges["document"] %>"><%= coll_type %></span></td>
+            <td class="text-right font-mono text-zinc-300"><%= coll["count"] ?? 0 %></td>
+            <td class="text-right font-mono text-zinc-500">
+              <%= fmt_bytes(((coll["stats"] ?? {})["disk_usage"] ?? {})["live_data_size"]) %>
+            </td>
+            <td class="w-px whitespace-nowrap text-right">
+              <div class="flex justify-end gap-2">
+                <% if coll_type == "columnar" %>
+                  <button class="btn-danger"
+                          hx-delete="<%= attr(db_collections_path(@db)) %>/<%= url(coll_name) %>?ctype=columnar"
+                          hx-target="#content" hx-swap="innerHTML show:top"
+                          hx-confirm="Drop columnar collection '<%= attr(coll_name) %>' and ALL its data?">
+                    Drop
+                  </button>
+                <% else %>
+                  <a href="<%= attr(db_collection_docs_path(@db, coll_name)) %>" class="btn-ghost">Browse</a>
+                  <button class="btn-ghost"
+                          hx-get="<%= attr(db_collections_path(@db)) %>/<%= url(coll_name) %>/stats"
+                          hx-target="#detail-row-<%= attr(coll_name) %>" hx-swap="innerHTML">
+                    Stats
+                  </button>
+                  <button class="btn-ghost"
+                          hx-get="<%= attr(db_collections_path(@db)) %>/<%= url(coll_name) %>/indexes"
+                          hx-target="#detail-row-<%= attr(coll_name) %>" hx-swap="innerHTML">
+                    Indexes
+                  </button>
+                  <button class="btn-ghost"
+                          hx-put="<%= attr(db_collections_path(@db)) %>/<%= url(coll_name) %>/truncate"
+                          hx-target="#content" hx-swap="innerHTML show:top"
+                          hx-confirm="Truncate '<%= attr(coll_name) %>'? All documents will be removed.">
+                    Truncate
+                  </button>
+                  <button class="btn-danger"
+                          hx-delete="<%= attr(db_collections_path(@db)) %>/<%= url(coll_name) %>"
+                          hx-target="#content" hx-swap="innerHTML show:top"
+                          hx-confirm="Drop collection '<%= attr(coll_name) %>' and ALL its data?">
+                    Drop
+                  </button>
+                <% end %>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="5" class="!border-0 !p-0">
+              <div id="detail-row-<%= attr(coll_name) %>"></div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <% if @collections.length() == 0 %>
+      <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no collections in <%= @db %></p>
+    <% end %>
+  </div>
+</div>

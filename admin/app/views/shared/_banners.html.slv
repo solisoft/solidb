@@ -1,0 +1,29 @@
+<%# Status banners rendered at the top of every section view (inside #content
+    so HTMX fragment swaps refresh them too). Locals: solidb_down,
+    flash_error, flash_notice. %>
+<% if solidb_down %>
+  <div class="mb-4 flex items-center gap-3 border border-amber-800 bg-amber-950/40 px-4 py-3 animate-fade-up">
+    <span class="relative flex h-2 w-2">
+      <span class="absolute inline-flex h-full w-full animate-pulse-dot bg-amber-400"></span>
+    </span>
+    <div>
+      <p class="font-mono text-xs uppercase tracking-[0.2em] text-amber-400">SoliDB unreachable</p>
+      <p class="mt-0.5 text-sm text-amber-200/80">
+        Could not reach the server at the configured SOLIDB_HOST. Check that SoliDB is running
+        and the SOLIDB_* variables in .env are correct.
+      </p>
+    </div>
+  </div>
+<% end %>
+<% if !flash_error.blank? && !solidb_down %>
+  <div class="mb-4 flex items-center gap-3 border border-red-900 bg-red-950/40 px-4 py-2.5 animate-fade-up">
+    <span class="font-mono text-[10px] uppercase tracking-[0.2em] text-red-400">error</span>
+    <span class="text-sm text-red-200"><%= flash_error %></span>
+  </div>
+<% end %>
+<% if !flash_notice.blank? %>
+  <div class="mb-4 flex items-center gap-3 border border-teal-900 bg-teal-950/40 px-4 py-2.5 animate-fade-up">
+    <span class="font-mono text-[10px] uppercase tracking-[0.2em] text-teal-400">ok</span>
+    <span class="text-sm text-teal-100"><%= flash_notice %></span>
+  </div>
+<% end %>

@@ -1,0 +1,208 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up" x-data="{ creating: false }"
+     x-on:keydown.escape.window="creating = false"
+     x-effect="document.body.style.overflow = creating ? 'hidden' : ''">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">db / <%= @db %></p>
+      <h2 class="mt-1">Triggers <span class="font-mono text-sm text-zinc-500">(<%= @triggers.length() %>)</span></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        a trigger fires a Lua script or webhook whenever documents change (insert / update / delete) in a collection —
+        delivery runs through a job queue with retries
+      </p>
+    </div>
+    <button class="btn-primary" x-on:click="creating = true">New trigger</button>
+  </div>
+
+  <%# Teleported to <body>: an ancestor with a retained transform/backdrop-filter
+      acts as containing block for position:fixed and crops the modal to the
+      content area. htmx.process() is required because htmx never initializes
+      <template> content. %>
+  <template x-teleport="body">
+  <div x-show="creating" x-cloak x-init="htmx.process($el)"
+       class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto overscroll-contain p-4 pt-16">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="creating = false"></div>
+    <%# Submit swaps #content out and destroys this Alpine scope -- close first
+        so the body scroll-lock is released before the swap. %>
+    <form class="relative w-full max-w-2xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+          x-data="{ targetType: 'script' }" x-on:submit="creating = false"
+          hx-post="<%= attr(db_triggers_path(@db)) %>" hx-target="#content" hx-swap="innerHTML show:top">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+        <p class="console-label">new trigger · <span class="text-teal-500"><%= @db %></span></p>
+        <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                x-on:click="creating = false">×</button>
+      </div>
+
+      <div class="space-y-4 px-5 py-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label class="console-label" for="trigger-name">name</label>
+            <input id="trigger-name" name="trigger_name" type="text" placeholder="audit_orders"
+                   class="console-input mt-1 font-mono" autocomplete="off">
+          </div>
+          <div>
+            <label class="console-label" for="trigger-collection">collection</label>
+            <select id="trigger-collection" name="collection" class="console-input mt-1 font-mono">
+              <option value="">— pick a collection —</option>
+              <% for collection_name in @collection_names %>
+                <option value="<%= attr(collection_name) %>"><%= collection_name %></option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <p class="console-label mb-2">events</p>
+          <div class="flex gap-5">
+            <label class="flex items-center gap-2 font-mono text-sm text-zinc-300">
+              <input type="checkbox" name="event_insert" value="1" checked class="accent-teal-500"> insert
+            </label>
+            <label class="flex items-center gap-2 font-mono text-sm text-zinc-300">
+              <input type="checkbox" name="event_update" value="1" class="accent-teal-500"> update
+            </label>
+            <label class="flex items-center gap-2 font-mono text-sm text-zinc-300">
+              <input type="checkbox" name="event_delete" value="1" class="accent-teal-500"> delete
+            </label>
+          </div>
+        </div>
+
+        <div class="border-t border-zinc-800 pt-3">
+          <p class="console-label mb-2">target</p>
+          <div class="mb-3 flex gap-5">
+            <label class="flex items-center gap-2 font-mono text-sm text-zinc-300">
+              <input type="radio" value="script" x-model="targetType" class="accent-teal-500"> Lua script
+            </label>
+            <label class="flex items-center gap-2 font-mono text-sm text-zinc-300">
+              <input type="radio" value="webhook" x-model="targetType" class="accent-teal-500"> webhook
+            </label>
+          </div>
+          <%# SoliDB rejects a trigger with BOTH script and webhook set, and
+              x-show only hides fields -- disable the inactive target so its
+              value never submits. %>
+          <div x-show="targetType === 'script'">
+            <label class="console-label" for="trigger-script">script</label>
+            <input id="trigger-script" name="script_path" type="text" placeholder="on_order_change"
+                   x-bind:disabled="targetType !== 'script'"
+                   class="console-input mt-1 font-mono" autocomplete="off">
+            <p class="mt-1 font-mono text-[10px] text-zinc-600">name of a Lua script in this database</p>
+          </div>
+          <div x-show="targetType === 'webhook'" x-cloak class="space-y-3">
+            <div>
+              <label class="console-label" for="trigger-webhook-url">webhook url</label>
+              <input id="trigger-webhook-url" name="webhook_url" type="text" placeholder="https://example.com/hooks/orders"
+                     x-bind:disabled="targetType !== 'webhook'"
+                     class="console-input mt-1 font-mono" autocomplete="off">
+            </div>
+            <div>
+              <label class="console-label" for="trigger-webhook-secret">webhook secret <span class="text-zinc-700">— optional</span></label>
+              <input id="trigger-webhook-secret" name="webhook_secret" type="text"
+                     x-bind:disabled="targetType !== 'webhook'"
+                     class="console-input mt-1 font-mono" autocomplete="off">
+            </div>
+          </div>
+        </div>
+
+        <div class="border-t border-zinc-800 pt-3">
+          <div>
+            <label class="console-label" for="trigger-filter">filter <span class="text-zinc-700">— optional SDBQL condition on doc</span></label>
+            <input id="trigger-filter" name="filter" type="text" placeholder="doc.status == 'paid'"
+                   class="console-input mt-1 font-mono" autocomplete="off">
+          </div>
+          <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label class="console-label" for="trigger-queue">queue</label>
+              <input id="trigger-queue" name="queue" type="text" placeholder="default"
+                     class="console-input mt-1 font-mono" autocomplete="off">
+            </div>
+            <div>
+              <label class="console-label" for="trigger-priority">priority</label>
+              <input id="trigger-priority" name="priority" type="number" placeholder="0"
+                     class="console-input mt-1 font-mono">
+            </div>
+            <div>
+              <label class="console-label" for="trigger-retries">max retries</label>
+              <input id="trigger-retries" name="max_retries" type="number" placeholder="5"
+                     class="console-input mt-1 font-mono">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+        <button type="button" class="btn-ghost" x-on:click="creating = false">Cancel</button>
+        <button type="submit" class="btn-primary">Create trigger</button>
+      </div>
+    </form>
+  </div>
+  </template>
+
+  <div class="console-card">
+    <table class="console-table">
+      <thead>
+        <tr>
+          <th>name</th>
+          <th>collection</th>
+          <th>events</th>
+          <th>target</th>
+          <th>queue</th>
+          <th>status</th>
+          <th class="text-right">actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% for trigger in @triggers %>
+          <% trigger_id = trigger["_key"] ?? (trigger["id"] ?? "") %>
+          <% trigger_enabled = trigger["enabled"] ?? false %>
+          <% webhook_url = trigger["webhook_url"] ?? "" %>
+          <% filter_expr = trigger["filter"] ?? "" %>
+          <tr>
+            <td class="font-mono text-zinc-200">
+              <%= trigger["name"] ?? "" %>
+              <% if !filter_expr.blank? %>
+                <span class="ml-1 font-mono text-[10px] text-amber-500" title="filter: <%= attr(filter_expr) %>">⚲ filtered</span>
+              <% end %>
+            </td>
+            <td class="font-mono text-xs text-zinc-300"><%= trigger["collection"] ?? "" %></td>
+            <td class="font-mono text-xs text-teal-400"><%= (trigger["events"] ?? []).join(", ") %></td>
+            <td class="font-mono text-xs text-zinc-300">
+              <% if webhook_url.blank? %>
+                <span class="text-zinc-600">script:</span> <%= trigger["script_path"] ?? "" %>
+              <% else %>
+                <span class="break-all">
+                  <span class="text-zinc-600">webhook:</span> <%= webhook_url %>
+                </span>
+              <% end %>
+            </td>
+            <td class="font-mono text-xs text-zinc-500"><%= trigger["queue"] ?? "default" %></td>
+            <td>
+              <% if trigger_enabled %>
+                <span class="font-mono text-[10px] uppercase tracking-widest text-teal-400">enabled</span>
+              <% else %>
+                <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-600">disabled</span>
+              <% end %>
+            </td>
+            <td class="w-px whitespace-nowrap text-right">
+              <div class="flex justify-end gap-2">
+                <button class="btn-ghost"
+                        hx-post="<%= attr(db_triggers_path(@db)) %>/<%= url(trigger_id) %>/toggle"
+                        hx-target="#content" hx-swap="innerHTML show:top">
+                  <%= trigger_enabled ? "Disable" : "Enable" %>
+                </button>
+                <button class="btn-danger"
+                        hx-delete="<%= attr(db_triggers_path(@db)) %>/<%= url(trigger_id) %>"
+                        hx-target="#content" hx-swap="innerHTML show:top"
+                        hx-confirm="Delete trigger '<%= attr(trigger["name"] ?? "") %>'?">
+                  Delete
+                </button>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <% if @triggers.length() == 0 %>
+      <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no triggers in <%= @db %></p>
+    <% end %>
+  </div>
+</div>

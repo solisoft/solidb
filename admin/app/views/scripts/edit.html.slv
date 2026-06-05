@@ -1,0 +1,15 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up">
+  <div>
+    <p class="console-label"><a href="<%= attr(db_scripts_path(@db)) %>" class="hover:text-teal-400 transition-colors">Scripts</a> / <%= @db %></p>
+    <h2 class="mt-1 font-mono"><%= @script["name"] ?? "" %></h2>
+  </div>
+  <% script_id = @script["id"] ?? (@script["_key"] ?? "") %>
+  <%- partial("scripts/form", {
+        "form_script": @script,
+        "form_url": db_scripts_path(@db) + "/" + script_id,
+        "form_method": "put",
+        "form_cancel_url": db_scripts_path(@db)
+      }) %>
+</div>

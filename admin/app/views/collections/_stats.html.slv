@@ -1,0 +1,45 @@
+<% if !stats_error.blank? %>
+  <div class="border-b border-zinc-800 bg-red-950/30 px-4 py-2 font-mono text-xs text-red-300">
+    <%= stats_error %>
+  </div>
+<% else %>
+  <% disk = stats["disk_usage"] ?? {} %>
+  <% sharding = stats["sharding"] ?? {} %>
+  <div class="border-b border-zinc-800 bg-zinc-950/80 px-6 py-4 animate-fade-up">
+    <p class="console-label mb-3">stats / <span class="text-teal-500"><%= collection_name %></span></p>
+    <dl class="grid grid-cols-2 gap-x-8 gap-y-2 sm:grid-cols-4">
+      <div>
+        <dt class="console-label">documents</dt>
+        <dd class="mt-0.5 font-mono text-sm text-zinc-200"><%= stats["document_count"] ?? 0 %></dd>
+      </div>
+      <div>
+        <dt class="console-label">total size</dt>
+        <dd class="mt-0.5 font-mono text-sm text-zinc-200"><%= fmt_bytes(disk["total_size"]) %></dd>
+      </div>
+      <div>
+        <dt class="console-label">live data</dt>
+        <dd class="mt-0.5 font-mono text-sm text-zinc-200"><%= fmt_bytes(disk["live_data_size"]) %></dd>
+      </div>
+      <div>
+        <dt class="console-label">sst files</dt>
+        <dd class="mt-0.5 font-mono text-sm text-zinc-200"><%= disk["num_sst_files"] ?? 0 %></dd>
+      </div>
+      <div>
+        <dt class="console-label">sharding</dt>
+        <dd class="mt-0.5 font-mono text-sm text-zinc-200"><%= sharding["enabled"] ? "enabled" : "off" %></dd>
+      </div>
+      <div>
+        <dt class="console-label">shards</dt>
+        <dd class="mt-0.5 font-mono text-sm text-zinc-200"><%= sharding["num_shards"] ?? 0 %></dd>
+      </div>
+      <div>
+        <dt class="console-label">memtable</dt>
+        <dd class="mt-0.5 font-mono text-sm text-zinc-200"><%= fmt_bytes(disk["memtable_size"]) %></dd>
+      </div>
+      <div>
+        <dt class="console-label">local docs</dt>
+        <dd class="mt-0.5 font-mono text-sm text-zinc-200"><%= stats["local_document_count"] ?? 0 %></dd>
+      </div>
+    </dl>
+  </div>
+<% end %>

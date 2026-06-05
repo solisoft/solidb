@@ -1,0 +1,106 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up" x-data="{ enqueueing: false }"
+     x-on:keydown.escape.window="enqueueing = false"
+     x-effect="document.body.style.overflow = enqueueing ? 'hidden' : ''">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">db / <%= @db %></p>
+      <h2 class="mt-1">Queues <span class="font-mono text-sm text-zinc-500">(<%= @queues.length() %>)</span></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        background job queues — a job runs a Lua script or webhook asynchronously, with priorities and retries.
+        cron jobs and triggers deliver through these queues too
+      </p>
+    </div>
+    <button class="btn-primary" x-on:click="enqueueing = true">Enqueue job</button>
+  </div>
+
+  <%# Teleported to <body>: an ancestor with a retained transform/backdrop-filter
+      acts as containing block for position:fixed and crops the modal to the
+      content area. htmx.process() is required because htmx never initializes
+      <template> content. %>
+  <template x-teleport="body">
+  <div x-show="enqueueing" x-cloak x-init="htmx.process($el)"
+       class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto overscroll-contain p-4 pt-16">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="enqueueing = false"></div>
+    <%# Submit swaps #content out and destroys this Alpine scope -- close first
+        so the body scroll-lock is released before the swap. %>
+    <form class="relative w-full max-w-xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+          x-on:submit="enqueueing = false"
+          hx-post="<%= attr(db_queues_path(@db)) %>/enqueue"
+          hx-target="#content" hx-swap="innerHTML show:top">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+        <p class="console-label">enqueue job · <span class="text-teal-500"><%= @db %></span></p>
+        <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                x-on:click="enqueueing = false">×</button>
+      </div>
+      <div class="space-y-3 px-5 py-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label class="console-label" for="job-queue">queue</label>
+            <input id="job-queue" name="queue" type="text" value="default" class="console-input mt-1 font-mono">
+          </div>
+          <div>
+            <label class="console-label" for="job-script">script</label>
+            <input id="job-script" name="script" type="text" placeholder="process_user"
+                   class="console-input mt-1 font-mono">
+          </div>
+          <div>
+            <label class="console-label" for="job-priority">priority</label>
+            <input id="job-priority" name="priority" type="number" placeholder="0"
+                   class="console-input mt-1 font-mono">
+          </div>
+          <div>
+            <label class="console-label" for="job-retries">max retries</label>
+            <input id="job-retries" name="max_retries" type="number" placeholder="3"
+                   class="console-input mt-1 font-mono">
+          </div>
+          <div class="sm:col-span-2">
+            <label class="console-label" for="job-run-at">run at <span class="text-zinc-700">— optional, RFC3339</span></label>
+            <input id="job-run-at" name="run_at" type="text" placeholder="2026-06-05T02:00:00Z"
+                   class="console-input mt-1 font-mono">
+          </div>
+        </div>
+        <div>
+          <label class="console-label" for="job-params">params (json)</label>
+          <textarea id="job-params" name="job_params" rows="3" spellcheck="false"
+                    placeholder='{ "user_id": 123 }'
+                    class="console-input mt-1 resize-y font-mono text-[13px]"></textarea>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+        <button type="button" class="btn-ghost" x-on:click="enqueueing = false">Cancel</button>
+        <button type="submit" class="btn-primary">Enqueue</button>
+      </div>
+    </form>
+  </div>
+  </template>
+
+  <div class="grid grid-cols-1 gap-4">
+    <% for queue in @queues %>
+      <% queue_name = queue["name"] ?? "" %>
+      <div class="console-card">
+        <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <p class="font-mono text-sm text-zinc-200"><%= queue_name %></p>
+          <div class="flex flex-wrap items-center gap-x-5 gap-y-1">
+            <p class="console-label"><span class="font-mono text-sm text-amber-400"><%= queue["pending"] ?? 0 %></span> pending</p>
+            <p class="console-label"><span class="font-mono text-sm text-teal-400"><%= queue["running"] ?? 0 %></span> running</p>
+            <p class="console-label"><span class="font-mono text-sm text-zinc-300"><%= queue["completed"] ?? 0 %></span> completed</p>
+            <p class="console-label"><span class="font-mono text-sm text-red-400"><%= queue["failed"] ?? 0 %></span> failed</p>
+            <button class="btn-ghost"
+                    hx-get="<%= attr(db_queues_path(@db)) %>/<%= url(queue_name) %>/jobs"
+                    hx-target="#jobs-<%= attr(queue_name) %>" hx-swap="innerHTML">
+              Jobs
+            </button>
+          </div>
+        </div>
+        <div id="jobs-<%= attr(queue_name) %>"></div>
+      </div>
+    <% end %>
+    <% if @queues.length() == 0 %>
+      <div class="console-card">
+        <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no queues in <%= @db %></p>
+      </div>
+    <% end %>
+  </div>
+</div>
