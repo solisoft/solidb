@@ -8,12 +8,13 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use super::collection::Collection;
 use super::database::Database;
+use super::pending_drops::PendingCfDrops;
 use crate::cluster::ClusterConfig;
 use crate::error::{DbError, DbResult};
 use crate::transaction::manager::TransactionManager;
 
 /// Metadata column family name
-const META_CF: &str = "_meta";
+pub(crate) const META_CF: &str = "_meta";
 
 /// Shared block cache used by all column families (and all DB instances).
 /// Without an explicit table factory, each CF gets its own private default
@@ -75,6 +76,8 @@ pub struct StorageEngine {
     cluster_config: Option<ClusterConfig>,
     /// Transaction manager (optionally initialized, uses RwLock for interior mutability)
     transaction_manager: RwLock<Option<Arc<TransactionManager>>>,
+    /// Column families scheduled for background drop (see `pending_drops`)
+    pending_cf_drops: Arc<PendingCfDrops>,
 }
 
 impl Clone for StorageEngine {
@@ -89,6 +92,7 @@ impl Clone for StorageEngine {
             transaction_manager: RwLock::new(
                 self.transaction_manager.read().ok().and_then(|t| t.clone()),
             ),
+            pending_cf_drops: self.pending_cf_drops.clone(),
         }
     }
 }
@@ -188,6 +192,7 @@ impl StorageEngine {
             databases: Arc::new(DashMap::new()),
             cluster_config: None,
             transaction_manager: RwLock::new(None),
+            pending_cf_drops: PendingCfDrops::new(),
         })
     }
 
@@ -246,6 +251,16 @@ impl StorageEngine {
         // Recalculate document counts for all collections
         // This ensures counts are accurate after crashes or unclean shutdowns
         self.recalculate_all_counts();
+
+        // Resume column-family drops interrupted by a previous shutdown/crash
+        let resumed = self.pending_cf_drops.resume_from_meta(&self.db);
+        if !resumed.is_empty() {
+            tracing::info!(
+                "Resuming {} interrupted column-family drops in the background",
+                resumed.len()
+            );
+            PendingCfDrops::spawn_dropper(self.db.clone(), self.pending_cf_drops.clone(), resumed);
+        }
 
         Ok(())
     }
@@ -327,7 +342,14 @@ impl StorageEngine {
         Ok(())
     }
 
-    /// Delete a database and all its collections
+    /// Delete a database and all its collections.
+    ///
+    /// The database is removed from metadata immediately; the per-collection
+    /// column-family drops run on a background thread. Each `drop_cf`
+    /// rewrites + fsyncs the entire OPTIONS file (one section per CF), so on
+    /// an instance with many CFs dropping a database inline would block the
+    /// request for `collections × hundreds-of-ms` (measured: 18s for 25
+    /// collections at ~1800 CFs). See `storage::pending_drops`.
     pub fn delete_database(&self, name: &str) -> DbResult<()> {
         // Prevent deletion of _system database
         if name == "_system" {
@@ -336,24 +358,34 @@ impl StorageEngine {
             ));
         }
 
-        // Get database to ensure it exists
-        let database = self.get_database(name)?;
-
-        // Delete all collections in the database
-        let collections = database.list_collections();
-        for collection_name in collections {
-            database.delete_collection(&collection_name)?;
+        // Ensure the database exists
+        if !self.list_databases().contains(&name.to_string()) {
+            return Err(DbError::CollectionNotFound(format!(
+                "Database '{}' not found",
+                name
+            )));
         }
 
-        // Remove database metadata (RocksDB is thread-safe for writes)
-        let meta_cf = self.db.cf_handle(META_CF).expect("META_CF should exist");
+        // Every CF belonging to this database (document + columnar), minus
+        // any already scheduled by a previous drop of the same name
+        let prefix = format!("{}:", name);
+        let doomed: Vec<String> = self
+            .db
+            .cf_names()
+            .into_iter()
+            .filter(|cf| cf.starts_with(&prefix) && !self.pending_cf_drops.contains(cf))
+            .collect();
+
+        // Atomically delete the `db:{name}` metadata key and persist a
+        // `pending_drop:` marker per CF, then drop the CFs in the background.
+        // Markers survive a crash and are resumed by `initialize`.
         let db_key = format!("db:{}", name);
-        self.db
-            .delete_cf(&meta_cf, db_key.as_bytes())
-            .map_err(|e| DbError::InternalError(format!("Failed to delete database: {}", e)))?;
+        self.pending_cf_drops.schedule(&self.db, &db_key, &doomed)?;
 
         // Remove from cache
         self.databases.remove(name);
+
+        PendingCfDrops::spawn_dropper(self.db.clone(), self.pending_cf_drops.clone(), doomed);
 
         Ok(())
     }
@@ -395,7 +427,11 @@ impl StorageEngine {
         }
 
         // Create and cache the database
-        let database = Database::new(name.to_string(), self.db.clone());
+        let database = Database::new(
+            name.to_string(),
+            self.db.clone(),
+            self.pending_cf_drops.clone(),
+        );
         self.databases.insert(name.to_string(), database.clone());
 
         Ok(database)

@@ -16,6 +16,7 @@ pub mod engine;
 pub mod geo;
 pub mod http_client;
 pub mod index;
+pub mod pending_drops;
 pub mod query_cache;
 pub mod schema;
 pub mod serializer;

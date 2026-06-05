@@ -146,6 +146,49 @@ fn test_delete_database_with_collections() {
     assert!(engine.get_database("dbwithcol").is_err());
 }
 
+#[test]
+fn test_recreate_database_after_delete() {
+    let (engine, _tmp) = create_test_engine();
+
+    engine.create_database("recreated".to_string()).unwrap();
+    let db = engine.get_database("recreated").unwrap();
+    db.create_collection("users".to_string(), None).unwrap();
+    let users = db.get_collection("users").unwrap();
+    users
+        .insert(json!({"_key": "alice", "name": "Alice"}))
+        .unwrap();
+
+    // Drop and immediately recreate the same database + collection. The old
+    // CF may still be awaiting its background drop — the recreate must claim
+    // it and come back empty, not fail with "already exists" or show stale
+    // documents.
+    engine.delete_database("recreated").unwrap();
+    assert!(engine.get_database("recreated").is_err());
+
+    engine.create_database("recreated".to_string()).unwrap();
+    let db = engine.get_database("recreated").unwrap();
+
+    // The doomed collection must not be visible on the fresh database
+    assert!(!db.list_collections().contains(&"users".to_string()));
+    assert!(db.get_collection("users").is_err());
+
+    db.create_collection("users".to_string(), None).unwrap();
+    let users = db.get_collection("users").unwrap();
+    assert_eq!(users.count(), 0, "reclaimed collection must be empty");
+}
+
+#[test]
+fn test_delete_database_twice_returns_not_found() {
+    let (engine, _tmp) = create_test_engine();
+
+    engine.create_database("twice".to_string()).unwrap();
+    engine.delete_database("twice").unwrap();
+
+    // The logical delete is immediate even though CF drops run in the
+    // background — a second delete must already see the database as gone.
+    assert!(engine.delete_database("twice").is_err());
+}
+
 // ============================================================================
 // Collection Operations Tests
 // ============================================================================
