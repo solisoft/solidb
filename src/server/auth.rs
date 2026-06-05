@@ -29,8 +29,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
 
-/// Rate limiting configuration
-const MAX_LOGIN_ATTEMPTS: usize = 20;
+/// Rate limiting configuration. The per-IP login budget defaults to 20/min;
+/// SOLIDB_MAX_LOGIN_ATTEMPTS overrides it (a dev box running several apps
+/// and test suites against one instance burns 20 in a single suite run).
+static MAX_LOGIN_ATTEMPTS: Lazy<usize> = Lazy::new(|| {
+    std::env::var("SOLIDB_MAX_LOGIN_ATTEMPTS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(20)
+});
 const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 
 /// Basic auth cache TTL in seconds (avoid repeated Argon2 verification)
@@ -98,7 +105,7 @@ pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
     attempts.retain(|t| now.duration_since(*t) < window);
 
     // Check if rate limited
-    if attempts.len() >= MAX_LOGIN_ATTEMPTS {
+    if attempts.len() >= *MAX_LOGIN_ATTEMPTS {
         return Err(crate::error::DbError::BadRequest(format!(
             "Too many login attempts. Please wait {} seconds before trying again.",
             RATE_LIMIT_WINDOW_SECS

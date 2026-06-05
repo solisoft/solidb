@@ -77,7 +77,13 @@ impl Collection {
         if count > 0 {
             db.write(&batch)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
-            self.chunk_count.fetch_sub(count, Ordering::Relaxed);
+            // Saturating: a counter that didn't observe the matching inserts
+            // must floor at 0, not wrap to u64::MAX.
+            let _ =
+                self.chunk_count
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                        Some(current.saturating_sub(count))
+                    });
             self.count_dirty.store(true, Ordering::Relaxed);
         }
 

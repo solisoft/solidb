@@ -13,9 +13,12 @@ impl Collection {
     pub fn get(&self, key: &str) -> DbResult<Document> {
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
 
         let bytes = db
             .get_cf(&cf, Self::doc_key(key))
@@ -88,9 +91,12 @@ impl Collection {
         // Build WriteBatch with document and all index entries atomically
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
         let mut batch = WriteBatch::default();
 
         // Add document to batch
@@ -186,9 +192,12 @@ impl Collection {
         // Build WriteBatch with document and all index updates atomically
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
         let mut batch = WriteBatch::default();
 
         // Update document in batch
@@ -290,9 +299,12 @@ impl Collection {
         // Build WriteBatch with document and all index updates atomically
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
         let mut batch = WriteBatch::default();
 
         // Update document in batch
@@ -376,9 +388,12 @@ impl Collection {
         // Build WriteBatch with document deletion and all index removals atomically
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
         let mut batch = WriteBatch::default();
 
         // Delete document from batch
@@ -456,9 +471,12 @@ impl Collection {
 
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
 
         let mut batch = WriteBatch::default();
         let mut insert_count = 0;
@@ -529,9 +547,12 @@ impl Collection {
 
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
 
         let mut batch = WriteBatch::default();
         let mut deleted_count = 0;
@@ -602,8 +623,16 @@ impl Collection {
         db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch delete: {}", e)))?;
 
-        // Update count
-        self.doc_count.fetch_sub(deleted_count, Ordering::Relaxed);
+        // Update count. Saturating: several Collection instances can exist
+        // for the same CF (engine cache, Database cache, fresh handles), each
+        // with its own counter — a plain fetch_sub on an instance that didn't
+        // see the inserts wraps to u64::MAX and the UI shows
+        // 18446744073709551615 documents.
+        let _ = self
+            .doc_count
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                Some(current.saturating_sub(deleted_count))
+            });
         self.count_dirty.store(true, Ordering::Relaxed);
 
         // Send Change Events
@@ -634,9 +663,12 @@ impl Collection {
 
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
 
         let mut batch = WriteBatch::default();
         let mut updated_docs = Vec::new();
@@ -773,9 +805,12 @@ impl Collection {
         let schema_validator = self.get_cached_schema_validator()?;
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
 
         let mut batch = WriteBatch::default();
         let mut inserted_docs = Vec::with_capacity(documents.len());
@@ -912,9 +947,12 @@ impl Collection {
     pub fn scan(&self, limit: Option<usize>) -> Vec<Document> {
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = match db.cf_handle(&self.name) {
+            Some(cf) => cf,
+            // CF dropped mid-operation (concurrent database delete): an
+            // empty scan is the graceful answer.
+            None => return Vec::new(),
+        };
         let prefix = DOC_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(&cf, prefix);
 
@@ -949,9 +987,12 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = match db.cf_handle(&self.name) {
+            Some(cf) => cf,
+            // CF dropped mid-operation (concurrent database delete): an
+            // empty scan is the graceful answer.
+            None => return Vec::new(),
+        };
         let prefix = DOC_PREFIX.as_bytes();
 
         // Scale readahead to limit: small reads get minimal readahead
@@ -1053,9 +1094,15 @@ impl Collection {
         self.count_dirty.store(true, Ordering::Relaxed);
     }
 
-    /// Decrement document count (called on delete) - atomic, no disk I/O
+    /// Decrement document count (called on delete) - atomic, no disk I/O.
+    /// Saturating: a counter that didn't observe the matching insert (another
+    /// Collection instance did) must floor at 0, not wrap to u64::MAX.
     pub(crate) fn decrement_count(&self) {
-        self.doc_count.fetch_sub(1, Ordering::Relaxed);
+        let _ = self
+            .doc_count
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                Some(current.saturating_sub(1))
+            });
         self.count_dirty.store(true, Ordering::Relaxed);
     }
 
@@ -1080,9 +1127,12 @@ impl Collection {
         // Collect keys to delete
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
         let prefix = DOC_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(&cf, prefix);
 
