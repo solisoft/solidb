@@ -1,19 +1,60 @@
 use dashmap::DashMap;
-use rust_rocksdb::{
-    BlockBasedOptions, Cache, ColumnFamilyDescriptor, DBCompressionType, Options, DB,
-};
+use rust_rocksdb::{BlockBasedOptions, Cache, ColumnFamilyDescriptor, DBCompressionType, Options};
+
+use super::RocksDb as DB;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use super::collection::Collection;
 use super::database::Database;
+use super::pending_drops::PendingCfDrops;
 use crate::cluster::ClusterConfig;
 use crate::error::{DbError, DbResult};
 use crate::transaction::manager::TransactionManager;
 
 /// Metadata column family name
-const META_CF: &str = "_meta";
+pub(crate) const META_CF: &str = "_meta";
+
+/// Shared block cache used by all column families (and all DB instances).
+/// Without an explicit table factory, each CF gets its own private default
+/// cache and no bloom filter — with thousands of CFs that wastes memory and
+/// bypasses the cache/bloom tuning entirely.
+fn shared_block_cache() -> &'static Cache {
+    static CACHE: OnceLock<Cache> = OnceLock::new();
+    CACHE.get_or_init(|| Cache::new_lru_cache(512 * 1024 * 1024))
+}
+
+/// Create optimized column family options
+/// Used for ALL column families — including those created via `Database` —
+/// to ensure consistent compression, caching, and performance settings
+pub(crate) fn tuned_cf_options() -> Options {
+    let mut opts = Options::default();
+
+    // Enable LZ4 compression for this column family
+    opts.set_compression_type(DBCompressionType::Lz4);
+
+    // Level compaction is the default and works well for most workloads
+    // Optimize for SSD storage with fast sequential I/O
+    opts.set_target_file_size_base(64 * 1024 * 1024); // 64MB base file size
+    opts.set_target_file_size_multiplier(2);
+
+    // Write buffer settings
+    opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB memtable
+    opts.set_max_write_buffer_number(3);
+    opts.set_min_write_buffer_number_to_merge(1);
+
+    // Optimize for SSD storage - parallel compactions
+    opts.set_max_subcompactions(4);
+
+    // Shared block cache + bloom filter for faster point lookups
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(shared_block_cache());
+    block_opts.set_bloom_filter(10.0, false);
+    opts.set_block_based_table_factory(&block_opts);
+
+    opts
+}
 
 /// The main storage engine backed by RocksDB
 ///
@@ -35,6 +76,8 @@ pub struct StorageEngine {
     cluster_config: Option<ClusterConfig>,
     /// Transaction manager (optionally initialized, uses RwLock for interior mutability)
     transaction_manager: RwLock<Option<Arc<TransactionManager>>>,
+    /// Column families scheduled for background drop (see `pending_drops`)
+    pending_cf_drops: Arc<PendingCfDrops>,
 }
 
 impl Clone for StorageEngine {
@@ -49,6 +92,7 @@ impl Clone for StorageEngine {
             transaction_manager: RwLock::new(
                 self.transaction_manager.read().ok().and_then(|t| t.clone()),
             ),
+            pending_cf_drops: self.pending_cf_drops.clone(),
         }
     }
 }
@@ -62,30 +106,6 @@ impl std::fmt::Debug for StorageEngine {
 }
 
 impl StorageEngine {
-    /// Create optimized column family options
-    /// Used for all column families to ensure consistent compression and performance settings
-    fn create_cf_options() -> Options {
-        let mut opts = Options::default();
-
-        // Enable LZ4 compression for this column family
-        opts.set_compression_type(DBCompressionType::Lz4);
-
-        // Level compaction is the default and works well for most workloads
-        // Optimize for SSD storage with fast sequential I/O
-        opts.set_target_file_size_base(64 * 1024 * 1024); // 64MB base file size
-        opts.set_target_file_size_multiplier(2);
-
-        // Write buffer settings
-        opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB memtable
-        opts.set_max_write_buffer_number(3);
-        opts.set_min_write_buffer_number_to_merge(1);
-
-        // Optimize for SSD storage - parallel compactions
-        opts.set_max_subcompactions(4);
-
-        opts
-    }
-
     /// Create a new storage engine
     pub fn new<P: AsRef<Path>>(data_dir: P) -> DbResult<Self> {
         let path = data_dir.as_ref().to_path_buf();
@@ -100,11 +120,10 @@ impl StorageEngine {
         opts.set_compression_type(DBCompressionType::Lz4);
         opts.set_compression_options(-14, -1, 0, 0);
 
-        // Block cache - use 512MB or 30% of available memory
+        // Block cache - shared 512MB cache across all CFs and DB instances
         // Improves read performance by caching frequently accessed blocks
-        let cache = Cache::new_lru_cache(512 * 1024 * 1024);
         let mut block_opts = BlockBasedOptions::default();
-        block_opts.set_block_cache(&cache);
+        block_opts.set_block_cache(shared_block_cache());
         // Enable bloom filter for faster point lookups
         block_opts.set_bloom_filter(10.0, false);
         opts.set_block_based_table_factory(&block_opts);
@@ -158,7 +177,7 @@ impl StorageEngine {
         // All column families inherit compression and performance settings
         let cf_descriptors: Vec<ColumnFamilyDescriptor> = cf_names
             .iter()
-            .map(|name| ColumnFamilyDescriptor::new(name, Self::create_cf_options()))
+            .map(|name| ColumnFamilyDescriptor::new(name, tuned_cf_options()))
             .collect();
 
         // Open database with column families
@@ -173,6 +192,7 @@ impl StorageEngine {
             databases: Arc::new(DashMap::new()),
             cluster_config: None,
             transaction_manager: RwLock::new(None),
+            pending_cf_drops: PendingCfDrops::new(),
         })
     }
 
@@ -231,6 +251,16 @@ impl StorageEngine {
         // Recalculate document counts for all collections
         // This ensures counts are accurate after crashes or unclean shutdowns
         self.recalculate_all_counts();
+
+        // Resume column-family drops interrupted by a previous shutdown/crash
+        let resumed = self.pending_cf_drops.resume_from_meta(&self.db);
+        if !resumed.is_empty() {
+            tracing::info!(
+                "Resuming {} interrupted column-family drops in the background",
+                resumed.len()
+            );
+            PendingCfDrops::spawn_dropper(self.db.clone(), self.pending_cf_drops.clone(), resumed);
+        }
 
         Ok(())
     }
@@ -306,13 +336,20 @@ impl StorageEngine {
         let meta_cf = self.db.cf_handle(META_CF).expect("META_CF should exist");
         let db_key = format!("db:{}", name);
         self.db
-            .put_cf(meta_cf, db_key.as_bytes(), b"1")
+            .put_cf(&meta_cf, db_key.as_bytes(), b"1")
             .map_err(|e| DbError::InternalError(format!("Failed to create database: {}", e)))?;
 
         Ok(())
     }
 
-    /// Delete a database and all its collections
+    /// Delete a database and all its collections.
+    ///
+    /// The database is removed from metadata immediately; the per-collection
+    /// column-family drops run on a background thread. Each `drop_cf`
+    /// rewrites + fsyncs the entire OPTIONS file (one section per CF), so on
+    /// an instance with many CFs dropping a database inline would block the
+    /// request for `collections × hundreds-of-ms` (measured: 18s for 25
+    /// collections at ~1800 CFs). See `storage::pending_drops`.
     pub fn delete_database(&self, name: &str) -> DbResult<()> {
         // Prevent deletion of _system database
         if name == "_system" {
@@ -321,24 +358,34 @@ impl StorageEngine {
             ));
         }
 
-        // Get database to ensure it exists
-        let database = self.get_database(name)?;
-
-        // Delete all collections in the database
-        let collections = database.list_collections();
-        for collection_name in collections {
-            database.delete_collection(&collection_name)?;
+        // Ensure the database exists
+        if !self.list_databases().contains(&name.to_string()) {
+            return Err(DbError::CollectionNotFound(format!(
+                "Database '{}' not found",
+                name
+            )));
         }
 
-        // Remove database metadata (RocksDB is thread-safe for writes)
-        let meta_cf = self.db.cf_handle(META_CF).expect("META_CF should exist");
+        // Every CF belonging to this database (document + columnar), minus
+        // any already scheduled by a previous drop of the same name
+        let prefix = format!("{}:", name);
+        let doomed: Vec<String> = self
+            .db
+            .cf_names()
+            .into_iter()
+            .filter(|cf| cf.starts_with(&prefix) && !self.pending_cf_drops.contains(cf))
+            .collect();
+
+        // Atomically delete the `db:{name}` metadata key and persist a
+        // `pending_drop:` marker per CF, then drop the CFs in the background.
+        // Markers survive a crash and are resumed by `initialize`.
         let db_key = format!("db:{}", name);
-        self.db
-            .delete_cf(meta_cf, db_key.as_bytes())
-            .map_err(|e| DbError::InternalError(format!("Failed to delete database: {}", e)))?;
+        self.pending_cf_drops.schedule(&self.db, &db_key, &doomed)?;
 
         // Remove from cache
         self.databases.remove(name);
+
+        PendingCfDrops::spawn_dropper(self.db.clone(), self.pending_cf_drops.clone(), doomed);
 
         Ok(())
     }
@@ -352,7 +399,7 @@ impl StorageEngine {
         };
 
         let prefix = b"db:";
-        let iter = self.db.prefix_iterator_cf(meta_cf, prefix);
+        let iter = self.db.prefix_iterator_cf(&meta_cf, prefix);
 
         iter.filter_map(|result| {
             result.ok().and_then(|(key, _)| {
@@ -380,7 +427,11 @@ impl StorageEngine {
         }
 
         // Create and cache the database
-        let database = Database::new(name.to_string(), self.db.clone());
+        let database = Database::new(
+            name.to_string(),
+            self.db.clone(),
+            self.pending_cf_drops.clone(),
+        );
         self.databases.insert(name.to_string(), database.clone());
 
         Ok(database)
@@ -394,7 +445,7 @@ impl StorageEngine {
         let type_ = collection_type.unwrap_or_else(|| "document".to_string());
 
         // Create the column family - requires exclusive lock
-        let opts = Self::create_cf_options();
+        let opts = tuned_cf_options();
         {
             let _cf_guard = self.cf_lock.write().unwrap();
 
@@ -404,20 +455,16 @@ impl StorageEngine {
                 return Err(DbError::CollectionAlreadyExists(name));
             }
 
-            // Safety: We use cf_lock to ensure exclusive access for CF operations
-            // This is a safe workaround for RocksDB's create_cf requiring &mut self
-            let db_ptr = Arc::as_ptr(&self.db) as *mut DB;
-            unsafe {
-                (*db_ptr).create_cf(&name, &opts).map_err(|e| {
-                    DbError::InternalError(format!("Failed to create collection: {}", e))
-                })?;
-            }
+            // MultiThreaded mode: create_cf takes &self and synchronizes internally
+            self.db.create_cf(&name, &opts).map_err(|e| {
+                DbError::InternalError(format!("Failed to create collection: {}", e))
+            })?;
         }
 
         // Persist collection type (lock-free, thread-safe)
         if let Some(cf) = self.db.cf_handle(&name) {
             self.db
-                .put_cf(cf, "_stats:type".as_bytes(), type_.as_bytes())
+                .put_cf(&cf, "_stats:type".as_bytes(), type_.as_bytes())
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to set collection type: {}", e))
                 })?;
@@ -465,26 +512,20 @@ impl StorageEngine {
             return Err(DbError::CollectionNotFound(name.to_string()));
         }
 
-        // Drop the column family - requires exclusive lock
-        {
-            let _cf_guard = self.cf_lock.write().unwrap();
-            // Safety: We use cf_lock to ensure exclusive access for CF operations
-            let db_ptr = Arc::as_ptr(&self.db) as *mut DB;
-            unsafe {
-                (*db_ptr).drop_cf(name).map_err(|e| {
-                    DbError::InternalError(format!("Failed to delete collection: {}", e))
-                })?;
-            }
-        }
+        // MultiThreaded mode: drop_cf takes &self and synchronizes internally
+        self.db
+            .drop_cf(name)
+            .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {}", e)))?;
 
         Ok(())
     }
 
     /// List all collection names
     pub fn list_collections(&self) -> Vec<String> {
-        // Get all column family names, excluding internal ones
-        DB::list_cf(&Options::default(), &self.path)
-            .unwrap_or_default()
+        // Use the live in-memory CF list — DB::list_cf would re-read the
+        // MANIFEST from disk on every call
+        self.db
+            .cf_names()
             .into_iter()
             .filter(|name| name != "default" && name != META_CF)
             .collect()

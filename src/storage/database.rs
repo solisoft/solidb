@@ -1,9 +1,12 @@
+use super::RocksDb as DB;
 use dashmap::DashMap;
-use rust_rocksdb::{Options, DB};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use super::collection::Collection;
 use super::columnar::*;
+use super::engine::tuned_cf_options;
+use super::pending_drops::{Claim, PendingCfDrops};
 use crate::error::{DbError, DbResult};
 
 use serde_json::Value;
@@ -19,6 +22,8 @@ pub struct Database {
     cf_lock: Arc<RwLock<()>>,
     /// Cached collection handles (DashMap for lock-free concurrent access)
     collections: Arc<DashMap<String, Collection>>,
+    /// Column families scheduled for background drop — treated as deleted
+    pending_cf_drops: Arc<PendingCfDrops>,
 }
 
 impl std::fmt::Debug for Database {
@@ -31,12 +36,13 @@ impl std::fmt::Debug for Database {
 
 impl Database {
     /// Create a new database handle
-    pub fn new(name: String, db: Arc<DB>) -> Self {
+    pub fn new(name: String, db: Arc<DB>, pending_cf_drops: Arc<PendingCfDrops>) -> Self {
         Self {
             name,
             db,
             cf_lock: Arc::new(RwLock::new(())),
             collections: Arc::new(DashMap::new()),
+            pending_cf_drops,
         }
     }
 
@@ -57,26 +63,51 @@ impl Database {
         {
             let _cf_guard = self.cf_lock.write().unwrap();
 
-            // Check inside lock to avoid TOCTOU race when multiple threads
-            // try to create the same collection concurrently
-            if self.db.cf_handle(&cf_name).is_some() {
-                return Err(DbError::CollectionAlreadyExists(collection_name));
+            // The CF may be a leftover from a dropped database still awaiting
+            // its background drop — claim it and recreate fresh instead of
+            // failing with "already exists".
+            match self.pending_cf_drops.claim_for_recreate(&cf_name) {
+                Claim::Claimed => {
+                    if self.db.cf_handle(&cf_name).is_some() {
+                        if let Err(e) = self.db.drop_cf(&cf_name) {
+                            self.pending_cf_drops.release_claim(&cf_name);
+                            return Err(DbError::InternalError(format!(
+                                "Failed to reclaim pending collection: {}",
+                                e
+                            )));
+                        }
+                    }
+                    self.pending_cf_drops.complete(&self.db, &cf_name);
+                }
+                Claim::InProgress => {
+                    // The background dropper is dropping this exact CF right
+                    // now — wait for it to finish, then create fresh below.
+                    self.pending_cf_drops
+                        .wait_until_dropped(&cf_name, Duration::from_secs(30))?;
+                }
+                Claim::NotPending => {
+                    // Check inside lock to avoid TOCTOU race when multiple
+                    // threads try to create the same collection concurrently
+                    if self.db.cf_handle(&cf_name).is_some() {
+                        return Err(DbError::CollectionAlreadyExists(collection_name));
+                    }
+                }
             }
 
-            let db_ptr = Arc::as_ptr(&self.db) as *mut DB;
-            unsafe {
-                (*db_ptr)
-                    .create_cf(&cf_name, &Options::default())
-                    .map_err(|e| {
-                        DbError::InternalError(format!("Failed to create collection: {}", e))
-                    })?;
-            }
+            // Use the shared tuned options so collections get LZ4 compression,
+            // the shared block cache, and bloom filters (Options::default()
+            // would silently skip all of that)
+            self.db
+                .create_cf(&cf_name, &tuned_cf_options())
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to create collection: {}", e))
+                })?;
         }
 
         // Persist collection type (lock-free, thread-safe)
         if let Some(cf) = self.db.cf_handle(&cf_name) {
             self.db
-                .put_cf(cf, "_stats:type".as_bytes(), type_.as_bytes())
+                .put_cf(&cf, "_stats:type".as_bytes(), type_.as_bytes())
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to set collection type: {}", e))
                 })?;
@@ -89,21 +120,20 @@ impl Database {
     pub fn delete_collection(&self, collection_name: &str) -> DbResult<()> {
         let cf_name = self.collection_cf_name(collection_name);
 
+        // Already scheduled for background drop — logically gone
+        if self.pending_cf_drops.contains(&cf_name) {
+            return Err(DbError::CollectionNotFound(collection_name.to_string()));
+        }
+
         // Check if collection exists (lock-free read)
         if self.db.cf_handle(&cf_name).is_none() {
             return Err(DbError::CollectionNotFound(collection_name.to_string()));
         }
 
-        // Drop column family - requires exclusive lock
-        {
-            let _cf_guard = self.cf_lock.write().unwrap();
-            let db_ptr = Arc::as_ptr(&self.db) as *mut DB;
-            unsafe {
-                (*db_ptr).drop_cf(&cf_name).map_err(|e| {
-                    DbError::InternalError(format!("Failed to delete collection: {}", e))
-                })?;
-            }
-        }
+        // MultiThreaded mode: drop_cf takes &self and synchronizes internally
+        self.db
+            .drop_cf(&cf_name)
+            .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {}", e)))?;
 
         // Remove from cache
         self.collections.remove(collection_name);
@@ -115,13 +145,16 @@ impl Database {
     pub fn list_collections(&self) -> Vec<String> {
         let prefix = format!("{}:", self.name);
 
-        // Iterate through all column families (lock-free, DB::list_cf is thread-safe)
+        // Use the live in-memory CF list — DB::list_cf would re-read the
+        // MANIFEST from disk on every call
         let mut collections = Vec::new();
-        for cf_name in DB::list_cf(&Options::default(), self.db.path()).unwrap_or_default() {
-            if cf_name.starts_with(&prefix) {
-                if let Some(name) = cf_name.strip_prefix(&prefix) {
-                    collections.push(name.to_string());
-                }
+        for cf_name in self.db.cf_names() {
+            // Skip CFs awaiting their background drop — logically deleted
+            if self.pending_cf_drops.contains(&cf_name) {
+                continue;
+            }
+            if let Some(name) = cf_name.strip_prefix(&prefix) {
+                collections.push(name.to_string());
             }
         }
         collections
@@ -135,6 +168,11 @@ impl Database {
         }
 
         let cf_name = self.collection_cf_name(collection_name);
+
+        // A CF awaiting its background drop is logically deleted
+        if self.pending_cf_drops.contains(&cf_name) {
+            return Err(DbError::CollectionNotFound(collection_name.to_string()));
+        }
 
         // Check if collection exists (lock-free read)
         if self.db.cf_handle(&cf_name).is_none() {
@@ -342,7 +380,7 @@ impl Database {
     /// Check if a collection is a columnar collection
     pub fn is_columnar_collection(&self, collection_name: &str) -> bool {
         let cf_name = self.columnar_cf_name(collection_name);
-        self.db.cf_handle(&cf_name).is_some()
+        self.db.cf_handle(&cf_name).is_some() && !self.pending_cf_drops.contains(&cf_name)
     }
 
     /// List all columnar collections in this database
@@ -375,7 +413,7 @@ mod tests {
     #[test]
     fn test_create_collection() {
         let (db, _dir) = create_test_db();
-        let database = Database::new("testdb".to_string(), db);
+        let database = Database::new("testdb".to_string(), db, PendingCfDrops::new());
 
         assert!(database
             .create_collection("users".to_string(), None)
@@ -386,7 +424,7 @@ mod tests {
     #[test]
     fn test_create_duplicate_collection() {
         let (db, _dir) = create_test_db();
-        let database = Database::new("testdb".to_string(), db);
+        let database = Database::new("testdb".to_string(), db, PendingCfDrops::new());
 
         database
             .create_collection("users".to_string(), None)
@@ -399,7 +437,7 @@ mod tests {
     #[test]
     fn test_delete_collection() {
         let (db, _dir) = create_test_db();
-        let database = Database::new("testdb".to_string(), db);
+        let database = Database::new("testdb".to_string(), db, PendingCfDrops::new());
 
         database
             .create_collection("users".to_string(), None)
@@ -411,7 +449,7 @@ mod tests {
     #[test]
     fn test_list_collections() {
         let (db, _dir) = create_test_db();
-        let database = Database::new("testdb".to_string(), db);
+        let database = Database::new("testdb".to_string(), db, PendingCfDrops::new());
 
         database
             .create_collection("users".to_string(), None)

@@ -1,0 +1,178 @@
+<%# x-effect locks body scroll while the modal is open so wheel events over
+    the fixed overlay don't scroll the page behind it. %>
+<div class="border-b border-zinc-800 bg-zinc-950/80 px-6 py-4 animate-fade-up"
+     x-data="{ creatingIndex: false }" x-on:keydown.escape.window="creatingIndex = false"
+     x-effect="document.body.style.overflow = creatingIndex ? 'hidden' : ''">
+  <div class="flex items-center justify-between">
+    <p class="console-label">indexes / <span class="text-teal-500"><%= collection_name %></span>
+      <span class="text-zinc-700">(<%= indexes.length() %>)</span></p>
+    <div class="flex gap-2">
+      <button class="btn-ghost"
+              hx-put="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/indexes/rebuild"
+              hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML"
+              hx-confirm="Rebuild all indexes of '<%= attr(collection_name) %>'? This can be slow on large collections.">
+        Rebuild all
+      </button>
+      <button class="btn-primary" x-on:click="creatingIndex = true">New index</button>
+    </div>
+  </div>
+
+  <% if !indexes_error.blank? %>
+    <p class="mt-2 font-mono text-xs text-red-300"><%= indexes_error %></p>
+  <% end %>
+  <% if !indexes_notice.blank? %>
+    <p class="mt-2 font-mono text-xs text-teal-400"><%= indexes_notice %></p>
+  <% end %>
+
+  <% if indexes.length() > 0 %>
+    <table class="console-table mt-3">
+      <thead>
+        <tr>
+          <th>name</th>
+          <th>type</th>
+          <th>fields</th>
+          <th>unique</th>
+          <th>info</th>
+          <th class="text-right">actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% for idx in indexes %>
+          <% idx_name = idx["name"] ?? "" %>
+          <%# Literal class strings so the Tailwind scanner compiles them:
+              border-amber-800 text-amber-400 border-violet-800 text-violet-400
+              border-sky-800 text-sky-400 border-rose-800 text-rose-400
+              border-zinc-700 text-zinc-400 %>
+          <% idx_badges = {
+            "hash": "border-sky-800 text-sky-400",
+            "fulltext": "border-violet-800 text-violet-400",
+            "geo": "border-amber-800 text-amber-400",
+            "ttl": "border-rose-800 text-rose-400",
+            "persistent": "border-zinc-700 text-zinc-400"
+          } %>
+          <tr>
+            <td class="font-mono text-zinc-200"><%= idx_name %></td>
+            <td><span class="console-label border px-1.5 py-0.5 <%= idx_badges[idx["type"]] ?? idx_badges["persistent"] %>"><%= idx["type"] %></span></td>
+            <td class="font-mono text-zinc-300"><%= (idx["fields"] ?? []).join(", ") %></td>
+            <td class="font-mono text-zinc-500"><%= idx["unique"] ? "yes" : "—" %></td>
+            <td class="font-mono text-zinc-500"><%= idx["detail"] %></td>
+            <td class="w-px whitespace-nowrap text-right">
+              <button class="btn-danger"
+                      hx-delete="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/indexes/<%= url(idx_name) %>"
+                      hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML"
+                      hx-confirm="Drop index '<%= attr(idx_name) %>'?">
+                Drop
+              </button>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% else %>
+    <p class="mt-3 font-mono text-xs text-zinc-600">no indexes on <%= collection_name %></p>
+  <% end %>
+
+  <%# Teleported to <body>: the panel lives inside a table row, and an
+      ancestor there acts as containing block for position:fixed, cropping
+      the modal to the panel area. htmx.process() is required because htmx
+      never initializes <template> content — without it the form's hx-post
+      would be inert. %>
+  <template x-teleport="body">
+  <div x-show="creatingIndex" x-cloak x-init="htmx.process($el)"
+       class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto overscroll-contain p-4 pt-16">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="creatingIndex = false"></div>
+    <%# Submit always swaps the whole panel out (success or error), which
+        destroys this Alpine scope — close first so the x-effect body-scroll
+        lock is released before the swap. %>
+    <form class="relative w-full max-w-3xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+          x-data="{ idxType: 'persistent' }" x-on:submit="creatingIndex = false"
+          hx-post="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/indexes"
+          hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+        <p class="console-label">new index · <span class="text-teal-500"><%= collection_name %></span></p>
+        <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                x-on:click="creatingIndex = false">×</button>
+      </div>
+
+      <div class="space-y-4 px-5 py-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label class="console-label" for="idx-name-<%= attr(collection_name) %>">name</label>
+            <input id="idx-name-<%= attr(collection_name) %>" name="index_name" type="text"
+                   placeholder="by_email" class="console-input mt-1 font-mono" autocomplete="off">
+          </div>
+          <div>
+            <label class="console-label" for="idx-fields-<%= attr(collection_name) %>">
+              <span x-text="['geo', 'ttl'].includes(idxType) ? 'field' : 'fields (comma-separated)'"></span>
+            </label>
+            <input id="idx-fields-<%= attr(collection_name) %>" name="fields" type="text"
+                   x-bind:placeholder="['geo', 'ttl'].includes(idxType) ? 'location' : 'email, name'"
+                   class="console-input mt-1 font-mono" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="border-t border-zinc-800 pt-3">
+          <p class="console-label mb-2">type</p>
+          <%# One radio card per index type, each with a plain-language
+              explanation of what it does and when to pick it. %>
+          <% index_types = [
+            { "value": "persistent", "tag": "good default",
+              "desc": "Sorted B-tree. Supports equality and range filters (>, <, >=, <=) and speeds up SORT. One or several fields; can enforce uniqueness. Pick this unless you have a specific reason not to." },
+            { "value": "hash", "tag": "exact match",
+              "desc": "Hash table for exact-equality (==) lookups — the fastest point queries. No range filters, no sorting. One or several fields; can enforce uniqueness." },
+            { "value": "fulltext", "tag": "text search",
+              "desc": "N-gram text index with fuzzy matching, for searching inside string fields. Not usable for equality or range filters." },
+            { "value": "geo", "tag": "lat / lon",
+              "desc": "Geospatial index on a single field holding coordinates as {lat, lon} or [lat, lon]. Powers near-point and within-radius queries." },
+            { "value": "ttl", "tag": "auto-expire",
+              "desc": "Automatically deletes expired documents. The field must hold a Unix timestamp in seconds; a document expires once the configured number of seconds has passed beyond that value." },
+            { "value": "bloom", "tag": "probabilistic",
+              "desc": "Bloom filter for very fast existence checks: a miss is guaranteed absent, a hit has a small false-positive rate. No ranges, no sorting, no deletions." },
+            { "value": "cuckoo", "tag": "probabilistic",
+              "desc": "Cuckoo filter — like bloom, but also supports deletions. Fast existence checks with a small false-positive rate." }
+          ] %>
+          <div class="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            <% for idx_type in index_types %>
+              <label class="flex cursor-pointer gap-3 border px-3 py-2 transition-colors hover:border-zinc-600"
+                     x-bind:class="idxType == '<%= idx_type["value"] %>' ? 'border-teal-700 bg-teal-950/20' : 'border-zinc-800'">
+                <input type="radio" name="index_type" value="<%= attr(idx_type["value"]) %>"
+                       x-model="idxType" class="mt-1 accent-teal-500">
+                <span>
+                  <span class="font-mono text-sm text-zinc-200"><%= idx_type["value"] %></span>
+                  <span class="console-label ml-2 text-zinc-600"><%= idx_type["tag"] %></span>
+                  <span class="mt-0.5 block text-xs leading-relaxed text-zinc-500"><%= idx_type["desc"] %></span>
+                </span>
+              </label>
+            <% end %>
+          </div>
+          <p class="mt-2 font-mono text-[10px] text-zinc-600">
+            all indexes are sparse: documents whose indexed fields are all null or missing are never indexed
+            (a unique index does not reject documents missing the field)
+          </p>
+        </div>
+
+        <div x-show="['persistent', 'hash'].includes(idxType)" class="border-t border-zinc-800 pt-3">
+          <label class="console-label flex items-center gap-1.5">
+            <input type="checkbox" name="unique" value="true" class="accent-teal-500">
+            unique — reject documents whose indexed value already exists
+          </label>
+        </div>
+
+        <div x-show="idxType == 'ttl'" x-cloak class="border-t border-zinc-800 pt-3">
+          <label class="console-label" for="idx-expire-<%= attr(collection_name) %>">expire after (seconds)</label>
+          <input id="idx-expire-<%= attr(collection_name) %>" name="expire_after_seconds" type="number" min="1"
+                 placeholder="3600" class="console-input mt-1 w-40 font-mono">
+          <p class="mt-1 font-mono text-[10px] text-zinc-600">
+            deleted when: field value (unix seconds) + expire after &lt; now
+          </p>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+        <button type="button" class="btn-ghost" x-on:click="creatingIndex = false">Cancel</button>
+        <button type="submit" class="btn-primary">Create index</button>
+      </div>
+    </form>
+  </div>
+  </template>
+</div>

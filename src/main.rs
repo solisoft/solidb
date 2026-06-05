@@ -535,19 +535,81 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
 
         let local_addr = listener.local_addr()?;
 
-        // Channels for dispatch
-        let (http_tx, http_rx) = mpsc::channel(100);
-        let (sync_tx, sync_rx) = mpsc::channel(100);
+        // Channels for dispatch. Sized to absorb burst traffic between
+        // accept and the protocol worker without back-pressuring the
+        // accept loop. 8192 is enough to hold several seconds of typical
+        // in-flight requests even at 10K req/s. If the receiver is
+        // genuinely saturated, dropping new accepts is preferable to
+        // head-of-line blocking behind an `await` on `send()`.
+        let (http_tx, http_rx) = mpsc::channel(8192);
+        let (sync_tx, sync_rx) = mpsc::channel(8192);
 
         // 1. Spawn HTTP Server
+        //
+        // Driven via hyper_util's auto Builder rather than `axum::serve` so we
+        // can set an HTTP/1 header-read timeout. Without it, a client that
+        // opens a keep-alive connection and then sends partial (or no) request
+        // headers parks a server task indefinitely — the keep-alive analogue of
+        // the unbounded protocol-sniff read bounded above. Graceful shutdown is
+        // preserved via `GracefulShutdown`.
         let channel_listener = ChannelListener::new(http_rx, local_addr);
+        let http_shutdown = shutdown_signal(shutdown_storage);
         tokio::spawn(async move {
-            if let Err(e) = axum::serve(channel_listener, app)
-                .with_graceful_shutdown(shutdown_signal(shutdown_storage))
-                .await
-            {
-                tracing::error!("HTTP server error: {}", e);
+            use axum::serve::Listener;
+            use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
+            use hyper_util::server::conn::auto::Builder as HttpConnBuilder;
+            use hyper_util::server::graceful::GracefulShutdown;
+            use hyper_util::service::TowerToHyperService;
+
+            let mut listener = channel_listener;
+            let graceful = GracefulShutdown::new();
+            tokio::pin!(http_shutdown);
+
+            // Provide `ConnectInfo<SocketAddr>` to handlers (e.g. login rate
+            // limiting keys on the real peer address rather than spoofable
+            // proxy headers).
+            let mut make_service =
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>();
+
+            loop {
+                let (io, addr) = tokio::select! {
+                    conn = listener.accept() => conn,
+                    _ = &mut http_shutdown => {
+                        tracing::info!("HTTP server received shutdown signal, draining connections");
+                        break;
+                    }
+                };
+
+                let mut builder = HttpConnBuilder::new(TokioExecutor::new());
+                // Bound the time a connection may take to send a complete set
+                // of request headers (defends against slow/half-open clients).
+                // `header_read_timeout` requires a registered timer.
+                builder
+                    .http1()
+                    .timer(TokioTimer::new())
+                    .header_read_timeout(Duration::from_secs(30));
+                // Infallible: IntoMakeServiceWithConnectInfo is always ready
+                // and its error type is Infallible.
+                let tower_service = {
+                    use tower::Service;
+                    match make_service.call(addr).await {
+                        Ok(svc) => svc,
+                        Err(never) => match never {},
+                    }
+                };
+                let service = TowerToHyperService::new(tower_service);
+                let conn = builder
+                    .serve_connection_with_upgrades(TokioIo::new(io), service)
+                    .into_owned();
+                let watched = graceful.watch(conn);
+                tokio::spawn(async move {
+                    if let Err(e) = watched.await {
+                        tracing::debug!("HTTP connection error: {}", e);
+                    }
+                });
             }
+
+            graceful.shutdown().await;
         });
 
         // 2. Spawn Sync Worker (background mode)
@@ -611,27 +673,50 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                     let connection_mgr = cluster_manager.clone();
 
                     tokio::spawn(async move {
-                        // Read initial bytes to determine protocol
+                        // Read initial bytes to determine protocol.
+                        //
+                        // Bound this read: a connection that is accepted but
+                        // never sends bytes (half-open keep-alive reuse, a
+                        // dead pooled connection, a port scanner) would
+                        // otherwise park this task forever holding the socket.
+                        // That unbounded wait is a primary source of the
+                        // intermittent "idle pending" stalls seen in prod.
                         let mut buf = vec![0u8; 14];
-                        let n = stream.read(&mut buf).await.unwrap_or(0);
+                        let n = match tokio::time::timeout(
+                            std::time::Duration::from_secs(10),
+                            stream.read(&mut buf),
+                        )
+                        .await
+                        {
+                            Ok(Ok(n)) => n,
+                            Ok(Err(_)) => 0,
+                            Err(_) => {
+                                tracing::warn!(
+                                    layer = "solidb_detect",
+                                    peer = %addr,
+                                    "protocol detection read timed out; dropping connection"
+                                );
+                                return;
+                            }
+                        };
 
                         let peeked_data = buf[..n].to_vec();
 
-                        // Detection logic - check magic headers first
+                        // Detection logic - check magic headers first.
+                        // Dispatch via `dispatch_or_drop` (try_send) so a
+                        // saturated protocol worker doesn't back-pressure the
+                        // accept loop.
                         // Check for Sync Protocol: "solidb-sync-v1"
                         if &peeked_data == b"solidb-sync-v1" {
                             // For sync traffic, pass the raw stream - the magic header has been consumed
                             // and verified, so we don't need to put it back in a PeekedStream
-                            if sync_tx.send((Box::new(stream), addr.to_string())).await.is_err() {
-                                 tracing::error!("Sync worker channel closed");
-                            }
+                            let sync_stream: solidb::sync::transport::SyncStream = Box::new(stream);
+                            dispatch_or_drop(&sync_tx, (sync_stream, addr.to_string()), "sync", &addr);
                         }
                         // Check for Native Driver Protocol: "solidb-drv-v1\0"
                         else if &peeked_data == b"solidb-drv-v1\0" {
                             // For driver traffic, pass the raw stream to the driver handler
-                            if driver_tx.send((stream, addr.to_string())).await.is_err() {
-                                 tracing::error!("Driver handler channel closed");
-                            }
+                            dispatch_or_drop(&driver_tx, (stream, addr.to_string()), "driver", &addr);
                         }
                         // Check for Cluster JSON Messages
                         else if peeked_data.first() == Some(&b'{') {
@@ -652,9 +737,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                         } else {
                             // HTTP traffic - need peeked bytes for HTTP parsing
                             let peeked_stream = PeekedStream::new(stream, peeked_data.clone());
-                            if http_tx.send((peeked_stream, addr)).await.is_err() {
-                                 tracing::error!("HTTP server channel closed");
-                            }
+                            dispatch_or_drop(&http_tx, (peeked_stream, addr), "HTTP", &addr);
                         }
                     });
                 }
@@ -677,12 +760,33 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         tracing::info!("Server listening on {}", addr);
 
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_signal(shutdown_storage))
-            .await?;
+        axum::serve(
+            listener,
+            // Provide `ConnectInfo<SocketAddr>` (login rate limiting keys on
+            // the real peer address).
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal(shutdown_storage))
+        .await?;
     }
 
     Ok(())
+}
+
+/// Hand a freshly accepted connection to a protocol worker without awaiting:
+/// if the dispatch channel is full we drop the connection (the client will
+/// see a closed connection and retry) rather than back-pressure the accept
+/// loop behind an `await` on `send()`.
+fn dispatch_or_drop<T>(tx: &mpsc::Sender<T>, item: T, what: &str, peer: &std::net::SocketAddr) {
+    match tx.try_send(item) {
+        Ok(()) => {}
+        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+            tracing::warn!(peer = %peer, "{} dispatch channel full, dropping connection", what);
+        }
+        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+            tracing::error!("{} dispatch channel closed", what);
+        }
+    }
 }
 
 async fn shutdown_signal(storage: Arc<StorageEngine>) {

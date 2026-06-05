@@ -597,11 +597,25 @@ impl SyncWorker {
                         }
 
                         if !batch_data.is_empty() {
+                            // Replicated writes to _api_keys must also update the
+                            // in-memory auth cache (the HTTP handlers that normally
+                            // maintain it are bypassed on this path).
+                            let api_key_docs: Vec<serde_json::Value> =
+                                if database == "_system" && collection == "_api_keys" {
+                                    batch_data.iter().map(|(_, doc)| doc.clone()).collect()
+                                } else {
+                                    Vec::new()
+                                };
+
                             if let Err(e) = coll.upsert_batch(batch_data) {
                                 warn!(
                                     "apply_batch: upsert failed for {}.{}: {}",
                                     database, collection, e
                                 );
+                            } else {
+                                for doc in &api_key_docs {
+                                    crate::server::auth::note_replicated_api_key_upsert(doc);
+                                }
                             }
                         }
                     }
@@ -624,6 +638,13 @@ impl SyncWorker {
                         }
 
                         if !keys_to_delete.is_empty() {
+                            // Evict replicated _api_keys deletes from the in-memory
+                            // auth cache so revoked keys stop authenticating here.
+                            if database == "_system" && collection == "_api_keys" {
+                                for key in &keys_to_delete {
+                                    crate::server::auth::note_replicated_api_key_delete(key);
+                                }
+                            }
                             let _ = coll.delete_batch(keys_to_delete);
                         }
                     }
@@ -689,6 +710,15 @@ impl SyncWorker {
                         }
 
                         if let Ok(coll) = db.get_collection(&entry.collection) {
+                            // Replicated _api_keys writes must also refresh the
+                            // in-memory auth cache (handlers are bypassed here).
+                            let api_key_doc =
+                                if entry.database == "_system" && entry.collection == "_api_keys" {
+                                    Some(doc.clone())
+                                } else {
+                                    None
+                                };
+
                             if let Err(e) =
                                 coll.upsert_batch(vec![(entry.document_key.clone(), doc)])
                             {
@@ -696,6 +726,8 @@ impl SyncWorker {
                                     "apply_entry: upsert failed for {}: {}",
                                     entry.document_key, e
                                 );
+                            } else if let Some(ref doc) = api_key_doc {
+                                crate::server::auth::note_replicated_api_key_upsert(doc);
                             }
                         }
                     }
@@ -706,6 +738,11 @@ impl SyncWorker {
                     if let Ok(coll) = db.get_collection(&entry.collection) {
                         let _ = coll.delete(&entry.document_key);
                     }
+                }
+                // Evict replicated _api_keys deletes from the in-memory auth
+                // cache so revoked keys stop authenticating here.
+                if entry.database == "_system" && entry.collection == "_api_keys" {
+                    crate::server::auth::note_replicated_api_key_delete(&entry.document_key);
                 }
             }
             Operation::CreateDatabase => {

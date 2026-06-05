@@ -1,0 +1,88 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up" x-data="{ creating: false }">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">Access</p>
+      <h2 class="mt-1">Roles <span class="font-mono text-sm text-zinc-500">(<%= @roles.length() %>)</span></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        RBAC roles bundle permissions (read / write / admin, per database or global) —
+        assign them to accounts from the users page
+      </p>
+    </div>
+    <button class="btn-primary" x-on:click="creating = !creating">New role</button>
+  </div>
+
+  <form x-show="creating" x-cloak class="console-card space-y-3 p-4"
+        hx-post="<%= roles_path() %>" hx-target="#content" hx-swap="innerHTML show:top">
+    <div class="flex flex-wrap gap-3">
+      <div>
+        <label class="console-label" for="role-name">name</label>
+        <input id="role-name" name="name" type="text" placeholder="data-analyst"
+               class="console-input mt-1 w-48 font-mono" autocomplete="off">
+      </div>
+      <div class="min-w-64 flex-1">
+        <label class="console-label" for="role-desc">description</label>
+        <input id="role-desc" name="description" type="text" placeholder="Read-only analytics access"
+               class="console-input mt-1">
+      </div>
+    </div>
+    <div>
+      <label class="console-label" for="role-perms">permissions (json array)</label>
+      <textarea id="role-perms" name="permissions" rows="3" spellcheck="false"
+                placeholder='[{ "action": "read", "scope": "database", "database": "analytics" }]'
+                class="console-input mt-1 resize-y font-mono text-[13px]"></textarea>
+      <p class="mt-1 font-mono text-[10px] text-zinc-600">actions: read / write / admin · scopes: global / database</p>
+    </div>
+    <div class="flex justify-end gap-2">
+      <button type="button" class="btn-ghost" x-on:click="creating = false">Cancel</button>
+      <button type="submit" class="btn-primary">Create role</button>
+    </div>
+  </form>
+
+  <div class="console-card">
+    <table class="console-table">
+      <thead>
+        <tr>
+          <th>role</th>
+          <th>description</th>
+          <th>permissions</th>
+          <th class="text-right">actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% for role in @roles %>
+          <% role_name = role["name"] ?? "" %>
+          <tr>
+            <td class="font-mono text-zinc-200">
+              <a href="<%= attr(role_path(role_name)) %>" class="hover:text-teal-300 transition-colors"><%= role_name %></a>
+              <% if role["is_builtin"] %>
+                <span class="console-label ml-2 border border-zinc-800 px-1.5 py-0.5">builtin</span>
+              <% end %>
+            </td>
+            <td class="text-sm text-zinc-400"><%= role["description"] ?? "" %></td>
+            <td>
+              <div class="flex flex-wrap gap-1.5">
+                <% for perm in (role["permissions"] ?? []) %>
+                  <span class="border border-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
+                    <%= perm["action"] ?? "" %>:<%= perm["scope"] ?? "" %><% if !(perm["database"] ?? "").blank? %>:<%= perm["database"] %><% end %>
+                  </span>
+                <% end %>
+              </div>
+            </td>
+            <td class="w-px whitespace-nowrap text-right">
+              <% if !role["is_builtin"] %>
+                <button class="btn-danger"
+                        hx-delete="<%= attr(role_path(role_name)) %>"
+                        hx-target="#content" hx-swap="innerHTML show:top"
+                        hx-confirm="Delete role '<%= attr(role_name) %>'?">
+                  Delete
+                </button>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</div>

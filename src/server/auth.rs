@@ -17,11 +17,15 @@ use axum::{
 };
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 
+use dashmap::DashMap;
+use lru::LruCache;
 use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
 
@@ -32,33 +36,63 @@ const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 /// Basic auth cache TTL in seconds (avoid repeated Argon2 verification)
 const BASIC_AUTH_CACHE_TTL_SECS: u64 = 60;
 
+/// Max number of distinct IPs we keep in the rate-limiter LRU.
+const RATE_LIMITER_CAPACITY: usize = 50_000;
+
+/// Max number of Basic-auth entries we keep in the cache LRU.
+const BASIC_AUTH_CACHE_CAPACITY: usize = 10_000;
+
 /// Cache entry for Basic auth results
 struct AuthCacheEntry {
     claims: Claims,
     expires_at: Instant,
 }
 
-/// In-memory rate limiter for login attempts
-/// Tracks attempts per IP address with automatic cleanup
-static LOGIN_RATE_LIMITER: Lazy<RwLock<HashMap<String, Vec<Instant>>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
+/// In-memory rate limiter for login attempts.
+/// Bounded LRU keyed by client IP, values are recent attempt timestamps.
+/// Parking-lot `Mutex` is non-async and faster than `std::sync::RwLock` here
+/// because every operation is a brief mutation (no concurrent readers).
+static LOGIN_RATE_LIMITER: Lazy<Mutex<LruCache<String, Vec<Instant>>>> = Lazy::new(|| {
+    Mutex::new(LruCache::new(
+        NonZeroUsize::new(RATE_LIMITER_CAPACITY).unwrap(),
+    ))
+});
 
-/// Cache for Basic auth results to avoid repeated Argon2 verification
+/// Cache for Basic auth results to avoid repeated Argon2 verification.
+/// Bounded LRU so a hostile or buggy client cannot grow the cache without
+/// limit (the previous `RwLock<HashMap>` only evicted opportunistically on
+/// the write path).
 /// Key: base64(username:password_hash), Value: Claims + expiry
-static BASIC_AUTH_CACHE: Lazy<RwLock<HashMap<String, AuthCacheEntry>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
+static BASIC_AUTH_CACHE: Lazy<Mutex<LruCache<String, AuthCacheEntry>>> = Lazy::new(|| {
+    Mutex::new(LruCache::new(
+        NonZeroUsize::new(BASIC_AUTH_CACHE_CAPACITY).unwrap(),
+    ))
+});
+
+/// Whether `X-Forwarded-For` / `X-Real-IP` may be trusted for client
+/// identity (rate limiting). Off by default: those headers are
+/// client-controlled, so trusting them lets a single machine rotate fake
+/// IPs to dodge the login rate limit. Set `SOLIDB_TRUST_PROXY_HEADERS=1`
+/// only when the server sits behind a proxy that overwrites them.
+static TRUST_PROXY_HEADERS: Lazy<bool> = Lazy::new(|| {
+    std::env::var("SOLIDB_TRUST_PROXY_HEADERS")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+});
+
+pub fn trust_proxy_headers() -> bool {
+    *TRUST_PROXY_HEADERS
+}
 
 /// Check if an IP is rate limited, return error if too many attempts
 pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
     let now = Instant::now();
     let window = std::time::Duration::from_secs(RATE_LIMIT_WINDOW_SECS);
 
-    let mut limiter = LOGIN_RATE_LIMITER
-        .write()
-        .unwrap_or_else(|e| e.into_inner());
+    let mut limiter = LOGIN_RATE_LIMITER.lock();
 
-    // Get or create entry for this IP
-    let attempts = limiter.entry(ip.to_string()).or_default();
+    // Get or create entry for this IP (LRU bump on access).
+    let attempts = limiter.get_or_insert_mut(ip.to_string(), Vec::new);
 
     // Remove old attempts outside the window
     attempts.retain(|t| now.duration_since(*t) < window);
@@ -79,28 +113,30 @@ pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
 
 /// Get cached Basic auth claims if still valid
 fn get_cached_basic_auth(cache_key: &str) -> Option<Claims> {
-    let cache = BASIC_AUTH_CACHE.read().ok()?;
+    let mut cache = BASIC_AUTH_CACHE.lock();
     if let Some(entry) = cache.get(cache_key) {
         if Instant::now() < entry.expires_at {
             return Some(entry.claims.clone());
         }
+        // Expired - drop it.
+        cache.pop(cache_key);
     }
     None
 }
 
 /// Cache a successful Basic auth result
 fn cache_basic_auth(cache_key: String, claims: Claims) {
-    if let Ok(mut cache) = BASIC_AUTH_CACHE.write() {
-        cache.retain(|_, v| Instant::now() < v.expires_at);
-        cache.insert(
-            cache_key,
-            AuthCacheEntry {
-                claims,
-                expires_at: Instant::now()
-                    + std::time::Duration::from_secs(BASIC_AUTH_CACHE_TTL_SECS),
-            },
-        );
-    }
+    let mut cache = BASIC_AUTH_CACHE.lock();
+    // Expired entries are dropped lazily when a lookup hits them (see
+    // `get_cached_basic_auth`); the LRU's bounded capacity caps the worst
+    // case at BASIC_AUTH_CACHE_CAPACITY entries.
+    cache.push(
+        cache_key,
+        AuthCacheEntry {
+            claims,
+            expires_at: Instant::now() + std::time::Duration::from_secs(BASIC_AUTH_CACHE_TTL_SECS),
+        },
+    );
 }
 
 const ADMIN_DB: &str = "_system";
@@ -367,6 +403,22 @@ impl AuthService {
 
         // Initialize RBAC system collections
         Self::init_rbac(storage, replication_log, should_skip_defaults)?;
+
+        // Pre-warm the in-memory API-key cache so `validate_api_key` is
+        // O(1) on the request hot path. Best-effort: any failure to scan
+        // just means the cache stays empty and validate_api_key falls back
+        // to a (slower) full scan on the first miss.
+        if let Err(e) = Self::load_api_key_cache(storage) {
+            tracing::warn!("Failed to pre-warm API key cache: {}", e);
+        } else {
+            let (hits, misses, len) = api_key_cache().stats();
+            tracing::info!(
+                "API key cache pre-warmed: {} keys loaded (hits={}, misses={})",
+                len,
+                hits,
+                misses
+            );
+        }
 
         Ok(())
     }
@@ -706,44 +758,67 @@ impl AuthService {
 
     /// Validate an API key against stored keys
     pub fn validate_api_key(storage: &StorageEngine, raw_key: &str) -> Result<Claims, DbError> {
-        let db = storage.get_database(ADMIN_DB)?;
-        let collection = db.get_collection(API_KEYS_COLL)?;
-
-        // Hash the incoming key once
         let incoming_hash = Self::hash_api_key(raw_key);
 
-        // Iterate through all keys and compare hashes (O(n) but fast with SHA-256)
+        // Fast path: in-memory hash -> ApiKey lookup. O(1) instead of O(N) scan
+        // over the _api_keys collection on every authenticated request.
+        if let Some(api_key) = api_key_cache().lookup(&incoming_hash) {
+            return api_key_to_claims(&api_key);
+        }
+
+        // Slow path: cache miss (cache not yet populated, or a key was just
+        // inserted on a peer node and hasn't replicated into the local cache
+        // yet). Fall back to a full scan, then backfill the cache for next time.
+        if !api_key_cache().is_loaded() {
+            // Lazy-load: best-effort populate; if storage doesn't have the
+            // collection yet (first boot), we just return the "invalid key"
+            // error from the scan.
+            let _ = Self::load_api_key_cache(storage);
+        }
+
+        let db = match storage.get_database(ADMIN_DB) {
+            Ok(db) => db,
+            Err(_) => return Err(DbError::BadRequest("Invalid API key".to_string())),
+        };
+        let collection = match db.get_collection(API_KEYS_COLL) {
+            Ok(c) => c,
+            Err(DbError::CollectionNotFound(_)) => {
+                return Err(DbError::BadRequest("Invalid API key".to_string()));
+            }
+            Err(_) => return Err(DbError::BadRequest("Invalid API key".to_string())),
+        };
+
         for doc in collection.scan(None) {
             let api_key: ApiKey = serde_json::from_value(doc.to_value())
                 .map_err(|_| DbError::InternalError("Corrupted API key data".to_string()))?;
 
-            // Constant-time comparison to prevent timing attacks
-            if constant_time_eq(incoming_hash.as_bytes(), api_key.key_hash.as_bytes()) {
-                // Check if API key has expired
-                if let Some(ref expires_at) = api_key.expires_at {
-                    if let Ok(expiry) = chrono::DateTime::parse_from_rfc3339(expires_at) {
-                        if expiry < chrono::Utc::now() {
-                            return Err(DbError::BadRequest("API key has expired".to_string()));
-                        }
-                    }
-                }
+            // Backfill the cache so subsequent requests are O(1).
+            api_key_cache().insert(api_key.clone());
 
-                // Return claims with roles and scoped_databases from the API key
-                return Ok(Claims {
-                    sub: format!("api-key:{}", api_key.name),
-                    exp: usize::MAX, // Claims never expire (API key expiry checked above)
-                    livequery: None,
-                    roles: if api_key.roles.is_empty() {
-                        None
-                    } else {
-                        Some(api_key.roles)
-                    },
-                    scoped_databases: api_key.scoped_databases,
-                });
+            if constant_time_eq(incoming_hash.as_bytes(), api_key.key_hash.as_bytes()) {
+                return api_key_to_claims(&api_key);
             }
         }
 
         Err(DbError::BadRequest("Invalid API key".to_string()))
+    }
+
+    /// Load the API key cache from storage. Called at startup and as a
+    /// backfill on first cache miss.
+    pub fn load_api_key_cache(storage: &StorageEngine) -> Result<usize, DbError> {
+        let mut loaded = 0;
+        if let Ok(db) = storage.get_database(ADMIN_DB) {
+            if let Ok(collection) = db.get_collection(API_KEYS_COLL) {
+                for doc in collection.scan(None) {
+                    if let Ok(api_key) = serde_json::from_value::<ApiKey>(doc.to_value()) {
+                        api_key_cache().insert(api_key);
+                        loaded += 1;
+                    }
+                }
+            }
+        }
+        api_key_cache().mark_loaded();
+        Ok(loaded)
     }
 
     /// Get roles for a user from _user_roles collection
@@ -781,6 +856,130 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     // subtle::ConstantTimeEq::ct_eq returns a Choice, we convert to bool
     // Note: ct_eq on slices short-circuits on length mismatch (but that's still constant-time)
     a.ct_eq(b).unwrap_u8() == 1
+}
+
+/// Convert a stored `ApiKey` to a `Claims` value, applying expiration checks.
+fn api_key_to_claims(api_key: &ApiKey) -> Result<Claims, DbError> {
+    if let Some(ref expires_at) = api_key.expires_at {
+        if let Ok(expiry) = chrono::DateTime::parse_from_rfc3339(expires_at) {
+            if expiry < chrono::Utc::now() {
+                return Err(DbError::BadRequest("API key has expired".to_string()));
+            }
+        }
+    }
+    Ok(Claims {
+        sub: format!("api-key:{}", api_key.name),
+        exp: usize::MAX,
+        livequery: None,
+        roles: if api_key.roles.is_empty() {
+            None
+        } else {
+            Some(api_key.roles.clone())
+        },
+        scoped_databases: api_key.scoped_databases.clone(),
+    })
+}
+
+/// In-memory cache of API keys, keyed by SHA-256 hash. Populated at startup
+/// (or lazily on first miss) so `validate_api_key` is O(1) instead of
+/// scanning the whole `_api_keys` collection on every authenticated request.
+pub struct ApiKeyCache {
+    /// key_hash -> ApiKey (Arc so hot-path lookups don't deep-clone the key)
+    by_hash: DashMap<String, std::sync::Arc<ApiKey>>,
+    /// id -> key_hash (for removal by id)
+    by_id: DashMap<String, String>,
+    /// True once the cache has been loaded from storage at least once.
+    loaded: std::sync::atomic::AtomicBool,
+    /// Number of lookups, for observability.
+    hits: AtomicU64,
+    misses: AtomicU64,
+}
+
+impl ApiKeyCache {
+    pub fn new() -> Self {
+        Self {
+            by_hash: DashMap::new(),
+            by_id: DashMap::new(),
+            loaded: std::sync::atomic::AtomicBool::new(false),
+            hits: AtomicU64::new(0),
+            misses: AtomicU64::new(0),
+        }
+    }
+
+    pub fn lookup(&self, key_hash: &str) -> Option<std::sync::Arc<ApiKey>> {
+        if let Some(v) = self.by_hash.get(key_hash) {
+            self.hits.fetch_add(1, Ordering::Relaxed);
+            Some(v.value().clone())
+        } else {
+            self.misses.fetch_add(1, Ordering::Relaxed);
+            None
+        }
+    }
+
+    pub fn insert(&self, api_key: ApiKey) {
+        let hash = api_key.key_hash.clone();
+        let id = api_key.id.clone();
+        self.by_hash
+            .insert(hash.clone(), std::sync::Arc::new(api_key));
+        self.by_id.insert(id, hash);
+    }
+
+    pub fn remove_by_id(&self, id: &str) {
+        if let Some((_, hash)) = self.by_id.remove(id) {
+            self.by_hash.remove(&hash);
+        }
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        self.loaded.load(Ordering::Acquire)
+    }
+
+    pub fn mark_loaded(&self) {
+        self.loaded.store(true, Ordering::Release);
+    }
+
+    pub fn clear(&self) {
+        self.by_hash.clear();
+        self.by_id.clear();
+        self.loaded.store(false, Ordering::Release);
+    }
+
+    pub fn stats(&self) -> (u64, u64, usize) {
+        (
+            self.hits.load(Ordering::Relaxed),
+            self.misses.load(Ordering::Relaxed),
+            self.by_hash.len(),
+        )
+    }
+}
+
+static API_KEY_CACHE: Lazy<ApiKeyCache> = Lazy::new(ApiKeyCache::new);
+
+impl Default for ApiKeyCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub fn api_key_cache() -> &'static ApiKeyCache {
+    &API_KEY_CACHE
+}
+
+/// Keep the in-memory API key cache in sync when a replicated write to
+/// `_system._api_keys` is applied locally (the sync worker bypasses the
+/// HTTP handlers that normally maintain the cache).
+pub fn note_replicated_api_key_upsert(doc: &serde_json::Value) {
+    match serde_json::from_value::<ApiKey>(doc.clone()) {
+        Ok(api_key) => api_key_cache().insert(api_key),
+        Err(e) => tracing::warn!("Replicated _api_keys doc did not parse as ApiKey: {}", e),
+    }
+}
+
+/// Evict a key from the in-memory cache when a replicated delete on
+/// `_system._api_keys` is applied locally, so a key revoked on a peer node
+/// stops authenticating here immediately.
+pub fn note_replicated_api_key_delete(id: &str) {
+    api_key_cache().remove_by_id(id);
 }
 
 /// Axum Middleware for Authentication

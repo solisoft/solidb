@@ -315,9 +315,7 @@ pub async fn complete_upload(
     state.upload_session_store.remove(&upload_id);
 
     // Invalidate cached listings so the new file is immediately visible.
-    query_cache::get_query_cache()
-        .invalidate_collection(&coll_name)
-        .await;
+    query_cache::get_query_cache().invalidate_collection(&coll_name);
 
     Ok(Json(doc_value))
 }

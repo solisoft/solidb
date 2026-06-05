@@ -1,0 +1,91 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<% if !@created_key.blank? %>
+  <div class="mb-4 border border-teal-700 bg-teal-950/40 px-4 py-3 animate-fade-up" x-data="{ copied: false }">
+    <p class="console-label text-teal-400">raw key — shown once, copy it now</p>
+    <div class="mt-2 flex items-center gap-3">
+      <code id="raw-key" class="break-all font-mono text-sm text-teal-200"><%= @created_key %></code>
+      <button class="btn-ghost shrink-0"
+              x-on:click="navigator.clipboard.writeText(document.getElementById('raw-key').textContent); copied = true; setTimeout(() => copied = false, 1500)">
+        <span x-show="!copied">Copy</span><span x-show="copied" x-cloak class="text-teal-400">Copied ✓</span>
+      </button>
+    </div>
+  </div>
+<% end %>
+
+<div class="space-y-5 animate-fade-up">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">Access</p>
+      <h2 class="mt-1">API Keys <span class="font-mono text-sm text-zinc-500">(<%= @keys.length() %>)</span></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        token credentials for programmatic access without a username/password —
+        the raw key is shown once at creation, store it somewhere safe
+      </p>
+    </div>
+
+    <form hx-post="<%= api_keys_path() %>" hx-target="#content" hx-swap="innerHTML show:top"
+          class="flex flex-wrap items-end gap-2">
+      <div>
+        <label class="console-label" for="key-name">name</label>
+        <input id="key-name" name="name" type="text" placeholder="ci-deploy"
+               class="console-input mt-1 w-36 font-mono" autocomplete="off">
+      </div>
+      <div>
+        <label class="console-label" for="key-roles">roles (csv)</label>
+        <input id="key-roles" name="roles" type="text" placeholder="editor,viewer"
+               class="console-input mt-1 w-36 font-mono">
+      </div>
+      <div>
+        <label class="console-label" for="key-dbs">scoped dbs (csv)</label>
+        <input id="key-dbs" name="scoped_databases" type="text" placeholder="app1,app2"
+               class="console-input mt-1 w-36 font-mono">
+      </div>
+      <button type="submit" class="btn-primary">Create</button>
+    </form>
+  </div>
+
+  <div class="console-card">
+    <table class="console-table">
+      <thead>
+        <tr>
+          <th>name</th>
+          <th>roles</th>
+          <th>scoped databases</th>
+          <th>created</th>
+          <th class="text-right">actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% for key in @keys %>
+          <tr>
+            <td class="font-mono text-zinc-200"><%= key["name"] ?? "" %></td>
+            <td>
+              <div class="flex flex-wrap gap-1.5">
+                <% for role_name in (key["roles"] ?? []) %>
+                  <span class="border border-zinc-700 px-1.5 py-0.5 font-mono text-xs text-zinc-300"><%= role_name %></span>
+                <% end %>
+              </div>
+            </td>
+            <td class="font-mono text-xs text-zinc-500">
+              <% scoped = key["scoped_databases"] ?? [] %>
+              <%= scoped.length() > 0 ? scoped.join(", ") : "all" %>
+            </td>
+            <td class="font-mono text-xs text-zinc-500"><%= (key["created_at"] ?? "").substring(0, 10) %></td>
+            <td class="w-px whitespace-nowrap text-right">
+              <button class="btn-danger"
+                      hx-delete="<%= api_keys_path() %>/<%= url(key["id"] ?? "") %>"
+                      hx-target="#content" hx-swap="innerHTML show:top"
+                      hx-confirm="Revoke API key '<%= attr(key["name"] ?? "") %>'? Clients using it will lose access.">
+                Revoke
+              </button>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <% if @keys.length() == 0 %>
+      <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no api keys</p>
+    <% end %>
+  </div>
+</div>

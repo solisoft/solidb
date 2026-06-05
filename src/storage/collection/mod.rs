@@ -1,9 +1,10 @@
+use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
-use rust_rocksdb::DB;
+use parking_lot::RwLock;
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 pub use super::document::Document;
 pub use super::geo::{GeoIndex, GeoIndexStats};

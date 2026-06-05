@@ -1,0 +1,100 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">Access</p>
+      <h2 class="mt-1">Users <span class="font-mono text-sm text-zinc-500">(<%= @users.length() %>)</span></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        server-level accounts for connecting to SoliDB — what an account may do comes from the roles assigned to it
+      </p>
+    </div>
+
+    <form hx-post="<%= users_path() %>" hx-target="#content" hx-swap="innerHTML show:top"
+          class="flex flex-wrap items-end gap-2">
+      <div>
+        <label class="console-label" for="user-name">username</label>
+        <input id="user-name" name="username" type="text" placeholder="alice"
+               class="console-input mt-1 w-36 font-mono" autocomplete="off">
+      </div>
+      <div>
+        <label class="console-label" for="user-pass">password</label>
+        <input id="user-pass" name="password" type="password" placeholder="min 6 chars"
+               class="console-input mt-1 w-36 font-mono" autocomplete="new-password">
+      </div>
+      <div>
+        <label class="console-label" for="user-role">role</label>
+        <select id="user-role" name="initial_role" class="console-input mt-1 w-28">
+          <option value="">none</option>
+          <% for role_name in @role_names %>
+            <option value="<%= attr(role_name) %>"><%= role_name %></option>
+          <% end %>
+        </select>
+      </div>
+      <button type="submit" class="btn-primary">Create</button>
+    </form>
+  </div>
+
+  <div class="console-card">
+    <table class="console-table">
+      <thead>
+        <tr>
+          <th>username</th>
+          <th>roles</th>
+          <th>created</th>
+          <th class="text-right">actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% for user in @users %>
+          <% username = user["username"] ?? "" %>
+          <tr x-data="{ grant: false }">
+            <td class="font-mono text-zinc-200"><%= username %></td>
+            <td>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <% for role_name in (user["roles"] ?? []) %>
+                  <span class="group/role inline-flex items-center gap-1 border border-zinc-700 px-1.5 py-0.5 font-mono text-xs text-zinc-300">
+                    <%= role_name %>
+                    <button class="text-zinc-600 transition-colors hover:text-red-400"
+                            hx-delete="<%= users_path() %>/<%= url(username) %>/roles/<%= url(role_name) %>"
+                            hx-target="#content" hx-swap="innerHTML show:top"
+                            hx-confirm="Revoke role '<%= attr(role_name) %>' from <%= attr(username) %>?"
+                            title="revoke">×</button>
+                  </span>
+                <% end %>
+                <button class="console-label border border-dashed border-zinc-700 px-1.5 py-0.5 transition-colors hover:border-teal-600 hover:text-teal-400"
+                        x-on:click="grant = !grant">+ role</button>
+              </div>
+              <form x-show="grant" x-cloak class="mt-2 flex items-end gap-2"
+                    hx-post="<%= users_path() %>/<%= url(username) %>/roles"
+                    hx-target="#content" hx-swap="innerHTML show:top">
+                <select name="role" class="console-input w-28 py-1 text-xs">
+                  <% for role_name in @role_names %>
+                    <option value="<%= attr(role_name) %>"><%= role_name %></option>
+                  <% end %>
+                </select>
+                <input name="database" type="text" placeholder="database (optional)"
+                       class="console-input w-40 py-1 font-mono text-xs">
+                <button type="submit" class="btn-primary py-1">Grant</button>
+              </form>
+            </td>
+            <td class="font-mono text-xs text-zinc-500"><%= (user["created_at"] ?? "").substring(0, 10) %></td>
+            <td class="w-px whitespace-nowrap text-right">
+              <% if username != "admin" %>
+                <button class="btn-danger"
+                        hx-delete="<%= users_path() %>/<%= url(username) %>"
+                        hx-target="#content" hx-swap="innerHTML show:top"
+                        hx-confirm="Delete user '<%= attr(username) %>'?">
+                  Delete
+                </button>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <% if @users.length() == 0 %>
+      <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no users</p>
+    <% end %>
+  </div>
+</div>

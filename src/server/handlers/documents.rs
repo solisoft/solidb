@@ -153,9 +153,7 @@ pub async fn insert_document(
     }
 
     // Invalidate query cache for this collection
-    query_cache::get_query_cache()
-        .invalidate_collection(&coll_name)
-        .await;
+    query_cache::get_query_cache().invalidate_collection(&coll_name);
 
     // Fire triggers for the insert
     if !coll_name.starts_with('_') {
@@ -223,9 +221,7 @@ pub async fn insert_documents_batch(
     };
 
     // Invalidate query cache for this collection
-    query_cache::get_query_cache()
-        .invalidate_collection(&coll_name)
-        .await;
+    query_cache::get_query_cache().invalidate_collection(&coll_name);
 
     // NOTE: Do NOT log to replication log for sharded data!
     // This endpoint is for internal shard operations (X-Shard-Direct).
@@ -352,9 +348,7 @@ pub async fn insert_documents_replica(
     let insert_count = collection.upsert_batch(keyed_docs)?;
 
     // Invalidate query cache for this collection
-    query_cache::get_query_cache()
-        .invalidate_collection(&coll_name)
-        .await;
+    query_cache::get_query_cache().invalidate_collection(&coll_name);
 
     tracing::debug!(
         "REPLICA: Stored {} docs for {}/{}",
@@ -691,9 +685,7 @@ pub async fn update_document(
     }
 
     // Invalidate query cache for this collection
-    query_cache::get_query_cache()
-        .invalidate_collection(&coll_name)
-        .await;
+    query_cache::get_query_cache().invalidate_collection(&coll_name);
 
     // Fire triggers for the update (or insert if upsert)
     if !coll_name.starts_with('_') {
@@ -767,9 +759,7 @@ pub async fn delete_document(
     collection.delete(&key)?;
 
     // Invalidate query cache for this collection
-    query_cache::get_query_cache()
-        .invalidate_collection(&coll_name)
-        .await;
+    query_cache::get_query_cache().invalidate_collection(&coll_name);
 
     // If this is a blob collection, trigger compaction to reclaim space from deleted chunks immediately
     if collection.get_type() == "blob" {

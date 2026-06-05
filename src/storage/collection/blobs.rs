@@ -8,7 +8,7 @@ impl Collection {
 
     /// Store a blob chunk
     pub fn put_blob_chunk(&self, key: &str, chunk_index: u32, data: &[u8]) -> DbResult<()> {
-        if *self.collection_type.read().unwrap() != "blob" {
+        if self.collection_type.read().as_str() != "blob" {
             return Err(DbError::OperationNotSupported(
                 "Blob operations only supported on blob collections".to_string(),
             ));
@@ -22,9 +22,9 @@ impl Collection {
         let chunk_key = Self::blo_chunk_key(key, chunk_index as usize);
 
         // ... existence check ...
-        let exists = db.get_cf(cf, &chunk_key).ok().flatten().is_some();
+        let exists = db.get_cf(&cf, &chunk_key).ok().flatten().is_some();
 
-        db.put_cf(cf, chunk_key, data)
+        db.put_cf(&cf, chunk_key, data)
             .map_err(|e| DbError::InternalError(format!("Failed to store blob chunk: {}", e)))?;
 
         if !exists {
@@ -43,7 +43,7 @@ impl Collection {
             .ok_or(DbError::CollectionNotFound(self.name.clone()))?;
 
         let chunk_key = Self::blo_chunk_key(key, chunk_index as usize);
-        match db.get_cf(cf, chunk_key) {
+        match db.get_cf(&cf, chunk_key) {
             Ok(Some(data)) => Ok(Some(data)),
             Ok(None) => Ok(None),
             Err(e) => Err(DbError::InternalError(format!(
@@ -61,7 +61,7 @@ impl Collection {
             .expect("Column family should exist");
 
         let prefix = format!("{}{}:", BLO_PREFIX, key);
-        let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
         let mut batch = WriteBatch::default();
         let mut count = 0;
 
@@ -70,7 +70,7 @@ impl Collection {
             if !k.starts_with(prefix.as_bytes()) {
                 break;
             }
-            batch.delete_cf(cf, k);
+            batch.delete_cf(&cf, k);
             count += 1;
         }
 
@@ -93,7 +93,7 @@ impl Collection {
         chunk_index: u32,
         data: &[u8],
     ) -> DbResult<()> {
-        if *self.collection_type.read().unwrap() != "blob" {
+        if self.collection_type.read().as_str() != "blob" {
             return Err(DbError::OperationNotSupported(
                 "Blob operations only supported on blob collections".to_string(),
             ));
@@ -105,7 +105,7 @@ impl Collection {
             .expect("Column family should exist");
 
         let key = format!("{}{}:{}", BLO_TMP_PREFIX, upload_id, chunk_index);
-        db.put_cf(cf, key.as_bytes(), data).map_err(|e| {
+        db.put_cf(&cf, key.as_bytes(), data).map_err(|e| {
             DbError::InternalError(format!("Failed to store temp blob chunk: {}", e))
         })?;
 
@@ -130,7 +130,7 @@ impl Collection {
         for i in 0..total_chunks {
             let tmp_key = format!("{}{}:{}", BLO_TMP_PREFIX, upload_id, i);
             let data = db
-                .get_cf(cf, tmp_key.as_bytes())
+                .get_cf(&cf, tmp_key.as_bytes())
                 .map_err(|e| DbError::InternalError(format!("Failed to read temp chunk: {}", e)))?
                 .ok_or_else(|| {
                     DbError::InternalError(format!(
@@ -140,8 +140,8 @@ impl Collection {
                 })?;
 
             let perm_key = Self::blo_chunk_key(blob_key, i as usize);
-            batch.put_cf(cf, &perm_key, &data);
-            batch.delete_cf(cf, tmp_key.as_bytes());
+            batch.put_cf(&cf, &perm_key, &data);
+            batch.delete_cf(&cf, tmp_key.as_bytes());
         }
 
         db.write(&batch).map_err(|e| {
@@ -163,7 +163,7 @@ impl Collection {
             .expect("Column family should exist");
 
         let prefix = format!("{}{}:", BLO_TMP_PREFIX, upload_id);
-        let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
         let mut batch = WriteBatch::default();
         let mut count = 0;
 
@@ -172,7 +172,7 @@ impl Collection {
             if !k.starts_with(prefix.as_bytes()) {
                 break;
             }
-            batch.delete_cf(cf, k);
+            batch.delete_cf(&cf, k);
             count += 1;
         }
 
@@ -186,7 +186,7 @@ impl Collection {
 
     /// Get blob statistics for this collection
     pub fn blob_stats(&self) -> DbResult<(usize, u64)> {
-        if *self.collection_type.read().unwrap() != "blob" {
+        if self.collection_type.read().as_str() != "blob" {
             return Ok((0, 0));
         }
 
@@ -199,7 +199,7 @@ impl Collection {
         let mut total_bytes = 0u64;
         let mut chunk_count = 0usize;
 
-        let iter = db.prefix_iterator_cf(cf, prefix);
+        let iter = db.prefix_iterator_cf(&cf, prefix);
         for item in iter.flatten() {
             let (key, value) = item;
             if !key.starts_with(prefix) {

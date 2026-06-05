@@ -126,9 +126,7 @@ pub async fn truncate_collection(
     }
 
     // Invalidate query cache for this collection
-    query_cache::get_query_cache()
-        .invalidate_collection(&coll_name)
-        .await;
+    query_cache::get_query_cache().invalidate_collection(&coll_name);
 
     // Record to replication log (only for non-direct requests to avoid duplicate logging)
     if !is_shard_direct {

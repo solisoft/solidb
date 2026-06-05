@@ -27,7 +27,7 @@ impl Collection {
             .cf_handle(&self.name)
             .expect("Column family should exist");
         let prefix = VEC_META_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(cf, prefix);
+        let iter = db.prefix_iterator_cf(&cf, prefix);
 
         iter.filter_map(|result| {
             result.ok().and_then(|(key, value)| {
@@ -64,7 +64,7 @@ impl Collection {
 
         // Check metadata first
         let meta_key = Self::vec_meta_key(name);
-        if db.get_cf(cf, &meta_key)?.is_none() {
+        if db.get_cf(&cf, &meta_key)?.is_none() {
             return Err(DbError::InvalidDocument(format!(
                 "Vector Index '{}' not found",
                 name
@@ -73,7 +73,7 @@ impl Collection {
 
         // Load data
         let data_key = Self::vec_data_key(name);
-        if let Some(bytes) = db.get_cf(cf, &data_key)? {
+        if let Some(bytes) = db.get_cf(&cf, &data_key)? {
             match super::vector::VectorIndex::deserialize(&bytes) {
                 Ok(index) => {
                     let index_arc = Arc::new(index);
@@ -108,7 +108,7 @@ impl Collection {
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
-            db.put_cf(cf, Self::vec_meta_key(&name), &config_bytes)
+            db.put_cf(&cf, Self::vec_meta_key(&name), &config_bytes)
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to create vector index: {}", e))
                 })?;
@@ -154,10 +154,10 @@ impl Collection {
         self.vector_indexes.remove(name);
 
         // Remove from disk
-        db.delete_cf(cf, Self::vec_meta_key(name)).map_err(|e| {
+        db.delete_cf(&cf, Self::vec_meta_key(name)).map_err(|e| {
             DbError::InternalError(format!("Failed to delete vector config: {}", e))
         })?;
-        db.delete_cf(cf, Self::vec_data_key(name))
+        db.delete_cf(&cf, Self::vec_data_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to delete vector data: {}", e)))?;
 
         Ok(())
@@ -231,7 +231,7 @@ impl Collection {
             let db = &self.db;
             let cf = db.cf_handle(&self.name).unwrap();
             let config_bytes = serde_json::to_vec(config)?;
-            db.put_cf(cf, Self::vec_meta_key(name), &config_bytes)
+            db.put_cf(&cf, Self::vec_meta_key(name), &config_bytes)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 
@@ -261,7 +261,7 @@ impl Collection {
             let name = entry.key();
             let index_arc = entry.value();
             let bytes = index_arc.serialize()?;
-            db.put_cf(cf, Self::vec_data_key(name), &bytes)
+            db.put_cf(&cf, Self::vec_data_key(name), &bytes)
                 .map_err(|e| {
                     DbError::InternalError(format!(
                         "Failed to persist vector index {}: {}",

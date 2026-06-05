@@ -20,13 +20,16 @@ impl Collection {
         if let Some(schema) = self.get_json_schema() {
             let schema_hash = Self::compute_schema_hash(&schema);
 
-            let mut cached_hash = self.schema_hash.write().unwrap();
-            let mut cached_validator = self.schema_validator.write().unwrap();
-
-            if let Some(ref current_hash) = *cached_hash {
-                if *current_hash == schema_hash {
-                    if let Some(ref validator) = *cached_validator {
-                        return Ok(Some(validator.clone()));
+            // Fast path: read guards only (parking_lot's RwLock never
+            // poisons, so no .unwrap() is needed).
+            {
+                let cached_hash = self.schema_hash.read();
+                let cached_validator = self.schema_validator.read();
+                if let Some(ref current_hash) = *cached_hash {
+                    if *current_hash == schema_hash {
+                        if let Some(ref validator) = *cached_validator {
+                            return Ok(Some(validator.clone()));
+                        }
                     }
                 }
             }
@@ -35,8 +38,16 @@ impl Collection {
                 DbError::InvalidDocument(format!("Schema compilation error: {}", e))
             })?;
 
-            *cached_hash = Some(schema_hash);
-            *cached_validator = Some(validator.clone());
+            // Hold BOTH write guards while setting the pair so the hash and
+            // validator can never be observed (or written) mismatched when
+            // two threads race with different schema versions. Lock order is
+            // always hash -> validator.
+            {
+                let mut cached_hash = self.schema_hash.write();
+                let mut cached_validator = self.schema_validator.write();
+                *cached_hash = Some(schema_hash);
+                *cached_validator = Some(validator.clone());
+            }
 
             Ok(Some(validator))
         } else {
@@ -44,10 +55,11 @@ impl Collection {
         }
     }
 
-    /// Invalidate schema cache (called when schema changes)
+    /// Invalidate schema cache (called when schema changes).
+    /// Same lock order as the setter (hash -> validator), both held together.
     fn invalidate_schema_cache(&self) {
-        let mut cached_hash = self.schema_hash.write().unwrap();
-        let mut cached_validator = self.schema_validator.write().unwrap();
+        let mut cached_hash = self.schema_hash.write();
+        let mut cached_validator = self.schema_validator.write();
         *cached_hash = None;
         *cached_validator = None;
     }
@@ -69,7 +81,7 @@ impl Collection {
             .expect("Column family should exist");
 
         let schema_bytes = serde_json::to_vec(&schema)?;
-        db.put_cf(cf, SCHEMA_KEY.as_bytes(), &schema_bytes)
+        db.put_cf(&cf, SCHEMA_KEY.as_bytes(), &schema_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to set schema: {}", e)))?;
 
         Ok(())
@@ -80,7 +92,7 @@ impl Collection {
         let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
 
-        db.get_cf(cf, SCHEMA_KEY.as_bytes())
+        db.get_cf(&cf, SCHEMA_KEY.as_bytes())
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -95,7 +107,7 @@ impl Collection {
             .cf_handle(&self.name)
             .expect("Column family should exist");
 
-        db.delete_cf(cf, SCHEMA_KEY.as_bytes())
+        db.delete_cf(&cf, SCHEMA_KEY.as_bytes())
             .map_err(|e| DbError::InternalError(format!("Failed to remove schema: {}", e)))?;
 
         Ok(())

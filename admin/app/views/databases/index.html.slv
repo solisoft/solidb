@@ -1,0 +1,65 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up" x-data="{ q: '' }">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">Server</p>
+      <h2 class="mt-1">Databases <span class="font-mono text-sm text-zinc-500">(<%= @database_names.length() %>)</span></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        each database is an isolated namespace of collections, scripts, queues, triggers and env vars —
+        dropping one deletes all of it, there is no undo
+      </p>
+    </div>
+
+    <form hx-post="<%= databases_path() %>" hx-target="#content" hx-swap="innerHTML show:top"
+          class="flex items-end gap-2">
+      <div>
+        <label class="console-label" for="db-name">new database</label>
+        <input id="db-name" name="name" type="text" placeholder="my_database"
+               class="console-input mt-1 w-56 font-mono" autocomplete="off">
+      </div>
+      <button type="submit" class="btn-primary">Create</button>
+    </form>
+  </div>
+
+  <div class="console-card">
+    <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">name</p>
+      <input type="text" x-model="q" placeholder="filter…"
+             class="console-input w-48 py-1 font-mono text-xs">
+    </div>
+    <table class="console-table">
+      <tbody>
+        <% for db_name in @database_names %>
+          <tr data-name="<%= attr(db_name) %>" x-show="$el.dataset.name.includes(q.toLowerCase())">
+            <td class="font-mono text-zinc-200">
+              <a href="<%= attr(db_collections_path(db_name)) %>" class="hover:text-teal-300 transition-colors">
+                <%= db_name %>
+              </a>
+              <% if db_name == "_system" %>
+                <span class="console-label ml-2 border border-zinc-800 px-1.5 py-0.5">system</span>
+              <% end %>
+            </td>
+            <td class="w-px whitespace-nowrap text-right">
+              <div class="flex justify-end gap-2">
+                <a href="<%= attr(db_collections_path(db_name)) %>" class="btn-ghost">Collections</a>
+                <a href="<%= attr(db_query_path(db_name)) %>" class="btn-ghost">Query</a>
+                <% if db_name != "_system" %>
+                  <button class="btn-danger"
+                          hx-delete="<%= databases_path() %>/<%= url(db_name) %>"
+                          hx-target="#content" hx-swap="innerHTML show:top"
+                          hx-confirm="Drop database '<%= attr(db_name) %>' and ALL its data?">
+                    Drop
+                  </button>
+                <% end %>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <% if @database_names.length() == 0 %>
+      <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no databases</p>
+    <% end %>
+  </div>
+</div>

@@ -17,7 +17,7 @@ impl Collection {
             .cf_handle(&self.name)
             .expect("Column family should exist");
         let prefix = FT_META_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(cf, prefix);
+        let iter = db.prefix_iterator_cf(&cf, prefix);
 
         iter.filter_map(|result| {
             result.ok().and_then(|(key, value)| {
@@ -35,7 +35,7 @@ impl Collection {
     pub(crate) fn get_fulltext_index(&self, name: &str) -> Option<FulltextIndex> {
         let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
-        db.get_cf(cf, Self::ft_meta_key(name))
+        db.get_cf(&cf, Self::ft_meta_key(name))
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -78,7 +78,7 @@ impl Collection {
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
-            db.put_cf(cf, Self::ft_meta_key(&name), &index_bytes)
+            db.put_cf(&cf, Self::ft_meta_key(&name), &index_bytes)
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to create fulltext index: {}", e))
                 })?;
@@ -104,7 +104,7 @@ impl Collection {
                     for term in &terms {
                         if term.len() >= min_length {
                             let term_key = Self::ft_term_key(&name, term, &doc.key);
-                            batch.put_cf(cf, term_key, doc.key.as_bytes());
+                            batch.put_cf(&cf, term_key, doc.key.as_bytes());
                         }
                     }
 
@@ -112,7 +112,7 @@ impl Collection {
                     let ngrams = generate_ngrams(text, NGRAM_SIZE);
                     for ngram in &ngrams {
                         let ngram_key = Self::ft_ngram_key(&name, ngram, &doc.key);
-                        batch.put_cf(cf, ngram_key, doc.key.as_bytes());
+                        batch.put_cf(&cf, ngram_key, doc.key.as_bytes());
                     }
                     count += 1;
                 }
@@ -151,7 +151,7 @@ impl Collection {
             .expect("Column family should exist");
 
         // Delete metadata
-        db.delete_cf(cf, Self::ft_meta_key(name))
+        db.delete_cf(&cf, Self::ft_meta_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop fulltext index: {}", e)))?;
 
         let mut batch = WriteBatch::default();
@@ -159,11 +159,11 @@ impl Collection {
 
         // Delete ngrams
         let prefix = format!("{}{}:", FT_PREFIX, name);
-        let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(prefix.as_bytes()) {
-                    batch.delete_cf(cf, key);
+                    batch.delete_cf(&cf, key);
                     count += 1;
                 } else {
                     break;
@@ -180,11 +180,11 @@ impl Collection {
 
         // Delete terms
         let term_prefix = format!("{}{}:", FT_TERM_PREFIX, name);
-        let iter = db.prefix_iterator_cf(cf, term_prefix.as_bytes());
+        let iter = db.prefix_iterator_cf(&cf, term_prefix.as_bytes());
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(term_prefix.as_bytes()) {
-                    batch.delete_cf(cf, key);
+                    batch.delete_cf(&cf, key);
                     count += 1;
                 } else {
                     break; // Fixed from original loop which implied break
@@ -234,14 +234,14 @@ impl Collection {
                     for term in &terms {
                         if term.len() >= index.min_length {
                             let term_key = Self::ft_term_key(&index.name, term, doc_key);
-                            batch.put_cf(cf, term_key, doc_key.as_bytes());
+                            batch.put_cf(&cf, term_key, doc_key.as_bytes());
                         }
                     }
 
                     let ngrams = generate_ngrams(text, NGRAM_SIZE);
                     for ngram in &ngrams {
                         let ngram_key = Self::ft_ngram_key(&index.name, ngram, doc_key);
-                        batch.put_cf(cf, ngram_key, doc_key.as_bytes());
+                        batch.put_cf(&cf, ngram_key, doc_key.as_bytes());
                     }
                 }
             }
@@ -277,14 +277,14 @@ impl Collection {
                     for term in &terms {
                         if term.len() >= index.min_length {
                             let term_key = Self::ft_term_key(&index.name, term, doc_key);
-                            batch.delete_cf(cf, term_key);
+                            batch.delete_cf(&cf, term_key);
                         }
                     }
 
                     let ngrams = generate_ngrams(text, NGRAM_SIZE);
                     for ngram in &ngrams {
                         let ngram_key = Self::ft_ngram_key(&index.name, ngram, doc_key);
-                        batch.delete_cf(cf, ngram_key);
+                        batch.delete_cf(&cf, ngram_key);
                     }
                 }
             }
@@ -339,7 +339,7 @@ impl Collection {
                 if term.len() >= index.min_length {
                     // Exact term lookup
                     let prefix = format!("{}{}:{}:", FT_TERM_PREFIX, index.name, term);
-                    let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+                    let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
 
                     for result in iter.flatten() {
                         let (key, _) = result;

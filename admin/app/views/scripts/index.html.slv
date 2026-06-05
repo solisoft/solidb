@@ -1,0 +1,64 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">db / <%= @db %></p>
+      <h2 class="mt-1">Lua scripts <span class="font-mono text-sm text-zinc-500">(<%= @scripts.length() %>)</span></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        Lua 5.4 scripts stored in this database — expose them as custom HTTP endpoints or run them
+        from queues, cron jobs and triggers
+      </p>
+    </div>
+    <a href="<%= attr(db_scripts_path(@db)) %>/new" class="btn-primary">New script</a>
+  </div>
+
+  <div class="console-card">
+    <table class="console-table">
+      <thead>
+        <tr>
+          <th>name</th>
+          <th>endpoint</th>
+          <th>methods</th>
+          <th>service</th>
+          <th class="text-right">actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% for script in @scripts %>
+          <% script_id = script["id"] ?? (script["_key"] ?? "") %>
+          <tr>
+            <td class="font-mono text-zinc-200">
+              <a href="<%= attr(db_scripts_path(@db)) %>/<%= url(script_id) %>" class="hover:text-teal-300 transition-colors">
+                <%= script["name"] ?? "" %>
+              </a>
+            </td>
+            <td class="font-mono text-xs text-zinc-400">/api/<%= @db %>/<%= script["service"] ?? "" %>/<%= script["path"] ?? "" %></td>
+            <td>
+              <div class="flex gap-1">
+                <% for method in (script["methods"] ?? []) %>
+                  <span class="border border-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-teal-400"><%= method %></span>
+                <% end %>
+              </div>
+            </td>
+            <td class="font-mono text-xs text-zinc-500"><%= script["service"] ?? "" %></td>
+            <td class="w-px whitespace-nowrap text-right">
+              <div class="flex justify-end gap-2">
+                <a href="<%= attr(db_scripts_path(@db)) %>/<%= url(script_id) %>/edit" class="btn-ghost">Edit</a>
+                <button class="btn-danger"
+                        hx-delete="<%= attr(db_scripts_path(@db)) %>/<%= url(script_id) %>"
+                        hx-target="#content" hx-swap="innerHTML show:top"
+                        hx-confirm="Delete script '<%= attr(script["name"] ?? "") %>'?">
+                  Delete
+                </button>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <% if @scripts.length() == 0 %>
+      <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no scripts in <%= @db %></p>
+    <% end %>
+  </div>
+</div>

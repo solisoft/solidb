@@ -4414,7 +4414,7 @@ dependencies = [
 
 [[package]]
 name = "solidb"
-version = "0.26.0"
+version = "0.26.2"
 dependencies = [
  "anyhow",
  "argon2",
@@ -4442,6 +4442,7 @@ dependencies = [
  "hex",
  "hmac",
  "hostname",
+ "hyper-util",
  "image",
  "indicatif",
  "jsonschema",

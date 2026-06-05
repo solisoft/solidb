@@ -186,6 +186,11 @@ pub async fn create_api_key_handler(
 
     collection.insert(doc_value.clone())?;
 
+    // Update the in-memory API key cache so this new key can authenticate
+    // requests immediately (O(1) lookup) without waiting for a lazy
+    // full-collection scan on the first request.
+    crate::server::auth::api_key_cache().insert(api_key.clone());
+
     // Record write for replication
     if let Some(ref log) = state.replication_log {
         let entry = LogEntry {
@@ -261,6 +266,10 @@ pub async fn delete_api_key_handler(
 
     collection.delete(&key_id)?;
 
+    // Drop the key from the in-memory cache so a deleted key can no longer
+    // authenticate (even if the raw key is still being presented).
+    crate::server::auth::api_key_cache().remove_by_id(&key_id);
+
     // Record write for replication
     if let Some(ref log) = state.replication_log {
         let entry = LogEntry {
@@ -284,22 +293,41 @@ pub async fn delete_api_key_handler(
 
 pub async fn login_handler(
     State(state): State<AppState>,
+    // `Result` (not `Option`): tests build the router without connect info,
+    // and axum 0.8's `Option<T>` extractor requires OptionalFromRequestParts,
+    // which ConnectInfo doesn't implement.
+    peer: Result<
+        axum::extract::ConnectInfo<std::net::SocketAddr>,
+        axum::extract::rejection::ExtensionRejection,
+    >,
     headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, DbError> {
-    // Extract client IP for rate limiting (check X-Forwarded-For first for proxied requests)
-    let client_ip = headers
-        .get("X-Forwarded-For")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(|s| s.trim().to_string())
-        .or_else(|| {
-            headers
-                .get("X-Real-IP")
-                .and_then(|h| h.to_str().ok())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "unknown".to_string());
+    // Extract client IP for rate limiting. The socket peer address is
+    // authoritative; X-Forwarded-For / X-Real-IP are client-controlled and
+    // only consulted when SOLIDB_TRUST_PROXY_HEADERS is set (i.e. the
+    // server is behind a proxy that overwrites them). Trusting them by
+    // default would let one machine rotate fake IPs past the rate limit.
+    let socket_ip = peer
+        .ok()
+        .map(|axum::extract::ConnectInfo(addr)| addr.ip().to_string());
+    let client_ip = if crate::server::auth::trust_proxy_headers() {
+        headers
+            .get("X-Forwarded-For")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| s.split(',').next())
+            .map(|s| s.trim().to_string())
+            .or_else(|| {
+                headers
+                    .get("X-Real-IP")
+                    .and_then(|h| h.to_str().ok())
+                    .map(|s| s.to_string())
+            })
+            .or(socket_ip)
+            .unwrap_or_else(|| "unknown".to_string())
+    } else {
+        socket_ip.unwrap_or_else(|| "unknown".to_string())
+    };
 
     // Check rate limit before processing
     crate::server::auth::check_rate_limit(&client_ip)?;

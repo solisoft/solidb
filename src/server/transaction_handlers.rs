@@ -84,7 +84,7 @@ pub async fn commit_transaction(
     state.storage.commit_transaction(tx_id)?;
 
     // Invalidate query cache since committed data is now visible
-    query_cache::get_query_cache().invalidate_all().await;
+    query_cache::get_query_cache().invalidate_all();
 
     Ok(Json(CommitTransactionResponse {
         id: tx_id.to_string(),

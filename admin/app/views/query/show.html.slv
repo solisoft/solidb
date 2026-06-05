@@ -1,0 +1,155 @@
+<div class="space-y-5 animate-fade-up" x-data="queryHistory()" x-on:query-history-updated.window="reload()">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">db / <%= @db %></p>
+      <h2 class="mt-1">Query console</h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        run SDBQL queries against this database — use @name bind vars for values,
+        Explain shows the execution plan without running anything
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <a href="<%= attr(db_slow_queries_path(@db)) %>" class="btn-ghost">Slow queries</a>
+      <button type="button" class="btn-ghost" x-on:click="open = !open; reload()">
+        History <span class="text-zinc-600" x-text="'(' + items.length + ')'"></span>
+      </button>
+    </div>
+  </div>
+
+  <div x-show="open" x-cloak class="console-card">
+    <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">last <span class="text-teal-400" x-text="items.length"></span> requests — stored in this browser</p>
+      <button type="button" class="btn-ghost py-0.5" x-on:click="clearAll()">Clear</button>
+    </div>
+    <ol class="max-h-72 divide-y divide-zinc-800/60 overflow-y-auto">
+      <template x-for="(item, idx) in items" :key="idx">
+        <li class="flex cursor-pointer items-center gap-3 px-4 py-2 transition-colors hover:bg-zinc-900/80"
+            x-on:click="use(item)">
+          <span class="shrink-0 font-mono text-[10px] uppercase tracking-widest"
+                x-bind:class="item.kind === 'explain' ? 'text-amber-400' : 'text-teal-400'"
+                x-text="item.kind"></span>
+          <code class="min-w-0 flex-1 truncate font-mono text-xs text-zinc-300" x-text="item.q"></code>
+          <span class="shrink-0 font-mono text-[10px] text-zinc-600" x-text="item.db"></span>
+          <span class="shrink-0 font-mono text-[10px] text-zinc-600" x-text="fmtTime(item.ts)"></span>
+        </li>
+      </template>
+    </ol>
+    <p x-show="items.length === 0" class="px-4 py-5 text-center font-mono text-xs text-zinc-600">no queries yet</p>
+  </div>
+
+  <form id="query-form" class="console-card p-4 space-y-3">
+    <div>
+      <label class="console-label" for="query-editor">sdbql</label>
+      <textarea id="query-editor" name="query" rows="8" spellcheck="false"
+                placeholder="FOR doc IN my_collection&#10;  FILTER doc.age > @min_age&#10;  LIMIT 20&#10;  RETURN doc"
+                class="console-input mt-1 resize-y font-mono text-[13px] leading-relaxed"></textarea>
+    </div>
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div class="min-w-72 flex-1">
+        <label class="console-label" for="bind-vars">bind vars (json)</label>
+        <textarea id="bind-vars" name="bind_vars" rows="2" spellcheck="false"
+                  placeholder='{ "min_age": 25 }'
+                  class="console-input mt-1 resize-y font-mono text-[13px]"></textarea>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" id="query-explain-btn" class="btn-ghost"
+                hx-post="<%= attr(db_query_path(@db)) %>/explain" hx-include="#query-form"
+                hx-target="#query-output" hx-swap="innerHTML">
+          Explain
+        </button>
+        <button type="button" id="query-run-btn" class="btn-primary"
+                hx-post="<%= attr(db_query_path(@db)) %>/run" hx-include="#query-form"
+                hx-target="#query-output" hx-swap="innerHTML">
+          Run <span class="text-teal-600">⌃↵</span>
+        </button>
+      </div>
+    </div>
+  </form>
+
+  <div id="query-output">
+    <p class="px-1 font-mono text-xs text-zinc-600">// results appear here — ctrl+enter runs the query</p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<script src="<%= public_path("js/admin-editor.js") %>"></script>
+<script>
+  // --- query history (latest 20, localStorage, per-browser) ---------------
+  var HISTORY_KEY = "solidb-admin:query-history";
+
+  function readHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); }
+    catch (e) { return []; }
+  }
+
+  function recordHistory(kind) {
+    var entry = {
+      kind: kind,
+      q: (document.getElementById("query-editor").value || "").trim(),
+      b: (document.getElementById("bind-vars").value || "").trim(),
+      <%# j() escapes for JS but does NOT add quotes — unquoted, a db named
+          "default" (JS reserved word) is a SyntaxError that kills this whole
+          script: no queryHistory(), no Monaco mount. %>
+      db: "<%- j(@db) %>",
+      ts: Date.now()
+    };
+    if (!entry.q) return;
+    // Dedupe: an identical query+binds replaces its older entry.
+    var items = readHistory().filter(function (it) {
+      return !(it.q === entry.q && it.b === entry.b && it.db === entry.db);
+    });
+    items.unshift(entry);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, 20)));
+    window.dispatchEvent(new CustomEvent("query-history-updated"));
+  }
+
+  function queryHistory() {
+    return {
+      open: false,
+      items: readHistory(),
+      reload: function () { this.items = readHistory(); },
+      clearAll: function () {
+        localStorage.removeItem(HISTORY_KEY);
+        this.items = [];
+      },
+      use: function (item) {
+        AdminEditor.setValue("query-editor", item.q);
+        AdminEditor.setValue("bind-vars", item.b || "");
+        this.open = false;
+      },
+      fmtTime: function (ts) {
+        var date = new Date(ts);
+        var sameDay = new Date().toDateString() === date.toDateString();
+        return sameDay ? date.toLocaleTimeString() : date.toLocaleDateString() + " " + date.toLocaleTimeString();
+      }
+    };
+  }
+
+  document.getElementById("query-run-btn").addEventListener("htmx:beforeRequest", function () {
+    recordHistory("run");
+  });
+  document.getElementById("query-explain-btn").addEventListener("htmx:beforeRequest", function () {
+    recordHistory("explain");
+  });
+
+  AdminEditor.setCollections(<%- json_compact(@collection_names) %>);
+  AdminEditor.mount(document.getElementById("query-editor"), {
+    language: "sdbql",
+    height: "220px",
+    onCtrlEnter: function () {
+      window.htmx && htmx.trigger("#query-run-btn", "click");
+    }
+  });
+  AdminEditor.mount(document.getElementById("bind-vars"), { language: "json", height: "72px" });
+
+  // Restore the latest request for this db so coming back to the console
+  // doesn't lose the query you were working with. History is recorded on
+  // every Run/Explain (see recordHistory above), so "latest" = items[0].
+  var lastForDb = readHistory().filter(function (it) {
+    return it.db === "<%- j(@db) %>";
+  })[0];
+  if (lastForDb) {
+    AdminEditor.setValue("query-editor", lastForDb.q);
+    AdminEditor.setValue("bind-vars", lastForDb.b || "");
+  }
+</script>

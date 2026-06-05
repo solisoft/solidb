@@ -136,9 +136,7 @@ pub async fn upload_blob(
                         chunks_buffer,
                     )
                     .await?;
-                query_cache::get_query_cache()
-                    .invalidate_collection(&coll_name)
-                    .await;
+                query_cache::get_query_cache().invalidate_collection(&coll_name);
                 return Ok(Json(doc));
             } else {
                 return Err(DbError::InternalError(
@@ -223,9 +221,7 @@ pub async fn upload_blob(
     }
 
     // Invalidate cached listings so the new file is immediately visible.
-    query_cache::get_query_cache()
-        .invalidate_collection(&coll_name)
-        .await;
+    query_cache::get_query_cache().invalidate_collection(&coll_name);
 
     Ok(Json(doc_value))
 }

@@ -1,0 +1,78 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-6">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="console-card p-5 animate-fade-up">
+      <p class="console-label">Server</p>
+      <div class="mt-3 flex items-center gap-2.5">
+        <span class="relative flex h-2.5 w-2.5">
+          <span class="absolute inline-flex h-full w-full animate-pulse-dot <%= @server_ok ? "bg-teal-400" : "bg-red-500" %>"></span>
+        </span>
+        <p class="font-mono text-lg <%= @server_ok ? "text-teal-300" : "text-red-400" %>">
+          <%= @server_ok ? "ONLINE" : "OFFLINE" %>
+        </p>
+      </div>
+      <p class="mt-2 font-mono text-xs text-zinc-500"><%= @cluster["hostname"] ?? "-" %></p>
+    </div>
+
+    <div class="console-card p-5 animate-fade-up" style="animation-delay: 60ms">
+      <p class="console-label">Uptime</p>
+      <p class="mt-3 font-mono text-lg text-zinc-100"><%= fmt_uptime(@cluster["uptime"]) %></p>
+      <p class="mt-2 font-mono text-xs text-zinc-500"><%= @cluster["os_name"] ?? "-" %> · <%= @cluster["num_cpus"] ?? "-" %> cpus</p>
+    </div>
+
+    <div class="console-card p-5 animate-fade-up" style="animation-delay: 120ms">
+      <p class="console-label">CPU / Memory</p>
+      <p class="mt-3 font-mono text-lg text-zinc-100"><%= fmt_percent(@cluster["cpu_usage"]) %></p>
+      <p class="mt-2 font-mono text-xs text-zinc-500">
+        <%= fmt_bytes(@cluster["memory_usage"]) %> / <%= fmt_bytes(@cluster["memory_total"]) %>
+      </p>
+    </div>
+
+    <div class="console-card p-5 animate-fade-up" style="animation-delay: 180ms">
+      <p class="console-label">Databases</p>
+      <p class="mt-3 font-mono text-lg text-zinc-100"><%= @database_names.length() %></p>
+      <a href="<%= databases_path() %>" class="mt-2 inline-block font-mono text-xs text-teal-400 hover:text-teal-300">manage →</a>
+    </div>
+  </div>
+
+  <div class="console-card animate-fade-up" style="animation-delay: 240ms">
+    <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+      <p class="console-label">Node</p>
+      <% if @cluster["is_cluster_mode"] %>
+        <span class="console-label border border-teal-900 px-2 py-0.5 text-teal-400">cluster mode</span>
+      <% end %>
+    </div>
+    <dl class="grid grid-cols-1 gap-x-8 gap-y-3 px-5 py-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div>
+        <dt class="console-label">node id</dt>
+        <dd class="mt-1 break-all font-mono text-xs text-zinc-300"><%= @cluster["node_id"] ?? "-" %></dd>
+      </div>
+      <div>
+        <dt class="console-label">os</dt>
+        <dd class="mt-1 font-mono text-xs text-zinc-300"><%= @cluster["os_name"] ?? "-" %> <%= @cluster["os_version"] ?? "" %></dd>
+      </div>
+      <div>
+        <dt class="console-label">hostname</dt>
+        <dd class="mt-1 font-mono text-xs text-zinc-300"><%= @cluster["hostname"] ?? "-" %></dd>
+      </div>
+    </dl>
+  </div>
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 animate-fade-up" style="animation-delay: 300ms">
+    <a href="<%= users_path() %>" class="console-card group p-5 transition-colors hover:border-teal-800">
+      <p class="console-label group-hover:text-teal-500">Access</p>
+      <p class="mt-2 text-sm text-zinc-300">Users, roles &amp; API keys</p>
+    </a>
+    <a href="<%= databases_path() %>" class="console-card group p-5 transition-colors hover:border-teal-800">
+      <p class="console-label group-hover:text-teal-500">Data</p>
+      <p class="mt-2 text-sm text-zinc-300">Databases, collections &amp; queries</p>
+    </a>
+    <% if @database_names.length() > 0 %>
+      <a href="<%= attr(db_live_path(@database_names[0])) %>" class="console-card group p-5 transition-colors hover:border-teal-800">
+        <p class="console-label group-hover:text-teal-500">Realtime</p>
+        <p class="mt-2 text-sm text-zinc-300">Live changefeed stream</p>
+      </a>
+    <% end %>
+  </div>
+</div>

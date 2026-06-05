@@ -18,7 +18,7 @@ impl Collection {
             .cf_handle(&self.name)
             .expect("Column family should exist");
         let prefix = TTL_META_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(cf, prefix);
+        let iter = db.prefix_iterator_cf(&cf, prefix);
 
         iter.filter_map(|result| {
             result.ok().and_then(|(key, value)| {
@@ -36,7 +36,7 @@ impl Collection {
     pub fn get_ttl_index(&self, name: &str) -> Option<TtlIndex> {
         let db = &self.db;
         let cf = db.cf_handle(&self.name)?;
-        db.get_cf(cf, Self::ttl_meta_key(name))
+        db.get_cf(&cf, Self::ttl_meta_key(name))
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -68,7 +68,7 @@ impl Collection {
             let cf = db
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
-            db.put_cf(cf, Self::ttl_meta_key(&name), &index_bytes)
+            db.put_cf(&cf, Self::ttl_meta_key(&name), &index_bytes)
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to create TTL index: {}", e))
                 })?;
@@ -99,7 +99,7 @@ impl Collection {
             .cf_handle(&self.name)
             .expect("Column family should exist");
 
-        db.delete_cf(cf, Self::ttl_meta_key(name))
+        db.delete_cf(&cf, Self::ttl_meta_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop TTL index: {}", e)))?;
 
         Ok(())
@@ -236,7 +236,7 @@ impl Collection {
         let mut expired_doc_keys: Vec<String> = Vec::new();
         let mut expired_expiry_keys: Vec<Vec<u8>> = Vec::new();
 
-        let iter = db.prefix_iterator_cf(cf, prefix.as_slice());
+        let iter = db.prefix_iterator_cf(&cf, prefix.as_slice());
 
         for result in iter.flatten() {
             let (key_bytes, _value) = result;
@@ -288,12 +288,12 @@ impl Collection {
             let base_idx = deleted_count;
             for (i, key) in chunk.iter().enumerate() {
                 // Delete document
-                batch.delete_cf(cf, Self::doc_key(key));
+                batch.delete_cf(&cf, Self::doc_key(key));
 
                 // Delete expiry index entry
                 let expiry_idx = base_idx.saturating_add(i);
                 if let Some(expiry_key) = expired_expiry_keys.get(expiry_idx) {
-                    batch.delete_cf(cf, expiry_key);
+                    batch.delete_cf(&cf, expiry_key);
                 }
 
                 deleted_count += 1;

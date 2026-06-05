@@ -1,0 +1,112 @@
+/* Tailwind CSS directives */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles — SoliDB admin ops console (dark zinc + terminal teal) */
+@layer base {
+    html {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        scroll-behavior: smooth;
+    }
+
+    body {
+        @apply bg-zinc-950 text-zinc-100 leading-relaxed;
+    }
+
+    h1 { @apply text-2xl font-semibold tracking-tight; }
+    h2 { @apply text-xl font-semibold tracking-tight; }
+    h3 { @apply text-lg font-medium; }
+
+    img, video { @apply max-w-full h-auto; }
+}
+
+@layer components {
+    /* Faint blueprint grid behind the content area. */
+    .console-grid {
+        background-image:
+            linear-gradient(rgba(63, 63, 70, 0.16) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(63, 63, 70, 0.16) 1px, transparent 1px);
+        background-size: 32px 32px;
+    }
+
+    /* Uppercase mono section label — the console's signature typographic move. */
+    .console-label {
+        @apply font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500;
+    }
+
+    /* No backdrop-blur here: backdrop-filter makes the card the containing
+       block for position:fixed descendants, which would scope/crop the
+       modals that live inside cards (e.g. per-row document edit). */
+    .console-card {
+        @apply border border-zinc-800 bg-zinc-900/80;
+    }
+
+    .console-input {
+        @apply w-full border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100
+               placeholder-zinc-600 outline-none transition-colors
+               focus:border-teal-500/60 focus:ring-1 focus:ring-teal-500/30;
+    }
+
+    .btn-primary {
+        @apply inline-flex items-center gap-2 border border-teal-500/50 bg-teal-500/10 px-3 py-1.5
+               font-mono text-xs uppercase tracking-wider text-teal-300 transition-all
+               hover:bg-teal-500/20 hover:border-teal-400;
+    }
+
+    .btn-ghost {
+        @apply inline-flex items-center gap-2 border border-zinc-700 bg-transparent px-3 py-1.5
+               font-mono text-xs uppercase tracking-wider text-zinc-400 transition-all
+               hover:border-zinc-500 hover:text-zinc-200;
+    }
+
+    .btn-danger {
+        @apply inline-flex items-center gap-2 border border-red-900 bg-transparent px-3 py-1.5
+               font-mono text-xs uppercase tracking-wider text-red-400/80 transition-all
+               hover:border-red-500 hover:bg-red-500/10 hover:text-red-300;
+    }
+
+    .console-table {
+        @apply w-full text-left text-sm;
+    }
+
+    .console-table thead th {
+        @apply border-b border-zinc-800 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.2em]
+               text-zinc-500 font-normal;
+    }
+
+    .console-table tbody td {
+        @apply border-b border-zinc-800/60 px-4 py-2.5 align-middle;
+    }
+
+    .console-table tbody tr {
+        @apply transition-colors hover:bg-zinc-900/80;
+    }
+}
+
+/* Alpine: hide x-cloak'd elements until Alpine boots. */
+[x-cloak] { display: none !important; }
+
+/* HTMX swap transition — content eases in on every fragment swap. */
+#content.htmx-swapping { opacity: 0; }
+#content { transition: opacity 120ms ease-out; }
+
+/* Custom scrollbar — teal-tinted to match the accent. */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(20, 184, 166, 0.25);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(20, 184, 166, 0.45);
+}

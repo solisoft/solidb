@@ -198,9 +198,7 @@ pub async fn execute_query(
         // Execute transactional SDBQL query
         use crate::sdbql::ast::BodyClause;
 
-        let prepared = crate::sdbql::get_prepared_statement_cache()
-            .parse_if_needed(&req.query)
-            .await?;
+        let prepared = crate::sdbql::get_prepared_statement_cache().parse_if_needed(&req.query)?;
         let query = prepared.query.as_ref();
 
         // Get transaction manager
@@ -458,9 +456,7 @@ pub async fn execute_query(
 
     // Non-transactional execution (existing logic)
     // Use prepared statement cache to avoid re-parsing frequently executed queries
-    let prepared = crate::sdbql::get_prepared_statement_cache()
-        .parse_if_needed(&req.query)
-        .await?;
+    let prepared = crate::sdbql::get_prepared_statement_cache().parse_if_needed(&req.query)?;
     let query = prepared.query.as_ref();
 
     // Check if query is cacheable (read-only with no mutations)
@@ -488,7 +484,7 @@ pub async fn execute_query(
 
     // Check cache if query is read-only and caching is enabled
     if let Some(ref key) = cache_key {
-        let cached_result = query_cache::get_query_cache().get(key).await;
+        let cached_result = query_cache::get_query_cache().get(key);
         if let Some(result) = cached_result {
             tracing::debug!(
                 "Query cache hit for: {}",
@@ -633,19 +629,17 @@ pub async fn execute_query(
     // Cache read-only query results
     if let Some(key) = cache_key {
         let result_clone: Vec<serde_json::Value> = query_result.results.clone();
-        query_cache::get_query_cache().put(key, result_clone).await;
+        query_cache::get_query_cache().put(key, result_clone);
     }
 
     // Invalidate query cache when mutations occurred
     if mutations.has_mutations() {
         let collections = mutated_collections(query);
         if collections.is_empty() {
-            query_cache::get_query_cache().invalidate_all().await;
+            query_cache::get_query_cache().invalidate_all();
         } else {
             for collection in collections {
-                query_cache::get_query_cache()
-                    .invalidate_collection(collection)
-                    .await;
+                query_cache::get_query_cache().invalidate_collection(collection);
             }
         }
     }
@@ -688,9 +682,7 @@ pub async fn explain_query(
     headers: HeaderMap,
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<Json<crate::sdbql::QueryExplain>, DbError> {
-    let prepared = crate::sdbql::get_prepared_statement_cache()
-        .parse_if_needed(&req.query)
-        .await?;
+    let prepared = crate::sdbql::get_prepared_statement_cache().parse_if_needed(&req.query)?;
     let query = (*prepared.query).clone();
     let bind_vars = req.bind_vars.clone();
     let storage = state.storage.clone();

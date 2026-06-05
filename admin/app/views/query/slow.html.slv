@@ -1,0 +1,61 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">
+        <a href="<%= attr(db_query_path(@db)) %>" class="hover:text-teal-400 transition-colors">Query</a>
+        / <%= @db %>
+      </p>
+      <h2 class="mt-1">Slow queries <span class="font-mono text-sm text-zinc-500">(<%= @slow_queries.length() %>)</span></h2>
+      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+        every query slower than 100ms is logged here automatically — use Explain on the query console
+        to find the missing index or full scan behind it
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <a href="<%= attr(db_query_path(@db)) %>" class="btn-ghost">← Query console</a>
+      <% if @slow_queries.length() > 0 %>
+        <button class="btn-danger"
+                hx-put="<%= attr(db_slow_queries_path(@db)) %>/clear"
+                hx-target="#content" hx-swap="innerHTML show:top"
+                hx-confirm="Clear the slow query log for '<%= attr(@db) %>'?">
+          Clear log
+        </button>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="console-card">
+    <table class="console-table">
+      <thead>
+        <tr>
+          <th>when</th>
+          <th class="text-right">duration</th>
+          <th>query</th>
+          <th class="text-right">results</th>
+          <th class="text-right">writes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% for slow_query in @slow_queries %>
+          <% timestamp = str(slow_query["timestamp"] ?? "") %>
+          <% duration_ms = slow_query["execution_time_ms"] ?? 0 %>
+          <% writes = (slow_query["documents_inserted"] ?? 0) + (slow_query["documents_updated"] ?? 0) + (slow_query["documents_removed"] ?? 0) %>
+          <tr>
+            <td class="w-px whitespace-nowrap font-mono text-xs text-zinc-500"><%= timestamp.substring(0, 19).replace("T", " ") %></td>
+            <td class="w-px whitespace-nowrap text-right font-mono text-xs <%= duration_ms >= 1000 ? "text-red-400" : "text-amber-400" %>">
+              <%= duration_ms %> ms
+            </td>
+            <td><code class="break-all font-mono text-xs text-zinc-300"><%= slow_query["query"] ?? "" %></code></td>
+            <td class="text-right font-mono text-xs text-zinc-400"><%= slow_query["results_count"] ?? 0 %></td>
+            <td class="text-right font-mono text-xs text-zinc-400"><%= writes %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <% if @slow_queries.length() == 0 %>
+      <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no slow queries logged in <%= @db %> — nothing over 100ms yet</p>
+    <% end %>
+  </div>
+</div>

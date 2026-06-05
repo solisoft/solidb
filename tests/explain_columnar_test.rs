@@ -1,18 +1,9 @@
 use solidb::storage::columnar::{ColumnDef, ColumnType, ColumnarCollection, CompressionType};
 
 use rust_rocksdb::Options;
-use rust_rocksdb::DB;
 use solidb::sdbql::{parse, QueryExecutor};
 use solidb::storage::engine::StorageEngine;
-use std::sync::{Arc, RwLock};
 use tempfile::TempDir;
-
-#[allow(dead_code)]
-fn create_test_db() -> (Arc<RwLock<DB>>, TempDir) {
-    let temp_dir = TempDir::new().unwrap();
-    let db = DB::open_default(temp_dir.path()).unwrap();
-    (Arc::new(RwLock::new(db)), temp_dir)
-}
 
 #[test]
 fn test_explain_columnar_query() {
@@ -20,17 +11,11 @@ fn test_explain_columnar_query() {
 
     // Create StorageEngine wrapper (this opens the DB)
     let storage = StorageEngine::new(_dir.path()).unwrap();
-    // database.db_arc() will provide the handle
 
-    // Check if StorageEngine has a method to get the DB Arc.
-    // Step 393 showed `db: Arc<RwLock<DB>>` is a field, but no public getter was visible in the snippet.
-    // However, Database struct has `db_arc()`.
-    // StorageEngine usually has `get_database`.
-
-    // Let's create the database first
+    // Create the database first
     storage.create_database("testdb".to_string()).unwrap();
     let database = storage.get_database("testdb").unwrap();
-    let db_arc = database.db_arc(); // valid way to get it
+    let db_arc = database.db_arc();
 
     // Create a regular collection first (required for executor to find the collection)
     // The collection name must match the name used in the query ("metrics")
@@ -38,16 +23,12 @@ fn test_explain_columnar_query() {
         .create_collection("metrics".to_string(), None)
         .unwrap();
 
-    // Manually create the column family for the columnar collection
-    // Using unsafe pattern similar to Database::create_collection
+    // Manually create the column family for the columnar collection.
+    // MultiThreaded mode: create_cf takes &self and synchronizes internally.
     {
         let cf_name = "testdb:_columnar_metrics";
-        // Check if exists first to be safe, though unexpected in fresh db
         if db_arc.cf_handle(cf_name).is_none() {
-            let db_ptr = Arc::as_ptr(&db_arc) as *mut DB;
-            unsafe {
-                (*db_ptr).create_cf(cf_name, &Options::default()).unwrap();
-            }
+            db_arc.create_cf(cf_name, &Options::default()).unwrap();
         }
     }
 

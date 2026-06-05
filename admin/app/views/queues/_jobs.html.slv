@@ -1,0 +1,63 @@
+<% if !jobs_error.blank? %>
+  <div class="border-t border-zinc-800 bg-red-950/30 px-4 py-2 font-mono text-xs text-red-300">
+    <%= jobs_error %>
+  </div>
+<% else %>
+  <div class="border-t border-zinc-800 animate-fade-up">
+    <% if jobs.length() == 0 %>
+      <p class="px-4 py-4 text-center font-mono text-xs text-zinc-600">no jobs in <%= queue_name %></p>
+    <% else %>
+      <table class="console-table">
+        <thead>
+          <tr>
+            <th>job</th>
+            <th>script/webhook</th>
+            <th>status</th>
+            <th class="text-right">priority</th>
+            <th class="text-right">actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for job in jobs %>
+            <% job_id = job["_key"] ?? "" %>
+            <% job_status = job["status"] ?? "pending" %>
+            <tr>
+              <td class="font-mono text-xs text-zinc-500"><%= job_id.substring(0, 8) %>…</td>
+              <% job_webhook = job["webhook_url"] ?? (job["callback_url"] ?? "") %>
+              <td class="font-mono text-xs text-zinc-200">
+                <% if job_webhook.blank? %>
+                  <%= job["script_path"] ?? (job["script"] ?? "") %>
+                <% else %>
+                  <span class="break-all">
+                    <span class="text-zinc-600">webhook:</span> <%= job_webhook %>
+                  </span>
+                <% end %>
+              </td>
+              <td>
+                <span class="border px-1.5 py-0.5 font-mono text-[10px] <%= job_status == "failed" ? "border-red-900 text-red-400" : (job_status == "running" ? "border-teal-900 text-teal-400" : "border-zinc-800 text-zinc-400") %>">
+                  <%= job_status %>
+                </span>
+              </td>
+              <td class="text-right font-mono text-xs text-zinc-400"><%= job["priority"] ?? 0 %></td>
+              <td class="w-px whitespace-nowrap text-right">
+                <div class="flex justify-end gap-2">
+                  <button class="btn-ghost"
+                          hx-post="<%= attr(db_queues_path(db)) %>/jobs/<%= url(job_id) %>/run-now"
+                          hx-target="#content" hx-swap="innerHTML show:top">
+                    Run now
+                  </button>
+                  <button class="btn-danger"
+                          hx-delete="<%= attr(db_queues_path(db)) %>/jobs/<%= url(job_id) %>"
+                          hx-target="#content" hx-swap="innerHTML show:top"
+                          hx-confirm="Cancel job <%= attr(job_id) %>?">
+                    Cancel
+                  </button>
+                </div>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% end %>
+  </div>
+<% end %>

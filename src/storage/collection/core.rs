@@ -1,24 +1,25 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
 use hex;
-use rust_rocksdb::DB;
+use parking_lot::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 impl Collection {
     /// Create a new collection handle
     pub fn new(name: String, db: Arc<DB>) -> Self {
         // Load cached count from disk, or calculate if not present
         let count = if let Some(cf) = db.cf_handle(&name) {
-            match db.get_cf(cf, STATS_COUNT_KEY.as_bytes()) {
+            match db.get_cf(&cf, STATS_COUNT_KEY.as_bytes()) {
                 Ok(Some(bytes)) => String::from_utf8_lossy(&bytes)
                     .parse::<usize>()
                     .unwrap_or(0),
                 _ => {
                     // No cached count - calculate from documents
                     let prefix = DOC_PREFIX.as_bytes();
-                    db.prefix_iterator_cf(cf, prefix)
+                    db.prefix_iterator_cf(&cf, prefix)
                         .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
                         .count()
                 }
@@ -30,7 +31,7 @@ impl Collection {
         // Determine initial chunk count (only relevant if it's a blob collection)
         let chunk_count = if let Some(cf) = db.cf_handle(&name) {
             let prefix = BLO_PREFIX.as_bytes();
-            db.prefix_iterator_cf(cf, prefix)
+            db.prefix_iterator_cf(&cf, prefix)
                 .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
                 .count()
         } else {
@@ -41,7 +42,7 @@ impl Collection {
 
         // Load collection type
         let collection_type = if let Some(cf) = db.cf_handle(&name) {
-            match db.get_cf(cf, COLLECTION_TYPE_KEY.as_bytes()) {
+            match db.get_cf(&cf, COLLECTION_TYPE_KEY.as_bytes()) {
                 Ok(Some(bytes)) => String::from_utf8_lossy(&bytes).to_string(),
                 _ => "document".to_string(),
             }
@@ -68,7 +69,7 @@ impl Collection {
 
     /// Get collection type
     pub fn get_type(&self) -> String {
-        self.collection_type.read().unwrap().clone()
+        self.collection_type.read().clone()
     }
 
     /// Set collection type (persists to disk)
@@ -79,12 +80,11 @@ impl Collection {
             .expect("Column family should exist");
 
         self.db
-            .put_cf(cf, COLLECTION_TYPE_KEY.as_bytes(), type_.as_bytes())
+            .put_cf(&cf, COLLECTION_TYPE_KEY.as_bytes(), type_.as_bytes())
             .map_err(|e| DbError::InternalError(format!("Failed to set collection type: {}", e)))?;
 
         // Update in-memory state
-        let mut mg = self.collection_type.write().unwrap();
-        *mg = type_.to_string();
+        *self.collection_type.write() = type_.to_string();
 
         Ok(())
     }
@@ -94,9 +94,11 @@ impl Collection {
         if self.count_dirty.swap(false, Ordering::Relaxed) {
             let count = self.doc_count.load(Ordering::Relaxed);
             if let Some(cf) = self.db.cf_handle(&self.name) {
-                let _ =
-                    self.db
-                        .put_cf(cf, STATS_COUNT_KEY.as_bytes(), count.to_string().as_bytes());
+                let _ = self.db.put_cf(
+                    &cf,
+                    STATS_COUNT_KEY.as_bytes(),
+                    count.to_string().as_bytes(),
+                );
             }
             // Update last flush time
             let now = std::time::SystemTime::now()
@@ -129,7 +131,7 @@ impl Collection {
     /// Compact the collection to remove tombstones and reclaim space
     pub fn compact(&self) {
         if let Some(cf) = self.db.cf_handle(&self.name) {
-            self.db.compact_range_cf(cf, None::<&[u8]>, None::<&[u8]>);
+            self.db.compact_range_cf(&cf, None::<&[u8]>, None::<&[u8]>);
         }
     }
 
@@ -162,7 +164,7 @@ impl Collection {
         // Get SST files size
         let sst_files_size = self
             .db
-            .property_int_value_cf(cf, "rocksdb.total-sst-files-size")
+            .property_int_value_cf(&cf, "rocksdb.total-sst-files-size")
             .ok()
             .flatten()
             .unwrap_or(0);
@@ -170,7 +172,7 @@ impl Collection {
         // Get estimated live data size
         let live_data_size = self
             .db
-            .property_int_value_cf(cf, "rocksdb.estimate-live-data-size")
+            .property_int_value_cf(&cf, "rocksdb.estimate-live-data-size")
             .ok()
             .flatten()
             .unwrap_or(0);
@@ -180,7 +182,7 @@ impl Collection {
         for i in 0..7 {
             num_sst_files += self
                 .db
-                .property_int_value_cf(cf, &format!("rocksdb.num-files-at-level{}", i))
+                .property_int_value_cf(&cf, &format!("rocksdb.num-files-at-level{}", i))
                 .ok()
                 .flatten()
                 .unwrap_or(0);
@@ -189,7 +191,7 @@ impl Collection {
         // Get memtable size
         let memtable_size = self
             .db
-            .property_int_value_cf(cf, "rocksdb.cur-size-all-mem-tables")
+            .property_int_value_cf(&cf, "rocksdb.cur-size-all-mem-tables")
             .ok()
             .flatten()
             .unwrap_or(0);
@@ -216,7 +218,7 @@ impl Collection {
 
         let config_bytes = serde_json::to_vec(config)?;
         self.db
-            .put_cf(cf, SHARD_CONFIG_KEY.as_bytes(), &config_bytes)
+            .put_cf(&cf, SHARD_CONFIG_KEY.as_bytes(), &config_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to store shard config: {}", e)))?;
 
         tracing::info!(
@@ -233,7 +235,7 @@ impl Collection {
         let cf = self.db.cf_handle(&self.name)?;
 
         self.db
-            .get_cf(cf, SHARD_CONFIG_KEY.as_bytes())
+            .get_cf(&cf, SHARD_CONFIG_KEY.as_bytes())
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -251,7 +253,7 @@ impl Collection {
 
         let table_bytes = serde_json::to_vec(table)?;
         self.db
-            .put_cf(cf, SHARD_TABLE_KEY.as_bytes(), &table_bytes)
+            .put_cf(&cf, SHARD_TABLE_KEY.as_bytes(), &table_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to store shard table: {}", e)))?;
 
         Ok(())
@@ -262,7 +264,7 @@ impl Collection {
         let cf = self.db.cf_handle(&self.name)?;
 
         self.db
-            .get_cf(cf, SHARD_TABLE_KEY.as_bytes())
+            .get_cf(&cf, SHARD_TABLE_KEY.as_bytes())
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())

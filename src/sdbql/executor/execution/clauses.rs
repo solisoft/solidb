@@ -18,6 +18,42 @@ use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
 use crate::sync::protocol::Operation;
 
+/// Block on the result of a sharded mutation that was spawned onto the tokio
+/// runtime, bounding the wait. The executor thread is synchronous and uses a
+/// `sync_channel` to hand the async coordinator call its result; an unbounded
+/// `recv()` there parks this thread forever if the spawned future stalls
+/// (unreachable shard, lock, fsync) — surfacing to callers as an idle, never
+/// answered request. `recv_timeout` turns that into a 504 instead.
+fn recv_sharded<T>(rx: std::sync::mpsc::Receiver<DbResult<T>>, op: &str) -> DbResult<T> {
+    recv_sharded_with(rx, op, std::time::Duration::from_secs(10))
+}
+
+fn recv_sharded_with<T>(
+    rx: std::sync::mpsc::Receiver<DbResult<T>>,
+    op: &str,
+    wait: std::time::Duration,
+) -> DbResult<T> {
+    use std::sync::mpsc::RecvTimeoutError;
+    match rx.recv_timeout(wait) {
+        Ok(inner) => inner,
+        Err(RecvTimeoutError::Timeout) => {
+            tracing::warn!(
+                layer = "solidb",
+                op = op,
+                timeout_secs = wait.as_secs(),
+                "sharded operation timed out"
+            );
+            Err(DbError::Timeout(format!(
+                "sharded {op} exceeded {}s",
+                wait.as_secs()
+            )))
+        }
+        Err(RecvTimeoutError::Disconnected) => {
+            Err(DbError::InternalError(format!("sharded {op} task failed")))
+        }
+    }
+}
+
 impl<'a> QueryExecutor<'a> {
     /// Execute body clauses and return row contexts with mutation stats
     pub(super) fn execute_body_clauses(
@@ -174,9 +210,7 @@ impl<'a> QueryExecutor<'a> {
                             });
 
                             // Wait for batch result
-                            let result = rx.recv().map_err(|_| {
-                                DbError::InternalError("Sharded batch insert failed".to_string())
-                            })??;
+                            let result = recv_sharded(rx, "insert")?;
                             tracing::debug!(
                                 "INSERT: Sharded batch completed - {} success, {} failed",
                                 result.0,
@@ -335,9 +369,7 @@ impl<'a> QueryExecutor<'a> {
                                     let res = coord.update(&db, &coll, &conf, &k, doc).await;
                                     let _ = tx.send(res);
                                 });
-                                let updated_doc = rx.recv().map_err(|_| {
-                                    DbError::InternalError("Sharded update task failed".to_string())
-                                })??;
+                                let updated_doc = recv_sharded(rx, "update")?;
                                 stats.documents_updated += 1;
 
                                 // Inject NEW variable
@@ -518,9 +550,7 @@ impl<'a> QueryExecutor<'a> {
                                     let res = coord.delete(&db, &coll, &conf, &k).await;
                                     let _ = tx.send(res);
                                 });
-                                rx.recv().map_err(|_| {
-                                    DbError::InternalError("Sharded remove task failed".to_string())
-                                })??;
+                                recv_sharded(rx, "remove")?;
                                 stats.documents_removed += 1;
                             }
                             i += 1; // CRITICAL: Advance to next clause
@@ -1232,5 +1262,40 @@ impl<'a> QueryExecutor<'a> {
         }
 
         Ok((rows, stats))
+    }
+}
+
+#[cfg(test)]
+mod recv_sharded_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn timeout_when_sender_never_sends() {
+        // Hold the sender open but never send → recv_timeout elapses →
+        // a bounded 504-mapped Timeout, not an indefinite park.
+        let (_tx, rx) = std::sync::mpsc::sync_channel::<DbResult<u32>>(1);
+        let err = recv_sharded_with(rx, "insert", Duration::from_millis(50)).unwrap_err();
+        assert!(matches!(err, DbError::Timeout(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn disconnected_when_sender_dropped() {
+        // Sender dropped without sending (e.g. spawned task panicked) →
+        // InternalError, distinct from the timeout case.
+        let (tx, rx) = std::sync::mpsc::sync_channel::<DbResult<u32>>(1);
+        drop(tx);
+        let err = recv_sharded_with(rx, "update", Duration::from_secs(10)).unwrap_err();
+        assert!(matches!(err, DbError::InternalError(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn passes_through_inner_result() {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<DbResult<u32>>(1);
+        tx.send(Ok(7)).unwrap();
+        assert_eq!(
+            recv_sharded_with(rx, "remove", Duration::from_secs(10)).unwrap(),
+            7
+        );
     }
 }

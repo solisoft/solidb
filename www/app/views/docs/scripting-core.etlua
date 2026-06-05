@@ -45,8 +45,8 @@
               <div class="text-xs text-gray-500 mt-1">Generate a V4 UUID.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
-              <span class="text-purple-400">solidb.env(key)</span> <span class="text-gray-500">-&gt; string</span>
-              <div class="text-xs text-gray-500 mt-1">Read permitted environment variable (must start with PUBLIC_).</div>
+              <span class="text-purple-400">solidb.env</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">Hash of environment variables loaded from the <code>_env</code> collection. Access by key, e.g. <code>solidb.env.MY_KEY</code>.</div>
             </li>
           </ul>
         </div>
