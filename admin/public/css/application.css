@@ -154,7 +154,7 @@ html,
   -o-tab-size: 4;
      tab-size: 4;
   /* 3 */
-  font-family: Space Grotesk, system-ui, sans-serif;
+  font-family: var(--font-sans);
   /* 4 */
   font-feature-settings: normal;
   /* 5 */
@@ -243,7 +243,7 @@ code,
 kbd,
 samp,
 pre {
-  font-family: JetBrains Mono, monospace;
+  font-family: var(--font-mono);
   /* 1 */
   font-feature-settings: normal;
   /* 2 */
@@ -562,10 +562,10 @@ html {
 
 body {
   --tw-bg-opacity: 1;
-  background-color: rgb(9 9 11 / var(--tw-bg-opacity, 1));
+  background-color: rgb(var(--surface-950) / var(--tw-bg-opacity, 1));
   line-height: 1.625;
   --tw-text-opacity: 1;
-  color: rgb(244 244 245 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-100) / var(--tw-text-opacity, 1));
 }
 
 h1 {
@@ -597,20 +597,20 @@ img, video {
 
 .console-grid {
   background-image:
-            linear-gradient(rgba(63, 63, 70, 0.16) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(63, 63, 70, 0.16) 1px, transparent 1px);
+            linear-gradient(rgb(var(--surface-700) / 0.16) 1px, transparent 1px),
+            linear-gradient(90deg, rgb(var(--surface-700) / 0.16) 1px, transparent 1px);
   background-size: 32px 32px;
 }
 
 /* Uppercase mono section label — the console's signature typographic move. */
 
 .console-label {
-  font-family: JetBrains Mono, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.2em;
   --tw-text-opacity: 1;
-  color: rgb(113 113 122 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-500) / var(--tw-text-opacity, 1));
 }
 
 /* Form labels stack above their input; element-scoped so console-label
@@ -620,6 +620,18 @@ label.console-label {
   display: block;
 }
 
+/* Explanatory copy (page descriptions, form hints). One notch larger
+       than the old text-xs so help text stays comfortably readable. */
+
+.console-help {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  line-height: 1.625;
+  --tw-text-opacity: 1;
+  color: rgb(var(--surface-500) / var(--tw-text-opacity, 1));
+}
+
 /* No backdrop-blur here: backdrop-filter makes the card the containing
        block for position:fixed descendants, which would scope/crop the
        modals that live inside cards (e.g. per-row document edit). */
@@ -627,17 +639,17 @@ label.console-label {
 .console-card {
   border-width: 1px;
   --tw-border-opacity: 1;
-  border-color: rgb(39 39 42 / var(--tw-border-opacity, 1));
-  background-color: rgb(24 24 27 / 0.8);
+  border-color: rgb(var(--surface-800) / var(--tw-border-opacity, 1));
+  background-color: rgb(var(--surface-900) / 0.8);
 }
 
 .console-input {
   width: 100%;
   border-width: 1px;
   --tw-border-opacity: 1;
-  border-color: rgb(39 39 42 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--surface-800) / var(--tw-border-opacity, 1));
   --tw-bg-opacity: 1;
-  background-color: rgb(9 9 11 / var(--tw-bg-opacity, 1));
+  background-color: rgb(var(--surface-950) / var(--tw-bg-opacity, 1));
   padding-left: 0.75rem;
   padding-right: 0.75rem;
   padding-top: 0.5rem;
@@ -645,17 +657,17 @@ label.console-label {
   font-size: 0.875rem;
   line-height: 1.25rem;
   --tw-text-opacity: 1;
-  color: rgb(244 244 245 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-100) / var(--tw-text-opacity, 1));
 }
 
 .console-input::-moz-placeholder {
   --tw-placeholder-opacity: 1;
-  color: rgb(82 82 91 / var(--tw-placeholder-opacity, 1));
+  color: rgb(var(--surface-600) / var(--tw-placeholder-opacity, 1));
 }
 
 .console-input::placeholder {
   --tw-placeholder-opacity: 1;
-  color: rgb(82 82 91 / var(--tw-placeholder-opacity, 1));
+  color: rgb(var(--surface-600) / var(--tw-placeholder-opacity, 1));
 }
 
 .console-input {
@@ -667,11 +679,11 @@ label.console-label {
 }
 
 .console-input:focus {
-  border-color: rgb(20 184 166 / 0.6);
+  border-color: rgb(var(--accent-500) / 0.6);
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color);
   box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
-  --tw-ring-color: rgb(20 184 166 / 0.3);
+  --tw-ring-color: rgb(var(--accent-500) / 0.3);
 }
 
 .btn-primary {
@@ -679,19 +691,19 @@ label.console-label {
   align-items: center;
   gap: 0.5rem;
   border-width: 1px;
-  border-color: rgb(20 184 166 / 0.5);
-  background-color: rgb(20 184 166 / 0.1);
+  border-color: rgb(var(--accent-500) / 0.5);
+  background-color: rgb(var(--accent-500) / 0.1);
   padding-left: 0.75rem;
   padding-right: 0.75rem;
   padding-top: 0.375rem;
   padding-bottom: 0.375rem;
-  font-family: JetBrains Mono, monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   line-height: 1rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   --tw-text-opacity: 1;
-  color: rgb(94 234 212 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-300) / var(--tw-text-opacity, 1));
   transition-property: all;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
@@ -699,8 +711,8 @@ label.console-label {
 
 .btn-primary:hover {
   --tw-border-opacity: 1;
-  border-color: rgb(45 212 191 / var(--tw-border-opacity, 1));
-  background-color: rgb(20 184 166 / 0.2);
+  border-color: rgb(var(--accent-400) / var(--tw-border-opacity, 1));
+  background-color: rgb(var(--accent-500) / 0.2);
 }
 
 .btn-ghost {
@@ -709,19 +721,19 @@ label.console-label {
   gap: 0.5rem;
   border-width: 1px;
   --tw-border-opacity: 1;
-  border-color: rgb(63 63 70 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--surface-700) / var(--tw-border-opacity, 1));
   background-color: transparent;
   padding-left: 0.75rem;
   padding-right: 0.75rem;
   padding-top: 0.375rem;
   padding-bottom: 0.375rem;
-  font-family: JetBrains Mono, monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   line-height: 1rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   --tw-text-opacity: 1;
-  color: rgb(161 161 170 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-400) / var(--tw-text-opacity, 1));
   transition-property: all;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
@@ -729,9 +741,9 @@ label.console-label {
 
 .btn-ghost:hover {
   --tw-border-opacity: 1;
-  border-color: rgb(113 113 122 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--surface-500) / var(--tw-border-opacity, 1));
   --tw-text-opacity: 1;
-  color: rgb(228 228 231 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-200) / var(--tw-text-opacity, 1));
 }
 
 .btn-danger {
@@ -746,7 +758,7 @@ label.console-label {
   padding-right: 0.75rem;
   padding-top: 0.375rem;
   padding-bottom: 0.375rem;
-  font-family: JetBrains Mono, monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   line-height: 1rem;
   text-transform: uppercase;
@@ -775,23 +787,23 @@ label.console-label {
 .console-table thead th {
   border-bottom-width: 1px;
   --tw-border-opacity: 1;
-  border-color: rgb(39 39 42 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--surface-800) / var(--tw-border-opacity, 1));
   padding-left: 1rem;
   padding-right: 1rem;
   padding-top: 0.5rem;
   padding-bottom: 0.5rem;
-  font-family: JetBrains Mono, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.2em;
   --tw-text-opacity: 1;
-  color: rgb(113 113 122 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-500) / var(--tw-text-opacity, 1));
 }
 
 .console-table tbody td {
   border-bottom-width: 1px;
-  border-color: rgb(39 39 42 / 0.6);
+  border-color: rgb(var(--surface-800) / 0.6);
   padding-left: 1rem;
   padding-right: 1rem;
   padding-top: 0.625rem;
@@ -806,7 +818,19 @@ label.console-label {
 }
 
 .console-table tbody tr:hover {
-  background-color: rgb(24 24 27 / 0.8);
+  background-color: rgb(var(--surface-900) / 0.8);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }
 
 .visible {
@@ -815,6 +839,10 @@ label.console-label {
 
 .collapse {
   visibility: collapse;
+}
+
+.static {
+  position: static;
 }
 
 .fixed {
@@ -833,8 +861,17 @@ label.console-label {
   inset: 0px;
 }
 
+.inset-y-0 {
+  top: 0px;
+  bottom: 0px;
+}
+
 .bottom-4 {
   bottom: 1rem;
+}
+
+.left-0 {
+  left: 0px;
 }
 
 .right-0 {
@@ -849,12 +886,29 @@ label.console-label {
   z-index: 20;
 }
 
+.z-30 {
+  z-index: 30;
+}
+
 .z-40 {
   z-index: 40;
 }
 
 .z-50 {
   z-index: 50;
+}
+
+.col-span-2 {
+  grid-column: span 2 / span 2;
+}
+
+.mx-auto {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.-ml-1 {
+  margin-left: -0.25rem;
 }
 
 .mb-1 {
@@ -889,12 +943,20 @@ label.console-label {
   margin-left: auto;
 }
 
+.mr-1 {
+  margin-right: 0.25rem;
+}
+
 .mt-0\.5 {
   margin-top: 0.125rem;
 }
 
 .mt-1 {
   margin-top: 0.25rem;
+}
+
+.mt-1\.5 {
+  margin-top: 0.375rem;
 }
 
 .mt-2 {
@@ -945,6 +1007,10 @@ label.console-label {
   height: 0.25rem;
 }
 
+.h-1\.5 {
+  height: 0.375rem;
+}
+
 .h-14 {
   height: 3.5rem;
 }
@@ -957,8 +1023,24 @@ label.console-label {
   height: 0.625rem;
 }
 
+.h-3 {
+  height: 0.75rem;
+}
+
 .h-4 {
   height: 1rem;
+}
+
+.h-5 {
+  height: 1.25rem;
+}
+
+.h-9 {
+  height: 2.25rem;
+}
+
+.h-\[65vh\] {
+  height: 65vh;
 }
 
 .h-full {
@@ -997,12 +1079,20 @@ label.console-label {
   min-height: 100vh;
 }
 
+.w-1\.5 {
+  width: 0.375rem;
+}
+
 .w-2 {
   width: 0.5rem;
 }
 
 .w-2\.5 {
   width: 0.625rem;
+}
+
+.w-20 {
+  width: 5rem;
 }
 
 .w-24 {
@@ -1013,6 +1103,18 @@ label.console-label {
   width: 7rem;
 }
 
+.w-3 {
+  width: 0.75rem;
+}
+
+.w-32 {
+  width: 8rem;
+}
+
+.w-36 {
+  width: 9rem;
+}
+
 .w-4 {
   width: 1rem;
 }
@@ -1021,12 +1123,28 @@ label.console-label {
   width: 10rem;
 }
 
+.w-44 {
+  width: 11rem;
+}
+
 .w-48 {
   width: 12rem;
 }
 
+.w-5 {
+  width: 1.25rem;
+}
+
+.w-52 {
+  width: 13rem;
+}
+
 .w-56 {
   width: 14rem;
+}
+
+.w-9 {
+  width: 2.25rem;
 }
 
 .w-full {
@@ -1041,8 +1159,8 @@ label.console-label {
   min-width: 0px;
 }
 
-.min-w-64 {
-  min-width: 16rem;
+.min-w-56 {
+  min-width: 14rem;
 }
 
 .min-w-72 {
@@ -1065,6 +1183,10 @@ label.console-label {
   max-width: 56rem;
 }
 
+.max-w-56 {
+  max-width: 14rem;
+}
+
 .max-w-md {
   max-width: 28rem;
 }
@@ -1079,6 +1201,25 @@ label.console-label {
 
 .shrink-0 {
   flex-shrink: 0;
+}
+
+.basis-full {
+  flex-basis: 100%;
+}
+
+.\!translate-x-0 {
+  --tw-translate-x: 0px !important;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y)) !important;
+}
+
+.-translate-x-full {
+  --tw-translate-x: -100%;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
+.rotate-90 {
+  --tw-rotate: 90deg;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 
 .transform {
@@ -1201,6 +1342,10 @@ label.console-label {
   gap: 1.25rem;
 }
 
+.gap-6 {
+  gap: 1.5rem;
+}
+
 .gap-px {
   gap: 1px;
 }
@@ -1235,6 +1380,12 @@ label.console-label {
 
 .gap-y-3 {
   row-gap: 0.75rem;
+}
+
+.space-y-1\.5 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(0.375rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(0.375rem * var(--tw-space-y-reverse));
 }
 
 .space-y-2 > :not([hidden]) ~ :not([hidden]) {
@@ -1274,7 +1425,7 @@ label.console-label {
 }
 
 .divide-zinc-800\/60 > :not([hidden]) ~ :not([hidden]) {
-  border-color: rgb(39 39 42 / 0.6);
+  border-color: rgb(var(--surface-800) / 0.6);
 }
 
 .overflow-auto {
@@ -1313,6 +1464,10 @@ label.console-label {
 
 .break-all {
   word-break: break-all;
+}
+
+.rounded-full {
+  border-radius: 9999px;
 }
 
 .\!border-0 {
@@ -1374,22 +1529,32 @@ label.console-label {
 
 .border-teal-400 {
   --tw-border-opacity: 1;
-  border-color: rgb(45 212 191 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--accent-400) / var(--tw-border-opacity, 1));
+}
+
+.border-teal-500 {
+  --tw-border-opacity: 1;
+  border-color: rgb(var(--accent-500) / var(--tw-border-opacity, 1));
+}
+
+.border-teal-600 {
+  --tw-border-opacity: 1;
+  border-color: rgb(var(--accent-600) / var(--tw-border-opacity, 1));
 }
 
 .border-teal-700 {
   --tw-border-opacity: 1;
-  border-color: rgb(15 118 110 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--accent-700) / var(--tw-border-opacity, 1));
 }
 
 .border-teal-800 {
   --tw-border-opacity: 1;
-  border-color: rgb(17 94 89 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--accent-800) / var(--tw-border-opacity, 1));
 }
 
 .border-teal-900 {
   --tw-border-opacity: 1;
-  border-color: rgb(19 78 74 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--accent-900) / var(--tw-border-opacity, 1));
 }
 
 .border-transparent {
@@ -1403,20 +1568,20 @@ label.console-label {
 
 .border-zinc-700 {
   --tw-border-opacity: 1;
-  border-color: rgb(63 63 70 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--surface-700) / var(--tw-border-opacity, 1));
 }
 
 .border-zinc-800 {
   --tw-border-opacity: 1;
-  border-color: rgb(39 39 42 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--surface-800) / var(--tw-border-opacity, 1));
 }
 
 .border-zinc-800\/40 {
-  border-color: rgb(39 39 42 / 0.4);
+  border-color: rgb(var(--surface-800) / 0.4);
 }
 
 .border-zinc-800\/60 {
-  border-color: rgb(39 39 42 / 0.6);
+  border-color: rgb(var(--surface-800) / 0.6);
 }
 
 .bg-amber-400 {
@@ -1435,6 +1600,10 @@ label.console-label {
 
 .bg-amber-950\/40 {
   background-color: rgb(69 26 3 / 0.4);
+}
+
+.bg-black\/60 {
+  background-color: rgb(0 0 0 / 0.6);
 }
 
 .bg-black\/70 {
@@ -1470,20 +1639,24 @@ label.console-label {
 
 .bg-teal-400 {
   --tw-bg-opacity: 1;
-  background-color: rgb(45 212 191 / var(--tw-bg-opacity, 1));
+  background-color: rgb(var(--accent-400) / var(--tw-bg-opacity, 1));
 }
 
 .bg-teal-500 {
   --tw-bg-opacity: 1;
-  background-color: rgb(20 184 166 / var(--tw-bg-opacity, 1));
+  background-color: rgb(var(--accent-500) / var(--tw-bg-opacity, 1));
+}
+
+.bg-teal-500\/5 {
+  background-color: rgb(var(--accent-500) / 0.05);
 }
 
 .bg-teal-950\/20 {
-  background-color: rgb(4 47 46 / 0.2);
+  background-color: rgb(var(--accent-950) / 0.2);
 }
 
 .bg-teal-950\/40 {
-  background-color: rgb(4 47 46 / 0.4);
+  background-color: rgb(var(--accent-950) / 0.4);
 }
 
 .bg-violet-500 {
@@ -1493,43 +1666,51 @@ label.console-label {
 
 .bg-zinc-500 {
   --tw-bg-opacity: 1;
-  background-color: rgb(113 113 122 / var(--tw-bg-opacity, 1));
+  background-color: rgb(var(--surface-500) / var(--tw-bg-opacity, 1));
 }
 
 .bg-zinc-600 {
   --tw-bg-opacity: 1;
-  background-color: rgb(82 82 91 / var(--tw-bg-opacity, 1));
+  background-color: rgb(var(--surface-600) / var(--tw-bg-opacity, 1));
 }
 
 .bg-zinc-800 {
   --tw-bg-opacity: 1;
-  background-color: rgb(39 39 42 / var(--tw-bg-opacity, 1));
+  background-color: rgb(var(--surface-800) / var(--tw-bg-opacity, 1));
 }
 
 .bg-zinc-800\/60 {
-  background-color: rgb(39 39 42 / 0.6);
+  background-color: rgb(var(--surface-800) / 0.6);
 }
 
 .bg-zinc-900 {
   --tw-bg-opacity: 1;
-  background-color: rgb(24 24 27 / var(--tw-bg-opacity, 1));
+  background-color: rgb(var(--surface-900) / var(--tw-bg-opacity, 1));
+}
+
+.bg-zinc-900\/60 {
+  background-color: rgb(var(--surface-900) / 0.6);
 }
 
 .bg-zinc-950 {
   --tw-bg-opacity: 1;
-  background-color: rgb(9 9 11 / var(--tw-bg-opacity, 1));
+  background-color: rgb(var(--surface-950) / var(--tw-bg-opacity, 1));
+}
+
+.bg-zinc-950\/60 {
+  background-color: rgb(var(--surface-950) / 0.6);
 }
 
 .bg-zinc-950\/70 {
-  background-color: rgb(9 9 11 / 0.7);
+  background-color: rgb(var(--surface-950) / 0.7);
 }
 
 .bg-zinc-950\/80 {
-  background-color: rgb(9 9 11 / 0.8);
+  background-color: rgb(var(--surface-950) / 0.8);
 }
 
 .bg-zinc-950\/90 {
-  background-color: rgb(9 9 11 / 0.9);
+  background-color: rgb(var(--surface-950) / 0.9);
 }
 
 .\!p-0 {
@@ -1546,10 +1727,6 @@ label.console-label {
 
 .p-5 {
   padding: 1.25rem;
-}
-
-.p-6 {
-  padding: 1.5rem;
 }
 
 .px-1 {
@@ -1688,11 +1865,11 @@ label.console-label {
 }
 
 .font-mono {
-  font-family: JetBrains Mono, monospace;
+  font-family: var(--font-mono);
 }
 
 .font-sans {
-  font-family: Space Grotesk, system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .text-\[10px\] {
@@ -1814,32 +1991,32 @@ label.console-label {
 
 .text-teal-100 {
   --tw-text-opacity: 1;
-  color: rgb(204 251 241 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-100) / var(--tw-text-opacity, 1));
 }
 
 .text-teal-200 {
   --tw-text-opacity: 1;
-  color: rgb(153 246 228 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-200) / var(--tw-text-opacity, 1));
 }
 
 .text-teal-300 {
   --tw-text-opacity: 1;
-  color: rgb(94 234 212 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-300) / var(--tw-text-opacity, 1));
 }
 
 .text-teal-400 {
   --tw-text-opacity: 1;
-  color: rgb(45 212 191 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-400) / var(--tw-text-opacity, 1));
 }
 
 .text-teal-500 {
   --tw-text-opacity: 1;
-  color: rgb(20 184 166 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-500) / var(--tw-text-opacity, 1));
 }
 
 .text-teal-600 {
   --tw-text-opacity: 1;
-  color: rgb(13 148 136 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-600) / var(--tw-text-opacity, 1));
 }
 
 .text-violet-400 {
@@ -1849,37 +2026,37 @@ label.console-label {
 
 .text-zinc-100 {
   --tw-text-opacity: 1;
-  color: rgb(244 244 245 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-100) / var(--tw-text-opacity, 1));
 }
 
 .text-zinc-200 {
   --tw-text-opacity: 1;
-  color: rgb(228 228 231 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-200) / var(--tw-text-opacity, 1));
 }
 
 .text-zinc-300 {
   --tw-text-opacity: 1;
-  color: rgb(212 212 216 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-300) / var(--tw-text-opacity, 1));
 }
 
 .text-zinc-400 {
   --tw-text-opacity: 1;
-  color: rgb(161 161 170 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-400) / var(--tw-text-opacity, 1));
 }
 
 .text-zinc-500 {
   --tw-text-opacity: 1;
-  color: rgb(113 113 122 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-500) / var(--tw-text-opacity, 1));
 }
 
 .text-zinc-600 {
   --tw-text-opacity: 1;
-  color: rgb(82 82 91 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-600) / var(--tw-text-opacity, 1));
 }
 
 .text-zinc-700 {
   --tw-text-opacity: 1;
-  color: rgb(63 63 70 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-700) / var(--tw-text-opacity, 1));
 }
 
 .antialiased {
@@ -1888,7 +2065,7 @@ label.console-label {
 }
 
 .accent-teal-500 {
-  accent-color: #14b8a6;
+  accent-color: rgb(var(--accent-500) / 1);
 }
 
 .shadow-2xl {
@@ -1941,8 +2118,390 @@ label.console-label {
   transition-duration: 150ms;
 }
 
+.transition-transform {
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.duration-200 {
+  transition-duration: 200ms;
+}
+
 .ease-in {
   transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Theme presets — every `teal-*` (accent) and `zinc-*` (surface) utility
+   resolves through these variables (see tailwind.config.js). Triplets are
+   space-separated RGB so Tailwind's opacity modifiers (teal-500/10,
+   zinc-800/60) keep working. The preset is picked on the Settings page and
+   applied as data-theme on <body>. */
+
+:root {
+  /* solidb (default) — terminal teal on zinc */
+  --accent-50:  240 253 250;
+  --accent-100: 204 251 241;
+  --accent-200: 153 246 228;
+  --accent-300: 94 234 212;
+  --accent-400: 45 212 191;
+  --accent-500: 20 184 166;
+  --accent-600: 13 148 136;
+  --accent-700: 15 118 110;
+  --accent-800: 17 94 89;
+  --accent-900: 19 78 74;
+  --accent-950: 4 47 46;
+  --surface-50:  250 250 250;
+  --surface-100: 244 244 245;
+  --surface-200: 228 228 231;
+  --surface-300: 212 212 216;
+  --surface-400: 161 161 170;
+  --surface-500: 113 113 122;
+  --surface-600: 82 82 91;
+  --surface-700: 63 63 70;
+  --surface-800: 39 39 42;
+  --surface-900: 24 24 27;
+  --surface-950: 9 9 11;
+}
+
+/* arangodb — avocado green on slate blue-gray */
+
+[data-theme="arangodb"] {
+  --accent-50:  248 252 233;
+  --accent-100: 238 248 204;
+  --accent-200: 221 240 155;
+  --accent-300: 197 228 104;
+  --accent-400: 172 216 75;
+  --accent-500: 148 200 61;
+  --accent-600: 118 165 44;
+  --accent-700: 90 128 35;
+  --accent-800: 72 102 31;
+  --accent-900: 60 85 30;
+  --accent-950: 30 46 12;
+  --surface-50:  248 250 252;
+  --surface-100: 241 245 249;
+  --surface-200: 226 232 240;
+  --surface-300: 203 213 225;
+  --surface-400: 148 163 184;
+  --surface-500: 100 116 139;
+  --surface-600: 71 85 105;
+  --surface-700: 51 65 85;
+  --surface-800: 30 41 59;
+  --surface-900: 15 23 42;
+  --surface-950: 2 6 23;
+}
+
+/* violet — purple accents on purple-tinted dark */
+
+[data-theme="violet"] {
+  --accent-50:  245 243 255;
+  --accent-100: 237 233 254;
+  --accent-200: 221 214 254;
+  --accent-300: 196 181 253;
+  --accent-400: 167 139 250;
+  --accent-500: 139 92 246;
+  --accent-600: 124 58 237;
+  --accent-700: 109 40 217;
+  --accent-800: 91 33 182;
+  --accent-900: 76 29 149;
+  --accent-950: 46 16 101;
+  --surface-50:  248 247 252;
+  --surface-100: 240 238 248;
+  --surface-200: 226 222 237;
+  --surface-300: 200 195 215;
+  --surface-400: 161 153 180;
+  --surface-500: 113 105 134;
+  --surface-600: 82 73 104;
+  --surface-700: 58 50 78;
+  --surface-800: 39 33 55;
+  --surface-900: 24 20 35;
+  --surface-950: 13 10 20;
+}
+
+/* amber — warm amber on stone */
+
+[data-theme="amber"] {
+  --accent-50:  255 251 235;
+  --accent-100: 254 243 199;
+  --accent-200: 253 230 138;
+  --accent-300: 252 211 77;
+  --accent-400: 251 191 36;
+  --accent-500: 245 158 11;
+  --accent-600: 217 119 6;
+  --accent-700: 180 83 9;
+  --accent-800: 146 64 14;
+  --accent-900: 120 53 15;
+  --accent-950: 69 26 3;
+  --surface-50:  250 250 249;
+  --surface-100: 245 245 244;
+  --surface-200: 231 229 228;
+  --surface-300: 214 211 209;
+  --surface-400: 168 162 158;
+  --surface-500: 120 113 108;
+  --surface-600: 87 83 78;
+  --surface-700: 68 64 60;
+  --surface-800: 41 37 36;
+  --surface-900: 28 25 23;
+  --surface-950: 12 10 9;
+}
+
+/* rose — rose red on red-tinted dark */
+
+[data-theme="rose"] {
+  --accent-50:  255 241 242;
+  --accent-100: 255 228 230;
+  --accent-200: 254 205 211;
+  --accent-300: 253 164 175;
+  --accent-400: 251 113 133;
+  --accent-500: 244 63 94;
+  --accent-600: 225 29 72;
+  --accent-700: 190 18 60;
+  --accent-800: 159 18 57;
+  --accent-900: 136 19 55;
+  --accent-950: 76 5 25;
+  --surface-50:  250 248 248;
+  --surface-100: 243 239 240;
+  --surface-200: 231 223 225;
+  --surface-300: 207 195 198;
+  --surface-400: 170 150 155;
+  --surface-500: 128 102 108;
+  --surface-600: 95 70 76;
+  --surface-700: 70 48 53;
+  --surface-800: 48 30 34;
+  --surface-900: 31 17 20;
+  --surface-950: 20 9 11;
+}
+
+/* sky — sky blue on cool gray */
+
+[data-theme="sky"] {
+  --accent-50:  240 249 255;
+  --accent-100: 224 242 254;
+  --accent-200: 186 230 253;
+  --accent-300: 125 211 252;
+  --accent-400: 56 189 248;
+  --accent-500: 14 165 233;
+  --accent-600: 2 132 199;
+  --accent-700: 3 105 161;
+  --accent-800: 7 89 133;
+  --accent-900: 12 74 110;
+  --accent-950: 8 47 73;
+  --surface-50:  249 250 251;
+  --surface-100: 243 244 246;
+  --surface-200: 229 231 235;
+  --surface-300: 209 213 219;
+  --surface-400: 156 163 175;
+  --surface-500: 107 114 128;
+  --surface-600: 75 85 99;
+  --surface-700: 55 65 81;
+  --surface-800: 31 41 55;
+  --surface-900: 17 24 39;
+  --surface-950: 3 7 18;
+}
+
+/* Light presets — the same palettes, scale-inverted: surface-950 becomes the
+   light page background, surface-100 the dark text, and accents land on their
+   darker shades for contrast. */
+
+/* solidb-light — teal on light zinc */
+
+[data-theme="solidb-light"] {
+  --accent-50: 4 47 46;
+  --accent-100: 19 78 74;
+  --accent-200: 17 94 89;
+  --accent-300: 15 118 110;
+  --accent-400: 13 148 136;
+  --accent-500: 20 184 166;
+  --accent-600: 45 212 191;
+  --accent-700: 94 234 212;
+  --accent-800: 153 246 228;
+  --accent-900: 204 251 241;
+  --accent-950: 240 253 250;
+  --surface-50: 9 9 11;
+  --surface-100: 24 24 27;
+  --surface-200: 39 39 42;
+  --surface-300: 63 63 70;
+  --surface-400: 82 82 91;
+  --surface-500: 113 113 122;
+  --surface-600: 161 161 170;
+  --surface-700: 212 212 216;
+  --surface-800: 228 228 231;
+  --surface-900: 244 244 245;
+  --surface-950: 250 250 250;
+}
+
+/* arangodb-light — avocado green on light slate — like the real thing */
+
+[data-theme="arangodb-light"] {
+  --accent-50: 30 46 12;
+  --accent-100: 60 85 30;
+  --accent-200: 72 102 31;
+  --accent-300: 90 128 35;
+  --accent-400: 118 165 44;
+  --accent-500: 148 200 61;
+  --accent-600: 172 216 75;
+  --accent-700: 197 228 104;
+  --accent-800: 221 240 155;
+  --accent-900: 238 248 204;
+  --accent-950: 248 252 233;
+  --surface-50: 2 6 23;
+  --surface-100: 15 23 42;
+  --surface-200: 30 41 59;
+  --surface-300: 51 65 85;
+  --surface-400: 71 85 105;
+  --surface-500: 100 116 139;
+  --surface-600: 148 163 184;
+  --surface-700: 203 213 225;
+  --surface-800: 226 232 240;
+  --surface-900: 241 245 249;
+  --surface-950: 248 250 252;
+}
+
+/* violet-light — purple on light lavender */
+
+[data-theme="violet-light"] {
+  --accent-50: 46 16 101;
+  --accent-100: 76 29 149;
+  --accent-200: 91 33 182;
+  --accent-300: 109 40 217;
+  --accent-400: 124 58 237;
+  --accent-500: 139 92 246;
+  --accent-600: 167 139 250;
+  --accent-700: 196 181 253;
+  --accent-800: 221 214 254;
+  --accent-900: 237 233 254;
+  --accent-950: 245 243 255;
+  --surface-50: 13 10 20;
+  --surface-100: 24 20 35;
+  --surface-200: 39 33 55;
+  --surface-300: 58 50 78;
+  --surface-400: 82 73 104;
+  --surface-500: 113 105 134;
+  --surface-600: 161 153 180;
+  --surface-700: 200 195 215;
+  --surface-800: 226 222 237;
+  --surface-900: 240 238 248;
+  --surface-950: 248 247 252;
+}
+
+/* amber-light — amber on warm paper */
+
+[data-theme="amber-light"] {
+  --accent-50: 69 26 3;
+  --accent-100: 120 53 15;
+  --accent-200: 146 64 14;
+  --accent-300: 180 83 9;
+  --accent-400: 217 119 6;
+  --accent-500: 245 158 11;
+  --accent-600: 251 191 36;
+  --accent-700: 252 211 77;
+  --accent-800: 253 230 138;
+  --accent-900: 254 243 199;
+  --accent-950: 255 251 235;
+  --surface-50: 12 10 9;
+  --surface-100: 28 25 23;
+  --surface-200: 41 37 36;
+  --surface-300: 68 64 60;
+  --surface-400: 87 83 78;
+  --surface-500: 120 113 108;
+  --surface-600: 168 162 158;
+  --surface-700: 214 211 209;
+  --surface-800: 231 229 228;
+  --surface-900: 245 245 244;
+  --surface-950: 250 250 249;
+}
+
+/* rose-light — rose on warm white */
+
+[data-theme="rose-light"] {
+  --accent-50: 76 5 25;
+  --accent-100: 136 19 55;
+  --accent-200: 159 18 57;
+  --accent-300: 190 18 60;
+  --accent-400: 225 29 72;
+  --accent-500: 244 63 94;
+  --accent-600: 251 113 133;
+  --accent-700: 253 164 175;
+  --accent-800: 254 205 211;
+  --accent-900: 255 228 230;
+  --accent-950: 255 241 242;
+  --surface-50: 20 9 11;
+  --surface-100: 31 17 20;
+  --surface-200: 48 30 34;
+  --surface-300: 70 48 53;
+  --surface-400: 95 70 76;
+  --surface-500: 128 102 108;
+  --surface-600: 170 150 155;
+  --surface-700: 207 195 198;
+  --surface-800: 231 223 225;
+  --surface-900: 243 239 240;
+  --surface-950: 250 248 248;
+}
+
+/* sky-light — sky blue on cool white */
+
+[data-theme="sky-light"] {
+  --accent-50: 8 47 73;
+  --accent-100: 12 74 110;
+  --accent-200: 7 89 133;
+  --accent-300: 3 105 161;
+  --accent-400: 2 132 199;
+  --accent-500: 14 165 233;
+  --accent-600: 56 189 248;
+  --accent-700: 125 211 252;
+  --accent-800: 186 230 253;
+  --accent-900: 224 242 254;
+  --accent-950: 240 249 255;
+  --surface-50: 3 7 18;
+  --surface-100: 17 24 39;
+  --surface-200: 31 41 55;
+  --surface-300: 55 65 81;
+  --surface-400: 75 85 99;
+  --surface-500: 107 114 128;
+  --surface-600: 156 163 175;
+  --surface-700: 209 213 219;
+  --surface-800: 229 231 235;
+  --surface-900: 243 244 246;
+  --surface-950: 249 250 251;
+}
+
+/* Font presets — font-sans/font-mono resolve through these variables (see
+   tailwind.config.js). Picked on the Settings page, applied as data-font on
+   <body>; the layout only loads the Google Fonts the active preset needs. */
+
+:root {
+  /* grotesk (default) */
+  --font-sans: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+[data-font="inter"] {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+[data-font="ibm-plex"] {
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+[data-font="source"] {
+  --font-sans: 'Source Sans 3', system-ui, sans-serif;
+  --font-mono: 'Source Code Pro', monospace;
+}
+
+[data-font="system"] {
+  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* Keyboard-highlighted option in the header db picker (plain rule, not in a
+   layer, so it lands after the utilities and wins the specificity tie against
+   the anchors' text-zinc-* classes). */
+
+.db-option-active {
+  background-color: rgb(var(--surface-800));
+  color: rgb(var(--accent-300));
 }
 
 /* Base styles — SoliDB admin ops console (dark zinc + terminal teal) */
@@ -1975,12 +2534,12 @@ label.console-label {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(20, 184, 166, 0.25);
+  background: rgb(var(--accent-500) / 0.25);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(20, 184, 166, 0.45);
+  background: rgb(var(--accent-500) / 0.45);
 }
 
 .file\:mr-3::file-selector-button {
@@ -1992,7 +2551,7 @@ label.console-label {
 }
 
 .file\:bg-teal-500\/10::file-selector-button {
-  background-color: rgb(20 184 166 / 0.1);
+  background-color: rgb(var(--accent-500) / 0.1);
 }
 
 .file\:px-3::file-selector-button {
@@ -2006,7 +2565,7 @@ label.console-label {
 }
 
 .file\:font-mono::file-selector-button {
-  font-family: JetBrains Mono, monospace;
+  font-family: var(--font-mono);
 }
 
 .file\:text-xs::file-selector-button {
@@ -2024,41 +2583,45 @@ label.console-label {
 
 .file\:text-teal-300::file-selector-button {
   --tw-text-opacity: 1;
-  color: rgb(94 234 212 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-300) / var(--tw-text-opacity, 1));
 }
 
 .hover\:border-teal-600:hover {
   --tw-border-opacity: 1;
-  border-color: rgb(13 148 136 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--accent-600) / var(--tw-border-opacity, 1));
 }
 
 .hover\:border-teal-800:hover {
   --tw-border-opacity: 1;
-  border-color: rgb(17 94 89 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--accent-800) / var(--tw-border-opacity, 1));
 }
 
 .hover\:border-zinc-600:hover {
   --tw-border-opacity: 1;
-  border-color: rgb(82 82 91 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--surface-600) / var(--tw-border-opacity, 1));
 }
 
 .hover\:border-zinc-700:hover {
   --tw-border-opacity: 1;
-  border-color: rgb(63 63 70 / var(--tw-border-opacity, 1));
+  border-color: rgb(var(--surface-700) / var(--tw-border-opacity, 1));
 }
 
 .hover\:bg-zinc-800:hover {
   --tw-bg-opacity: 1;
-  background-color: rgb(39 39 42 / var(--tw-bg-opacity, 1));
+  background-color: rgb(var(--surface-800) / var(--tw-bg-opacity, 1));
 }
 
 .hover\:bg-zinc-900:hover {
   --tw-bg-opacity: 1;
-  background-color: rgb(24 24 27 / var(--tw-bg-opacity, 1));
+  background-color: rgb(var(--surface-900) / var(--tw-bg-opacity, 1));
+}
+
+.hover\:bg-zinc-900\/60:hover {
+  background-color: rgb(var(--surface-900) / 0.6);
 }
 
 .hover\:bg-zinc-900\/80:hover {
-  background-color: rgb(24 24 27 / 0.8);
+  background-color: rgb(var(--surface-900) / 0.8);
 }
 
 .hover\:text-red-400:hover {
@@ -2068,32 +2631,37 @@ label.console-label {
 
 .hover\:text-teal-300:hover {
   --tw-text-opacity: 1;
-  color: rgb(94 234 212 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-300) / var(--tw-text-opacity, 1));
 }
 
 .hover\:text-teal-400:hover {
   --tw-text-opacity: 1;
-  color: rgb(45 212 191 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-400) / var(--tw-text-opacity, 1));
 }
 
 .hover\:text-zinc-200:hover {
   --tw-text-opacity: 1;
-  color: rgb(228 228 231 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-200) / var(--tw-text-opacity, 1));
 }
 
 .hover\:text-zinc-300:hover {
   --tw-text-opacity: 1;
-  color: rgb(212 212 216 / var(--tw-text-opacity, 1));
+  color: rgb(var(--surface-300) / var(--tw-text-opacity, 1));
+}
+
+.focus\:outline-none:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
 
 .group[open] .group-open\:text-teal-400 {
   --tw-text-opacity: 1;
-  color: rgb(45 212 191 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-400) / var(--tw-text-opacity, 1));
 }
 
 .group:hover .group-hover\:text-teal-500 {
   --tw-text-opacity: 1;
-  color: rgb(20 184 166 / var(--tw-text-opacity, 1));
+  color: rgb(var(--accent-500) / var(--tw-text-opacity, 1));
 }
 
 @media (min-width: 640px) {
@@ -2103,6 +2671,34 @@ label.console-label {
 
   .sm\:col-span-3 {
     grid-column: span 3 / span 3;
+  }
+
+  .sm\:flex {
+    display: flex;
+  }
+
+  .sm\:w-48 {
+    width: 12rem;
+  }
+
+  .sm\:w-56 {
+    width: 14rem;
+  }
+
+  .sm\:w-auto {
+    width: auto;
+  }
+
+  .sm\:min-w-64 {
+    min-width: 16rem;
+  }
+
+  .sm\:flex-none {
+    flex: none;
+  }
+
+  .sm\:basis-auto {
+    flex-basis: auto;
   }
 
   .sm\:grid-cols-2 {
@@ -2116,11 +2712,77 @@ label.console-label {
   .sm\:grid-cols-4 {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+
+  .sm\:gap-x-5 {
+    -moz-column-gap: 1.25rem;
+         column-gap: 1.25rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .md\:static {
+    position: static;
+  }
+
+  .md\:hidden {
+    display: none;
+  }
+
+  .md\:translate-x-0 {
+    --tw-translate-x: 0px;
+    transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+  }
+
+  .md\:gap-3 {
+    gap: 0.75rem;
+  }
+
+  .md\:p-6 {
+    padding: 1.5rem;
+  }
+
+  .md\:px-6 {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+
+  .md\:transition-none {
+    transition-property: none;
+  }
 }
 
 @media (min-width: 1024px) {
+  .lg\:col-span-4 {
+    grid-column: span 4 / span 4;
+  }
+
+  .lg\:max-h-\[calc\(65vh\+2\.6rem\)\] {
+    max-height: calc(65vh + 2.6rem);
+  }
+
+  .lg\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .lg\:grid-cols-3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .lg\:grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .lg\:grid-cols-\[1fr_20rem\] {
+    grid-template-columns: 1fr 20rem;
+  }
+
+  .lg\:gap-x-6 {
+    -moz-column-gap: 1.5rem;
+         column-gap: 1.5rem;
+  }
+
+  .lg\:overflow-y-auto {
+    overflow-y: auto;
   }
 }
 

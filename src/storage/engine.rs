@@ -467,7 +467,7 @@ impl StorageEngine {
             match self.pending_cf_drops.claim_for_recreate(&name) {
                 Claim::Claimed => {
                     if self.db.cf_handle(&name).is_some() {
-                        if let Err(e) = self.db.drop_cf(&name) {
+                        if let Err(e) = super::cf_ops::timed(|| self.db.drop_cf(&name)) {
                             self.pending_cf_drops.release_claim(&name);
                             return Err(DbError::InternalError(format!(
                                 "Failed to reclaim pending collection: {}",
@@ -493,7 +493,7 @@ impl StorageEngine {
             }
 
             // MultiThreaded mode: create_cf takes &self and synchronizes internally
-            self.db.create_cf(&name, &opts).map_err(|e| {
+            super::cf_ops::timed(|| self.db.create_cf(&name, &opts)).map_err(|e| {
                 DbError::InternalError(format!("Failed to create collection: {}", e))
             })?;
         }
@@ -566,8 +566,7 @@ impl StorageEngine {
         }
 
         // MultiThreaded mode: drop_cf takes &self and synchronizes internally
-        self.db
-            .drop_cf(name)
+        super::cf_ops::timed(|| self.db.drop_cf(name))
             .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {}", e)))?;
 
         // Drop the stale cached handle so a later same-name create starts fresh.

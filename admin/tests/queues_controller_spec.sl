@@ -37,6 +37,12 @@ describe("QueuesController") do
       response = get("/databases/admin_spec_queues/queues/spec_queue/jobs")
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "spec_script")
+      # Details panel: full job id, params payload, and metadata labels.
+      assert_contains(res_body(response), job_id)
+      assert_contains(res_body(response), "retries")
+      assert_contains(res_body(response), "run at")
+      assert_contains(res_body(response), "params")
+      assert_contains(res_body(response), "0 / 1")
 
       response = delete("/databases/admin_spec_queues/queues/jobs/" + job_id)
       assert_eq(res_status(response), 200)

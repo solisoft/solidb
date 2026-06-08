@@ -20,7 +20,7 @@
     <div>
       <p class="console-label">Access</p>
       <h2 class="mt-1">API Keys <span class="font-mono text-sm text-zinc-500">(<%= @keys.length() %>)</span></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         token credentials for programmatic access without a username/password —
         the raw key is shown once at creation, store it somewhere safe
       </p>
@@ -72,7 +72,7 @@
   </template>
 
   <div class="console-card">
-    <table class="console-table">
+    <div class="overflow-x-auto"><table class="console-table">
       <thead>
         <tr>
           <th>name</th>
@@ -109,7 +109,7 @@
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
     <% if @keys.length() == 0 %>
       <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no api keys</p>
     <% end %>

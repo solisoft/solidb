@@ -21,7 +21,7 @@ describe("CollectionsController") do
   end
 
   describe("collection lifecycle") do
-    test("create, stats, truncate, drop") do
+    test("create, stats, drop") do
       response = post("/databases/admin_spec_colls/collections", { "name": "specs", "type": "document" })
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "collection specs created")
@@ -30,25 +30,29 @@ describe("CollectionsController") do
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "documents")
 
-      response = put("/databases/admin_spec_colls/collections/specs/truncate", {})
-      assert_eq(res_status(response), 200)
-      assert_contains(res_body(response), "collection specs truncated")
-
       response = delete("/databases/admin_spec_colls/collections/specs")
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "collection specs dropped")
+    end
+
+    test("creation modal documents each collection kind") do
+      response = get("/databases/admin_spec_colls/collections")
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "general-purpose JSON documents")
+      assert_contains(body, "graph relations between documents")
+      assert_contains(body, "binary files (uploads, images)")
+      assert_contains(body, "append-heavy timestamped events")
+      assert_contains(body, "column-oriented analytics table")
+      # Schema editing moved to the collection page; the modal no longer
+      # carries a schema textarea.
+      assert_not(body.includes?("name=\"schema\""))
     end
 
     test("rejects a blank collection name") do
       response = post("/databases/admin_spec_colls/collections", { "name": "" })
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "collection name is required")
-    end
-
-    test("rejects an invalid json schema") do
-      response = post("/databases/admin_spec_colls/collections", { "name": "bad_schema", "schema": "{nope" })
-      assert_eq(res_status(response), 200)
-      assert_contains(res_body(response), "schema must be a valid JSON object")
     end
 
     test("creates a timeseries collection") do

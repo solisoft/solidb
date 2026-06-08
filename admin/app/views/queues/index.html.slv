@@ -7,7 +7,7 @@
     <div>
       <p class="console-label">db / <%= @db %></p>
       <h2 class="mt-1">Queues <span class="font-mono text-sm text-zinc-500">(<%= @queues.length() %>)</span></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         background job queues — a job runs a Lua script or webhook asynchronously, with priorities and retries.
         cron jobs and triggers deliver through these queues too
       </p>
@@ -82,7 +82,7 @@
       <div class="console-card">
         <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
           <p class="font-mono text-sm text-zinc-200"><%= queue_name %></p>
-          <div class="flex flex-wrap items-center gap-x-5 gap-y-1">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 sm:gap-x-5">
             <p class="console-label"><span class="font-mono text-sm text-amber-400"><%= queue["pending"] ?? 0 %></span> pending</p>
             <p class="console-label"><span class="font-mono text-sm text-teal-400"><%= queue["running"] ?? 0 %></span> running</p>
             <p class="console-label"><span class="font-mono text-sm text-zinc-300"><%= queue["completed"] ?? 0 %></span> completed</p>

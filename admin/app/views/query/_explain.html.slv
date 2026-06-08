@@ -26,7 +26,7 @@
     <%# --- collection access: the headline of any plan — full scan or index? --- %>
     <% accesses = plan["collections"] ?? [] %>
     <% if accesses.length() > 0 %>
-      <table class="console-table border-b border-zinc-800">
+      <div class="overflow-x-auto"><table class="console-table border-b border-zinc-800">
         <thead>
           <tr>
             <th>collection</th>
@@ -60,7 +60,7 @@
             </tr>
           <% end %>
         </tbody>
-      </table>
+      </table></div>
     <% end %>
 
     <%# --- filters: humanized expression + selectivity --- %>

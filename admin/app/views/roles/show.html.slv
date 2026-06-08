@@ -40,7 +40,7 @@
     <div class="border-b border-zinc-800 px-4 py-2.5">
       <p class="console-label">permissions</p>
     </div>
-    <table class="console-table">
+    <div class="overflow-x-auto"><table class="console-table">
       <thead>
         <tr><th>action</th><th>scope</th><th>database</th></tr>
       </thead>
@@ -53,6 +53,6 @@
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
   </div>
 </div>

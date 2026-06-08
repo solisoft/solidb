@@ -7,7 +7,7 @@
     <div>
       <p class="console-label">db / <%= @db %></p>
       <h2 class="mt-1">Triggers <span class="font-mono text-sm text-zinc-500">(<%= @triggers.length() %>)</span></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         a trigger fires a Lua script or webhook whenever documents change (insert / update / delete) in a collection —
         delivery runs through a job queue with retries
       </p>
@@ -54,7 +54,7 @@
 
         <div>
           <p class="console-label mb-2">events</p>
-          <div class="flex gap-5">
+          <div class="flex flex-wrap gap-x-5 gap-y-2">
             <label class="flex items-center gap-2 font-mono text-sm text-zinc-300">
               <input type="checkbox" name="event_insert" value="1" checked class="accent-teal-500"> insert
             </label>
@@ -85,7 +85,7 @@
             <input id="trigger-script" name="script_path" type="text" placeholder="on_order_change"
                    x-bind:disabled="targetType !== 'script'"
                    class="console-input mt-1 font-mono" autocomplete="off">
-            <p class="mt-1 font-mono text-[10px] text-zinc-600">name of a Lua script in this database</p>
+            <p class="mt-1 font-mono text-xs text-zinc-600">name of a Lua script in this database</p>
           </div>
           <div x-show="targetType === 'webhook'" x-cloak class="space-y-3">
             <div>
@@ -138,7 +138,7 @@
   </template>
 
   <div class="console-card">
-    <table class="console-table">
+    <div class="overflow-x-auto"><table class="console-table">
       <thead>
         <tr>
           <th>name</th>
@@ -200,7 +200,7 @@
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
     <% if @triggers.length() == 0 %>
       <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no triggers in <%= @db %></p>
     <% end %>

@@ -1,0 +1,130 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<div class="space-y-5 animate-fade-up">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">db / <%= @db %></p>
+      <h2 class="mt-1">Graph explorer</h2>
+      <p class="mt-1 max-w-2xl console-help">
+        traverse an edge collection from a start vertex — click a node to inspect it, double-click to expand
+        its neighborhood, drag to rearrange
+      </p>
+    </div>
+    <form method="post" action="<%= attr(db_graph_path(@db)) %>/demo">
+      <button type="submit" class="btn-ghost"
+              title="creates sw_characters + sw_relations and loads them — safe to re-run">
+        Seed Star Wars demo
+      </button>
+    </form>
+  </div>
+
+  <% if @edge_collections.length() == 0 %>
+    <div class="console-card px-4 py-8 text-center">
+      <p class="font-mono text-sm text-zinc-500">no edge collections in <%= @db %></p>
+      <p class="mt-2 font-mono text-xs text-zinc-600">
+        create a collection with type <span class="text-violet-400">edge</span> and insert documents with
+        <code class="text-zinc-400">_from</code> / <code class="text-zinc-400">_to</code> refs, then come back —
+        <a href="<%= attr(db_collections_path(@db)) %>" class="text-teal-400 transition-colors hover:text-teal-300">go to collections</a>
+        — or seed the Star Wars demo above to try the explorer right away
+      </p>
+    </div>
+  <% else %>
+    <form id="graph-form" class="console-card flex flex-wrap items-end gap-3 p-4">
+      <div>
+        <label class="console-label" for="graph-edge">edge collection</label>
+        <select id="graph-edge" name="edge" class="console-input mt-1 w-44 font-mono">
+          <% for edge_name in @edge_collections %>
+            <option value="<%- attr(edge_name) %>"><%= edge_name %></option>
+          <% end %>
+        </select>
+      </div>
+      <div class="min-w-56 flex-1">
+        <label class="console-label" for="graph-start">start vertex <span class="text-zinc-700">— collection/key · leave blank to sample the collection</span></label>
+        <input id="graph-start" name="start" type="text" list="graph-start-suggestions"
+               placeholder="people/alice" autocomplete="off"
+               class="console-input mt-1 font-mono text-[13px]">
+        <datalist id="graph-start-suggestions">
+          <% for coll_name in @vertex_collections %>
+            <option value="<%- attr(coll_name) %>/"></option>
+          <% end %>
+        </datalist>
+      </div>
+      <div>
+        <label class="console-label" for="graph-direction">direction</label>
+        <select id="graph-direction" name="direction" class="console-input mt-1 w-32">
+          <option value="any">any</option>
+          <option value="outbound">outbound</option>
+          <option value="inbound">inbound</option>
+        </select>
+      </div>
+      <div>
+        <label class="console-label" for="graph-depth">depth</label>
+        <select id="graph-depth" name="depth" class="console-input mt-1 w-20">
+          <option value="1">1</option>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+        </select>
+      </div>
+      <div>
+        <label class="console-label" for="graph-limit">max edges</label>
+        <select id="graph-limit" name="limit" class="console-input mt-1 w-24">
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="250">250</option>
+          <option value="500">500</option>
+        </select>
+      </div>
+      <button type="submit" class="btn-primary py-2.5">Explore</button>
+      <button type="button" id="graph-clear" class="btn-ghost py-2.5">Clear</button>
+    </form>
+
+    <div id="graph-error" class="console-card hidden border-red-900 px-4 py-3">
+      <p class="console-label text-red-400">traversal error</p>
+      <pre id="graph-error-text" class="mt-2 overflow-x-auto font-mono text-xs text-red-200"></pre>
+    </div>
+
+    <div class="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_20rem]">
+      <div class="console-card">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2.5">
+          <p class="console-label">canvas · <span id="graph-stats" class="text-zinc-500">0 nodes · 0 edges</span></p>
+          <div id="graph-legend" class="flex flex-wrap items-center gap-2"></div>
+        </div>
+        <%# The traverse endpoint is carried as a data attribute so the JS
+            stays free of inline templating. %>
+        <div id="graph-canvas" class="h-[65vh] w-full bg-zinc-950"
+             data-endpoint="<%= attr(db_graph_path(@db)) %>/traverse">
+          <p class="px-4 py-8 text-center font-mono text-xs text-zinc-600">
+            pick an edge collection and a start vertex, then Explore
+          </p>
+        </div>
+      </div>
+      <div class="console-card lg:max-h-[calc(65vh+2.6rem)] lg:overflow-y-auto">
+        <div class="border-b border-zinc-800 px-4 py-2.5">
+          <p class="console-label">inspector</p>
+        </div>
+        <div class="px-4 py-3">
+          <p id="graph-inspector-hint" class="font-mono text-xs text-zinc-600">click a node or an edge to inspect it</p>
+          <p id="graph-inspector-id" class="hidden break-all font-mono text-xs text-teal-400"></p>
+          <a id="graph-inspector-browse" href="#" class="mt-2 hidden font-mono text-[11px] text-zinc-500 transition-colors hover:text-teal-300">
+            browse collection →
+          </a>
+          <pre id="graph-inspector-doc" class="json-view mt-3 hidden overflow-x-auto font-mono text-[11px] leading-relaxed"></pre>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</div>
+
+<% if @edge_collections.length() > 0 %>
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<script src="<%= public_path("js/admin-graph.js") %>"></script>
+<script>
+  AdminGraph.init({
+    canvas: document.getElementById("graph-canvas"),
+    form: document.getElementById("graph-form"),
+    docsBase: "<%- j(db_collections_path(@db)) %>"
+  });
+</script>
+<% end %>

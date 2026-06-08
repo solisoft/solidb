@@ -25,7 +25,7 @@
   <% end %>
 
   <% if indexes.length() > 0 %>
-    <table class="console-table mt-3">
+    <div class="overflow-x-auto"><table class="console-table mt-3">
       <thead>
         <tr>
           <th>name</th>
@@ -67,7 +67,7 @@
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
   <% else %>
     <p class="mt-3 font-mono text-xs text-zinc-600">no indexes on <%= collection_name %></p>
   <% end %>
@@ -145,7 +145,7 @@
               </label>
             <% end %>
           </div>
-          <p class="mt-2 font-mono text-[10px] text-zinc-600">
+          <p class="mt-2 font-mono text-xs text-zinc-600">
             all indexes are sparse: documents whose indexed fields are all null or missing are never indexed
             (a unique index does not reject documents missing the field)
           </p>
@@ -162,7 +162,7 @@
           <label class="console-label" for="idx-expire-<%= attr(collection_name) %>">expire after (seconds)</label>
           <input id="idx-expire-<%= attr(collection_name) %>" name="expire_after_seconds" type="number" min="1"
                  placeholder="3600" class="console-input mt-1 w-40 font-mono">
-          <p class="mt-1 font-mono text-[10px] text-zinc-600">
+          <p class="mt-1 font-mono text-xs text-zinc-600">
             deleted when: field value (unix seconds) + expire after &lt; now
           </p>
         </div>

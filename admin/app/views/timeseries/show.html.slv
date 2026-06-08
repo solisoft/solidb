@@ -1,0 +1,85 @@
+<%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
+
+<% ts_base = db_collection_timeseries_path(@db, @collection_name) %>
+<% chart_ready = @field_error.blank? %>
+
+<div class="space-y-5 animate-fade-up">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="console-label">
+        <a href="<%= attr(db_collections_path(@db)) %>" class="hover:text-teal-400 transition-colors">Collections</a>
+        / <%= @db %>
+      </p>
+      <h2 class="mt-1 font-mono">
+        <%= @collection_name %>
+        <span class="console-label ml-2 border border-rose-800 px-1.5 py-0.5 align-middle text-rose-400">timeseries</span>
+      </h2>
+      <p class="mt-1 max-w-2xl console-help">
+        bucketed chart over the points in this collection — pick a window, bucket and aggregation;
+        group by a tag field to compare series
+      </p>
+    </div>
+    <a href="<%= attr(db_collection_docs_path(@db, @collection_name)) %>" class="btn-ghost">Raw docs</a>
+  </div>
+
+  <% if !chart_ready %>
+    <div class="console-card px-4 py-8 text-center">
+      <p class="font-mono text-sm text-zinc-500"><%= @field_error %></p>
+      <p class="mt-2 font-mono text-xs text-zinc-600">
+        insert documents with a timestamp field (epoch ms, epoch seconds or ISO8601) and at least one
+        numeric field, then come back — the explorer discovers the fields from the data
+      </p>
+    </div>
+  <% else %>
+    <%- partial("timeseries/controls", { "value_fields": @value_fields, "group_fields": @group_fields }) %>
+
+    <div id="ts-error" class="console-card hidden border-red-900 px-4 py-3">
+      <p class="console-label text-red-400">chart error</p>
+      <pre id="ts-error-text" class="mt-2 overflow-x-auto font-mono text-xs text-red-200"></pre>
+    </div>
+
+    <div class="console-card">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2.5">
+        <p class="console-label">chart · <span id="ts-meta" class="text-zinc-500">loading…</span></p>
+        <p id="ts-hint" class="console-label hidden text-amber-400"></p>
+      </div>
+      <div id="ts-chart" class="w-full px-2 py-3"></div>
+    </div>
+  <% end %>
+
+  <div class="console-card">
+    <div id="ts-points">
+      <%- partial("timeseries/points", {
+            "db": @db, "collection_name": @collection_name,
+            "points": @points, "has_more": @has_more, "points_error": @points_error,
+            "offset": @offset, "limit": @limit, "range_key": @range_key,
+            "from_ms": @from_ms, "to_ms": @to_ms,
+            "time_field": @time_field, "time_kind": @time_kind
+          }) %>
+    </div>
+  </div>
+
+  <%- partial("timeseries/retention", {
+        "ts_base": ts_base, "ttl_indexes": @ttl_indexes, "time_field": @time_field
+      }) %>
+</div>
+
+<% if chart_ready %>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css">
+<style>
+  /* uPlot ships a light theme - align the legend with the console palette. */
+  #ts-chart .u-legend { color: #a1a1aa; font: 11px "JetBrains Mono", monospace; }
+  #ts-chart .u-legend .u-value { color: #e4e4e7; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
+<script src="<%= public_path("js/admin-timeseries.js") %>"></script>
+<script>
+  AdminTimeseries.init({
+    mount: document.getElementById("ts-chart"),
+    form: document.getElementById("ts-form"),
+    dataEndpoint: "<%- j(ts_base) %>/data",
+    pointsEndpoint: "<%- j(ts_base) %>/points",
+    pointsTarget: "#ts-points"
+  });
+</script>
+<% end %>

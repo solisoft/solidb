@@ -109,9 +109,19 @@ fn log_slow_query(
     documents_inserted: usize,
     documents_updated: usize,
     documents_removed: usize,
+    origin: Option<String>,
+    cf_ops_during: u64,
+    cf_ops_ms_during: f64,
 ) {
     // Only log if query exceeds threshold
     if execution_time_ms < SLOW_QUERY_THRESHOLD_MS {
+        return;
+    }
+
+    // Never log queries that touch the slow-query log itself: when CF churn
+    // (or load) pushes them past the threshold they re-enter the log right
+    // after a clear — a feedback loop that makes clearing unreliable.
+    if query_text.contains("_slow_queries") {
         return;
     }
 
@@ -159,7 +169,11 @@ fn log_slow_query(
             }
         };
 
-        // Create log entry
+        // Create log entry. `cf_ops_during` / `cf_ops_ms_during` record the
+        // column-family create/drop activity that overlapped this query —
+        // CF ops hold the RocksDB DB mutex for their full OPTIONS rewrite,
+        // so a high value means the query was queueing behind CF churn
+        // (e.g. a test suite), not doing slow work itself.
         let log_entry = serde_json::json!({
             "query": query_text,
             "execution_time_ms": execution_time_ms,
@@ -167,7 +181,10 @@ fn log_slow_query(
             "results_count": results_count,
             "documents_inserted": documents_inserted,
             "documents_updated": documents_updated,
-            "documents_removed": documents_removed
+            "documents_removed": documents_removed,
+            "origin": origin,
+            "cf_ops_during": cf_ops_during,
+            "cf_ops_ms_during": cf_ops_ms_during
         });
 
         if let Err(e) = collection.insert(log_entry) {
@@ -182,6 +199,7 @@ pub async fn execute_query(
     State(state): State<AppState>,
     Path(db_name): Path<String>,
     headers: HeaderMap,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<ApiResponse<ExecuteQueryResponse>, DbError> {
     // Count every query
@@ -542,6 +560,10 @@ pub async fn execute_query(
     let db_name_for_logging = db_name.clone();
     let query_text_for_logging = req.query.clone();
 
+    // Snapshot CF-op activity so the slow-query log can tell a genuinely
+    // slow query from one that queued behind create_cf/drop_cf churn.
+    let cf_ops_before = crate::storage::cf_ops::snapshot();
+
     // Only use spawn_blocking for potentially long-running queries
     // (mutations or range iterations). Simple reads run directly.
     let (query_result, execution_time_ms) = if is_long_running_query(query) {
@@ -645,6 +667,7 @@ pub async fn execute_query(
     }
 
     // Log slow query if it exceeds threshold (async, non-blocking)
+    let cf_ops_after = crate::storage::cf_ops::snapshot();
     log_slow_query(
         state.storage.clone(),
         db_name_for_logging,
@@ -654,6 +677,9 @@ pub async fn execute_query(
         mutations.documents_inserted,
         mutations.documents_updated,
         mutations.documents_removed,
+        claims.map(|ext| ext.0.sub),
+        cf_ops_before.ops_since(&cf_ops_after),
+        cf_ops_before.ms_since(&cf_ops_after),
     );
 
     let (cursor_id, result_batch, has_more) = state

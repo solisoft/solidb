@@ -69,7 +69,7 @@ impl Database {
             match self.pending_cf_drops.claim_for_recreate(&cf_name) {
                 Claim::Claimed => {
                     if self.db.cf_handle(&cf_name).is_some() {
-                        if let Err(e) = self.db.drop_cf(&cf_name) {
+                        if let Err(e) = super::cf_ops::timed(|| self.db.drop_cf(&cf_name)) {
                             self.pending_cf_drops.release_claim(&cf_name);
                             return Err(DbError::InternalError(format!(
                                 "Failed to reclaim pending collection: {}",
@@ -97,11 +97,9 @@ impl Database {
             // Use the shared tuned options so collections get LZ4 compression,
             // the shared block cache, and bloom filters (Options::default()
             // would silently skip all of that)
-            self.db
-                .create_cf(&cf_name, &tuned_cf_options())
-                .map_err(|e| {
-                    DbError::InternalError(format!("Failed to create collection: {}", e))
-                })?;
+            super::cf_ops::timed(|| self.db.create_cf(&cf_name, &tuned_cf_options())).map_err(
+                |e| DbError::InternalError(format!("Failed to create collection: {}", e)),
+            )?;
         }
 
         // Persist collection type (lock-free, thread-safe)
@@ -131,8 +129,7 @@ impl Database {
         }
 
         // MultiThreaded mode: drop_cf takes &self and synchronizes internally
-        self.db
-            .drop_cf(&cf_name)
+        super::cf_ops::timed(|| self.db.drop_cf(&cf_name))
             .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {}", e)))?;
 
         // Remove from cache

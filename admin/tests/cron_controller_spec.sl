@@ -48,7 +48,22 @@ describe("CronController") do
     test("rejects missing fields") do
       response = post("/databases/admin_spec_cron/cron", { "cron_name": "", "cron_expression": "", "script": "" })
       assert_eq(res_status(response), 200)
-      assert_contains(res_body(response), "name, cron expression and script are required")
+      assert_contains(res_body(response), "name, cron expression and a script or webhook target are required")
+    end
+
+    test("rejects a job with no script and no webhook") do
+      response = post("/databases/admin_spec_cron/cron",
+                      { "cron_name": "no_target", "cron_expression": "0 * * * * *", "script": "" })
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "a script or webhook target are required")
+    end
+
+    test("creates a cron job with a webhook target") do
+      response = post("/databases/admin_spec_cron/cron",
+                      { "cron_name": "spec_webhook", "cron_expression": "0 0 2 * * *",
+                        "script": "", "webhook_url": "https://example.com/hooks/nightly" })
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "cron job spec_webhook created")
     end
 
     test("rejects invalid params json") do

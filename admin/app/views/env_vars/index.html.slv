@@ -7,7 +7,7 @@
     <div>
       <p class="console-label">db / <%= @db %></p>
       <h2 class="mt-1">Env vars <span class="font-mono text-sm text-zinc-500">(<%= @env_vars.length() %>)</span></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         per-database key/value settings readable from Lua scripts — use them for API keys and endpoints
         instead of hardcoding values in script source
       </p>
@@ -43,7 +43,7 @@
           <label class="console-label" for="env-value">value</label>
           <textarea id="env-value" name="env_value" rows="3" spellcheck="false" x-model="envValue"
                     class="console-input mt-1 resize-y font-mono text-[13px]"></textarea>
-          <p class="mt-1 font-mono text-[10px] text-zinc-600">saving an existing key overwrites its value</p>
+          <p class="mt-1 font-mono text-xs text-zinc-600">saving an existing key overwrites its value</p>
         </div>
       </div>
       <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
@@ -55,7 +55,7 @@
   </template>
 
   <div class="console-card">
-    <table class="console-table">
+    <div class="overflow-x-auto"><table class="console-table">
       <thead>
         <tr>
           <th>key</th>
@@ -90,7 +90,7 @@
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
     <% if @env_vars.length() == 0 %>
       <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no env vars in <%= @db %></p>
     <% end %>

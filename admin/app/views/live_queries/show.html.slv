@@ -8,7 +8,7 @@
     <div>
       <p class="console-label">db / <%= @db %></p>
       <h2 class="mt-1">Live queries</h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         real-time changefeed — subscribe to a collection over WebSocket and watch inserts, updates
         and deletes stream in as they happen
       </p>
@@ -30,7 +30,7 @@
                 placeholder="FOR doc IN <%= first_collection %> RETURN doc">FOR doc IN <%= first_collection %> RETURN doc</textarea>
     </div>
     <div class="flex flex-wrap items-center justify-between gap-2">
-      <p class="font-mono text-[10px] text-zinc-600">
+      <p class="font-mono text-xs text-zinc-600">
         events stream in below as documents change — the socket reconnects automatically
       </p>
       <div class="flex gap-2">
@@ -80,7 +80,7 @@
       var li = document.createElement("li");
       li.className = "flex gap-3 px-4 py-2";
       var time = document.createElement("span");
-      time.className = "shrink-0 select-none font-mono text-[10px] text-zinc-600";
+      time.className = "shrink-0 select-none font-mono text-xs text-zinc-600";
       time.textContent = new Date().toLocaleTimeString();
       var kindEl = document.createElement("span");
       kindEl.className = "shrink-0 font-mono text-[10px] uppercase tracking-widest " +

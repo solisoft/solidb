@@ -10,7 +10,7 @@
     <div>
       <p class="console-label">db / <%= @db %></p>
       <h2 class="mt-1">Collections <span class="font-mono text-sm text-zinc-500">(<%= @collections.length() %>)</span></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         document stores inside this database — open one to browse documents, manage indexes or inspect stats
       </p>
     </div>
@@ -35,21 +35,39 @@
       </div>
 
       <div class="space-y-4 px-5 py-4">
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label class="console-label" for="coll-name">name</label>
-            <input id="coll-name" name="name" type="text" placeholder="my_collection"
-                   class="console-input mt-1 font-mono" autocomplete="off">
-          </div>
-          <div>
-            <label class="console-label" for="coll-type">type</label>
-            <select id="coll-type" name="type" x-model="collType" class="console-input mt-1">
-              <option value="document">document</option>
-              <option value="blob">blob</option>
-              <option value="edge">edge</option>
-              <option value="timeseries">timeseries</option>
-              <option value="columnar">columnar</option>
-            </select>
+        <div>
+          <label class="console-label" for="coll-name">name</label>
+          <input id="coll-name" name="name" type="text" placeholder="my_collection"
+                 class="console-input mt-1 font-mono" autocomplete="off">
+        </div>
+
+        <%# Type picker: radio cards with a one-line doc per kind, instead of a
+            bare dropdown. Selected card classes are literal strings so the
+            Tailwind scanner compiles them: border-teal-600 bg-teal-500/5 %>
+        <% coll_kinds = [
+          { "value": "document", "doc": "general-purpose JSON documents — flexible fields, secondary indexes. the default choice." },
+          { "value": "edge", "doc": "graph relations between documents (_from / _to) — enables traversals and graph queries." },
+          { "value": "blob", "doc": "binary files (uploads, images) — chunked storage served through the binary driver protocol." },
+          { "value": "timeseries", "doc": "append-heavy timestamped events and metrics — optimized for time-range scans." },
+          { "value": "columnar", "doc": "column-oriented analytics table with typed columns — needs column definitions below." }
+        ] %>
+        <div>
+          <p class="console-label mb-2">type</p>
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <% for kind in coll_kinds %>
+              <label class="flex cursor-pointer flex-col gap-1 border px-3 py-2 transition-colors"
+                     x-bind:class="collType == '<%= kind["value"] %>' ? 'border-teal-600 bg-teal-500/5' : 'border-zinc-800 hover:border-zinc-700'">
+                <input type="radio" name="type" value="<%= kind["value"] %>" x-model="collType" class="sr-only">
+                <span class="flex items-center gap-2 font-mono text-xs"
+                      x-bind:class="collType == '<%= kind["value"] %>' ? 'text-teal-300' : 'text-zinc-200'">
+                  <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="<%= collection_kind_icon(kind["value"]) %>"/>
+                  </svg>
+                  <%= kind["value"] %>
+                </span>
+                <span class="font-mono text-xs leading-relaxed text-zinc-600"><%= kind["doc"] %></span>
+              </label>
+            <% end %>
           </div>
         </div>
 
@@ -58,7 +76,7 @@
           <textarea name="columns" rows="4" spellcheck="false"
                     placeholder='[{ "name": "host", "type": "string" }, { "name": "value", "type": "float" }]'
                     class="console-input resize-y font-mono text-[13px]"></textarea>
-          <p class="mt-1 font-mono text-[10px] text-zinc-600">types: int / float / string / bool / timestamp / json</p>
+          <p class="mt-1 font-mono text-xs text-zinc-600">types: int / float / string / bool / timestamp / json</p>
         </div>
 
         <div x-show="collType != 'columnar'" class="border-t border-zinc-800 pt-3">
@@ -82,25 +100,9 @@
           </div>
         </div>
 
-        <div x-show="collType != 'columnar'" class="border-t border-zinc-800 pt-3">
-          <p class="console-label mb-2">validation <span class="text-zinc-700">— optional</span></p>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div>
-              <label class="console-label" for="coll-validation">mode</label>
-              <select id="coll-validation" name="validation_mode" class="console-input mt-1">
-                <option value="">none</option>
-                <option value="strict">strict</option>
-                <option value="moderate">moderate</option>
-              </select>
-            </div>
-            <div class="sm:col-span-3">
-              <label class="console-label" for="coll-schema">json schema</label>
-              <textarea id="coll-schema" name="schema" rows="4" spellcheck="false"
-                        placeholder='{ "type": "object", "properties": { "email": { "type": "string" } } }'
-                        class="console-input mt-1 resize-y font-mono text-[13px]"></textarea>
-            </div>
-          </div>
-        </div>
+        <p x-show="collType != 'columnar'" class="border-t border-zinc-800 pt-3 font-mono text-xs text-zinc-600">
+          json schema validation is configured from the collection page once created
+        </p>
       </div>
 
       <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
@@ -112,17 +114,17 @@
   </template>
 
   <div class="console-card">
-    <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2.5">
       <p class="console-label">collection</p>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <button type="button" class="btn-ghost py-1 text-xs"
                 x-on:click="showSystem = !showSystem"
                 x-text="showSystem ? 'Hide system' : 'Show system'"></button>
         <input type="text" x-model="q" placeholder="filter…"
-               class="console-input w-48 py-1 font-mono text-xs">
+               class="console-input w-36 py-1 font-mono text-xs sm:w-48">
       </div>
     </div>
-    <table class="console-table">
+    <div class="overflow-x-auto"><table class="console-table">
       <thead>
         <tr>
           <th>name</th>
@@ -135,21 +137,25 @@
       <tbody>
         <% for coll in @collections %>
           <% coll_name = coll["name"] ?? "" %>
-          <% is_blob = (coll["type"] ?? "document") == "blob" %>
+          <% coll_type = coll["type"] ?? "document" %>
+          <% is_blob = coll_type == "blob" %>
+          <%# Timeseries collections open the chart explorer; everything else
+              lands on the raw documents browser. %>
+          <% browse_path = db_collection_docs_path(@db, coll_name) %>
+          <% browse_path = db_collection_timeseries_path(@db, coll_name) if coll_type == "timeseries" %>
           <%# System collections (_triggers, _env, ...) are hidden until the
               "Show system" toggle flips showSystem. %>
           <tr data-name="<%= attr(coll_name) %>"
               x-show="$el.dataset.name.includes(q.toLowerCase()) && (showSystem || !$el.dataset.name.startsWith('_'))"
               <% if is_blob %>data-drop-url="<%= attr(db_collection_docs_path(@db, coll_name)) %>/upload"<% end %>>
             <td class="font-mono text-zinc-200">
-              <a href="<%= attr(db_collection_docs_path(@db, coll_name)) %>" class="hover:text-teal-300 transition-colors">
+              <a href="<%= attr(browse_path) %>" class="hover:text-teal-300 transition-colors">
                 <%= coll_name %>
               </a>
               <% if is_blob %>
                 <span class="console-label ml-2 border border-dashed border-zinc-800 px-1.5 py-0.5 text-zinc-600">⇣ drop files</span>
               <% end %>
             </td>
-            <% coll_type = coll["type"] ?? "document" %>
             <%# Literal class strings so the Tailwind scanner compiles them:
                 border-amber-800 text-amber-400 border-violet-800 text-violet-400
                 border-sky-800 text-sky-400 border-rose-800 text-rose-400
@@ -161,7 +167,14 @@
               "timeseries": "border-rose-800 text-rose-400",
               "document": "border-zinc-700 text-zinc-400"
             } %>
-            <td><span class="console-label border px-1.5 py-0.5 <%= type_badges[coll_type] ?? type_badges["document"] %>"><%= coll_type %></span></td>
+            <td>
+              <span class="console-label inline-flex items-center gap-1 border px-1.5 py-0.5 <%= type_badges[coll_type] ?? type_badges["document"] %>">
+                <svg class="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="<%= collection_kind_icon(coll_type) %>"/>
+                </svg>
+                <%= coll_type %>
+              </span>
+            </td>
             <td class="text-right font-mono text-zinc-300"><%= coll["count"] ?? 0 %></td>
             <td class="text-right font-mono text-zinc-500">
               <%= fmt_bytes(((coll["stats"] ?? {})["disk_usage"] ?? {})["live_data_size"]) %>
@@ -176,7 +189,9 @@
                     Drop
                   </button>
                 <% else %>
-                  <a href="<%= attr(db_collection_docs_path(@db, coll_name)) %>" class="btn-ghost">Browse</a>
+                  <a href="<%= attr(browse_path) %>" class="btn-ghost">
+                    <%= coll_type == "timeseries" ? "Explore" : "Browse" %>
+                  </a>
                   <button class="btn-ghost"
                           hx-get="<%= attr(db_collections_path(@db)) %>/<%= url(coll_name) %>/stats"
                           hx-target="#detail-row-<%= attr(coll_name) %>" hx-swap="innerHTML">
@@ -186,12 +201,6 @@
                           hx-get="<%= attr(db_collections_path(@db)) %>/<%= url(coll_name) %>/indexes"
                           hx-target="#detail-row-<%= attr(coll_name) %>" hx-swap="innerHTML">
                     Indexes
-                  </button>
-                  <button class="btn-ghost"
-                          hx-put="<%= attr(db_collections_path(@db)) %>/<%= url(coll_name) %>/truncate"
-                          hx-target="#content" hx-swap="innerHTML show:top"
-                          hx-confirm="Truncate '<%= attr(coll_name) %>'? All documents will be removed.">
-                    Truncate
                   </button>
                   <button class="btn-danger"
                           hx-delete="<%= attr(db_collections_path(@db)) %>/<%= url(coll_name) %>"
@@ -210,7 +219,7 @@
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
     <% if @collections.length() == 0 %>
       <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no collections in <%= @db %></p>
     <% end %>

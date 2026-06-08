@@ -7,7 +7,7 @@
     <% if jobs.length() == 0 %>
       <p class="px-4 py-4 text-center font-mono text-xs text-zinc-600">no jobs in <%= queue_name %></p>
     <% else %>
-      <table class="console-table">
+      <div class="overflow-x-auto"><table class="console-table">
         <thead>
           <tr>
             <th>job</th>
@@ -17,12 +17,17 @@
             <th class="text-right">actions</th>
           </tr>
         </thead>
-        <tbody>
-          <% for job in jobs %>
+        <tbody x-data="{ open: null }">
+          <% for job, i in jobs %>
             <% job_id = job["_key"] ?? "" %>
             <% job_status = job["status"] ?? "pending" %>
-            <tr>
-              <td class="font-mono text-xs text-zinc-500"><%= job_id.substring(0, 8) %>…</td>
+            <%# Whole row toggles the details panel; the actions cell stops
+                propagation so Run now / Cancel do not also toggle. %>
+            <tr class="cursor-pointer" x-on:click="open = open === <%= i %> ? null : <%= i %>">
+              <td class="whitespace-nowrap font-mono text-xs text-zinc-500">
+                <span class="mr-1 inline-block text-zinc-600 transition-transform"
+                      x-bind:class="open === <%= i %> ? 'rotate-90' : ''">&rsaquo;</span><%= job_id %>
+              </td>
               <% job_webhook = job["webhook_url"] ?? (job["callback_url"] ?? "") %>
               <td class="font-mono text-xs text-zinc-200">
                 <% if job_webhook.blank? %>
@@ -39,7 +44,7 @@
                 </span>
               </td>
               <td class="text-right font-mono text-xs text-zinc-400"><%= job["priority"] ?? 0 %></td>
-              <td class="w-px whitespace-nowrap text-right">
+              <td class="w-px whitespace-nowrap text-right" x-on:click.stop>
                 <div class="flex justify-end gap-2">
                   <button class="btn-ghost"
                           hx-post="<%= attr(db_queues_path(db)) %>/jobs/<%= url(job_id) %>/run-now"
@@ -55,9 +60,66 @@
                 </div>
               </td>
             </tr>
+            <tr x-show="open === <%= i %>" x-cloak>
+              <td colspan="5" class="bg-zinc-950/60 px-4 py-3">
+                <div class="grid grid-cols-2 gap-x-8 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
+                  <div class="col-span-2 sm:col-span-3 lg:col-span-4">
+                    <p class="console-label">job id</p>
+                    <p class="break-all font-mono text-xs text-zinc-300"><%= job_id %></p>
+                  </div>
+                  <div>
+                    <p class="console-label">created</p>
+                    <p class="font-mono text-xs text-zinc-300"><%= fmt_epoch(job["created_at"]) %></p>
+                  </div>
+                  <div>
+                    <p class="console-label">run at</p>
+                    <p class="font-mono text-xs text-zinc-300"><%= fmt_epoch(job["run_at"]) %></p>
+                  </div>
+                  <div>
+                    <p class="console-label">started</p>
+                    <p class="font-mono text-xs text-zinc-300"><%= fmt_epoch_ms(job["started_at"]) %></p>
+                  </div>
+                  <div>
+                    <p class="console-label">completed</p>
+                    <p class="font-mono text-xs text-zinc-300"><%= fmt_epoch_ms(job["completed_at"]) %></p>
+                  </div>
+                  <div>
+                    <p class="console-label">duration</p>
+                    <% job_started = job["started_at"] %>
+                    <% job_completed = job["completed_at"] %>
+                    <p class="font-mono text-xs text-zinc-300"><%= (job_started.nil? || job_completed.nil?) ? "-" : fmt_ms(job_completed - job_started) %></p>
+                  </div>
+                  <div>
+                    <p class="console-label">retries</p>
+                    <p class="font-mono text-xs text-zinc-300"><%= str(job["retry_count"] ?? 0) + " / " + str(job["max_retries"] ?? 0) %></p>
+                  </div>
+                  <% job_cron = job["cron_job_id"] ?? "" %>
+                  <% if !job_cron.blank? %>
+                    <div>
+                      <p class="console-label">cron job</p>
+                      <p class="break-all font-mono text-xs text-zinc-300"><%= job_cron %></p>
+                    </div>
+                  <% end %>
+                </div>
+                <% job_params_json = json_compact(job["params"]) %>
+                <% if !job_params_json.blank? && job_params_json != "null" %>
+                  <div class="mt-3">
+                    <p class="console-label">params</p>
+                    <pre class="mt-1 whitespace-pre-wrap break-all border border-zinc-800 bg-zinc-900/60 px-3 py-2 font-mono text-xs text-zinc-300"><%= job_params_json %></pre>
+                  </div>
+                <% end %>
+                <% job_error = job["last_error"] ?? "" %>
+                <% if !job_error.blank? %>
+                  <div class="mt-3">
+                    <p class="console-label">last error</p>
+                    <pre class="mt-1 whitespace-pre-wrap break-all border border-red-900 bg-red-950/30 px-3 py-2 font-mono text-xs text-red-300"><%= job_error %></pre>
+                  </div>
+                <% end %>
+              </td>
+            </tr>
           <% end %>
         </tbody>
-      </table>
+      </table></div>
     <% end %>
   </div>
 <% end %>

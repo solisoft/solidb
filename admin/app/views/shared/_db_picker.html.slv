@@ -2,8 +2,8 @@
     the active db (and the switcher) is never out of reach. %>
 <% active_db = picker_db.blank? ? "_system" : picker_db %>
 <% if picker_databases.length() > 0 %>
-  <div x-data="{ open: false, q: '' }" class="relative">
-    <button @click="open = !open; q = ''; $nextTick(() => open && $refs.dbFilter.focus())"
+  <div x-data="dbPicker()" class="relative">
+    <button @click="toggle()"
             @click.outside="open = false"
             class="btn-ghost">
       <span class="text-zinc-600">db:</span>
@@ -14,10 +14,16 @@
          x-on:keydown.escape.stop="open = false"
          class="absolute right-0 z-20 mt-1 w-56 border border-zinc-700 bg-zinc-900 shadow-xl shadow-black/50">
       <div class="border-b border-zinc-800 p-2">
+        <%# ArrowUp/Down move the highlight over filtered options, Enter follows
+            the highlighted one - see public/js/admin-db-picker.js. %>
         <input type="text" x-ref="dbFilter" x-model="q" placeholder="filter…"
+               @input="hi = 0; refresh()"
+               @keydown.down.prevent="move(1)"
+               @keydown.up.prevent="move(-1)"
+               @keydown.enter.prevent="choose()"
                class="console-input py-1 font-mono text-xs" autocomplete="off">
       </div>
-      <div class="max-h-72 overflow-y-auto">
+      <div class="max-h-72 overflow-y-auto" x-ref="dbList">
         <% for db_name in picker_databases %>
           <a href="<%= attr(db_collections_path(db_name)) %>"
              data-db="<%= attr(db_name) %>"

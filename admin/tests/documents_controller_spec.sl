@@ -35,10 +35,36 @@ describe("DocumentsController") do
       assert_contains(body, "filtered")
     end
 
+    test("quoted filter round-trips without double escaping") do
+      response = get("/databases/admin_spec_docs/collections/people/docs?filter=" +
+                     url("doc.name == \"Alice\""))
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      # <%- attr(@filter) %>: attr-escaped exactly once. <%= attr(...) %> would
+      # re-escape the & and the input would display literal &quot;.
+      assert_contains(body, "value=\"doc.name == &quot;Alice&quot;\"")
+      assert_not(body.includes?("&amp;quot;"))
+      assert_contains(body, "documents 1–1")
+    end
+
     test("surfaces filter errors") do
       response = get("/databases/admin_spec_docs/collections/people/docs?filter=" + url("doc.,,,"))
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "filter error")
+    end
+
+    test("edit modal textarea excludes system attributes") do
+      response = get("/databases/admin_spec_docs/collections/people/docs")
+      body = res_body(response)
+      # The editable JSON lives in the x-ref="docEditor" textarea; system
+      # attributes move to the modal header (read-only).
+      segments = body.split("x-ref=\"docEditor\"")
+      assert_gt(segments.length(), 1)
+      editable_json = segments[1].split("</textarea>")[0]
+      assert_contains(editable_json, "name")
+      assert_not(editable_json.includes?("_rev"))
+      assert_not(editable_json.includes?("_created_at"))
+      assert_not(editable_json.includes?("_key"))
     end
 
     test("paginates with offset and limit") do
@@ -69,6 +95,118 @@ describe("DocumentsController") do
       response = post("/databases/admin_spec_docs/collections/people/docs", { "document": "{nope" })
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "document must be a JSON object")
+    end
+  end
+
+  describe("export / import") do
+    test("export streams jsonl with attachment headers") do
+      response = get("/databases/admin_spec_docs/collections/people/docs/export")
+      assert_eq(res_status(response), 200)
+      assert_contains(res_header(response, "Content-Type"), "x-ndjson")
+      assert_contains(res_header(response, "Content-Disposition"), "admin_spec_docs-people.jsonl")
+      body = res_body(response)
+      assert_contains(body, "alice")
+      assert_contains(body, "bob")
+      assert_contains(body, "_collectionType")
+    end
+
+    test("import a jsonl file") do
+      boundary = "----specboundary10"
+      content = "{\"_key\": \"imp1\", \"name\": \"Imp One\"}\n{\"_key\": \"imp2\", \"name\": \"Imp Two\"}\n"
+      body = "--" + boundary + "\r\n"
+      body = body + "Content-Disposition: form-data; name=\"file\"; filename=\"docs.jsonl\"\r\n"
+      body = body + "Content-Type: application/octet-stream\r\n\r\n"
+      body = body + content + "\r\n"
+      body = body + "--" + boundary + "--\r\n"
+      response = request("POST", "/databases/admin_spec_docs/collections/people/docs/import", body,
+                         { "headers": { "Content-Type": "multipart/form-data; boundary=" + boundary } })
+      assert_eq(res_status(response), 200)
+      page = res_body(response)
+      assert_contains(page, "imported 2 document(s)")
+      assert_contains(page, "imp1")
+      assert_contains(page, "imp2")
+    end
+
+    test("import a pretty-printed json array") do
+      boundary = "----specboundary11"
+      content = "[\n  { \"_key\": \"imp3\", \"name\": \"Imp Three\" },\n" +
+                "  { \"_key\": \"imp4\", \"name\": \"Imp Four\" }\n]\n"
+      body = "--" + boundary + "\r\n"
+      body = body + "Content-Disposition: form-data; name=\"file\"; filename=\"docs.json\"\r\n"
+      body = body + "Content-Type: application/json\r\n\r\n"
+      body = body + content + "\r\n"
+      body = body + "--" + boundary + "--\r\n"
+      response = request("POST", "/databases/admin_spec_docs/collections/people/docs/import", body,
+                         { "headers": { "Content-Type": "multipart/form-data; boundary=" + boundary } })
+      assert_eq(res_status(response), 200)
+      page = res_body(response)
+      assert_contains(page, "imported 2 document(s)")
+      assert_contains(page, "imp3")
+      assert_contains(page, "imp4")
+    end
+
+    test("import without a file is rejected") do
+      response = post("/databases/admin_spec_docs/collections/people/docs/import", {})
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "no file selected")
+    end
+  end
+
+  describe("truncate") do
+    test("truncates the collection from the docs page") do
+      SolidbClient.post_api(SolidbEndpoints.collections("admin_spec_docs"), { "name": "wipe_me" })
+      SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_docs", "wipe_me"), { "_key": "gone", "x": 1 })
+
+      response = put("/databases/admin_spec_docs/collections/wipe_me/docs/truncate", {})
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "collection wipe_me truncated")
+      assert_contains(body, "no documents")
+
+      SolidbClient.delete_api(SolidbEndpoints.collection("admin_spec_docs", "wipe_me"))
+    end
+  end
+
+  describe("json schema") do
+    test("set, render in the editor modal, remove") do
+      schema_json = "{\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}}}"
+      response = put("/databases/admin_spec_docs/collections/people/docs/schema",
+                     { "schema": schema_json, "validation_mode": "strict" })
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "schema updated (strict)")
+      # Header button badge reflects the active mode.
+      assert_contains(body, "· strict")
+      # The editor textarea is pre-filled with the stored schema.
+      segments = body.split("x-ref=\"schemaEditor\"")
+      assert_gt(segments.length(), 1)
+      assert_contains(segments[1].split("</textarea>")[0], "object")
+
+      response = delete("/databases/admin_spec_docs/collections/people/docs/schema")
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "schema removed")
+    end
+
+    test("rejects invalid schema json") do
+      response = put("/databases/admin_spec_docs/collections/people/docs/schema",
+                     { "schema": "{nope", "validation_mode": "strict" })
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "schema must be a valid JSON object")
+    end
+
+    test("rejects a schema that is not a json object") do
+      response = put("/databases/admin_spec_docs/collections/people/docs/schema",
+                     { "schema": "[1, 2]", "validation_mode": "strict" })
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "schema must be a valid JSON object")
+    end
+
+    test("unknown validation mode falls back to off") do
+      response = put("/databases/admin_spec_docs/collections/people/docs/schema",
+                     { "schema": "{\"type\": \"object\"}", "validation_mode": "bogus" })
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "schema updated (off)")
+      delete("/databases/admin_spec_docs/collections/people/docs/schema")
     end
   end
 
@@ -117,6 +255,12 @@ describe("DocumentsController") do
       response = post("/databases/admin_spec_docs/collections/files/docs/upload", {})
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "no file selected")
+    end
+
+    test("blob collections cannot be exported as jsonl") do
+      response = get("/databases/admin_spec_docs/collections/files/docs/export")
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "blob collections cannot be exported")
     end
 
     test("drag-drop JSON branch: upload + error both answer JSON") do

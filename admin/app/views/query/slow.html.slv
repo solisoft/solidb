@@ -8,9 +8,11 @@
         / <%= @db %>
       </p>
       <h2 class="mt-1">Slow queries <span class="font-mono text-sm text-zinc-500">(<%= @slow_queries.length() %>)</span></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         every query slower than 100ms is logged here automatically — use Explain on the query console
-        to find the missing index or full scan behind it
+        to find the missing index or full scan behind it. a non-zero <span class="text-zinc-400">cf churn</span>
+        means the query queued behind collection create/drop operations (e.g. a running test suite)
+        rather than doing slow work itself
       </p>
     </div>
     <div class="flex gap-2">
@@ -27,14 +29,16 @@
   </div>
 
   <div class="console-card">
-    <table class="console-table">
+    <div class="overflow-x-auto"><table class="console-table">
       <thead>
         <tr>
           <th>when</th>
           <th class="text-right">duration</th>
           <th>query</th>
+          <th>origin</th>
           <th class="text-right">results</th>
           <th class="text-right">writes</th>
+          <th class="text-right">cf churn</th>
         </tr>
       </thead>
       <tbody>
@@ -42,18 +46,29 @@
           <% timestamp = str(slow_query["timestamp"] ?? "") %>
           <% duration_ms = slow_query["execution_time_ms"] ?? 0 %>
           <% writes = (slow_query["documents_inserted"] ?? 0) + (slow_query["documents_updated"] ?? 0) + (slow_query["documents_removed"] ?? 0) %>
+          <% cf_ops = slow_query["cf_ops_during"] ?? 0 %>
+          <% cf_ops_ms = slow_query["cf_ops_ms_during"] ?? 0 %>
           <tr>
             <td class="w-px whitespace-nowrap font-mono text-xs text-zinc-500"><%= timestamp.substring(0, 19).replace("T", " ") %></td>
             <td class="w-px whitespace-nowrap text-right font-mono text-xs <%= duration_ms >= 1000 ? "text-red-400" : "text-amber-400" %>">
               <%= fmt_ms(duration_ms) %>
             </td>
             <td><code class="break-all font-mono text-xs text-zinc-300"><%= slow_query["query"] ?? "" %></code></td>
+            <td class="w-px whitespace-nowrap font-mono text-xs text-zinc-400"><%= slow_query["origin"] ?? "–" %></td>
             <td class="text-right font-mono text-xs text-zinc-400"><%= slow_query["results_count"] ?? 0 %></td>
             <td class="text-right font-mono text-xs text-zinc-400"><%= writes %></td>
+            <td class="w-px whitespace-nowrap text-right font-mono text-xs <%= cf_ops > 0 ? "text-amber-400" : "text-zinc-600" %>"
+                title="collection create/drop operations that overlapped this query — a likely contention cause, not the query's own work">
+              <% if cf_ops > 0 %>
+                <%= cf_ops %> ops · <%= fmt_ms(cf_ops_ms) %>
+              <% else %>
+                –
+              <% end %>
+            </td>
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
     <% if @slow_queries.length() == 0 %>
       <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no slow queries logged in <%= @db %> — nothing over 100ms yet</p>
     <% end %>

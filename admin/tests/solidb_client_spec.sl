@@ -4,7 +4,7 @@
 describe("SolidbClient") do
   before_each() do
     # Start every test from an empty token cache so order can't leak state.
-    SolidbClient.cached_token = ""
+    SolidbClient.cached_tokens = {}
   end
 
   describe("derive_ws_url") do
@@ -106,14 +106,19 @@ describe("SolidbClient") do
 
   describe("token cache") do
     test("token() serves the cached value without logging in") do
-      SolidbClient.cached_token = "cached.jwt"
+      SolidbClient.cached_tokens[SolidbClient.connection_key()] = "cached.jwt"
       assert_eq(SolidbClient.token(), "cached.jwt")
     end
 
-    test("clear_token() empties the cache") do
-      SolidbClient.cached_token = "cached.jwt"
+    test("clear_token() empties the current connection's entry") do
+      SolidbClient.cached_tokens[SolidbClient.connection_key()] = "cached.jwt"
       SolidbClient.clear_token()
-      assert_eq(SolidbClient.cached_token, "")
+      assert_eq(SolidbClient.cached_tokens[SolidbClient.connection_key()], "")
+    end
+
+    test("tokens are cached per host|username connection") do
+      SolidbClient.cached_tokens["http://other:6745|admin"] = "other.jwt"
+      assert_ne(SolidbClient.token() ?? "", "other.jwt")
     end
   end
 
@@ -121,7 +126,7 @@ describe("SolidbClient") do
     test("login mints and caches a token") do
       token = SolidbClient.login()
       assert_not(token.blank?)
-      assert_eq(SolidbClient.cached_token, token)
+      assert_eq(SolidbClient.cached_tokens[SolidbClient.connection_key()], token)
     end
 
     test("get_api lists databases") do
@@ -131,10 +136,10 @@ describe("SolidbClient") do
     end
 
     test("a stale token self-heals via the 401 retry") do
-      SolidbClient.cached_token = "stale.invalid.jwt"
+      SolidbClient.cached_tokens[SolidbClient.connection_key()] = "stale.invalid.jwt"
       result = SolidbClient.get_api(SolidbEndpoints.databases())
       assert(result["ok"])
-      assert_ne(SolidbClient.cached_token, "stale.invalid.jwt")
+      assert_ne(SolidbClient.cached_tokens[SolidbClient.connection_key()], "stale.invalid.jwt")
     end
 
     test("livequery_token returns a non-empty token") do

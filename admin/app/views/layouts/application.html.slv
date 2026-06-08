@@ -5,27 +5,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= @title ?? "SoliDB Admin" %> · SoliDB Admin</title>
 
+  <!-- PWA: installable app manifest + icons (see public/manifest.json) -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#09090b">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
   <!-- Tailwind CSS (compiled) -->
   <link rel="stylesheet" href="<%= public_path("css/application.css") %>">
 
-  <!-- Google Fonts — same pairing as the kv app -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Google Fonts — only the active font preset's families (none for "system") -->
+  <% font_link = admin_font_link() %>
+  <% if !font_link.blank? %>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="<%- font_link %>" rel="stylesheet">
+  <% end %>
 </head>
-<body class="min-h-full bg-zinc-950 text-zinc-100 font-sans antialiased">
-  <div class="flex min-h-screen">
+<%# data-theme/data-font drive the accent + font CSS variables (see Settings
+    page); both helpers whitelist their cookie value so they are attr-safe. %>
+<body class="min-h-full bg-zinc-950 text-zinc-100 font-sans antialiased"
+      data-theme="<%- admin_theme() %>" data-font="<%- admin_font() %>">
+  <div class="flex min-h-screen" x-data="{ navOpen: false }" @keydown.escape.window="navOpen = false">
     <%- partial("shared/nav", { "nav_db": @db ?? "", "nav_path": current_path() }) %>
 
+    <%# Mobile-only backdrop behind the off-canvas sidebar. %>
+    <div x-cloak x-show="navOpen" @click="navOpen = false"
+         class="fixed inset-0 z-30 bg-black/60 md:hidden" aria-hidden="true"></div>
+
     <div class="flex min-w-0 flex-1 flex-col">
-      <header class="flex h-14 items-center justify-between border-b border-zinc-800 bg-zinc-950/90 px-6">
-        <div class="flex items-center gap-3">
-          <h1 class="text-base font-medium tracking-tight text-zinc-200"><%= @title ?? "SoliDB Admin" %></h1>
+      <header class="flex h-14 items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/90 px-4 md:px-6">
+        <div class="flex min-w-0 items-center gap-2 md:gap-3">
+          <button type="button" @click="navOpen = true" aria-label="Open navigation"
+                  class="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-200 md:hidden">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
+          </button>
+          <h1 class="truncate text-base font-medium tracking-tight text-zinc-200"><%= @title ?? "SoliDB Admin" %></h1>
         </div>
-        <%- partial("shared/db_picker", { "picker_db": @db ?? "", "picker_databases": @databases ?? [] }) %>
+        <div class="flex min-w-0 items-center gap-3">
+          <%# Current SoliDB connection - click to switch servers. %>
+          <a href="<%= connection_path() %>" title="SoliDB connection — click to switch servers"
+             class="hidden items-center gap-1.5 font-mono text-[11px] text-zinc-500 transition-colors hover:text-teal-300 sm:flex">
+            <span class="h-1.5 w-1.5 shrink-0 rounded-full <%= connection_overridden() ? "bg-amber-400" : "bg-teal-400" %>"></span>
+            <span class="max-w-44 truncate"><%= connection_host_label() %></span>
+          </a>
+          <%- partial("shared/db_picker", { "picker_db": @db ?? "", "picker_databases": @databases ?? [] }) %>
+        </div>
       </header>
 
-      <main id="content" class="console-grid flex-1 overflow-x-auto p-6">
+      <main id="content" tabindex="-1" class="console-grid flex-1 overflow-x-auto p-4 focus:outline-none md:p-6">
         <%= yield %>
       </main>
     </div>
@@ -35,8 +65,26 @@
 
   <!-- HTMx + Alpine.js (Soli's default client stack) -->
   <script defer src="<%= public_path("js/htmx.min.js") %>"></script>
+  <%# admin-db-picker.js MUST load before alpine.min.js: this Alpine build
+      starts itself in a microtask right after its own script evaluates, so
+      components referenced from x-data have to exist by then. %>
+  <script defer src="<%= public_path("js/admin-db-picker.js") %>"></script>
   <script defer src="<%= public_path("js/alpine.min.js") %>"></script>
   <script defer src="<%= public_path("js/admin-json.js") %>"></script>
   <script defer src="<%= public_path("js/admin-drop.js") %>"></script>
+  <script defer src="<%= public_path("js/admin-nav-keys.js") %>"></script>
+
+  <%# PWA service worker: offline fallback page + cached static assets. Page
+      HTML is never cached (live data behind auth) - see public/sw.js. %>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("/sw.js").catch(function () {
+          /* insecure context (plain http on a remote host) or unsupported -
+             the app keeps working as a regular website */
+        });
+      });
+    }
+  </script>
 </body>
 </html>

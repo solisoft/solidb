@@ -5,7 +5,7 @@
     <div>
       <p class="console-label">Server</p>
       <h2 class="mt-1">Cluster</h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         live node health, peers and the replication sync log — refreshes every 3 seconds
       </p>
     </div>

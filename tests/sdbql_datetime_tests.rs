@@ -208,6 +208,21 @@ fn test_time_bucket_1h() {
     assert_eq!(results[0].as_i64().unwrap(), 3600000);
 }
 
+#[test]
+fn test_time_bucket_float_timestamp() {
+    let (engine, _tmp) = create_test_engine();
+
+    // SDBQL arithmetic produces floats (e.g. epoch-seconds * 1000); the
+    // bucket must accept them instead of erroring on non-i64 numbers.
+    let results = execute_query(&engine, "RETURN TIME_BUCKET(90000.0, '1m')");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_i64().unwrap(), 60000);
+
+    let results = execute_query(&engine, "RETURN TIME_BUCKET(90 * 1000, '1m')");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_i64().unwrap(), 60000);
+}
+
 // ============================================================================
 // UUID Functions Tests
 // ============================================================================

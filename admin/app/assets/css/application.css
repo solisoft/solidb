@@ -3,6 +3,377 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme presets — every `teal-*` (accent) and `zinc-*` (surface) utility
+   resolves through these variables (see tailwind.config.js). Triplets are
+   space-separated RGB so Tailwind's opacity modifiers (teal-500/10,
+   zinc-800/60) keep working. The preset is picked on the Settings page and
+   applied as data-theme on <body>. */
+:root {
+    /* solidb (default) — terminal teal on zinc */
+    --accent-50:  240 253 250;
+    --accent-100: 204 251 241;
+    --accent-200: 153 246 228;
+    --accent-300: 94 234 212;
+    --accent-400: 45 212 191;
+    --accent-500: 20 184 166;
+    --accent-600: 13 148 136;
+    --accent-700: 15 118 110;
+    --accent-800: 17 94 89;
+    --accent-900: 19 78 74;
+    --accent-950: 4 47 46;
+
+    --surface-50:  250 250 250;
+    --surface-100: 244 244 245;
+    --surface-200: 228 228 231;
+    --surface-300: 212 212 216;
+    --surface-400: 161 161 170;
+    --surface-500: 113 113 122;
+    --surface-600: 82 82 91;
+    --surface-700: 63 63 70;
+    --surface-800: 39 39 42;
+    --surface-900: 24 24 27;
+    --surface-950: 9 9 11;
+}
+
+/* arangodb — avocado green on slate blue-gray */
+[data-theme="arangodb"] {
+    --accent-50:  248 252 233;
+    --accent-100: 238 248 204;
+    --accent-200: 221 240 155;
+    --accent-300: 197 228 104;
+    --accent-400: 172 216 75;
+    --accent-500: 148 200 61;
+    --accent-600: 118 165 44;
+    --accent-700: 90 128 35;
+    --accent-800: 72 102 31;
+    --accent-900: 60 85 30;
+    --accent-950: 30 46 12;
+
+    --surface-50:  248 250 252;
+    --surface-100: 241 245 249;
+    --surface-200: 226 232 240;
+    --surface-300: 203 213 225;
+    --surface-400: 148 163 184;
+    --surface-500: 100 116 139;
+    --surface-600: 71 85 105;
+    --surface-700: 51 65 85;
+    --surface-800: 30 41 59;
+    --surface-900: 15 23 42;
+    --surface-950: 2 6 23;
+}
+
+/* violet — purple accents on purple-tinted dark */
+[data-theme="violet"] {
+    --accent-50:  245 243 255;
+    --accent-100: 237 233 254;
+    --accent-200: 221 214 254;
+    --accent-300: 196 181 253;
+    --accent-400: 167 139 250;
+    --accent-500: 139 92 246;
+    --accent-600: 124 58 237;
+    --accent-700: 109 40 217;
+    --accent-800: 91 33 182;
+    --accent-900: 76 29 149;
+    --accent-950: 46 16 101;
+
+    --surface-50:  248 247 252;
+    --surface-100: 240 238 248;
+    --surface-200: 226 222 237;
+    --surface-300: 200 195 215;
+    --surface-400: 161 153 180;
+    --surface-500: 113 105 134;
+    --surface-600: 82 73 104;
+    --surface-700: 58 50 78;
+    --surface-800: 39 33 55;
+    --surface-900: 24 20 35;
+    --surface-950: 13 10 20;
+}
+
+/* amber — warm amber on stone */
+[data-theme="amber"] {
+    --accent-50:  255 251 235;
+    --accent-100: 254 243 199;
+    --accent-200: 253 230 138;
+    --accent-300: 252 211 77;
+    --accent-400: 251 191 36;
+    --accent-500: 245 158 11;
+    --accent-600: 217 119 6;
+    --accent-700: 180 83 9;
+    --accent-800: 146 64 14;
+    --accent-900: 120 53 15;
+    --accent-950: 69 26 3;
+
+    --surface-50:  250 250 249;
+    --surface-100: 245 245 244;
+    --surface-200: 231 229 228;
+    --surface-300: 214 211 209;
+    --surface-400: 168 162 158;
+    --surface-500: 120 113 108;
+    --surface-600: 87 83 78;
+    --surface-700: 68 64 60;
+    --surface-800: 41 37 36;
+    --surface-900: 28 25 23;
+    --surface-950: 12 10 9;
+}
+
+/* rose — rose red on red-tinted dark */
+[data-theme="rose"] {
+    --accent-50:  255 241 242;
+    --accent-100: 255 228 230;
+    --accent-200: 254 205 211;
+    --accent-300: 253 164 175;
+    --accent-400: 251 113 133;
+    --accent-500: 244 63 94;
+    --accent-600: 225 29 72;
+    --accent-700: 190 18 60;
+    --accent-800: 159 18 57;
+    --accent-900: 136 19 55;
+    --accent-950: 76 5 25;
+
+    --surface-50:  250 248 248;
+    --surface-100: 243 239 240;
+    --surface-200: 231 223 225;
+    --surface-300: 207 195 198;
+    --surface-400: 170 150 155;
+    --surface-500: 128 102 108;
+    --surface-600: 95 70 76;
+    --surface-700: 70 48 53;
+    --surface-800: 48 30 34;
+    --surface-900: 31 17 20;
+    --surface-950: 20 9 11;
+}
+
+/* sky — sky blue on cool gray */
+[data-theme="sky"] {
+    --accent-50:  240 249 255;
+    --accent-100: 224 242 254;
+    --accent-200: 186 230 253;
+    --accent-300: 125 211 252;
+    --accent-400: 56 189 248;
+    --accent-500: 14 165 233;
+    --accent-600: 2 132 199;
+    --accent-700: 3 105 161;
+    --accent-800: 7 89 133;
+    --accent-900: 12 74 110;
+    --accent-950: 8 47 73;
+
+    --surface-50:  249 250 251;
+    --surface-100: 243 244 246;
+    --surface-200: 229 231 235;
+    --surface-300: 209 213 219;
+    --surface-400: 156 163 175;
+    --surface-500: 107 114 128;
+    --surface-600: 75 85 99;
+    --surface-700: 55 65 81;
+    --surface-800: 31 41 55;
+    --surface-900: 17 24 39;
+    --surface-950: 3 7 18;
+}
+
+
+/* Light presets — the same palettes, scale-inverted: surface-950 becomes the
+   light page background, surface-100 the dark text, and accents land on their
+   darker shades for contrast. */
+
+/* solidb-light — teal on light zinc */
+[data-theme="solidb-light"] {
+    --accent-50: 4 47 46;
+    --accent-100: 19 78 74;
+    --accent-200: 17 94 89;
+    --accent-300: 15 118 110;
+    --accent-400: 13 148 136;
+    --accent-500: 20 184 166;
+    --accent-600: 45 212 191;
+    --accent-700: 94 234 212;
+    --accent-800: 153 246 228;
+    --accent-900: 204 251 241;
+    --accent-950: 240 253 250;
+
+    --surface-50: 9 9 11;
+    --surface-100: 24 24 27;
+    --surface-200: 39 39 42;
+    --surface-300: 63 63 70;
+    --surface-400: 82 82 91;
+    --surface-500: 113 113 122;
+    --surface-600: 161 161 170;
+    --surface-700: 212 212 216;
+    --surface-800: 228 228 231;
+    --surface-900: 244 244 245;
+    --surface-950: 250 250 250;
+}
+
+/* arangodb-light — avocado green on light slate — like the real thing */
+[data-theme="arangodb-light"] {
+    --accent-50: 30 46 12;
+    --accent-100: 60 85 30;
+    --accent-200: 72 102 31;
+    --accent-300: 90 128 35;
+    --accent-400: 118 165 44;
+    --accent-500: 148 200 61;
+    --accent-600: 172 216 75;
+    --accent-700: 197 228 104;
+    --accent-800: 221 240 155;
+    --accent-900: 238 248 204;
+    --accent-950: 248 252 233;
+
+    --surface-50: 2 6 23;
+    --surface-100: 15 23 42;
+    --surface-200: 30 41 59;
+    --surface-300: 51 65 85;
+    --surface-400: 71 85 105;
+    --surface-500: 100 116 139;
+    --surface-600: 148 163 184;
+    --surface-700: 203 213 225;
+    --surface-800: 226 232 240;
+    --surface-900: 241 245 249;
+    --surface-950: 248 250 252;
+}
+
+/* violet-light — purple on light lavender */
+[data-theme="violet-light"] {
+    --accent-50: 46 16 101;
+    --accent-100: 76 29 149;
+    --accent-200: 91 33 182;
+    --accent-300: 109 40 217;
+    --accent-400: 124 58 237;
+    --accent-500: 139 92 246;
+    --accent-600: 167 139 250;
+    --accent-700: 196 181 253;
+    --accent-800: 221 214 254;
+    --accent-900: 237 233 254;
+    --accent-950: 245 243 255;
+
+    --surface-50: 13 10 20;
+    --surface-100: 24 20 35;
+    --surface-200: 39 33 55;
+    --surface-300: 58 50 78;
+    --surface-400: 82 73 104;
+    --surface-500: 113 105 134;
+    --surface-600: 161 153 180;
+    --surface-700: 200 195 215;
+    --surface-800: 226 222 237;
+    --surface-900: 240 238 248;
+    --surface-950: 248 247 252;
+}
+
+/* amber-light — amber on warm paper */
+[data-theme="amber-light"] {
+    --accent-50: 69 26 3;
+    --accent-100: 120 53 15;
+    --accent-200: 146 64 14;
+    --accent-300: 180 83 9;
+    --accent-400: 217 119 6;
+    --accent-500: 245 158 11;
+    --accent-600: 251 191 36;
+    --accent-700: 252 211 77;
+    --accent-800: 253 230 138;
+    --accent-900: 254 243 199;
+    --accent-950: 255 251 235;
+
+    --surface-50: 12 10 9;
+    --surface-100: 28 25 23;
+    --surface-200: 41 37 36;
+    --surface-300: 68 64 60;
+    --surface-400: 87 83 78;
+    --surface-500: 120 113 108;
+    --surface-600: 168 162 158;
+    --surface-700: 214 211 209;
+    --surface-800: 231 229 228;
+    --surface-900: 245 245 244;
+    --surface-950: 250 250 249;
+}
+
+/* rose-light — rose on warm white */
+[data-theme="rose-light"] {
+    --accent-50: 76 5 25;
+    --accent-100: 136 19 55;
+    --accent-200: 159 18 57;
+    --accent-300: 190 18 60;
+    --accent-400: 225 29 72;
+    --accent-500: 244 63 94;
+    --accent-600: 251 113 133;
+    --accent-700: 253 164 175;
+    --accent-800: 254 205 211;
+    --accent-900: 255 228 230;
+    --accent-950: 255 241 242;
+
+    --surface-50: 20 9 11;
+    --surface-100: 31 17 20;
+    --surface-200: 48 30 34;
+    --surface-300: 70 48 53;
+    --surface-400: 95 70 76;
+    --surface-500: 128 102 108;
+    --surface-600: 170 150 155;
+    --surface-700: 207 195 198;
+    --surface-800: 231 223 225;
+    --surface-900: 243 239 240;
+    --surface-950: 250 248 248;
+}
+
+/* sky-light — sky blue on cool white */
+[data-theme="sky-light"] {
+    --accent-50: 8 47 73;
+    --accent-100: 12 74 110;
+    --accent-200: 7 89 133;
+    --accent-300: 3 105 161;
+    --accent-400: 2 132 199;
+    --accent-500: 14 165 233;
+    --accent-600: 56 189 248;
+    --accent-700: 125 211 252;
+    --accent-800: 186 230 253;
+    --accent-900: 224 242 254;
+    --accent-950: 240 249 255;
+
+    --surface-50: 3 7 18;
+    --surface-100: 17 24 39;
+    --surface-200: 31 41 55;
+    --surface-300: 55 65 81;
+    --surface-400: 75 85 99;
+    --surface-500: 107 114 128;
+    --surface-600: 156 163 175;
+    --surface-700: 209 213 219;
+    --surface-800: 229 231 235;
+    --surface-900: 243 244 246;
+    --surface-950: 249 250 251;
+}
+
+/* Font presets — font-sans/font-mono resolve through these variables (see
+   tailwind.config.js). Picked on the Settings page, applied as data-font on
+   <body>; the layout only loads the Google Fonts the active preset needs. */
+:root {
+    /* grotesk (default) */
+    --font-sans: 'Space Grotesk', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+}
+
+[data-font="inter"] {
+    --font-sans: 'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+}
+
+[data-font="ibm-plex"] {
+    --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+}
+
+[data-font="source"] {
+    --font-sans: 'Source Sans 3', system-ui, sans-serif;
+    --font-mono: 'Source Code Pro', monospace;
+}
+
+[data-font="system"] {
+    --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* Keyboard-highlighted option in the header db picker (plain rule, not in a
+   layer, so it lands after the utilities and wins the specificity tie against
+   the anchors' text-zinc-* classes). */
+.db-option-active {
+    background-color: rgb(var(--surface-800));
+    color: rgb(var(--accent-300));
+}
+
 /* Base styles — SoliDB admin ops console (dark zinc + terminal teal) */
 @layer base {
     html {
@@ -26,8 +397,8 @@
     /* Faint blueprint grid behind the content area. */
     .console-grid {
         background-image:
-            linear-gradient(rgba(63, 63, 70, 0.16) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(63, 63, 70, 0.16) 1px, transparent 1px);
+            linear-gradient(rgb(var(--surface-700) / 0.16) 1px, transparent 1px),
+            linear-gradient(90deg, rgb(var(--surface-700) / 0.16) 1px, transparent 1px);
         background-size: 32px 32px;
     }
 
@@ -40,6 +411,12 @@
        badges on spans/buttons stay inline. */
     label.console-label {
         @apply block;
+    }
+
+    /* Explanatory copy (page descriptions, form hints). One notch larger
+       than the old text-xs so help text stays comfortably readable. */
+    .console-help {
+        @apply font-mono text-sm leading-relaxed text-zinc-500;
     }
 
     /* No backdrop-blur here: backdrop-filter makes the card the containing
@@ -109,10 +486,10 @@
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(20, 184, 166, 0.25);
+    background: rgb(var(--accent-500) / 0.25);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(20, 184, 166, 0.45);
+    background: rgb(var(--accent-500) / 0.45);
 }

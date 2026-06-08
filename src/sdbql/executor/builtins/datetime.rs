@@ -217,11 +217,17 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
 
             match &args[0] {
                 Value::Number(n) => {
-                    let ts = n.as_i64().ok_or_else(|| {
-                        DbError::ExecutionError(
-                            "TIME_BUCKET: timestamp must be a valid number".to_string(),
-                        )
-                    })?;
+                    // Accept floats too: SDBQL arithmetic produces floats
+                    // (e.g. seconds * 1000), which would otherwise poison
+                    // every computed timestamp.
+                    let ts = n
+                        .as_i64()
+                        .or_else(|| n.as_f64().map(|f| f as i64))
+                        .ok_or_else(|| {
+                            DbError::ExecutionError(
+                                "TIME_BUCKET: timestamp must be a valid number".to_string(),
+                            )
+                        })?;
                     let bucket = ts.div_euclid(interval_ms as i64) * (interval_ms as i64);
                     Ok(Some(Value::Number(bucket.into())))
                 }

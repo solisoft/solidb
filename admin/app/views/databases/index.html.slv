@@ -5,18 +5,18 @@
     <div>
       <p class="console-label">Server</p>
       <h2 class="mt-1">Databases <span class="font-mono text-sm text-zinc-500">(<%= @database_names.length() %>)</span></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         each database is an isolated namespace of collections, scripts, queues, triggers and env vars —
         dropping one deletes all of it, there is no undo
       </p>
     </div>
 
     <form hx-post="<%= databases_path() %>" hx-target="#content" hx-swap="innerHTML show:top"
-          class="flex items-end gap-2">
-      <div>
+          class="flex w-full items-end gap-2 sm:w-auto">
+      <div class="min-w-0 flex-1 sm:flex-none">
         <label class="console-label" for="db-name">new database</label>
         <input id="db-name" name="name" type="text" placeholder="my_database"
-               class="console-input mt-1 w-56 font-mono" autocomplete="off">
+               class="console-input mt-1 w-full font-mono sm:w-56" autocomplete="off">
       </div>
       <%# py-2.5 matches the console-input height (py-2 text-sm). %>
       <button type="submit" class="btn-primary py-2.5">Create</button>
@@ -29,7 +29,7 @@
       <input type="text" x-model="q" placeholder="filter…"
              class="console-input w-48 py-1 font-mono text-xs">
     </div>
-    <table class="console-table">
+    <div class="overflow-x-auto"><table class="console-table">
       <tbody>
         <% for db_name in @database_names %>
           <tr data-name="<%= attr(db_name) %>" x-show="$el.dataset.name.includes(q.toLowerCase())">
@@ -58,7 +58,7 @@
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
     <% if @database_names.length() == 0 %>
       <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no databases</p>
     <% end %>

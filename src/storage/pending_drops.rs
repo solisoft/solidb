@@ -204,7 +204,7 @@ impl PendingCfDrops {
                     continue; // claimed by a concurrent recreate
                 }
                 if db.cf_handle(cf).is_some() {
-                    if let Err(e) = db.drop_cf(cf) {
+                    if let Err(e) = super::cf_ops::timed(|| db.drop_cf(cf)) {
                         tracing::warn!("Background drop of column family '{}' failed: {}", cf, e);
                         registry.release_claim(cf);
                         continue;

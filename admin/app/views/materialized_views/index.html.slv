@@ -7,7 +7,7 @@
     <div>
       <p class="console-label">db / <%= @db %></p>
       <h2 class="mt-1">Materialized views <span class="font-mono text-sm text-zinc-500">(<%= @views.length() %>)</span></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         a materialized view stores the <em>result</em> of an SDBQL query as a regular collection — reads are instant
         because nothing is recomputed, but the data goes stale until you refresh it. good for expensive
         aggregations and reports queried far more often than the source data changes
@@ -38,14 +38,14 @@
           <label class="console-label" for="view-name">name</label>
           <input id="view-name" name="name" type="text" placeholder="active_users"
                  class="console-input mt-1 font-mono" autocomplete="off">
-          <p class="mt-1 font-mono text-[10px] text-zinc-600">becomes a queryable collection with the same name</p>
+          <p class="mt-1 font-mono text-xs text-zinc-600">becomes a queryable collection with the same name</p>
         </div>
         <div>
           <label class="console-label" for="view-query">query <span class="text-zinc-700">— the AS part, plain SDBQL</span></label>
           <textarea id="view-query" name="query" rows="6" spellcheck="false"
                     placeholder="FOR u IN users&#10;  FILTER u.active == true&#10;  RETURN { name: u.name, email: u.email }"
                     class="console-input mt-1 resize-y font-mono text-[13px] leading-relaxed"></textarea>
-          <p class="mt-1 font-mono text-[10px] text-zinc-600">
+          <p class="mt-1 font-mono text-xs text-zinc-600">
             runs once at creation to populate the view — data goes stale until you refresh it
           </p>
         </div>
@@ -60,7 +60,7 @@
   </template>
 
   <div class="console-card">
-    <table class="console-table">
+    <div class="overflow-x-auto"><table class="console-table">
       <thead>
         <tr>
           <th>name</th>
@@ -110,7 +110,7 @@
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
     <% if @views.length() == 0 %>
       <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no materialized views in <%= @db %></p>
     <% end %>

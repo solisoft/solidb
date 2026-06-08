@@ -5,7 +5,7 @@
     <div>
       <p class="console-label">Access</p>
       <h2 class="mt-1">Roles <span class="font-mono text-sm text-zinc-500">(<%= @roles.length() %>)</span></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         RBAC roles bundle permissions (read / write / admin, per database or global) —
         assign them to accounts from the users page
       </p>
@@ -16,12 +16,12 @@
   <form x-show="creating" x-cloak class="console-card space-y-3 p-4"
         hx-post="<%= roles_path() %>" hx-target="#content" hx-swap="innerHTML show:top">
     <div class="flex flex-wrap gap-3">
-      <div>
+      <div class="w-full sm:w-auto">
         <label class="console-label" for="role-name">name</label>
         <input id="role-name" name="name" type="text" placeholder="data-analyst"
-               class="console-input mt-1 w-48 font-mono" autocomplete="off">
+               class="console-input mt-1 w-full font-mono sm:w-48" autocomplete="off">
       </div>
-      <div class="min-w-64 flex-1">
+      <div class="min-w-0 flex-1 basis-full sm:basis-auto sm:min-w-64">
         <label class="console-label" for="role-desc">description</label>
         <input id="role-desc" name="description" type="text" placeholder="Read-only analytics access"
                class="console-input mt-1">
@@ -32,7 +32,7 @@
       <textarea id="role-perms" name="permissions" rows="3" spellcheck="false"
                 placeholder='[{ "action": "read", "scope": "database", "database": "analytics" }]'
                 class="console-input mt-1 resize-y font-mono text-[13px]"></textarea>
-      <p class="mt-1 font-mono text-[10px] text-zinc-600">actions: read / write / admin · scopes: global / database</p>
+      <p class="mt-1 font-mono text-xs text-zinc-600">actions: read / write / admin · scopes: global / database</p>
     </div>
     <div class="flex justify-end gap-2">
       <button type="button" class="btn-ghost" x-on:click="creating = false">Cancel</button>
@@ -41,7 +41,7 @@
   </form>
 
   <div class="console-card">
-    <table class="console-table">
+    <div class="overflow-x-auto"><table class="console-table">
       <thead>
         <tr>
           <th>role</th>
@@ -83,6 +83,6 @@
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
   </div>
 </div>

@@ -1,0 +1,80 @@
+<%# Retention panel: TTL indexes (expire by a timestamp field) and manual
+    prune. Prune cuts by INSERT time - the UUIDv7 key embeds it - because
+    timeseries documents cannot be deleted individually. %>
+<% ttl_field_default = (time_field ?? "").blank? ? "timestamp" : time_field %>
+<% ttl_list = ttl_indexes ?? [] %>
+<div class="console-card">
+  <div class="border-b border-zinc-800 px-4 py-2.5">
+    <p class="console-label">retention</p>
+  </div>
+  <div class="grid grid-cols-1 gap-6 p-4 lg:grid-cols-2">
+    <div>
+      <p class="console-label mb-2">ttl indexes <span class="text-zinc-700">— auto-expire points by a timestamp field</span></p>
+      <% for ttl_index in ttl_list %>
+        <% ttl_name = ttl_index["name"] ?? "" %>
+        <div class="mb-2 flex items-center justify-between gap-2 border border-zinc-800 px-3 py-2">
+          <div class="min-w-0">
+            <p class="truncate font-mono text-xs text-zinc-200"><%= ttl_name %></p>
+            <p class="font-mono text-[11px] text-zinc-500">
+              field <span class="text-teal-400"><%= ttl_index["field"] ?? "-" %></span>
+              · expires after <%= fmt_uptime(ttl_index["expire_after_seconds"]) %>
+            </p>
+          </div>
+          <button class="btn-danger shrink-0"
+                  hx-delete="<%= attr(ts_base) %>/ttl/<%= url(ttl_name) %>"
+                  hx-target="#content" hx-swap="innerHTML show:top"
+                  hx-confirm="Drop ttl index '<%= attr(ttl_name) %>'? Points will stop expiring automatically.">
+            Drop
+          </button>
+        </div>
+      <% end %>
+      <% if ttl_list.length() == 0 %>
+        <p class="mb-2 border border-dashed border-zinc-800 px-3 py-2 font-mono text-xs text-zinc-600">
+          no ttl index — points are kept forever until pruned
+        </p>
+      <% end %>
+      <form class="flex flex-wrap items-end gap-2"
+            hx-post="<%= attr(ts_base) %>/ttl" hx-target="#content" hx-swap="innerHTML show:top">
+        <div>
+          <label class="console-label" for="ttl-field">field</label>
+          <input id="ttl-field" name="field" type="text" value="<%- attr(ttl_field_default) %>"
+                 class="console-input mt-1 w-36 font-mono text-[13px]">
+        </div>
+        <div>
+          <label class="console-label" for="ttl-expire">expire after <span class="text-zinc-700">— seconds</span></label>
+          <input id="ttl-expire" name="expire_after_seconds" type="number" min="1" placeholder="2592000"
+                 class="console-input mt-1 w-32 font-mono text-[13px]">
+        </div>
+        <button type="submit" class="btn-primary py-2.5">Add TTL</button>
+        <p class="w-full font-mono text-[11px] text-zinc-600">86400 = 1 day · 604800 = 7 days · 2592000 = 30 days</p>
+      </form>
+    </div>
+
+    <div x-data="{ pruneMode: '30d' }">
+      <p class="console-label mb-2">prune <span class="text-zinc-700">— delete points inserted before a cutoff</span></p>
+      <form class="flex flex-wrap items-end gap-2"
+            hx-post="<%= attr(ts_base) %>/prune" hx-target="#content" hx-swap="innerHTML show:top"
+            hx-confirm="Permanently delete every point inserted before the cutoff? This cannot be undone.">
+        <div>
+          <label class="console-label" for="prune-preset">older than</label>
+          <select id="prune-preset" name="older_than_preset" x-model="pruneMode"
+                  class="console-input mt-1 w-32 font-mono">
+            <option value="7d">7 days</option>
+            <option value="30d" selected>30 days</option>
+            <option value="90d">90 days</option>
+            <option value="custom">custom…</option>
+          </select>
+        </div>
+        <div x-show="pruneMode == 'custom'" x-cloak>
+          <label class="console-label" for="prune-cutoff">cutoff <span class="text-zinc-700">— ISO8601</span></label>
+          <input id="prune-cutoff" name="older_than" type="text" placeholder="2026-01-01T00:00:00Z"
+                 class="console-input mt-1 w-52 font-mono text-[13px]">
+        </div>
+        <button type="submit" class="btn-danger py-2.5">Prune</button>
+        <p class="w-full font-mono text-[11px] text-zinc-600">
+          cutoff applies to INSERT time (embedded in the UUIDv7 key), not the document's timestamp field
+        </p>
+      </form>
+    </div>
+  </div>
+</div>

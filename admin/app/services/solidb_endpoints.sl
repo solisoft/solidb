@@ -93,6 +93,22 @@ class SolidbEndpoints
     return SolidbEndpoints.collection(db, name) + "/truncate"
   end
 
+  static def collection_schema(db, name)
+    return SolidbEndpoints.collection(db, name) + "/schema"
+  end
+
+  static def collection_export(db, name)
+    return SolidbEndpoints.collection(db, name) + "/export"
+  end
+
+  static def collection_import(db, name)
+    return SolidbEndpoints.collection(db, name) + "/import"
+  end
+
+  static def collection_prune(db, name)
+    return SolidbEndpoints.collection(db, name) + "/prune"
+  end
+
   # --- indexes (standard + fulltext share one family; geo / ttl have
   # their own create+list APIs, but DELETE /index/{coll}/{name} drops any) ---
   static def collection_indexes(db, name)
@@ -113,6 +129,10 @@ class SolidbEndpoints
 
   static def ttl_indexes(db, name)
     return "/_api/database/" + db + "/ttl/" + name
+  end
+
+  static def ttl_index(db, name, index_name)
+    return SolidbEndpoints.ttl_indexes(db, name) + "/" + index_name
   end
 
   # --- columnar collections (separate API family) ---

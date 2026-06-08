@@ -1,0 +1,65 @@
+<div class="space-y-5 animate-fade-up">
+  <div>
+    <p class="console-label">console</p>
+    <h2 class="mt-1">Settings</h2>
+    <p class="mt-1 max-w-2xl console-help">
+      admin console preferences — stored in your browser, per-operator
+    </p>
+  </div>
+
+  <% dark_presets = @presets.filter do |preset| !preset.ends_with("-light") end %>
+  <% light_presets = @presets.filter do |preset| preset.ends_with("-light") end %>
+  <div class="console-card">
+    <div class="border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">theme · dark presets</p>
+    </div>
+    <div class="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
+      <% for preset in dark_presets %>
+        <%- partial("settings/preset_card", {
+              "preset": preset,
+              "swatch": @theme_swatches[preset],
+              "blurb": @theme_blurbs[preset],
+              "is_current": preset == @current_theme
+            }) %>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="console-card">
+    <div class="border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">theme · light presets</p>
+    </div>
+    <div class="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
+      <% for preset in light_presets %>
+        <%- partial("settings/preset_card", {
+              "preset": preset,
+              "swatch": @theme_swatches[preset],
+              "blurb": @theme_blurbs[preset],
+              "is_current": preset == @current_theme
+            }) %>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="console-card">
+    <div class="border-b border-zinc-800 px-4 py-2.5">
+      <p class="console-label">typography · font preset</p>
+    </div>
+    <div class="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
+      <% for font in @fonts %>
+        <% is_current_font = font == @current_font %>
+        <form method="post" action="<%= attr(settings_path()) %>/font">
+          <input type="hidden" name="font" value="<%- attr(font) %>">
+          <button type="submit"
+                  class="w-full border px-4 py-3 text-left transition-colors <%= is_current_font ? "border-teal-500 bg-teal-950/20" : "border-zinc-800 hover:border-zinc-600" %>">
+            <p class="font-mono text-sm <%= is_current_font ? "text-teal-300" : "text-zinc-200" %>"><%= font %></p>
+            <p class="mt-1.5 font-mono text-xs text-zinc-500"><%= @font_blurbs[font] %></p>
+            <% if is_current_font %>
+              <p class="console-label mt-2 text-teal-500">active</p>
+            <% end %>
+          </button>
+        </form>
+      <% end %>
+    </div>
+  </div>
+</div>

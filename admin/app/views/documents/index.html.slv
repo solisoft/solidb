@@ -3,7 +3,8 @@
 <% docs_base = db_collection_docs_path(@db, @collection_name) %>
 <% page_query = "?filter=" + url(@filter) + "&limit=" + str(@limit) %>
 
-<div class="space-y-5 animate-fade-up" x-data="{ creating: false }" x-on:keydown.escape.window="creating = false">
+<div class="space-y-5 animate-fade-up" x-data="{ creating: false, importing: false, schemaOpen: false }"
+     x-on:keydown.escape.window="creating = false; importing = false; schemaOpen = false">
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div>
       <p class="console-label">
@@ -11,27 +12,44 @@
         / <%= @db %>
       </p>
       <h2 class="mt-1 font-mono"><%= @collection_name %></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         browse, create and edit the documents in this collection — filter takes an SDBQL condition on doc
       </p>
     </div>
     <% if @collection_type == "blob" %>
       <button class="btn-primary" x-on:click="creating = true">Upload file</button>
     <% else %>
-      <button class="btn-primary"
-              x-on:click="creating = true; $nextTick(() => window.AdminEditor && AdminEditor.mountOnce($refs.newDoc, { language: 'json', height: '50vh' }))">
-        New document
-      </button>
+      <div class="flex flex-wrap gap-2">
+        <button class="btn-ghost" x-on:click="schemaOpen = true">
+          Schema<% if !@schema_json.blank? %> <span class="text-teal-500">· <%= @schema_mode %></span><% end %>
+        </button>
+        <button class="btn-ghost"
+                hx-put="<%= attr(docs_base) %>/truncate"
+                hx-target="#content" hx-swap="innerHTML show:top"
+                hx-confirm="Truncate '<%= attr(@collection_name) %>'? All documents will be removed.">
+          Truncate
+        </button>
+        <a href="<%= attr(docs_base) %>/export" class="btn-ghost" download>Export .jsonl</a>
+        <button class="btn-ghost" x-on:click="importing = true">Import</button>
+        <button class="btn-primary" x-on:click="creating = true">New document</button>
+      </div>
     <% end %>
   </div>
 
   <% if @collection_type == "blob" %>
-    <div x-show="creating" x-cloak class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-4 pt-16">
+    <%# Teleported to <body>: an ancestor with a retained transform (animate-fade-up)
+        acts as containing block for position:fixed and crops the modal to the
+        content area. htmx.process() is required because htmx never initializes
+        <template> content. %>
+    <template x-teleport="body">
+    <div x-show="creating" x-cloak x-init="htmx.process($el)"
+         class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-4 pt-16">
       <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="creating = false"></div>
       <form class="relative w-full max-w-xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+            x-on:submit="creating = false"
             hx-post="<%= attr(docs_base) %>/upload" hx-encoding="multipart/form-data"
             hx-target="#content" hx-swap="innerHTML show:top">
-        <input type="hidden" name="filter" value="<%= attr(@filter) %>">
+        <input type="hidden" name="filter" value="<%- attr(@filter) %>">
         <input type="hidden" name="limit" value="<%= @limit %>">
         <input type="hidden" name="offset" value="<%= @offset %>">
         <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
@@ -44,7 +62,7 @@
           <input id="blob-file" name="file" type="file"
                  class="console-input mt-1 file:mr-3 file:border-0 file:bg-teal-500/10 file:px-3 file:py-1
                         file:font-mono file:text-xs file:uppercase file:tracking-wider file:text-teal-300">
-          <p class="mt-2 font-mono text-[10px] text-zinc-600">stored via the binary driver protocol — bytes arrive exactly as sent</p>
+          <p class="mt-2 font-mono text-xs text-zinc-600">stored via the binary driver protocol — bytes arrive exactly as sent</p>
         </div>
         <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
           <button type="button" class="btn-ghost" x-on:click="creating = false">Cancel</button>
@@ -52,14 +70,22 @@
         </div>
       </form>
     </div>
+    </template>
   <% end %>
 
   <% if @collection_type != "blob" %>
-  <div x-show="creating" x-cloak class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-4 pt-10">
+  <%# Same teleport rationale as the upload modal. The Monaco mount lives here
+      (x-effect) rather than on the trigger button: $refs does not resolve
+      across the teleport boundary, inside the clone it does. %>
+  <template x-teleport="body">
+  <div x-show="creating" x-cloak x-init="htmx.process($el)"
+       x-effect="creating && $nextTick(() => window.AdminEditor && AdminEditor.mountOnce($refs.newDoc, { language: 'json', height: '50vh' }))"
+       class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-4 pt-10">
     <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="creating = false"></div>
     <form class="relative w-full max-w-4xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+          x-on:submit="creating = false"
           hx-post="<%= attr(docs_base) %>" hx-target="#content" hx-swap="innerHTML show:top">
-      <input type="hidden" name="filter" value="<%= attr(@filter) %>">
+      <input type="hidden" name="filter" value="<%- attr(@filter) %>">
       <input type="hidden" name="limit" value="<%= @limit %>">
       <input type="hidden" name="offset" value="<%= @offset %>">
       <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
@@ -81,12 +107,102 @@
       </div>
     </form>
   </div>
+  </template>
+
+  <%# Import modal - same teleport rationale as above. %>
+  <template x-teleport="body">
+  <div x-show="importing" x-cloak x-init="htmx.process($el)"
+       class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-4 pt-16">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="importing = false"></div>
+    <form class="relative w-full max-w-xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+          x-on:submit="importing = false"
+          hx-post="<%= attr(docs_base) %>/import" hx-encoding="multipart/form-data"
+          hx-target="#content" hx-swap="innerHTML show:top">
+      <input type="hidden" name="filter" value="<%- attr(@filter) %>">
+      <input type="hidden" name="limit" value="<%= @limit %>">
+      <input type="hidden" name="offset" value="<%= @offset %>">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+        <p class="console-label">import documents · <span class="text-teal-500"><%= @collection_name %></span></p>
+        <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                x-on:click="importing = false">×</button>
+      </div>
+      <div class="px-5 py-5">
+        <label class="console-label" for="import-file">file</label>
+        <input id="import-file" name="file" type="file" accept=".json,.jsonl,.ndjson,application/json"
+               class="console-input mt-1 file:mr-3 file:border-0 file:bg-teal-500/10 file:px-3 file:py-1
+                      file:font-mono file:text-xs file:uppercase file:tracking-wider file:text-teal-300">
+        <p class="mt-2 font-mono text-xs text-zinc-600">
+          .jsonl (one document per line) or .json (array of documents, or a single object) —
+          documents keep their _key when present
+        </p>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+        <button type="button" class="btn-ghost" x-on:click="importing = false">Cancel</button>
+        <button type="submit" class="btn-primary">Import</button>
+      </div>
+    </form>
+  </div>
+  </template>
+
+  <%# Schema editor modal - same teleport rationale as above. Monaco mounts on
+      first open; the textarea stays the value carrier for the HTMX submit. %>
+  <template x-teleport="body">
+  <div x-show="schemaOpen" x-cloak x-init="htmx.process($el)"
+       x-effect="schemaOpen && $nextTick(() => window.AdminEditor && AdminEditor.mountOnce($refs.schemaEditor, { language: 'json', height: '50vh' }))"
+       class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-4 pt-10">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="schemaOpen = false"></div>
+    <form class="relative w-full max-w-4xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+          x-on:submit="schemaOpen = false"
+          hx-put="<%= attr(docs_base) %>/schema" hx-target="#content" hx-swap="innerHTML show:top">
+      <input type="hidden" name="filter" value="<%- attr(@filter) %>">
+      <input type="hidden" name="limit" value="<%= @limit %>">
+      <input type="hidden" name="offset" value="<%= @offset %>">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+        <p class="console-label">json schema · <span class="text-teal-500"><%= @collection_name %></span></p>
+        <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                x-on:click="schemaOpen = false">×</button>
+      </div>
+      <div class="space-y-4 px-5 py-4">
+        <div class="max-w-56">
+          <label class="console-label" for="schema-mode">validation mode</label>
+          <select id="schema-mode" name="validation_mode" class="console-input mt-1">
+            <option value="off" <% if @schema_mode == "off" %>selected<% end %>>off — store only, no checks</option>
+            <option value="lenient" <% if @schema_mode == "lenient" %>selected<% end %>>lenient — warn on mismatch</option>
+            <option value="strict" <% if @schema_mode == "strict" %>selected<% end %>>strict — reject on mismatch</option>
+          </select>
+        </div>
+        <div>
+          <label class="console-label" for="schema-editor">schema <span class="text-zinc-700">— json schema applied to every write</span></label>
+          <textarea id="schema-editor" name="schema" rows="10" spellcheck="false" x-ref="schemaEditor"
+                    placeholder='{ "type": "object", "properties": { "email": { "type": "string" } } }'
+                    class="console-input mt-1 resize-y font-mono text-[13px]"><%= @schema_json %></textarea>
+        </div>
+      </div>
+      <div class="flex items-center justify-between gap-2 border-t border-zinc-800 px-5 py-3">
+        <div>
+          <% if !@schema_json.blank? %>
+            <button type="button" class="btn-danger" x-on:click="schemaOpen = false"
+                    hx-delete="<%= attr(docs_base) %>/schema"
+                    hx-target="#content" hx-swap="innerHTML show:top"
+                    hx-confirm="Remove the schema from '<%= attr(@collection_name) %>'? Writes will no longer be validated.">
+              Remove schema
+            </button>
+          <% end %>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" class="btn-ghost" x-on:click="schemaOpen = false">Cancel</button>
+          <button type="submit" class="btn-primary">Save schema</button>
+        </div>
+      </div>
+    </form>
+  </div>
+  </template>
   <% end %>
 
   <form method="get" action="<%= attr(docs_base) %>" class="console-card flex flex-wrap items-end gap-3 p-4">
     <div class="min-w-72 flex-1">
       <label class="console-label" for="docs-filter">filter <span class="text-zinc-700">— sdbql expression on `doc`</span></label>
-      <input id="docs-filter" name="filter" type="text" value="<%= attr(@filter) %>"
+      <input id="docs-filter" name="filter" type="text" value="<%- attr(@filter) %>"
              placeholder='doc.age > 25 AND doc.name LIKE "A%"'
              class="console-input mt-1 font-mono text-[13px]">
     </div>
@@ -124,10 +240,10 @@
         <% if @offset > 0 %>
           <% prev_offset = @offset - @limit %>
           <% prev_offset = 0 if prev_offset < 0 %>
-          <a href="<%= attr(docs_base + page_query) %>&offset=<%= prev_offset %>" class="btn-ghost">← Prev</a>
+          <a href="<%- attr(docs_base + page_query) %>&offset=<%= prev_offset %>" class="btn-ghost">← Prev</a>
         <% end %>
         <% if @has_more %>
-          <a href="<%= attr(docs_base + page_query) %>&offset=<%= @offset + @limit %>" class="btn-ghost">Next →</a>
+          <a href="<%- attr(docs_base + page_query) %>&offset=<%= @offset + @limit %>" class="btn-ghost">Next →</a>
         <% end %>
       </div>
     </div>
@@ -139,27 +255,27 @@
         <% doc_filename = doc["filename"] ?? (doc["name"] ?? "") %>
         <% is_image = doc_content_type.starts_with("image/") %>
         <li x-data="{ open: false, editing: false }" x-on:keydown.escape.window="editing = false">
-          <div class="flex items-center gap-3 px-4 py-2">
-            <button class="shrink-0 font-mono text-xs text-zinc-600 transition-colors hover:text-teal-400"
-                    x-on:click="open = !open" x-text="open ? '▾' : '▸'">▸</button>
+          <%# The whole row toggles the expanded view; the actions cluster stops
+              propagation so its buttons don't also collapse/expand. %>
+          <div class="flex cursor-pointer items-center gap-3 px-4 py-2 transition-colors hover:bg-zinc-900/60"
+               x-on:click="open = !open">
+            <span class="shrink-0 font-mono text-xs text-zinc-600 transition-colors hover:text-teal-400"
+                  x-text="open ? '▾' : '▸'">▸</span>
             <span class="shrink-0 font-mono text-xs text-teal-400"><%= doc_key %></span>
             <% if @collection_type == "blob" %>
               <span class="min-w-0 flex-1 truncate font-mono text-xs text-zinc-200"
-                    title="<%= attr(doc_filename) %>"><%= doc_filename %></span>
+                    title="<%- attr(doc_filename) %>"><%= doc_filename %></span>
               <span class="inline-block max-w-44 shrink-0 truncate console-label border border-zinc-800 px-1.5 py-0.5"
-                    title="<%= attr(doc_content_type) %>"><%= doc_content_type %></span>
+                    title="<%- attr(doc_content_type) %>"><%= doc_content_type %></span>
               <span class="shrink-0 font-mono text-xs text-zinc-500"><%= fmt_bytes(doc["size"]) %></span>
             <% else %>
               <code class="min-w-0 flex-1 truncate font-mono text-xs text-zinc-400"><%= truncate_text(json_compact(doc), 160, "…") %></code>
             <% end %>
-            <div class="flex shrink-0 gap-2">
+            <div class="flex shrink-0 gap-2" x-on:click.stop>
               <% if @collection_type == "blob" %>
                 <a href="<%= attr(docs_base) %>/<%= url(doc_key) %>/blob?download=1" class="btn-ghost">Download</a>
               <% else %>
-                <button class="btn-ghost"
-                        x-on:click="editing = true; $nextTick(() => window.AdminEditor && AdminEditor.mountOnce($refs.docEditor, { language: 'json', height: '60vh' }))">
-                  Edit
-                </button>
+                <button class="btn-ghost" x-on:click="editing = true">Edit</button>
               <% end %>
               <button class="btn-danger"
                       hx-delete="<%= attr(docs_base) %>/<%= url(doc_key) %>?filter=<%= url(@filter) %>&limit=<%= @limit %>&offset=<%= @offset %>"
@@ -173,28 +289,57 @@
             <% if is_image %>
               <div class="px-12 pt-3">
                 <img src="<%= attr(docs_base) %>/<%= url(doc_key) %>/blob" loading="lazy"
-                     alt="<%= attr(doc_filename == "" ? doc_key : doc_filename) %>"
+                     alt="<%- attr(doc_filename == "" ? doc_key : doc_filename) %>"
                      class="max-h-72 border border-zinc-800">
               </div>
             <% end %>
             <pre class="json-view overflow-x-auto px-12 py-3 font-mono text-xs leading-relaxed"><%= json_compact(doc) %></pre>
           </div>
 
-          <div x-show="editing" x-cloak class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-4 pt-10">
+          <%# Teleported to <body>: the li sits under transformed ancestors that
+              crop position:fixed. Monaco mounts via x-effect inside the clone,
+              where $refs.docEditor resolves. %>
+          <template x-teleport="body">
+          <div x-show="editing" x-cloak x-init="htmx.process($el)"
+               x-effect="editing && $nextTick(() => window.AdminEditor && AdminEditor.mountOnce($refs.docEditor, { language: 'json', height: '60vh' }))"
+               class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-4 pt-10">
             <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="editing = false"></div>
             <form class="relative w-full max-w-4xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60"
+                  x-on:submit="editing = false"
                   hx-put="<%= attr(docs_base) %>/<%= url(doc_key) %>" hx-target="#content" hx-swap="innerHTML show:top">
-              <input type="hidden" name="filter" value="<%= attr(@filter) %>">
+              <input type="hidden" name="filter" value="<%- attr(@filter) %>">
               <input type="hidden" name="limit" value="<%= @limit %>">
               <input type="hidden" name="offset" value="<%= @offset %>">
-              <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
-                <p class="console-label">edit · <span class="text-teal-500"><%= doc_key %></span></p>
-                <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
-                        x-on:click="editing = false">×</button>
+              <div class="border-b border-zinc-800 px-5 py-3">
+                <div class="flex items-center justify-between">
+                  <p class="console-label">edit · <span class="text-teal-500"><%= doc_key %></span></p>
+                  <button type="button" class="font-mono text-zinc-600 transition-colors hover:text-zinc-300"
+                          x-on:click="editing = false">×</button>
+                </div>
+                <%# System attributes are server-managed: read-only here, stripped
+                    from the editable JSON below. %>
+                <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 lg:grid-cols-4 lg:gap-x-6">
+                  <div class="min-w-0">
+                    <p class="console-label">_id</p>
+                    <p class="break-all font-mono text-[10px] text-zinc-500"><%= doc["_id"] ?? "-" %></p>
+                  </div>
+                  <div class="min-w-0">
+                    <p class="console-label">_rev</p>
+                    <p class="break-all font-mono text-[10px] text-zinc-500"><%= doc["_rev"] ?? "-" %></p>
+                  </div>
+                  <div>
+                    <p class="console-label">_created_at</p>
+                    <p class="font-mono text-[10px] text-zinc-500"><%= fmt_iso(doc["_created_at"]) %></p>
+                  </div>
+                  <div>
+                    <p class="console-label">_updated_at</p>
+                    <p class="font-mono text-[10px] text-zinc-500"><%= fmt_iso(doc["_updated_at"]) %></p>
+                  </div>
+                </div>
               </div>
               <div class="px-5 py-4">
                 <textarea name="document" rows="10" spellcheck="false" x-ref="docEditor"
-                          class="console-input resize-y font-mono text-[13px]"><%= json_compact(doc) %></textarea>
+                          class="console-input resize-y font-mono text-[13px]"><%= json_compact(doc_user_attrs(doc)) %></textarea>
               </div>
               <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
                 <button type="button" class="btn-ghost" x-on:click="editing = false">Cancel</button>
@@ -202,6 +347,7 @@
               </div>
             </form>
           </div>
+          </template>
         </li>
       <% end %>
     </ol>

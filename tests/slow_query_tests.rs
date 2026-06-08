@@ -248,6 +248,16 @@ async fn test_slow_query_document_structure() {
             assert!(sq["documents_updated"].is_u64() || sq["documents_updated"].is_i64());
             assert!(sq["documents_removed"].is_u64() || sq["documents_removed"].is_i64());
 
+            // Contention diagnostics: CF-op activity that overlapped the
+            // query, and the authenticated origin that issued it.
+            assert!(sq["cf_ops_during"].is_u64() || sq["cf_ops_during"].is_i64());
+            assert!(sq["cf_ops_ms_during"].is_f64() || sq["cf_ops_ms_during"].is_u64());
+            assert!(
+                sq["origin"].is_string() || sq["origin"].is_null(),
+                "origin should be the authenticated username or null, got: {:?}",
+                sq["origin"]
+            );
+
             println!("Slow query logged: {:?}", sq);
         }
     }
@@ -334,4 +344,39 @@ async fn test_multiple_slow_queries_logged() {
     // The number of logged slow queries should match queries that exceeded threshold
     // (with some tolerance for timing variations)
     assert!(slow_queries.len() >= expected, "Should log slow queries");
+}
+
+#[tokio::test]
+async fn test_queries_reading_slow_log_are_never_logged() {
+    let (app, _tmp, token) = create_test_app();
+
+    setup_db(&app, &token, "selfrefdb").await;
+    setup_collection(&app, &token, "selfrefdb", "data").await;
+
+    // A deliberately heavy query that ALSO reads _slow_queries. Even when it
+    // exceeds the threshold it must not be logged: such self-referencing
+    // queries (the admin's slow-query page and badge) would otherwise
+    // re-enter the log right after a clear — a feedback loop.
+    let self_ref_query = r#"
+        LET noise = (FOR i IN 1..200000 RETURN i * 2)
+        FOR sq IN _slow_queries
+            RETURN { sq: sq, noise: LENGTH(noise) }
+    "#;
+
+    let result = execute_query(&app, &token, "selfrefdb", self_ref_query).await;
+    let exec_time = result["executionTimeMs"].as_f64().unwrap_or(0.0);
+    println!("Self-referencing query execution time: {}ms", exec_time);
+
+    // Wait for any (incorrect) async logging to land before asserting.
+    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+
+    let slow_queries = get_slow_queries(&app, &token, "selfrefdb").await;
+    let self_logged = slow_queries
+        .iter()
+        .any(|sq| sq["query"].as_str().unwrap_or("").contains("_slow_queries"));
+    assert!(
+        !self_logged,
+        "queries reading _slow_queries must never be logged into it (took {}ms)",
+        exec_time
+    );
 }

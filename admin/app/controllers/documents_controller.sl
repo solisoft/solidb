@@ -37,6 +37,39 @@ class DocumentsController < Controller
     return this._respond(result, "document " + key + " updated")
   end
 
+  # PUT /databases/:db/collections/:name/docs/truncate - remove every document
+  # but keep the collection (and its indexes) in place.
+  def truncate
+    this._ctx()
+    result = SolidbClient.put_api(SolidbEndpoints.collection_truncate(@db, @collection_name))
+    return this._respond(result, "collection " + @collection_name + " truncated")
+  end
+
+  # PUT /databases/:db/collections/:name/docs/schema - set / replace the
+  # collection's JSON schema and validation mode.
+  def update_schema
+    this._ctx()
+    schema = JSON.parse((params["schema"] ?? "").trim()) rescue nil
+    if schema.nil? || type(schema) != "hash"
+      return this._respond({ "ok": false, "status": 422, "error": "schema must be a valid JSON object" }, "")
+    end
+    mode = (params["validation_mode"] ?? "off").trim()
+    mode = "off" unless ["off", "lenient", "strict"].includes?(mode)
+    result = SolidbClient.post_api(SolidbEndpoints.collection_schema(@db, @collection_name),
+                                   { "schema": schema, "validationMode": mode })
+    # _ctx captured the pre-update schema; reload so the page reflects the write.
+    this._load_schema()
+    return this._respond(result, "schema updated (" + mode + ")")
+  end
+
+  # DELETE /databases/:db/collections/:name/docs/schema
+  def delete_schema
+    this._ctx()
+    result = SolidbClient.delete_api(SolidbEndpoints.collection_schema(@db, @collection_name))
+    this._load_schema()
+    return this._respond(result, "schema removed")
+  end
+
   # POST /databases/:db/collections/:name/docs/upload - multipart file upload
   # into a blob collection. The file's base64 payload goes through the binary
   # driver protocol (store_blob), never through an HTTP string body, so the
@@ -96,6 +129,55 @@ class DocumentsController < Controller
     }
   end
 
+  # GET /databases/:db/collections/:name/docs/export - stream the collection
+  # as a .jsonl download (proxied from the SoliDB export API). Document
+  # collections only: blob exports interleave raw binary chunks that would be
+  # corrupted by string transport. (`export` is a reserved keyword in Soli,
+  # hence export_docs.)
+  def export_docs
+    this._ctx()
+    if @collection_type == "blob"
+      return this._respond({ "ok": false, "status": 422, "error": "blob collections cannot be exported as JSONL" }, "")
+    end
+    result = SolidbClient.get_raw(SolidbEndpoints.collection_export(@db, @collection_name))
+    if !result["ok"]
+      return this._respond(result, "")
+    end
+    return {
+      "status": 200,
+      "headers": {
+        "Content-Type": "application/x-ndjson",
+        "Content-Disposition": "attachment; filename=\"" + @db + "-" + @collection_name + ".jsonl\""
+      },
+      "body": result["body"]
+    }
+  end
+
+  # POST /databases/:db/collections/:name/docs/import - multipart upload of a
+  # .json (array or single object, pretty-printed ok) or .jsonl file. The
+  # content is normalized to JSONL before hitting the import API, whose
+  # format sniffing chokes on pretty-printed JSON. (`import` is a reserved
+  # keyword in Soli, hence import_docs.)
+  def import_docs
+    this._ctx()
+    file = find_uploaded_file(req, "file")
+    if file.nil?
+      return this._respond({ "ok": false, "status": 422, "error": "no file selected" }, "")
+    end
+    content = Base64.decode(file["data"]) rescue ""
+    jsonl = this._to_jsonl(content)
+    if jsonl.blank?
+      return this._respond({ "ok": false, "status": 422, "error": "file is empty" }, "")
+    end
+    result = SolidbClient.post_multipart(SolidbEndpoints.collection_import(@db, @collection_name),
+                                         file["filename"] ?? "import.jsonl", jsonl)
+    imported = (result["data"] ?? {})["count"] ?? 0
+    failed = (result["data"] ?? {})["failed"] ?? 0
+    notice = "imported " + str(imported) + " document(s)"
+    notice = notice + ", " + str(failed) + " failed" if failed > 0
+    return this._respond(result, notice)
+  end
+
   # DELETE /databases/:db/collections/:name/docs/:key
   def delete
     this._ctx()
@@ -114,6 +196,7 @@ class DocumentsController < Controller
     offset = 0 if offset < 0
     @offset = offset
     this._load_collection_type()
+    this._load_schema()
   end
 
   # blob collections get upload/download/preview affordances in the view.
@@ -122,6 +205,18 @@ class DocumentsController < Controller
     collections = (result["data"] ?? {})["collections"] ?? []
     matching = collections.filter do |coll| coll["name"] == @collection_name end
     @collection_type = matching.length() > 0 ? (matching[0]["type"] ?? "document") : "document"
+  end
+
+  # Current JSON schema + validation mode, feeding the schema editor modal.
+  # Blob collections store binary chunks and never carry a schema.
+  def _load_schema
+    @schema_json = ""
+    @schema_mode = "off"
+    return if @collection_type == "blob"
+    result = SolidbClient.get_api(SolidbEndpoints.collection_schema(@db, @collection_name))
+    schema = (result["data"] ?? {})["schema"]
+    @schema_json = JSON.stringify(schema) unless schema.nil?
+    @schema_mode = (result["data"] ?? {})["validationMode"] ?? "off"
   end
 
   # Authenticated binary-protocol connection (byte-safe for blob payloads).
@@ -143,6 +238,23 @@ class DocumentsController < Controller
     return document
   end
 
+  # Normalize an uploaded file to JSONL. A parseable JSON array becomes one
+  # compact line per element; a single object becomes one line. Content that
+  # is not whole-file JSON (i.e. multi-line JSONL) passes through - the
+  # import API validates line by line. Every return path ends with "\n":
+  # the streaming importer silently drops a final unterminated line.
+  def _to_jsonl(content)
+    text = (content ?? "").trim()
+    return "" if text.blank?
+    parsed = JSON.parse(text) rescue nil
+    return text + "\n" if parsed.nil?
+    if type(parsed) == "array"
+      lines = parsed.map do |doc| JSON.stringify(doc) end
+      return lines.join("\n") + "\n"
+    end
+    return JSON.stringify(parsed) + "\n"
+  end
+
   # Runs the listing query: the filter input is spliced as a FILTER clause on
   # `doc`, offset/limit are bound. Fetches limit+1 rows to know has-more.
   # Blob collections project metadata only -- their docs embed binary chunk
@@ -157,7 +269,9 @@ class DocumentsController < Controller
     query = "FOR doc IN " + @collection_name
     query = query + " FILTER " + @filter unless @filter.blank?
     query = query + return_clause
-    payload = { "query": query, "bindVars": { "offset": @offset, "batch": @limit + 1 } }
+    # cache: false - the browser must reflect writes that bypass the query
+    # cache (bulk import's insert_batch does not invalidate it).
+    payload = { "query": query, "bindVars": { "offset": @offset, "batch": @limit + 1 }, "cache": false }
     result = SolidbClient.post_api(SolidbEndpoints.cursor(@db), payload)
     rows = (result["data"] ?? {})["result"] ?? []
     @has_more = rows.length() > @limit

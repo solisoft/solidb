@@ -52,7 +52,8 @@ describe("QueryController") do
       SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_slow", "_slow_queries"),
                             { "query": "FOR d IN big RETURN d", "execution_time_ms": 250.5,
                               "timestamp": "2026-06-05T10:00:00Z", "results_count": 9000,
-                              "documents_inserted": 0, "documents_updated": 0, "documents_removed": 0 })
+                              "documents_inserted": 0, "documents_updated": 0, "documents_removed": 0,
+                              "origin": "gc-worker", "cf_ops_during": 3, "cf_ops_ms_during": 1200.0 })
     end
 
     after_all() do
@@ -66,12 +67,33 @@ describe("QueryController") do
       assert_contains(body, "Slow queries")
       assert_contains(body, "FOR d IN big RETURN d")
       assert_contains(body, "250.5")
+      # origin + cf-churn contention columns from the seeded entry
+      assert_contains(body, "gc-worker")
+      assert_contains(body, "3 ops")
     end
 
     test("badge fragment shows the count") do
+      # Re-baseline first: under full-suite load the earlier tests' own page
+      # reads can be logged as slow queries (CF-churn contention), inflating
+      # the count past the entry seeded in before_all.
+      SolidbClient.put_api(SolidbEndpoints.collection_truncate("admin_spec_slow", "_slow_queries"))
+      SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_slow", "_slow_queries"),
+                            { "query": "RETURN 1", "execution_time_ms": 120.0,
+                              "timestamp": "2026-06-05T11:00:00Z", "results_count": 1,
+                              "documents_inserted": 0, "documents_updated": 0, "documents_removed": 0 })
       response = get("/databases/admin_spec_slow/query/slow/count")
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), ">1</span>")
+    end
+
+    test("renders dashes for entries logged before origin/cf tracking existed") do
+      SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_slow", "_slow_queries"),
+                            { "query": "FOR old IN legacy RETURN old", "execution_time_ms": 150.0,
+                              "timestamp": "2026-06-04T10:00:00Z", "results_count": 1,
+                              "documents_inserted": 0, "documents_updated": 0, "documents_removed": 0 })
+      response = get("/databases/admin_spec_slow/query/slow")
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "FOR old IN legacy RETURN old")
     end
 
     test("clear truncates the log and empties the badge") do

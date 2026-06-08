@@ -7,7 +7,7 @@
     <div>
       <p class="console-label">Access</p>
       <h2 class="mt-1">Users <span class="font-mono text-sm text-zinc-500">(<%= @users.length() %>)</span></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         server-level accounts for connecting to SoliDB — what an account may do comes from the roles assigned to it
       </p>
     </div>
@@ -62,7 +62,7 @@
   </template>
 
   <div class="console-card">
-    <table class="console-table">
+    <div class="overflow-x-auto"><table class="console-table">
       <thead>
         <tr>
           <th>username</th>
@@ -118,7 +118,7 @@
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
     <% if @users.length() == 0 %>
       <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no users</p>
     <% end %>

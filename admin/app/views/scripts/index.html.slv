@@ -5,7 +5,7 @@
     <div>
       <p class="console-label">db / <%= @db %></p>
       <h2 class="mt-1">Lua scripts <span class="font-mono text-sm text-zinc-500">(<%= @scripts.length() %>)</span></h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         Lua 5.4 scripts stored in this database — expose them as custom HTTP endpoints or run them
         from queues, cron jobs and triggers
       </p>
@@ -14,7 +14,7 @@
   </div>
 
   <div class="console-card">
-    <table class="console-table">
+    <div class="overflow-x-auto"><table class="console-table">
       <thead>
         <tr>
           <th>name</th>
@@ -56,7 +56,7 @@
           </tr>
         <% end %>
       </tbody>
-    </table>
+    </table></div>
     <% if @scripts.length() == 0 %>
       <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">no scripts in <%= @db %></p>
     <% end %>

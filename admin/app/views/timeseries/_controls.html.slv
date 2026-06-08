@@ -1,0 +1,79 @@
+<%# Chart toolbar. The JS driver (admin-timeseries.js) listens for change
+    events and re-fetches /data + the points fragment - no page reload.
+    Alpine only carries the show/hide state (custom range, count agg). %>
+<form id="ts-form" class="console-card flex flex-wrap items-end gap-3 p-4"
+      x-data="{ range: '1h', agg: 'avg' }" x-on:submit.prevent>
+  <div>
+    <label class="console-label" for="ts-range">window</label>
+    <select id="ts-range" name="range" x-model="range" class="console-input mt-1 w-28 font-mono">
+      <option value="15m">15m</option>
+      <option value="1h" selected>1h</option>
+      <option value="6h">6h</option>
+      <option value="24h">24h</option>
+      <option value="7d">7d</option>
+      <option value="30d">30d</option>
+      <option value="custom">custom</option>
+    </select>
+  </div>
+  <div x-show="range == 'custom'" x-cloak>
+    <label class="console-label" for="ts-from">from <span class="text-zinc-700">— ISO8601 or epoch ms</span></label>
+    <input id="ts-from" name="from" type="text" placeholder="2026-06-06T00:00:00Z"
+           class="console-input mt-1 w-52 font-mono text-[13px]">
+  </div>
+  <div x-show="range == 'custom'" x-cloak>
+    <label class="console-label" for="ts-to">to</label>
+    <input id="ts-to" name="to" type="text" placeholder="2026-06-07T00:00:00Z"
+           class="console-input mt-1 w-52 font-mono text-[13px]">
+  </div>
+  <div>
+    <label class="console-label" for="ts-bucket">bucket</label>
+    <select id="ts-bucket" name="bucket" class="console-input mt-1 w-24 font-mono">
+      <option value="auto" selected>auto</option>
+      <option value="1m">1m</option>
+      <option value="5m">5m</option>
+      <option value="15m">15m</option>
+      <option value="1h">1h</option>
+      <option value="6h">6h</option>
+      <option value="1d">1d</option>
+    </select>
+  </div>
+  <div>
+    <label class="console-label" for="ts-agg">aggregate</label>
+    <select id="ts-agg" name="agg" x-model="agg" class="console-input mt-1 w-24 font-mono">
+      <option value="avg" selected>avg</option>
+      <option value="min">min</option>
+      <option value="max">max</option>
+      <option value="sum">sum</option>
+      <option value="count">count</option>
+    </select>
+  </div>
+  <div x-show="agg != 'count'">
+    <label class="console-label" for="ts-value-field">value field</label>
+    <select id="ts-value-field" name="value_field" class="console-input mt-1 w-36 font-mono">
+      <% for field_name in value_fields ?? [] %>
+        <option value="<%- attr(field_name) %>"><%= field_name %></option>
+      <% end %>
+    </select>
+  </div>
+  <div>
+    <label class="console-label" for="ts-group-by">group by</label>
+    <select id="ts-group-by" name="group_by" class="console-input mt-1 w-36 font-mono">
+      <option value="" selected>—</option>
+      <% for field_name in group_fields ?? [] %>
+        <option value="<%- attr(field_name) %>"><%= field_name %></option>
+      <% end %>
+    </select>
+  </div>
+  <div class="ml-auto flex items-end gap-2">
+    <label class="flex cursor-pointer items-center gap-2 py-2.5 console-label" for="ts-tail">
+      <input id="ts-tail" name="tail" type="checkbox" class="accent-teal-500">
+      live tail
+    </label>
+    <select id="ts-tail-interval" name="tail_interval" class="console-input w-20 font-mono"
+            title="poll interval">
+      <option value="5">5s</option>
+      <option value="10" selected>10s</option>
+      <option value="30">30s</option>
+    </select>
+  </div>
+</form>

@@ -21,11 +21,7 @@ class CollectionsController < Controller
       return this._respond({ "ok": false, "status": 422, "error": "collection name is required" }, "")
     end
     return this._create_columnar(name) if params["type"] == "columnar"
-    payload = this._build_create_payload(name)
-    if payload.nil?
-      return this._respond({ "ok": false, "status": 422, "error": "schema must be a valid JSON object" }, "")
-    end
-    result = SolidbClient.post_api(SolidbEndpoints.collections(@db), payload)
+    result = SolidbClient.post_api(SolidbEndpoints.collections(@db), this._build_create_payload(name))
     return this._respond(result, "collection " + name + " created")
   end
 
@@ -42,8 +38,8 @@ class CollectionsController < Controller
     return this._respond(result, "columnar collection " + name + " created")
   end
 
-  # Optional creation settings from the modal; nil when the schema textarea
-  # holds invalid JSON.
+  # Optional creation settings from the modal. JSON schema / validation are
+  # managed from the collection's documents page, not at creation time.
   def _build_create_payload(name)
     payload = { "name": name }
     coll_type = (params["type"] ?? "").trim()
@@ -54,14 +50,6 @@ class CollectionsController < Controller
     payload["shardKey"] = shard_key unless shard_key.blank?
     replication_factor = (params["replication_factor"] ?? "").trim()
     payload["replicationFactor"] = replication_factor.to_int() unless replication_factor.blank?
-    validation_mode = (params["validation_mode"] ?? "").trim()
-    payload["validationMode"] = validation_mode unless validation_mode.blank?
-    schema_text = (params["schema"] ?? "").trim()
-    if !schema_text.blank?
-      schema = JSON.parse(schema_text) rescue nil
-      return nil if schema.nil?
-      payload["schema"] = schema
-    end
     return payload
   end
 
@@ -73,14 +61,6 @@ class CollectionsController < Controller
     @stats = result["data"] ?? {}
     @stats_error = result["ok"] ? "" : (result["error"] ?? "request failed")
     return render("collections/_stats", { "layout": false })
-  end
-
-  # PUT /databases/:db/collections/:name/truncate
-  def truncate
-    this._ctx()
-    name = params["name"] ?? ""
-    result = SolidbClient.put_api(SolidbEndpoints.collection_truncate(@db, name))
-    return this._respond(result, "collection " + name + " truncated")
   end
 
   # DELETE /databases/:db/collections/:name (?ctype=columnar for columnar)

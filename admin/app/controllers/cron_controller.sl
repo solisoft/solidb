@@ -21,9 +21,10 @@ class CronController < Controller
       return this._respond({ "ok": false, "status": 422, "error": "params must be a JSON object" }, "")
     end
     cron_name = payload["name"] ?? ""
-    if cron_name.blank? || (payload["cron_expression"] ?? "") == "" || (payload["script"] ?? "") == ""
+    has_target = (payload["script"] ?? "") != "" || (payload["webhook_url"] ?? "") != ""
+    if cron_name.blank? || (payload["cron_expression"] ?? "") == "" || !has_target
       return this._respond({ "ok": false, "status": 422,
-                             "error": "name, cron expression and script are required" }, "")
+                             "error": "name, cron expression and a script or webhook target are required" }, "")
     end
     result = SolidbClient.post_api(SolidbEndpoints.cron_jobs(@db), payload)
     return this._respond(result, "cron job " + cron_name + " created")
@@ -66,6 +67,13 @@ class CronController < Controller
       "script": (params["script"] ?? "").trim(),
       "params": job_params
     }
+    # SoliDB rejects a job with BOTH a script and a webhook -- only forward the
+    # webhook fields when a url was actually given (the form disables the
+    # inactive target so its inputs never submit).
+    webhook_url = (params["webhook_url"] ?? "").trim()
+    payload["webhook_url"] = webhook_url unless webhook_url.blank?
+    webhook_secret = (params["webhook_secret"] ?? "").trim()
+    payload["webhook_secret"] = webhook_secret unless webhook_secret.blank?
     queue = (params["queue"] ?? "").trim()
     payload["queue"] = queue unless queue.blank?
     priority = (params["priority"] ?? "").trim()

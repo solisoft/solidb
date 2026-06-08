@@ -1,0 +1,19 @@
+<form method="post" action="<%= attr(settings_path()) %>/theme">
+  <input type="hidden" name="theme" value="<%- attr(preset) %>">
+  <button type="submit"
+          class="w-full border px-4 py-3 text-left transition-colors <%= is_current ? "border-teal-500 bg-teal-950/20" : "border-zinc-800 hover:border-zinc-600" %>">
+    <div class="flex items-center justify-between">
+      <p class="font-mono text-sm <%= is_current ? "text-teal-300" : "text-zinc-200" %>"><%= preset %></p>
+      <div class="flex gap-1">
+        <% for swatch_color in swatch %>
+          <span class="inline-block h-4 w-4 border border-zinc-700"
+                style="background-color: <%- attr(swatch_color) %>"></span>
+        <% end %>
+      </div>
+    </div>
+    <p class="mt-1.5 font-mono text-xs text-zinc-500"><%= blurb %></p>
+    <% if is_current %>
+      <p class="console-label mt-2 text-teal-500">active</p>
+    <% end %>
+  </button>
+</form>

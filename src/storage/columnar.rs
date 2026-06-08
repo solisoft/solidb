@@ -1038,8 +1038,7 @@ impl ColumnarCollection {
     /// Drop the entire columnar collection (removes everything including schema)
     pub fn drop(&self) -> DbResult<()> {
         // MultiThreaded mode: drop_cf takes &self and synchronizes internally
-        self.db
-            .drop_cf(&self.cf_name)
+        super::cf_ops::timed(|| self.db.drop_cf(&self.cf_name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop CF: {}", e)))?;
 
         Ok(())

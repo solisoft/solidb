@@ -5,7 +5,7 @@
     <div>
       <p class="console-label">db / <%= @db %></p>
       <h2 class="mt-1">Lua REPL</h2>
-      <p class="mt-1 max-w-2xl font-mono text-xs text-zinc-600">
+      <p class="mt-1 max-w-2xl console-help">
         interactive Lua 5.4 against this database — variables persist between evals (server-side session),
         print() output is captured, the last expression is the result. db API is available as in scripts
       </p>

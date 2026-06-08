@@ -6,6 +6,7 @@
 /// `cf_handle()` reads done all over the codebase.
 pub type RocksDb = rust_rocksdb::DBWithThreadMode<rust_rocksdb::MultiThreaded>;
 
+pub mod cf_ops;
 pub mod codec;
 pub mod collection;
 pub mod columnar;

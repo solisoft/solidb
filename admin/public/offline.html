@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline · SoliDB Admin</title>
+  <style>
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: #09090b; color: #d4d4d8;
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .card { text-align: center; padding: 2rem; border: 1px solid #27272a; background: rgba(24, 24, 27, .8); }
+    .dot { display: inline-block; width: 10px; height: 10px; background: #f87171; border-radius: 9999px; margin-right: .6rem; }
+    h1 { font-size: 1rem; letter-spacing: .2em; text-transform: uppercase; color: #f4f4f5; }
+    p { font-size: .85rem; color: #71717a; max-width: 28rem; line-height: 1.6; }
+    button {
+      margin-top: 1rem; padding: .5rem 1rem; font: inherit; font-size: .8rem; cursor: pointer;
+      color: #5eead4; background: rgba(45, 212, 191, .1); border: 1px solid rgba(45, 212, 191, .5);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1><span class="dot"></span>SoliDB Admin — offline</h1>
+    <p>The admin console can't reach the server right now. Check your connection (or the server), then retry.</p>
+    <button onclick="location.reload()">Retry</button>
+  </div>
+</body>
+</html>

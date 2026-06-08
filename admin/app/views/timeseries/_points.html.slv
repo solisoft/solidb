@@ -1,0 +1,64 @@
+<%# Raw points fragment - swapped into #ts-points by the pager buttons, the
+    chart driver (on control changes) and the live tail. Rendered both via
+    partial() from show (explicit locals) and directly by the points action
+    (controller @-vars exposed under the same bare names). %>
+<% point_docs = points ?? [] %>
+<% points_base = db_collection_timeseries_path(db, collection_name) + "/points" %>
+<% window_range = range_key ?? "1h" %>
+<% page_offset = offset ?? 0 %>
+<% page_limit = limit ?? 25 %>
+<% points_query = "?range=" + url(window_range) + "&limit=" + str(page_limit) %>
+<% if window_range == "custom" %>
+  <% points_query = points_query + "&from=" + str(from_ms) + "&to=" + str(to_ms) %>
+<% end %>
+
+<div class="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2.5">
+  <p class="console-label">
+    points <%= page_offset + 1 %>–<%= page_offset + point_docs.length() %>
+    <span class="text-zinc-600">· newest first · window <%= fmt_epoch_ms(from_ms) %> → <%= fmt_epoch_ms(to_ms) %></span>
+  </p>
+  <div class="flex gap-2">
+    <% if page_offset > 0 %>
+      <% prev_offset = page_offset - page_limit %>
+      <% prev_offset = 0 if prev_offset < 0 %>
+      <button class="btn-ghost"
+              hx-get="<%- attr(points_base + points_query) %>&offset=<%= prev_offset %>"
+              hx-target="#ts-points" hx-swap="innerHTML">← Prev</button>
+    <% end %>
+    <% if has_more ?? false %>
+      <button class="btn-ghost"
+              hx-get="<%- attr(points_base + points_query) %>&offset=<%= page_offset + page_limit %>"
+              hx-target="#ts-points" hx-swap="innerHTML">Next →</button>
+    <% end %>
+  </div>
+</div>
+
+<% if !(points_error ?? "").blank? %>
+  <div class="border-b border-red-900 px-4 py-3">
+    <p class="console-label text-red-400">points error</p>
+    <pre class="mt-2 overflow-x-auto font-mono text-xs text-red-200"><%= points_error %></pre>
+  </div>
+<% end %>
+
+<ol class="divide-y divide-zinc-800/60">
+  <% for doc in point_docs %>
+    <% time_label = fmt_point_time(doc[time_field ?? ""], time_kind ?? "ms") %>
+    <li x-data="{ open: false }">
+      <div class="flex cursor-pointer items-center gap-3 px-4 py-2 transition-colors hover:bg-zinc-900/60"
+           x-on:click="open = !open">
+        <span class="shrink-0 font-mono text-xs text-zinc-600" x-text="open ? '▾' : '▸'">▸</span>
+        <span class="shrink-0 font-mono text-xs text-teal-400"><%= time_label %></span>
+        <code class="min-w-0 flex-1 truncate font-mono text-xs text-zinc-400"><%= truncate_text(json_compact(doc_user_attrs(doc)), 140, "…") %></code>
+        <span class="shrink-0 font-mono text-[10px] text-zinc-600"><%= doc["_key"] ?? "" %></span>
+      </div>
+      <div x-show="open" x-cloak class="border-t border-zinc-800/60 bg-zinc-950/70">
+        <pre class="json-view overflow-x-auto px-12 py-3 font-mono text-xs leading-relaxed"><%= json_compact(doc) %></pre>
+      </div>
+    </li>
+  <% end %>
+</ol>
+<% if point_docs.length() == 0 %>
+  <p class="px-4 py-8 text-center font-mono text-sm text-zinc-600">
+    no points in this window — timeseries collections are insert-only, points appear as they are written
+  </p>
+<% end %>
