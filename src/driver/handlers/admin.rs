@@ -312,7 +312,10 @@ pub async fn handle_assign_role(
             });
 
             match user_roles_coll.insert(role_doc) {
-                Ok(doc) => Response::ok(doc.to_value()),
+                Ok(doc) => {
+                    crate::server::auth::AuthService::invalidate_user_roles_cache(&username);
+                    Response::ok(doc.to_value())
+                }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
             }
         }
@@ -348,6 +351,7 @@ pub async fn handle_revoke_role(
                         }
                     }
                 }
+                crate::server::auth::AuthService::invalidate_user_roles_cache(&username);
                 Response::ok_empty()
             }
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),

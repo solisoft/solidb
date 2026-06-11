@@ -1109,15 +1109,89 @@ impl Collection {
     // ==================== Maintenance ====================
 
     /// Truncate collection (delete all documents)
+    /// Remove every document plus all of its per-document index / fulltext /
+    /// TTL / blob entries, while preserving the collection's definitions
+    /// (schema, index metadata, shard config, type).
+    ///
+    /// This is O(number of key prefixes), not O(number of documents). The old
+    /// path read every document into memory (`all()`), then in `delete_batch`
+    /// re-read each one, recomputed its index keys, queued a per-doc point
+    /// delete, and emitted a change event per row — multi-second on large
+    /// collections. Instead we write a handful of RocksDB range tombstones in a
+    /// single atomic batch, which is effectively constant-time regardless of
+    /// document count.
     pub fn truncate(&self) -> DbResult<usize> {
-        let docs = self.all();
-        let count = docs.len();
-        if count == 0 {
-            return Ok(0);
+        // Cached count is the maintained document count; report it as "deleted"
+        // without paying for a full scan.
+        let count = self.count();
+
+        let db = &self.db;
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
+
+        // Range tombstones over every per-document DATA prefix. Each prefix ends
+        // in ':' (0x3A), so the exclusive upper bound is the same prefix with
+        // ':' bumped to ';' (0x3B). That bound stops before the matching
+        // `*_meta:` definitions and the `_stats:*` config keys (whose next byte
+        // '_' is 0x5F > 0x3B), so index definitions, schema, collection type and
+        // shard config all survive the truncate. `doc:` additionally covers the
+        // nested `doc:ttl_exp:` expiry-index entries.
+        let data_ranges: [(&[u8], &[u8]); 9] = [
+            (b"doc:", b"doc;"),         // documents + TTL expiry entries
+            (b"idx:", b"idx;"),         // persistent / hash index entries
+            (b"geo:", b"geo;"),         // geo index entries
+            (b"ft:", b"ft;"),           // fulltext n-gram entries
+            (b"ft_term:", b"ft_term;"), // fulltext term -> doc entries
+            (b"blo:", b"blo;"),         // blob chunks
+            (b"blo_tmp:", b"blo_tmp;"), // resumable-upload temp chunks
+            (b"blo_idx:", b"blo_idx;"), // blob bloom-filter index
+            (b"cfo_idx:", b"cfo_idx;"), // cuckoo-filter index
+        ];
+
+        let mut batch = WriteBatch::default();
+        for (start, end) in data_ranges {
+            batch.delete_range_cf(&cf, start, end);
+        }
+        db.write(&batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to truncate: {}", e)))?;
+
+        // Vector indexes answer searches from their in-memory structure, not via
+        // the `idx:` entries we just dropped — leaving stale vectors would keep
+        // surfacing truncated documents. Empty each defined index in place
+        // (loading it first if needed) and persist the empty state to
+        // `vec_data:`.
+        for config in self.get_all_vector_index_configs() {
+            if let Ok(index) = self.get_vector_index(&config.name) {
+                index.clear();
+            }
+        }
+        if let Err(e) = self.persist_vector_indexes() {
+            tracing::warn!("Failed to persist vector indexes after truncate: {}", e);
         }
 
-        let keys: Vec<String> = docs.iter().map(|d| d.key.clone()).collect();
-        self.delete_batch(keys)
+        // Reset counters and flush the zeroed count to disk immediately.
+        self.doc_count.store(0, Ordering::Relaxed);
+        self.chunk_count.store(0, Ordering::Relaxed);
+        self.count_dirty.store(true, Ordering::Relaxed);
+        self.flush_stats();
+
+        // One broadcast event instead of one-per-document: subscribers
+        // (LiveQuery, stream processors) learn the collection was cleared
+        // without being flooded.
+        if count > 0 {
+            let _ = self.change_sender.send(ChangeEvent {
+                type_: ChangeType::Truncate,
+                key: String::new(),
+                data: None,
+                old_data: None,
+            });
+        }
+
+        Ok(count)
     }
 
     /// Prune documents older than timestamp (for timeseries)

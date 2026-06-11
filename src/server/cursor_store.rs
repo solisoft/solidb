@@ -16,7 +16,15 @@ struct StoredCursor {
     remaining_results: VecDeque<Value>,
     created_at: Instant,
     batch_size: usize,
+    /// Database the originating query ran against; cursor continuation
+    /// re-checks read permission on it.
+    db_name: String,
 }
+
+/// Upper bound on concurrently stored cursors. Cursors hold full result
+/// sets in memory; without a cap a client looping on cursor-producing
+/// queries (and never draining them) grows memory until the TTL sweep.
+const MAX_CURSORS: usize = 10_000;
 
 impl CursorStore {
     /// Create a new cursor store with the specified TTL
@@ -27,13 +35,45 @@ impl CursorStore {
         }
     }
 
+    /// Keep the store under `MAX_CURSORS`: drop expired entries first, then
+    /// the oldest live cursor if still full (it would be the first to expire
+    /// anyway).
+    fn make_room(&self) {
+        if self.cursors.len() < MAX_CURSORS {
+            return;
+        }
+        self.cursors
+            .retain(|_, cursor| cursor.created_at.elapsed() <= self.ttl);
+        while self.cursors.len() >= MAX_CURSORS {
+            let oldest = self
+                .cursors
+                .iter()
+                .max_by_key(|entry| entry.created_at.elapsed())
+                .map(|entry| entry.key().clone());
+            match oldest {
+                Some(key) => {
+                    self.cursors.remove(&key);
+                    tracing::warn!("Cursor store full ({}), evicted oldest cursor", MAX_CURSORS);
+                }
+                None => break,
+            }
+        }
+    }
+
     /// Store query results and return a cursor ID
-    pub fn store(&self, results: Vec<Value>, batch_size: usize) -> String {
+    pub fn store(
+        &self,
+        db_name: impl Into<String>,
+        results: Vec<Value>,
+        batch_size: usize,
+    ) -> String {
+        self.make_room();
         let cursor_id = Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
         let cursor = StoredCursor {
             remaining_results: VecDeque::from(results),
             created_at: Instant::now(),
             batch_size,
+            db_name: db_name.into(),
         };
 
         self.cursors.insert(cursor_id.clone(), cursor);
@@ -46,6 +86,7 @@ impl CursorStore {
     /// If all results fit in the first batch, no cursor is stored.
     pub fn store_and_get_first_batch(
         &self,
+        db_name: impl Into<String>,
         results: Vec<Value>,
         batch_size: usize,
     ) -> (Option<String>, Vec<Value>, bool) {
@@ -59,16 +100,23 @@ impl CursorStore {
             return (None, first_batch, false);
         }
 
+        self.make_room();
         let cursor_id = Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
         let cursor = StoredCursor {
             remaining_results: std::mem::take(&mut remaining_results),
             created_at: Instant::now(),
             batch_size,
+            db_name: db_name.into(),
         };
 
         self.cursors.insert(cursor_id.clone(), cursor);
 
         (Some(cursor_id), first_batch, true)
+    }
+
+    /// Database the cursor's query ran against (None if expired/unknown).
+    pub fn db_name(&self, cursor_id: &str) -> Option<String> {
+        self.cursors.get(cursor_id).map(|c| c.db_name.clone())
     }
 
     /// Get the next batch of results from a cursor
@@ -139,7 +187,7 @@ mod tests {
         let store = CursorStore::new(Duration::from_secs(300));
         let results = vec![json!({"id": 1}), json!({"id": 2}), json!({"id": 3})];
 
-        let cursor_id = store.store(results, 2);
+        let cursor_id = store.store("db1", results, 2);
 
         // First batch
         let (batch, has_more) = store.get_next_batch(&cursor_id).unwrap();
@@ -160,7 +208,7 @@ mod tests {
         let store = CursorStore::new(Duration::from_millis(100));
         let results = vec![json!({"id": 1})];
 
-        let cursor_id = store.store(results, 10);
+        let cursor_id = store.store("db1", results, 10);
 
         // Wait for expiration
         std::thread::sleep(Duration::from_millis(150));
@@ -174,7 +222,7 @@ mod tests {
         let store = CursorStore::new(Duration::from_secs(300));
         let results = vec![json!({"id": 1})];
 
-        let cursor_id = store.store(results, 10);
+        let cursor_id = store.store("db1", results, 10);
 
         // Delete cursor
         assert!(store.delete(&cursor_id));
@@ -188,7 +236,7 @@ mod tests {
         let store = CursorStore::new(Duration::from_secs(300));
         let results = vec![json!({"id": 1}), json!({"id": 2})];
 
-        let cursor_id = store.store(results, 10);
+        let cursor_id = store.store("db1", results, 10);
 
         // Single batch contains all results
         let (batch, has_more) = store.get_next_batch(&cursor_id).unwrap();
@@ -201,7 +249,7 @@ mod tests {
         let store = CursorStore::new(Duration::from_secs(300));
         let results = vec![json!({"id": 1}), json!({"id": 2}), json!({"id": 3})];
 
-        let (cursor_id, first_batch, has_more) = store.store_and_get_first_batch(results, 2);
+        let (cursor_id, first_batch, has_more) = store.store_and_get_first_batch("db1", results, 2);
 
         assert!(has_more);
         assert!(cursor_id.is_some());
@@ -221,7 +269,8 @@ mod tests {
         let store = CursorStore::new(Duration::from_secs(300));
         let results = vec![json!({"id": 1}), json!({"id": 2})];
 
-        let (cursor_id, first_batch, has_more) = store.store_and_get_first_batch(results, 10);
+        let (cursor_id, first_batch, has_more) =
+            store.store_and_get_first_batch("db1", results, 10);
 
         assert!(!has_more);
         assert!(cursor_id.is_none());

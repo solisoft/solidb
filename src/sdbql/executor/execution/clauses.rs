@@ -718,6 +718,61 @@ impl<'a> QueryExecutor<'a> {
                     // Execute graph traversal using BFS
                     let mut new_rows = Vec::new();
 
+                    // Get edge collection (shared by every start vertex)
+                    let edge_collection = self.get_collection(&gt.edge_collection)?;
+
+                    // Without an index on _from/_to, the per-vertex fallback
+                    // used to rescan the whole edge collection for EVERY
+                    // visited vertex (B^depth full scans). Probe for the
+                    // indexes once and, when missing, build an in-memory
+                    // adjacency map with a single scan instead.
+                    let probe = Value::String(String::new());
+                    let has_from_index = edge_collection.index_lookup_eq("_from", &probe).is_some();
+                    let has_to_index = edge_collection.index_lookup_eq("_to", &probe).is_some();
+                    let needs_adjacency = match gt.direction {
+                        EdgeDirection::Outbound => !has_from_index,
+                        EdgeDirection::Inbound => !has_to_index,
+                        EdgeDirection::Any => !(has_from_index && has_to_index),
+                    };
+                    let adjacency: Option<
+                        std::collections::HashMap<String, Vec<crate::storage::Document>>,
+                    > = if needs_adjacency {
+                        let mut map: std::collections::HashMap<
+                            String,
+                            Vec<crate::storage::Document>,
+                        > = std::collections::HashMap::new();
+                        let want_from =
+                            matches!(gt.direction, EdgeDirection::Outbound | EdgeDirection::Any);
+                        let want_to =
+                            matches!(gt.direction, EdgeDirection::Inbound | EdgeDirection::Any);
+                        for doc in edge_collection.scan(None) {
+                            let from = match doc.get("_from") {
+                                Some(Value::String(s)) => Some(s.clone()),
+                                _ => None,
+                            };
+                            let to = match doc.get("_to") {
+                                Some(Value::String(s)) => Some(s.clone()),
+                                _ => None,
+                            };
+                            if want_from {
+                                if let Some(ref f) = from {
+                                    map.entry(f.clone()).or_default().push(doc.clone());
+                                }
+                            }
+                            if want_to {
+                                if let Some(ref t) = to {
+                                    // Self-loop already inserted under _from
+                                    if !(want_from && from.as_deref() == Some(t.as_str())) {
+                                        map.entry(t.clone()).or_default().push(doc.clone());
+                                    }
+                                }
+                            }
+                        }
+                        Some(map)
+                    } else {
+                        None
+                    };
+
                     for ctx in &rows {
                         // Evaluate start vertex
                         let start_value = self.evaluate_expr_with_context(&gt.start_vertex, ctx)?;
@@ -730,9 +785,6 @@ impl<'a> QueryExecutor<'a> {
                                 ))
                             }
                         };
-
-                        // Get edge collection
-                        let edge_collection = self.get_collection(&gt.edge_collection)?;
 
                         // BFS traversal
                         let mut visited: std::collections::HashSet<String> =
@@ -775,68 +827,45 @@ impl<'a> QueryExecutor<'a> {
                             let current_id_str = current_id.clone();
                             let current_value = Value::String(current_id_str.clone());
 
-                            // Use index lookup on _from/_to field if available, fallback to scan
+                            // Use index lookup on _from/_to if available; otherwise the
+                            // prebuilt adjacency map (single scan, done above).
+                            let adjacency_edges = |key: &str| -> Vec<crate::storage::Document> {
+                                adjacency
+                                    .as_ref()
+                                    .and_then(|m| m.get(key).cloned())
+                                    .unwrap_or_default()
+                            };
                             let edges: Vec<_> = match gt.direction {
                                 EdgeDirection::Outbound => {
                                     // Look up edges where _from = current_id
                                     edge_collection
                                         .index_lookup_eq("_from", &current_value)
-                                        .unwrap_or_else(|| {
-                                            // Fallback to scan if no index
-                                            let current_str = current_id_str.as_str();
-                                            edge_collection
-                                                .scan(None)
-                                                .into_iter()
-                                                .filter(|e| match e.get("_from") {
-                                                    Some(serde_json::Value::String(s)) => {
-                                                        s.as_str() == current_str
-                                                    }
-                                                    _ => false,
-                                                })
-                                                .collect()
-                                        })
+                                        .unwrap_or_else(|| adjacency_edges(&current_id_str))
                                 }
                                 EdgeDirection::Inbound => {
                                     // Look up edges where _to = current_id
                                     edge_collection
                                         .index_lookup_eq("_to", &current_value)
-                                        .unwrap_or_else(|| {
-                                            // Fallback to scan if no index
-                                            let current_str = current_id_str.as_str();
-                                            edge_collection
-                                                .scan(None)
-                                                .into_iter()
-                                                .filter(|e| match e.get("_to") {
-                                                    Some(serde_json::Value::String(s)) => {
-                                                        s.as_str() == current_str
-                                                    }
-                                                    _ => false,
-                                                })
-                                                .collect()
-                                        })
+                                        .unwrap_or_else(|| adjacency_edges(&current_id_str))
                                 }
                                 EdgeDirection::Any => {
-                                    // For ANY direction, need to scan (or union of both lookups)
-                                    let current_str = current_id_str.as_str();
-                                    edge_collection
-                                        .scan(None)
-                                        .into_iter()
-                                        .filter(|e| {
-                                            let from_match = match e.get("_from") {
-                                                Some(serde_json::Value::String(s)) => {
-                                                    s.as_str() == current_str
-                                                }
-                                                _ => false,
-                                            };
-                                            let to_match = match e.get("_to") {
-                                                Some(serde_json::Value::String(s)) => {
-                                                    s.as_str() == current_str
-                                                }
-                                                _ => false,
-                                            };
-                                            from_match || to_match
-                                        })
-                                        .collect()
+                                    // Union of both directions; with both indexes present use
+                                    // them, otherwise the adjacency map (keyed on both ends).
+                                    match (
+                                        edge_collection.index_lookup_eq("_from", &current_value),
+                                        edge_collection.index_lookup_eq("_to", &current_value),
+                                    ) {
+                                        (Some(from_edges), Some(to_edges)) => {
+                                            let mut seen: std::collections::HashSet<String> =
+                                                std::collections::HashSet::new();
+                                            from_edges
+                                                .into_iter()
+                                                .chain(to_edges)
+                                                .filter(|e| seen.insert(e.key.clone()))
+                                                .collect()
+                                        }
+                                        _ => adjacency_edges(&current_id_str),
+                                    }
                                 }
                             };
 
@@ -904,6 +933,11 @@ impl<'a> QueryExecutor<'a> {
 
                         let edge_collection = self.get_collection(&sp.edge_collection)?;
 
+                        // Scan edges ONCE per path search: the edge set doesn't
+                        // change mid-BFS, and rescanning it for every dequeued
+                        // vertex made shortest-path O(V × E) disk reads.
+                        let all_edges = edge_collection.scan(None);
+
                         // BFS with parent tracking
                         let mut visited: std::collections::HashMap<
                             String,
@@ -922,8 +956,7 @@ impl<'a> QueryExecutor<'a> {
                                 break;
                             }
 
-                            let edges = edge_collection.scan(None);
-                            for edge_doc in edges {
+                            for edge_doc in &all_edges {
                                 let edge_val = edge_doc.to_value();
                                 let from = edge_val.get("_from").and_then(|v| v.as_str());
                                 let to = edge_val.get("_to").and_then(|v| v.as_str());
@@ -1082,20 +1115,22 @@ impl<'a> QueryExecutor<'a> {
 
                     match join_clause.join_type {
                         JoinType::Inner | JoinType::Left => {
-                            // Standard LEFT/INNER JOIN: iterate left side, find matches on right
+                            // Standard LEFT/INNER JOIN: iterate left side, find matches on right.
+                            // Scan the joined collection ONCE: it doesn't depend on the
+                            // left row, and rescanning it per row turned every join into
+                            // O(left × right) disk reads.
+                            let all_docs: Vec<Value> = collection
+                                .scan(None)
+                                .into_iter()
+                                .map(|doc| doc.to_value())
+                                .collect();
+
                             let mut new_rows = Vec::new();
 
                             for ctx in &rows {
-                                // Get all documents from joined collection
-                                let all_docs: Vec<Value> = collection
-                                    .scan(None)
-                                    .into_iter()
-                                    .map(|doc| doc.to_value())
-                                    .collect();
-
                                 // Find matching documents by evaluating join condition
                                 let mut matches = Vec::new();
-                                for doc in all_docs {
+                                for doc in &all_docs {
                                     let mut temp_ctx = ctx.clone();
                                     temp_ctx.insert(join_clause.variable.clone(), doc.clone());
 
@@ -1104,7 +1139,7 @@ impl<'a> QueryExecutor<'a> {
                                         &temp_ctx,
                                     ) {
                                         if result.as_bool().unwrap_or(false) {
-                                            matches.push(doc);
+                                            matches.push(doc.clone());
                                         }
                                     }
                                 }

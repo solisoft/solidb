@@ -24,19 +24,36 @@ pub mod transaction;
 /// Handler for a single driver connection
 pub struct DriverHandler {
     pub(crate) storage: Arc<StorageEngine>,
+    /// Replication log; driver mutations must be logged here or replicas
+    /// silently diverge from data written over the binary protocol.
+    pub(crate) replication: Option<Arc<crate::sync::log::SyncLog>>,
     /// Active transactions for this connection
     pub(crate) transactions: HashMap<String, TransactionId>,
     /// Authenticated database (None = not authenticated)
     pub(crate) authenticated_db: Option<String>,
+    /// Principal identity (username or API key id) for audit logs
+    pub(crate) session_subject: String,
+    /// Permissions resolved from the principal's roles at auth time.
+    /// Connection-lifetime snapshot: a revoked role applies on reconnect.
+    pub(crate) session_permissions: std::collections::HashSet<crate::server::Permission>,
+    /// Database restriction for scoped API keys
+    pub(crate) session_scoped_databases: Option<Vec<String>>,
 }
 
 impl DriverHandler {
     /// Create a new handler
-    pub fn new(storage: Arc<StorageEngine>) -> Self {
+    pub fn new(
+        storage: Arc<StorageEngine>,
+        replication: Option<Arc<crate::sync::log::SyncLog>>,
+    ) -> Self {
         Self {
             storage,
+            replication,
             transactions: HashMap::new(),
             authenticated_db: None,
+            session_subject: String::new(),
+            session_permissions: std::collections::HashSet::new(),
+            session_scoped_databases: None,
         }
     }
 
@@ -140,6 +157,29 @@ impl DriverHandler {
                     return Response::error(DriverError::AuthError(
                         "Authentication required".to_string(),
                     ));
+                }
+            }
+        }
+
+        // Per-command authorization against the session's resolved
+        // permissions, mirroring the HTTP authz middleware. The command's own
+        // `database` field is checked — connections are NOT trusted to stay
+        // on the database they authenticated against.
+        if self.authenticated_db.is_some() {
+            if let Some(action) = command.required_action() {
+                if let Err(e) = crate::server::AuthorizationService::check_permission_raw(
+                    &self.session_permissions,
+                    action,
+                    command.database(),
+                    self.session_scoped_databases.as_deref(),
+                ) {
+                    tracing::warn!(
+                        target: "audit",
+                        user = %self.session_subject,
+                        "driver command denied: {}",
+                        e
+                    );
+                    return Response::error(DriverError::AuthError(e.to_string()));
                 }
             }
         }
@@ -904,6 +944,59 @@ impl DriverHandler {
         }
     }
 
+    /// Log a driver mutation to the replication log, mirroring the HTTP
+    /// handlers' behavior (physical shard collections are partitioned, not
+    /// replicated — same rule as `server/handlers/documents.rs`).
+    pub(crate) fn log_replication(
+        &self,
+        database: &str,
+        collection: &str,
+        operation: crate::sync::protocol::Operation,
+        key: &str,
+        data: Option<&serde_json::Value>,
+    ) {
+        if crate::server::handlers::system::is_physical_shard_collection(collection) {
+            return;
+        }
+        if let Some(ref log) = self.replication {
+            log.log_document_op(
+                database,
+                collection,
+                operation,
+                key,
+                data.and_then(|v| serde_json::to_vec(v).ok()),
+            );
+        }
+    }
+
+    /// Batch variant of `log_replication` (single fsync via `append_batch`).
+    pub(crate) fn log_replication_batch(
+        &self,
+        database: &str,
+        collection: &str,
+        operation: crate::sync::protocol::Operation,
+        docs: &[crate::storage::Document],
+    ) {
+        if crate::server::handlers::system::is_physical_shard_collection(collection) {
+            return;
+        }
+        if let Some(ref log) = self.replication {
+            let entries = docs
+                .iter()
+                .map(|doc| {
+                    crate::sync::log::LogEntry::new_op(
+                        database,
+                        collection,
+                        operation,
+                        doc.key.clone(),
+                        serde_json::to_vec(&doc.to_value()).ok(),
+                    )
+                })
+                .collect();
+            log.append_batch(entries);
+        }
+    }
+
     /// Helper to get a collection
     pub(crate) fn get_collection(
         &self,
@@ -922,14 +1015,16 @@ impl DriverHandler {
 /// Spawn a handler for incoming driver connections
 pub fn spawn_driver_handler(
     storage: Arc<StorageEngine>,
+    replication: Option<Arc<crate::sync::log::SyncLog>>,
 ) -> tokio::sync::mpsc::Sender<(TcpStream, String)> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(TcpStream, String)>(100);
 
     tokio::spawn(async move {
         while let Some((stream, addr)) = rx.recv().await {
             let storage = storage.clone();
+            let replication = replication.clone();
             tokio::spawn(async move {
-                let mut handler = DriverHandler::new(storage);
+                let mut handler = DriverHandler::new(storage, replication);
                 handler.handle_connection(stream, addr).await;
             });
         }

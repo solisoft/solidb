@@ -545,6 +545,7 @@ pub async fn assign_role(
 
     // Invalidate cache for this user
     state.permission_cache.invalidate(&username);
+    crate::server::auth::AuthService::invalidate_user_roles_cache(&username);
 
     Ok((
         StatusCode::CREATED,
@@ -616,6 +617,7 @@ pub async fn revoke_role(
 
     // Invalidate cache for this user
     state.permission_cache.invalidate(&username);
+    crate::server::auth::AuthService::invalidate_user_roles_cache(&username);
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -946,6 +948,7 @@ pub async fn delete_user(
 
     // Invalidate cache for this user
     state.permission_cache.invalidate(&username);
+    crate::server::auth::AuthService::invalidate_user_roles_cache(&username);
 
     Ok(StatusCode::NO_CONTENT)
 }

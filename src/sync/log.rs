@@ -33,6 +33,27 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
+    /// Build an entry stamped "now" with the local node filled in by `append`.
+    pub fn new_op(
+        database: impl Into<String>,
+        collection: impl Into<String>,
+        operation: Operation,
+        key: impl Into<String>,
+        data: Option<Vec<u8>>,
+    ) -> Self {
+        Self {
+            sequence: 0,
+            node_id: String::new(),
+            database: database.into(),
+            collection: collection.into(),
+            operation,
+            key: key.into(),
+            data,
+            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            origin_sequence: None,
+        }
+    }
+
     /// Convert to SyncEntry for replication
     pub fn to_sync_entry(&self, hlc: &HybridLogicalClock) -> SyncEntry {
         SyncEntry {
@@ -181,6 +202,32 @@ impl SyncLog {
         }
 
         *seq
+    }
+
+    /// Log a document-level operation (insert/update/delete) for replication.
+    pub fn log_document_op(
+        &self,
+        database: &str,
+        collection: &str,
+        operation: Operation,
+        key: &str,
+        data: Option<Vec<u8>>,
+    ) -> u64 {
+        self.append(LogEntry::new_op(database, collection, operation, key, data))
+    }
+
+    /// Log a collection truncate so replicas clear the collection too.
+    /// Every direct caller of `Collection::truncate()` outside the HTTP
+    /// handler (binary driver, materialized-view refresh) must use this,
+    /// otherwise replicas silently keep the old documents.
+    pub fn log_truncate(&self, database: &str, collection: &str) -> u64 {
+        self.append(LogEntry::new_op(
+            database,
+            collection,
+            Operation::TruncateCollection,
+            "",
+            None,
+        ))
     }
 
     /// Append multiple entries atomically

@@ -90,8 +90,30 @@ pub async fn create_database(
     }))
 }
 
-pub async fn list_databases(State(state): State<AppState>) -> Json<ListDatabasesResponse> {
-    let databases = state.storage.list_databases();
+pub async fn list_databases(
+    State(state): State<AppState>,
+    Extension(claims): Extension<crate::server::auth::Claims>,
+) -> Json<ListDatabasesResponse> {
+    // Only list databases the caller can at least read, so a low-privilege
+    // or db-scoped principal can't enumerate every database on the server.
+    let permissions = AuthorizationService::get_effective_permissions(&claims, &state)
+        .await
+        .unwrap_or_default();
+    let scoped = claims.scoped_databases.as_deref();
+    let databases = state
+        .storage
+        .list_databases()
+        .into_iter()
+        .filter(|db| {
+            AuthorizationService::check_permission_raw(
+                &permissions,
+                PermissionAction::Read,
+                Some(db),
+                scoped,
+            )
+            .is_ok()
+        })
+        .collect();
     Json(ListDatabasesResponse { databases })
 }
 
@@ -100,7 +122,10 @@ pub async fn delete_database(
     Extension(claims): Extension<crate::server::auth::Claims>,
     Path(name): Path<String>,
 ) -> Result<StatusCode, DbError> {
-    AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
+    // Pass the target database so db-scoped admin keys can only delete
+    // databases inside their scope.
+    AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, Some(&name))
+        .await?;
     state.storage.delete_database(&name)?;
 
     // Record to replication log

@@ -219,10 +219,26 @@ pub struct ExecuteSdbqlTransactionalRequest {
 pub async fn execute_transactional_sdbql(
     State(state): State<AppState>,
     Path((db_name, tx_id_str)): Path<(String, String)>,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
     Json(req): Json<ExecuteSdbqlTransactionalRequest>,
 ) -> Result<Json<Value>, DbError> {
     use crate::sdbql::ast::BodyClause;
     use crate::sdbql::{parse, QueryExecutor};
+
+    // The authz middleware only required Read for the /query suffix; upgrade
+    // to Write when the transactional query mutates.
+    {
+        let parsed = parse(&req.query)?;
+        if parsed.has_mutations() {
+            crate::server::authz_middleware::enforce(
+                &claims,
+                &state,
+                crate::server::authorization::PermissionAction::Write,
+                Some(&db_name),
+            )
+            .await?;
+        }
+    }
 
     // Parse transaction ID
     let tx_id_value: u64 = tx_id_str

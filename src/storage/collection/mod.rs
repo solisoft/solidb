@@ -61,6 +61,9 @@ pub enum ChangeType {
     Insert,
     Update,
     Delete,
+    /// Whole collection cleared. Emitted once by `truncate()` instead of one
+    /// `Delete` per document, so subscribers aren't flooded on large wipes.
+    Truncate,
 }
 
 /// Real-time change event

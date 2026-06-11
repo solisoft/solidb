@@ -703,19 +703,31 @@ impl AuthService {
     /// Create a short-lived JWT token specifically for live query WebSocket connections.
     /// This token expires in 30 seconds - just enough time to establish a WebSocket connection.
     /// The livequery claim can be used to restrict what operations this token allows.
-    pub fn create_livequery_jwt() -> Result<String, DbError> {
+    ///
+    /// The requesting principal's roles and database scope are copied into
+    /// the token so per-database authorization applies to the WebSocket
+    /// subscriptions opened with it (a role-less token would be denied
+    /// everything once subscription authz is enforced).
+    pub fn create_livequery_jwt(
+        sub: &str,
+        roles: Option<Vec<String>>,
+        scoped_databases: Option<Vec<String>>,
+    ) -> Result<String, DbError> {
         let expiration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|_| DbError::InternalError("System clock before UNIX epoch".to_string()))?
             .as_secs() as usize
             + 2; // 2 seconds - ultra short lived for file downloads!
 
+        // Keep the caller's `sub`: the permission cache is keyed on it, so a
+        // shared "livequery" subject would leak one user's resolved
+        // permissions to another.
         let claims = Claims {
-            sub: "livequery".to_owned(),
+            sub: sub.to_owned(),
             exp: expiration,
             livequery: Some(true),
-            roles: None,
-            scoped_databases: None,
+            roles,
+            scoped_databases,
         };
 
         encode(
@@ -761,6 +773,23 @@ impl AuthService {
         let mut hasher = Sha256::new();
         hasher.update(key.as_bytes());
         hex::encode(hasher.finalize())
+    }
+
+    /// Look up an API key record by raw key via the in-memory cache,
+    /// lazy-loading the cache from storage on first miss. O(1) on the hot
+    /// path — use this instead of scanning `_api_keys`.
+    pub fn lookup_api_key(
+        storage: &StorageEngine,
+        raw_key: &str,
+    ) -> Option<std::sync::Arc<ApiKey>> {
+        let incoming_hash = Self::hash_api_key(raw_key);
+        if let Some(api_key) = api_key_cache().lookup(&incoming_hash) {
+            return Some(api_key);
+        }
+        if !api_key_cache().is_loaded() {
+            let _ = Self::load_api_key_cache(storage);
+        }
+        api_key_cache().lookup(&incoming_hash)
     }
 
     /// Validate an API key against stored keys
@@ -830,6 +859,19 @@ impl AuthService {
 
     /// Get roles for a user from _user_roles collection
     pub fn get_user_roles(storage: &StorageEngine, username: &str) -> Option<Vec<String>> {
+        // `_user_roles` is keyed by random UUID, so resolving a user's roles
+        // means scanning the whole collection — O(assignments) on every auth
+        // path. Cache per-username with a short TTL; role grants/revocations
+        // call `invalidate_user_roles_cache` for immediate effect locally
+        // (replicated changes converge within the TTL).
+        const TTL: std::time::Duration = std::time::Duration::from_secs(30);
+        if let Some(entry) = USER_ROLES_CACHE.get(username) {
+            let (roles, at) = entry.value();
+            if at.elapsed() < TTL {
+                return roles.clone();
+            }
+        }
+
         let db = match storage.get_database(ADMIN_DB) {
             Ok(db) => db,
             Err(_) => return None,
@@ -849,13 +891,25 @@ impl AuthService {
             }
         }
 
-        if roles.is_empty() {
-            None
-        } else {
-            Some(roles)
-        }
+        let result = if roles.is_empty() { None } else { Some(roles) };
+        USER_ROLES_CACHE.insert(
+            username.to_string(),
+            (result.clone(), std::time::Instant::now()),
+        );
+        result
+    }
+
+    /// Drop the cached role list for a user after a grant/revoke.
+    pub fn invalidate_user_roles_cache(username: &str) {
+        USER_ROLES_CACHE.remove(username);
     }
 }
+
+/// Cached role list and the moment it was loaded.
+type CachedUserRoles = (Option<Vec<String>>, std::time::Instant);
+
+/// Per-username role cache for `get_user_roles` (see comment there).
+static USER_ROLES_CACHE: Lazy<DashMap<String, CachedUserRoles>> = Lazy::new(DashMap::new);
 
 /// Constant-time comparison to prevent timing attacks
 /// Uses subtle::ConstantTimeEq for proper constant-time comparison
@@ -1326,10 +1380,13 @@ mod tests {
 
     #[test]
     fn test_create_livequery_jwt() {
-        let token = AuthService::create_livequery_jwt().unwrap();
+        let token =
+            AuthService::create_livequery_jwt("alice", Some(vec!["viewer".to_string()]), None)
+                .unwrap();
 
         let claims = AuthService::validate_token(&token).unwrap();
-        assert_eq!(claims.sub, "livequery");
+        assert_eq!(claims.sub, "alice");
+        assert_eq!(claims.roles, Some(vec!["viewer".to_string()]));
         assert_eq!(claims.livequery, Some(true));
     }
 

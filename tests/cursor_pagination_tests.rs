@@ -46,7 +46,7 @@ async fn test_cursor_batching() {
 
     // Create cursor with batch size 10
     // store() is synchronous
-    let cursor_id = cursor_store.store(all_results, 10);
+    let cursor_id = cursor_store.store("testdb", all_results, 10);
 
     // Get first batch
     // get_next_batch returns Option<(Vec<Value>, bool)>
@@ -79,7 +79,7 @@ async fn test_cursor_exhaustion() {
     let results = executor.execute(&query).unwrap(); // 25 items (0-24)
 
     // Batch size 10
-    let cursor_id = cursor_store.store(results, 10);
+    let cursor_id = cursor_store.store("testdb", results, 10);
 
     // Batch 1 (0-9)
     let (_b1, more1) = cursor_store.get_next_batch(&cursor_id).unwrap();
@@ -110,7 +110,7 @@ async fn test_cursor_deletion() {
     let executor = QueryExecutor::new(&engine);
     let results = executor.execute(&query).unwrap();
 
-    let cursor_id = cursor_store.store(results, 10);
+    let cursor_id = cursor_store.store("testdb", results, 10);
 
     // Delete cursor
     let deleted = cursor_store.delete(&cursor_id);
@@ -129,7 +129,7 @@ async fn test_empty_result_cursor() {
     let executor = QueryExecutor::new(&engine);
     let results = executor.execute(&query).unwrap(); // Empty
 
-    let cursor_id = cursor_store.store(results, 10);
+    let cursor_id = cursor_store.store("testdb", results, 10);
 
     // Getting batch from empty results
     let (batch, has_more) = cursor_store.get_next_batch(&cursor_id).unwrap();
@@ -149,7 +149,7 @@ async fn test_large_batch_size() {
     let results = executor.execute(&query).unwrap(); // 100 items
 
     // Batch size larger than total results
-    let cursor_id = cursor_store.store(results, 200);
+    let cursor_id = cursor_store.store("testdb", results, 200);
 
     let (batch, has_more) = cursor_store.get_next_batch(&cursor_id).unwrap();
     assert_eq!(batch.len(), 100);

@@ -199,7 +199,7 @@ pub async fn execute_query(
     State(state): State<AppState>,
     Path(db_name): Path<String>,
     headers: HeaderMap,
-    claims: Option<axum::Extension<crate::server::auth::Claims>>,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<ApiResponse<ExecuteQueryResponse>, DbError> {
     // Count every query
@@ -208,8 +208,20 @@ pub async fn execute_query(
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     // Auth is enforced by `auth_middleware` on the route layer (routes.rs).
-    // No per-handler token validation needed here — would only drift from the
-    // middleware (API keys, Basic auth, cluster-internal bypass).
+    // The authz middleware only required Read for this endpoint (queries are
+    // reads by default); if the parsed query mutates, upgrade to Write here.
+    {
+        let prepared = crate::sdbql::get_prepared_statement_cache().parse_if_needed(&req.query)?;
+        if prepared.query.has_mutations() {
+            crate::server::authz_middleware::enforce(
+                &claims,
+                &state,
+                crate::server::authorization::PermissionAction::Write,
+                Some(&db_name),
+            )
+            .await?;
+        }
+    }
 
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {
@@ -558,6 +570,7 @@ pub async fn execute_query(
 
     // Clone db_name and query text for slow query logging (before they're moved)
     let db_name_for_logging = db_name.clone();
+    let db_name_for_cursor = db_name.clone();
     let query_text_for_logging = req.query.clone();
 
     // Snapshot CF-op activity so the slow-query log can tell a genuinely
@@ -677,14 +690,16 @@ pub async fn execute_query(
         mutations.documents_inserted,
         mutations.documents_updated,
         mutations.documents_removed,
-        claims.map(|ext| ext.0.sub),
+        Some(claims.sub.clone()),
         cf_ops_before.ops_since(&cf_ops_after),
         cf_ops_before.ms_since(&cf_ops_after),
     );
 
-    let (cursor_id, result_batch, has_more) = state
-        .cursor_store
-        .store_and_get_first_batch(query_result.results, batch_size);
+    let (cursor_id, result_batch, has_more) = state.cursor_store.store_and_get_first_batch(
+        db_name_for_cursor,
+        query_result.results,
+        batch_size,
+    );
 
     Ok(ApiResponse::new(
         ExecuteQueryResponse {
@@ -755,7 +770,19 @@ pub async fn get_next_batch(
     State(state): State<AppState>,
     Path(cursor_id): Path<String>,
     headers: HeaderMap,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
 ) -> Result<ApiResponse<ExecuteQueryResponse>, DbError> {
+    // The cursor route has no {db} path param; check read permission against
+    // the database the original query ran on.
+    if let Some(db) = state.cursor_store.db_name(&cursor_id) {
+        crate::server::authz_middleware::enforce(
+            &claims,
+            &state,
+            crate::server::authorization::PermissionAction::Read,
+            Some(&db),
+        )
+        .await?;
+    }
     if let Some((batch, has_more)) = state.cursor_store.get_next_batch(&cursor_id) {
         let count = batch.len();
         Ok(ApiResponse::new(
@@ -783,7 +810,17 @@ pub async fn get_next_batch(
 pub async fn delete_cursor(
     State(state): State<AppState>,
     Path(cursor_id): Path<String>,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
 ) -> Result<StatusCode, DbError> {
+    if let Some(db) = state.cursor_store.db_name(&cursor_id) {
+        crate::server::authz_middleware::enforce(
+            &claims,
+            &state,
+            crate::server::authorization::PermissionAction::Read,
+            Some(&db),
+        )
+        .await?;
+    }
     if state.cursor_store.delete(&cursor_id) {
         Ok(StatusCode::NO_CONTENT)
     } else {

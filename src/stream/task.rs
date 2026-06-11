@@ -147,6 +147,18 @@ impl StreamTask {
             ChangeType::Delete => {
                 // Ignore deletes for now in simple stream processing
             }
+            ChangeType::Truncate => {
+                // The source collection was wiped; buffered events belong to
+                // data that no longer exists, so drop the pending window.
+                if !self.buffer.is_empty() {
+                    tracing::warn!(
+                        "Stream {}: source collection truncated, discarding {} buffered events",
+                        self.name,
+                        self.buffer.len()
+                    );
+                    self.buffer.clear();
+                }
+            }
         }
     }
 

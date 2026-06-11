@@ -227,6 +227,25 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         args.keyfile.clone(),
     );
 
+    // Clustered deployments must authenticate inter-node traffic. Without a
+    // keyfile, replication and cluster-control messages would be accepted
+    // from anyone who can reach the port (HMAC is silently skipped), so
+    // refuse to start rather than run an open cluster.
+    if !args.peers.is_empty() && cluster_config.keyfile.is_none() {
+        anyhow::bail!(
+            "Cluster peers are configured but no keyfile is available. \
+             Create a shared secret (e.g. `openssl rand -hex 32 > solidb.key`, \
+             same file on every node) and pass it with --keyfile. \
+             Refusing to start an unauthenticated cluster."
+        );
+    }
+    if args.peers.is_empty() && cluster_config.keyfile.is_none() {
+        tracing::warn!(
+            "No cluster keyfile configured: replication and cluster ports accept \
+             unauthenticated connections. Set --keyfile before adding peers."
+        );
+    }
+
     let storage = StorageEngine::with_cluster_config(&args.data_dir, cluster_config.clone())?;
     storage.initialize()?;
     tracing::info!("Storage engine initialized");
@@ -238,6 +257,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     // Transport
     let transport = Arc::new(solidb::cluster::transport::TcpTransport::new(
         repl_address.clone(),
+        cluster_config.keyfile.clone(),
     ));
 
     // Cluster State
@@ -318,18 +338,35 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     // Clone for background task
     let healing_coordinator = shared_coordinator.clone();
     tokio::spawn(async move {
+        // Exponential backoff on consecutive failures: with an unreachable
+        // peer, a fixed 5s cadence turns into a retry storm of failed
+        // outbound connections and log spam. Back off up to 5 minutes and
+        // reset as soon as a cycle succeeds.
+        let base = std::time::Duration::from_secs(5);
+        let max_backoff = std::time::Duration::from_secs(300);
+        let mut delay = base;
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(delay).await;
+
+            let mut failed = false;
 
             // First, clean up any orphaned shards from previous node assignment
             if let Err(e) = healing_coordinator.cleanup_orphaned_shards().await {
                 tracing::error!("Orphaned shard cleanup failed: {}", e);
+                failed = true;
             }
 
             // Then, heal shards by creating replicas on healthy nodes
             if let Err(e) = healing_coordinator.heal_shards().await {
                 tracing::error!("Shard healing failed: {}", e);
+                failed = true;
             }
+
+            delay = if failed {
+                (delay * 2).min(max_backoff)
+            } else {
+                base
+            };
         }
     });
 
@@ -620,7 +657,8 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
 
         // 3. Spawn Driver Handler (native binary protocol)
         let driver_storage = storage_for_shutdown.clone();
-        let driver_tx = solidb::driver::spawn_driver_handler(driver_storage);
+        let driver_tx =
+            solidb::driver::spawn_driver_handler(driver_storage, Some(replication_log.clone()));
         tracing::info!("Native driver protocol enabled on port {}", args.port);
 
         // 3. Dispatch Loop (Main Task) with shutdown handling
@@ -671,6 +709,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                     let sync_tx = sync_tx.clone();
                     let driver_tx = driver_tx.clone();
                     let connection_mgr = cluster_manager.clone();
+                    let cluster_secret = cluster_config.keyfile.clone();
 
                     tokio::spawn(async move {
                         // Read initial bytes to determine protocol.
@@ -724,15 +763,52 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                             let peeked_stream = PeekedStream::new(stream, peeked_data.clone());
                             let mgr = connection_mgr.clone();
                             tokio::spawn(async move {
-                                 let mut buf = Vec::new();
-                                 let mut stream = peeked_stream;
-                                 if stream.read_to_end(&mut buf).await.is_ok() {
-                                    if let Ok(msg) = serde_json::from_slice(&buf) {
-                                        mgr.handle_message(msg).await;
-                                    } else {
-                                        tracing::warn!("Failed to deserialize cluster message from {}", addr);
+                                // Bound both the size (cluster control messages are
+                                // small; an unbounded read_to_end lets anyone OOM the
+                                // node by streaming data) and the time (a held-open
+                                // connection would park this task forever).
+                                let mut buf = Vec::new();
+                                let mut stream = tokio::io::AsyncReadExt::take(
+                                    peeked_stream,
+                                    (solidb::cluster::transport::MAX_CLUSTER_MESSAGE_SIZE + 1) as u64,
+                                );
+                                let read = tokio::time::timeout(
+                                    std::time::Duration::from_secs(10),
+                                    stream.read_to_end(&mut buf),
+                                )
+                                .await;
+                                match read {
+                                    Ok(Ok(_)) if buf.len() <= solidb::cluster::transport::MAX_CLUSTER_MESSAGE_SIZE => {
+                                        // When a keyfile is configured, only HMAC-signed
+                                        // messages are accepted — membership changes and
+                                        // rebalances must not be attacker-injectable.
+                                        match solidb::cluster::transport::open_cluster_message(
+                                            &buf,
+                                            cluster_secret.as_deref(),
+                                        ) {
+                                            Ok(msg) => mgr.handle_message(msg).await,
+                                            Err(e) => {
+                                                tracing::warn!(
+                                                    "Rejected cluster message from {}: {}",
+                                                    addr,
+                                                    e
+                                                );
+                                            }
+                                        }
                                     }
-                                 }
+                                    Ok(Ok(_)) => {
+                                        tracing::warn!(
+                                            "Cluster message from {} exceeds size limit, dropped",
+                                            addr
+                                        );
+                                    }
+                                    _ => {
+                                        tracing::warn!(
+                                            "Cluster message read from {} failed or timed out",
+                                            addr
+                                        );
+                                    }
+                                }
                             });
                         } else {
                             // HTTP traffic - need peeked bytes for HTTP parsing

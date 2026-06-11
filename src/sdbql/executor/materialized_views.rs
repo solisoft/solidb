@@ -159,12 +159,38 @@ impl<'a> QueryExecutor<'a> {
         };
 
         let target_coll = self.storage.get_collection(&full_view_name)?;
-        target_coll.truncate()?;
+        let removed_count = target_coll.truncate()?;
+
+        // Replicas only see this refresh through the replication log: log
+        // the truncate (or they keep the stale view contents) and the
+        // re-inserted rows.
+        let (log_db, log_coll) = match view_name.split_once(':') {
+            Some((db, coll)) => (db, coll),
+            None => (db_name, view_name.as_str()),
+        };
+        if let Some(repl) = self.replication {
+            repl.log_truncate(log_db, log_coll);
+        }
 
         // 5. Bulk insert new results
         let inserted_count = results.len();
         if !results.is_empty() {
-            target_coll.insert_batch(results)?;
+            let inserted = target_coll.insert_batch(results)?;
+            if let Some(repl) = self.replication {
+                let entries = inserted
+                    .iter()
+                    .map(|doc| {
+                        crate::sync::log::LogEntry::new_op(
+                            log_db,
+                            log_coll,
+                            crate::sync::protocol::Operation::Insert,
+                            doc.key.clone(),
+                            serde_json::to_vec(&doc.to_value()).ok(),
+                        )
+                    })
+                    .collect();
+                repl.append_batch(entries);
+            }
         }
 
         Ok(QueryExecutionResult {
@@ -175,7 +201,7 @@ impl<'a> QueryExecutor<'a> {
             mutations: MutationStats {
                 documents_inserted: inserted_count,
                 documents_updated: 0,
-                documents_removed: 0, // count truncated?
+                documents_removed: removed_count,
             },
         })
     }

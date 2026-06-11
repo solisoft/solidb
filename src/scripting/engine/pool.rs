@@ -85,9 +85,16 @@ impl LuaPool {
     /// 1. Sanitized globals (unsafe stdlib removed)
     /// 2. Static globals (crypto, time, json, string/table extensions, etc.)
     pub fn new_with_options(size: usize, skip_reset: bool) -> Self {
+        if skip_reset {
+            tracing::warn!(
+                "Lua fast mode (skip_reset) is enabled: globals persist across requests \
+                 in pooled states. Only use with trusted, stateless scripts."
+            );
+        }
         let states = (0..size)
             .map(|_| {
                 let lua = Lua::new();
+                Self::apply_memory_limit(&lua);
                 Self::sanitize_globals(&lua);
                 // Initialize static globals ONCE per pool state
                 Self::setup_static_globals(&lua);
@@ -197,6 +204,21 @@ impl LuaPool {
                 };
             }
             std::hint::spin_loop();
+        }
+    }
+
+    /// Cap a state's allocator so a script with an allocation loop OOMs its
+    /// own request instead of the server. Default 64 MB; override with
+    /// `SOLIDB_LUA_MEMORY_LIMIT_MB` (0 disables the limit).
+    pub(crate) fn apply_memory_limit(lua: &Lua) {
+        let limit_mb = std::env::var("SOLIDB_LUA_MEMORY_LIMIT_MB")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(64);
+        if limit_mb > 0 {
+            if let Err(e) = lua.set_memory_limit(limit_mb * 1024 * 1024) {
+                tracing::warn!("Failed to set Lua memory limit: {}", e);
+            }
         }
     }
 

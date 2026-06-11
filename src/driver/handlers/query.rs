@@ -13,12 +13,30 @@ pub fn handle_query(
     // Parse the SDBQL query first
     match crate::sdbql::parse(&sdbql) {
         Ok(query) => {
+            // The dispatch check only required Read for Query; upgrade to
+            // Write when the parsed query mutates (same as the HTTP /cursor).
+            if query.has_mutations() {
+                if let Err(e) = crate::server::AuthorizationService::check_permission_raw(
+                    &handler.session_permissions,
+                    crate::server::PermissionAction::Write,
+                    Some(&database),
+                    handler.session_scoped_databases.as_deref(),
+                ) {
+                    return Response::error(DriverError::AuthError(e.to_string()));
+                }
+            }
+
             // Create executor with database and bind vars
-            let executor = if bind_vars.is_empty() {
+            let mut executor = if bind_vars.is_empty() {
                 QueryExecutor::with_database(&handler.storage, database)
             } else {
                 QueryExecutor::with_database_and_bind_vars(&handler.storage, database, bind_vars)
             };
+            // Mutating queries must reach the replication log, same as the
+            // HTTP query handler.
+            if let Some(ref log) = handler.replication {
+                executor = executor.with_replication(log);
+            }
 
             match executor.execute(&query) {
                 Ok(results) => Response::ok(serde_json::json!(results)),

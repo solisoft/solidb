@@ -65,60 +65,44 @@ pub async fn handle_auth(
         return Response::error(DriverError::AuthError("Invalid credentials".to_string()));
     }
 
-    // Set authenticated state (admin users have access to all databases)
+    // Resolve the user's roles to a permission snapshot for this connection;
+    // every subsequent command is checked against it.
+    let role_names = crate::server::auth::AuthService::get_user_roles(&handler.storage, &username)
+        .unwrap_or_default();
+    let permissions = crate::server::AuthorizationService::load_permissions_from_storage(
+        &handler.storage,
+        &role_names,
+    );
+
+    // The principal must at least read the database it authenticates against.
+    if let Err(e) = crate::server::AuthorizationService::check_permission_raw(
+        &permissions,
+        crate::server::PermissionAction::Read,
+        Some(&database),
+        None,
+    ) {
+        return Response::error(DriverError::AuthError(e.to_string()));
+    }
+
+    handler.session_subject = username;
+    handler.session_permissions = permissions;
+    handler.session_scoped_databases = None;
     handler.authenticated_db = Some(database);
     Response::ok_empty()
 }
 
 async fn handle_api_key_auth(
     handler: &mut DriverHandler,
-    system_db: &crate::storage::Database,
+    _system_db: &crate::storage::Database,
     database: &str,
     api_key: &str,
 ) -> Response {
-    // Get API keys collection
-    let api_keys_coll = match system_db.get_collection("_api_keys") {
-        Ok(coll) => coll,
-        Err(_) => {
-            return Response::error(DriverError::AuthError(
-                "API keys collection not found".to_string(),
-            ))
-        }
-    };
-
-    // Find API key by hash
-    let key_hash = crate::server::auth::AuthService::hash_api_key(api_key);
-
-    // Search through API keys to find match using constant-time comparison
-    let mut api_key_doc = None;
-    for doc in api_keys_coll.scan(None) {
-        let doc_clone = doc.clone();
-        let doc_value = doc_clone.to_value();
-        let hash_value_opt = doc_value.get("key_hash").and_then(|v| v.as_str());
-        if let Some(hash_value) = hash_value_opt {
-            if hash_value.len() == key_hash.len()
-                && crate::server::auth::constant_time_eq(hash_value.as_bytes(), key_hash.as_bytes())
-            {
-                api_key_doc = Some(doc_clone);
-                break;
-            }
-        }
-    }
-
-    let api_key_doc = match api_key_doc {
-        Some(doc) => doc,
-        None => return Response::error(DriverError::AuthError("Invalid API key".to_string())),
-    };
-
-    // Parse API key
-    let api_key_data: crate::server::auth::ApiKey =
-        match serde_json::from_value(api_key_doc.to_value()) {
-            Ok(k) => k,
-            Err(_) => {
-                return Response::error(DriverError::AuthError(
-                    "Invalid API key format".to_string(),
-                ))
-            }
+    // O(1) cached lookup (shared with the HTTP path) instead of scanning the
+    // whole _api_keys collection per auth attempt.
+    let api_key_data =
+        match crate::server::auth::AuthService::lookup_api_key(&handler.storage, api_key) {
+            Some(k) => k,
+            None => return Response::error(DriverError::AuthError("Invalid API key".to_string())),
         };
 
     // Check if API key is expired
@@ -139,7 +123,29 @@ async fn handle_api_key_auth(
         }
     }
 
+    // Resolve the key's roles to a permission snapshot for this connection.
+    let permissions = crate::server::AuthorizationService::load_permissions_from_storage(
+        &handler.storage,
+        &api_key_data.roles,
+    );
+    let scoped = api_key_data
+        .scoped_databases
+        .clone()
+        .filter(|dbs| !dbs.is_empty());
+
+    if let Err(e) = crate::server::AuthorizationService::check_permission_raw(
+        &permissions,
+        crate::server::PermissionAction::Read,
+        Some(database),
+        scoped.as_deref(),
+    ) {
+        return Response::error(DriverError::AuthError(e.to_string()));
+    }
+
     // Set authenticated state with API key name as identifier
+    handler.session_subject = format!("apikey:{}", api_key_data.id);
+    handler.session_permissions = permissions;
+    handler.session_scoped_databases = scoped;
     handler.authenticated_db = Some(database.to_string());
     Response::ok_empty()
 }

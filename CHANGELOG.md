@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.26.4](https://github.com/solisoft/solidb/compare/v0.26.3...v0.26.4) (2026-06-11)
+
+### Security
+
+* **Per-database authorization on the data plane**: every `/_api/database/{db}/...` route (documents, queries, collections, indexes, blobs, scripts, queues, triggers, ...) now enforces the caller's role permissions and API-key database scope. Previously only authentication was checked — any valid token could read/write any database. Notes for operators:
+  * Set `SOLIDB_DB_AUTHZ_MODE=warn` for a dry-run release: denials are logged on the `audit` target but allowed. Default is `enforce`.
+  * Pre-RBAC users and API keys hold the `admin` role (existing migration) and are unaffected. JWTs minted without roles are now denied on data routes.
+  * `truncate`, `DROP collection` and the db-scoped Lua REPL now require `Admin` (the built-in `editor` role loses them).
+  * Database-scoped API keys can no longer perform global operations (create/delete database, role and key management) even when they carry the `admin` role, and `GET /_api/databases` only lists databases the caller can read.
+  * Mutating SDBQL/SQL submitted through read endpoints (`/cursor`, `/sql`, transactional `/query`) is upgraded to a Write permission check after parsing.
+  * WebSocket changefeed subscriptions and live queries check Read permission on the target database; livequery tokens inherit the requester's identity/roles.
+  * The binary driver protocol resolves roles at auth time and checks every command against its `database` field (connections are no longer trusted to stay on the database they authenticated against).
+* **Cluster control messages are HMAC-signed**: when a keyfile is configured, membership/heartbeat/rebalance messages on the multiplexed port are wrapped in a signed envelope (timestamp + nonce + HMAC-SHA256) and unsigned or stale messages are rejected. The read is also size-capped (1 MB) and time-bounded. **All nodes in a cluster must upgrade together.**
+* **Keyfile required for clusters**: a node configured with `--peers` now refuses to start without a keyfile instead of silently running an unauthenticated cluster.
+* **Replication slowloris protection**: sync protocol reads are time-bounded (partial headers/payloads can no longer hold connections open forever).
+* **Lua resource limits**: scripts run under a 64 MB memory cap (`SOLIDB_LUA_MEMORY_LIMIT_MB`) and a 30 s execution deadline (`SOLIDB_LUA_TIMEOUT_SECS`).
+
+### Fixes
+
+* **Truncate now replicates from every path**: the binary driver and materialized-view refresh previously truncated locally without writing to the replication log, leaving replicas with stale data. Driver document/collection/database mutations and driver queries now also feed the replication log (they previously never replicated at all).
+* Stream processors clear their buffered window when the source collection is truncated instead of aggregating over deleted data.
+* Materialized-view refresh reports the number of removed documents in mutation stats.
+
+### Performance
+
+* JOINs scan the joined collection once instead of once per left-side row.
+* Graph traversals without a `_from`/`_to` index build an in-memory adjacency map (one scan) instead of rescanning the edge collection for every visited vertex; `ANY`-direction traversals use the indexes when both exist.
+* Shortest-path queries scan the edge collection once per search instead of once per visited vertex.
+* Per-username role lookups are cached (30 s TTL, invalidated on grant/revoke) instead of scanning `_user_roles` on every request; driver API-key auth uses the shared O(1) key cache instead of scanning `_api_keys`.
+* Cursor store is capped at 10 000 concurrent cursors (oldest evicted); shard healing backs off exponentially (up to 5 min) when peers are unreachable; the sync worker warns loudly when an unacknowledged peer blocks log pruning.
+
 ## [0.21.2](https://github.com/solisoft/solidb/compare/v0.21.1...v0.21.2) (2026-03-24)
 
 ### Improvements

@@ -1064,6 +1064,23 @@ impl SyncWorker {
             }
         };
 
+        // A peer that is permanently offline pins `min_sent_sequence` and the
+        // log grows without bound until the disk fills. Pruning past an
+        // unacked peer would silently lose its data, so don't — but make the
+        // situation loud so an operator removes the dead peer (or runs the
+        // manual prune endpoint) before the disk fills.
+        const LAG_WARN_THRESHOLD: u64 = 1_000_000;
+        let lag = upper_bound.saturating_sub(safe_seq);
+        if lag > LAG_WARN_THRESHOLD {
+            warn!(
+                "Sync log retains {} unpruned entries because at least one peer \
+                 has not acknowledged past sequence {} (head {}). If that peer is \
+                 permanently gone, remove it from the cluster or prune manually — \
+                 the log will otherwise grow until the disk fills.",
+                lag, safe_seq, current
+            );
+        }
+
         // prune_before(N) deletes entries with sequence < N. We want to KEEP
         // up to and including safe_seq, so we pass safe_seq + 1.
         let before = safe_seq.saturating_add(1);
@@ -1195,13 +1212,27 @@ impl SyncWorker {
         let hlc = HybridLogicalClock::now(sync_log.node_id());
 
         loop {
-            // Read message header
+            // Read message header. Waiting for the FIRST byte may block
+            // indefinitely (persistent connections legitimately idle between
+            // messages), but once a message has started, the rest of the
+            // header and the payload must arrive promptly — otherwise a peer
+            // sending one byte and stalling holds the connection forever
+            // (slowloris on the replication port).
             let mut header = [0u8; 5];
-            if tokio::io::AsyncReadExt::read_exact(&mut stream, &mut header)
+            if tokio::io::AsyncReadExt::read_exact(&mut stream, &mut header[..1])
                 .await
                 .is_err()
             {
                 break;
+            }
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                tokio::io::AsyncReadExt::read_exact(&mut stream, &mut header[1..]),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {}
+                _ => break,
             }
 
             let compressed = header[0] == 1;
@@ -1212,11 +1243,14 @@ impl SyncWorker {
             }
 
             let mut data = vec![0u8; len as usize];
-            if tokio::io::AsyncReadExt::read_exact(&mut stream, &mut data)
-                .await
-                .is_err()
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(60),
+                tokio::io::AsyncReadExt::read_exact(&mut stream, &mut data),
+            )
+            .await
             {
-                break;
+                Ok(Ok(_)) => {}
+                _ => break,
             }
 
             let payload = if compressed {

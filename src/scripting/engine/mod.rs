@@ -25,6 +25,37 @@ pub use cache::ScriptCache;
 pub use pool::LuaPool;
 pub use script_index::ScriptIndex;
 
+/// Abort a script that runs past its wall-clock deadline (default 30s,
+/// override with `SOLIDB_LUA_TIMEOUT_SECS`, 0 disables). Checked every 50k
+/// VM instructions, so a `while true do end` cannot pin a pooled state (and
+/// its OS thread) forever. The caller must `lua.remove_hook()` afterwards.
+fn install_deadline_hook(lua: &Lua) {
+    static TIMEOUT_SECS: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    let timeout = *TIMEOUT_SECS.get_or_init(|| {
+        std::env::var("SOLIDB_LUA_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(30)
+    });
+    if timeout == 0 {
+        return;
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout);
+    let _ = lua.set_hook(
+        mlua::HookTriggers::new().every_nth_instruction(50_000),
+        move |_lua, _debug| {
+            if std::time::Instant::now() > deadline {
+                Err(mlua::Error::RuntimeError(format!(
+                    "script exceeded execution time limit ({}s)",
+                    timeout
+                )))
+            } else {
+                Ok(mlua::VmState::Continue)
+            }
+        },
+    );
+}
+
 /// Lua scripting engine
 pub struct ScriptEngine {
     pub(crate) storage: Arc<StorageEngine>,
@@ -188,11 +219,15 @@ impl ScriptEngine {
                 func.dump(false)
             };
 
-            // 3. Execute the bytecode
+            // 3. Execute the bytecode under a wall-clock deadline: an
+            // infinite loop in a script would otherwise pin a pooled state
+            // (and its OS thread) forever.
+            install_deadline_hook(lua);
             let chunk = lua.load(&bytecode[..]);
-            let lua_result = chunk
-                .eval::<LuaValue>()
-                .map_err(|e| DbError::InternalError(format!("Lua error: {}", e)))?;
+            let lua_result = chunk.eval::<LuaValue>();
+            lua.remove_hook();
+            let lua_result =
+                lua_result.map_err(|e| DbError::InternalError(format!("Lua error: {}", e)))?;
 
             // 4. Check for RawJson (pre-serialized) or convert to JSON
             if let LuaValue::UserData(ref ud) = lua_result {
@@ -223,6 +258,7 @@ impl ScriptEngine {
         context: &ScriptContext,
     ) -> Result<ScriptResult, DbError> {
         let lua = Lua::new();
+        LuaPool::apply_memory_limit(&lua);
 
         // Secure environment: Remove unsafe standard libraries and functions
         let globals = lua.globals();
@@ -254,10 +290,13 @@ impl ScriptEngine {
         // Set up the Lua environment
         self.setup_lua_globals(&lua, db_name, context, Some((&script.key, &script.name)))?;
 
-        // Execute the script
+        // Execute the script under the same deadline as the pooled path
+        install_deadline_hook(&lua);
         let chunk = lua.load(&script.code);
+        let eval_result = chunk.eval_async::<LuaValue>().await;
+        lua.remove_hook();
 
-        match chunk.eval_async::<LuaValue>().await {
+        match eval_result {
             Ok(result) => {
                 // Convert Lua result to JSON
                 let json_result = self.lua_to_json(&lua, result)?;

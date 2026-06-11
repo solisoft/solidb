@@ -39,6 +39,7 @@ pub struct SqlTranslateResponse {
 pub async fn execute_sql_handler(
     State(state): State<AppState>,
     Path(db): Path<String>,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
     Json(request): Json<SqlRequest>,
 ) -> Result<Json<SqlResponse>, (StatusCode, Json<SqlResponse>)> {
     // Translate SQL to SDBQL
@@ -80,12 +81,38 @@ pub async fn execute_sql_handler(
         }
     };
 
+    // The authz middleware only required Read for /sql; translated SQL can
+    // mutate (INSERT/UPDATE/DELETE), so upgrade to Write when it does.
+    if query_ast.has_mutations() {
+        if let Err(e) = crate::server::authz_middleware::enforce(
+            &claims,
+            &state,
+            crate::server::authorization::PermissionAction::Write,
+            Some(&db),
+        )
+        .await
+        {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(SqlResponse {
+                    result: Value::Null,
+                    sdbql: Some(sdbql),
+                    error: Some(e.to_string()),
+                }),
+            ));
+        }
+    }
+
     // Create executor with database context and bind variables
-    let executor = crate::sdbql::QueryExecutor::with_database_and_bind_vars(
+    let mut executor = crate::sdbql::QueryExecutor::with_database_and_bind_vars(
         &state.storage,
         db.clone(),
         request.bind_vars,
     );
+    // Mutating SQL must reach the replication log like every other write path.
+    if let Some(ref log) = state.replication_log {
+        executor = executor.with_replication(log);
+    }
 
     // Execute the query
     match executor.execute(&query_ast) {

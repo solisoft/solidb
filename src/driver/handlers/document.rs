@@ -1,5 +1,6 @@
 use crate::driver::protocol::{DriverError, Response};
 use crate::driver::DriverHandler;
+use crate::sync::protocol::Operation;
 
 pub fn handle_get(
     handler: &DriverHandler,
@@ -33,7 +34,17 @@ pub fn handle_insert(
                 }
             }
             match coll.insert(doc_data) {
-                Ok(doc) => Response::ok(doc.to_value()),
+                Ok(doc) => {
+                    let value = doc.to_value();
+                    handler.log_replication(
+                        &database,
+                        &collection,
+                        Operation::Insert,
+                        &doc.key,
+                        Some(&value),
+                    );
+                    Response::ok(value)
+                }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
             }
         }
@@ -72,7 +83,17 @@ pub fn handle_update(
             };
 
             match result {
-                Ok(doc) => Response::ok(doc.to_value()),
+                Ok(doc) => {
+                    let value = doc.to_value();
+                    handler.log_replication(
+                        &database,
+                        &collection,
+                        Operation::Update,
+                        &doc.key,
+                        Some(&value),
+                    );
+                    Response::ok(value)
+                }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
             }
         }
@@ -88,7 +109,10 @@ pub fn handle_delete(
 ) -> Response {
     match handler.get_collection(&database, &collection) {
         Ok(coll) => match coll.delete(&key) {
-            Ok(_) => Response::ok_empty(),
+            Ok(_) => {
+                handler.log_replication(&database, &collection, Operation::Delete, &key, None);
+                Response::ok_empty()
+            }
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
         Err(e) => Response::error(e),
@@ -138,7 +162,10 @@ pub fn handle_bulk_insert(
         Ok(coll) => {
             // Use batch insert for efficiency
             match coll.insert_batch(documents) {
-                Ok(docs) => Response::ok_count(docs.len()),
+                Ok(docs) => {
+                    handler.log_replication_batch(&database, &collection, Operation::Insert, &docs);
+                    Response::ok_count(docs.len())
+                }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
             }
         }

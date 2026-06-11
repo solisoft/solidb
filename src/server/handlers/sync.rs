@@ -313,6 +313,7 @@ pub async fn register_sync_session(
 /// Pull changes from server to client
 pub async fn pull_changes(
     State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, DbError> {
     let session_id = req
@@ -393,6 +394,28 @@ pub async fn pull_changes(
         filtered
     };
 
+    // Only hand out changes from databases the caller can read. The sync log
+    // spans every database on the node; without this filter any sync session
+    // receives all of them.
+    let permissions =
+        crate::server::AuthorizationService::get_effective_permissions(&claims, &state).await?;
+    let scoped = claims.scoped_databases.as_deref();
+    let mut allowed_dbs: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    let filtered: Vec<_> = filtered
+        .into_iter()
+        .filter(|e| {
+            *allowed_dbs.entry(e.database.clone()).or_insert_with(|| {
+                crate::server::authz_middleware::enforce_raw(
+                    &permissions,
+                    crate::server::PermissionAction::Read,
+                    Some(&e.database),
+                    scoped,
+                    &claims.sub,
+                )
+            })
+        })
+        .collect();
+
     // Convert LogEntry -> SyncChange
     let changes: Vec<SyncChange> = filtered.iter().map(log_entry_to_sync_change).collect();
 
@@ -441,6 +464,7 @@ pub async fn pull_changes(
 /// Push changes from client to server
 pub async fn push_changes(
     State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, DbError> {
     let session_id = req
@@ -478,12 +502,35 @@ pub async fn push_changes(
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_else(VersionVector::new);
 
+    // Per-database write permission, resolved once per distinct database.
+    let permissions =
+        crate::server::AuthorizationService::get_effective_permissions(&claims, &state).await?;
+    let scoped = claims.scoped_databases.as_deref();
+    let mut writable_dbs: std::collections::HashMap<String, bool> =
+        std::collections::HashMap::new();
+
     let conflicts: Vec<serde_json::Value> = Vec::new();
     let mut accepted = 0;
-    let rejected = 0;
+    let mut rejected = 0;
 
     // Process each change
     for change in &changes {
+        let writable = *writable_dbs
+            .entry(change.database.clone())
+            .or_insert_with(|| {
+                crate::server::authz_middleware::enforce_raw(
+                    &permissions,
+                    crate::server::PermissionAction::Write,
+                    Some(&change.database),
+                    scoped,
+                    &claims.sub,
+                )
+            });
+        if !writable {
+            rejected += 1;
+            continue;
+        }
+
         // TODO: Apply change to database and detect conflicts
         // For now, simulate acceptance
         accepted += 1;

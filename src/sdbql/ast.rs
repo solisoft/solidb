@@ -51,6 +51,25 @@ pub struct Query {
     pub body_clauses: Vec<BodyClause>,
 }
 
+impl Query {
+    /// True if executing this query writes data (INSERT/UPDATE/UPSERT/REMOVE
+    /// clauses, stream or materialized-view DDL). Used to decide whether a
+    /// principal needs Write rather than Read permission.
+    pub fn has_mutations(&self) -> bool {
+        self.body_clauses.iter().any(|clause| {
+            matches!(
+                clause,
+                BodyClause::Insert(_)
+                    | BodyClause::Update(_)
+                    | BodyClause::Upsert(_)
+                    | BodyClause::Remove(_)
+            )
+        }) || self.create_stream_clause.is_some()
+            || self.create_materialized_view_clause.is_some()
+            || self.refresh_materialized_view_clause.is_some()
+    }
+}
+
 /// A clause that can appear in the query body (preserves order for correlated subqueries)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BodyClause {

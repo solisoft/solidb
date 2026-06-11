@@ -165,7 +165,7 @@ impl ConnectionPool {
     ) -> Result<TcpStream, TransportError> {
         // If no keyfile, skip authentication
         if self.keyfile_path.is_empty() || !std::path::Path::new(&self.keyfile_path).exists() {
-            debug!("authenticate_client: no keyfile, skipping");
+            warn!("authenticate_client: no keyfile, skipping authentication — inter-node replication is unauthenticated");
             return Ok(stream);
         }
 
@@ -358,14 +358,31 @@ impl ConnectionPool {
         Ok(())
     }
 
-    /// Read a message from a stream
+    /// Read a message from a stream.
+    ///
+    /// Used for handshake challenges and request/response reads, where a
+    /// reply is expected promptly — both reads are bounded so a peer that
+    /// sends a partial header (or a length prefix and then stalls) can't
+    /// park the task and hold the connection open forever.
     pub async fn read_message<T>(stream: &mut T) -> Result<SyncMessage, TransportError>
     where
         T: tokio::io::AsyncRead + Unpin,
     {
+        let timeout_err = || {
+            TransportError::IoError(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "sync read timed out",
+            ))
+        };
+
         // Read header
         let mut header = [0u8; 5];
-        stream.read_exact(&mut header).await?;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            stream.read_exact(&mut header),
+        )
+        .await
+        .map_err(|_| timeout_err())??;
 
         let compressed = header[0] == 1;
         let len = u32::from_be_bytes([header[1], header[2], header[3], header[4]]);
@@ -376,7 +393,12 @@ impl ConnectionPool {
 
         // Read payload
         let mut data = vec![0u8; len as usize];
-        stream.read_exact(&mut data).await?;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            stream.read_exact(&mut data),
+        )
+        .await
+        .map_err(|_| timeout_err())??;
 
         // Decompress if needed
         let payload = if compressed {

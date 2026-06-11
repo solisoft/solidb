@@ -124,7 +124,8 @@ fn test_jwt_different_users() {
 #[test]
 fn test_create_livequery_jwt() {
     // Create livequery token
-    let token = AuthService::create_livequery_jwt().expect("Livequery JWT creation should succeed");
+    let token = AuthService::create_livequery_jwt("user1", Some(vec!["admin".to_string()]), None)
+        .expect("Livequery JWT creation should succeed");
 
     // Token should be non-empty
     assert!(!token.is_empty());

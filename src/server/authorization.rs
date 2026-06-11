@@ -282,18 +282,24 @@ impl AuthorizationService {
             return Ok(HashSet::new());
         }
 
-        // Load roles from DB or cache
+        // Load roles from cache (pre-seeded with the builtin roles) or DB.
+        // A missing `_system`/`_roles` collection is not an error: the cache
+        // still resolves builtin roles, and unknown role names simply grant
+        // nothing.
         let mut roles = Vec::new();
-        let db = state.storage.get_database("_system")?;
-        let roles_coll = db.get_collection(ROLES_COLLECTION)?;
+        let roles_coll = state
+            .storage
+            .get_database("_system")
+            .ok()
+            .and_then(|db| db.get_collection(ROLES_COLLECTION).ok());
 
         for role_name in &role_names {
             // Try cache first
             if let Some(role) = state.permission_cache.get_role(role_name) {
                 roles.push(role);
-            } else {
+            } else if let Some(ref coll) = roles_coll {
                 // Load from DB
-                if let Ok(doc) = roles_coll.get(role_name) {
+                if let Ok(doc) = coll.get(role_name) {
                     if let Ok(role) = serde_json::from_value::<Role>(doc.data) {
                         state.permission_cache.set_role(role.clone());
                         roles.push(role);
@@ -314,6 +320,38 @@ impl AuthorizationService {
         state.permission_cache.set(claims.sub.clone(), cached);
 
         Ok(permissions)
+    }
+
+    /// Resolve role names to permissions straight from storage, for callers
+    /// without an `AppState` (e.g. the binary driver protocol). Unknown role
+    /// names fall back to the built-in definitions so a fresh node where
+    /// `init_rbac` hasn't persisted them yet still resolves admin/editor/viewer.
+    pub fn load_permissions_from_storage(
+        storage: &crate::storage::StorageEngine,
+        role_names: &[String],
+    ) -> HashSet<Permission> {
+        let mut roles = Vec::new();
+        let roles_coll = storage
+            .get_database("_system")
+            .ok()
+            .and_then(|db| db.get_collection(ROLES_COLLECTION).ok());
+
+        for role_name in role_names {
+            let stored = roles_coll
+                .as_ref()
+                .and_then(|coll| coll.get(role_name).ok())
+                .and_then(|doc| serde_json::from_value::<Role>(doc.data).ok());
+            if let Some(role) = stored {
+                roles.push(role);
+            } else if let Some(builtin) = Role::builtin_roles()
+                .into_iter()
+                .find(|r| &r.name == role_name)
+            {
+                roles.push(builtin);
+            }
+        }
+
+        Self::resolve_permissions(&roles)
     }
 
     /// Check if a user (from Claims) has permission for an action
@@ -348,13 +386,26 @@ impl AuthorizationService {
         database: Option<&str>,
         scoped_databases: Option<&[String]>,
     ) -> DbResult<()> {
-        // Check database scope restriction (for API keys)
-        if let (Some(scoped_dbs), Some(db)) = (scoped_databases, database) {
-            if !scoped_dbs.iter().any(|d| d == db) {
-                return Err(DbError::Forbidden(format!(
-                    "Access denied: API key not authorized for database '{}'",
-                    db
-                )));
+        // Check database scope restriction (for API keys). A scoped key is
+        // confined to its databases: global operations (database == None,
+        // e.g. create/delete database, role and API-key management) are
+        // denied outright — otherwise a db-scoped admin key could escalate
+        // by minting unscoped keys or deleting other databases.
+        if let Some(scoped_dbs) = scoped_databases {
+            match database {
+                Some(db) if scoped_dbs.iter().any(|d| d == db) => {}
+                Some(db) => {
+                    return Err(DbError::Forbidden(format!(
+                        "Access denied: API key not authorized for database '{}'",
+                        db
+                    )));
+                }
+                None => {
+                    return Err(DbError::Forbidden(
+                        "Access denied: database-scoped API key cannot perform global operations"
+                            .to_string(),
+                    ));
+                }
             }
         }
 
@@ -538,6 +589,49 @@ mod tests {
             Some(&scoped_dbs)
         )
         .is_err());
+    }
+
+    #[test]
+    fn test_scoped_key_denied_global_operations() {
+        // Even a scoped key carrying global admin must not perform global
+        // operations (create/delete database, role management, key minting).
+        let mut permissions = HashSet::new();
+        permissions.insert(Permission::global_admin());
+
+        let scoped_dbs = vec!["db1".to_string()];
+
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Admin,
+            None,
+            Some(&scoped_dbs)
+        )
+        .is_err());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Read,
+            None,
+            Some(&scoped_dbs)
+        )
+        .is_err());
+
+        // Inside its scope the key still works, including admin actions.
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Admin,
+            Some("db1"),
+            Some(&scoped_dbs)
+        )
+        .is_ok());
+
+        // Unscoped principals are unaffected by the global-op rule.
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Admin,
+            None,
+            None
+        )
+        .is_ok());
     }
 
     #[test]

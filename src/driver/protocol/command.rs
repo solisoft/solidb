@@ -514,3 +514,184 @@ pub enum Command {
 fn default_true() -> bool {
     true
 }
+
+impl Command {
+    /// Database this command targets, when it carries one. Global commands
+    /// (database/role/user/key/cluster management) return `None`.
+    pub fn database(&self) -> Option<&str> {
+        use Command::*;
+        match self {
+            ListCollections { database }
+            | CreateCollection { database, .. }
+            | DeleteCollection { database, .. }
+            | CollectionStats { database, .. }
+            | Get { database, .. }
+            | Insert { database, .. }
+            | Update { database, .. }
+            | Delete { database, .. }
+            | List { database, .. }
+            | Query { database, .. }
+            | Explain { database, .. }
+            | CreateIndex { database, .. }
+            | DeleteIndex { database, .. }
+            | ListIndexes { database, .. }
+            | BeginTransaction { database, .. }
+            | BulkInsert { database, .. }
+            | CreateScript { database, .. }
+            | ListScripts { database }
+            | GetScript { database, .. }
+            | UpdateScript { database, .. }
+            | DeleteScript { database, .. }
+            | ListQueues { database }
+            | ListJobs { database, .. }
+            | EnqueueJob { database, .. }
+            | CancelJob { database, .. }
+            | ListCronJobs { database }
+            | CreateCronJob { database, .. }
+            | UpdateCronJob { database, .. }
+            | DeleteCronJob { database, .. }
+            | ListTriggers { database }
+            | ListCollectionTriggers { database, .. }
+            | CreateTrigger { database, .. }
+            | GetTrigger { database, .. }
+            | UpdateTrigger { database, .. }
+            | DeleteTrigger { database, .. }
+            | ToggleTrigger { database, .. }
+            | ListEnvVars { database }
+            | SetEnvVar { database, .. }
+            | DeleteEnvVar { database, .. }
+            | ClusterReshard { database, .. }
+            | TruncateCollection { database, .. }
+            | CompactCollection { database, .. }
+            | PruneCollection { database, .. }
+            | RecountCollection { database, .. }
+            | RepairCollection { database, .. }
+            | GetCollectionSharding { database, .. }
+            | ExportCollection { database, .. }
+            | ImportCollection { database, .. }
+            | SetCollectionSchema { database, .. }
+            | GetCollectionSchema { database, .. }
+            | DeleteCollectionSchema { database, .. }
+            | RebuildIndexes { database, .. }
+            | HybridSearch { database, .. }
+            | CreateGeoIndex { database, .. }
+            | ListGeoIndexes { database, .. }
+            | DeleteGeoIndex { database, .. }
+            | GeoNear { database, .. }
+            | GeoWithin { database, .. }
+            | CreateVectorIndex { database, .. }
+            | ListVectorIndexes { database, .. }
+            | DeleteVectorIndex { database, .. }
+            | VectorSearch { database, .. }
+            | QuantizeVectorIndex { database, .. }
+            | DequantizeVectorIndex { database, .. }
+            | CreateTtlIndex { database, .. }
+            | ListTtlIndexes { database, .. }
+            | DeleteTtlIndex { database, .. }
+            | CreateColumnar { database, .. }
+            | ListColumnar { database }
+            | GetColumnar { database, .. }
+            | DeleteColumnar { database, .. }
+            | InsertColumnar { database, .. }
+            | AggregateColumnar { database, .. }
+            | QueryColumnar { database, .. }
+            | CreateColumnarIndex { database, .. }
+            | ListColumnarIndexes { database, .. }
+            | DeleteColumnarIndex { database, .. } => Some(database),
+            TransactionCommand { command, .. } => command.database(),
+            _ => None,
+        }
+    }
+
+    /// Permission this command requires, mirroring the HTTP authz
+    /// middleware's mapping (reads → Read; mutations → Write; truncate /
+    /// drop-collection and global management commands → Admin).
+    /// Returns `None` for commands exempt from the per-command check:
+    /// Auth/Ping, Batch (inner commands are re-dispatched individually),
+    /// commit/rollback (their mutations were checked when issued), and
+    /// self-introspection.
+    pub fn required_action(&self) -> Option<crate::server::authorization::PermissionAction> {
+        use crate::server::authorization::PermissionAction as A;
+        use Command::*;
+        match self {
+            Auth { .. }
+            | Ping
+            | Batch { .. }
+            | CommitTransaction { .. }
+            | RollbackTransaction { .. }
+            | GetCurrentUser
+            | GetCurrentUserPermissions => None,
+
+            TransactionCommand { command, .. } => command.required_action(),
+
+            // Reads. Mutating SDBQL via `Query` is upgraded to Write in
+            // `handle_query`, same as the HTTP /cursor endpoint.
+            ListDatabases
+            | ListCollections { .. }
+            | CollectionStats { .. }
+            | Get { .. }
+            | List { .. }
+            | Query { .. }
+            | Explain { .. }
+            | ListIndexes { .. }
+            | ListScripts { .. }
+            | GetScript { .. }
+            | GetScriptStats
+            | ListQueues { .. }
+            | ListJobs { .. }
+            | ListCronJobs { .. }
+            | ListTriggers { .. }
+            | ListCollectionTriggers { .. }
+            | GetTrigger { .. }
+            | ListEnvVars { .. }
+            | GetCollectionSharding { .. }
+            | ExportCollection { .. }
+            | GetCollectionSchema { .. }
+            | HybridSearch { .. }
+            | ListGeoIndexes { .. }
+            | GeoNear { .. }
+            | GeoWithin { .. }
+            | ListVectorIndexes { .. }
+            | VectorSearch { .. }
+            | ListTtlIndexes { .. }
+            | ListColumnar { .. }
+            | GetColumnar { .. }
+            | AggregateColumnar { .. }
+            | QueryColumnar { .. }
+            | ListColumnarIndexes { .. } => Some(A::Read),
+
+            // Irreversible bulk destruction — Admin, same as HTTP
+            TruncateCollection { .. } | DeleteCollection { .. } | DeleteColumnar { .. } => {
+                Some(A::Admin)
+            }
+
+            // Global management commands — Admin (and denied outright for
+            // database-scoped API keys since database() is None)
+            CreateDatabase { .. }
+            | DeleteDatabase { .. }
+            | ListRoles
+            | CreateRole { .. }
+            | GetRole { .. }
+            | UpdateRole { .. }
+            | DeleteRole { .. }
+            | ListUsers
+            | CreateUser { .. }
+            | DeleteUser { .. }
+            | GetUserRoles { .. }
+            | AssignRole { .. }
+            | RevokeRole { .. }
+            | ListApiKeys
+            | CreateApiKey { .. }
+            | DeleteApiKey { .. }
+            | ClusterStatus
+            | ClusterInfo
+            | ClusterRemoveNode { .. }
+            | ClusterRebalance
+            | ClusterCleanup
+            | ClusterReshard { .. } => Some(A::Admin),
+
+            // Everything else writes data
+            _ => Some(A::Write),
+        }
+    }
+}

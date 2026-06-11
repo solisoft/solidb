@@ -1009,6 +1009,14 @@ pub fn create_router(
         .route("/_api/sync/ack", post(acknowledge_changes))
         .route("/_api/sync/conflicts", get(list_conflicts))
         .route("/_api/sync/resolve", post(resolve_conflict))
+        // Per-database authorization. Added BEFORE the auth layer so that
+        // auth (added last = outermost) runs first and provides Claims.
+        // Routes without a {db} path param pass through and rely on their
+        // handlers' own permission checks.
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::server::authz_middleware::db_authz_middleware,
+        ))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::server::auth::auth_middleware,

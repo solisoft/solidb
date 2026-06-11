@@ -402,8 +402,16 @@ pub struct LiveQueryTokenResponse {
 /// This endpoint requires authentication (regular JWT or API key).
 /// The returned token is valid for 30 seconds - just enough to establish a WebSocket connection.
 /// This allows clients to connect to live queries without exposing long-lived admin tokens.
-pub async fn livequery_token_handler() -> Result<Json<LiveQueryTokenResponse>, DbError> {
-    let token = crate::server::auth::AuthService::create_livequery_jwt()?;
+pub async fn livequery_token_handler(
+    Extension(claims): Extension<crate::server::auth::Claims>,
+) -> Result<Json<LiveQueryTokenResponse>, DbError> {
+    // The short-lived token inherits the requester's identity, roles and
+    // database scope so WebSocket subscription authz applies to it.
+    let token = crate::server::auth::AuthService::create_livequery_jwt(
+        &claims.sub,
+        claims.roles.clone(),
+        claims.scoped_databases.clone(),
+    )?;
     Ok(Json(LiveQueryTokenResponse {
         token,
         expires_in: 2,

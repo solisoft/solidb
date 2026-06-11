@@ -9,15 +9,37 @@ pub fn handle_list_databases(handler: &DriverHandler) -> Response {
 }
 
 pub fn handle_create_database(handler: &DriverHandler, name: String) -> Response {
-    match handler.storage.create_database(name) {
-        Ok(_) => Response::ok_empty(),
+    match handler.storage.create_database(name.clone()) {
+        Ok(_) => {
+            if let Some(ref log) = handler.replication {
+                log.append(crate::sync::log::LogEntry::new_op(
+                    name,
+                    "",
+                    crate::sync::protocol::Operation::CreateDatabase,
+                    "",
+                    None,
+                ));
+            }
+            Response::ok_empty()
+        }
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
     }
 }
 
 pub fn handle_delete_database(handler: &DriverHandler, name: String) -> Response {
     match handler.storage.delete_database(&name) {
-        Ok(_) => Response::ok_empty(),
+        Ok(_) => {
+            if let Some(ref log) = handler.replication {
+                log.append(crate::sync::log::LogEntry::new_op(
+                    name,
+                    "",
+                    crate::sync::protocol::Operation::DeleteDatabase,
+                    "",
+                    None,
+                ));
+            }
+            Response::ok_empty()
+        }
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
     }
 }
@@ -39,8 +61,23 @@ pub fn handle_create_collection(
     collection_type: Option<String>,
 ) -> Response {
     match handler.storage.get_database(&database) {
-        Ok(db) => match db.create_collection(name, collection_type) {
-            Ok(_) => Response::ok_empty(),
+        Ok(db) => match db.create_collection(name.clone(), collection_type.clone()) {
+            Ok(_) => {
+                if let Some(ref log) = handler.replication {
+                    let metadata = serde_json::json!({
+                        "type": collection_type.unwrap_or_else(|| "document".to_string()),
+                        "shardConfig": None::<serde_json::Value>,
+                    });
+                    log.append(crate::sync::log::LogEntry::new_op(
+                        database,
+                        name,
+                        crate::sync::protocol::Operation::CreateCollection,
+                        "",
+                        serde_json::to_vec(&metadata).ok(),
+                    ));
+                }
+                Response::ok_empty()
+            }
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -54,7 +91,18 @@ pub fn handle_delete_collection(
 ) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => match db.delete_collection(&name) {
-            Ok(_) => Response::ok_empty(),
+            Ok(_) => {
+                if let Some(ref log) = handler.replication {
+                    log.append(crate::sync::log::LogEntry::new_op(
+                        database,
+                        name,
+                        crate::sync::protocol::Operation::DeleteCollection,
+                        "",
+                        None,
+                    ));
+                }
+                Response::ok_empty()
+            }
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -85,7 +133,16 @@ pub fn handle_truncate_collection(
 ) -> Response {
     match handler.get_collection(&database, &collection) {
         Ok(coll) => match coll.truncate() {
-            Ok(_) => Response::ok_empty(),
+            Ok(_) => {
+                // Same rule as the HTTP handler: replicas must replay the
+                // truncate or they keep the old documents forever.
+                if !crate::server::handlers::system::is_physical_shard_collection(&collection) {
+                    if let Some(ref log) = handler.replication {
+                        log.log_truncate(&database, &collection);
+                    }
+                }
+                Response::ok_empty()
+            }
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
         Err(e) => Response::error(e),
@@ -142,7 +199,15 @@ pub fn handle_import_collection(
 ) -> Response {
     match handler.get_collection(&database, &collection) {
         Ok(coll) => match coll.insert_batch(documents) {
-            Ok(docs) => Response::ok_count(docs.len()),
+            Ok(docs) => {
+                handler.log_replication_batch(
+                    &database,
+                    &collection,
+                    crate::sync::protocol::Operation::Insert,
+                    &docs,
+                );
+                Response::ok_count(docs.len())
+            }
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
         Err(e) => Response::error(e),

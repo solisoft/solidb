@@ -244,16 +244,28 @@ pub async fn ws_changefeed_handler(
             )
     };
 
-    // If not cluster-internal, validate the JWT token
-    if !is_cluster_internal
-        && crate::server::auth::AuthService::validate_token(&params.token).is_err()
-    {
-        return Response::builder()
-            .status(StatusCode::UNAUTHORIZED)
-            .body(Body::empty())
-            .expect("Valid status code should not fail")
-            .into_response();
-    }
+    // If not cluster-internal, validate the JWT token. Keep the claims:
+    // each subscription is authorized against the database it targets.
+    let claims = if is_cluster_internal {
+        crate::server::auth::Claims {
+            sub: "cluster-internal".to_string(),
+            exp: usize::MAX,
+            livequery: None,
+            roles: Some(vec!["admin".to_string()]),
+            scoped_databases: None,
+        }
+    } else {
+        match crate::server::auth::AuthService::validate_token(&params.token) {
+            Ok(claims) => claims,
+            Err(_) => {
+                return Response::builder()
+                    .status(StatusCode::UNAUTHORIZED)
+                    .body(Body::empty())
+                    .expect("Valid status code should not fail")
+                    .into_response();
+            }
+        }
+    };
 
     if validate_ws_origin(&headers).is_err() {
         return forbidden_response();
@@ -262,10 +274,15 @@ pub async fn ws_changefeed_handler(
     // Check if HTMX mode is requested
     let use_htmx = params.htmx.map(|s| s == "true").unwrap_or(false);
 
-    ws.on_upgrade(move |socket| handle_socket(socket, state, use_htmx))
+    ws.on_upgrade(move |socket| handle_socket(socket, state, claims, use_htmx))
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState, use_htmx: bool) {
+async fn handle_socket(
+    socket: WebSocket,
+    state: AppState,
+    claims: crate::server::auth::Claims,
+    use_htmx: bool,
+) {
     // Split socket into sender and receiver
     let (mut sender, mut receiver) = socket.split();
 
@@ -341,19 +358,29 @@ async fn handle_socket(socket: WebSocket, state: AppState, use_htmx: bool) {
                     Ok(req) if req.type_ == "subscribe" => {
                         let tx_clone = tx.clone();
                         let state_clone = state.clone();
+                        let claims_clone = claims.clone();
 
                         // Spawn a dedicated task for this subscription
                         tokio::spawn(async move {
-                            handle_subscribe_request(req, state_clone, tx_clone, use_htmx).await;
+                            handle_subscribe_request(
+                                req,
+                                state_clone,
+                                claims_clone,
+                                tx_clone,
+                                use_htmx,
+                            )
+                            .await;
                         });
                     }
                     Ok(req) if req.type_ == "live_query" => {
                         let tx_clone = tx.clone();
                         let state_clone = state.clone();
+                        let claims_clone = claims.clone();
 
                         // Spawn a dedicated task for this live query
                         tokio::spawn(async move {
-                            handle_live_query_request(req, state_clone, tx_clone).await;
+                            handle_live_query_request(req, state_clone, claims_clone, tx_clone)
+                                .await;
                         });
                     }
                     _ => {
@@ -388,10 +415,29 @@ async fn handle_socket(socket: WebSocket, state: AppState, use_htmx: bool) {
 async fn handle_subscribe_request(
     req: ChangefeedRequest,
     state: AppState,
+    claims: crate::server::auth::Claims,
     tx: tokio::sync::mpsc::Sender<Message>,
     use_htmx: bool,
 ) {
     let db_name = req.database.clone().unwrap_or("_system".to_string());
+
+    // A changefeed exposes every document change in the collection; require
+    // read permission on the target database before subscribing.
+    if let Err(e) = crate::server::authz_middleware::enforce(
+        &claims,
+        &state,
+        crate::server::authorization::PermissionAction::Read,
+        Some(&db_name),
+    )
+    .await
+    {
+        let mut response = serde_json::json!({ "error": e.to_string() });
+        if let Some(req_id) = &req.id {
+            response["id"] = serde_json::Value::String(req_id.clone());
+        }
+        let _ = tx.send(Message::Text(response.to_string().into())).await;
+        return;
+    }
 
     let coll_name = match req.collection.clone() {
         Some(c) => c,
@@ -616,11 +662,13 @@ async fn handle_subscribe_request(
                         ChangeType::Insert => "INSERT",
                         ChangeType::Update => "UPDATE",
                         ChangeType::Delete => "DELETE",
+                        ChangeType::Truncate => "TRUNCATE",
                     };
                     let status_class = match event.type_ {
                         ChangeType::Insert => "bg-success/10 text-success",
                         ChangeType::Update => "bg-warning/10 text-warning",
                         ChangeType::Delete => "bg-error/10 text-error",
+                        ChangeType::Truncate => "bg-error/10 text-error",
                     };
                     let data_str = event
                         .data
@@ -678,10 +726,29 @@ async fn handle_subscribe_request(
 async fn handle_live_query_request(
     req: ChangefeedRequest,
     state: AppState,
+    claims: crate::server::auth::Claims,
     tx: tokio::sync::mpsc::Sender<Message>,
 ) {
     if let Some(query_str) = req.query {
         let db_name = req.database.clone().unwrap_or("_system".to_string());
+
+        // Live queries re-execute against the database on every change;
+        // require read permission before registering the subscription.
+        if let Err(e) = crate::server::authz_middleware::enforce(
+            &claims,
+            &state,
+            crate::server::authorization::PermissionAction::Read,
+            Some(&db_name),
+        )
+        .await
+        {
+            let mut response = serde_json::json!({ "error": e.to_string() });
+            if let Some(req_id) = &req.id {
+                response["id"] = serde_json::Value::String(req_id.clone());
+            }
+            let _ = tx.send(Message::Text(response.to_string().into())).await;
+            return;
+        }
 
         // 1. Parse query to identify dependencies
         match crate::sdbql::parser::parse(&query_str) {
