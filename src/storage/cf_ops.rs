@@ -68,7 +68,9 @@ mod tests {
         timed(|| ());
         let after = snapshot();
 
-        assert_eq!(before.ops_since(&after), 2);
+        // Counters are process-wide statics, so other tests running in
+        // parallel may also bump them. Assert at least our two calls landed.
+        assert!(before.ops_since(&after) >= 2);
         assert!(before.ms_since(&after) >= 5.0);
     }
 }
