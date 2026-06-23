@@ -379,7 +379,11 @@ pub async fn login_handler(
 
     // 6. Verify password
     if !crate::server::auth::AuthService::verify_password(&req.password, &user.password_hash) {
-        tracing::warn!("Password verification failed for user '{}'", req.username);
+        tracing::warn!(
+            "Password verification failed for user '{}' from {}",
+            req.username,
+            client_ip
+        );
         return Err(DbError::BadRequest("Invalid credentials".to_string()));
     }
 
