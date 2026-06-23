@@ -95,11 +95,15 @@ class MaterializedViewsController < Controller
     # No _views collection yet just means no views were ever created.
     @views = result["ok"] ? ((result["data"] ?? {})["result"] ?? []) : []
     counts = {}
+    names = []
     collections_result = SolidbClient.get_api(SolidbEndpoints.collections(@db))
     for coll in ((collections_result["data"] ?? {})["collections"] ?? [])
-      counts[coll["name"] ?? ""] = coll["count"] ?? 0
+      coll_name = coll["name"] ?? ""
+      counts[coll_name] = coll["count"] ?? 0
+      names.push(coll_name) unless coll_name.blank?
     end
     @view_counts = counts
+    @collection_names = names
   end
 
   def _reset_banners

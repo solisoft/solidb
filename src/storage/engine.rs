@@ -16,19 +16,90 @@ use crate::transaction::manager::TransactionManager;
 /// Metadata column family name
 pub(crate) const META_CF: &str = "_meta";
 
+/// Process-wide RocksDB memory/tuning profile.
+///
+/// Memory in RocksDB is dominated by per-CF structures (memtables, pinned
+/// index/filter blocks). SoliDB maps one collection to one column family, so
+/// on instances with thousands of collections (typically dev boxes that have
+/// accumulated test/app databases) total RAM scales with the CF count. The
+/// `dev` profile shrinks per-CF buffers and adds a *global* memtable budget so
+/// idle CFs stop adding up. Prod keeps the throughput-oriented defaults.
+#[derive(Clone, Copy, Debug)]
+pub struct EngineProfile {
+    /// Shared LRU block cache size (bytes).
+    pub block_cache_bytes: usize,
+    /// Per-CF memtable size (bytes).
+    pub write_buffer_size: usize,
+    /// Max memtables kept in memory per CF before flush.
+    pub max_write_buffer_number: i32,
+    /// Global cap on total memtable memory across ALL CFs (bytes).
+    /// `None` leaves it unbounded (RocksDB default).
+    pub db_write_buffer_size: Option<usize>,
+    /// Background compaction/flush threads.
+    pub max_background_jobs: i32,
+    /// Open-file (table cache) limit; `-1` = unlimited.
+    pub max_open_files: i32,
+    /// Store index/filter blocks in the (bounded) block cache instead of
+    /// pinning them per-CF. Caps index/filter RAM at the price of some reads.
+    pub cache_index_and_filter_blocks: bool,
+}
+
+impl EngineProfile {
+    /// Throughput-oriented defaults (production).
+    pub const fn prod() -> Self {
+        Self {
+            block_cache_bytes: 512 * 1024 * 1024,
+            write_buffer_size: 64 * 1024 * 1024,
+            max_write_buffer_number: 3,
+            db_write_buffer_size: None,
+            max_background_jobs: 6,
+            max_open_files: -1,
+            cache_index_and_filter_blocks: false,
+        }
+    }
+
+    /// Low-memory profile for dev boxes with many idle column families.
+    pub const fn dev() -> Self {
+        Self {
+            block_cache_bytes: 128 * 1024 * 1024,
+            write_buffer_size: 8 * 1024 * 1024,
+            max_write_buffer_number: 2,
+            db_write_buffer_size: Some(128 * 1024 * 1024),
+            max_background_jobs: 2,
+            max_open_files: 512,
+            cache_index_and_filter_blocks: true,
+        }
+    }
+}
+
+static PROFILE: OnceLock<EngineProfile> = OnceLock::new();
+
+/// Select the process-wide engine profile. Must be called once, before the
+/// first `StorageEngine` is constructed (i.e. before the block cache and any
+/// CF options are built). Later calls are ignored.
+pub fn set_engine_profile(profile: EngineProfile) {
+    let _ = PROFILE.set(profile);
+}
+
+/// The active engine profile (defaults to `prod` if never set).
+pub(crate) fn profile() -> EngineProfile {
+    *PROFILE.get_or_init(EngineProfile::prod)
+}
+
 /// Shared block cache used by all column families (and all DB instances).
 /// Without an explicit table factory, each CF gets its own private default
 /// cache and no bloom filter — with thousands of CFs that wastes memory and
 /// bypasses the cache/bloom tuning entirely.
 fn shared_block_cache() -> &'static Cache {
     static CACHE: OnceLock<Cache> = OnceLock::new();
-    CACHE.get_or_init(|| Cache::new_lru_cache(512 * 1024 * 1024))
+    CACHE.get_or_init(|| Cache::new_lru_cache(profile().block_cache_bytes))
 }
 
 /// Create optimized column family options
 /// Used for ALL column families — including those created via `Database` —
 /// to ensure consistent compression, caching, and performance settings
 pub(crate) fn tuned_cf_options() -> Options {
+    let p = profile();
     let mut opts = Options::default();
 
     // Enable LZ4 compression for this column family
@@ -39,9 +110,9 @@ pub(crate) fn tuned_cf_options() -> Options {
     opts.set_target_file_size_base(64 * 1024 * 1024); // 64MB base file size
     opts.set_target_file_size_multiplier(2);
 
-    // Write buffer settings
-    opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB memtable
-    opts.set_max_write_buffer_number(3);
+    // Write buffer settings (per-CF memtable; profile-tuned)
+    opts.set_write_buffer_size(p.write_buffer_size);
+    opts.set_max_write_buffer_number(p.max_write_buffer_number);
     opts.set_min_write_buffer_number_to_merge(1);
 
     // Optimize for SSD storage - parallel compactions
@@ -51,6 +122,12 @@ pub(crate) fn tuned_cf_options() -> Options {
     let mut block_opts = BlockBasedOptions::default();
     block_opts.set_block_cache(shared_block_cache());
     block_opts.set_bloom_filter(10.0, false);
+    if p.cache_index_and_filter_blocks {
+        // Bound index/filter RAM by storing those blocks in the shared cache
+        // rather than pinning them per-CF (matters with thousands of CFs).
+        block_opts.set_cache_index_and_filter_blocks(true);
+        block_opts.set_pin_l0_filter_and_index_blocks_in_cache(true);
+    }
     opts.set_block_based_table_factory(&block_opts);
 
     opts
@@ -128,15 +205,28 @@ impl StorageEngine {
         block_opts.set_bloom_filter(10.0, false);
         opts.set_block_based_table_factory(&block_opts);
 
+        let p = profile();
+
         // Write buffer settings - larger memtable reduces flush frequency
-        // Better for write-heavy workloads
-        opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB memtable
-        opts.set_max_write_buffer_number(4);
+        // Better for write-heavy workloads (profile-tuned)
+        opts.set_write_buffer_size(p.write_buffer_size);
+        opts.set_max_write_buffer_number(p.max_write_buffer_number + 1);
         opts.set_min_write_buffer_number_to_merge(1);
 
+        // Global cap on total memtable memory across ALL column families.
+        // The single most effective knob when CF count is large: without it,
+        // memtable RAM scales with the number of CFs.
+        if let Some(budget) = p.db_write_buffer_size {
+            opts.set_db_write_buffer_size(budget);
+        }
+
+        // Bound the table cache (pinned index/filter blocks scale with open
+        // SST files, which scale with CF count).
+        opts.set_max_open_files(p.max_open_files);
+
         // Background jobs - more threads for compaction/flushing
-        // Improves write throughput under heavy load
-        opts.set_max_background_jobs(6);
+        // Improves write throughput under heavy load (profile-tuned)
+        opts.set_max_background_jobs(p.max_background_jobs);
         opts.set_max_subcompactions(4);
 
         // Target file size for better compaction behavior

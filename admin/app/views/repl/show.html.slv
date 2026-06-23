@@ -61,6 +61,7 @@
     <div>
       <label class="console-label" for="repl-code">lua</label>
       <textarea id="repl-code" name="code" rows="5" spellcheck="false"
+                data-editor="lua" data-editor-height="140px" data-editor-submit="#repl-run-btn"
                 placeholder="local docs = db:query('FOR d IN users LIMIT 3 RETURN d')&#10;return #docs"
                 class="console-input mt-1 resize-y font-mono text-[13px] leading-relaxed"></textarea>
     </div>
@@ -74,16 +75,9 @@
   </form>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
-<script src="<%= public_path("js/admin-editor.js") %>"></script>
 <script>
-  AdminEditor.mount(document.getElementById("repl-code"), {
-    language: "lua",
-    height: "140px",
-    onCtrlEnter: function () {
-      window.htmx && htmx.trigger("#repl-run-btn", "click");
-    }
-  });
+  // #repl-code is mounted by AdminEditor.autoMount (wired in the layout) from
+  // its data-editor attributes — nothing to mount here.
 
   // A successful eval clears the input (classic REPL feel) and removes the
   // empty-state placeholder.

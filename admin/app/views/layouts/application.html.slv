@@ -73,6 +73,10 @@
   <script defer src="<%= public_path("js/admin-json.js") %>"></script>
   <script defer src="<%= public_path("js/admin-drop.js") %>"></script>
   <script defer src="<%= public_path("js/admin-nav-keys.js") %>"></script>
+  <%# Monaco editors: bootstrap lives here (not on the page) so it survives
+      SPA-style navigation and auto-mounts any textarea[data-editor] on every
+      nav event. The Monaco loader itself is lazy-injected only when needed. %>
+  <script defer src="<%= public_path("js/admin-editor.js") %>"></script>
 
   <%# PWA service worker: offline fallback page + cached static assets. Page
       HTML is never cached (live data behind auth) - see public/sw.js. %>

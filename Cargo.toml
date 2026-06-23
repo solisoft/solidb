@@ -183,6 +183,14 @@ inherits = "release"
 tokio-test = "0.4"
 solidb-client = { path = "clients/rust-client" }
 
+# Memory allocator: jemalloc fragments far less than glibc malloc and returns
+# freed memory to the OS. With one column family per collection plus many
+# Tokio/RocksDB threads, glibc's per-thread arenas pin RSS at the allocation
+# high-water mark (multi-GB) long after the memory is freed; jemalloc keeps
+# RSS tracking the actual working set. Not used under MSVC (Windows).
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.6"
+
 [features]
 fuse = ["dep:fuser"]
 

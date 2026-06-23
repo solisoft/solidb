@@ -50,16 +50,28 @@ window.AdminJson = (function () {
 
   var styleEl = document.createElement("style");
   styleEl.textContent = STYLE;
-  document.head.appendChild(styleEl);
+  // nav.js wipes <head> styles during swap(), so re-attach if it's gone --
+  // otherwise the re-highlighted spans render with no colors after a nav.
+  function restoreStyle() {
+    if (!styleEl.isConnected) document.head.appendChild(styleEl);
+  }
+  restoreStyle();
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () { scan(document); });
   } else {
     scan(document);
   }
+  // Soli's instant-nav (src/serve/nav.js) swaps <body> and fires `soli:load`
+  // after each client-side navigation (e.g. paging to the next page of docs)
+  // -- without this the new page's .json-view nodes stay raw until a refresh.
+  // htmx:* / turbo:* are kept so the same bundle works under those stacks too.
+  document.addEventListener("soli:load", function () { restoreStyle(); scan(document); });
   document.addEventListener("htmx:afterSwap", function (evt) {
+    restoreStyle();
     scan(evt.target || document);
   });
+  document.addEventListener("turbo:load", function () { restoreStyle(); scan(document); });
 
   return { scan: scan, render: render };
 })();

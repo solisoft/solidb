@@ -73,4 +73,33 @@ describe("CronController") do
       assert_contains(res_body(response), "params must be a JSON object")
     end
   end
+
+  describe("ApiList.normalize") do
+    # Older SoliDB builds return list rows as arrays instead of objects; the
+    # cron view indexes cron["_key"], so a raw array row would 500 the page.
+    test("passes modern object rows through unchanged") do
+      rows = ApiList.normalize(
+        [{ "_key": "c1", "name": "nightly", "cron_expression": "0 2 * * *" }])
+      assert_eq(rows[0]["_key"], "c1")
+      assert_eq(rows[0]["name"], "nightly")
+    end
+
+    test("coerces legacy [key, object] array rows and keeps every field") do
+      rows = ApiList.normalize(
+        JSON.parse("[[\"c2\", {\"name\": \"hourly\", \"cron_expression\": \"0 * * * *\", \"queue\": \"q\"}]]"))
+      assert_eq(rows[0]["_key"], "c2")
+      assert_eq(rows[0]["name"], "hourly")
+      assert_eq(rows[0]["cron_expression"], "0 * * * *")
+    end
+
+    test("returns an empty hash for an unusable row, never a crash") do
+      rows = ApiList.normalize(JSON.parse("[[1, 2, 3]]"))
+      assert_eq(rows.length(), 1)
+      assert_eq(rows[0]["_key"] ?? "", "")
+    end
+
+    test("returns an empty list for a non-array payload") do
+      assert_eq(ApiList.normalize(null).length(), 0)
+    end
+  end
 end

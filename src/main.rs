@@ -1,3 +1,10 @@
+// Use jemalloc instead of the system (glibc) allocator. RocksDB + many threads
+// make glibc's per-thread arenas pin RSS at the high-water mark; jemalloc keeps
+// RSS tracking the actual working set and returns freed memory to the OS.
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 use clap::{Parser, Subcommand};
 use solidb::server::multiplex::{ChannelListener, PeekedStream};
 use solidb::{cluster::ClusterConfig, create_router, scripting::ScriptStats, StorageEngine};
@@ -61,6 +68,13 @@ struct Args {
     /// WARNING: never set this on a node that participates in replication.
     #[arg(long)]
     no_sync_log: bool,
+
+    /// Use the low-memory storage profile. Shrinks per-CF memtables, adds a
+    /// global memtable budget, caps open files, and stores index/filter
+    /// blocks in the bounded block cache. Intended for dev boxes with many
+    /// idle collections; trades some throughput for much lower RAM.
+    #[arg(long)]
+    dev: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -244,6 +258,16 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
             "No cluster keyfile configured: replication and cluster ports accept \
              unauthenticated connections. Set --keyfile before adding peers."
         );
+    }
+
+    // Select the RocksDB memory/tuning profile BEFORE constructing the engine
+    // (the shared block cache and CF options are built lazily on first use).
+    use solidb::storage::engine::{set_engine_profile, EngineProfile};
+    if args.dev {
+        set_engine_profile(EngineProfile::dev());
+        tracing::info!("Storage profile: dev (low-memory)");
+    } else {
+        set_engine_profile(EngineProfile::prod());
     }
 
     let storage = StorageEngine::with_cluster_config(&args.data_dir, cluster_config.clone())?;

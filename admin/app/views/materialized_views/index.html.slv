@@ -22,6 +22,7 @@
       <template> content. %>
   <template x-teleport="body">
   <div x-show="creating" x-cloak x-init="htmx.process($el)"
+       x-effect="creating && $nextTick(() => { if (!window.AdminEditor) return; try { AdminEditor.setCollections(JSON.parse($refs.queryEditor.dataset.editorCollections || '[]')); } catch (e) {} AdminEditor.mountOnce($refs.queryEditor, { language: 'sdbql', height: '180px' }); })"
        class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto overscroll-contain p-4 pt-16">
     <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="creating = false"></div>
     <form class="relative w-full max-w-2xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
@@ -42,7 +43,8 @@
         </div>
         <div>
           <label class="console-label" for="view-query">query <span class="text-zinc-700">— the AS part, plain SDBQL</span></label>
-          <textarea id="view-query" name="query" rows="6" spellcheck="false"
+          <textarea id="view-query" name="query" rows="6" spellcheck="false" x-ref="queryEditor"
+                    data-editor-collections="<%= attr(json_compact(@collection_names)) %>"
                     placeholder="FOR u IN users&#10;  FILTER u.active == true&#10;  RETURN { name: u.name, email: u.email }"
                     class="console-input mt-1 resize-y font-mono text-[13px] leading-relaxed"></textarea>
           <p class="mt-1 font-mono text-xs text-zinc-600">

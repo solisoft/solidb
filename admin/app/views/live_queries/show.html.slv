@@ -26,6 +26,8 @@
       <label class="console-label" for="live-query">live query (sdbql)</label>
       <% first_collection = @collections.length() > 0 ? (@collections[0]["name"] ?? "my_collection") : "my_collection" %>
       <textarea id="live-query" rows="3" spellcheck="false"
+                data-editor="sdbql" data-editor-height="110px" data-editor-submit="#live-start"
+                data-editor-collections="<%= attr(json_compact(@collection_names)) %>"
                 class="console-input mt-1 resize-y font-mono text-[13px]"
                 placeholder="FOR doc IN <%= first_collection %> RETURN doc">FOR doc IN <%= first_collection %> RETURN doc</textarea>
     </div>
@@ -168,18 +170,6 @@
   })();
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
-<script src="<%= public_path("js/admin-editor.js") %>"></script>
-<script>
-  AdminEditor.setCollections(<%- json_compact(@collection_names) %>);
-  // The editor syncs back into the #live-query textarea, which the WS code
-  // reads on subscribe — so Subscribe keeps working unchanged.
-  AdminEditor.mount(document.getElementById("live-query"), {
-    language: "sdbql",
-    height: "110px",
-    onCtrlEnter: function () {
-      var startButton = document.getElementById("live-start");
-      if (startButton && !startButton.disabled) startButton.click();
-    }
-  });
-</script>
+<%# The #live-query editor is mounted by AdminEditor.autoMount (wired in the
+    layout) from its data-editor attributes. The editor syncs back into the
+    textarea, which the WS code reads on subscribe — so Subscribe is unchanged. %>

@@ -13,12 +13,22 @@ class QueuesController < Controller
     this._load()
   end
 
-  # GET /databases/:db/queues/:name/jobs - HTMX-loaded fragment
+  # GET /databases/:db/queues/:name/jobs - HTMX-loaded fragment.
+  # Accepts ?status=&limit=&offset= for filtering and pagination; the API
+  # returns the full filtered total alongside the page so we can page on it.
   def jobs
     this._ctx()
     @queue_name = params["name"] ?? ""
-    result = SolidbClient.get_api(SolidbEndpoints.queue_jobs(@db, @queue_name))
-    @jobs = (result["data"] ?? {})["jobs"] ?? []
+    @status_filter = this._status_filter()
+    @jobs_limit = this._jobs_limit()
+    offset = (params["offset"] ?? "0").to_int()
+    offset = 0 if offset < 0
+    @jobs_offset = offset
+    endpoint = SolidbEndpoints.queue_jobs(@db, @queue_name) + this._jobs_query()
+    result = SolidbClient.get_api(endpoint)
+    data = result["data"] ?? {}
+    @jobs = data["jobs"] ?? []
+    @jobs_total = data["total"] ?? 0
     @jobs_error = result["ok"] ? "" : (result["error"] ?? "request failed")
     return render("queues/_jobs", { "layout": false })
   end
@@ -59,6 +69,27 @@ class QueuesController < Controller
     @databases = AdminContext.database_names()
   end
 
+  # Whitelisted job status; "" means no filter (all statuses).
+  def _status_filter
+    status = (params["status"] ?? "").trim().downcase()
+    return "" unless ["pending", "running", "completed", "failed"].includes?(status)
+    return status
+  end
+
+  def _jobs_limit
+    limit = (params["limit"] ?? "50").to_int()
+    return 50 unless [25, 50, 100].includes?(limit)
+    return limit
+  end
+
+  # Query string for the jobs API: limit/offset always sent, status only when set.
+  def _jobs_query
+    query = "?limit=" + str(@jobs_limit) + "&offset=" + str(@jobs_offset)
+    # status is a whitelisted enum word (see _status_filter), so it needs no encoding.
+    query = query + "&status=" + @status_filter unless @status_filter.blank?
+    return query
+  end
+
   # nil when the params textarea holds invalid JSON.
   def _build_enqueue_payload
     job_params = {}
@@ -79,7 +110,9 @@ class QueuesController < Controller
 
   def _load
     result = SolidbClient.get_api(SolidbEndpoints.queues(@db))
-    @queues = result["data"] ?? []
+    # Normalize the API shape (older SoliDB returns arrays, not stat objects)
+    # so the view can always index queue["name"] without a 500. See QueuesView.
+    @queues = QueuesView.normalize(result["data"] ?? [])
     if !result["ok"]
       @flash_error = result["error"] ?? "request failed"
       @solidb_down = (result["status"] ?? -1) == 0

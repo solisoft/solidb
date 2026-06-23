@@ -28,6 +28,18 @@ describe("MaterializedViewsController") do
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "Materialized views")
     end
+
+    test("create modal wires the query field to the Monaco SDBQL editor") do
+      response = get("/databases/admin_spec_views/views")
+      body = res_body(response)
+      # Mounted explicitly via x-effect when the modal opens (autoMount would
+      # mis-measure inside the hidden, teleported <template>).
+      assert_contains(body, "x-ref=\"queryEditor\"")
+      assert_contains(body, "language: 'sdbql'")
+      # Collection names are handed to the editor for autocompletion.
+      assert_contains(body, "data-editor-collections")
+      assert_contains(body, "people")
+    end
   end
 
   describe("view lifecycle") do

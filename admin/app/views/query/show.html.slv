@@ -44,6 +44,8 @@
     <div>
       <label class="console-label" for="query-editor">sdbql</label>
       <textarea id="query-editor" name="query" rows="8" spellcheck="false"
+                data-editor="sdbql" data-editor-height="220px" data-editor-submit="#query-run-btn"
+                data-editor-collections="<%= attr(json_compact(@collection_names)) %>"
                 placeholder="FOR doc IN my_collection&#10;  FILTER doc.age > @min_age&#10;  LIMIT 20&#10;  RETURN doc"
                 class="console-input mt-1 resize-y font-mono text-[13px] leading-relaxed"></textarea>
     </div>
@@ -51,6 +53,7 @@
       <div class="min-w-72 flex-1">
         <label class="console-label" for="bind-vars">bind vars (json)</label>
         <textarea id="bind-vars" name="bind_vars" rows="2" spellcheck="false"
+                  data-editor="json" data-editor-height="72px"
                   placeholder='{ "min_age": 25 }'
                   class="console-input mt-1 resize-y font-mono text-[13px]"></textarea>
       </div>
@@ -74,8 +77,6 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
-<script src="<%= public_path("js/admin-editor.js") %>"></script>
 <script>
   // --- query history (latest 20, localStorage, per-browser) ---------------
   var HISTORY_KEY = "solidb-admin:query-history";
@@ -135,24 +136,26 @@
     recordHistory("explain");
   });
 
-  AdminEditor.setCollections(<%- json_compact(@collection_names) %>);
-  AdminEditor.mount(document.getElementById("query-editor"), {
-    language: "sdbql",
-    height: "220px",
-    onCtrlEnter: function () {
-      window.htmx && htmx.trigger("#query-run-btn", "click");
-    }
-  });
-  AdminEditor.mount(document.getElementById("bind-vars"), { language: "json", height: "72px" });
+  // Editors are mounted by AdminEditor.autoMount (wired in the layout) from the
+  // textareas' data-editor attributes — nothing to mount here.
 
   // Restore the latest request for this db so coming back to the console
   // doesn't lose the query you were working with. History is recorded on
   // every Run/Explain (see recordHistory above), so "latest" = items[0].
+  // Set the textarea values directly: autoMount seeds Monaco from them, and
+  // this works whether or not Monaco has booted yet.
   var lastForDb = readHistory().filter(function (it) {
     return it.db === "<%- j(@db) %>";
   })[0];
   if (lastForDb) {
-    AdminEditor.setValue("query-editor", lastForDb.q);
-    AdminEditor.setValue("bind-vars", lastForDb.b || "");
+    var queryEl = document.getElementById("query-editor");
+    var bindEl = document.getElementById("bind-vars");
+    if (queryEl) queryEl.value = lastForDb.q;
+    if (bindEl) bindEl.value = lastForDb.b || "";
+    // If Monaco already mounted (e.g. re-navigation), push the values in too.
+    if (window.AdminEditor) {
+      AdminEditor.setValue("query-editor", lastForDb.q);
+      AdminEditor.setValue("bind-vars", lastForDb.b || "");
+    }
   }
 </script>

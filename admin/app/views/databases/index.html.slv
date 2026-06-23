@@ -1,6 +1,6 @@
 <%- partial("shared/banners", { "solidb_down": @solidb_down, "flash_error": @flash_error, "flash_notice": @flash_notice }) %>
 
-<div class="space-y-5 animate-fade-up" x-data="{ q: '' }">
+<div class="space-y-5 animate-fade-up" x-data="{ q: '', showHidden: false, hidden(name) { let n = name.toLowerCase(); return n.endsWith('_test') || n.endsWith('_spec'); } }">
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div>
       <p class="console-label">Server</p>
@@ -26,13 +26,26 @@
   <div class="console-card">
     <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
       <p class="console-label">name</p>
-      <input type="text" x-model="q" placeholder="filter…"
-             class="console-input w-48 py-1 font-mono text-xs">
+      <div class="flex items-center gap-2">
+        <% let hidden_count = @database_names.filter(fn(name) {
+             let lowered = name.downcase()
+             return lowered.ends_with("_test") || lowered.ends_with("_spec")
+           }).length() %>
+        <% if hidden_count > 0 %>
+          <button type="button" @click="showHidden = !showHidden" class="btn-ghost text-xs"
+                  x-text="(showHidden ? 'Hide' : 'Show') + ' test &amp; spec (<%= hidden_count %>)'">
+            Show test &amp; spec (<%= hidden_count %>)
+          </button>
+        <% end %>
+        <input type="text" x-model="q" placeholder="filter…"
+               class="console-input w-48 py-1 font-mono text-xs">
+      </div>
     </div>
     <div class="overflow-x-auto"><table class="console-table">
       <tbody>
         <% for db_name in @database_names %>
-          <tr data-name="<%= attr(db_name) %>" x-show="$el.dataset.name.includes(q.toLowerCase())">
+          <tr data-name="<%= attr(db_name) %>"
+              x-show="$el.dataset.name.includes(q.toLowerCase()) && (showHidden || !hidden($el.dataset.name))">
             <td class="font-mono text-zinc-200">
               <a href="<%= attr(db_collections_path(db_name)) %>" class="hover:text-teal-300 transition-colors">
                 <%= db_name %>

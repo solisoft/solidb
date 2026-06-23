@@ -6,7 +6,7 @@
  * stale-while-revalidate keyed by full URL, so the ?v= fingerprint that
  * public_path() appends naturally busts the cache on deploys.
  */
-var CACHE = "solidb-admin-v1";
+var CACHE = "solidb-admin-v2";
 var OFFLINE_URL = "/offline.html";
 
 self.addEventListener("install", function (event) {

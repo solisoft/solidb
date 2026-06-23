@@ -85,7 +85,9 @@ class CronController < Controller
 
   def _load
     result = SolidbClient.get_api(SolidbEndpoints.cron_jobs(@db))
-    @cron_jobs = result["data"] ?? []
+    # Normalize the API shape (older servers return arrays, not objects) so the
+    # view can index cron["_key"] without a 500. See ApiList.
+    @cron_jobs = ApiList.normalize(result["data"] ?? [])
     if !result["ok"]
       @flash_error = result["error"] ?? "request failed"
       @solidb_down = (result["status"] ?? -1) == 0
