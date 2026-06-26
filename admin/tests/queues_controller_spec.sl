@@ -53,9 +53,12 @@ describe("QueuesController") do
       assert_contains(res_body(response), "params")
       assert_contains(res_body(response), "0 / 1")
 
-      response = delete("/databases/admin_spec_queues/queues/jobs/" + job_id)
+      # Cancel refreshes only the queue's jobs fragment in place (the button
+      # carries ?queue=) — no full-page reload, so no layout in the response.
+      response = delete("/databases/admin_spec_queues/queues/jobs/" + job_id + "?queue=spec_queue")
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "job cancelled")
+      assert_not(res_body(response).includes?("<!DOCTYPE html>"))
     end
 
     test("run-now reschedules a pending job") do
@@ -66,9 +69,11 @@ describe("QueuesController") do
       jobs = (jobs_result["data"] ?? {})["jobs"] ?? []
       assert_gt(jobs.length(), 0)
 
-      response = post("/databases/admin_spec_queues/queues/jobs/" + jobs[0]["_key"] + "/run-now", {})
+      # Run-now also refreshes the queue's jobs fragment in place.
+      response = post("/databases/admin_spec_queues/queues/jobs/" + jobs[0]["_key"] + "/run-now?queue=spec_runs", {})
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "job scheduled to run now")
+      assert_not(res_body(response).includes?("<!DOCTYPE html>"))
     end
 
     test("rejects a job without a script") do

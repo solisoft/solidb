@@ -9,7 +9,7 @@
       <h2 class="mt-1">Cron jobs <span class="font-mono text-sm text-zinc-500">(<%= @cron_jobs.length() %>)</span></h2>
       <p class="mt-1 max-w-2xl console-help">
         scheduled jobs — a 6-field cron expression (seconds first, e.g. 0 0 2 * * * = daily at 02:00)
-        runs a Lua script on a queue
+        runs a Lua script or calls a webhook
       </p>
     </div>
     <button class="btn-primary" x-on:click="creating = true">New cron job</button>

@@ -18,19 +18,7 @@ class QueuesController < Controller
   # returns the full filtered total alongside the page so we can page on it.
   def jobs
     this._ctx()
-    @queue_name = params["name"] ?? ""
-    @status_filter = this._status_filter()
-    @jobs_limit = this._jobs_limit()
-    offset = (params["offset"] ?? "0").to_int()
-    offset = 0 if offset < 0
-    @jobs_offset = offset
-    endpoint = SolidbEndpoints.queue_jobs(@db, @queue_name) + this._jobs_query()
-    result = SolidbClient.get_api(endpoint)
-    data = result["data"] ?? {}
-    @jobs = data["jobs"] ?? []
-    @jobs_total = data["total"] ?? 0
-    @jobs_error = result["ok"] ? "" : (result["error"] ?? "request failed")
-    return render("queues/_jobs", { "layout": false })
+    return this._render_jobs_fragment("", "")
   end
 
   # POST /databases/:db/queues/enqueue (queue name comes from the form)
@@ -51,17 +39,54 @@ class QueuesController < Controller
   end
 
   # DELETE /databases/:db/queues/jobs/:id
+  # Re-renders only the queue's jobs fragment so the expanded panel stays open
+  # instead of reloading the whole page (which collapses it). The button sends
+  # ?queue=&limit=&status=&offset= so we refresh the exact view the user is on.
   def cancel_job
     this._ctx()
     result = SolidbClient.delete_api(SolidbEndpoints.queue_job(@db, params["id"] ?? ""))
-    return this._respond(result, "job cancelled")
+    notice = result["ok"] ? "job cancelled" : ""
+    action_error = result["ok"] ? "" : (result["error"] ?? "request failed")
+    return this._render_jobs_fragment(notice, action_error)
   end
 
   # POST /databases/:db/queues/jobs/:id/run-now
+  # Same in-place refresh as cancel_job — see its note.
   def run_now
     this._ctx()
     result = SolidbClient.post_api(SolidbEndpoints.queue_job_run_now(@db, params["id"] ?? ""))
-    return this._respond(result, "job scheduled to run now")
+    notice = result["ok"] ? "job scheduled to run now" : ""
+    action_error = result["ok"] ? "" : (result["error"] ?? "request failed")
+    return this._render_jobs_fragment(notice, action_error)
+  end
+
+  # Renders the HTMX jobs fragment for a single queue, honoring the
+  # filter/pagination state on the request. Shared by the jobs listing and the
+  # cancel / run-now actions so those stay in-place instead of swapping the
+  # whole #content (which would collapse the open queue panel). `notice` shows a
+  # success line; `action_error` (a failed cancel/run-now) wins over any
+  # downstream fetch error so the user sees the real cause.
+  def _render_jobs_fragment(notice, action_error)
+    # The jobs route carries the queue name in the path (:name); cancel/run-now
+    # send it as ?queue= because their path slot holds the job id instead.
+    @queue_name = params["name"] ?? (params["queue"] ?? "")
+    @status_filter = this._status_filter()
+    @jobs_limit = this._jobs_limit()
+    offset = (params["offset"] ?? "0").to_int()
+    offset = 0 if offset < 0
+    @jobs_offset = offset
+    endpoint = SolidbEndpoints.queue_jobs(@db, @queue_name) + this._jobs_query()
+    result = SolidbClient.get_api(endpoint)
+    data = result["data"] ?? {}
+    @jobs = data["jobs"] ?? []
+    @jobs_total = data["total"] ?? 0
+    @jobs_notice = notice
+    if !action_error.blank?
+      @jobs_error = action_error
+    else
+      @jobs_error = result["ok"] ? "" : (result["error"] ?? "request failed")
+    end
+    return render("queues/_jobs", { "layout": false })
   end
 
   def _ctx

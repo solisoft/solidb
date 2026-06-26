@@ -1659,6 +1659,10 @@ label.console-label {
   background-color: rgb(var(--accent-950) / 0.2);
 }
 
+.bg-teal-950\/30 {
+  background-color: rgb(var(--accent-950) / 0.3);
+}
+
 .bg-teal-950\/40 {
   background-color: rgb(var(--accent-950) / 0.4);
 }

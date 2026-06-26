@@ -1,3 +1,8 @@
+<% if !jobs_notice.blank? %>
+  <div class="border-t border-zinc-800 bg-teal-950/30 px-4 py-2 font-mono text-xs text-teal-300">
+    <%= jobs_notice %>
+  </div>
+<% end %>
 <% if !jobs_error.blank? %>
   <div class="border-t border-zinc-800 bg-red-950/30 px-4 py-2 font-mono text-xs text-red-300">
     <%= jobs_error %>
@@ -5,6 +10,10 @@
 <% else %>
   <% jobs_base = db_queues_path(db) + "/" + url(queue_name) + "/jobs" %>
   <% jobs_target = "#jobs-" + queue_name %>
+  <%# Carried on cancel / run-now so the action refreshes this exact view
+      (same queue, page, and status) in place instead of reloading #content. %>
+  <% action_query = "?queue=" + url(queue_name) + "&limit=" + str(jobs_limit) + "&offset=" + str(jobs_offset) %>
+  <% action_query = action_query + "&status=" + url(status_filter) unless status_filter.blank? %>
   <%# Preserve status + limit across pagination clicks. %>
   <% page_query = "?limit=" + str(jobs_limit) %>
   <% page_query = page_query + "&status=" + url(status_filter) unless status_filter.blank? %>
@@ -70,6 +79,12 @@
             <% job_target = job["script_path"] ?? (job["script"] ?? "") %>
             <% job_target = job["webhook_url"] ?? (job["callback_url"] ?? "") if job_target.blank? %>
             <% job_search = (job_target + " " + job_id + " " + job_status).downcase() %>
+            <% job_actions_base = db_queues_path(db) + "/jobs/" + url(job_id) %>
+            <% run_now_url = job_actions_base + "/run-now" + action_query %>
+            <% cancel_url = job_actions_base + action_query %>
+            <% status_class = "border-zinc-800 text-zinc-400" %>
+            <% status_class = "border-teal-900 text-teal-400" if job_status == "running" %>
+            <% status_class = "border-red-900 text-red-400" if job_status == "failed" %>
             <%# Whole row toggles the details panel; the actions cell stops
                 propagation so Run now / Cancel do not also toggle. %>
             <tr class="cursor-pointer" data-search="<%= attr(job_search) %>"
@@ -89,7 +104,7 @@
                 <p class="mt-0.5 break-all text-[10px] text-zinc-600"><%= job_id %></p>
               </td>
               <td>
-                <span class="border px-1.5 py-0.5 font-mono text-[10px] <%= job_status == "failed" ? "border-red-900 text-red-400" : (job_status == "running" ? "border-teal-900 text-teal-400" : "border-zinc-800 text-zinc-400") %>">
+                <span class="border px-1.5 py-0.5 font-mono text-[10px] <%= status_class %>">
                   <%= job_status %>
                 </span>
               </td>
@@ -97,13 +112,13 @@
               <td class="w-px whitespace-nowrap text-right" x-on:click.stop>
                 <div class="flex justify-end gap-2">
                   <button class="btn-ghost"
-                          hx-post="<%= attr(db_queues_path(db)) %>/jobs/<%= url(job_id) %>/run-now"
-                          hx-target="#content" hx-swap="innerHTML show:top">
+                          hx-post="<%- attr(run_now_url) %>"
+                          hx-target="<%- attr(jobs_target) %>" hx-swap="innerHTML">
                     Run now
                   </button>
                   <button class="btn-danger"
-                          hx-delete="<%= attr(db_queues_path(db)) %>/jobs/<%= url(job_id) %>"
-                          hx-target="#content" hx-swap="innerHTML show:top"
+                          hx-delete="<%- attr(cancel_url) %>"
+                          hx-target="<%- attr(jobs_target) %>" hx-swap="innerHTML"
                           hx-confirm="Cancel job <%= attr(job_id) %>?">
                     Cancel
                   </button>
