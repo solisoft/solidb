@@ -119,6 +119,7 @@ post("/databases/:db/repl/eval", "repl#eval")
 get("/databases/:db/queues", "queues#index", name: "db_queues")
 get("/databases/:db/queues/:name/jobs", "queues#jobs")
 post("/databases/:db/queues/enqueue", "queues#enqueue")
+post("/databases/:db/queues/:name/settings", "queues#update_settings")
 delete("/databases/:db/queues/jobs/:id", "queues#cancel_job")
 post("/databases/:db/queues/jobs/:id/run-now", "queues#run_now")
 

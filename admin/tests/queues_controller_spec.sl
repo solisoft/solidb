@@ -184,4 +184,49 @@ describe("QueuesController") do
       assert_contains(res_body(response), "spec_page_script")
     end
   end
+
+  describe("queue settings") do
+    test("saves settings and surfaces them on the queue card") do
+      response = post("/databases/admin_spec_queues/queues/spec_settings/settings",
+                      { "paused": "1", "concurrency": "3", "default_priority": "7" })
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "settings saved for spec_settings")
+      # The queue had no jobs, but a configured queue still shows up in the
+      # list with its settings rendered (the "max N" badge only renders when
+      # concurrency > 0, so it uniquely marks spec_settings).
+      assert_contains(res_body(response), "max 3")
+    end
+
+    test("clamps a negative concurrency to 0 (unlimited)") do
+      post("/databases/admin_spec_queues/queues/spec_clamp/settings",
+           { "concurrency": "-5", "default_priority": "0" })
+      config = SolidbClient.get_api(SolidbEndpoints.queues("admin_spec_queues"))
+      queues = QueuesView.normalize(config["data"] ?? [])
+      clamp = queues.filter do |queue| queue["name"] == "spec_clamp" end
+      assert_eq(clamp.length(), 1)
+      assert_eq(clamp[0]["concurrency"], 0)
+    end
+
+    test("applies the queue default priority to jobs enqueued without one") do
+      SolidbClient.put_api(SolidbEndpoints.queue_config("admin_spec_queues", "spec_prio"),
+                           { "default_priority": 9 })
+      post("/databases/admin_spec_queues/queues/enqueue",
+           { "queue": "spec_prio", "script": "spec_script",
+             "run_at": "2030-01-01T00:00:00Z" })
+      jobs_result = SolidbClient.get_api(SolidbEndpoints.queue_jobs("admin_spec_queues", "spec_prio"))
+      jobs = (jobs_result["data"] ?? {})["jobs"] ?? []
+      assert_gt(jobs.length(), 0)
+      assert_eq(jobs[0]["priority"], 9)
+    end
+
+    test("renders the settings editor on the index") do
+      seed_spec_jobs("spec_form", 1)
+      response = get("/databases/admin_spec_queues/queues")
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "Save settings")
+      assert_contains(body, "max concurrency")
+      assert_contains(body, "default priority")
+    end
+  end
 end

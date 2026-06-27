@@ -1474,6 +1474,10 @@ label.console-label {
   border-radius: 9999px;
 }
 
+.rounded-sm {
+  border-radius: 0.125rem;
+}
+
 .\!border-0 {
   border-width: 0px !important;
 }
@@ -1598,6 +1602,10 @@ label.console-label {
   background-color: rgb(245 158 11 / var(--tw-bg-opacity, 1));
 }
 
+.bg-amber-500\/15 {
+  background-color: rgb(245 158 11 / 0.15);
+}
+
 .bg-amber-950\/30 {
   background-color: rgb(69 26 3 / 0.3);
 }
@@ -1682,6 +1690,10 @@ label.console-label {
   background-color: rgb(var(--surface-600) / var(--tw-bg-opacity, 1));
 }
 
+.bg-zinc-700\/40 {
+  background-color: rgb(var(--surface-700) / 0.4);
+}
+
 .bg-zinc-800 {
   --tw-bg-opacity: 1;
   background-color: rgb(var(--surface-800) / var(--tw-bg-opacity, 1));
@@ -1703,6 +1715,10 @@ label.console-label {
 .bg-zinc-950 {
   --tw-bg-opacity: 1;
   background-color: rgb(var(--surface-950) / var(--tw-bg-opacity, 1));
+}
+
+.bg-zinc-950\/40 {
+  background-color: rgb(var(--surface-950) / 0.4);
 }
 
 .bg-zinc-950\/60 {
@@ -1942,6 +1958,10 @@ label.console-label {
 
 .tracking-tight {
   letter-spacing: -0.025em;
+}
+
+.tracking-wide {
+  letter-spacing: 0.025em;
 }
 
 .tracking-widest {
@@ -2724,6 +2744,10 @@ label.console-label {
   .sm\:gap-x-5 {
     -moz-column-gap: 1.25rem;
          column-gap: 1.25rem;
+  }
+
+  .sm\:pb-2 {
+    padding-bottom: 0.5rem;
   }
 }
 

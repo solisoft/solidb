@@ -176,6 +176,11 @@ class SolidbEndpoints
     return "/_api/database/" + db + "/queues"
   end
 
+  # PUT — create/update per-queue settings (paused, concurrency, default priority).
+  static def queue_config(db, queue_name)
+    return "/_api/database/" + db + "/queues/" + queue_name
+  end
+
   static def queue_jobs(db, queue_name)
     return "/_api/database/" + db + "/queues/" + queue_name + "/jobs"
   end

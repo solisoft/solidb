@@ -42,6 +42,7 @@
               <li><strong>Distributed Workers</strong>: Every node in a SoliDB cluster runs background workers that automatically pick up and execute jobs.</li>
               <li><strong>Optimistic Locking</strong>: Uses SoliDB's revision check (<code class="bg-gray-800 px-1 rounded">_rev</code>) to ensure that a job is executed by exactly one worker, even in a large cluster.</li>
               <li><strong>Priorities & Retries</strong>: Jobs support priority levels and automatic retries with exponential backoff.</li>
+              <li><strong>Per-queue settings</strong>: Each queue can be <strong>paused</strong> (workers stop claiming new jobs while running ones finish), capped to a maximum <strong>concurrency</strong>, and given a <strong>default priority</strong> applied to jobs enqueued without an explicit one. Settings live in the <code class="text-indigo-400">_queue_config</code> collection and are purely additive — a queue with no config row keeps the historical behavior (running, unlimited concurrency, priority 0).</li>
               <li><strong>Two execution targets</strong>:
                 <ul class="list-disc list-inside space-y-1 ml-6 mt-2">
                   <li><strong>Script</strong> — set <code class="text-indigo-400">script</code> to run a server-side Lua script close to your data.</li>
@@ -85,7 +86,7 @@
                        <tr><td class="p-3 text-fuchsia-400 font-mono">webhook_secret</td><td class="p-3 font-mono">string</td><td class="p-3">Per-job HMAC-SHA256 key for signing the body via <code>X-Webhook-Signature</code>. Falls back to <code>SOLI_WEBHOOK_SECRET</code> / <code>SOLI_JOBS_SECRET</code> env vars when omitted.</td></tr>
                        <tr><td class="p-3 text-fuchsia-400 font-mono">webhook_headers</td><td class="p-3 font-mono">object</td><td class="p-3">Extra HTTP headers attached to the outbound webhook request.</td></tr>
                        <tr><td class="p-3 text-fuchsia-400 font-mono">params</td><td class="p-3 font-mono">object</td><td class="p-3">JSON arguments passed to the script, or POSTed as the body for webhook jobs. Accepts <code>args</code> as an alias.</td></tr>
-                       <tr><td class="p-3 text-fuchsia-400 font-mono">priority</td><td class="p-3 font-mono">integer</td><td class="p-3">Higher values execute first.</td></tr>
+                       <tr><td class="p-3 text-fuchsia-400 font-mono">priority</td><td class="p-3 font-mono">integer</td><td class="p-3">Higher values execute first. When omitted, falls back to the queue's configured <code>default_priority</code> (0 if the queue has no config row).</td></tr>
                        <tr><td class="p-3 text-fuchsia-400 font-mono">max_retries</td><td class="p-3 font-mono">integer</td><td class="p-3">Max attempts on failure (exponential backoff between retries).</td></tr>
                        <tr><td class="p-3 text-fuchsia-400 font-mono">run_at</td><td class="p-3 font-mono">int | string</td><td class="p-3">Unix-seconds integer or RFC-3339 timestamp for delayed execution. Defaults to "now".</td></tr>
                      </tbody>
@@ -121,7 +122,43 @@
                  <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
                 <code class="text-gray-300">/_api/database/:db/queues</code>
               </div>
-              <p class="text-sm text-gray-400">Get statistics for all queues.</p>
+              <p class="text-sm text-gray-400">Get statistics for all queues. Each entry includes per-job counts (<code>pending</code>, <code>running</code>, <code>completed</code>, <code>failed</code>, <code>total</code>) plus the queue's settings (<code>paused</code>, <code>concurrency</code>, <code>default_priority</code>). A queue that has been configured but has no jobs yet still appears in the list.</p>
+            </div>
+
+            <!-- Update Queue Settings -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/queues/:queue</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create or update a queue's settings. Fields are optional — omitted fields keep their current value (patch semantics), so you can flip a single setting. The queue need not have any jobs yet; this is how a queue gets pre-configured. The settings are upserted into the <code class="text-indigo-400">_queue_config</code> collection (keyed by queue name), and the full updated config is returned.</p>
+
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr><th class="p-3">Field</th><th class="p-3">Type</th><th class="p-3">Description</th></tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr><td class="p-3 text-fuchsia-400 font-mono">paused</td><td class="p-3 font-mono">boolean</td><td class="p-3">When <code>true</code>, the worker claims no new jobs from this queue; already-running jobs finish, and pending jobs wait until the queue is resumed.</td></tr>
+                       <tr><td class="p-3 text-fuchsia-400 font-mono">concurrency</td><td class="p-3 font-mono">integer</td><td class="p-3">Maximum jobs from this queue allowed to run at once. <code>0</code> means unlimited (the historical default).</td></tr>
+                       <tr><td class="p-3 text-fuchsia-400 font-mono">default_priority</td><td class="p-3 font-mono">integer</td><td class="p-3">Priority assigned to jobs enqueued on this queue when the enqueue request omits an explicit <code>priority</code>. May be negative.</td></tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+
+               <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Example — Pause a queue and cap concurrency</h4>
+               <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                 {"paused": true, "concurrency": 3, "default_priority": 5}
+               </div>
+
+               <div class="mt-4 bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4 text-xs">
+                 <p class="text-indigo-200">
+                   <strong>Takes effect immediately:</strong> resuming a queue or raising its concurrency nudges the workers to re-check right away instead of waiting for the next poll.
+                 </p>
+               </div>
             </div>
           </div>
         </div>

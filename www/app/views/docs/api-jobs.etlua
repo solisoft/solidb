@@ -27,7 +27,24 @@
                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
                 <code class="text-gray-300">/_api/database/:db/queues</code>
               </div>
-              <p class="text-sm text-gray-400">List all queues in a database.</p>
+              <p class="text-sm text-gray-400">List all queues in a database, with job counts and per-queue settings (<code class="text-indigo-400">paused</code>, <code class="text-indigo-400">concurrency</code>, <code class="text-indigo-400">default_priority</code>).</p>
+            </div>
+
+            <!-- PUT /_api/database/:db/queues/:name -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/queues/:name</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">
+                Create or update a queue's settings. All fields optional (patch semantics); the queue need not have jobs yet. See <a href="/docs/queues" class="text-indigo-400 hover:underline">Queues</a> for details.
+              </p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "paused": true, "concurrency": 3, "default_priority": 5 }
+                </div>
+              </div>
             </div>
 
             <!-- GET /_api/database/:db/queues/:name/jobs -->

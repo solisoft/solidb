@@ -38,6 +38,21 @@ class QueuesController < Controller
     return this._respond(result, "job enqueued on " + queue_name)
   end
 
+  # POST /databases/:db/queues/:name/settings
+  # Saves per-queue settings (pause, concurrency cap, default priority). The
+  # queue name comes from the path; the API upserts the config so a queue can
+  # be configured before it has any jobs.
+  def update_settings
+    this._ctx()
+    queue_name = (params["name"] ?? "").trim()
+    if queue_name.blank?
+      return this._respond({ "ok": false, "status": 422, "error": "queue name is required" }, "")
+    end
+    payload = this._build_settings_payload()
+    result = SolidbClient.put_api(SolidbEndpoints.queue_config(@db, queue_name), payload)
+    return this._respond(result, "settings saved for " + queue_name)
+  end
+
   # DELETE /databases/:db/queues/jobs/:id
   # Re-renders only the queue's jobs fragment so the expanded panel stays open
   # instead of reloading the whole page (which collapses it). The button sends
@@ -131,6 +146,27 @@ class QueuesController < Controller
     run_at = (params["run_at"] ?? "").trim()
     payload["run_at"] = run_at unless run_at.blank?
     return payload
+  end
+
+  # Settings payload for the queue-config API. `paused` is an HTML checkbox, so
+  # an unchecked box sends nothing -> false. Concurrency is clamped to >= 0
+  # (0 means unlimited); default_priority may be negative.
+  def _build_settings_payload
+    concurrency = this._int_param("concurrency", 0)
+    concurrency = 0 if concurrency < 0
+    return {
+      "paused": !(params["paused"] ?? "").blank?,
+      "concurrency": concurrency,
+      "default_priority": this._int_param("default_priority", 0)
+    }
+  end
+
+  # Parse an integer form field, falling back when blank (an empty field
+  # shouldn't blow up to_int()).
+  def _int_param(key, fallback)
+    raw = (params[key] ?? "").trim()
+    return fallback if raw.blank?
+    return raw.to_int()
   end
 
   def _load

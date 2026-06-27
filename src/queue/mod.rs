@@ -4,7 +4,7 @@ pub(crate) mod signing;
 mod types;
 
 pub use jobs::validate_job_target;
-pub use types::{CronJob, Job, JobStatus};
+pub use types::{CronJob, Job, JobStatus, QueueConfig};
 
 use crate::scripting::{ScriptEngine, ScriptStats};
 use crate::storage::StorageEngine;

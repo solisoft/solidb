@@ -125,11 +125,28 @@ impl QueueWorker {
                 Err(_) => continue,
             };
 
-            // Query for candidates in this specific database
-            let query_str = format!(
-                "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} SORT j.priority DESC LIMIT 1 RETURN j",
-                now
-            );
+            // Per-queue settings gate which queues are claimable this pass:
+            // paused queues are skipped outright, and queues already at their
+            // concurrency cap are skipped until a running job finishes. Queues
+            // with no config row impose no restriction, so the common case
+            // (no `_queue_config` collection) adds a single cheap lookup.
+            let blocked_queues = Self::blocked_queues(&self.storage, &db_name, &db);
+
+            // Query for candidates in this specific database. When some queues
+            // are blocked we exclude them so the LIMIT-1 claim still lands on
+            // the top-priority *eligible* job instead of stalling on a paused
+            // or saturated queue.
+            let query_str = if blocked_queues.is_empty() {
+                format!(
+                    "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} SORT j.priority DESC LIMIT 1 RETURN j",
+                    now
+                )
+            } else {
+                format!(
+                    "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} AND j.queue NOT IN @blocked SORT j.priority DESC LIMIT 1 RETURN j",
+                    now
+                )
+            };
 
             tracing::debug!("Query for db {}: {}", db_name, query_str);
 
@@ -141,8 +158,17 @@ impl QueueWorker {
                 }
             };
 
-            let executor =
-                crate::sdbql::QueryExecutor::with_database(&self.storage, db_name.clone());
+            let executor = if blocked_queues.is_empty() {
+                crate::sdbql::QueryExecutor::with_database(&self.storage, db_name.clone())
+            } else {
+                let mut bind_vars = crate::sdbql::BindVars::new();
+                bind_vars.insert("blocked".to_string(), serde_json::json!(blocked_queues));
+                crate::sdbql::QueryExecutor::with_database_and_bind_vars(
+                    &self.storage,
+                    db_name.clone(),
+                    bind_vars,
+                )
+            };
             let result = match executor.execute(&query_ast) {
                 Ok(res) => res,
                 Err(e) => {
@@ -195,6 +221,7 @@ impl QueueWorker {
             let worker_engine = self.script_engine.clone();
             let worker_http = self.http_client.clone();
             let worker_dev_http = self.dev_http_client.clone();
+            let worker_notifier = self.notifier();
             let job_id = job.id.clone();
             let db_name_task = db_name.clone();
 
@@ -253,8 +280,83 @@ impl QueueWorker {
                         let _ = coll.update(&job_id, final_val);
                     }
                 }
+
+                // A slot just freed up — wake the workers so a queue that was
+                // sitting at its concurrency cap (or a retry rescheduled to
+                // `now`) gets claimed immediately instead of after the poll.
+                let _ = worker_notifier.send(());
             });
         }
+    }
+
+    /// Queues the worker must not claim from on this pass: those that are
+    /// paused, plus those already running at (or above) their concurrency cap.
+    /// Returns an empty vec when no queue imposes a restriction (the common
+    /// case), which lets `check_jobs` keep its original unfiltered query.
+    fn blocked_queues(
+        storage: &Arc<StorageEngine>,
+        db_name: &str,
+        db: &crate::storage::Database,
+    ) -> Vec<String> {
+        let configs: Vec<super::types::QueueConfig> = match db.get_collection("_queue_config") {
+            Ok(cfg_coll) => cfg_coll
+                .scan(None)
+                .into_iter()
+                .filter_map(|doc| serde_json::from_value(doc.to_value()).ok())
+                .collect(),
+            Err(_) => return Vec::new(),
+        };
+        if configs.is_empty() {
+            return Vec::new();
+        }
+
+        // Only pay for the running-count query when a queue actually caps
+        // concurrency; a config that just sets pause/default_priority doesn't
+        // need it.
+        let needs_running_counts = configs.iter().any(|c| c.concurrency > 0);
+        let running_counts = if needs_running_counts {
+            Self::running_counts_by_queue(storage, db_name)
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        configs
+            .into_iter()
+            .filter(|c| {
+                c.paused
+                    || (c.concurrency > 0
+                        && running_counts.get(&c.name).copied().unwrap_or(0)
+                            >= c.concurrency as usize)
+            })
+            .map(|c| c.name)
+            .collect()
+    }
+
+    /// Count of currently-`running` jobs grouped by queue, used to enforce
+    /// per-queue concurrency caps. Any query failure degrades to an empty map
+    /// (no caps enforced) rather than stalling the worker.
+    fn running_counts_by_queue(
+        storage: &Arc<StorageEngine>,
+        db_name: &str,
+    ) -> std::collections::HashMap<String, usize> {
+        let mut counts = std::collections::HashMap::new();
+        let query_ast =
+            match crate::sdbql::parse("FOR j IN _jobs FILTER j.status == 'running' RETURN j.queue")
+            {
+                Ok(ast) => ast,
+                Err(_) => return counts,
+            };
+        let executor = crate::sdbql::QueryExecutor::with_database(storage, db_name.to_string());
+        let rows = match executor.execute(&query_ast) {
+            Ok(rows) => rows,
+            Err(_) => return counts,
+        };
+        for row in rows {
+            if let Some(queue) = row.as_str() {
+                *counts.entry(queue.to_string()).or_insert(0) += 1;
+            }
+        }
+        counts
     }
 
     pub(crate) async fn execute_job(

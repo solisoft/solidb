@@ -32,7 +32,12 @@ class QueuesView
       "pending": stats["pending"] ?? 0,
       "running": stats["running"] ?? 0,
       "completed": stats["completed"] ?? 0,
-      "failed": stats["failed"] ?? 0
+      "failed": stats["failed"] ?? 0,
+      # Per-queue settings (newer SoliDB). Legacy array payloads predate these,
+      # so default to the unconfigured state.
+      "paused": stats["paused"] ?? false,
+      "concurrency": stats["concurrency"] ?? 0,
+      "default_priority": stats["default_priority"] ?? 0
     }
   end
 end

@@ -727,6 +727,10 @@ pub fn create_router(
             get(super::queue_handlers::list_queues_handler),
         )
         .route(
+            "/_api/database/{db}/queues/{name}",
+            put(super::queue_handlers::update_queue_config_handler),
+        )
+        .route(
             "/_api/database/{db}/queues/{name}/jobs",
             get(super::queue_handlers::list_jobs_handler),
         )

@@ -79,14 +79,29 @@
   <div class="grid grid-cols-1 gap-4">
     <% for queue in @queues %>
       <% queue_name = queue["name"] ?? "" %>
-      <div class="console-card">
+      <% paused = queue["paused"] ?? false %>
+      <% concurrency = queue["concurrency"] ?? 0 %>
+      <% default_priority = queue["default_priority"] ?? 0 %>
+      <div class="console-card" x-data="{ settings: false }">
         <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <p class="font-mono text-sm text-zinc-200"><%= queue_name %></p>
+          <div class="flex items-center gap-2">
+            <p class="font-mono text-sm text-zinc-200"><%= queue_name %></p>
+            <% if paused %>
+              <span class="rounded-sm bg-amber-500/15 px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wide text-amber-400">paused</span>
+            <% end %>
+            <% if concurrency > 0 %>
+              <span class="rounded-sm bg-zinc-700/40 px-1.5 py-0.5 font-mono text-[11px] text-zinc-400">max <%= concurrency %></span>
+            <% end %>
+          </div>
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 sm:gap-x-5">
             <p class="console-label"><span class="font-mono text-sm text-amber-400"><%= queue["pending"] ?? 0 %></span> pending</p>
             <p class="console-label"><span class="font-mono text-sm text-teal-400"><%= queue["running"] ?? 0 %></span> running</p>
             <p class="console-label"><span class="font-mono text-sm text-zinc-300"><%= queue["completed"] ?? 0 %></span> completed</p>
             <p class="console-label"><span class="font-mono text-sm text-red-400"><%= queue["failed"] ?? 0 %></span> failed</p>
+            <button class="btn-ghost" x-on:click="settings = !settings"
+                    x-bind:class="settings ? 'text-teal-400' : ''">
+              Settings
+            </button>
             <button class="btn-ghost"
                     hx-get="<%= attr(db_queues_path(@db)) %>/<%= url(queue_name) %>/jobs"
                     hx-target="#jobs-<%= attr(queue_name) %>" hx-swap="innerHTML">
@@ -94,6 +109,36 @@
             </button>
           </div>
         </div>
+
+        <%# Inline settings editor — submits to #content (same swap as enqueue)
+            so the saved values come back rendered into the card header. %>
+        <div x-show="settings" x-cloak class="border-t border-zinc-800 bg-zinc-950/40 px-4 py-4">
+          <form hx-post="<%= attr(db_queues_path(@db)) %>/<%= url(queue_name) %>/settings"
+                hx-target="#content" hx-swap="innerHTML show:top"
+                x-on:submit="settings = false"
+                class="grid grid-cols-1 items-end gap-3 sm:grid-cols-3">
+            <label class="flex items-center gap-2 sm:pb-2">
+              <input type="checkbox" name="paused" value="1" <%= paused ? "checked" : "" %>
+                     class="h-4 w-4 accent-teal-500">
+              <span class="console-label">paused — stop claiming new jobs</span>
+            </label>
+            <div>
+              <label class="console-label" for="concurrency-<%= attr(queue_name) %>">max concurrency <span class="text-zinc-700">— 0 = unlimited</span></label>
+              <input id="concurrency-<%= attr(queue_name) %>" name="concurrency" type="number" min="0"
+                     value="<%= concurrency %>" class="console-input mt-1 font-mono">
+            </div>
+            <div>
+              <label class="console-label" for="priority-<%= attr(queue_name) %>">default priority</label>
+              <input id="priority-<%= attr(queue_name) %>" name="default_priority" type="number"
+                     value="<%= default_priority %>" class="console-input mt-1 font-mono">
+            </div>
+            <div class="flex justify-end gap-2 sm:col-span-3">
+              <button type="button" class="btn-ghost" x-on:click="settings = false">Cancel</button>
+              <button type="submit" class="btn-primary">Save settings</button>
+            </div>
+          </form>
+        </div>
+
         <div id="jobs-<%= attr(queue_name) %>"></div>
       </div>
     <% end %>

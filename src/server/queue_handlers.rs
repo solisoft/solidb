@@ -42,6 +42,33 @@ pub struct QueueStats {
     pub completed: usize,
     pub failed: usize,
     pub total: usize,
+    /// Per-queue settings (from `_queue_config`); defaults when unconfigured.
+    pub paused: bool,
+    pub concurrency: u32,
+    pub default_priority: i32,
+}
+
+impl QueueStats {
+    fn zeroed(name: String) -> Self {
+        QueueStats {
+            name,
+            pending: 0,
+            running: 0,
+            completed: 0,
+            failed: 0,
+            total: 0,
+            paused: false,
+            concurrency: 0,
+            default_priority: 0,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateQueueConfigRequest {
+    pub paused: Option<bool>,
+    pub concurrency: Option<u32>,
+    pub default_priority: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -76,14 +103,9 @@ pub async fn list_queues_handler(
         let job: Job = serde_json::from_value(doc.to_value())
             .map_err(|_| DbError::InternalError("Corrupted job data".to_string()))?;
 
-        let entry = stats_map.entry(job.queue.clone()).or_insert(QueueStats {
-            name: job.queue.clone(),
-            pending: 0,
-            running: 0,
-            completed: 0,
-            failed: 0,
-            total: 0,
-        });
+        let entry = stats_map
+            .entry(job.queue.clone())
+            .or_insert_with(|| QueueStats::zeroed(job.queue.clone()));
 
         entry.total += 1;
         match job.status {
@@ -91,6 +113,23 @@ pub async fn list_queues_handler(
             JobStatus::Running => entry.running += 1,
             JobStatus::Completed => entry.completed += 1,
             JobStatus::Failed => entry.failed += 1,
+        }
+    }
+
+    // Overlay per-queue settings. A queue may be configured before it has any
+    // jobs, so configs also surface queues that don't appear in `_jobs` yet.
+    if let Ok(cfg_coll) = db.get_collection("_queue_config") {
+        for doc in cfg_coll.scan(None) {
+            let config: crate::queue::QueueConfig = match serde_json::from_value(doc.to_value()) {
+                Ok(config) => config,
+                Err(_) => continue,
+            };
+            let entry = stats_map
+                .entry(config.name.clone())
+                .or_insert_with(|| QueueStats::zeroed(config.name.clone()));
+            entry.paused = config.paused;
+            entry.concurrency = config.concurrency;
+            entry.default_priority = config.default_priority;
         }
     }
 
@@ -214,6 +253,70 @@ pub async fn run_now_job_handler(
     }
 
     Ok(Json(serde_json::json!({ "success": true })))
+}
+
+/// Create or update the settings for a queue. Fields are optional so callers
+/// can patch a single setting; omitted fields keep their current value. The
+/// queue need not have any jobs yet — this is how a queue gets pre-configured.
+pub async fn update_queue_config_handler(
+    State(state): State<AppState>,
+    Path((db_name, queue_name)): Path<(String, String)>,
+    Json(req): Json<UpdateQueueConfigRequest>,
+) -> Result<Json<crate::queue::QueueConfig>, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+
+    if db.get_collection("_queue_config").is_err() {
+        db.create_collection("_queue_config".to_string(), None)?;
+    }
+    let config_coll = db.get_collection("_queue_config")?;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    // Start from the existing row (preserving its `_rev`) or a fresh default.
+    let mut config = match config_coll.get(&queue_name) {
+        Ok(doc) => serde_json::from_value::<crate::queue::QueueConfig>(doc.to_value())
+            .map_err(|_| DbError::InternalError("Corrupted queue config".to_string()))?,
+        Err(_) => crate::queue::QueueConfig {
+            name: queue_name.clone(),
+            revision: None,
+            paused: false,
+            concurrency: 0,
+            default_priority: 0,
+            updated_at: now,
+        },
+    };
+
+    if let Some(paused) = req.paused {
+        config.paused = paused;
+    }
+    if let Some(concurrency) = req.concurrency {
+        config.concurrency = concurrency;
+    }
+    if let Some(default_priority) = req.default_priority {
+        config.default_priority = default_priority;
+    }
+    config.updated_at = now;
+
+    let doc_val = serde_json::to_value(&config).unwrap();
+    match config.revision.clone() {
+        Some(rev) => {
+            config_coll.update_with_rev(&queue_name, &rev, doc_val)?;
+        }
+        None => {
+            config_coll.insert(doc_val)?;
+        }
+    }
+
+    // Resuming a queue or raising its concurrency should take effect now, not
+    // on the next poll — nudge the worker to re-check.
+    if let Some(ref worker) = state.queue_worker {
+        let _ = worker.notifier().send(());
+    }
+
+    Ok(Json(config))
 }
 
 #[derive(Debug, Deserialize)]
@@ -442,12 +545,25 @@ pub async fn enqueue_job_handler(
         None => now,
     };
 
+    // An omitted priority falls back to the queue's configured default
+    // (0 when the queue has no config row).
+    let priority = req.priority.unwrap_or_else(|| {
+        db.get_collection("_queue_config")
+            .ok()
+            .and_then(|coll| coll.get(&queue_name).ok())
+            .and_then(|doc| {
+                serde_json::from_value::<crate::queue::QueueConfig>(doc.to_value()).ok()
+            })
+            .map(|config| config.default_priority)
+            .unwrap_or(0)
+    });
+
     let job_id = uuid::Uuid::new_v4().to_string();
     let job = Job {
         id: job_id.clone(),
         revision: None,
         queue: queue_name,
-        priority: req.priority.unwrap_or(0),
+        priority,
         script_path,
         webhook_url: req.webhook_url,
         webhook_secret: req.webhook_secret,

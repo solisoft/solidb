@@ -82,3 +82,29 @@ pub struct CronJob {
 fn default_max_retries() -> i32 {
     3
 }
+
+/// Per-queue settings, persisted in the `_queue_config` collection keyed by
+/// queue name. A queue with no config row behaves as the defaults below
+/// (running, unlimited concurrency, priority 0), so configuration is purely
+/// additive — existing queues keep working untouched.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueueConfig {
+    /// Queue name; stored as the document `_key`.
+    #[serde(rename = "_key")]
+    pub name: String,
+    #[serde(rename = "_rev", skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    /// When true the worker claims no jobs from this queue (already-running
+    /// jobs finish; new ones wait until the queue is resumed).
+    #[serde(default)]
+    pub paused: bool,
+    /// Max jobs from this queue allowed to run concurrently. `0` means
+    /// unlimited (the historical behavior).
+    #[serde(default)]
+    pub concurrency: u32,
+    /// Priority assigned to jobs enqueued on this queue when the enqueue
+    /// request omits an explicit priority.
+    #[serde(default)]
+    pub default_priority: i32,
+    pub updated_at: u64,
+}
