@@ -13,14 +13,30 @@ use std::fmt;
 pub struct TransactionId(u64);
 
 impl TransactionId {
-    /// Create a new transaction ID based on current timestamp
+    /// Create a new transaction ID: current timestamp (nanos), bumped past
+    /// the last issued ID when the clock tick is too coarse to distinguish
+    /// concurrent callers. A raw timestamp collides under concurrency — two
+    /// threads beginning transactions in the same clock tick used to get the
+    /// SAME ID, which merges their entries at WAL replay and confuses the
+    /// lock table.
     pub fn new() -> Self {
-        Self(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos() as u64,
-        )
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static LAST: AtomicU64 = AtomicU64::new(0);
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
+
+        let mut last = LAST.load(Ordering::Relaxed);
+        loop {
+            let candidate = now.max(last + 1);
+            match LAST.compare_exchange_weak(last, candidate, Ordering::Relaxed, Ordering::Relaxed)
+            {
+                Ok(_) => return Self(candidate),
+                Err(actual) => last = actual,
+            }
+        }
     }
 
     /// Create a transaction ID from a raw value
