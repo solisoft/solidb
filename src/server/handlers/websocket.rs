@@ -916,8 +916,30 @@ async fn handle_live_query_request(
                 }
 
                 // 6. Reactive Loop
-                while dep_rx.recv().await.is_some() {
-                    // On ANY change to ANY dependency, re-run query.
+                // Coalesce change bursts: a bulk write of N documents used to
+                // re-run the query N times per subscriber. After the first
+                // event, keep absorbing events until the stream is quiet for
+                // DEBOUNCE — capped at MAX_DELAY from the first event so a
+                // continuous write stream can't starve the subscriber of
+                // updates. Events arriving while the query re-runs stay
+                // buffered in the channel and start the next cycle.
+                const DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(150);
+                const MAX_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
+                'reactive: while dep_rx.recv().await.is_some() {
+                    let deadline = tokio::time::Instant::now() + MAX_DELAY;
+                    loop {
+                        tokio::select! {
+                            more = dep_rx.recv() => {
+                                if more.is_none() {
+                                    break 'reactive; // all forwarders gone
+                                }
+                                if tokio::time::Instant::now() >= deadline {
+                                    break; // burst still going — run anyway
+                                }
+                            }
+                            _ = tokio::time::sleep(DEBOUNCE) => break,
+                        }
+                    }
                     // If the client is gone, the send returns an error and we
                     // bail so the forwarder tasks above can shut down (they
                     // break once dep_rx is dropped here).
