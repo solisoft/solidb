@@ -144,6 +144,8 @@ end
 local function get_all_users()
   local result = Sdb:Sdbql([[
     FOR u IN users
+    SORT u.firstname ASC
+    LIMIT 500
     RETURN { _key: u._key, firstname: u.firstname, lastname: u.lastname, email: u.email }
   ]])
   return (result and result.result) or {}

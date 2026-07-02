@@ -139,7 +139,7 @@ function PagesController:edit()
   end
 
   -- Get all pages for parent selection (exclude descendants to prevent circular refs)
-  local result = Sdb:Sdbql("FOR p IN pages SORT p.title ASC RETURN p")
+  local result = Sdb:Sdbql("FOR p IN pages SORT p.title ASC LIMIT 1000 RETURN { _key: p._key, title: p.title, icon: p.icon, parent_id: p.parent_id, position: p.position }")
   local all_pages = {}
   if result and result.result then
     for _, data in ipairs(result.result) do
