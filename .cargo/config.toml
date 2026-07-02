@@ -6,8 +6,3 @@ rustflags = ["-C", "linker=aarch64-linux-gnu-gcc"]
 
 [net]
 git-fetch-with-cli = true
-
-[profile.release]
-# Optimize for size
-opt-level = "z"
-lto = "thin"
