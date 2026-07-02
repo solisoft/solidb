@@ -94,17 +94,16 @@ pub async fn change_password_handler(
         .map_err(|_| DbError::InternalError("Corrupted user data".to_string()))?;
 
     // 5. Verify current password
-    if !crate::server::auth::AuthService::verify_password(
-        &req.current_password,
-        &user.password_hash,
-    ) {
+    if !crate::server::auth::verify_password_blocking(&req.current_password, &user.password_hash)
+        .await
+    {
         return Err(DbError::BadRequest(
             "Current password is incorrect".to_string(),
         ));
     }
 
     // 6. Hash new password
-    let new_hash = crate::server::auth::AuthService::hash_password(&req.new_password)?;
+    let new_hash = crate::server::auth::hash_password_blocking(&req.new_password).await?;
 
     // 7. Update user document
     let updated_user = crate::server::auth::User {
@@ -378,7 +377,7 @@ pub async fn login_handler(
     })?;
 
     // 6. Verify password
-    if !crate::server::auth::AuthService::verify_password(&req.password, &user.password_hash) {
+    if !crate::server::auth::verify_password_blocking(&req.password, &user.password_hash).await {
         tracing::warn!(
             "Password verification failed for user '{}' from {}",
             req.username,

@@ -779,7 +779,7 @@ pub async fn create_user(
     }
 
     // Hash password
-    let password_hash = crate::server::auth::AuthService::hash_password(&req.password)?;
+    let password_hash = crate::server::auth::hash_password_blocking(&req.password).await?;
 
     let user = crate::server::auth::User {
         username: req.username.clone(),

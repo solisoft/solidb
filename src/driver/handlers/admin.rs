@@ -221,8 +221,13 @@ pub async fn handle_create_user(
                 Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
             };
 
-            // Hash password
-            let password_hash = crate::server::auth::AuthService::hash_password(&password);
+            // Hash password. This previously embedded the unhandled
+            // `Result` into the document, storing `{"Ok": "..."}` as the
+            // hash and making the created user unable to log in.
+            let password_hash = match crate::server::auth::hash_password_blocking(&password).await {
+                Ok(h) => h,
+                Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
+            };
 
             let user_doc = serde_json::json!({
                 "_key": username,

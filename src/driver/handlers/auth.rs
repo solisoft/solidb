@@ -60,8 +60,9 @@ pub async fn handle_auth(
         }
     };
 
-    // Verify password using AuthService
-    if !crate::server::auth::AuthService::verify_password(&password, &user.password_hash) {
+    // Verify password using AuthService (on the blocking pool — Argon2 is
+    // CPU-bound and must not pin the async runtime)
+    if !crate::server::auth::verify_password_blocking(&password, &user.password_hash).await {
         return Response::error(DriverError::AuthError("Invalid credentials".to_string()));
     }
 

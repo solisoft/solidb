@@ -1045,6 +1045,27 @@ pub fn note_replicated_api_key_delete(id: &str) {
 
 /// Axum Middleware for Authentication
 /// Supports both JWT (Authorization: Bearer <token>) and API keys (X-API-Key: <key>)
+/// Run Argon2 verification on the blocking pool. Argon2 is CPU-bound for
+/// tens of milliseconds by design; calling it inline in an async handler
+/// pins a runtime worker thread for the whole hash, so a burst of
+/// cache-miss authentications can stall every in-flight request.
+pub(crate) async fn verify_password_blocking(password: &str, hash: &str) -> bool {
+    let password = password.to_string();
+    let hash = hash.to_string();
+    tokio::task::spawn_blocking(move || AuthService::verify_password(&password, &hash))
+        .await
+        .unwrap_or(false)
+}
+
+/// Blocking-pool wrapper for Argon2 password hashing (same rationale as
+/// [`verify_password_blocking`]).
+pub(crate) async fn hash_password_blocking(password: &str) -> Result<String, DbError> {
+    let password = password.to_string();
+    tokio::task::spawn_blocking(move || AuthService::hash_password(&password))
+        .await
+        .map_err(|e| DbError::InternalError(format!("hash task failed: {}", e)))?
+}
+
 pub async fn auth_middleware(
     State(state): State<crate::server::handlers::AppState>,
     mut req: Request<Body>,
@@ -1173,10 +1194,9 @@ pub async fn auth_middleware(
                                 if let Ok(doc) = collection.get(username) {
                                     if let Ok(user) = serde_json::from_value::<User>(doc.to_value())
                                     {
-                                        if AuthService::verify_password(
-                                            password,
-                                            &user.password_hash,
-                                        ) {
+                                        if verify_password_blocking(password, &user.password_hash)
+                                            .await
+                                        {
                                             // Load user roles from _user_roles
                                             let roles = AuthService::get_user_roles(
                                                 &state.storage,
@@ -1283,10 +1303,9 @@ pub async fn permissive_auth_middleware(
                                 if let Ok(doc) = collection.get(username) {
                                     if let Ok(user) = serde_json::from_value::<User>(doc.to_value())
                                     {
-                                        if AuthService::verify_password(
-                                            password,
-                                            &user.password_hash,
-                                        ) {
+                                        if verify_password_blocking(password, &user.password_hash)
+                                            .await
+                                        {
                                             // Load user roles from _user_roles
                                             let roles = AuthService::get_user_roles(
                                                 &state.storage,
