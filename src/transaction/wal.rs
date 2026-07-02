@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, Mutex,
+    Arc, Condvar, Mutex,
 };
 
 /// Write-Ahead Log entry types
@@ -50,13 +50,37 @@ impl WalEntry {
     }
 }
 
-/// Write-Ahead Log writer with batching support
+/// Write-Ahead Log writer with batching and group commit.
+///
+/// Commits used to serialize one-fsync-at-a-time behind the file mutex,
+/// capping commit throughput at ~1/fsync-latency regardless of concurrency.
+/// Entries are now tagged with a monotonically increasing sequence number;
+/// one committer at a time becomes the sync leader and fsyncs *everything*
+/// buffered so far, while concurrent committers wait on a condvar until the
+/// leader's fsync covers their sequence — N concurrent commits share one
+/// fsync instead of paying for N.
 pub struct WalWriter {
     file: Arc<Mutex<File>>,
     path: PathBuf,
-    buffer: Arc<Mutex<VecDeque<String>>>,
+    buffer: Arc<Mutex<WalBuffer>>,
     batch_size: usize,
     pending_writes: Arc<AtomicUsize>,
+    sync_state: Arc<Mutex<SyncState>>,
+    sync_done: Arc<Condvar>,
+}
+
+/// Entries waiting for their fsync, tagged with the sequence of the most
+/// recently buffered entry so waiters can tell when theirs became durable.
+struct WalBuffer {
+    entries: VecDeque<String>,
+    last_assigned: u64,
+}
+
+struct SyncState {
+    /// A leader is currently writing + fsyncing.
+    syncing: bool,
+    /// Highest sequence number known durable on disk.
+    synced: u64,
 }
 
 impl WalWriter {
@@ -77,26 +101,37 @@ impl WalWriter {
         Ok(Self {
             file: Arc::new(Mutex::new(file)),
             path,
-            buffer: Arc::new(Mutex::new(VecDeque::new())),
+            buffer: Arc::new(Mutex::new(WalBuffer {
+                entries: VecDeque::new(),
+                last_assigned: 0,
+            })),
             batch_size: batch_size.max(1),
             pending_writes: Arc::new(AtomicUsize::new(0)),
+            sync_state: Arc::new(Mutex::new(SyncState {
+                syncing: false,
+                synced: 0,
+            })),
+            sync_done: Arc::new(Condvar::new()),
         })
+    }
+
+    /// Buffer a serialized entry and return its sequence number.
+    fn buffer_entry(&self, entry: &WalEntry) -> DbResult<u64> {
+        let json = serde_json::to_string(entry)
+            .map_err(|e| DbError::InternalError(format!("Failed to serialize WAL entry: {}", e)))?;
+        let mut buffer = self.buffer.lock().unwrap();
+        buffer.entries.push_back(json);
+        buffer.last_assigned += 1;
+        Ok(buffer.last_assigned)
     }
 
     /// Write a WAL entry (batched)
     pub fn write(&self, entry: &WalEntry) -> DbResult<()> {
-        let json = serde_json::to_string(entry)
-            .map_err(|e| DbError::InternalError(format!("Failed to serialize WAL entry: {}", e)))?;
-
-        let mut buffer = self.buffer.lock().unwrap();
-
-        // Add to buffer
-        buffer.push_back(json);
+        self.buffer_entry(entry)?;
         let pending = self.pending_writes.fetch_add(1, Ordering::SeqCst) + 1;
 
         // If batch is full, flush
         if pending >= self.batch_size {
-            drop(buffer);
             self.flush()?;
         }
 
@@ -105,27 +140,69 @@ impl WalWriter {
 
     /// Flush buffered writes to disk
     pub fn flush(&self) -> DbResult<()> {
-        let mut buffer = self.buffer.lock().unwrap();
+        let target = {
+            let buffer = self.buffer.lock().unwrap();
+            if buffer.entries.is_empty() {
+                return Ok(());
+            }
+            buffer.last_assigned
+        };
+        self.sync_up_to(target)
+    }
 
-        if buffer.is_empty() {
-            return Ok(());
+    /// Block until every entry up to `target` is durable. One caller at a
+    /// time becomes the leader and fsyncs the whole buffer; the rest wait on
+    /// the condvar and return as soon as a leader's fsync covers them.
+    fn sync_up_to(&self, target: u64) -> DbResult<()> {
+        let mut state = self.sync_state.lock().unwrap();
+        loop {
+            if state.synced >= target {
+                return Ok(());
+            }
+            if !state.syncing {
+                state.syncing = true;
+                drop(state);
+
+                let result = self.write_and_sync();
+
+                let mut state = self.sync_state.lock().unwrap();
+                state.syncing = false;
+                if let Ok(up_to) = &result {
+                    state.synced = state.synced.max(*up_to);
+                }
+                self.sync_done.notify_all();
+                // Our entry was buffered before we became leader, so a
+                // successful sync always covers `target`.
+                return result.map(|_| ());
+            }
+            // Follower: wait for the in-flight sync, then re-check.
+            state = self.sync_done.wait(state).unwrap();
         }
+    }
 
-        let mut file = self.file.lock().unwrap();
+    /// Drain the buffer, write everything, fsync once. Returns the sequence
+    /// of the last entry made durable.
+    fn write_and_sync(&self) -> DbResult<u64> {
+        let (entries, up_to) = {
+            let mut buffer = self.buffer.lock().unwrap();
+            let entries: Vec<String> = buffer.entries.drain(..).collect();
+            (entries, buffer.last_assigned)
+        };
 
-        // Write all buffered entries
-        while let Some(json) = buffer.pop_front() {
-            writeln!(file, "{}", json)
-                .map_err(|e| DbError::InternalError(format!("Failed to write WAL entry: {}", e)))?;
+        if !entries.is_empty() {
+            let mut file = self.file.lock().unwrap();
+            for json in &entries {
+                writeln!(file, "{}", json).map_err(|e| {
+                    DbError::InternalError(format!("Failed to write WAL entry: {}", e))
+                })?;
+            }
+            // Ensure durability - flush to disk
+            file.sync_all()
+                .map_err(|e| DbError::InternalError(format!("Failed to sync WAL: {}", e)))?;
         }
-
-        // Ensure durability - flush to disk
-        file.sync_all()
-            .map_err(|e| DbError::InternalError(format!("Failed to sync WAL: {}", e)))?;
 
         self.pending_writes.store(0, Ordering::SeqCst);
-
-        Ok(())
+        Ok(up_to)
     }
 
     /// Force flush without batching (for critical operations like commit)
@@ -146,7 +223,9 @@ impl WalWriter {
         self.write(&WalEntry::Operation { tx_id, operation })
     }
 
-    /// Write transaction commit (always forces sync)
+    /// Write transaction commit (always forces sync). Concurrent commits
+    /// group: whoever becomes the sync leader fsyncs every buffered entry,
+    /// and the rest return as soon as that fsync covers theirs.
     pub fn write_commit(&self, tx_id: TransactionId) -> DbResult<()> {
         let entry = WalEntry::Commit {
             tx_id,
@@ -157,15 +236,8 @@ impl WalWriter {
         };
 
         // For commit, we always want to ensure durability
-        let json = serde_json::to_string(&entry)
-            .map_err(|e| DbError::InternalError(format!("Failed to serialize WAL entry: {}", e)))?;
-
-        let mut buffer = self.buffer.lock().unwrap();
-        buffer.push_back(json);
-        drop(buffer);
-
-        // Force flush on commit
-        self.flush()
+        let seq = self.buffer_entry(&entry)?;
+        self.sync_up_to(seq)
     }
 
     /// Write transaction abort
@@ -188,14 +260,8 @@ impl WalWriter {
                 .as_nanos() as u64,
         };
 
-        let json = serde_json::to_string(&entry)
-            .map_err(|e| DbError::InternalError(format!("Failed to serialize WAL entry: {}", e)))?;
-
-        let mut buffer = self.buffer.lock().unwrap();
-        buffer.push_back(json);
-        drop(buffer);
-
-        self.flush()
+        let seq = self.buffer_entry(&entry)?;
+        self.sync_up_to(seq)
     }
 
     /// Get WAL file path
@@ -433,5 +499,44 @@ mod tests {
 
         // Should have begin and commit for tx2 only
         assert_eq!(entries.len(), 2);
+    }
+
+    /// Group commit: many threads committing concurrently must all land
+    /// durably, exactly once each, and replay cleanly.
+    #[test]
+    fn test_wal_concurrent_group_commit() {
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("test.wal");
+
+        let writer = Arc::new(WalWriter::new(&wal_path).unwrap());
+        const THREADS: usize = 8;
+        const COMMITS_PER_THREAD: usize = 50;
+
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let writer = Arc::clone(&writer);
+                std::thread::spawn(move || {
+                    for _ in 0..COMMITS_PER_THREAD {
+                        let tx_id = TransactionId::new();
+                        writer.write_begin(tx_id).unwrap();
+                        writer.write_commit(tx_id).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let reader = WalReader::new(&wal_path);
+        let entries = reader.read_all().unwrap();
+        let commits = entries
+            .iter()
+            .filter(|e| matches!(e, WalEntry::Commit { .. }))
+            .count();
+        assert_eq!(commits, THREADS * COMMITS_PER_THREAD);
+
+        let committed = reader.replay().unwrap();
+        assert_eq!(committed.len(), THREADS * COMMITS_PER_THREAD);
     }
 }
