@@ -93,6 +93,12 @@ pub fn validate_job_target(
     }
 }
 
+/// How many jobs one worker pass may claim per database. Each pass costs one
+/// (indexed) candidate query regardless of batch size, so claiming a batch
+/// removes the one-scan-per-job ceiling under backlog; per-queue concurrency
+/// caps are still enforced claim-by-claim.
+const CLAIM_BATCH: usize = 8;
+
 fn default_webhook_secret() -> Option<String> {
     std::env::var("SOLI_WEBHOOK_SECRET")
         .ok()
@@ -125,26 +131,32 @@ impl QueueWorker {
                 Err(_) => continue,
             };
 
+            Self::ensure_status_index(&jobs_coll);
+
             // Per-queue settings gate which queues are claimable this pass:
             // paused queues are skipped outright, and queues already at their
             // concurrency cap are skipped until a running job finishes. Queues
             // with no config row impose no restriction, so the common case
             // (no `_queue_config` collection) adds a single cheap lookup.
-            let blocked_queues = Self::blocked_queues(&self.storage, &db_name, &db);
+            let remaining_slots = Self::queue_remaining_slots(&self.storage, &db_name, &db);
+            let blocked_queues: Vec<&String> = remaining_slots
+                .iter()
+                .filter(|(_, slots)| **slots == 0)
+                .map(|(queue, _)| queue)
+                .collect();
 
-            // Query for candidates in this specific database. When some queues
-            // are blocked we exclude them so the LIMIT-1 claim still lands on
-            // the top-priority *eligible* job instead of stalling on a paused
-            // or saturated queue.
+            // Query for a batch of candidates in this specific database,
+            // top-priority first. Excluding blocked queues keeps the batch
+            // filled with *eligible* jobs instead of paused or saturated ones.
             let query_str = if blocked_queues.is_empty() {
                 format!(
-                    "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} SORT j.priority DESC LIMIT 1 RETURN j",
-                    now
+                    "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} SORT j.priority DESC LIMIT {} RETURN j",
+                    now, CLAIM_BATCH
                 )
             } else {
                 format!(
-                    "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} AND j.queue NOT IN @blocked SORT j.priority DESC LIMIT 1 RETURN j",
-                    now
+                    "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} AND j.queue NOT IN @blocked SORT j.priority DESC LIMIT {} RETURN j",
+                    now, CLAIM_BATCH
                 )
             };
 
@@ -181,133 +193,163 @@ impl QueueWorker {
                 continue;
             }
 
-            let job_val = match result.first() {
-                Some(val) => val,
-                None => continue,
-            };
-
             tracing::info!(
-                "Found pending job to execute in db {}: {:?}",
-                db_name,
-                job_val
+                "Found {} pending job(s) to claim in db {}",
+                result.len(),
+                db_name
             );
 
-            let mut job: Job = match serde_json::from_value(job_val.clone()) {
-                Ok(j) => j,
-                Err(e) => {
-                    tracing::error!("Corrupted job data in db {}: {}", db_name, e);
+            // Claim the whole batch, respecting per-queue slots that remain
+            // after each claim (remaining_slots was computed before any claim
+            // in this pass).
+            let mut claimed_per_queue: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
+
+            for job_val in result {
+                let mut job: Job = match serde_json::from_value(job_val) {
+                    Ok(j) => j,
+                    Err(e) => {
+                        tracing::error!("Corrupted job data in db {}: {}", db_name, e);
+                        continue;
+                    }
+                };
+
+                if let Some(&slots) = remaining_slots.get(&job.queue) {
+                    let claimed = claimed_per_queue.get(&job.queue).copied().unwrap_or(0);
+                    if claimed >= slots {
+                        continue; // queue would exceed its concurrency cap
+                    }
+                }
+
+                // Claim job (CAS on revision — losing a race just skips it)
+                let rev = job.revision.clone().unwrap_or_default();
+                job.status = JobStatus::Running;
+                let now_millis = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64;
+                job.started_at = Some(now_millis);
+                let doc_val = serde_json::to_value(&job).unwrap();
+                if let Err(e) = jobs_coll.update_with_rev(&job.id, &rev, doc_val) {
+                    tracing::warn!("Failed to claim job {}: {}", job.id, e);
                     continue;
                 }
-            };
+                *claimed_per_queue.entry(job.queue.clone()).or_insert(0) += 1;
 
-            // Claim job
-            let rev = job.revision.clone().unwrap_or_default();
-            job.status = JobStatus::Running;
-            let now_millis = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64;
-            job.started_at = Some(now_millis);
-            let doc_val = serde_json::to_value(&job).unwrap();
-            if let Err(e) = jobs_coll.update_with_rev(&job.id, &rev, doc_val) {
-                tracing::warn!("Failed to claim job {}: {}", job.id, e);
-                continue;
-            }
+                tracing::info!("Claimed job {} in db {}", job.id, db_name);
 
-            tracing::info!("Claimed job {} in db {}", job.id, db_name);
+                // Execute
+                let worker_storage = self.storage.clone();
+                let worker_engine = self.script_engine.clone();
+                let worker_http = self.http_client.clone();
+                let worker_dev_http = self.dev_http_client.clone();
+                let worker_notifier = self.notifier();
+                let job_id = job.id.clone();
+                let db_name_task = db_name.clone();
 
-            // Execute
-            let worker_storage = self.storage.clone();
-            let worker_engine = self.script_engine.clone();
-            let worker_http = self.http_client.clone();
-            let worker_dev_http = self.dev_http_client.clone();
-            let worker_notifier = self.notifier();
-            let job_id = job.id.clone();
-            let db_name_task = db_name.clone();
-
-            tokio::spawn(async move {
-                let mut job_to_update = job;
-                match Self::execute_job(
-                    &worker_storage,
-                    &worker_engine,
-                    &worker_http,
-                    &worker_dev_http,
-                    &job_to_update,
-                    &db_name_task,
-                )
-                .await
-                {
-                    Ok(_) => {
-                        let completed_millis = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_millis() as u64;
-                        job_to_update.status = JobStatus::Completed;
-                        job_to_update.completed_at = Some(completed_millis);
-                        job_to_update.last_error = None;
-                    }
-                    Err(e) => {
-                        let completed_now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs();
-                        let completed_millis = completed_now * 1000
-                            + (std::time::SystemTime::now()
+                tokio::spawn(async move {
+                    let mut job_to_update = job;
+                    match Self::execute_job(
+                        &worker_storage,
+                        &worker_engine,
+                        &worker_http,
+                        &worker_dev_http,
+                        &job_to_update,
+                        &db_name_task,
+                    )
+                    .await
+                    {
+                        Ok(_) => {
+                            let completed_millis = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap()
-                                .subsec_millis() as u64);
-                        tracing::error!("Job {} failed in db {}: {}", job_id, db_name_task, e);
-                        job_to_update.retry_count += 1;
-                        job_to_update.last_error = Some(e.to_string());
-
-                        if job_to_update.retry_count < job_to_update.max_retries as u32 {
-                            job_to_update.status = JobStatus::Pending;
-                            job_to_update.started_at = None;
-                            let delay = 10 * (2u64.pow(job_to_update.retry_count));
-                            let delay = std::cmp::min(delay, 24 * 3600);
-                            job_to_update.run_at = completed_now + delay;
-                        } else {
-                            job_to_update.status = JobStatus::Failed;
+                                .as_millis()
+                                as u64;
+                            job_to_update.status = JobStatus::Completed;
                             job_to_update.completed_at = Some(completed_millis);
+                            job_to_update.last_error = None;
+                        }
+                        Err(e) => {
+                            let completed_now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs();
+                            let completed_millis = completed_now * 1000
+                                + (std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .subsec_millis() as u64);
+                            tracing::error!("Job {} failed in db {}: {}", job_id, db_name_task, e);
+                            job_to_update.retry_count += 1;
+                            job_to_update.last_error = Some(e.to_string());
+
+                            if job_to_update.retry_count < job_to_update.max_retries as u32 {
+                                job_to_update.status = JobStatus::Pending;
+                                job_to_update.started_at = None;
+                                let delay = 10 * (2u64.pow(job_to_update.retry_count));
+                                let delay = std::cmp::min(delay, 24 * 3600);
+                                job_to_update.run_at = completed_now + delay;
+                            } else {
+                                job_to_update.status = JobStatus::Failed;
+                                job_to_update.completed_at = Some(completed_millis);
+                            }
                         }
                     }
-                }
 
-                // Update back to DB
-                if let Ok(db) = worker_storage.get_database(&db_name_task) {
-                    if let Ok(coll) = db.get_collection("_jobs") {
-                        let final_val = serde_json::to_value(&job_to_update).unwrap();
-                        let _ = coll.update(&job_id, final_val);
+                    // Update back to DB
+                    if let Ok(db) = worker_storage.get_database(&db_name_task) {
+                        if let Ok(coll) = db.get_collection("_jobs") {
+                            let final_val = serde_json::to_value(&job_to_update).unwrap();
+                            let _ = coll.update(&job_id, final_val);
+                        }
                     }
-                }
 
-                // A slot just freed up — wake the workers so a queue that was
-                // sitting at its concurrency cap (or a retry rescheduled to
-                // `now`) gets claimed immediately instead of after the poll.
-                let _ = worker_notifier.send(());
-            });
+                    // A slot just freed up — wake the workers so a queue that
+                    // was sitting at its concurrency cap (or a retry
+                    // rescheduled to `now`) gets claimed immediately instead
+                    // of after the poll.
+                    let _ = worker_notifier.send(());
+                });
+            }
         }
     }
 
-    /// Queues the worker must not claim from on this pass: those that are
-    /// paused, plus those already running at (or above) their concurrency cap.
-    /// Returns an empty vec when no queue imposes a restriction (the common
-    /// case), which lets `check_jobs` keep its original unfiltered query.
-    fn blocked_queues(
+    /// Ensure `_jobs.status` is indexed. Every claim pass and the per-queue
+    /// running-count query filter on `status`; without an index each one is
+    /// a full scan of the entire job history. Cheap to call once per pass —
+    /// index metadata is served from the in-memory cache.
+    fn ensure_status_index(jobs_coll: &crate::storage::Collection) {
+        if jobs_coll.get_index_for_field("status").is_none() {
+            if let Err(e) = jobs_coll.create_index(
+                "idx_jobs_status".to_string(),
+                vec!["status".to_string()],
+                crate::storage::IndexType::Persistent,
+                false,
+            ) {
+                tracing::warn!("Failed to create _jobs status index: {}", e);
+            }
+        }
+    }
+
+    /// Remaining claimable slots per queue for this pass: paused queues map
+    /// to 0, capped queues to `cap - running`. Queues without a config row
+    /// are absent (unlimited). An empty map means no queue imposes a
+    /// restriction — the common case (no `_queue_config` collection).
+    fn queue_remaining_slots(
         storage: &Arc<StorageEngine>,
         db_name: &str,
         db: &crate::storage::Database,
-    ) -> Vec<String> {
+    ) -> std::collections::HashMap<String, usize> {
         let configs: Vec<super::types::QueueConfig> = match db.get_collection("_queue_config") {
             Ok(cfg_coll) => cfg_coll
                 .scan(None)
                 .into_iter()
                 .filter_map(|doc| serde_json::from_value(doc.to_value()).ok())
                 .collect(),
-            Err(_) => return Vec::new(),
+            Err(_) => return std::collections::HashMap::new(),
         };
         if configs.is_empty() {
-            return Vec::new();
+            return std::collections::HashMap::new();
         }
 
         // Only pay for the running-count query when a queue actually caps
@@ -322,13 +364,16 @@ impl QueueWorker {
 
         configs
             .into_iter()
-            .filter(|c| {
-                c.paused
-                    || (c.concurrency > 0
-                        && running_counts.get(&c.name).copied().unwrap_or(0)
-                            >= c.concurrency as usize)
+            .filter_map(|c| {
+                if c.paused {
+                    Some((c.name, 0))
+                } else if c.concurrency > 0 {
+                    let running = running_counts.get(&c.name).copied().unwrap_or(0);
+                    Some((c.name, (c.concurrency as usize).saturating_sub(running)))
+                } else {
+                    None
+                }
             })
-            .map(|c| c.name)
             .collect()
     }
 
