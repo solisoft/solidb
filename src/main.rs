@@ -26,6 +26,13 @@ struct Args {
     #[arg(short, long, default_value_t = 6745)]
     port: u16,
 
+    /// Address to bind the listeners to. Defaults to 0.0.0.0 (all
+    /// interfaces); use 127.0.0.1 to restrict the node to loopback, e.g.
+    /// behind a reverse proxy. Falls back to the SOLIDB_HOST environment
+    /// variable when the flag is absent.
+    #[arg(long)]
+    host: Option<String>,
+
     /// Unique node identifier (auto-generated if not provided)
     #[arg(long)]
     node_id: Option<String>,
@@ -199,7 +206,17 @@ fn main() -> anyhow::Result<()> {
     runtime.block_on(async_main(args))
 }
 
+/// Address the listeners bind to: `--host`, then `SOLIDB_HOST`, then
+/// 0.0.0.0 (all interfaces, the historical default).
+fn bind_host(args: &Args) -> String {
+    args.host
+        .clone()
+        .or_else(|| std::env::var("SOLIDB_HOST").ok())
+        .unwrap_or_else(|| "0.0.0.0".to_string())
+}
+
 async fn async_main(args: Args) -> anyhow::Result<()> {
+    let host = bind_host(&args);
     // Initialize logging
     tracing_subscriber::registry()
         .with(
@@ -591,7 +608,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     // Determine launch mode
     if args.port == replication_port {
         tracing::info!("Starting in MULTIPLEXED mode on port {}", args.port);
-        let addr = format!("0.0.0.0:{}", args.port);
+        let addr = format!("{}:{}", host, args.port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
 
         let local_addr = listener.local_addr()?;
@@ -856,7 +873,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         });
 
         // 2. Serve HTTP (standard mode)
-        let addr = format!("0.0.0.0:{}", args.port);
+        let addr = format!("{}:{}", host, args.port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         tracing::info!("Server listening on {}", addr);
 
