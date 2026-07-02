@@ -133,3 +133,95 @@ fn test_index_usage_unique_constraint() {
     let explain = executor.explain(&query).unwrap();
     assert_eq!(explain.collections[0].access_type, "index_lookup");
 }
+
+// ============================================================================
+// LIMIT pushdown into index lookups
+// ============================================================================
+
+fn create_pushdown_engine() -> (StorageEngine, TempDir) {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    engine.create_database("pushdb".to_string()).unwrap();
+    let db = engine.get_database("pushdb").unwrap();
+    db.create_collection("events".to_string(), None).unwrap();
+    let events = db.get_collection("events").unwrap();
+    events
+        .create_index(
+            "cat_idx".to_string(),
+            vec!["cat".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+    // 300 docs: 100 per category, seq unique
+    for i in 0..300 {
+        events
+            .insert(json!({ "cat": i % 3, "flag": i % 2, "seq": i }))
+            .unwrap();
+    }
+    (engine, tmp_dir)
+}
+
+#[test]
+fn test_limit_pushdown_eq_returns_exactly_n() {
+    let (engine, _tmp) = create_pushdown_engine();
+    let executor = QueryExecutor::with_database(&engine, "pushdb".to_string());
+
+    let r = executor
+        .execute(&parse("FOR e IN events FILTER e.cat == 1 LIMIT 10 RETURN e.seq").unwrap())
+        .unwrap();
+    assert_eq!(r.len(), 10);
+    assert!(r.iter().all(|v| v.as_i64().unwrap() % 3 == 1));
+}
+
+#[test]
+fn test_limit_pushdown_with_offset() {
+    let (engine, _tmp) = create_pushdown_engine();
+    let executor = QueryExecutor::with_database(&engine, "pushdb".to_string());
+
+    let all = executor
+        .execute(&parse("FOR e IN events FILTER e.cat == 1 RETURN e.seq").unwrap())
+        .unwrap();
+    assert_eq!(all.len(), 100);
+    let limited = executor
+        .execute(&parse("FOR e IN events FILTER e.cat == 1 LIMIT 5, 10 RETURN e.seq").unwrap())
+        .unwrap();
+    assert_eq!(limited.as_slice(), &all[5..15]);
+}
+
+/// `cat == 1 AND flag == 0`: only `cat` is indexed, so the flag conjunct is a
+/// residual filter — the LIMIT must NOT be pushed into the index lookup or
+/// the result would under-fill. 50 docs match; LIMIT 30 must return 30.
+#[test]
+fn test_limit_not_pushed_for_partially_covered_filter() {
+    let (engine, _tmp) = create_pushdown_engine();
+    let executor = QueryExecutor::with_database(&engine, "pushdb".to_string());
+
+    let r = executor
+        .execute(
+            &parse("FOR e IN events FILTER e.cat == 1 AND e.flag == 0 LIMIT 30 RETURN e.seq")
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(r.len(), 30);
+    assert!(r.iter().all(|v| {
+        let s = v.as_i64().unwrap();
+        s % 3 == 1 && s % 2 == 0
+    }));
+}
+
+#[test]
+fn test_limit_pushdown_range() {
+    let (engine, _tmp) = create_pushdown_engine();
+    let executor = QueryExecutor::with_database(&engine, "pushdb".to_string());
+
+    let all = executor
+        .execute(&parse("FOR e IN events FILTER e.cat >= 1 RETURN e.seq").unwrap())
+        .unwrap();
+    assert_eq!(all.len(), 200);
+    let limited = executor
+        .execute(&parse("FOR e IN events FILTER e.cat >= 1 LIMIT 10 RETURN e.seq").unwrap())
+        .unwrap();
+    assert_eq!(limited.as_slice(), &all[..10]);
+}

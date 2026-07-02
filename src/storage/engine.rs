@@ -591,6 +591,7 @@ impl StorageEngine {
         // A cached handle from the pre-drop incarnation of this CF must not
         // shadow the fresh one.
         self.collections.remove(&name);
+        super::collection::index_meta::invalidate_index_meta(&self.db, &name);
 
         // Persist collection type (lock-free, thread-safe)
         if let Some(cf) = self.db.cf_handle(&name) {
@@ -661,6 +662,7 @@ impl StorageEngine {
 
         // Drop the stale cached handle so a later same-name create starts fresh.
         self.collections.remove(name);
+        super::collection::index_meta::invalidate_index_meta(&self.db, name);
 
         Ok(())
     }

@@ -6,14 +6,12 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use serde_json::Value;
-
 use super::format_expression;
 use super::types::{
     CollectionAccess, Context, ExecutionTiming, FilterInfo, LetBinding, LimitInfo, QueryExplain,
     SortInfo,
 };
-use super::{compare_values, QueryExecutor};
+use super::QueryExecutor;
 use crate::error::DbResult;
 use crate::sdbql::ast::*;
 
@@ -244,21 +242,7 @@ impl<'a> QueryExecutor<'a> {
         // Apply SORT
         if let Some(sort) = &query.sort_clause {
             let sort_start = Instant::now();
-            rows.sort_by(|a, b| {
-                for (expr, ascending) in &sort.fields {
-                    let a_val = self
-                        .evaluate_expr_with_context(expr, a)
-                        .unwrap_or(Value::Null);
-                    let b_val = self
-                        .evaluate_expr_with_context(expr, b)
-                        .unwrap_or(Value::Null);
-                    let cmp = compare_values(&a_val, &b_val);
-                    if cmp != std::cmp::Ordering::Equal {
-                        return if *ascending { cmp } else { cmp.reverse() };
-                    }
-                }
-                std::cmp::Ordering::Equal
-            });
+            rows = self.sort_rows(rows, &sort.fields);
             sort_us = sort_start.elapsed().as_micros() as u64;
         }
 

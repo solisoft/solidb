@@ -533,3 +533,73 @@ fn test_duplicate_index_name_error() {
     );
     assert!(result.is_err());
 }
+
+// ============================================================================
+// Index Metadata Cache Tests
+// ============================================================================
+
+/// The index-definition cache is keyed by column family, not by Collection
+/// instance: the engine-level and database-level handle caches each build
+/// their own Collection for the same CF, and a create/drop through one must
+/// be visible through the other.
+#[test]
+fn test_index_metadata_cache_cross_handle_invalidation() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_database("cachedb".to_string()).unwrap();
+    let db = engine.get_database("cachedb").unwrap();
+    db.create_collection("users".to_string(), None).unwrap();
+
+    let db_handle = db.get_collection("users").unwrap();
+    let engine_handle = engine.get_collection("cachedb:users").unwrap();
+
+    // Warm both paths' view of the (empty) metadata
+    assert!(engine_handle.get_all_indexes().is_empty());
+    assert!(db_handle.get_all_indexes().is_empty());
+
+    // Create through the DB handle; the engine handle must see it
+    db_handle
+        .create_index(
+            "email_idx".to_string(),
+            vec!["email".to_string()],
+            IndexType::Hash,
+            false,
+        )
+        .unwrap();
+    assert_eq!(engine_handle.get_all_indexes().len(), 1);
+
+    // TTL metadata shares the same snapshot
+    db_handle
+        .create_ttl_index("ttl_idx".to_string(), "created_at".to_string(), 60)
+        .unwrap();
+    assert_eq!(engine_handle.get_all_ttl_indexes().len(), 1);
+
+    // Drop through the engine handle; the DB handle must see it gone
+    engine_handle.drop_index("email_idx").unwrap();
+    assert!(db_handle.get_all_indexes().is_empty());
+}
+
+/// Deleting and recreating a collection must not serve the previous
+/// incarnation's index definitions from the cache.
+#[test]
+fn test_index_metadata_cache_collection_recreate() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_database("cachedb".to_string()).unwrap();
+    let db = engine.get_database("cachedb").unwrap();
+    db.create_collection("users".to_string(), None).unwrap();
+
+    let users = db.get_collection("users").unwrap();
+    users
+        .create_index(
+            "email_idx".to_string(),
+            vec!["email".to_string()],
+            IndexType::Hash,
+            false,
+        )
+        .unwrap();
+    assert_eq!(users.get_all_indexes().len(), 1);
+
+    db.delete_collection("users").unwrap();
+    db.create_collection("users".to_string(), None).unwrap();
+    let fresh = db.get_collection("users").unwrap();
+    assert!(fresh.get_all_indexes().is_empty());
+}

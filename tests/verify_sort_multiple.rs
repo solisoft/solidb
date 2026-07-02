@@ -79,3 +79,42 @@ fn test_multiple_sort_fields_mixed() {
 
     assert_eq!(names, vec!["C", "D", "A", "B"]);
 }
+
+/// SORT must be stable: rows with equal sort keys keep their pre-sort (scan)
+/// order, and the top-k path used when a LIMIT follows must produce exactly
+/// the first k rows of the stable full sort.
+#[test]
+fn test_sort_stability_with_and_without_limit() {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    engine.create_database("sortdb".to_string()).unwrap();
+    let db = engine.get_database("sortdb").unwrap();
+    db.create_collection("items".to_string(), None).unwrap();
+    let items = db.get_collection("items").unwrap();
+
+    // 100 docs, only 3 distinct sort keys, seq distinguishes the rows
+    for i in 0..100 {
+        items.insert(json!({ "grp": i % 3, "seq": i })).unwrap();
+    }
+
+    let executor = QueryExecutor::with_database(&engine, "sortdb".to_string());
+
+    // Scan order (by doc key) is the pre-sort order stability must preserve
+    let scan_order = executor
+        .execute(&parse("FOR d IN items RETURN [d.grp, d.seq]").unwrap())
+        .unwrap();
+    let mut expected = scan_order.clone();
+    expected.sort_by_key(|row| row[0].as_i64().unwrap()); // Rust's stable sort
+
+    let full = executor
+        .execute(&parse("FOR d IN items SORT d.grp ASC RETURN [d.grp, d.seq]").unwrap())
+        .unwrap();
+    assert_eq!(full, expected, "SORT is not stable w.r.t. scan order");
+
+    // LIMITed result (top-k path) must equal the prefix of the full stable sort
+    let limited = executor
+        .execute(&parse("FOR d IN items SORT d.grp ASC LIMIT 2, 7 RETURN [d.grp, d.seq]").unwrap())
+        .unwrap();
+    assert_eq!(limited.as_slice(), &full[2..9]);
+}

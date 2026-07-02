@@ -8,33 +8,19 @@ impl Collection {
 
     /// Get all geo index metadata
     pub fn get_all_geo_indexes(&self) -> Vec<GeoIndex> {
-        let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
-        let prefix = GEO_META_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
-
-        iter.filter_map(|result| {
-            result.ok().and_then(|(key, value)| {
-                if key.starts_with(prefix) {
-                    serde_json::from_slice(&value).ok()
-                } else {
-                    None
-                }
-            })
-        })
-        .collect()
+        self.index_meta()
+            .expect("Column family should exist")
+            .geo
+            .clone()
     }
 
     /// Get a geo index by name
     pub(crate) fn get_geo_index(&self, name: &str) -> Option<GeoIndex> {
-        let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
-        db.get_cf(&cf, Self::geo_meta_key(name))
-            .ok()
-            .flatten()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        self.index_meta()?
+            .geo
+            .iter()
+            .find(|i| i.name == name)
+            .cloned()
     }
 
     /// Create a geospatial index
@@ -64,6 +50,7 @@ impl Collection {
                     DbError::InternalError(format!("Failed to create geo index: {}", e))
                 })?;
         }
+        self.invalidate_index_meta();
 
         // Build index from existing documents
         let docs = self.all();
@@ -116,6 +103,7 @@ impl Collection {
         // Delete metadata
         db.delete_cf(&cf, Self::geo_meta_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop geo index: {}", e)))?;
+        self.invalidate_index_meta();
 
         // Delete entries
         let prefix = format!("{}{}:", GEO_PREFIX, name);

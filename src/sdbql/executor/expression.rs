@@ -12,7 +12,8 @@ use serde_json::Value;
 
 use super::types::Context;
 use super::{
-    evaluate_binary_op, evaluate_unary_op, get_field_value, to_bool, values_equal, QueryExecutor,
+    compare_key_rows, evaluate_binary_op, evaluate_unary_op, get_field_ref, get_field_value,
+    to_bool, values_equal, QueryExecutor,
 };
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
@@ -72,6 +73,104 @@ impl<'a> QueryExecutor<'a> {
 
         Ok(result)
     }
+    /// Resolve simple variable / field-path expressions to a borrow of the
+    /// value already in the context, so FILTER predicates, SORT keys and
+    /// projections don't deep-clone the whole document just to read one
+    /// field. `None` means "not resolvable by reference" and the caller falls
+    /// back to the owned evaluation path (which also reproduces its error
+    /// semantics, e.g. the "Variable not found" error).
+    fn resolve_ref<'v>(&'v self, expr: &Expression, ctx: &'v Context) -> Option<&'v Value> {
+        static NULL: Value = Value::Null;
+        match expr {
+            Expression::Variable(name) => ctx.get(name),
+            Expression::BindVariable(name) => ctx
+                .get(&format!("@{}", name))
+                .or_else(|| self.bind_vars.get(name)),
+            Expression::FieldAccess(base, field) => {
+                let base_value = self.resolve_ref(base, ctx)?;
+                // A missing segment reads as Null, matching get_field_value
+                Some(get_field_ref(base_value, field).unwrap_or(&NULL))
+            }
+            Expression::OptionalFieldAccess(base, field) => {
+                let base_value = self.resolve_ref(base, ctx)?;
+                match base_value {
+                    Value::Object(_) => Some(get_field_ref(base_value, field).unwrap_or(&NULL)),
+                    // Null and non-object bases read as Null
+                    _ => Some(&NULL),
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Sort rows by precomputing each row's sort keys once
+    /// (decorate-sort-undecorate) instead of re-evaluating the sort
+    /// expressions for both sides of every comparison. Evaluation errors read
+    /// as Null, matching the previous comparator's `unwrap_or`; `sort_by` is
+    /// stable, so tie order is unchanged.
+    pub(crate) fn sort_rows(
+        &self,
+        rows: Vec<Context>,
+        fields: &[(Expression, bool)],
+    ) -> Vec<Context> {
+        let ascending: Vec<bool> = fields.iter().map(|(_, asc)| *asc).collect();
+        let mut decorated: Vec<(Vec<Value>, Context)> = rows
+            .into_iter()
+            .map(|ctx| {
+                let keys = fields
+                    .iter()
+                    .map(|(expr, _)| {
+                        self.evaluate_expr_with_context(expr, &ctx)
+                            .unwrap_or(Value::Null)
+                    })
+                    .collect();
+                (keys, ctx)
+            })
+            .collect();
+        decorated.sort_by(|a, b| compare_key_rows(&a.0, &b.0, &ascending));
+        decorated.into_iter().map(|(_, ctx)| ctx).collect()
+    }
+
+    /// Keep only the first `k` rows of the sorted order, for SORT immediately
+    /// followed by LIMIT. The original row index is the final tiebreaker,
+    /// making the order total — the result is exactly the first `k` rows of
+    /// the stable full sort, at O(N + k log k) comparisons instead of
+    /// O(N log N).
+    pub(crate) fn sort_rows_top_k(
+        &self,
+        rows: Vec<Context>,
+        fields: &[(Expression, bool)],
+        k: usize,
+    ) -> Vec<Context> {
+        if k == 0 {
+            return Vec::new();
+        }
+        let ascending: Vec<bool> = fields.iter().map(|(_, asc)| *asc).collect();
+        let mut decorated: Vec<(Vec<Value>, usize, Context)> = rows
+            .into_iter()
+            .enumerate()
+            .map(|(index, ctx)| {
+                let keys = fields
+                    .iter()
+                    .map(|(expr, _)| {
+                        self.evaluate_expr_with_context(expr, &ctx)
+                            .unwrap_or(Value::Null)
+                    })
+                    .collect();
+                (keys, index, ctx)
+            })
+            .collect();
+        let cmp = |a: &(Vec<Value>, usize, Context), b: &(Vec<Value>, usize, Context)| {
+            compare_key_rows(&a.0, &b.0, &ascending).then(a.1.cmp(&b.1))
+        };
+        if k < decorated.len() {
+            decorated.select_nth_unstable_by(k - 1, cmp);
+            decorated.truncate(k);
+        }
+        decorated.sort_by(cmp);
+        decorated.into_iter().map(|(_, _, ctx)| ctx).collect()
+    }
+
     /// Evaluate a filter expression with full context
     pub fn evaluate_filter_with_context(&self, expr: &Expression, ctx: &Context) -> DbResult<bool> {
         match self.evaluate_expr_with_context(expr, ctx)? {
@@ -103,11 +202,22 @@ impl<'a> QueryExecutor<'a> {
             }
 
             Expression::FieldAccess(base, field) => {
+                // Fast path: borrow the base from the context and clone only
+                // the leaf instead of deep-cloning the whole document.
+                if let Some(base_value) = self.resolve_ref(base, ctx) {
+                    return Ok(get_field_value(base_value, field));
+                }
                 let base_value = self.evaluate_expr_with_context(base, ctx)?;
                 Ok(get_field_value(&base_value, field))
             }
 
             Expression::OptionalFieldAccess(base, field) => {
+                if let Some(base_value) = self.resolve_ref(base, ctx) {
+                    return Ok(match base_value {
+                        Value::Object(_) => get_field_value(base_value, field),
+                        _ => Value::Null,
+                    });
+                }
                 let base_value = self.evaluate_expr_with_context(base, ctx)?;
                 // Return null if base is null or not an object
                 match base_value {
@@ -242,9 +352,25 @@ impl<'a> QueryExecutor<'a> {
                     self.evaluate_expr_with_context(right, ctx)
                 }
                 _ => {
-                    let left_val = self.evaluate_expr_with_context(left, ctx)?;
-                    let right_val = self.evaluate_expr_with_context(right, ctx)?;
-                    evaluate_binary_op(&left_val, op, &right_val)
+                    // Borrow operands that are simple variable/field paths so
+                    // `FILTER doc.f == @v` evaluates without cloning anything.
+                    let left_owned;
+                    let left_val = match self.resolve_ref(left, ctx) {
+                        Some(v) => v,
+                        None => {
+                            left_owned = self.evaluate_expr_with_context(left, ctx)?;
+                            &left_owned
+                        }
+                    };
+                    let right_owned;
+                    let right_val = match self.resolve_ref(right, ctx) {
+                        Some(v) => v,
+                        None => {
+                            right_owned = self.evaluate_expr_with_context(right, ctx)?;
+                            &right_owned
+                        }
+                    };
+                    evaluate_binary_op(left_val, op, right_val)
                 }
             },
 

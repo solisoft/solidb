@@ -61,6 +61,7 @@ impl<'a> QueryExecutor<'a> {
         clauses: &[BodyClause],
         initial_ctx: &Context,
         scan_limit: Option<usize>,
+        indexed_filter_limit: Option<usize>,
     ) -> DbResult<(Vec<Context>, MutationStats)> {
         let mut rows: Vec<Context> = vec![initial_ctx.clone()];
         let mut stats = MutationStats::new();
@@ -97,12 +98,26 @@ impl<'a> QueryExecutor<'a> {
 
                             if let Ok(collection) = self.get_collection(&for_clause.collection) {
                                 for ctx in &rows {
-                                    let Some((docs, _name, _ty)) = self.lookup_index_for_filter(
-                                        &collection,
-                                        &filter_clause.expression,
-                                        &for_clause.variable,
-                                        ctx,
-                                    ) else {
+                                    // Cap the lookup at LIMIT only when the
+                                    // whole FILTER is the index condition — a
+                                    // residual conjunct could reject fetched
+                                    // rows and under-fill the LIMIT.
+                                    let lookup_limit = indexed_filter_limit.filter(|_| {
+                                        self.filter_fully_covered_by_index(
+                                            &filter_clause.expression,
+                                            &for_clause.variable,
+                                            ctx,
+                                        )
+                                    });
+                                    let Some((docs, _name, _ty)) = self
+                                        .lookup_index_for_filter_limited(
+                                            &collection,
+                                            &filter_clause.expression,
+                                            &for_clause.variable,
+                                            ctx,
+                                            lookup_limit,
+                                        )
+                                    else {
                                         all_rows_indexable = false;
                                         break;
                                     };

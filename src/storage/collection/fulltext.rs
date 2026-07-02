@@ -12,33 +12,19 @@ impl Collection {
 
     /// Get all fulltext indexes
     pub fn get_all_fulltext_indexes(&self) -> Vec<FulltextIndex> {
-        let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
-        let prefix = FT_META_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
-
-        iter.filter_map(|result| {
-            result.ok().and_then(|(key, value)| {
-                if key.starts_with(prefix) {
-                    serde_json::from_slice(&value).ok()
-                } else {
-                    None
-                }
-            })
-        })
-        .collect()
+        self.index_meta()
+            .expect("Column family should exist")
+            .fulltext
+            .clone()
     }
 
     /// Get a fulltext index by name
     pub(crate) fn get_fulltext_index(&self, name: &str) -> Option<FulltextIndex> {
-        let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
-        db.get_cf(&cf, Self::ft_meta_key(name))
-            .ok()
-            .flatten()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        self.index_meta()?
+            .fulltext
+            .iter()
+            .find(|i| i.name == name)
+            .cloned()
     }
 
     /// Get a fulltext index that covers a specific field
@@ -83,6 +69,7 @@ impl Collection {
                     DbError::InternalError(format!("Failed to create fulltext index: {}", e))
                 })?;
         }
+        self.invalidate_index_meta();
 
         // Build index
         let docs = self.all();
@@ -153,6 +140,7 @@ impl Collection {
         // Delete metadata
         db.delete_cf(&cf, Self::ft_meta_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop fulltext index: {}", e)))?;
+        self.invalidate_index_meta();
 
         let mut batch = WriteBatch::default();
         let mut count = 0;

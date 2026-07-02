@@ -123,6 +123,22 @@ impl<'a> QueryExecutor<'a> {
         var_name: &str,
         ctx: &Context,
     ) -> Option<(Vec<crate::storage::Document>, String, String)> {
+        self.lookup_index_for_filter_limited(collection, filter, var_name, ctx, None)
+    }
+
+    /// [`lookup_index_for_filter`] with an optional cap on the number of
+    /// documents fetched. Callers must only pass `Some` when the FILTER is
+    /// fully satisfied by the index condition (see
+    /// [`Self::filter_fully_covered_by_index`]) — a residual conjunct could
+    /// otherwise reject fetched rows and silently under-fill the LIMIT.
+    pub(super) fn lookup_index_for_filter_limited(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+        limit: Option<usize>,
+    ) -> Option<(Vec<crate::storage::Document>, String, String)> {
         // 1. Composite path
         let eq_conditions = self.extract_equality_conditions(filter, var_name, ctx);
         if eq_conditions.len() >= 2 {
@@ -138,7 +154,7 @@ impl<'a> QueryExecutor<'a> {
 
         // 2. Single-field fallback
         let cond = self.extract_indexable_condition(filter, var_name, ctx)?;
-        let docs = self.use_index_for_condition(collection, &cond)?;
+        let docs = self.use_index_for_condition(collection, &cond, limit)?;
         let (name, type_str) = collection
             .get_all_indexes()
             .into_iter()
@@ -146,6 +162,33 @@ impl<'a> QueryExecutor<'a> {
             .map(|i| (i.name, format!("{:?}", i.index_type)))
             .unwrap_or_default();
         Some((docs, name, type_str))
+    }
+
+    /// True when the FILTER expression is exactly one indexable comparison —
+    /// i.e. the index lookup returns precisely the rows the FILTER accepts,
+    /// so a LIMIT can be pushed into the lookup. AND/OR trees are excluded:
+    /// only one conjunct feeds the index and the rest re-filter afterwards.
+    pub(super) fn filter_fully_covered_by_index(
+        &self,
+        expr: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> bool {
+        match expr {
+            Expression::BinaryOp { op, .. } => {
+                matches!(
+                    op,
+                    BinaryOperator::Equal
+                        | BinaryOperator::LessThan
+                        | BinaryOperator::LessThanOrEqual
+                        | BinaryOperator::GreaterThan
+                        | BinaryOperator::GreaterThanOrEqual
+                ) && self
+                    .extract_indexable_condition(expr, var_name, ctx)
+                    .is_some()
+            }
+            _ => false,
+        }
     }
 
     /// Extract a concrete value from the non-field side of a comparison.
@@ -213,11 +256,13 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
-    /// Use index for a condition lookup
+    /// Use index for a condition lookup. `limit` caps the number of fetched
+    /// documents (LIMIT pushdown); pass `None` for the full result.
     pub(super) fn use_index_for_condition(
         &self,
         collection: &Collection,
         condition: &IndexableCondition,
+        limit: Option<usize>,
     ) -> Option<Vec<crate::storage::Document>> {
         // Fast-path: `_key` is the primary key, served by a direct RocksDB get()
         // instead of a full prefix scan + in-memory filter.
@@ -246,6 +291,17 @@ impl<'a> QueryExecutor<'a> {
 
         match condition.op {
             BinaryOperator::Equal => {
+                if let Some(k) = limit {
+                    // Same normalized-then-original two-try as the unlimited path
+                    if let Some(docs) =
+                        collection.index_lookup_eq_limit(&condition.field, &normalized_value, k)
+                    {
+                        if !docs.is_empty() {
+                            return Some(docs);
+                        }
+                    }
+                    return collection.index_lookup_eq_limit(&condition.field, &condition.value, k);
+                }
                 // Try with normalized value first
                 if let Some(docs) = collection.index_lookup_eq(&condition.field, &normalized_value)
                 {
@@ -257,16 +313,16 @@ impl<'a> QueryExecutor<'a> {
                 collection.index_lookup_eq(&condition.field, &condition.value)
             }
             BinaryOperator::GreaterThan => {
-                collection.index_lookup_gt(&condition.field, &normalized_value)
+                collection.index_lookup_gt(&condition.field, &normalized_value, limit)
             }
             BinaryOperator::GreaterThanOrEqual => {
-                collection.index_lookup_gte(&condition.field, &normalized_value)
+                collection.index_lookup_gte(&condition.field, &normalized_value, limit)
             }
             BinaryOperator::LessThan => {
-                collection.index_lookup_lt(&condition.field, &normalized_value)
+                collection.index_lookup_lt(&condition.field, &normalized_value, limit)
             }
             BinaryOperator::LessThanOrEqual => {
-                collection.index_lookup_lte(&condition.field, &normalized_value)
+                collection.index_lookup_lte(&condition.field, &normalized_value, limit)
             }
             _ => None,
         }

@@ -150,6 +150,9 @@ impl PendingCfDrops {
             let _ = db.delete_cf(&meta_cf, format!("{}{}", MARKER_PREFIX, cf_name).as_bytes());
         }
         self.states.remove(cf_name);
+        // A same-name recreate must not inherit this incarnation's cached
+        // index definitions.
+        super::collection::index_meta::invalidate_index_meta(db, cf_name);
     }
 
     /// Block until the background dropper finishes this CF (used when a

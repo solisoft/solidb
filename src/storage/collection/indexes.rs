@@ -16,33 +16,19 @@ impl Collection {
 
     /// Get all index metadata
     pub fn get_all_indexes(&self) -> Vec<Index> {
-        let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
-        let prefix = IDX_META_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
-
-        iter.filter_map(|result| {
-            result.ok().and_then(|(key, value)| {
-                if key.starts_with(prefix) {
-                    serde_json::from_slice(&value).ok()
-                } else {
-                    None
-                }
-            })
-        })
-        .collect()
+        self.index_meta()
+            .expect("Column family should exist")
+            .indexes
+            .clone()
     }
 
     /// Get an index by name
     pub(crate) fn get_index(&self, name: &str) -> Option<Index> {
-        let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
-        db.get_cf(&cf, Self::idx_meta_key(name))
-            .ok()
-            .flatten()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        self.index_meta()?
+            .indexes
+            .iter()
+            .find(|i| i.name == name)
+            .cloned()
     }
 
     /// Create an index on a field
@@ -74,6 +60,7 @@ impl Collection {
             db.put_cf(&cf, Self::idx_meta_key(&name), &index_bytes)
                 .map_err(|e| DbError::InternalError(format!("Failed to create index: {}", e)))?;
         }
+        self.invalidate_index_meta();
 
         // Build index from existing documents using WriteBatch for better performance
         let docs = self.all();
@@ -199,6 +186,7 @@ impl Collection {
                 DbError::InternalError(format!("Failed to write final drop batch: {}", e))
             })?;
         }
+        self.invalidate_index_meta();
 
         Ok(())
     }
@@ -896,26 +884,11 @@ impl Collection {
 
     /// Get an index for a field
     pub fn get_index_for_field(&self, field: &str) -> Option<Index> {
-        let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
-
-        // Try to find index by checking idx_meta entries
-        let prefix = IDX_META_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
-
-        for result in iter.flatten() {
-            let (key, value) = result;
-            if !key.starts_with(prefix) {
-                break;
-            }
-            if let Ok(index) = serde_json::from_slice::<Index>(&value) {
-                // Check if field is the first field in the index
-                if index.fields.first().map(|s| s.as_str()) == Some(field) {
-                    return Some(index);
-                }
-            }
-        }
-        None
+        self.index_meta()?
+            .indexes
+            .iter()
+            .find(|index| index.fields.first().map(|s| s.as_str()) == Some(field))
+            .cloned()
     }
 
     /// Get a single-field index for a field. Used by equality and range
@@ -924,46 +897,53 @@ impl Collection {
     /// so a prefix built from `<hex_a>` alone never matches its entries and
     /// silently returns no results.
     fn get_single_field_index_for_field(&self, field: &str) -> Option<Index> {
-        let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
-
-        let prefix = IDX_META_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
-
-        for result in iter.flatten() {
-            let (key, value) = result;
-            if !key.starts_with(prefix) {
-                break;
-            }
-            if let Ok(index) = serde_json::from_slice::<Index>(&value) {
-                if index.fields.len() == 1
-                    && index.fields.first().map(|s| s.as_str()) == Some(field)
-                {
-                    return Some(index);
-                }
-            }
-        }
-        None
+        self.index_meta()?
+            .indexes
+            .iter()
+            .find(|index| {
+                index.fields.len() == 1 && index.fields.first().map(|s| s.as_str()) == Some(field)
+            })
+            .cloned()
     }
 
     /// Lookup documents where field > value
-    pub fn index_lookup_gt(&self, field: &str, value: &Value) -> Option<Vec<Document>> {
-        self.index_range_scan(field, value, false, true)
+    pub fn index_lookup_gt(
+        &self,
+        field: &str,
+        value: &Value,
+        limit: Option<usize>,
+    ) -> Option<Vec<Document>> {
+        self.index_range_scan(field, value, false, true, limit)
     }
 
     /// Lookup documents where field >= value
-    pub fn index_lookup_gte(&self, field: &str, value: &Value) -> Option<Vec<Document>> {
-        self.index_range_scan(field, value, true, true)
+    pub fn index_lookup_gte(
+        &self,
+        field: &str,
+        value: &Value,
+        limit: Option<usize>,
+    ) -> Option<Vec<Document>> {
+        self.index_range_scan(field, value, true, true, limit)
     }
 
     /// Lookup documents where field < value
-    pub fn index_lookup_lt(&self, field: &str, value: &Value) -> Option<Vec<Document>> {
-        self.index_range_scan(field, value, false, false)
+    pub fn index_lookup_lt(
+        &self,
+        field: &str,
+        value: &Value,
+        limit: Option<usize>,
+    ) -> Option<Vec<Document>> {
+        self.index_range_scan(field, value, false, false, limit)
     }
 
     /// Lookup documents where field <= value
-    pub fn index_lookup_lte(&self, field: &str, value: &Value) -> Option<Vec<Document>> {
-        self.index_range_scan(field, value, true, false)
+    pub fn index_lookup_lte(
+        &self,
+        field: &str,
+        value: &Value,
+        limit: Option<usize>,
+    ) -> Option<Vec<Document>> {
+        self.index_range_scan(field, value, true, false, limit)
     }
 
     fn index_range_scan(
@@ -972,6 +952,7 @@ impl Collection {
         value: &Value,
         inclusive: bool,
         forward: bool,
+        limit: Option<usize>,
     ) -> Option<Vec<Document>> {
         let index = self.get_single_field_index_for_field(field)?;
         let index_name = &index.name;
@@ -984,6 +965,9 @@ impl Collection {
         let prefix_base = format!("{}{}:", IDX_PREFIX, index_name);
         let seek_key = format!("{}{}:", prefix_base, value_str);
 
+        // Pre-existing safety cap for unlimited scans; explicit limits from
+        // LIMIT pushdown replace it.
+        let cap = limit.unwrap_or(1000);
         let mut doc_keys = Vec::new();
 
         if forward {
@@ -1004,9 +988,9 @@ impl Collection {
                     let val_str = String::from_utf8_lossy(&v);
                     doc_keys.push(Self::doc_key(&val_str));
                 }
-                if doc_keys.len() >= 1000 {
+                if doc_keys.len() >= cap {
                     break;
-                } // Safety limit
+                }
             }
         } else {
             // For reverse, we might land ON the key or BEFORE it.
@@ -1027,7 +1011,7 @@ impl Collection {
                     let val_str = String::from_utf8_lossy(&v);
                     doc_keys.push(Self::doc_key(&val_str));
                 }
-                if doc_keys.len() >= 1000 {
+                if doc_keys.len() >= cap {
                     break;
                 }
             }
@@ -1208,8 +1192,15 @@ impl Collection {
             return None;
         }
         let index = self.get_single_field_index_for_field(field)?;
-        // Skip bloom check for limit query? No, same logic.
-        // It's just a limit.
+
+        // Same Bloom/Cuckoo definite-miss early-exit as `index_lookup_eq`
+        if (index.index_type == IndexType::Bloom
+            && !self.bloom_check(&index.name, &value.to_string()))
+            || (index.index_type == IndexType::Cuckoo
+                && !self.cuckoo_check(&index.name, &value.to_string()))
+        {
+            return Some(Vec::new());
+        }
 
         let value_str = hex::encode(crate::storage::codec::encode_key(value));
 

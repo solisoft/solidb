@@ -13,33 +13,19 @@ impl Collection {
 
     /// Get all TTL indexes
     pub fn get_all_ttl_indexes(&self) -> Vec<TtlIndex> {
-        let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
-        let prefix = TTL_META_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
-
-        iter.filter_map(|result| {
-            result.ok().and_then(|(key, value)| {
-                if key.starts_with(prefix) {
-                    serde_json::from_slice(&value).ok()
-                } else {
-                    None
-                }
-            })
-        })
-        .collect()
+        self.index_meta()
+            .expect("Column family should exist")
+            .ttl
+            .clone()
     }
 
     /// Get a TTL index by name
     pub fn get_ttl_index(&self, name: &str) -> Option<TtlIndex> {
-        let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
-        db.get_cf(&cf, Self::ttl_meta_key(name))
-            .ok()
-            .flatten()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        self.index_meta()?
+            .ttl
+            .iter()
+            .find(|i| i.name == name)
+            .cloned()
     }
 
     /// Create a TTL index
@@ -73,6 +59,7 @@ impl Collection {
                     DbError::InternalError(format!("Failed to create TTL index: {}", e))
                 })?;
         }
+        self.invalidate_index_meta();
 
         // Trigger an initial cleanup?
         // self.cleanup_expired_documents_for_ttl_index(&index)?;
@@ -101,6 +88,7 @@ impl Collection {
 
         db.delete_cf(&cf, Self::ttl_meta_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop TTL index: {}", e)))?;
+        self.invalidate_index_meta();
 
         Ok(())
     }

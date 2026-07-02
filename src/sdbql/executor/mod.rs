@@ -25,7 +25,8 @@ pub mod utils;
 mod window;
 
 pub use helpers::{
-    compare_values, evaluate_binary_op, evaluate_unary_op, get_field_value, to_bool, values_equal,
+    compare_key_rows, compare_values, evaluate_binary_op, evaluate_unary_op, get_field_ref,
+    get_field_value, to_bool, values_equal,
 };
 pub use types::*;
 pub use utils::*;

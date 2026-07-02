@@ -101,6 +101,7 @@ impl Database {
                 |e| DbError::InternalError(format!("Failed to create collection: {}", e)),
             )?;
         }
+        super::collection::index_meta::invalidate_index_meta(&self.db, &cf_name);
 
         // Persist collection type (lock-free, thread-safe)
         if let Some(cf) = self.db.cf_handle(&cf_name) {
@@ -134,6 +135,7 @@ impl Database {
 
         // Remove from cache
         self.collections.remove(collection_name);
+        super::collection::index_meta::invalidate_index_meta(&self.db, &cf_name);
 
         Ok(())
     }

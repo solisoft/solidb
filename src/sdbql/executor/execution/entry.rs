@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use super::super::types::{Context, MutationStats, QueryExecutionResult};
 use super::super::window::contains_window_functions;
-use super::super::{compare_values, QueryExecutor};
+use super::super::QueryExecutor;
 use crate::error::DbResult;
 use crate::sdbql::ast::*;
 
@@ -367,10 +367,49 @@ impl<'a> QueryExecutor<'a> {
             None
         };
 
+        // Optimization: push LIMIT into the index lookup when the body is
+        // exactly FOR + FILTER, nothing reorders or regroups rows afterwards,
+        // and the FILTER is fully satisfied by the index condition (that last
+        // part is checked per-row in the index branch, where the row context
+        // needed for condition extraction is available).
+        let indexed_filter_limit = if query.sort_clause.is_none()
+            && query.body_clauses.len() == 2
+            && matches!(query.body_clauses[0], BodyClause::For(_))
+            && matches!(query.body_clauses[1], BodyClause::Filter(_))
+            && query
+                .return_clause
+                .as_ref()
+                .is_none_or(|rc| !contains_window_functions(&rc.expression))
+        {
+            query.limit_clause.as_ref().and_then(|l| {
+                let offset = self
+                    .evaluate_expr_with_context(&l.offset, &initial_bindings)
+                    .ok()
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize)
+                    .unwrap_or(0);
+                let count = self
+                    .evaluate_expr_with_context(&l.count, &initial_bindings)
+                    .ok()
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize)
+                    .unwrap_or(0);
+                // Fetch offset+count — the LIMIT below still applies the offset
+                offset.checked_add(count)
+            })
+        } else {
+            None
+        };
+
         // Process body_clauses in order (supports correlated subqueries)
         // If body_clauses is empty, fall back to legacy behavior
         let (rows, mutation_stats) = if !query.body_clauses.is_empty() {
-            self.execute_body_clauses(&query.body_clauses, &initial_bindings, scan_limit)?
+            self.execute_body_clauses(
+                &query.body_clauses,
+                &initial_bindings,
+                scan_limit,
+                indexed_filter_limit,
+            )?
         } else {
             // Legacy path: use for_clauses and filter_clauses separately
             let mut rows =
@@ -388,22 +427,36 @@ impl<'a> QueryExecutor<'a> {
 
         // Apply SORT
         if let Some(sort) = &query.sort_clause {
-            rows.sort_by(|a, b| {
-                for (expr, ascending) in &sort.fields {
-                    let a_val = self
-                        .evaluate_expr_with_context(expr, a)
-                        .unwrap_or(Value::Null);
-                    let b_val = self
-                        .evaluate_expr_with_context(expr, b)
-                        .unwrap_or(Value::Null);
-
-                    let cmp = compare_values(&a_val, &b_val);
-                    if cmp != std::cmp::Ordering::Equal {
-                        return if *ascending { cmp } else { cmp.reverse() };
-                    }
+            // When a LIMIT follows and no window functions need the full
+            // sorted set, only the first offset+count rows survive — use the
+            // top-k path (identical output order) instead of a full sort.
+            let top_k = query.limit_clause.as_ref().and_then(|limit| {
+                let no_windows = query
+                    .return_clause
+                    .as_ref()
+                    .is_none_or(|rc| !contains_window_functions(&rc.expression));
+                if !no_windows {
+                    return None;
                 }
-                std::cmp::Ordering::Equal
+                let offset = self
+                    .evaluate_expr_with_context(&limit.offset, &initial_bindings)
+                    .ok()
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize)
+                    .unwrap_or(0);
+                let count = self
+                    .evaluate_expr_with_context(&limit.count, &initial_bindings)
+                    .ok()
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize)
+                    .unwrap_or(0);
+                let k = offset.checked_add(count)?;
+                (k.saturating_mul(4) < rows.len()).then_some(k)
             });
+            rows = match top_k {
+                Some(k) => self.sort_rows_top_k(rows, &sort.fields, k),
+                None => self.sort_rows(rows, &sort.fields),
+            };
         }
 
         // Apply window functions if RETURN clause contains any
@@ -469,7 +522,7 @@ impl<'a> QueryExecutor<'a> {
         }
 
         // Execute body clauses
-        let (rows, _) = self.execute_body_clauses(&query.body_clauses, &ctx, None)?;
+        let (rows, _) = self.execute_body_clauses(&query.body_clauses, &ctx, None, None)?;
 
         // Apply RETURN projection
         let results = if let Some(ref return_clause) = query.return_clause {

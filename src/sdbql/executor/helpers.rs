@@ -30,6 +30,30 @@ pub fn get_field_value(value: &Value, field_path: &str) -> Value {
     current.clone()
 }
 
+/// Reference-returning sibling of [`get_field_value`]: walks the dotted path
+/// and borrows the leaf instead of cloning it. `None` when any segment is
+/// missing — the caller decides whether that reads as `Null`.
+#[inline]
+pub fn get_field_ref<'v>(value: &'v Value, field_path: &str) -> Option<&'v Value> {
+    let mut current = value;
+    for part in field_path.split('.') {
+        current = current.get(part)?;
+    }
+    Some(current)
+}
+
+/// Compare two rows of precomputed sort keys, honoring per-field direction.
+#[inline]
+pub fn compare_key_rows(a: &[Value], b: &[Value], ascending: &[bool]) -> Ordering {
+    for ((a_val, b_val), asc) in a.iter().zip(b.iter()).zip(ascending.iter()) {
+        let cmp = compare_values(a_val, b_val);
+        if cmp != Ordering::Equal {
+            return if *asc { cmp } else { cmp.reverse() };
+        }
+    }
+    Ordering::Equal
+}
+
 #[inline]
 pub fn values_equal(left: &Value, right: &Value) -> bool {
     match (left, right) {
