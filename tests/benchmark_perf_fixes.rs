@@ -142,3 +142,48 @@ fn benchmark_single_inserts_with_indexes() {
         count as f64 / elapsed.as_secs_f64()
     );
 }
+
+#[test]
+#[ignore]
+fn benchmark_join_hash_vs_nested() {
+    let (engine, _tmp) = create_test_db();
+    let db = engine.get_database("bench_db").unwrap();
+    db.create_collection("orders".to_string(), None).unwrap();
+    db.create_collection("customers".to_string(), None).unwrap();
+
+    let customers = db.get_collection("customers").unwrap();
+    customers
+        .insert_batch(
+            (0..5_000)
+                .map(|i| json!({"cid": i, "name": format!("cust-{}", i)}))
+                .collect(),
+        )
+        .unwrap();
+    let orders = db.get_collection("orders").unwrap();
+    orders
+        .insert_batch(
+            (0..1_000)
+                .map(|i| json!({"customer_id": i % 5_000, "total": i}))
+                .collect(),
+        )
+        .unwrap();
+
+    let executor = QueryExecutor::with_database(&engine, "bench_db".to_string());
+
+    // Equi-join: hash path, O(L+R)
+    let len = run_query(
+        &executor,
+        "FOR o IN orders JOIN customers ON o.customer_id == customers.cid RETURN LENGTH(customers)",
+        "equi JOIN (hash path, 1k x 5k)",
+    );
+    assert_eq!(len, 1_000);
+
+    // Non-equi join: nested-loop fallback, O(L*R) — the old cost of ALL joins
+    let len = run_query(
+        &executor,
+        "FOR o IN orders FILTER o.total < 100 JOIN customers ON customers.cid < o.total RETURN LENGTH(customers)",
+        "non-equi JOIN (nested loop, 100 x 5k)",
+    );
+    // 99: the total==0 order matches no customer (no cid < 0) and INNER drops it
+    assert_eq!(len, 99);
+}

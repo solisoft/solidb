@@ -191,6 +191,47 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
+    /// Split a JOIN condition into an equi-join term `var.field == key_expr`
+    /// where `key_expr` does not reference `var` (it is evaluated against the
+    /// left row instead). Returns the field path on `var`, the key expression
+    /// for the other side, and whether the term is the *entire* condition —
+    /// when it was pulled out of an AND, the remaining conjuncts must be
+    /// re-checked per matched pair.
+    pub(super) fn extract_equi_join_term<'e>(
+        &self,
+        condition: &'e Expression,
+        var_name: &str,
+    ) -> Option<(String, &'e Expression, bool)> {
+        match condition {
+            Expression::BinaryOp {
+                left,
+                op: BinaryOperator::Equal,
+                right,
+            } => {
+                if let Some(field) = self.extract_field_path(left, var_name) {
+                    if !expression_references_var(right, var_name) {
+                        return Some((field, right.as_ref(), true));
+                    }
+                }
+                if let Some(field) = self.extract_field_path(right, var_name) {
+                    if !expression_references_var(left, var_name) {
+                        return Some((field, left.as_ref(), true));
+                    }
+                }
+                None
+            }
+            Expression::BinaryOp {
+                left,
+                op: BinaryOperator::And,
+                right,
+            } => self
+                .extract_equi_join_term(left, var_name)
+                .or_else(|| self.extract_equi_join_term(right, var_name))
+                .map(|(field, expr, _)| (field, expr, false)),
+            _ => None,
+        }
+    }
+
     /// Extract a concrete value from the non-field side of a comparison.
     ///
     /// Accepts literals, bind variables, and any expression that can be

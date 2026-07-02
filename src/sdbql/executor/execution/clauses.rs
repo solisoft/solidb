@@ -55,6 +55,88 @@ fn recv_sharded_with<T>(
 }
 
 impl<'a> QueryExecutor<'a> {
+    /// For each row, the indices (in scan order) of `docs` matching the join
+    /// condition with `var_name` bound to the doc.
+    ///
+    /// When the condition contains an equi-join term (`var.field == expr`),
+    /// this builds a hash table over the docs' field values and probes it
+    /// once per row — O(L+R) instead of the O(L×R) nested loop. Matching
+    /// semantics are unchanged: `codec::encode_key` equality coincides with
+    /// `values_equal` (numbers compare as f64, everything else structurally,
+    /// serde_json maps serialize in canonical key order), and when the equi
+    /// term was pulled out of an AND the full condition is re-checked per
+    /// candidate. Non-equi conditions fall back to the nested loop.
+    fn join_match_indices(
+        &self,
+        rows: &[Context],
+        docs: &[Value],
+        condition: &Expression,
+        var_name: &str,
+    ) -> Vec<Vec<usize>> {
+        use super::super::get_field_value;
+        use crate::storage::codec::encode_key;
+
+        if let Some((field_path, key_expr, is_whole_condition)) =
+            self.extract_equi_join_term(condition, var_name)
+        {
+            let mut table: std::collections::HashMap<Vec<u8>, Vec<usize>> =
+                std::collections::HashMap::new();
+            for (idx, doc) in docs.iter().enumerate() {
+                let key = encode_key(&get_field_value(doc, &field_path));
+                table.entry(key).or_default().push(idx);
+            }
+
+            return rows
+                .iter()
+                .map(|ctx| {
+                    // An evaluation error reads as "no match", exactly like
+                    // the nested loop's `if let Ok(..)`.
+                    let Ok(key_val) = self.evaluate_expr_with_context(key_expr, ctx) else {
+                        return Vec::new();
+                    };
+                    let Some(candidates) = table.get(&encode_key(&key_val)) else {
+                        return Vec::new();
+                    };
+                    if is_whole_condition {
+                        return candidates.clone();
+                    }
+                    candidates
+                        .iter()
+                        .copied()
+                        .filter(|&idx| {
+                            self.join_condition_matches(ctx, &docs[idx], condition, var_name)
+                        })
+                        .collect()
+                })
+                .collect();
+        }
+
+        // Fallback: nested loop for non-equi conditions
+        rows.iter()
+            .map(|ctx| {
+                (0..docs.len())
+                    .filter(|&idx| {
+                        self.join_condition_matches(ctx, &docs[idx], condition, var_name)
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn join_condition_matches(
+        &self,
+        ctx: &Context,
+        doc: &Value,
+        condition: &Expression,
+        var_name: &str,
+    ) -> bool {
+        let mut temp_ctx = ctx.clone();
+        temp_ctx.insert(var_name.to_string(), doc.clone());
+        self.evaluate_expr_with_context(condition, &temp_ctx)
+            .map(|v| v.as_bool().unwrap_or(false))
+            .unwrap_or(false)
+    }
+
     /// Execute body clauses and return row contexts with mutation stats
     pub(super) fn execute_body_clauses(
         &self,
@@ -1133,31 +1215,26 @@ impl<'a> QueryExecutor<'a> {
                             // Standard LEFT/INNER JOIN: iterate left side, find matches on right.
                             // Scan the joined collection ONCE: it doesn't depend on the
                             // left row, and rescanning it per row turned every join into
-                            // O(left × right) disk reads.
+                            // O(left × right) disk reads. Matching goes through
+                            // join_match_indices (hash join for equi-conditions).
                             let all_docs: Vec<Value> = collection
                                 .scan(None)
                                 .into_iter()
                                 .map(|doc| doc.to_value())
                                 .collect();
 
+                            let match_indices = self.join_match_indices(
+                                &rows,
+                                &all_docs,
+                                &join_clause.condition,
+                                &join_clause.variable,
+                            );
+
                             let mut new_rows = Vec::new();
 
-                            for ctx in &rows {
-                                // Find matching documents by evaluating join condition
-                                let mut matches = Vec::new();
-                                for doc in &all_docs {
-                                    let mut temp_ctx = ctx.clone();
-                                    temp_ctx.insert(join_clause.variable.clone(), doc.clone());
-
-                                    if let Ok(result) = self.evaluate_expr_with_context(
-                                        &join_clause.condition,
-                                        &temp_ctx,
-                                    ) {
-                                        if result.as_bool().unwrap_or(false) {
-                                            matches.push(doc.clone());
-                                        }
-                                    }
-                                }
+                            for (ctx, indices) in rows.iter().zip(match_indices) {
+                                let matches: Vec<Value> =
+                                    indices.iter().map(|&i| all_docs[i].clone()).collect();
 
                                 // Handle INNER vs LEFT
                                 match join_clause.join_type {
@@ -1195,29 +1272,33 @@ impl<'a> QueryExecutor<'a> {
                                 .map(|doc| doc.to_value())
                                 .collect();
 
-                            for right_doc in all_right_docs {
-                                // Find matching left rows for this right doc
-                                let mut left_matches = Vec::new();
-                                for left_ctx in &rows {
-                                    // Check if left row matches this right doc
-                                    let mut temp_ctx = left_ctx.clone();
-                                    temp_ctx
-                                        .insert(join_clause.variable.clone(), right_doc.clone());
-
-                                    if let Ok(result) = self.evaluate_expr_with_context(
-                                        &join_clause.condition,
-                                        &temp_ctx,
-                                    ) {
-                                        if result.as_bool().unwrap_or(false) {
-                                            // Convert left context to Value for grouping
-                                            left_matches.push(
-                                                serde_json::to_value(left_ctx).unwrap_or(
-                                                    Value::Object(serde_json::Map::new()),
-                                                ),
-                                            );
-                                        }
-                                    }
+                            // Transpose row→docs matches into doc→rows so the
+                            // hash-join path serves RIGHT JOIN too (row order
+                            // within each doc is preserved by ascending
+                            // iteration).
+                            let match_indices = self.join_match_indices(
+                                &rows,
+                                &all_right_docs,
+                                &join_clause.condition,
+                                &join_clause.variable,
+                            );
+                            let mut rows_per_doc: Vec<Vec<usize>> =
+                                vec![Vec::new(); all_right_docs.len()];
+                            for (row_idx, indices) in match_indices.iter().enumerate() {
+                                for &doc_idx in indices {
+                                    rows_per_doc[doc_idx].push(row_idx);
                                 }
+                            }
+
+                            for (doc_idx, right_doc) in all_right_docs.into_iter().enumerate() {
+                                // Convert matching left contexts to Values for grouping
+                                let left_matches: Vec<Value> = rows_per_doc[doc_idx]
+                                    .iter()
+                                    .map(|&row_idx| {
+                                        serde_json::to_value(&rows[row_idx])
+                                            .unwrap_or(Value::Object(serde_json::Map::new()))
+                                    })
+                                    .collect();
 
                                 // Create result: right doc + array of matching left rows
                                 //  This mirrors LEFT JOIN behavior but from right perspective
@@ -1265,22 +1346,20 @@ impl<'a> QueryExecutor<'a> {
                                 .collect();
 
                             // Phase 1: LEFT JOIN part - iterate left, find right matches
-                            for ctx in &rows {
-                                let mut matches = Vec::new();
-                                for (idx, doc) in all_right_docs.iter().enumerate() {
-                                    let mut temp_ctx = ctx.clone();
-                                    temp_ctx.insert(join_clause.variable.clone(), doc.clone());
-
-                                    if let Ok(result) = self.evaluate_expr_with_context(
-                                        &join_clause.condition,
-                                        &temp_ctx,
-                                    ) {
-                                        if result.as_bool().unwrap_or(false) {
-                                            matches.push(doc.clone());
-                                            matched_right_indices.insert(idx);
-                                        }
-                                    }
-                                }
+                            let match_indices = self.join_match_indices(
+                                &rows,
+                                &all_right_docs,
+                                &join_clause.condition,
+                                &join_clause.variable,
+                            );
+                            for (ctx, indices) in rows.iter().zip(match_indices) {
+                                let matches: Vec<Value> = indices
+                                    .iter()
+                                    .map(|&idx| {
+                                        matched_right_indices.insert(idx);
+                                        all_right_docs[idx].clone()
+                                    })
+                                    .collect();
 
                                 // Always include left row (LEFT JOIN semantics)
                                 let mut new_ctx = ctx.clone();

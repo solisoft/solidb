@@ -489,3 +489,114 @@ fn test_full_outer_join_comprehensive() -> DbResult<()> {
     drop(storage);
     Ok(())
 }
+
+// ============================================================================
+// Hash-join semantics (equi-joins take the hash path; these pin down the
+// edge cases where hash-key equality must match values_equal semantics)
+// ============================================================================
+
+fn setup_hash_join_data() -> DbResult<(StorageEngine, String)> {
+    let uuid = Uuid::new_v4();
+    let db_path = format!("/tmp/test_hashjoin_db_{}", uuid);
+    let storage = StorageEngine::new(&db_path)?;
+    let db_name = format!("test_db_{}", uuid);
+    storage.create_database(db_name.clone())?;
+    storage.create_collection(format!("{}:left_docs", db_name), None)?;
+    storage.create_collection(format!("{}:right_docs", db_name), None)?;
+
+    let left = storage.get_collection(&format!("{}:left_docs", db_name))?;
+    left.insert(json!({"_key": "l1", "ref": 1, "tag": "a"}))?; // int key
+    left.insert(json!({"_key": "l2", "ref": 2.0, "tag": "b"}))?; // float key
+    left.insert(json!({"_key": "l3", "ref": null, "tag": "c"}))?; // null key
+    left.insert(json!({"_key": "l4", "tag": "d"}))?; // missing key field
+
+    let right = storage.get_collection(&format!("{}:right_docs", db_name))?;
+    right.insert(json!({"_key": "r1", "val": 1.0, "flag": true}))?; // float matches int 1
+    right.insert(json!({"_key": "r2", "val": 2, "flag": false}))?; // int matches float 2.0
+    right.insert(json!({"_key": "r3", "val": null, "flag": true}))?; // null matches null
+    right.insert(json!({"_key": "r4", "val": 99, "flag": true}))?; // matches nothing
+
+    Ok((storage, db_name))
+}
+
+/// Int and float forms of the same number must join (values_equal compares
+/// as f64), and null must join null — including a missing field, which
+/// reads as null on both sides.
+#[test]
+fn test_hash_join_number_normalization_and_null() -> DbResult<()> {
+    let (storage, db_name) = setup_hash_join_data()?;
+    let executor = QueryExecutor::with_database(&storage, db_name);
+
+    let query = parse(
+        "FOR l IN left_docs JOIN right_docs ON l.ref == right_docs.val SORT l.tag ASC RETURN {tag: l.tag, matches: LENGTH(right_docs)}",
+    )?;
+    let results = executor.execute(&query)?;
+
+    // INNER join: l4 (missing ref → null) matches r3 (null), same as l3
+    assert_eq!(results.len(), 4);
+    assert_eq!(results[0], json!({"tag": "a", "matches": 1})); // 1 == 1.0
+    assert_eq!(results[1], json!({"tag": "b", "matches": 1})); // 2.0 == 2
+    assert_eq!(results[2], json!({"tag": "c", "matches": 1})); // null == null
+    assert_eq!(results[3], json!({"tag": "d", "matches": 1})); // missing == null
+    Ok(())
+}
+
+/// An AND condition takes the hash path on the equi term but must re-check
+/// the remaining conjuncts per candidate.
+#[test]
+fn test_hash_join_with_residual_condition() -> DbResult<()> {
+    let (storage, db_name) = setup_hash_join_data()?;
+    let executor = QueryExecutor::with_database(&storage, db_name);
+
+    let query = parse(
+        "FOR l IN left_docs JOIN right_docs ON l.ref == right_docs.val AND right_docs.flag == true SORT l.tag ASC RETURN {tag: l.tag, matches: LENGTH(right_docs)}",
+    )?;
+    let results = executor.execute(&query)?;
+
+    // r2 (flag=false) is rejected by the residual conjunct, so l2 drops out
+    // of the INNER join entirely.
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0], json!({"tag": "a", "matches": 1}));
+    assert_eq!(results[1], json!({"tag": "c", "matches": 1}));
+    assert_eq!(results[2], json!({"tag": "d", "matches": 1}));
+    Ok(())
+}
+
+/// Non-equi conditions can't use the hash table and must fall back to the
+/// nested loop with identical results.
+#[test]
+fn test_join_non_equi_fallback() -> DbResult<()> {
+    let (storage, db_name) = setup_hash_join_data()?;
+    let executor = QueryExecutor::with_database(&storage, db_name);
+
+    let query = parse(
+        "FOR l IN left_docs FILTER l.ref != null JOIN right_docs ON right_docs.val > l.ref SORT l.tag ASC RETURN {tag: l.tag, matches: LENGTH(right_docs)}",
+    )?;
+    let results = executor.execute(&query)?;
+
+    // l1 (ref 1): r2 (2) and r4 (99) are greater → 2 matches
+    // l2 (ref 2.0): r4 (99) → 1 match
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0], json!({"tag": "a", "matches": 2}));
+    assert_eq!(results[1], json!({"tag": "b", "matches": 1}));
+    Ok(())
+}
+
+/// LEFT JOIN through the hash path keeps unmatched left rows with an empty
+/// match array.
+#[test]
+fn test_hash_left_join_keeps_unmatched() -> DbResult<()> {
+    let (storage, db_name) = setup_hash_join_data()?;
+    let executor = QueryExecutor::with_database(&storage, db_name);
+
+    let query = parse(
+        "FOR l IN left_docs FILTER l.tag == 'a' LEFT JOIN right_docs ON l.ref == right_docs.missing_field SORT l.tag ASC RETURN {tag: l.tag, matches: LENGTH(right_docs)}",
+    )?;
+    let results = executor.execute(&query)?;
+
+    // r.missing_field is null everywhere; l1's ref is 1 → no match, but the
+    // left row survives with 0 matches.
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!({"tag": "a", "matches": 0}));
+    Ok(())
+}
