@@ -40,19 +40,6 @@
     <% end %>
   </a>
 
-  <!-- Talks -->
-  <a href="/talks" class="relative group">
-    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 <%= is_active("^/talks") and 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' or 'text-text-muted hover:bg-white/10 hover:text-white' %>">
-      <i class="fas fa-comments text-lg"></i>
-    </div>
-    <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
-      Talks
-    </div>
-    <% if is_active("^/talks") then %>
-    <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-6 bg-emerald-500 rounded-r-full"></div>
-    <% end %>
-  </a>
-
   <!-- Belote -->
   <a href="/belote" class="relative group">
     <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 <%= is_active("^/belote") and 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.3)]' or 'text-text-muted hover:bg-white/10 hover:text-white' %>">
@@ -201,7 +188,7 @@
           return tokenCache.token;
         }
         try {
-          const res = await fetch('/talks/livequery_token');
+          const res = await fetch('/livequery_token');
           const data = await res.json();
           tokenCache.token = data.token;
           tokenCache.expiry = Date.now() + (data.expires_in || 30) * 1000;

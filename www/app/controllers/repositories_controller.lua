@@ -15,7 +15,7 @@ local function get_current_user()
 end
 
 function RepositoriesController:before_action()
-  self.layout = "talks"
+  self.layout = "app"
   self.current_user = get_current_user()
 end
 

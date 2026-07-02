@@ -33,7 +33,7 @@ end
 function UsersController:index()
   local current_user = require_admin(self)
   if not current_user then
-    return self:redirect("/talks")
+    return self:redirect("/projects")
   end
 
   local result = Sdb:Sdbql([[
@@ -56,7 +56,7 @@ function UsersController:index()
   -- Get pending invitations count
   local pending_invitations = InvitationToken.pending_count()
 
-  self.layout = "talks"
+  self.layout = "app"
   self:render("admin/users/index", {
     current_user = current_user,
     users = users,
@@ -68,7 +68,7 @@ end
 function UsersController:show()
   local current_user = require_admin(self)
   if not current_user then
-    return self:redirect("/talks")
+    return self:redirect("/projects")
   end
 
   local result = Sdb:Sdbql([[
@@ -82,7 +82,7 @@ function UsersController:show()
     return self:redirect("/admin/users")
   end
 
-  self.layout = "talks"
+  self.layout = "app"
   self:render("admin/users/show", {
     current_user = current_user,
     user = user
@@ -93,7 +93,7 @@ end
 function UsersController:edit()
   local current_user = require_admin(self)
   if not current_user then
-    return self:redirect("/talks")
+    return self:redirect("/projects")
   end
 
   local result = Sdb:Sdbql([[
@@ -107,7 +107,7 @@ function UsersController:edit()
     return self:redirect("/admin/users")
   end
 
-  self.layout = "talks"
+  self.layout = "app"
   self:render("admin/users/edit", {
     current_user = current_user,
     user = user
@@ -173,7 +173,7 @@ end
 function UsersController:invitations()
   local current_user = require_admin(self)
   if not current_user then
-    return self:redirect("/talks")
+    return self:redirect("/projects")
   end
 
   local invitations = InvitationToken.all_with_status()
@@ -192,7 +192,7 @@ function UsersController:invitations()
     end
   end
 
-  self.layout = "talks"
+  self.layout = "app"
   self:render("admin/users/invitations", {
     current_user = current_user,
     invitations = invitations

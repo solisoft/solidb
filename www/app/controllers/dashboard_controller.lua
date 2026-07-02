@@ -169,35 +169,6 @@ function DashboardController:sidebar_pending_mrs()
   self:render("shared/_widget_merge_requests", { mrs = mrs })
 end
 
-function DashboardController:sidebar_recent_messages()
-  local user = AuthHelper.get_current_user()
-  if not user then return self:html("") end
-
-  local Message = require("models.message")
-  -- Fetch recent messages from channels the user is in
-  -- (Complex query: User -> Channels -> Messages)
-  -- Simplified for MVP: Messages from any channel, assuming public or user has access
-  -- Ideally: Join with subscriptions/memberships
-
-  local result = Sdb:Sdbql([[
-    FOR m IN messages
-      SORT m.timestamp DESC
-      LIMIT 5
-      LET sender = (FOR u IN users FILTER u._key == m.user_key RETURN {firstname: u.firstname})[0]
-      RETURN MERGE(m, {sender_name: sender.firstname})
-  ]], {})
-
-  local messages = {}
-  if result and result.result then
-    for _, doc in ipairs(result.result) do
-      table.insert(messages, Message:new(doc))
-    end
-  end
-
-  self.layout = false
-  self:render("shared/_widget_recent_messages", { messages = messages })
-end
-
 function DashboardController:sidebar_calendar_invites()
   local user = AuthHelper.get_current_user()
   if not user then return self:html("") end

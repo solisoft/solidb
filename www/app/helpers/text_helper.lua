@@ -63,7 +63,7 @@ function M.format_message(text)
     if lang and lang ~= "" then
       lang_class = " language-" .. lang:lower()
     end
-    -- Using theme classes matching talks app (bg-bg-dark, border-border/30)
+    -- Using theme classes matching the app layout (bg-bg-dark, border-border/30)
     local pre_class = ' class="bg-bg-dark/50 border border-border/30 rounded-lg p-3 overflow-x-auto my-2 text-sm font-mono"'
     local code_class = ' class="font-mono text-sm' .. lang_class .. '"'
     -- Preserve newlines inside code block by encoding them temporarily if needed, 
@@ -106,27 +106,6 @@ function M.format_message(text)
 
   -- Images: ![alt](url)
   formatted = formatted:gsub("!%[([^%]]*)%]%(([^%)]+)%)", '<img src="%2" alt="%1" onclick="openLightbox(this.src)" class="max-w-md max-h-96 rounded-lg border border-border/30 my-2 cursor-pointer hover:opacity-90 transition-opacity">')
-
-  -- File Attachments: [name](/talks/file/key)
-  -- Render as a nice card with icon
-  formatted = formatted:gsub("%[([^%]]+)%]%((/talks/file/[^%)]+)%)", function(name, url)
-      return '<a href="' .. url .. '" target="_blank" rel="noopener" class="inline-flex items-center gap-3 px-4 py-3 my-2 bg-gradient-to-r from-bg-dark/80 to-bg-dark/40 border border-border/40 rounded-xl hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10 transition-all duration-200 group max-w-sm">' ..
-             '<div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-primary/20 to-accent/20 rounded-lg flex items-center justify-center">' ..
-               '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">' ..
-                 '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />' ..
-               '</svg>' ..
-             '</div>' ..
-             '<div class="flex-1 min-w-0">' ..
-               '<div class="font-medium text-text text-sm truncate group-hover:text-primary transition-colors">' .. name .. '</div>' ..
-               '<div class="text-xs text-text-muted">Click to download</div>' ..
-             '</div>' ..
-             '<div class="flex-shrink-0 text-text-muted group-hover:text-primary transition-colors">' ..
-               '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">' ..
-                 '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />' ..
-               '</svg>' ..
-             '</div>' ..
-             '</a>'
-  end)
 
   -- Links: [text](url)
   formatted = formatted:gsub("%[([^%]]+)%]%(([^%)]+)%)", '<a href="%2" target="_blank" rel="noopener noreferrer" class="text-primary hover:text-primary-light hover:underline">%1</a>')

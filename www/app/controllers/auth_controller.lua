@@ -17,7 +17,7 @@ end
 -- Login Form (GET /auth/login)
 function AuthController:login()
   self.layout = "auth"
-  local redirect_to = self.params.redirect or "/talks"
+  local redirect_to = self.params.redirect or "/projects"
   local flash = GetFlash()
   self:render("auth/login", {
     redirect_to = redirect_to,
@@ -29,7 +29,7 @@ end
 function AuthController:do_login()
   local email = self.params.email
   local password = self.params.password
-  local redirect_to = self.params.redirect or "/talks"
+  local redirect_to = self.params.redirect or "/projects"
   local db = get_db()
 
   if not email or not password or email == "" or password == "" then
@@ -90,7 +90,7 @@ end
 -- Signup Form (GET /auth/signup)
 function AuthController:signup()
   self.layout = "auth"
-  local redirect_to = self.params.redirect or "/talks"
+  local redirect_to = self.params.redirect or "/projects"
   local token = self.params.token or ""
   local flash = GetFlash()
 
@@ -140,7 +140,7 @@ function AuthController:do_signup()
   local email = self.params.email
   local password = self.params.password
   local token = self.params.token or ""
-  local redirect_to = self.params.redirect or "/talks"
+  local redirect_to = self.params.redirect or "/projects"
   local db = get_db()
 
   -- Check if this is first user
@@ -271,6 +271,17 @@ function AuthController:logout()
   DestroySession()
   local redirect_to = self.params.redirect or "/auth/login"
   return self:redirect(redirect_to)
+end
+
+-- Short-lived LiveQuery token for browser WebSocket subscriptions
+-- (used by the activity sidebar and projects sidebar live updates)
+function AuthController:livequery_token()
+  local token = Sdb:LiveQueryToken()
+
+  self:json({
+    token = token,
+    expires_in = 30
+  })
 end
 
 return AuthController

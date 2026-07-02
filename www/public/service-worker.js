@@ -1,4 +1,4 @@
-const CACHE_NAME = "talks-v23";
+const CACHE_NAME = "solidb-v24";
 const STATIC_ASSETS = [
   "/favicon.png",
   "/manifest.json",
@@ -59,7 +59,7 @@ self.addEventListener("fetch", (event) => {
   if (event.request.mode === "navigate") {
     event.respondWith(
       fetch(event.request).catch(() => {
-        return caches.match("/talks").then(response => {
+        return caches.match("/projects").then(response => {
           return response || new Response("Offline", { status: 503, statusText: "Service Unavailable" });
         });
       })

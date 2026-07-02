@@ -53,7 +53,7 @@ function AuthHelper.require_login(controller, redirect_path)
     if controller.params._json then
       controller:json({ error = "Unauthorized" }, 401)
     else
-      local current_path = redirect_path or GetPath() or "/talks"
+      local current_path = redirect_path or GetPath() or "/projects"
       controller:redirect("/auth/login?redirect=" .. current_path)
     end
     return nil

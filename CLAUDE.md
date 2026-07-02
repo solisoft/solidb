@@ -109,8 +109,7 @@ www/
 │   ├── models/          # Data models
 │   └── views/           # Etlua templates
 │       ├── dashboard/   # Database management UI
-│       ├── docs/        # Documentation website
-│       └── talks/       # Slack-like chat application
+│       └── docs/        # Documentation website
 ├── config/
 │   ├── database.json    # DB connection config
 │   └── routes.lua       # URL routing
@@ -122,7 +121,6 @@ www/
 
 - **Dashboard** (`/dashboard`) - Database management UI for browsing collections, running queries, managing indexes
 - **Documentation** (`/docs`) - SoliDB documentation website
-- **Talks** (`/talks`) - Slack-like team chat with channels, DMs, threads, reactions, file uploads, voice/video calls, and real-time updates via LiveQuery WebSocket
 
 ### Development Commands
 
@@ -147,6 +145,6 @@ lua beans.lua specs       # Run tests
 
 - **Routing**: `config/routes.lua` maps URLs to `controller#action`
 - **Views**: Etlua templates with `<%= %>` for output, `<% %>` for Lua code
-- **Components**: Riot.js with `window.TalksMixin` for shared utilities
+- **Components**: Riot.js components compiled via `npm run build:riot`
 - **Real-time**: LiveQuery WebSocket subscriptions for instant updates
 - **Auth**: Session cookies with Argon2 password hashing

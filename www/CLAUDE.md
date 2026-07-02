@@ -18,7 +18,7 @@
 
 
 ## Purpose
-LuaOnBeans web application providing the SoliDB Dashboard, Documentation site, and Talks chat application. Uses Riot.js components, TailwindCSS, and HTMX for dynamic interactions.
+LuaOnBeans web application providing the SoliDB Dashboard, Documentation site, and internal team apps (projects, mailbox, repositories). Uses Riot.js components, TailwindCSS, and HTMX for dynamic interactions.
 
 ## Structure
 
@@ -42,7 +42,6 @@ www/
 |-----|-----|-------------|
 | Dashboard | `/database/:db` | Database management UI |
 | Documentation | `/docs` | SoliDB documentation |
-| Talks | `/talks` | Slack-like team chat |
 
 ## Key Patterns
 

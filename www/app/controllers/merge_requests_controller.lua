@@ -6,7 +6,7 @@ local GitHelper = require("helpers.git_helper")
 local AuthHelper = require("helpers.auth_helper")
 
 function MergeRequestsController:before_action()
-  self.layout = "talks"
+  self.layout = "app"
   self.current_user = AuthHelper.require_login(self, "/repositories")
   if not self.current_user then return end
 end
@@ -163,15 +163,26 @@ function MergeRequestsController:show()
   local MrComment = require("models.mr_comment")
   local comments = MrComment.where({ mr_id = mr.id }):all()
 
-  -- Enrich comments with author info
+  -- Enrich comments with author info (one batched query, not one per comment)
   local db = _G.Sdb
-  if db then
+  if db and #comments > 0 then
+    local author_ids, seen = {}, {}
     for _, comment in ipairs(comments) do
-      if comment.author_id then
-        local userRes = db:Sdbql("FOR u IN users FILTER u._key == @key RETURN { name: u.name, username: u.username }", { key = comment.author_id })
-        if userRes and userRes.result and userRes.result[1] then
-          comment.author_name = userRes.result[1].name or userRes.result[1].username
+      if comment.author_id and not seen[comment.author_id] then
+        seen[comment.author_id] = true
+        table.insert(author_ids, comment.author_id)
+      end
+    end
+    if #author_ids > 0 then
+      local userRes = db:Sdbql("FOR u IN users FILTER u._key IN @keys RETURN { _key: u._key, name: u.name, username: u.username }", { keys = author_ids })
+      local by_key = {}
+      if userRes and userRes.result then
+        for _, u in ipairs(userRes.result) do
+          by_key[u._key] = u.name or u.username
         end
+      end
+      for _, comment in ipairs(comments) do
+        comment.author_name = by_key[comment.author_id]
       end
     end
   end

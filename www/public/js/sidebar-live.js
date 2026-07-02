@@ -25,7 +25,7 @@
             return tokenCache.token;
         }
         try {
-            const res = await fetch('/talks/livequery_token');
+            const res = await fetch('/livequery_token');
             if (!res.ok) throw new Error('Failed to fetch token');
             const data = await res.json();
             tokenCache.token = data.token;
@@ -77,14 +77,6 @@
                 database: DB_NAME,
                 query: 'FOR mr IN merge_requests FILTER mr.status == "open" RETURN mr'
             }));
-
-            // Messages
-            sidebarWs.send(JSON.stringify({
-                type: 'live_query',
-                id: 'messages',
-                database: DB_NAME,
-                query: 'FOR m IN messages RETURN m'
-            }));
         };
 
         sidebarWs.onmessage = (e) => {
@@ -95,8 +87,6 @@
                     notify('sidebar:tasks');
                 } else if (msg.id === 'mrs') {
                     notify('sidebar:mrs');
-                } else if (msg.id === 'messages') {
-                    notify('sidebar:messages');
                 }
             } catch (err) {
                 console.error(`[Sidebar] Message error:`, err);

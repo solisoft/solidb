@@ -1,12 +1,12 @@
 {
-    "name": "Talks",
-    "short_name": "Talks",
-    "start_url": "/talks",
+    "name": "SoliDB",
+    "short_name": "SoliDB",
+    "start_url": "/projects",
     "scope": "/",
     "display": "standalone",
     "background_color": "#1A1D21",
     "theme_color": "#1A1D21",
-    "description": "Collaborate and communicate with your team in real-time.",
+    "description": "SoliDB team workspace.",
     "orientation": "any",
     "icons": [
         {

@@ -23,8 +23,12 @@ router.get("/api/:db/:service/docs/openapi.json", "public_apidocs#service_openap
 router.get("/sidebar/tasks_progress", "dashboard#sidebar_tasks_progress")
 router.get("/sidebar/tasks_priority", "dashboard#sidebar_tasks_priority")
 router.get("/sidebar/pending_mrs", "dashboard#sidebar_pending_mrs")
-router.get("/sidebar/recent_messages", "dashboard#sidebar_recent_messages")
 router.get("/sidebar/calendar_invites", "dashboard#sidebar_calendar_invites")
+
+-- Short-lived LiveQuery token for browser WebSocket subscriptions
+router.scope("", { middleware = { "session_auth" } }, function()
+  router.get("/livequery_token", "auth#livequery_token")
+end)
 
 -- Auth routes
 router.get("/auth/login", "auth#login")
@@ -276,60 +280,6 @@ router.scope("/admin", { middleware = { "session_auth" } }, function()
   router.get("/invitations", "admin/users#invitations")
   router.post("/invitations", "admin/users#create_invitation")
   router.delete("/invitations/:key", "admin/users#delete_invitation")
-end)
-
--- Talks (Chat App) routes - requires session auth
-router.scope("/talks", { middleware = { "session_auth" } }, function()
-  router.get("", "talks#index")
-  router.get("/livequery_token", "talks#livequery_token")
-  router.get("/user/:key", "talks#get_user")
-  router.get("/setup_presence", "talks#setup_presence")
-
-  -- Sidebar partials
-  router.get("/sidebar/channels", "talks#sidebar_channels")
-  router.get("/sidebar/dms", "talks#sidebar_dms")
-  router.get("/sidebar/users", "talks#sidebar_users")
-
-  -- Messages
-  router.get("/messages/:channel", "talks#messages")
-  router.get("/message/:key", "talks#show_message")
-  router.get("/message/:key/edit", "talks#edit_message")
-  router.post("/message", "talks#send_message")
-  router.put("/message/:key", "talks#update_message")
-  router.delete("/message/:key", "talks#delete_message")
-
-  -- Reactions
-  router.get("/emoji_picker/:key", "talks#emoji_picker")
-  router.post("/react", "talks#toggle_reaction")
-
-  -- Threads
-  router.get("/thread/:message_id", "talks#thread")
-  router.post("/thread/:message_id/reply", "talks#thread_reply")
-
-  -- Channels
-  router.get("/channel/modal/create", "talks#channel_modal")
-  router.get("/channel/users", "talks#channel_users")
-  router.post("/channel", "talks#create_channel")
-
-  -- Groups
-  router.get("/group/modal/create", "talks#group_modal")
-  router.post("/group", "talks#create_group")
-
-  -- DMs
-  router.post("/dm/start/:user_key", "talks#dm_start")
-
-  -- Files
-  router.get("/file/:key", "talks#file")
-
-  -- Calls
-  router.get("/call/ui/:channel_key", "talks#call_ui")
-  router.get("/call/ui/:channel_key/:type", "talks#call_ui")
-  router.post("/call/join/:channel_key", "talks#call_join")
-  router.post("/call/leave/:channel_key", "talks#call_leave")
-  router.get("/call/participants/:channel_key", "talks#call_participants")
-  router.post("/call/decline", "talks#call_decline")
-  router.post("/call/signal", "talks#call_signal")
-  router.delete("/call/signal/:key", "talks#call_signal_delete")
 end)
 
 -- Belote (Card Game) routes - requires session auth

@@ -12,7 +12,7 @@ end
 
 -- Get all users (for assignee dropdowns)
 local function get_all_users()
-  local result = Sdb:Sdbql("FOR u IN users RETURN { _key: u._key, firstname: u.firstname, lastname: u.lastname }")
+  local result = Sdb:Sdbql("FOR u IN users SORT u.firstname ASC LIMIT 500 RETURN { _key: u._key, firstname: u.firstname, lastname: u.lastname }")
   return (result and result.result) or {}
 end
 
@@ -30,7 +30,7 @@ function ProjectsController:index()
     app.data.feature_count = app:features_count()
   end
 
-  self.layout = "talks"
+  self.layout = "app"
   self:render("projects/index", {
     current_user = current_user,
     apps = apps,
@@ -149,7 +149,7 @@ function ProjectsController:features()
     feature.data.done_count = feature:done_tasks_count()
   end
 
-  self.layout = "talks"
+  self.layout = "app"
   self:render("projects/features", {
     current_user = current_user,
     app = app,
@@ -326,7 +326,7 @@ function ProjectsController:board()
     end
   end
 
-  self.layout = "talks"
+  self.layout = "app"
   self:render("projects/board", {
     current_user = current_user,
     app = app,

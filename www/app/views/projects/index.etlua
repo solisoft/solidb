@@ -57,7 +57,7 @@
 
   async function getToken() {
     try {
-      const res = await fetch('/talks/livequery_token');
+      const res = await fetch('/livequery_token');
       const data = await res.json();
       return data.token;
     } catch (e) {
