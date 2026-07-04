@@ -328,8 +328,12 @@ pub async fn login_handler(
         socket_ip.unwrap_or_else(|| "unknown".to_string())
     };
 
-    // Check rate limit before processing
-    crate::server::auth::check_rate_limit(&client_ip)?;
+    // Rate limit on (client IP, username), counting only *failed* attempts:
+    // parallel legitimate logins (e.g. a local test runner's workers all
+    // hitting 127.0.0.1) can't exhaust the budget, and one app looping on
+    // bad credentials doesn't lock other users out of the same host.
+    let rate_bucket = format!("{}|{}", client_ip, req.username);
+    crate::server::auth::check_rate_limit(&rate_bucket)?;
     // 1. Get _system database
     let db = state.storage.get_database("_system")?;
 
@@ -364,6 +368,7 @@ pub async fn login_handler(
     let doc = match collection.get(&req.username) {
         Ok(d) => d,
         Err(DbError::DocumentNotFound(_)) => {
+            crate::server::auth::record_login_failure(&rate_bucket);
             // Return generic error for security
             return Err(DbError::BadRequest("Invalid credentials".to_string()));
         }
@@ -378,6 +383,7 @@ pub async fn login_handler(
 
     // 6. Verify password
     if !crate::server::auth::verify_password_blocking(&req.password, &user.password_hash).await {
+        crate::server::auth::record_login_failure(&rate_bucket);
         tracing::warn!(
             "Password verification failed for user '{}' from {}",
             req.username,
@@ -385,6 +391,9 @@ pub async fn login_handler(
         );
         return Err(DbError::BadRequest("Invalid credentials".to_string()));
     }
+
+    // Successful login: reset this bucket's failure count.
+    crate::server::auth::clear_login_failures(&rate_bucket);
 
     // 7. Generate Token with roles
     let roles = crate::server::auth::AuthService::get_user_roles(&state.storage, &user.username);

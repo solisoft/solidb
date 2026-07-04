@@ -29,21 +29,31 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
 
-/// Rate limiting configuration. The per-IP login budget defaults to 20/min;
-/// SOLIDB_MAX_LOGIN_ATTEMPTS overrides it (a dev box running several apps
-/// and test suites against one instance burns 20 in a single suite run).
+/// Rate limiting configuration. The failed-login budget per (IP, username)
+/// bucket defaults to 20/window; SOLIDB_MAX_LOGIN_ATTEMPTS overrides it.
+/// Successful logins are never counted (see `check_rate_limit`), so parallel
+/// legitimate logins from one host cannot exhaust the budget.
 static MAX_LOGIN_ATTEMPTS: Lazy<usize> = Lazy::new(|| {
     std::env::var("SOLIDB_MAX_LOGIN_ATTEMPTS")
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(20)
 });
-const RATE_LIMIT_WINDOW_SECS: u64 = 60;
+
+/// Sliding-window length for the login limiter. Defaults to 60s;
+/// SOLIDB_LOGIN_RATE_WINDOW_SECS overrides it.
+static RATE_LIMIT_WINDOW_SECS: Lazy<u64> = Lazy::new(|| {
+    std::env::var("SOLIDB_LOGIN_RATE_WINDOW_SECS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|secs| *secs > 0)
+        .unwrap_or(60)
+});
 
 /// Basic auth cache TTL in seconds (avoid repeated Argon2 verification)
 const BASIC_AUTH_CACHE_TTL_SECS: u64 = 60;
 
-/// Max number of distinct IPs we keep in the rate-limiter LRU.
+/// Max number of distinct (IP, username) buckets we keep in the rate-limiter LRU.
 const RATE_LIMITER_CAPACITY: usize = 50_000;
 
 /// Max number of Basic-auth entries we keep in the cache LRU.
@@ -56,7 +66,8 @@ struct AuthCacheEntry {
 }
 
 /// In-memory rate limiter for login attempts.
-/// Bounded LRU keyed by client IP, values are recent attempt timestamps.
+/// Bounded LRU keyed by (client IP, username), values are recent *failed*
+/// attempt timestamps — successful logins are never recorded.
 /// Parking-lot `Mutex` is non-async and faster than `std::sync::RwLock` here
 /// because every operation is a brief mutation (no concurrent readers).
 static LOGIN_RATE_LIMITER: Lazy<Mutex<LruCache<String, Vec<Instant>>>> = Lazy::new(|| {
@@ -91,31 +102,57 @@ pub fn trust_proxy_headers() -> bool {
     *TRUST_PROXY_HEADERS
 }
 
-/// Check if an IP is rate limited, return error if too many attempts
-pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
+/// Check whether a login bucket has exhausted its failed-attempt budget.
+/// Read-only: attempts are recorded via `record_login_failure`, and only
+/// failures count, so any number of successful logins never trips the
+/// limiter. Returns `DbError::RateLimited` (HTTP 429 + `Retry-After`) when
+/// the bucket is full.
+pub fn check_rate_limit(bucket: &str) -> Result<(), crate::error::DbError> {
     let now = Instant::now();
-    let window = std::time::Duration::from_secs(RATE_LIMIT_WINDOW_SECS);
+    let window = std::time::Duration::from_secs(*RATE_LIMIT_WINDOW_SECS);
 
     let mut limiter = LOGIN_RATE_LIMITER.lock();
 
-    // Get or create entry for this IP (LRU bump on access).
-    let attempts = limiter.get_or_insert_mut(ip.to_string(), Vec::new);
+    let Some(attempts) = limiter.get_mut(bucket) else {
+        return Ok(());
+    };
 
     // Remove old attempts outside the window
     attempts.retain(|t| now.duration_since(*t) < window);
 
-    // Check if rate limited
     if attempts.len() >= *MAX_LOGIN_ATTEMPTS {
-        return Err(crate::error::DbError::BadRequest(format!(
-            "Too many login attempts. Please wait {} seconds before trying again.",
-            RATE_LIMIT_WINDOW_SECS
-        )));
+        // The bucket frees up when its oldest failure ages out of the window.
+        let retry_after_secs = attempts
+            .first()
+            .map(|oldest| window.saturating_sub(now.duration_since(*oldest)).as_secs() + 1)
+            .unwrap_or(*RATE_LIMIT_WINDOW_SECS);
+        return Err(crate::error::DbError::RateLimited(
+            format!(
+                "Too many failed login attempts. Please wait {} seconds before trying again.",
+                retry_after_secs
+            ),
+            retry_after_secs,
+        ));
     }
 
-    // Record this attempt
-    attempts.push(now);
-
     Ok(())
+}
+
+/// Record a failed login attempt against a bucket.
+pub fn record_login_failure(bucket: &str) {
+    let now = Instant::now();
+    let window = std::time::Duration::from_secs(*RATE_LIMIT_WINDOW_SECS);
+
+    let mut limiter = LOGIN_RATE_LIMITER.lock();
+    let attempts = limiter.get_or_insert_mut(bucket.to_string(), Vec::new);
+    attempts.retain(|t| now.duration_since(*t) < window);
+    attempts.push(now);
+}
+
+/// Drop a bucket after a successful login so a user who eventually typed
+/// the right password starts fresh.
+pub fn clear_login_failures(bucket: &str) {
+    LOGIN_RATE_LIMITER.lock().pop(bucket);
 }
 
 /// Get cached Basic auth claims if still valid
@@ -1527,9 +1564,41 @@ mod tests {
 
     #[test]
     fn test_check_rate_limit_initial() {
-        // First call should succeed (using unique IP)
-        let result = check_rate_limit("192.168.1.1_test");
+        // First call should succeed (using unique bucket)
+        let result = check_rate_limit("192.168.1.1_test|admin");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_rate_limit_only_counts_failures() {
+        // Checking without recording failures never trips the limiter,
+        // regardless of how many (successful) logins happen.
+        let bucket = "10.0.0.1_test|alice";
+        for _ in 0..(*MAX_LOGIN_ATTEMPTS * 10) {
+            assert!(check_rate_limit(bucket).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_rate_limit_blocks_after_max_failures_then_clears() {
+        let bucket = "10.0.0.2_test|bob";
+        for _ in 0..*MAX_LOGIN_ATTEMPTS {
+            assert!(check_rate_limit(bucket).is_ok());
+            record_login_failure(bucket);
+        }
+
+        match check_rate_limit(bucket) {
+            Err(crate::error::DbError::RateLimited(msg, retry_after_secs)) => {
+                assert!(msg.contains("Too many failed login attempts"));
+                assert!(retry_after_secs >= 1);
+                assert!(retry_after_secs <= *RATE_LIMIT_WINDOW_SECS + 1);
+            }
+            other => panic!("expected RateLimited, got {:?}", other),
+        }
+
+        // A successful login clears the bucket.
+        clear_login_failures(bucket);
+        assert!(check_rate_limit(bucket).is_ok());
     }
 
     #[test]

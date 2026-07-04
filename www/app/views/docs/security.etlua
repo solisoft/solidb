@@ -61,7 +61,7 @@
                 </tr>
                 <tr class="hover:bg-white/5 transition-colors">
                   <td class="p-4 text-gray-300 font-medium">Rate Limiting</td>
-                  <td class="p-4 text-gray-400">Login attempts are limited to <strong>5 per 60 seconds</strong> per IP address to prevent brute force attacks.</td>
+                  <td class="p-4 text-gray-400">Failed login attempts are limited to <strong>20 per 60 seconds</strong> per (IP address, username) pair — successful logins are never counted. Over the limit, the server responds <code class="text-cyan-400">429 Too Many Requests</code> with a <code class="text-cyan-400">Retry-After</code> header. Tune via <code class="text-cyan-400">SOLIDB_MAX_LOGIN_ATTEMPTS</code> and <code class="text-cyan-400">SOLIDB_LOGIN_RATE_WINDOW_SECS</code>.</td>
                 </tr>
               </tbody>
             </table>

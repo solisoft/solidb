@@ -30,6 +30,11 @@ pub enum DbError {
     #[error("Bad Request: {0}")]
     BadRequest(String),
 
+    /// Too many requests. The second field is the suggested delay in seconds
+    /// before retrying, surfaced as the HTTP `Retry-After` header.
+    #[error("{0}")]
+    RateLimited(String, u64),
+
     #[error("Operation not supported: {0}")]
     OperationNotSupported(String),
 
@@ -115,6 +120,7 @@ impl IntoResponse for DbError {
             | DbError::SchemaValidationError(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             DbError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
             DbError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
+            DbError::RateLimited(msg, _) => (StatusCode::TOO_MANY_REQUESTS, msg.clone()),
             DbError::OperationNotSupported(msg) => (StatusCode::NOT_IMPLEMENTED, msg.clone()),
             DbError::TransactionTimeout(_) => (StatusCode::REQUEST_TIMEOUT, self.to_string()),
             DbError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.to_string()),
@@ -128,7 +134,15 @@ impl IntoResponse for DbError {
             "type": format!("{:?}", self).split('(').next().unwrap_or("Error") // Basic type extraction
         });
 
-        (status, Json(body)).into_response()
+        let mut response = (status, Json(body)).into_response();
+        if let DbError::RateLimited(_, retry_after_secs) = &self {
+            if let Ok(value) = axum::http::HeaderValue::from_str(&retry_after_secs.to_string()) {
+                response
+                    .headers_mut()
+                    .insert(axum::http::header::RETRY_AFTER, value);
+            }
+        }
+        response
     }
 }
 
