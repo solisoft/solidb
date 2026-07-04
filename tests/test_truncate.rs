@@ -83,3 +83,115 @@ fn test_truncate_empty_collection() {
     assert_eq!(count, 0);
     assert_eq!(col.count(), 0);
 }
+
+#[test]
+fn test_truncate_clears_blob_chunks() {
+    let (engine, _tmp) = create_test_db();
+    let db_names = engine.list_databases();
+    let db = engine.get_database(&db_names[0]).unwrap();
+
+    db.create_collection("files".to_string(), Some("blob".to_string()))
+        .unwrap();
+    let files = db.get_collection("files").unwrap();
+
+    files
+        .insert(json!({ "_key": "doc1", "filename": "a.bin" }))
+        .unwrap();
+    files.put_blob_chunk("doc1", 0, b"chunk-zero").unwrap();
+    files.put_blob_chunk("doc1", 1, b"chunk-one").unwrap();
+
+    let (chunks_before, bytes_before) = files.blob_stats().unwrap();
+    assert_eq!(chunks_before, 2);
+    assert!(bytes_before > 0);
+    assert_eq!(files.stats().chunk_count, 2);
+
+    files.truncate().unwrap();
+
+    // Chunks are gone from storage, not just from the cached counter
+    assert_eq!(files.get_blob_chunk("doc1", 0).unwrap(), None);
+    assert_eq!(files.get_blob_chunk("doc1", 1).unwrap(), None);
+    assert_eq!(files.blob_stats().unwrap(), (0, 0));
+    assert_eq!(files.stats().chunk_count, 0);
+}
+
+#[test]
+fn test_truncate_clears_tmp_upload_chunks() {
+    let (engine, _tmp) = create_test_db();
+    let db_names = engine.list_databases();
+    let db = engine.get_database(&db_names[0]).unwrap();
+
+    db.create_collection("uploads".to_string(), Some("blob".to_string()))
+        .unwrap();
+    let uploads = db.get_collection("uploads").unwrap();
+
+    uploads.put_blob_chunk_tmp("up1", 0, b"partial").unwrap();
+
+    uploads.truncate().unwrap();
+
+    // Finalizing must fail: the temp chunk was removed by truncate
+    assert!(uploads.finalize_blob_upload("up1", "doc1", 1).is_err());
+}
+
+#[test]
+fn test_truncate_clears_fulltext_entries() {
+    let (engine, _tmp) = create_test_db();
+    let db_names = engine.list_databases();
+    let db = engine.get_database(&db_names[0]).unwrap();
+
+    db.create_collection("articles".to_string(), None).unwrap();
+    let articles = db.get_collection("articles").unwrap();
+
+    articles
+        .create_fulltext_index("ft_bio".to_string(), vec!["bio".to_string()], None)
+        .unwrap();
+    articles
+        .insert(json!({ "name": "Alice", "bio": "database engineer" }))
+        .unwrap();
+    articles
+        .insert(json!({ "name": "Bob", "bio": "database admin" }))
+        .unwrap();
+
+    let matches = articles.fulltext_search("database", None, 10).unwrap();
+    assert_eq!(matches.len(), 2);
+
+    articles.truncate().unwrap();
+
+    // No stale fulltext entries pointing at deleted documents
+    let matches = articles.fulltext_search("database", None, 10).unwrap();
+    assert!(matches.is_empty());
+
+    // Index definition survives and still works for new documents
+    assert_eq!(articles.list_fulltext_indexes().len(), 1);
+    articles
+        .insert(json!({ "name": "Carol", "bio": "database architect" }))
+        .unwrap();
+    let matches = articles.fulltext_search("database", None, 10).unwrap();
+    assert_eq!(matches.len(), 1);
+}
+
+#[test]
+fn test_truncate_clears_ttl_expiry_entries() {
+    let (engine, _tmp) = create_test_db();
+    let db_names = engine.list_databases();
+    let db = engine.get_database(&db_names[0]).unwrap();
+
+    db.create_collection("sessions".to_string(), None).unwrap();
+    let sessions = db.get_collection("sessions").unwrap();
+
+    sessions
+        .create_ttl_index("ttl_created".to_string(), "created_at".to_string(), 1)
+        .unwrap();
+
+    // Control: an already-expired document is reaped via the expiry index
+    sessions
+        .insert(json!({ "_key": "s1", "created_at": 1000 }))
+        .unwrap();
+    assert_eq!(sessions.cleanup_all_expired_documents().unwrap(), 1);
+
+    // Truncate must also drop the expiry entries, so cleanup finds nothing
+    sessions
+        .insert(json!({ "_key": "s2", "created_at": 1000 }))
+        .unwrap();
+    sessions.truncate().unwrap();
+    assert_eq!(sessions.cleanup_all_expired_documents().unwrap(), 0);
+}
