@@ -11,3 +11,6 @@ www/config/database.json
 .claude/
 /clients/solidb-laravel-eloquent/vendor
 /clients/solidb-laravel-eloquent/composer.lock
+/admin.zip
+/admin/cur.json
+/admin/run_full.html
