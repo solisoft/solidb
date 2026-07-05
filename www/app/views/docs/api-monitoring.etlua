@@ -246,7 +246,7 @@ instances:
               <div class="bg-gray-950/50 p-4 rounded border border-white/5 font-mono text-xs text-gray-300 overflow-x-auto">
                 <pre>services:
   solidb:
-    image: solidb/solidb:latest
+    image: ghcr.io/solisoft/solidb:latest
     ports:
       - "6745:6745"
 
