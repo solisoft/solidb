@@ -21,7 +21,7 @@ class QueryController < Controller
 
   # POST /databases/:db/query/run - returns the results fragment (HTMX)
   def run
-    this._ctx()
+    this._ctx(false)
     payload = this._build_payload()
     if payload.nil?
       return this._render_results({ "ok": false, "error": "bind vars must be a JSON object" })
@@ -32,7 +32,7 @@ class QueryController < Controller
 
   # POST /databases/:db/query/explain - returns the explain fragment (HTMX)
   def explain
-    this._ctx()
+    this._ctx(false)
     payload = this._build_payload()
     if payload.nil?
       return this._render_explain({ "ok": false, "error": "bind vars must be a JSON object" })
@@ -53,7 +53,7 @@ class QueryController < Controller
 
   # GET /databases/:db/query/slow/count - sidebar badge fragment (HTMX)
   def slow_count
-    this._ctx()
+    this._ctx(false)
     @slow_count = this._count_slow()
     return render("query/_slow_badge", { "layout": false })
   end
@@ -73,9 +73,14 @@ class QueryController < Controller
 
   # Route context: set explicitly per action (before_action hooks are wired
   # by a startup-time scan and are unreliable under dev hot-reload).
-  def _ctx
+  #
+  # @databases is consumed only by the layout topbar db-picker. HTMX fragment
+  # actions render with layout:false, so they never show the topbar -- passing
+  # load_databases:false skips a wasted GET /databases round-trip to SoliDB on
+  # every query run/explain.
+  def _ctx(load_databases = true)
     @db = params["db"] ?? ""
-    @databases = AdminContext.database_names()
+    @databases = load_databases ? AdminContext.database_names() : []
   end
 
   # nil when the bind-vars textarea holds invalid JSON.
