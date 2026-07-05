@@ -223,6 +223,44 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             };
             Ok(Some(Value::Number(num_from_f64(median))))
         }
+        "PERCENTILE" | "QUANTILE" if (args.len() == 2 || args.len() == 3) && args[0].is_array() => {
+            let arr = args[0].as_array().unwrap();
+            // Percentile rank must be within [0, 100]. Non-numeric or
+            // out-of-range values yield Null (mirrors the degenerate-input
+            // handling of the other statistical aggregates).
+            let p = match args[1].as_f64() {
+                Some(p) if (0.0..=100.0).contains(&p) => p,
+                _ => return Ok(Some(Value::Null)),
+            };
+            // Optional third argument selects the method:
+            //   "rank"          -> nearest-rank (default)
+            //   "interpolation" -> linear interpolation between closest ranks
+            let method = args.get(2).and_then(|v| v.as_str()).unwrap_or("rank");
+            let mut nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
+            if nums.is_empty() {
+                return Ok(Some(Value::Null));
+            }
+            nums.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let n = nums.len();
+            let result = if method.eq_ignore_ascii_case("interpolation") {
+                // Linear interpolation (Excel PERCENTILE.INC / numpy "linear").
+                // Coincides with MEDIAN at p = 50.
+                let pos = (p / 100.0) * (n - 1) as f64;
+                let lower = pos.floor() as usize;
+                let frac = pos - lower as f64;
+                if lower + 1 < n {
+                    nums[lower] + frac * (nums[lower + 1] - nums[lower])
+                } else {
+                    nums[lower]
+                }
+            } else {
+                // Nearest-rank method: rank = ceil(p/100 * n), 1-indexed.
+                let rank = ((p / 100.0) * n as f64).ceil() as usize;
+                let idx = rank.saturating_sub(1).min(n - 1);
+                nums[idx]
+            };
+            Ok(Some(Value::Number(num_from_f64(result))))
+        }
         "VARIANCE" | "VAR_POP" | "VAR_SAMP" if args.len() == 1 && args[0].is_array() => {
             let arr = args[0].as_array().unwrap();
             let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();

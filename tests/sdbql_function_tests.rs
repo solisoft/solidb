@@ -540,6 +540,48 @@ fn test_function_median() {
 }
 
 #[test]
+fn test_function_percentile() {
+    let (engine, _tmp) = create_test_engine();
+
+    // Nearest-rank method (default).
+    assert_eq!(
+        execute_query(&engine, "RETURN PERCENTILE([1, 2, 3, 4, 5], 50)"),
+        json!(3.0)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN PERCENTILE([1, 2, 3, 4, 5], 100)"),
+        json!(5.0)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN PERCENTILE([15, 20, 35, 40, 50], 40)"),
+        json!(20.0)
+    );
+
+    // Interpolation method matches MEDIAN at the 50th percentile.
+    let p50 = execute_query(
+        &engine,
+        "RETURN PERCENTILE([1, 2, 3, 4], 50, \"interpolation\")",
+    );
+    assert!((p50.as_f64().unwrap() - 2.5).abs() < 0.0001);
+
+    let p90 = execute_query(
+        &engine,
+        "RETURN PERCENTILE([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 90, \"interpolation\")",
+    );
+    assert!((p90.as_f64().unwrap() - 9.1).abs() < 0.0001);
+
+    // Degenerate / invalid inputs return Null.
+    assert_eq!(
+        execute_query(&engine, "RETURN PERCENTILE([], 50)"),
+        json!(null)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN PERCENTILE([1, 2, 3], 150)"),
+        json!(null)
+    );
+}
+
+#[test]
 fn test_function_variance() {
     let (engine, _tmp) = create_test_engine();
 

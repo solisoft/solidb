@@ -303,7 +303,7 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `MEDIAN(arr)` | Median | `MEDIAN([1,5,10])` → `5` |
 | `VARIANCE(arr)` | Population variance | |
 | `STDDEV(arr)` | Standard deviation | |
-| `PERCENTILE(arr, p)` | p-th percentile | `PERCENTILE([1..100], 95)` → `95` |
+| `PERCENTILE(arr, p [, method])` | p-th percentile (0-100); `method` = `"rank"` (default) or `"interpolation"` | `PERCENTILE([1..100], 95)` → `95` |
 
 ### Date & Time Functions
 

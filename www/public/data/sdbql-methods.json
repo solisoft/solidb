@@ -541,9 +541,9 @@
     },
     {
       "name": "PERCENTILE",
-      "description": "Returns the p-th percentile (0-100)",
+      "description": "Returns the p-th percentile (0-100); method is \"rank\" (default) or \"interpolation\"",
       "category": "numeric",
-      "signature": "PERCENTILE(arr, p)",
+      "signature": "PERCENTILE(arr, p [, method])",
       "url": "/docs/sdbql-functions-numeric#fn-PERCENTILE"
     },
     {
