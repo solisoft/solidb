@@ -835,6 +835,18 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(results))
             }
 
+            // NEIGHBORS(edge_collection, seeds, options?) - expand seeds N hops
+            // over an edge collection, scored by hop distance (local Graph RAG).
+            "NEIGHBORS" => self.eval_neighbors(&evaluated_args),
+
+            // GRAPH_RAG(seed_collection, vector_index, edge_collection, query_vector, options?)
+            // Retrieve seeds by vector/hybrid similarity, then expand the graph.
+            "GRAPH_RAG" => self.eval_graph_rag(&evaluated_args),
+
+            // COMMUNITY_SEARCH(query_text, options?) - global GraphRAG retrieval
+            // of community summaries produced by a prior community build.
+            "COMMUNITY_SEARCH" => self.eval_community_search(&evaluated_args),
+
             // Unknown function
             _ => Err(DbError::ExecutionError(format!(
                 "Unknown function: {}",

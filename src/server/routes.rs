@@ -520,6 +520,19 @@ pub fn create_router(
             "/_api/database/{db}/hybrid/{collection}/search",
             post(hybrid_search),
         )
+        // Global GraphRAG: community detection build + status + listing
+        .route(
+            "/_api/database/{db}/graph/community/build",
+            post(build_communities),
+        )
+        .route(
+            "/_api/database/{db}/graph/community/build/{request_id}",
+            get(build_status),
+        )
+        .route(
+            "/_api/database/{db}/graph/communities",
+            get(list_communities),
+        )
         // TTL index routes
         .route(
             "/_api/database/{db}/ttl/{collection}",

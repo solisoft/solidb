@@ -8,6 +8,8 @@
 
 mod clauses;
 mod entry;
+mod graph;
+mod graph_rag;
 mod streaming;
 mod subquery;
 

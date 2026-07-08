@@ -47,7 +47,8 @@ local PAGE_TITLES = {
   ["clients-rust"] = "Rust Client",
   ["comparison"] = "Database Comparison",
   ["security"] = "Security",
-  ["tooling"] = "Command-Line Tools"
+  ["tooling"] = "Command-Line Tools",
+  ["graph-rag"] = "Graph RAG"
 }
 
 -- Documentation landing page

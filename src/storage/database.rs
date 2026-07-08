@@ -112,6 +112,28 @@ impl Database {
                 })?;
         }
 
+        // Edge collections are traversed by their _from/_to fields; index those
+        // up-front so graph traversals and GRAPH_RAG never fall back to a full
+        // edge scan. The indexes are non-unique (many edges share a _from/_to)
+        // and creation is idempotent thanks to the pre-probe (skips a field a
+        // user index already covers). The collection is empty here, so the
+        // index backfill is free.
+        if type_ == "edge" {
+            if let Ok(coll) = self.get_collection(&collection_name) {
+                let probe = serde_json::Value::String(String::new());
+                for (idx_name, field) in [("_edge_from_idx", "_from"), ("_edge_to_idx", "_to")] {
+                    if coll.index_lookup_eq(field, &probe).is_none() {
+                        let _ = coll.create_index(
+                            idx_name.to_string(),
+                            vec![field.to_string()],
+                            crate::storage::IndexType::Persistent,
+                            false,
+                        );
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 

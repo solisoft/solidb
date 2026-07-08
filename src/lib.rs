@@ -4,6 +4,7 @@ pub mod cluster;
 pub mod daemon;
 pub mod driver;
 pub mod error;
+pub mod graph;
 pub mod observability;
 pub mod queue;
 pub mod scripting;
