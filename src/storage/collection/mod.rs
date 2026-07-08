@@ -22,12 +22,14 @@ pub mod core;
 pub mod crud;
 pub mod fulltext;
 pub mod geo;
+pub mod hybrid;
 pub mod index_meta;
 pub mod indexes;
 pub mod schema;
 pub mod ttl;
 pub mod txn;
 pub mod vector;
+pub use self::hybrid::{FusionMethod, HybridSearchOptions, HybridSearchResult};
 pub use self::vector::QuantizationStats;
 
 /// Key prefixes for different data types

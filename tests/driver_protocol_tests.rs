@@ -672,3 +672,49 @@ fn test_driver_error_invalid_command() {
     let err = DriverError::InvalidCommand("Unknown command".to_string());
     assert!(err.to_string().contains("Invalid command"));
 }
+
+#[test]
+fn test_command_hybrid_search_roundtrip() {
+    let cmd = Command::HybridSearch {
+        database: "mydb".to_string(),
+        collection: "articles".to_string(),
+        vector: vec![0.1, 0.2, 0.3],
+        text_query: "machine learning".to_string(),
+        vector_index: "embedding_idx".to_string(),
+        fulltext_field: "content".to_string(),
+        vector_weight: Some(0.6),
+        text_weight: Some(0.4),
+        limit: Some(20),
+        fusion: Some("rrf".to_string()),
+    };
+
+    let bytes = encode_command(&cmd).unwrap();
+    let decoded: Command = decode_message(&bytes[4..]).unwrap();
+
+    match decoded {
+        Command::HybridSearch {
+            database,
+            collection,
+            vector,
+            text_query,
+            vector_index,
+            fulltext_field,
+            vector_weight,
+            text_weight,
+            limit,
+            fusion,
+        } => {
+            assert_eq!(database, "mydb");
+            assert_eq!(collection, "articles");
+            assert_eq!(vector.len(), 3);
+            assert_eq!(text_query, "machine learning");
+            assert_eq!(vector_index, "embedding_idx");
+            assert_eq!(fulltext_field, "content");
+            assert_eq!(vector_weight, Some(0.6));
+            assert_eq!(text_weight, Some(0.4));
+            assert_eq!(limit, Some(20));
+            assert_eq!(fusion.as_deref(), Some("rrf"));
+        }
+        _ => panic!("Expected HybridSearch command"),
+    }
+}

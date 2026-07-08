@@ -627,26 +627,60 @@ pub async fn delete_ttl_index(
 #[derive(Debug, Deserialize)]
 pub struct HybridSearchRequest {
     pub vector: Vec<f32>,
-    pub query: String, // Fulltext query
-    pub limit: usize,
+    pub text_query: String,
+    pub vector_index: String,
+    pub fulltext_field: String,
     #[serde(default)]
     pub vector_weight: Option<f32>, // 0.0 to 1.0 (default 0.5)
+    #[serde(default)]
+    pub text_weight: Option<f32>, // 0.0 to 1.0 (default 0.5)
+    #[serde(default)]
+    pub limit: Option<usize>, // default 10
+    #[serde(default)]
+    pub fusion: Option<String>, // "weighted" (default) or "rrf"
 }
 
 #[derive(Debug, Serialize)]
 pub struct HybridSearchResponse {
-    pub results: Vec<VectorSearchResult>,
+    pub results: Vec<crate::storage::HybridSearchResult>,
     pub count: usize,
 }
 
 pub async fn hybrid_search(
-    State(_state): State<AppState>,
-    Path((_db_name, _coll_name)): Path<(String, String)>,
-    Json(_req): Json<HybridSearchRequest>,
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+    Json(req): Json<HybridSearchRequest>,
 ) -> Result<Json<HybridSearchResponse>, DbError> {
-    // Current implementation doesn't support hybrid search directly via collection API
-    // This is a placeholder until full implementation is restored/added
-    Err(DbError::OperationNotSupported(
-        "Hybrid search temporarily unavailable".to_string(),
-    ))
+    use crate::storage::{FusionMethod, HybridSearchOptions};
+
+    let fusion = match req.fusion.as_deref() {
+        None => FusionMethod::default(),
+        Some(s) => FusionMethod::parse(s).ok_or_else(|| {
+            DbError::BadRequest(format!(
+                "Invalid fusion method '{}': expected \"weighted\" or \"rrf\"",
+                s
+            ))
+        })?,
+    };
+    let defaults = HybridSearchOptions::default();
+    let opts = HybridSearchOptions {
+        vector_weight: req.vector_weight.unwrap_or(defaults.vector_weight),
+        text_weight: req.text_weight.unwrap_or(defaults.text_weight),
+        limit: req.limit.unwrap_or(defaults.limit),
+        fusion,
+    };
+
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    let results = collection.hybrid_search(
+        &req.vector_index,
+        &req.fulltext_field,
+        &req.vector,
+        &req.text_query,
+        &opts,
+    )?;
+
+    let count = results.len();
+    Ok(Json(HybridSearchResponse { results, count }))
 }

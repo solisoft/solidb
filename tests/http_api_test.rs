@@ -458,3 +458,211 @@ async fn test_bad_request_api() {
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+// ============================================================================
+// Hybrid Search API Tests
+// ============================================================================
+
+async fn post_json(
+    app: &axum::Router,
+    token: &str,
+    uri: &str,
+    body: Value,
+) -> axum::response::Response {
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(token))
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+/// Create db/collection, vector + fulltext indexes and a small corpus for
+/// the hybrid search endpoint tests.
+async fn setup_hybrid_api(app: &axum::Router, token: &str) {
+    post_json(app, token, "/_api/database", json!({ "name": "hdb" })).await;
+    post_json(
+        app,
+        token,
+        "/_api/database/hdb/collection",
+        json!({ "name": "articles" }),
+    )
+    .await;
+    let resp = post_json(
+        app,
+        token,
+        "/_api/database/hdb/vector/articles",
+        json!({
+            "name": "embedding_idx",
+            "field": "embedding",
+            "dimension": 4,
+            "metric": "cosine"
+        }),
+    )
+    .await;
+    assert!(
+        resp.status().is_success(),
+        "vector index creation failed: {}",
+        resp.status()
+    );
+    let resp = post_json(
+        app,
+        token,
+        "/_api/database/hdb/index/articles",
+        json!({
+            "type": "fulltext",
+            "name": "content_ft",
+            "fields": ["content"],
+            "min_length": 3
+        }),
+    )
+    .await;
+    assert!(
+        resp.status().is_success(),
+        "fulltext index creation failed: {}",
+        resp.status()
+    );
+
+    for (key, content, embedding) in [
+        ("doc1", "machine learning basics", [0.9, 0.1, 0.1, 0.0]),
+        ("doc2", "statistical data analysis", [0.85, 0.15, 0.0, 0.1]),
+        ("doc3", "machine learning deep dive", [0.0, 0.0, 0.9, 0.1]),
+    ] {
+        let resp = post_json(
+            app,
+            token,
+            "/_api/database/hdb/document/articles",
+            json!({ "_key": key, "content": content, "embedding": embedding }),
+        )
+        .await;
+        assert!(
+            resp.status().is_success(),
+            "document insert failed: {}",
+            resp.status()
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_hybrid_search_api() {
+    let (app, _tmp, token) = create_test_app();
+    setup_hybrid_api(&app, &token).await;
+
+    let response = post_json(
+        &app,
+        &token,
+        "/_api/database/hdb/hybrid/articles/search",
+        json!({
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "text_query": "machine learning",
+            "vector_index": "embedding_idx",
+            "fulltext_field": "content",
+            "vector_weight": 0.6,
+            "text_weight": 0.4,
+            "limit": 10
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+
+    let results = json["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "hybrid search should return results");
+    assert_eq!(json["count"], results.len());
+
+    let first = &results[0];
+    assert!(first["doc_key"].is_string(), "result carries doc_key");
+    assert!(first["score"].is_number(), "result carries score");
+    assert!(first["sources"].is_array(), "result carries sources");
+    assert!(
+        first["document"].is_object(),
+        "result carries the full document"
+    );
+
+    // doc1 matches both legs strongly and must be present.
+    assert!(
+        results.iter().any(|r| r["doc_key"] == "doc1"),
+        "doc1 (matches both sources) should be in the results"
+    );
+}
+
+#[tokio::test]
+async fn test_hybrid_search_api_rrf() {
+    let (app, _tmp, token) = create_test_app();
+    setup_hybrid_api(&app, &token).await;
+
+    let response = post_json(
+        &app,
+        &token,
+        "/_api/database/hdb/hybrid/articles/search",
+        json!({
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "text_query": "machine learning",
+            "vector_index": "embedding_idx",
+            "fulltext_field": "content",
+            "fusion": "rrf",
+            "limit": 2
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    let results = json["results"].as_array().expect("results array");
+    assert!(!results.is_empty());
+    assert!(results.len() <= 2, "limit is respected");
+}
+
+#[tokio::test]
+async fn test_hybrid_search_api_invalid_fusion() {
+    let (app, _tmp, token) = create_test_app();
+    setup_hybrid_api(&app, &token).await;
+
+    let response = post_json(
+        &app,
+        &token,
+        "/_api/database/hdb/hybrid/articles/search",
+        json!({
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "text_query": "machine learning",
+            "vector_index": "embedding_idx",
+            "fulltext_field": "content",
+            "fusion": "bogus"
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_hybrid_search_api_unknown_vector_index() {
+    let (app, _tmp, token) = create_test_app();
+    setup_hybrid_api(&app, &token).await;
+
+    let response = post_json(
+        &app,
+        &token,
+        "/_api/database/hdb/hybrid/articles/search",
+        json!({
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "text_query": "machine learning",
+            "vector_index": "no_such_index",
+            "fulltext_field": "content"
+        }),
+    )
+    .await;
+
+    assert!(
+        response.status().is_client_error() || response.status().is_server_error(),
+        "unknown vector index must not return success (got {})",
+        response.status()
+    );
+}

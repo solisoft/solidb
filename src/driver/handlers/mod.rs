@@ -740,9 +740,30 @@ impl DriverHandler {
                 collection,
             } => index::handle_rebuild_indexes(self, database, collection),
 
-            Command::HybridSearch { .. } => Response::error(DriverError::InvalidCommand(
-                "Hybrid search not yet supported".to_string(),
-            )),
+            Command::HybridSearch {
+                database,
+                collection,
+                vector,
+                text_query,
+                vector_index,
+                fulltext_field,
+                vector_weight,
+                text_weight,
+                limit,
+                fusion,
+            } => index::handle_hybrid_search(
+                self,
+                database,
+                collection,
+                vector,
+                text_query,
+                vector_index,
+                fulltext_field,
+                vector_weight,
+                text_weight,
+                limit,
+                fusion,
+            ),
 
             // ==================== Geo Index Operations ====================
             Command::CreateGeoIndex {

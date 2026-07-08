@@ -434,3 +434,69 @@ fn test_hybrid_search_empty_text_query() {
         "Should return results even with empty text query"
     );
 }
+
+#[test]
+fn test_hybrid_search_fulltext_candidates_not_starved() {
+    // Regression test: the fulltext leg used to fetch at most 2 candidates
+    // regardless of `limit`, so at most 2 results could ever carry a
+    // "fulltext" source. It now over-fetches `limit * 3` like the vector leg.
+    let (engine, _tmp) = create_test_engine();
+    engine
+        .create_collection("articles".to_string(), None)
+        .unwrap();
+    let collection = engine.get_collection("articles").unwrap();
+
+    let vector_config =
+        VectorIndexConfig::new("embedding_idx".to_string(), "embedding".to_string(), 4)
+            .with_metric(VectorMetric::Cosine);
+    collection.create_vector_index(vector_config).unwrap();
+    collection
+        .create_fulltext_index(
+            "content_ft".to_string(),
+            vec!["content".to_string()],
+            Some(3),
+        )
+        .unwrap();
+
+    // Five documents all matching the text query, with varied embeddings.
+    for i in 0..5 {
+        collection
+            .insert(json!({
+                "_key": format!("doc{}", i),
+                "content": format!("quantum computing article number {}", i),
+                "embedding": [0.2 * i as f32, 1.0 - 0.2 * i as f32, 0.3, 0.1]
+            }))
+            .unwrap();
+    }
+
+    let query = r#"
+        LET results = HYBRID_SEARCH(
+            "articles",
+            "embedding_idx",
+            "content",
+            [1.0, 0.0, 0.0, 0.0],
+            "quantum computing",
+            { limit: 10 }
+        )
+        FOR result IN results
+        RETURN { key: result.doc._key, sources: result.sources }
+    "#;
+
+    let results = execute_query(&engine, query);
+
+    let fulltext_matches = results
+        .iter()
+        .filter(|r| {
+            r.get("sources")
+                .and_then(|s| s.as_array())
+                .map(|arr| arr.iter().any(|v| v == "fulltext"))
+                .unwrap_or(false)
+        })
+        .count();
+
+    assert!(
+        fulltext_matches >= 5,
+        "All 5 text-matching docs should carry a fulltext source (got {})",
+        fulltext_matches
+    );
+}

@@ -19,7 +19,6 @@ mod helpers;
 mod index_opt;
 mod materialized_views;
 pub mod phonetic;
-pub mod search;
 pub mod types;
 pub mod utils;
 mod window;

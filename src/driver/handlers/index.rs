@@ -254,6 +254,53 @@ pub fn handle_delete_vector_index(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn handle_hybrid_search(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+    vector: Vec<f32>,
+    text_query: String,
+    vector_index: String,
+    fulltext_field: String,
+    vector_weight: Option<f32>,
+    text_weight: Option<f32>,
+    limit: Option<u32>,
+    fusion: Option<String>,
+) -> Response {
+    use crate::storage::{FusionMethod, HybridSearchOptions};
+
+    let fusion = match fusion.as_deref() {
+        None => FusionMethod::default(),
+        Some(s) => match FusionMethod::parse(s) {
+            Some(f) => f,
+            None => {
+                return Response::error(DriverError::InvalidCommand(format!(
+                    "Invalid fusion method '{}': expected \"weighted\" or \"rrf\"",
+                    s
+                )))
+            }
+        },
+    };
+    let defaults = HybridSearchOptions::default();
+    let opts = HybridSearchOptions {
+        vector_weight: vector_weight.unwrap_or(defaults.vector_weight),
+        text_weight: text_weight.unwrap_or(defaults.text_weight),
+        limit: limit.map(|l| l as usize).unwrap_or(defaults.limit),
+        fusion,
+    };
+
+    match handler.get_collection(&database, &collection) {
+        Ok(coll) => {
+            match coll.hybrid_search(&vector_index, &fulltext_field, &vector, &text_query, &opts) {
+                Ok(results) => Response::ok(serde_json::json!(results)),
+                Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+            }
+        }
+        Err(e) => Response::error(e),
+    }
+}
+
 pub fn handle_vector_search(
     handler: &DriverHandler,
     database: String,

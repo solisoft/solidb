@@ -607,16 +607,19 @@ curl -X POST \
       "score": 0.85,
       "vector_score": 0.9,
       "text_score": 0.7,
-      "sources": ["vector", "fulltext"]
+      "sources": ["vector", "fulltext"],
+      "document": { "_key": "article_001", "title": "..." }
     },
     {
       "doc_key": "article_042",
       "score": 0.72,
       "vector_score": 0.8,
       "text_score": null,
-      "sources": ["vector"]
+      "sources": ["vector"],
+      "document": { "_key": "article_042", "title": "..." }
     }
-  ]
+  ],
+  "count": 2
 }
                   </div>
                 </div>

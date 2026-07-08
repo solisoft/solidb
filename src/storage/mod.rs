@@ -23,7 +23,9 @@ pub mod schema;
 pub mod serializer;
 pub mod vector;
 
-pub use collection::{Collection, CollectionStats, DiskUsage};
+pub use collection::{
+    Collection, CollectionStats, DiskUsage, FusionMethod, HybridSearchOptions, HybridSearchResult,
+};
 pub use columnar::{
     AggregateOp, ColumnDef, ColumnFilter, ColumnType, ColumnarCollection, ColumnarCollectionMeta,
     ColumnarStats, CompressionType,

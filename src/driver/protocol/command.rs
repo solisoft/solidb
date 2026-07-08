@@ -370,10 +370,18 @@ pub enum Command {
     HybridSearch {
         database: String,
         collection: String,
-        query: String,
         vector: Vec<f32>,
+        text_query: String,
+        vector_index: String,
+        fulltext_field: String,
+        #[serde(default)]
+        vector_weight: Option<f32>,
+        #[serde(default)]
+        text_weight: Option<f32>,
+        #[serde(default)]
         limit: Option<u32>,
-        filter: Option<String>,
+        #[serde(default)]
+        fusion: Option<String>,
     },
     CreateGeoIndex {
         database: String,
