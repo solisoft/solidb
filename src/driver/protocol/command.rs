@@ -383,6 +383,28 @@ pub enum Command {
         #[serde(default)]
         fusion: Option<String>,
     },
+    GraphNeighbors {
+        database: String,
+        edge_collection: String,
+        seeds: serde_json::Value,
+        #[serde(default)]
+        options: Option<serde_json::Value>,
+    },
+    GraphRag {
+        database: String,
+        seed_collection: String,
+        vector_index: String,
+        edge_collection: String,
+        query_vector: Vec<f32>,
+        #[serde(default)]
+        options: Option<serde_json::Value>,
+    },
+    CommunitySearch {
+        database: String,
+        query_text: String,
+        #[serde(default)]
+        options: Option<serde_json::Value>,
+    },
     CreateGeoIndex {
         database: String,
         collection: String,
@@ -582,6 +604,9 @@ impl Command {
             | DeleteCollectionSchema { database, .. }
             | RebuildIndexes { database, .. }
             | HybridSearch { database, .. }
+            | GraphNeighbors { database, .. }
+            | GraphRag { database, .. }
+            | CommunitySearch { database, .. }
             | CreateGeoIndex { database, .. }
             | ListGeoIndexes { database, .. }
             | DeleteGeoIndex { database, .. }
@@ -656,6 +681,7 @@ impl Command {
             | ExportCollection { .. }
             | GetCollectionSchema { .. }
             | HybridSearch { .. }
+            | CommunitySearch { .. }
             | ListGeoIndexes { .. }
             | GeoNear { .. }
             | GeoWithin { .. }
@@ -667,6 +693,14 @@ impl Command {
             | AggregateColumnar { .. }
             | QueryColumnar { .. }
             | ListColumnarIndexes { .. } => Some(A::Read),
+
+            // Graph expansion lazily creates the `_from`/`_to` indexes an edge
+            // collection needs, so it is a Write — same as its HTTP
+            // counterparts, which fall through to Write for lack of a
+            // read-semantics suffix. `CommunitySearch` only reads a prior
+            // build's output, so it stays a Read (as does `POST
+            // /graph/community/search`, matched by the `/search` suffix).
+            GraphNeighbors { .. } | GraphRag { .. } => Some(A::Write),
 
             // Irreversible bulk destruction — Admin, same as HTTP
             TruncateCollection { .. } | DeleteCollection { .. } | DeleteColumnar { .. } => {

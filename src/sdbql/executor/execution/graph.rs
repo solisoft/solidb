@@ -10,10 +10,19 @@
 //!   but has no match, and `None` **only** when the field is unindexed. The
 //!   in-memory adjacency map is therefore built (and consulted) exactly when a
 //!   required field is unindexed — never when it merely has no matching edge.
-//! - When `auto_index` is set, a missing `_from`/`_to` index is created lazily
-//!   (persistent, non-unique). `create_index` backfills existing docs with one
-//!   scan — the same cost as building the throwaway adjacency map it replaces —
-//!   but it persists, so every later traversal / GRAPH_RAG call is indexed.
+//! - When `auto_index` is set **and the collection is an edge collection**, a
+//!   missing `_from`/`_to` index is created lazily (persistent, non-unique).
+//!   `create_index` backfills existing docs with one scan — the same cost as
+//!   building the throwaway adjacency map it replaces — but it persists, so
+//!   every later traversal / GRAPH_RAG call is indexed.
+//!
+//!   The edge-type gate matters: `NEIGHBORS`/`GRAPH_RAG` take a collection
+//!   *name* from the query, and SDBQL function calls carry only `Read`
+//!   permission. Without the gate, `NEIGHBORS("any_collection", …)` would
+//!   persist `_from`/`_to` indexes on an unrelated document collection. Edge
+//!   collections already get both indexes at creation time (`Database::
+//!   create_collection`), so this path only ever fires for edge collections
+//!   predating that behavior.
 
 use crate::sdbql::ast::EdgeDirection;
 use crate::storage::{Collection, Document};
@@ -46,7 +55,7 @@ impl<'e> EdgeExpander<'e> {
         let mut has_from_index = edge.index_lookup_eq("_from", &probe).is_some();
         let mut has_to_index = edge.index_lookup_eq("_to", &probe).is_some();
 
-        if auto_index {
+        if auto_index && edge.get_type() == "edge" {
             if want_from && !has_from_index {
                 let _ = edge.create_index(
                     "_edge_from_idx".to_string(),
@@ -146,10 +155,14 @@ impl<'e> EdgeExpander<'e> {
         }
     }
 
-    /// The vertex on the far side of `edge_val` relative to `current_id`.
-    pub(crate) fn next_id(&self, edge_val: &Value, current_id: &str) -> Option<String> {
-        let from = edge_val.get("_from").and_then(|v| v.as_str());
-        let to = edge_val.get("_to").and_then(|v| v.as_str());
+    /// The vertex on the far side of an edge with endpoints `from`/`to`,
+    /// relative to `current_id`.
+    fn resolve_next(
+        &self,
+        from: Option<&str>,
+        to: Option<&str>,
+        current_id: &str,
+    ) -> Option<String> {
         match self.direction {
             EdgeDirection::Outbound => to.map(|s| s.to_string()),
             EdgeDirection::Inbound => from.map(|s| s.to_string()),
@@ -163,6 +176,29 @@ impl<'e> EdgeExpander<'e> {
                 }
             }
         }
+    }
+
+    /// The vertex on the far side of `edge_val` relative to `current_id`.
+    pub(crate) fn next_id(&self, edge_val: &Value, current_id: &str) -> Option<String> {
+        self.resolve_next(
+            edge_val.get("_from").and_then(|v| v.as_str()),
+            edge_val.get("_to").and_then(|v| v.as_str()),
+            current_id,
+        )
+    }
+
+    /// Same, straight off the stored document. `Document::get` clones a single
+    /// field, where `to_value()` would rebuild the whole JSON object plus five
+    /// metadata fields — wasteful in the BFS inner loop, which only ever reads
+    /// `_from` and `_to`.
+    fn next_id_from_doc(&self, edge_doc: &Document, current_id: &str) -> Option<String> {
+        let from = edge_doc.get("_from");
+        let to = edge_doc.get("_to");
+        self.resolve_next(
+            from.as_ref().and_then(|v| v.as_str()),
+            to.as_ref().and_then(|v| v.as_str()),
+            current_id,
+        )
     }
 
     /// Single-source BFS from `seed`, emitting each reached vertex once at its
@@ -192,8 +228,7 @@ impl<'e> EdgeExpander<'e> {
                 continue;
             }
             for edge_doc in self.edges_for(&current_id) {
-                let edge_val = edge_doc.to_value();
-                if let Some(next) = self.next_id(&edge_val, &current_id) {
+                if let Some(next) = self.next_id_from_doc(&edge_doc, &current_id) {
                     if visited.len() >= max_frontier {
                         break;
                     }

@@ -520,6 +520,13 @@ pub fn create_router(
             "/_api/database/{db}/hybrid/{collection}/search",
             post(hybrid_search),
         )
+        // Graph RAG: local expansion + global community retrieval
+        .route("/_api/database/{db}/graph/neighbors", post(graph_neighbors))
+        .route("/_api/database/{db}/graph/rag", post(graph_rag_search))
+        .route(
+            "/_api/database/{db}/graph/community/search",
+            post(community_search),
+        )
         // Global GraphRAG: community detection build + status + listing
         .route(
             "/_api/database/{db}/graph/community/build",

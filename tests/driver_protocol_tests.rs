@@ -718,3 +718,40 @@ fn test_command_hybrid_search_roundtrip() {
         _ => panic!("Expected HybridSearch command"),
     }
 }
+
+#[test]
+fn test_command_graph_rag_roundtrip() {
+    let cmd = Command::GraphRag {
+        database: "mydb".to_string(),
+        seed_collection: "docs".to_string(),
+        vector_index: "emb".to_string(),
+        edge_collection: "links".to_string(),
+        query_vector: vec![1.0, 0.0, 0.0, 0.0],
+        options: Some(serde_json::json!({ "hops": 1, "seed_limit": 5 })),
+    };
+
+    let bytes = encode_command(&cmd).unwrap();
+    let decoded: Command = decode_message(&bytes[4..]).unwrap();
+
+    match decoded {
+        Command::GraphRag {
+            database,
+            seed_collection,
+            vector_index,
+            edge_collection,
+            query_vector,
+            options,
+        } => {
+            assert_eq!(database, "mydb");
+            assert_eq!(seed_collection, "docs");
+            assert_eq!(vector_index, "emb");
+            assert_eq!(edge_collection, "links");
+            assert_eq!(query_vector.len(), 4);
+            assert_eq!(
+                options.and_then(|o| o.get("hops").and_then(|v| v.as_u64())),
+                Some(1)
+            );
+        }
+        _ => panic!("Expected GraphRag command"),
+    }
+}

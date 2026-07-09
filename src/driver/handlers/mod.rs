@@ -16,6 +16,7 @@ pub mod admin;
 pub mod auth;
 pub mod database;
 pub mod document;
+pub mod graph;
 pub mod index;
 pub mod query;
 pub mod scheduler;
@@ -764,6 +765,36 @@ impl DriverHandler {
                 limit,
                 fusion,
             ),
+
+            Command::GraphNeighbors {
+                database,
+                edge_collection,
+                seeds,
+                options,
+            } => graph::handle_graph_neighbors(self, database, edge_collection, seeds, options),
+
+            Command::GraphRag {
+                database,
+                seed_collection,
+                vector_index,
+                edge_collection,
+                query_vector,
+                options,
+            } => graph::handle_graph_rag(
+                self,
+                database,
+                seed_collection,
+                vector_index,
+                edge_collection,
+                query_vector,
+                options,
+            ),
+
+            Command::CommunitySearch {
+                database,
+                query_text,
+                options,
+            } => graph::handle_community_search(self, database, query_text, options),
 
             // ==================== Geo Index Operations ====================
             Command::CreateGeoIndex {

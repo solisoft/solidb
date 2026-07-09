@@ -14,6 +14,7 @@ use super::super::QueryExecutor;
 use super::graph::{EdgeExpander, Reached};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::EdgeDirection;
+use crate::storage::{Collection, VectorMetric};
 use serde_json::{json, Map, Value};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -61,17 +62,62 @@ struct ScoredHit {
 }
 
 impl<'a> QueryExecutor<'a> {
+    /// Public API: `NEIGHBORS(edge_collection, seeds, options?)`
+    pub fn neighbors(
+        &self,
+        edge_collection: &str,
+        seeds: Value,
+        options: Option<Value>,
+    ) -> DbResult<Value> {
+        let mut args = vec![json!(edge_collection), seeds];
+        if let Some(o) = options {
+            args.push(o);
+        }
+        self.eval_neighbors(&args)
+    }
+
+    /// Public API: `GRAPH_RAG(seed_collection, vector_index, edge_collection, query_vector, options?)`
+    pub fn graph_rag(
+        &self,
+        seed_collection: &str,
+        vector_index: &str,
+        edge_collection: &str,
+        query_vector: Value,
+        options: Option<Value>,
+    ) -> DbResult<Value> {
+        let mut args = vec![
+            json!(seed_collection),
+            json!(vector_index),
+            json!(edge_collection),
+            query_vector,
+        ];
+        if let Some(o) = options {
+            args.push(o);
+        }
+        self.eval_graph_rag(&args)
+    }
+
+    /// Public API: `COMMUNITY_SEARCH(query_text, options?)`
+    pub fn community_search(&self, query_text: &str, options: Option<Value>) -> DbResult<Value> {
+        let mut args = vec![json!(query_text)];
+        if let Some(o) = options {
+            args.push(o);
+        }
+        self.eval_community_search(&args)
+    }
+
     /// `NEIGHBORS(edge_collection, seeds, options?)`
     pub(crate) fn eval_neighbors(&self, args: &[Value]) -> DbResult<Value> {
         if args.len() < 2 || args.len() > 3 {
-            return Err(DbError::ExecutionError(
+            return Err(DbError::BadRequest(
                 "NEIGHBORS requires 2-3 arguments: edge_collection, seeds, [options]".to_string(),
             ));
         }
         let edge_name = args[0].as_str().ok_or_else(|| {
-            DbError::ExecutionError("NEIGHBORS: edge_collection must be a string".to_string())
+            DbError::BadRequest("NEIGHBORS: edge_collection must be a string".to_string())
         })?;
         let opts_val = args.get(2);
+        check_options(opts_val, &[EXPAND_OPTIONS, NEIGHBORS_OPTIONS], "NEIGHBORS")?;
         let opts = parse_expand_options(opts_val, "NEIGHBORS")?;
         let seeds = parse_seeds(&args[1], opts_val, "NEIGHBORS")?;
         self.graph_rag_run(edge_name, seeds, &opts)
@@ -80,47 +126,46 @@ impl<'a> QueryExecutor<'a> {
     /// `GRAPH_RAG(seed_collection, vector_index, edge_collection, query_vector, options?)`
     pub(crate) fn eval_graph_rag(&self, args: &[Value]) -> DbResult<Value> {
         if args.len() < 4 || args.len() > 5 {
-            return Err(DbError::ExecutionError(
+            return Err(DbError::BadRequest(
                 "GRAPH_RAG requires 4-5 arguments: seed_collection, vector_index, edge_collection, query_vector, [options]".to_string(),
             ));
         }
         let seed_collection = args[0].as_str().ok_or_else(|| {
-            DbError::ExecutionError("GRAPH_RAG: seed_collection must be a string".to_string())
+            DbError::BadRequest("GRAPH_RAG: seed_collection must be a string".to_string())
         })?;
         let vector_index = args[1].as_str().ok_or_else(|| {
-            DbError::ExecutionError("GRAPH_RAG: vector_index must be a string".to_string())
+            DbError::BadRequest("GRAPH_RAG: vector_index must be a string".to_string())
         })?;
         let edge_name = args[2].as_str().ok_or_else(|| {
-            DbError::ExecutionError("GRAPH_RAG: edge_collection must be a string".to_string())
+            DbError::BadRequest("GRAPH_RAG: edge_collection must be a string".to_string())
         })?;
         let query_vector = Self::extract_vector_arg(&args[3], "GRAPH_RAG: query_vector")?;
         let opts_val = args.get(4);
+        check_options(opts_val, &[EXPAND_OPTIONS, GRAPH_RAG_OPTIONS], "GRAPH_RAG")?;
         let opts = parse_expand_options(opts_val, "GRAPH_RAG")?;
 
-        let get_opt_str = |k: &str| opts_val.and_then(|o| o.get(k)).and_then(|v| v.as_str());
-        let get_opt_u64 = |k: &str| opts_val.and_then(|o| o.get(k)).and_then(|v| v.as_u64());
-        let seed_mode = get_opt_str("seed_mode").unwrap_or("vector");
-        let seed_limit = get_opt_u64("seed_limit").unwrap_or(10) as usize;
-        let ef = get_opt_u64("ef").map(|v| v as usize);
+        let seed_mode = opt_str(opts_val, "seed_mode", "GRAPH_RAG")?.unwrap_or("vector");
+        let seed_limit = opt_u64(opts_val, "seed_limit", "GRAPH_RAG")?.unwrap_or(10) as usize;
+        let ef = opt_u64(opts_val, "ef", "GRAPH_RAG")?.map(|v| v as usize);
 
         let coll = self.get_collection(seed_collection)?;
         let mut seeds: Vec<(String, f64)> = Vec::new();
         match seed_mode {
             "hybrid" => {
-                let fulltext_field = get_opt_str("fulltext_field").ok_or_else(|| {
-                    DbError::ExecutionError(
-                        "GRAPH_RAG: seed_mode 'hybrid' requires options.fulltext_field".to_string(),
-                    )
-                })?;
-                let text_query = get_opt_str("text_query").ok_or_else(|| {
-                    DbError::ExecutionError(
-                        "GRAPH_RAG: seed_mode 'hybrid' requires options.text_query".to_string(),
-                    )
-                })?;
-                let hopts = crate::storage::HybridSearchOptions {
-                    limit: seed_limit,
-                    ..Default::default()
-                };
+                let fulltext_field =
+                    opt_str(opts_val, "fulltext_field", "GRAPH_RAG")?.ok_or_else(|| {
+                        DbError::BadRequest(
+                            "GRAPH_RAG: seed_mode 'hybrid' requires options.fulltext_field"
+                                .to_string(),
+                        )
+                    })?;
+                let text_query =
+                    opt_str(opts_val, "text_query", "GRAPH_RAG")?.ok_or_else(|| {
+                        DbError::BadRequest(
+                            "GRAPH_RAG: seed_mode 'hybrid' requires options.text_query".to_string(),
+                        )
+                    })?;
+                let hopts = parse_hybrid_options(opts_val, seed_limit, "GRAPH_RAG")?;
                 for hit in coll.hybrid_search(
                     vector_index,
                     fulltext_field,
@@ -128,23 +173,28 @@ impl<'a> QueryExecutor<'a> {
                     text_query,
                     &hopts,
                 )? {
-                    let id = hit
-                        .document
-                        .as_ref()
-                        .and_then(|d| d.get("_id"))
-                        .and_then(|v| v.as_str())
-                        .map(String::from)
-                        .unwrap_or_else(|| format!("{}/{}", seed_collection, hit.doc_key));
-                    seeds.push((id, hit.score as f64));
+                    // Derive the vertex id from `doc_key`, never from the hit's
+                    // `_id`: a document's `_id` is built from the column-family
+                    // name, so under a database context it reads
+                    // "<db>:<collection>/<key>" while edges reference vertices
+                    // as "<collection>/<key>".
+                    seeds.push((
+                        format!("{}/{}", seed_collection, hit.doc_key),
+                        hit.score as f64,
+                    ));
                 }
             }
             "vector" => {
+                let metric = vector_index_metric(&coll, vector_index, "GRAPH_RAG")?;
                 for r in coll.vector_search(vector_index, &query_vector, seed_limit, ef)? {
-                    seeds.push((format!("{}/{}", seed_collection, r.doc_key), r.score as f64));
+                    seeds.push((
+                        format!("{}/{}", seed_collection, r.doc_key),
+                        similarity_weight(metric, r.score as f64),
+                    ));
                 }
             }
             other => {
-                return Err(DbError::ExecutionError(format!(
+                return Err(DbError::BadRequest(format!(
                     "GRAPH_RAG: unknown seed_mode '{}' (expected 'vector' or 'hybrid')",
                     other
                 )));
@@ -159,25 +209,22 @@ impl<'a> QueryExecutor<'a> {
     /// omitted it defaults to the latest run recorded for `edge_collection`.
     pub(crate) fn eval_community_search(&self, args: &[Value]) -> DbResult<Value> {
         if args.is_empty() || args.len() > 2 {
-            return Err(DbError::ExecutionError(
+            return Err(DbError::BadRequest(
                 "COMMUNITY_SEARCH requires 1-2 arguments: query_text, [options]".to_string(),
             ));
         }
         let query_text = args[0].as_str().ok_or_else(|| {
-            DbError::ExecutionError("COMMUNITY_SEARCH: query_text must be a string".to_string())
+            DbError::BadRequest("COMMUNITY_SEARCH: query_text must be a string".to_string())
         })?;
         let opts = args.get(1);
-        let get_str = |k: &str| opts.and_then(|o| o.get(k)).and_then(|v| v.as_str());
-        let limit = opts
-            .and_then(|o| o.get("limit"))
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5) as usize;
+        check_options(opts, &[COMMUNITY_SEARCH_OPTIONS], "COMMUNITY_SEARCH")?;
+        let limit = opt_u64(opts, "limit", "COMMUNITY_SEARCH")?.unwrap_or(5) as usize;
 
         // Resolve the run to filter on: explicit run_id, else the latest run
         // recorded for the edge collection in _graph_runs.
-        let run_id: Option<String> = match get_str("run_id") {
+        let run_id: Option<String> = match opt_str(opts, "run_id", "COMMUNITY_SEARCH")? {
             Some(r) => Some(r.to_string()),
-            None => get_str("edge_collection").and_then(|ec| {
+            None => opt_str(opts, "edge_collection", "COMMUNITY_SEARCH")?.and_then(|ec| {
                 self.get_collection("_graph_runs").ok().and_then(|runs| {
                     runs.get(ec).ok().and_then(|d| {
                         d.to_value()
@@ -194,46 +241,48 @@ impl<'a> QueryExecutor<'a> {
             Err(_) => return Ok(Value::Array(vec![])),
         };
 
-        // Score community summaries by term overlap with the query.
-        // `_community_summaries` is a small derived collection (bounded by
-        // max_communities), so a scan is cheap and avoids coupling to
-        // fulltext-index maintenance.
-        let query_terms = tokenize_lower(query_text);
+        // Prefer the fulltext index created during community build; fall back to
+        // a term-overlap scan when no index exists or fulltext yields no hits.
+        if !summaries.list_fulltext_indexes().is_empty() {
+            let ft =
+                self.community_search_fulltext(&summaries, query_text, run_id.as_deref(), limit)?;
+            if ft.as_array().is_some_and(|a| !a.is_empty()) {
+                return Ok(ft);
+            }
+        }
+        Ok(Value::Array(community_search_token_overlap(
+            summaries.scan(None).into_iter().map(|d| d.to_value()),
+            query_text,
+            run_id.as_deref(),
+            limit,
+        )))
+    }
+
+    fn community_search_fulltext(
+        &self,
+        summaries: &Collection,
+        query_text: &str,
+        run_id: Option<&str>,
+        limit: usize,
+    ) -> DbResult<Value> {
+        let matches = summaries.fulltext_search(
+            query_text,
+            Some(vec!["summary".to_string(), "title".to_string()]),
+            limit.saturating_mul(4),
+        )?;
         let mut scored: Vec<(f64, Value)> = Vec::new();
-        for doc in summaries.scan(None) {
+        for m in matches {
+            // A summary deleted between the index hit and the fetch (a
+            // concurrent community build purging the previous run) must not
+            // fail the whole search.
+            let Ok(doc) = summaries.get(&m.doc_key) else {
+                continue;
+            };
             let v = doc.to_value();
-            if let Some(ref rid) = run_id {
-                if v.get("run_id").and_then(|x| x.as_str()) != Some(rid.as_str()) {
+            if let Some(rid) = run_id {
+                if v.get("run_id").and_then(|x| x.as_str()) != Some(rid) {
                     continue;
                 }
-            }
-            let mut hay = String::new();
-            for field in ["summary", "title"] {
-                if let Some(s) = v.get(field).and_then(|x| x.as_str()) {
-                    hay.push_str(s);
-                    hay.push(' ');
-                }
-            }
-            if let Some(kw) = v.get("keywords").and_then(|x| x.as_array()) {
-                for k in kw {
-                    if let Some(s) = k.as_str() {
-                        hay.push_str(s);
-                        hay.push(' ');
-                    }
-                }
-            }
-            let hay_terms: HashSet<String> = tokenize_lower(&hay).into_iter().collect();
-            let hits = query_terms
-                .iter()
-                .filter(|t| hay_terms.contains(*t))
-                .count();
-            let score = if query_terms.is_empty() {
-                1.0
-            } else {
-                hits as f64 / query_terms.len() as f64
-            };
-            if score <= 0.0 {
-                continue;
             }
             let mut obj = Map::new();
             for f in [
@@ -246,8 +295,8 @@ impl<'a> QueryExecutor<'a> {
             ] {
                 obj.insert(f.to_string(), v.get(f).cloned().unwrap_or(Value::Null));
             }
-            obj.insert("score".to_string(), json!(score));
-            scored.push((score, Value::Object(obj)));
+            obj.insert("score".to_string(), json!(m.score));
+            scored.push((m.score, Value::Object(obj)));
         }
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
         let out: Vec<Value> = scored.into_iter().take(limit).map(|(_, v)| v).collect();
@@ -274,8 +323,13 @@ impl<'a> QueryExecutor<'a> {
 
         let scored = graph_aggregate(&seeds, &reached_per_seed, opts);
 
-        let mut out = Vec::with_capacity(scored.len());
+        // `limit` counts *returned* hits, so truncate after hydration: a
+        // dangling target must not consume a slot a valid hit could fill.
+        let mut out = Vec::with_capacity(opts.limit.min(scored.len()));
         for hit in scored {
+            if out.len() >= opts.limit {
+                break;
+            }
             // Resolve "coll/key" -> document; skip dangling / heterogeneous
             // targets (mirrors the traversal clause's tolerant hydration).
             let doc = match hit.id.split_once('/') {
@@ -308,13 +362,22 @@ impl<'a> QueryExecutor<'a> {
 /// Pure scoring/dedup: fold seed similarities and per-seed BFS reaches into a
 /// ranked hit list. `contrib = seed_sim * decay^hop`, combined per vertex by
 /// `max` (default) or `sum`, keeping the minimum hop and the seed responsible
-/// for the strongest single contribution (`via`).
+/// for the strongest single contribution (`via`). The caller applies
+/// `opts.limit` after hydration.
 fn graph_aggregate(
     seeds: &[(String, f64)],
     reached: &[Vec<Reached>],
     opts: &ExpandOptions,
 ) -> Vec<ScoredHit> {
     let mut map: HashMap<String, ScoredHit> = HashMap::new();
+
+    // `Max` must not floor scores at zero: a seed weight can legitimately be
+    // negative (raw cosine similarity, dot product), and `0.0.max(-0.3)` would
+    // silently flatten every such hit to a tie.
+    let init_score = match opts.combine {
+        Combine::Max => f64::NEG_INFINITY,
+        Combine::Sum => 0.0,
+    };
 
     let add = |map: &mut HashMap<String, ScoredHit>,
                id: &str,
@@ -323,7 +386,7 @@ fn graph_aggregate(
                via: Option<String>| {
         let e = map.entry(id.to_string()).or_insert_with(|| ScoredHit {
             id: id.to_string(),
-            score: 0.0,
+            score: init_score,
             best_contrib: f64::NEG_INFINITY,
             hops,
             seed: false,
@@ -343,6 +406,8 @@ fn graph_aggregate(
         }
     };
 
+    let seed_ids: HashSet<&str> = seeds.iter().map(|(id, _)| id.as_str()).collect();
+
     if opts.include_seeds {
         for (id, sim) in seeds {
             add(&mut map, id, *sim, 0, None);
@@ -356,6 +421,12 @@ fn graph_aggregate(
     for (i, reaches) in reached.iter().enumerate() {
         let (seed_id, sim) = &seeds[i];
         for r in reaches {
+            // `include_seeds: false` excludes seeds from the output entirely,
+            // including a seed reached from a *different* seed — otherwise the
+            // option would only half-apply.
+            if !opts.include_seeds && seed_ids.contains(r.id.as_str()) {
+                continue;
+            }
             let contrib = sim * opts.decay.powi(r.depth as i32);
             add(&mut map, &r.id, contrib, r.depth, Some(seed_id.clone()));
         }
@@ -368,8 +439,221 @@ fn graph_aggregate(
             .unwrap_or(Ordering::Equal)
             .then_with(|| a.id.cmp(&b.id))
     });
-    hits.truncate(opts.limit);
     hits
+}
+
+fn parse_hybrid_options(
+    opts_val: Option<&Value>,
+    seed_limit: usize,
+    fname: &str,
+) -> DbResult<crate::storage::HybridSearchOptions> {
+    use crate::storage::{FusionMethod, HybridSearchOptions};
+
+    let defaults = HybridSearchOptions::default();
+    let fusion = match opt_str(opts_val, "fusion", fname)? {
+        Some(s) => FusionMethod::parse(s).ok_or_else(|| {
+            DbError::BadRequest(format!(
+                "{}: unknown fusion '{}' (expected weighted|rrf)",
+                fname, s
+            ))
+        })?,
+        None => defaults.fusion,
+    };
+    Ok(HybridSearchOptions {
+        vector_weight: opt_f64(opts_val, "vector_weight", fname)?
+            .map(|v| v as f32)
+            .unwrap_or(defaults.vector_weight),
+        text_weight: opt_f64(opts_val, "text_weight", fname)?
+            .map(|v| v as f32)
+            .unwrap_or(defaults.text_weight),
+        limit: seed_limit,
+        fusion,
+    })
+}
+
+/// The metric of `index` on `coll`. Read from the stored config rather than
+/// `get_vector_index`, which would page the whole HNSW graph in from disk.
+fn vector_index_metric(coll: &Collection, index: &str, fname: &str) -> DbResult<VectorMetric> {
+    coll.get_all_vector_index_configs()
+        .into_iter()
+        .find(|c| c.name == index)
+        .map(|c| c.metric)
+        .ok_or_else(|| DbError::BadRequest(format!("{}: unknown vector index '{}'", fname, index)))
+}
+
+/// Map a raw `vector_search` score onto a strictly positive weight that grows
+/// with similarity.
+///
+/// `VectorSearchResult::score` means a different thing per metric: a cosine
+/// similarity in `[-1, 1]`, an L2 **distance** (smaller is closer), or an
+/// unbounded dot product. Hop-decay scoring multiplies this weight by
+/// `decay^hop` and ranks descending, so it needs "bigger is closer" and a sign
+/// that survives the multiplication. Each mapping below is strictly monotonic
+/// in similarity, so the seed ordering the index produced is preserved.
+fn similarity_weight(metric: VectorMetric, score: f64) -> f64 {
+    match metric {
+        // [-1, 1] -> [0, 1]
+        VectorMetric::Cosine => (score + 1.0) / 2.0,
+        // distance in [0, inf) -> (0, 1], decreasing
+        VectorMetric::Euclidean => 1.0 / (1.0 + score.max(0.0)),
+        // (-inf, inf) -> (0, 1), increasing
+        VectorMetric::DotProduct => 1.0 / (1.0 + (-score).exp()),
+    }
+}
+
+/// Expansion options, shared by `NEIGHBORS` and `GRAPH_RAG`.
+const EXPAND_OPTIONS: &[&str] = &[
+    "hops",
+    "direction",
+    "decay",
+    "combine",
+    "include_seeds",
+    "max_frontier",
+    "limit",
+];
+
+/// `NEIGHBORS`-only: qualifies bare seed keys. `GRAPH_RAG` derives seed ids
+/// from the collection it searched, so accepting it there would be misleading.
+const NEIGHBORS_OPTIONS: &[&str] = &["seed_collection"];
+
+/// Options `GRAPH_RAG` accepts on top of [`EXPAND_OPTIONS`], for seed retrieval.
+const GRAPH_RAG_OPTIONS: &[&str] = &[
+    "seed_mode",
+    "seed_limit",
+    "ef",
+    "fulltext_field",
+    "text_query",
+    "vector_weight",
+    "text_weight",
+    "fusion",
+];
+
+const COMMUNITY_SEARCH_OPTIONS: &[&str] = &["run_id", "edge_collection", "limit"];
+
+/// Reject a non-object `options` argument and any key outside `allowed`, so a
+/// typo (`seedLimit`) fails loudly instead of silently selecting a default.
+fn check_options(opts_val: Option<&Value>, allowed: &[&[&str]], fname: &str) -> DbResult<()> {
+    let Some(v) = opts_val else { return Ok(()) };
+    if v.is_null() {
+        return Ok(());
+    }
+    let Some(m) = v.as_object() else {
+        return Err(DbError::BadRequest(format!(
+            "{}: options must be an object",
+            fname
+        )));
+    };
+    for key in m.keys() {
+        if !allowed.iter().any(|set| set.contains(&key.as_str())) {
+            return Err(DbError::BadRequest(format!(
+                "{}: unknown option '{}'",
+                fname, key
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Typed option readers. A key that is present but of the wrong type is an
+/// error, not a silent fallback to the default.
+fn opt_u64(opts_val: Option<&Value>, key: &str, fname: &str) -> DbResult<Option<u64>> {
+    match opts_val.and_then(|o| o.get(key)) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_u64().map(Some).ok_or_else(|| {
+            DbError::BadRequest(format!(
+                "{}: option '{}' must be a non-negative integer",
+                fname, key
+            ))
+        }),
+    }
+}
+
+fn opt_f64(opts_val: Option<&Value>, key: &str, fname: &str) -> DbResult<Option<f64>> {
+    match opts_val.and_then(|o| o.get(key)) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_f64().map(Some).ok_or_else(|| {
+            DbError::BadRequest(format!("{}: option '{}' must be a number", fname, key))
+        }),
+    }
+}
+
+fn opt_bool(opts_val: Option<&Value>, key: &str, fname: &str) -> DbResult<Option<bool>> {
+    match opts_val.and_then(|o| o.get(key)) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_bool().map(Some).ok_or_else(|| {
+            DbError::BadRequest(format!("{}: option '{}' must be a boolean", fname, key))
+        }),
+    }
+}
+
+fn opt_str<'v>(opts_val: Option<&'v Value>, key: &str, fname: &str) -> DbResult<Option<&'v str>> {
+    match opts_val.and_then(|o| o.get(key)) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_str().map(Some).ok_or_else(|| {
+            DbError::BadRequest(format!("{}: option '{}' must be a string", fname, key))
+        }),
+    }
+}
+
+/// Token-overlap fallback for COMMUNITY_SEARCH when no fulltext index exists.
+fn community_search_token_overlap(
+    docs: impl Iterator<Item = Value>,
+    query_text: &str,
+    run_id: Option<&str>,
+    limit: usize,
+) -> Vec<Value> {
+    let query_terms = tokenize_lower(query_text);
+    let mut scored: Vec<(f64, Value)> = Vec::new();
+    for v in docs {
+        if let Some(rid) = run_id {
+            if v.get("run_id").and_then(|x| x.as_str()) != Some(rid) {
+                continue;
+            }
+        }
+        let mut hay = String::new();
+        for field in ["summary", "title"] {
+            if let Some(s) = v.get(field).and_then(|x| x.as_str()) {
+                hay.push_str(s);
+                hay.push(' ');
+            }
+        }
+        if let Some(kw) = v.get("keywords").and_then(|x| x.as_array()) {
+            for k in kw {
+                if let Some(s) = k.as_str() {
+                    hay.push_str(s);
+                    hay.push(' ');
+                }
+            }
+        }
+        let hay_terms: HashSet<String> = tokenize_lower(&hay).into_iter().collect();
+        let hits = query_terms
+            .iter()
+            .filter(|t| hay_terms.contains(*t))
+            .count();
+        let score = if query_terms.is_empty() {
+            1.0
+        } else {
+            hits as f64 / query_terms.len() as f64
+        };
+        if score <= 0.0 {
+            continue;
+        }
+        let mut obj = Map::new();
+        for f in [
+            "community_id",
+            "title",
+            "summary",
+            "keywords",
+            "size",
+            "run_id",
+        ] {
+            obj.insert(f.to_string(), v.get(f).cloned().unwrap_or(Value::Null));
+        }
+        obj.insert("score".to_string(), json!(score));
+        scored.push((score, Value::Object(obj)));
+    }
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+    scored.into_iter().take(limit).map(|(_, v)| v).collect()
 }
 
 /// Split text into lowercase alphanumeric tokens of length >= 3.
@@ -385,7 +669,7 @@ fn parse_direction(s: &str, fname: &str) -> DbResult<EdgeDirection> {
         "outbound" | "out" => Ok(EdgeDirection::Outbound),
         "inbound" | "in" => Ok(EdgeDirection::Inbound),
         "any" | "both" => Ok(EdgeDirection::Any),
-        other => Err(DbError::ExecutionError(format!(
+        other => Err(DbError::BadRequest(format!(
             "{}: unknown direction '{}' (expected outbound|inbound|any)",
             fname, other
         ))),
@@ -394,37 +678,41 @@ fn parse_direction(s: &str, fname: &str) -> DbResult<EdgeDirection> {
 
 fn parse_expand_options(opts_val: Option<&Value>, fname: &str) -> DbResult<ExpandOptions> {
     let mut o = ExpandOptions::default();
-    if let Some(Value::Object(m)) = opts_val {
-        if let Some(v) = m.get("hops").and_then(|v| v.as_u64()) {
-            o.hops = v as usize;
+    if let Some(v) = opt_u64(opts_val, "hops", fname)? {
+        o.hops = v as usize;
+    }
+    if let Some(v) = opt_str(opts_val, "direction", fname)? {
+        o.direction = parse_direction(v, fname)?;
+    }
+    if let Some(v) = opt_f64(opts_val, "decay", fname)? {
+        if !(v > 0.0 && v <= 1.0) {
+            return Err(DbError::BadRequest(format!(
+                "{}: decay must be in (0, 1], got {}",
+                fname, v
+            )));
         }
-        if let Some(v) = m.get("direction").and_then(|v| v.as_str()) {
-            o.direction = parse_direction(v, fname)?;
-        }
-        if let Some(v) = m.get("decay").and_then(|v| v.as_f64()) {
-            o.decay = v.clamp(f64::EPSILON, 1.0);
-        }
-        if let Some(v) = m.get("combine").and_then(|v| v.as_str()) {
-            o.combine = match v.to_lowercase().as_str() {
-                "max" => Combine::Max,
-                "sum" => Combine::Sum,
-                other => {
-                    return Err(DbError::ExecutionError(format!(
-                        "{}: unknown combine '{}' (expected max|sum)",
-                        fname, other
-                    )))
-                }
-            };
-        }
-        if let Some(v) = m.get("include_seeds").and_then(|v| v.as_bool()) {
-            o.include_seeds = v;
-        }
-        if let Some(v) = m.get("max_frontier").and_then(|v| v.as_u64()) {
-            o.max_frontier = v as usize;
-        }
-        if let Some(v) = m.get("limit").and_then(|v| v.as_u64()) {
-            o.limit = v as usize;
-        }
+        o.decay = v;
+    }
+    if let Some(v) = opt_str(opts_val, "combine", fname)? {
+        o.combine = match v.to_lowercase().as_str() {
+            "max" => Combine::Max,
+            "sum" => Combine::Sum,
+            other => {
+                return Err(DbError::BadRequest(format!(
+                    "{}: unknown combine '{}' (expected max|sum)",
+                    fname, other
+                )))
+            }
+        };
+    }
+    if let Some(v) = opt_bool(opts_val, "include_seeds", fname)? {
+        o.include_seeds = v;
+    }
+    if let Some(v) = opt_u64(opts_val, "max_frontier", fname)? {
+        o.max_frontier = v as usize;
+    }
+    if let Some(v) = opt_u64(opts_val, "limit", fname)? {
+        o.limit = v as usize;
     }
     Ok(o)
 }
@@ -433,12 +721,10 @@ fn parse_expand_options(opts_val: Option<&Value>, fname: &str) -> DbResult<Expan
 /// or `{id|_id, score?}` objects. Bare keys are qualified with
 /// `options.seed_collection` when provided.
 fn parse_seeds(v: &Value, opts_val: Option<&Value>, fname: &str) -> DbResult<Vec<(String, f64)>> {
-    let seed_coll = opts_val
-        .and_then(|o| o.get("seed_collection"))
-        .and_then(|v| v.as_str());
+    let seed_coll = opt_str(opts_val, "seed_collection", fname)?;
     let arr = v
         .as_array()
-        .ok_or_else(|| DbError::ExecutionError(format!("{}: seeds must be an array", fname)))?;
+        .ok_or_else(|| DbError::BadRequest(format!("{}: seeds must be an array", fname)))?;
     let mut out = Vec::with_capacity(arr.len());
     for item in arr {
         let (raw_id, score) = match item {
@@ -449,7 +735,7 @@ fn parse_seeds(v: &Value, opts_val: Option<&Value>, fname: &str) -> DbResult<Vec
                     .or_else(|| m.get("_id"))
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| {
-                        DbError::ExecutionError(format!(
+                        DbError::BadRequest(format!(
                             "{}: seed object requires an 'id' or '_id' string",
                             fname
                         ))
@@ -459,7 +745,7 @@ fn parse_seeds(v: &Value, opts_val: Option<&Value>, fname: &str) -> DbResult<Vec
                 (id, score)
             }
             _ => {
-                return Err(DbError::ExecutionError(format!(
+                return Err(DbError::BadRequest(format!(
                     "{}: each seed must be a string or an object",
                     fname
                 )))

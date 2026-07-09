@@ -666,3 +666,288 @@ async fn test_hybrid_search_api_unknown_vector_index() {
         response.status()
     );
 }
+
+// ============================================================================
+// Graph RAG API Tests
+// ============================================================================
+
+async fn get_json(app: &axum::Router, token: &str, uri: &str) -> axum::response::Response {
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(uri)
+                .header("Authorization", auth_header(token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+async fn setup_graph_rag_api(app: &axum::Router, token: &str) {
+    post_json(app, token, "/_api/database", json!({ "name": "grdb" })).await;
+    post_json(
+        app,
+        token,
+        "/_api/database/grdb/collection",
+        json!({ "name": "docs" }),
+    )
+    .await;
+    post_json(
+        app,
+        token,
+        "/_api/database/grdb/collection",
+        json!({ "name": "links", "type": "edge" }),
+    )
+    .await;
+    let resp = post_json(
+        app,
+        token,
+        "/_api/database/grdb/vector/docs",
+        json!({
+            "name": "emb",
+            "field": "embedding",
+            "dimension": 4,
+            "metric": "cosine"
+        }),
+    )
+    .await;
+    assert!(
+        resp.status().is_success(),
+        "vector index creation failed: {}",
+        resp.status()
+    );
+    let resp = post_json(
+        app,
+        token,
+        "/_api/database/grdb/index/docs",
+        json!({
+            "type": "fulltext",
+            "name": "text_ft",
+            "fields": ["text"],
+            "min_length": 3
+        }),
+    )
+    .await;
+    assert!(
+        resp.status().is_success(),
+        "fulltext index creation failed: {}",
+        resp.status()
+    );
+
+    for doc in [
+        json!({ "_key": "a", "title": "Doc A", "text": "vector database introduction", "embedding": [1.0, 0.0, 0.0, 0.0] }),
+        json!({ "_key": "b", "title": "Doc B", "embedding": [0.5, 0.5, 0.0, 0.0] }),
+        json!({ "_key": "d", "title": "Doc D", "text": "embedding search with vector database", "embedding": [0.994, 0.006, 0.0, 0.0] }),
+    ] {
+        let resp = post_json(app, token, "/_api/database/grdb/document/docs", doc).await;
+        assert!(
+            resp.status().is_success(),
+            "document insert failed: {}",
+            resp.status()
+        );
+    }
+    let resp = post_json(
+        app,
+        token,
+        "/_api/database/grdb/document/links",
+        json!({ "_from": "docs/a", "_to": "docs/b" }),
+    )
+    .await;
+    assert!(
+        resp.status().is_success(),
+        "edge insert failed: {}",
+        resp.status()
+    );
+}
+
+#[tokio::test]
+async fn test_graph_rag_api() {
+    let (app, _tmp, token) = create_test_app();
+    setup_graph_rag_api(&app, &token).await;
+
+    let response = post_json(
+        &app,
+        &token,
+        "/_api/database/grdb/graph/rag",
+        json!({
+            "seed_collection": "docs",
+            "vector_index": "emb",
+            "edge_collection": "links",
+            "query_vector": [1.0, 0.0, 0.0, 0.0],
+            "options": { "hops": 1, "seed_limit": 2, "direction": "outbound" }
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    let results = json["results"].as_array().expect("results array");
+    assert!(results.len() >= 2);
+    assert_eq!(json["count"], results.len());
+}
+
+/// Hybrid seeding over the real HTTP path, where the executor carries a
+/// database context and documents' `_id` are prefixed with the database name.
+#[tokio::test]
+async fn test_graph_rag_api_hybrid_seed_mode() {
+    let (app, _tmp, token) = create_test_app();
+    setup_graph_rag_api(&app, &token).await;
+
+    let response = post_json(
+        &app,
+        &token,
+        "/_api/database/grdb/graph/rag",
+        json!({
+            "seed_collection": "docs",
+            "vector_index": "emb",
+            "edge_collection": "links",
+            "query_vector": [1.0, 0.0, 0.0, 0.0],
+            "options": {
+                "seed_mode": "hybrid",
+                "fulltext_field": "text",
+                "text_query": "vector database",
+                "seed_limit": 5,
+                "hops": 1
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    let ids: Vec<&str> = json["results"]
+        .as_array()
+        .expect("results array")
+        .iter()
+        .filter_map(|r| r["id"].as_str())
+        .collect();
+    assert!(ids.contains(&"docs/a"), "got {:?}", ids);
+    assert!(ids.contains(&"docs/d"), "got {:?}", ids);
+    assert!(ids.contains(&"docs/b"), "expansion missing, got {:?}", ids);
+}
+
+/// An unknown option must fail the request rather than silently fall back.
+#[tokio::test]
+async fn test_graph_rag_api_rejects_unknown_option() {
+    let (app, _tmp, token) = create_test_app();
+    setup_graph_rag_api(&app, &token).await;
+
+    let response = post_json(
+        &app,
+        &token,
+        "/_api/database/grdb/graph/rag",
+        json!({
+            "seed_collection": "docs",
+            "vector_index": "emb",
+            "edge_collection": "links",
+            "query_vector": [1.0, 0.0, 0.0, 0.0],
+            "options": { "seedLimit": 2 }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_graph_neighbors_api() {
+    let (app, _tmp, token) = create_test_app();
+    setup_graph_rag_api(&app, &token).await;
+
+    let response = post_json(
+        &app,
+        &token,
+        "/_api/database/grdb/graph/neighbors",
+        json!({
+            "edge_collection": "links",
+            "seeds": ["docs/a"],
+            "options": { "hops": 1, "direction": "outbound" }
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    let results = json["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 2);
+}
+
+#[tokio::test]
+async fn test_community_build_api() {
+    let (app, _tmp, token) = create_test_app();
+    setup_graph_rag_api(&app, &token).await;
+    // Add a second edge to form a small community
+    post_json(
+        &app,
+        &token,
+        "/_api/database/grdb/document/links",
+        json!({ "_from": "docs/d", "_to": "docs/b" }),
+    )
+    .await;
+
+    let response = post_json(
+        &app,
+        &token,
+        "/_api/database/grdb/graph/community/build",
+        json!({
+            "edge_collection": "links",
+            "min_community_size": 2,
+            "summarize": true
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let started = response_json(response).await;
+    let request_id = started["request_id"].as_str().expect("request_id");
+    assert_eq!(started["status"], "pending");
+
+    let mut status = "pending".to_string();
+    for _ in 0..50 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let poll = get_json(
+            &app,
+            &token,
+            &format!("/_api/database/grdb/graph/community/build/{}", request_id),
+        )
+        .await;
+        assert_eq!(poll.status(), StatusCode::OK);
+        let body = response_json(poll).await;
+        status = body["status"].as_str().unwrap_or("pending").to_string();
+        if status == "done" || status == "failed" {
+            break;
+        }
+    }
+    assert_eq!(status, "done");
+
+    let list = get_json(
+        &app,
+        &token,
+        "/_api/database/grdb/graph/communities?edge_collection=links",
+    )
+    .await;
+    assert_eq!(list.status(), StatusCode::OK);
+    let communities = response_json(list).await;
+    assert!(
+        !communities["communities"].as_array().unwrap().is_empty(),
+        "build should produce communities"
+    );
+
+    let search = post_json(
+        &app,
+        &token,
+        "/_api/database/grdb/graph/community/search",
+        json!({
+            "query_text": "community connected entities",
+            "options": { "edge_collection": "links", "limit": 3 }
+        }),
+    )
+    .await;
+    assert_eq!(search.status(), StatusCode::OK);
+    let search_json = response_json(search).await;
+    assert!(
+        search_json["count"].as_u64().unwrap_or(0) > 0,
+        "community search should return summaries: {:?}",
+        search_json
+    );
+}

@@ -403,6 +403,22 @@ RETURN users[*].name -- Returns array of names
 | `HIGHLIGHT(text, terms)` | Wrap matches in `<b>` | `HIGHLIGHT(doc.body, @terms)` |
 | `SAMPLE(coll, n)` | Random documents | `SAMPLE("users", 5)` |
 
+### Graph RAG Functions
+
+| Function | Description | Example |
+| :--- | :--- | :--- |
+| `NEIGHBORS(edge, seeds, opts?)` | Expand seed vertices N hops over an edge collection | `NEIGHBORS("links", ["docs/a"], { hops: 2 })` |
+| `GRAPH_RAG(coll, idx, edge, vec, opts?)` | Vector/hybrid seed retrieval then graph expansion | `GRAPH_RAG("docs", "emb", "links", @q, { hops: 1 })` |
+| `COMMUNITY_SEARCH(query, opts?)` | Search community summaries from a prior build | `COMMUNITY_SEARCH("vector db", { edge_collection: "links" })` |
+
+`GRAPH_RAG` options include all `NEIGHBORS` expansion options (`hops`, `direction`, `decay`, `combine`, `include_seeds`, `max_frontier`, `limit`) plus `seed_mode` (`vector` or `hybrid`), `seed_limit`, `ef`, `fulltext_field`, `text_query`, `vector_weight`, `text_weight`, and `fusion`. `seed_collection` is a `NEIGHBORS`-only option, used to qualify bare seed keys.
+
+Options are validated strictly: an unknown key, a wrongly typed value, or a `decay` outside `(0, 1]` is an error rather than a silent fallback to the default.
+
+`GRAPH_RAG` normalizes each seed's index score to a `(0, 1]` weight before applying hop decay, so `score` and `seed_score` are comparable regardless of the vector index metric (`cosine`, `euclidean`, or `dotProduct`). Ranking always follows similarity, never raw distance.
+
+`COMMUNITY_SEARCH` accepts `run_id`, `edge_collection`, and `limit`. Given an `edge_collection` it resolves the latest build for it; a community build retires the output of the previous run for that edge collection, so results never mix runs.
+
 ### Crypto & Security
 
 | Function | Description | Example |
