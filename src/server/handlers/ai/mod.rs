@@ -117,8 +117,42 @@ pub async fn generate_content_handler(
 ) -> Result<Json<GenerateContentResponse>, DbError> {
     use crate::server::llm_client::{LLMClient, Message};
 
-    let client = LLMClient::from_storage(&state.storage, &db_name, request.provider.as_deref())?;
+    let client =
+        LLMClient::from_storage(&state.storage, &db_name, request.provider.as_deref(), None)?;
     let provider_name = format!("{:?}", client.provider()).to_lowercase();
+
+    // Semantic response cache (opt-in via SEMANTIC_CACHE_ENABLED). Best-effort: any
+    // failure in the embed/lookup path just falls through to a normal LLM call.
+    let cache = crate::storage::semantic_query_cache::semantic_cache();
+    let mut cache_emb: Option<Vec<f32>> = None;
+    if cache.enabled() {
+        // Key on system + prompt so a different system prompt can't collide.
+        let cache_text = match &request.system {
+            Some(s) => format!("{}\n{}", s, request.prompt),
+            None => request.prompt.clone(),
+        };
+        // The embedding provider may differ from the chat provider (e.g. Anthropic
+        // cannot embed); default to OpenAI, overridable via SEMANTIC_CACHE_PROVIDER.
+        let embed_provider = std::env::var("SEMANTIC_CACHE_PROVIDER").ok();
+        if let Ok(embed_client) = LLMClient::from_storage(
+            &state.storage,
+            &db_name,
+            embed_provider.as_deref().or(Some("openai")),
+            None,
+        ) {
+            if let Ok(emb) = embed_client.embed(&cache_text).await {
+                if let Some(hit) = cache.get(&db_name, &emb) {
+                    if let Some(content) = hit.as_str() {
+                        return Ok(Json(GenerateContentResponse {
+                            content: content.to_string(),
+                            provider: provider_name,
+                        }));
+                    }
+                }
+                cache_emb = Some(emb);
+            }
+        }
+    }
 
     let mut messages = Vec::new();
 
@@ -131,6 +165,11 @@ pub async fn generate_content_handler(
     messages.push(Message::user(&request.prompt));
 
     let content = client.chat(messages).await?;
+
+    // Populate the semantic cache for future similar prompts.
+    if let Some(emb) = cache_emb {
+        cache.put(&db_name, emb, serde_json::Value::String(content.clone()));
+    }
 
     Ok(Json(GenerateContentResponse {
         content,

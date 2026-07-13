@@ -13,7 +13,9 @@ pub mod build;
 pub mod community;
 pub mod louvain;
 pub mod model;
+pub mod pagerank;
 pub mod summarize;
 
 pub use community::{detect_communities, Community};
 pub use model::{Graph, GraphBuilder};
+pub use pagerank::{pagerank, pagerank_directed, pagerank_scored};

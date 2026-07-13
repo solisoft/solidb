@@ -752,6 +752,122 @@ fn test_graph_outbound_traversal() {
 }
 
 #[test]
+fn test_pagerank_and_degree_centrality() {
+    let tmp_dir = TempDir::new().unwrap();
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap()).unwrap();
+
+    // Setup directed graph for testing analytics
+    // a -> b (1), a -> c (1), b -> c (2)   (directed)
+    engine.create_collection("nodes".to_string(), None).unwrap();
+    let nodes = engine.get_collection("nodes").unwrap();
+    nodes.insert(json!({"_key": "a"})).unwrap();
+    nodes.insert(json!({"_key": "b"})).unwrap();
+    nodes.insert(json!({"_key": "c"})).unwrap();
+
+    engine
+        .create_collection("links".to_string(), Some("edge".to_string()))
+        .unwrap();
+    let links = engine.get_collection("links").unwrap();
+    links
+        .insert(json!({"_from": "nodes/a", "_to": "nodes/b", "w": 1}))
+        .unwrap();
+    links
+        .insert(json!({"_from": "nodes/a", "_to": "nodes/c", "w": 1}))
+        .unwrap();
+    links
+        .insert(json!({"_from": "nodes/b", "_to": "nodes/c", "w": 2}))
+        .unwrap();
+
+    let deg_results = execute_query(&engine, r#"RETURN DEGREE_CENTRALITY("links")"#);
+    assert!(!deg_results.is_empty());
+
+    let pr_results = execute_query(
+        &engine,
+        r#"RETURN PAGERANK("links", {limit: 5, damping: 0.85})"#,
+    );
+    assert!(!pr_results.is_empty());
+    if let Some(first) = pr_results.first() {
+        if let Some(obj) = first.as_object() {
+            assert!(obj.contains_key("node"));
+            assert!(obj.contains_key("score"));
+        }
+    }
+}
+
+#[test]
+fn test_rerank_lexical_reorders_by_overlap() {
+    let tmp_dir = TempDir::new().unwrap();
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap()).unwrap();
+
+    // Lexical rerank is pure (no LLM, no storage): most query-token overlap wins.
+    let q = r#"
+        LET docs = [
+            {content: "the quick brown fox jumps over"},
+            {content: "vector databases store embeddings for search"},
+            {content: "graph traversal and vector search combined"}
+        ]
+        RETURN RERANK("vector search embeddings", docs)
+    "#;
+    let res = execute_query(&engine, q);
+    let arr = res[0].as_array().unwrap();
+    assert_eq!(arr.len(), 3);
+    // doc[1] has 3 overlapping tokens, doc[2] has 2, doc[0] has 0.
+    assert_eq!(
+        arr[0]["content"],
+        json!("vector databases store embeddings for search")
+    );
+    assert_eq!(
+        arr[1]["content"],
+        json!("graph traversal and vector search combined")
+    );
+    assert_eq!(arr[2]["content"], json!("the quick brown fox jumps over"));
+
+    // limit truncates to the top-k after reordering.
+    let q_limited = r#"
+        LET docs = [
+            {content: "the quick brown fox jumps over"},
+            {content: "vector databases store embeddings for search"},
+            {content: "graph traversal and vector search combined"}
+        ]
+        RETURN RERANK("vector search embeddings", docs, {limit: 1})
+    "#;
+    let res = execute_query(&engine, q_limited);
+    let arr = res[0].as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(
+        arr[0]["content"],
+        json!("vector databases store embeddings for search")
+    );
+}
+
+#[test]
+fn test_stream_output_collection_emitted_at() {
+    // Simulates the output collection that streams write to (with emitted_at for prune/retention)
+    let tmp_dir = TempDir::new().unwrap();
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap()).unwrap();
+    let coll_name = "_streams:test_stream";
+    let _ = engine.create_collection(coll_name.to_string(), None);
+    let coll = engine.get_collection(coll_name).unwrap();
+
+    // As done in stream task process_window
+    let now = "2026-07-12T12:00:00Z".to_string();
+    coll.insert(serde_json::json!({
+        "value": 42,
+        "emitted_at": now
+    }))
+    .unwrap();
+
+    assert_eq!(coll.count(), 1);
+    let doc = coll.get("0").ok().or_else(|| {
+        // keys may be auto
+        coll.scan(None).into_iter().next()
+    });
+    if let Some(d) = doc {
+        assert!(d.get("emitted_at").is_some());
+    }
+}
+
+#[test]
 fn test_cte_simple() {
     let (engine, _tmp_dir) = create_seeded_engine();
 

@@ -29,6 +29,105 @@ pub fn get_transaction_id(headers: &HeaderMap) -> Option<TransactionId> {
         .map(TransactionId::from_u64)
 }
 
+/// Inject auto-generated embeddings into a document for any vector indexes
+/// on the collection that declare an `embedding_source`.
+/// This is the API-layer hook that enables "just insert text" semantic search / GraphRAG.
+async fn inject_auto_embeddings_if_needed(
+    storage: &std::sync::Arc<crate::storage::StorageEngine>,
+    db_name: &str,
+    collection: &crate::storage::Collection,
+    mut data: serde_json::Value,
+) -> Result<serde_json::Value, DbError> {
+    use crate::server::llm_client::LLMClient;
+    use crate::storage::index::VectorIndexConfig;
+
+    let configs: Vec<VectorIndexConfig> = collection.get_all_vector_index_configs();
+    if configs.is_empty() {
+        return Ok(data);
+    }
+
+    // Only act on objects
+    if !data.is_object() {
+        return Ok(data);
+    }
+
+    let obj = data.as_object_mut().unwrap();
+
+    for config in configs {
+        if let Some(ref source_field) = config.embedding_source {
+            let target_field = config.field.clone();
+            // If the target vector field is already present and looks valid, skip
+            if let Some(existing) = obj.get(&target_field) {
+                if let Some(arr) = existing.as_array() {
+                    if arr.len() == config.dimension {
+                        continue;
+                    }
+                }
+            }
+
+            // Get source text (owned, so we can mutate `obj` afterwards).
+            let text = match obj.get(source_field).and_then(|v| v.as_str()) {
+                Some(t) if !t.trim().is_empty() => t.to_string(),
+                _ => continue,
+            };
+
+            // Embeddings default to OpenAI; the chat/NL default stays Anthropic.
+            // An index may override the provider via `embedding_provider`.
+            let provider = config
+                .embedding_provider
+                .clone()
+                .unwrap_or_else(|| "openai".to_string());
+
+            // Auto-embedding is best-effort: a provider/config error, a transient
+            // outage, or a dimension mismatch must NOT fail the insert (that would
+            // brick every write to the collection). Log and store the document
+            // without a vector instead.
+            let client = match LLMClient::from_storage(
+                storage,
+                db_name,
+                Some(&provider),
+                config.embedding_model.clone(),
+            ) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!(
+                        "Auto-embedding skipped for vector index '{}' (provider {}): {}",
+                        config.name,
+                        provider,
+                        e
+                    );
+                    continue;
+                }
+            };
+            let emb = match client.embed(&text).await {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::warn!(
+                        "Auto-embedding failed for field '{}' in vector index '{}': {}",
+                        source_field,
+                        config.name,
+                        e
+                    );
+                    continue;
+                }
+            };
+            if emb.len() != config.dimension {
+                tracing::warn!(
+                    "Auto-embedding dimension mismatch for index '{}': provider returned {}, \
+                     expected {} — storing document without vector",
+                    config.name,
+                    emb.len(),
+                    config.dimension
+                );
+                continue;
+            }
+            obj.insert(target_field, serde_json::json!(emb));
+        }
+    }
+
+    Ok(data)
+}
+
 // ==================== Structs ====================
 
 /// Copy shard data from a source node (used for healing)
@@ -64,6 +163,11 @@ pub async fn insert_document(
         }
         Err(e) => return Err(e),
     };
+
+    // Auto-embeddings: if vector indexes declare embedding_source, synthesize vectors
+    // from text fields before the core insert (supports full _env + provider config).
+    let data =
+        inject_auto_embeddings_if_needed(&state.storage, &db_name, &collection, data).await?;
 
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {

@@ -102,6 +102,12 @@ impl Collection {
         // Add document to batch
         batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
 
+        // Record a version in the same atomic batch (if versioning is enabled).
+        let versioned = self.is_versioned();
+        if versioned {
+            self.append_version_to_batch(&mut batch, &cf, &key, Some(&doc_value));
+        }
+
         // Add index entries to batch (if enabled)
         if update_indexes {
             // Compute and add regular + geo index entries
@@ -143,6 +149,11 @@ impl Collection {
         // Update vector indexes in-memory (separate from WriteBatch)
         if update_indexes {
             self.update_vector_indexes_on_upsert(&key, &doc_value);
+        }
+
+        // Enforce version retention (best-effort, off the atomic write).
+        if versioned {
+            self.prune_versions(&key);
         }
 
         // Update document count
@@ -203,6 +214,12 @@ impl Collection {
         // Update document in batch
         batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
 
+        // Record a version in the same atomic batch (if versioning is enabled).
+        let versioned = self.is_versioned();
+        if versioned {
+            self.append_version_to_batch(&mut batch, &cf, key, Some(&new_value));
+        }
+
         // Compute and apply index updates atomically
         let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
             self.compute_index_entries_for_update(key, &old_value, &new_value)?;
@@ -251,6 +268,11 @@ impl Collection {
         // Update vector indexes in-memory (separate from WriteBatch)
         self.update_vector_indexes_on_delete(key);
         self.update_vector_indexes_on_upsert(key, &new_value);
+
+        // Enforce version retention (best-effort, off the atomic write).
+        if versioned {
+            self.prune_versions(key);
+        }
 
         // Broadcast change event
         let _ = self.change_sender.send(ChangeEvent {
@@ -310,6 +332,12 @@ impl Collection {
         // Update document in batch
         batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
 
+        // Record a version in the same atomic batch (if versioning is enabled).
+        let versioned = self.is_versioned();
+        if versioned {
+            self.append_version_to_batch(&mut batch, &cf, key, Some(&new_value));
+        }
+
         // Compute and apply index updates atomically
         let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
             self.compute_index_entries_for_update(key, &old_value, &new_value)?;
@@ -368,6 +396,11 @@ impl Collection {
         self.update_vector_indexes_on_delete(key);
         self.update_vector_indexes_on_upsert(key, &new_value);
 
+        // Enforce version retention (best-effort, off the atomic write).
+        if versioned {
+            self.prune_versions(key);
+        }
+
         // Broadcast change event
         let _ = self.change_sender.send(ChangeEvent {
             type_: ChangeType::Update,
@@ -398,6 +431,12 @@ impl Collection {
 
         // Delete document from batch
         batch.delete_cf(&cf, Self::doc_key(key));
+
+        // Record a delete tombstone version in the same atomic batch.
+        let versioned = self.is_versioned();
+        if versioned {
+            self.append_version_to_batch(&mut batch, &cf, key, None);
+        }
 
         // Compute and remove regular + geo index entries
         let (regular_keys, geo_keys) = self.compute_index_entries_for_delete(key, &doc_value)?;
@@ -440,6 +479,11 @@ impl Collection {
 
         // Update vector indexes in-memory (separate from WriteBatch)
         self.update_vector_indexes_on_delete(key);
+
+        // Enforce version retention (best-effort, off the atomic write).
+        if versioned {
+            self.prune_versions(key);
+        }
 
         // Update document count
         self.decrement_count();

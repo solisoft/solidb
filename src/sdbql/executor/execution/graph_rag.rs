@@ -14,10 +14,19 @@ use super::super::QueryExecutor;
 use super::graph::{EdgeExpander, Reached};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::EdgeDirection;
+use crate::server::llm_client::{LLMClient, Message};
+use crate::storage::index::extract_field_value;
 use crate::storage::{Collection, VectorMetric};
 use serde_json::{json, Map, Value};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+
+use crate::graph::pagerank_directed;
+
+/// Allowed option keys for `RERANK` (strictly validated).
+const RERANK_OPTIONS: &[&str] = &["mode", "field", "limit", "provider", "model"];
+/// Allowed option keys for `RAG_PIPELINE` (strictly validated).
+const RAG_PIPELINE_OPTIONS: &[&str] = &["text_query", "limit"];
 
 #[derive(Clone, Copy)]
 enum Combine {
@@ -357,6 +366,307 @@ impl<'a> QueryExecutor<'a> {
         }
         Ok(Value::Array(out))
     }
+
+    // PAGERANK(edge_collection [, options?])
+    // Runs PageRank over the directed graph defined by the edge collection.
+    // Returns array of objects: [{ node: "...", score: 0.123 }, ...] sorted by score desc.
+    pub(crate) fn eval_pagerank(&self, args: &[Value]) -> DbResult<Value> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(DbError::BadRequest(
+                "PAGERANK requires 1-2 args: edge_collection, [options]".to_string(),
+            ));
+        }
+        let edge_name = args[0].as_str().ok_or_else(|| {
+            DbError::BadRequest("PAGERANK: edge_collection must be string".into())
+        })?;
+
+        let opts = args.get(1);
+        let damping = opt_f64(opts, "damping", "PAGERANK")?.unwrap_or(0.85);
+        let iters = opt_u64(opts, "iterations", "PAGERANK")?.unwrap_or(20) as usize;
+        let limit = opt_u64(opts, "limit", "PAGERANK")?.unwrap_or(100) as usize;
+
+        // Validate options strictly rather than silently producing garbage scores.
+        if !(damping > 0.0 && damping <= 1.0) {
+            return Err(DbError::BadRequest(
+                "PAGERANK: damping must be in (0, 1]".to_string(),
+            ));
+        }
+        if iters == 0 || iters > 1000 {
+            return Err(DbError::BadRequest(
+                "PAGERANK: iterations must be between 1 and 1000".to_string(),
+            ));
+        }
+
+        let edge_coll = self.get_collection(edge_name)?;
+
+        // Build directed out-neighbors for PAGERANK (with weights if present).
+        let mut out_neighbors: std::collections::HashMap<String, Vec<(String, f64)>> =
+            std::collections::HashMap::new();
+        for doc in edge_coll.scan(None) {
+            let v = doc.to_value();
+            if let (Some(from), Some(to)) = (
+                v.get("_from").and_then(|x| x.as_str()),
+                v.get("_to").and_then(|x| x.as_str()),
+            ) {
+                let w = v.get("weight").and_then(|x| x.as_f64()).unwrap_or(1.0);
+                out_neighbors
+                    .entry(from.to_string())
+                    .or_default()
+                    .push((to.to_string(), w));
+            }
+        }
+
+        let mut scored = pagerank_directed(&out_neighbors, damping, iters, 1e-6);
+        if scored.len() > limit {
+            scored.truncate(limit);
+        }
+
+        let out: Vec<Value> = scored
+            .into_iter()
+            .map(|(node, score)| json!({ "node": node, "score": score }))
+            .collect();
+
+        Ok(Value::Array(out))
+    }
+
+    // DEGREE_CENTRALITY(edge_collection)
+    pub(crate) fn eval_degree_centrality(&self, args: &[Value]) -> DbResult<Value> {
+        if args.is_empty() {
+            return Err(DbError::BadRequest(
+                "DEGREE_CENTRALITY(edge_collection) required".to_string(),
+            ));
+        }
+        let edge_name = args[0].as_str().ok_or_else(|| {
+            DbError::BadRequest("DEGREE_CENTRALITY: edge_collection must be string".into())
+        })?;
+
+        let edge_coll = self.get_collection(edge_name)?;
+        let mut degree: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+
+        for doc in edge_coll.scan(None) {
+            let v = doc.to_value();
+            if let Some(from) = v.get("_from").and_then(|x| x.as_str()) {
+                *degree.entry(from.to_string()).or_insert(0.0) += 1.0;
+            }
+            if let Some(to) = v.get("_to").and_then(|x| x.as_str()) {
+                *degree.entry(to.to_string()).or_insert(0.0) += 1.0;
+            }
+        }
+
+        let mut pairs: Vec<_> = degree.into_iter().collect();
+        pairs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let out: Vec<Value> = pairs
+            .into_iter()
+            .map(|(node, deg)| json!({ "node": node, "degree": deg }))
+            .collect();
+
+        Ok(Value::Array(out))
+    }
+
+    /// RERANK(query, docs, options?) — reorder retrieved documents by relevance to
+    /// `query`. `options` (all optional): `mode` ("lexical" default, or "llm"),
+    /// `field` (dotted path to the text; auto-detected otherwise), `limit`,
+    /// `provider`, `model`. LLM mode falls back to lexical on any failure, so the
+    /// function is always safe to call.
+    pub(crate) fn eval_rerank(&self, args: &[Value]) -> DbResult<Value> {
+        if args.len() < 2 || args.len() > 3 {
+            return Err(DbError::BadRequest(
+                "RERANK requires 2-3 args: query, docs, [options]".to_string(),
+            ));
+        }
+        let query = args[0]
+            .as_str()
+            .ok_or_else(|| DbError::BadRequest("RERANK: query must be a string".to_string()))?;
+        let docs = args[1]
+            .as_array()
+            .ok_or_else(|| DbError::BadRequest("RERANK: docs must be an array".to_string()))?;
+
+        let opts = args.get(2);
+        check_options(opts, &[RERANK_OPTIONS], "RERANK")?;
+        let mode = opt_str(opts, "mode", "RERANK")?.unwrap_or("lexical");
+        let field = opt_str(opts, "field", "RERANK")?;
+        let limit = opt_u64(opts, "limit", "RERANK")?.map(|n| n as usize);
+        let provider = opt_str(opts, "provider", "RERANK")?;
+        let model = opt_str(opts, "model", "RERANK")?;
+
+        if docs.is_empty() {
+            return Ok(Value::Array(vec![]));
+        }
+
+        let texts: Vec<String> = docs.iter().map(|d| rerank_extract_text(d, field)).collect();
+
+        let order: Vec<usize> = if mode.eq_ignore_ascii_case("llm") {
+            match self.rerank_llm(query, &texts, provider, model) {
+                Ok(ord) => ord,
+                Err(e) => {
+                    tracing::warn!("RERANK llm mode failed ({}); falling back to lexical", e);
+                    rerank_lexical_order(query, &texts)
+                }
+            }
+        } else if mode.eq_ignore_ascii_case("lexical") {
+            rerank_lexical_order(query, &texts)
+        } else {
+            return Err(DbError::BadRequest(format!(
+                "RERANK: unknown mode '{}' (expected 'lexical' or 'llm')",
+                mode
+            )));
+        };
+
+        let mut out: Vec<Value> = order.into_iter().map(|i| docs[i].clone()).collect();
+        if let Some(l) = limit {
+            out.truncate(l);
+        }
+        Ok(Value::Array(out))
+    }
+
+    /// LLM-backed rerank: ask the chat model to return the document indices in
+    /// relevance order. Returns a full permutation (indices the model omits are
+    /// appended in their original order).
+    fn rerank_llm(
+        &self,
+        query: &str,
+        texts: &[String],
+        provider: Option<&str>,
+        model: Option<&str>,
+    ) -> DbResult<Vec<usize>> {
+        let db = self.database.as_deref().unwrap_or("_system");
+        let client =
+            LLMClient::from_storage(self.storage, db, provider, model.map(|s| s.to_string()))?;
+
+        let mut listing = String::new();
+        for (i, t) in texts.iter().enumerate() {
+            let snippet: String = t.chars().take(500).collect();
+            listing.push_str(&format!("[{}] {}\n", i, snippet.replace('\n', " ")));
+        }
+        let sys = Message::system(
+            "You are a search result re-ranker. Given a query and numbered documents, \
+             respond with ONLY a JSON array of the document indices ordered from most to \
+             least relevant, e.g. [2,0,1]. No prose, no code fences.",
+        );
+        let user = Message::user(&format!(
+            "Query: {}\n\nDocuments:\n{}\nReturn the JSON array of indices, most relevant first.",
+            query, listing
+        ));
+        let resp = client.chat_blocking(vec![sys, user])?;
+        parse_index_list(&resp, texts.len())
+    }
+
+    /// RAG_PIPELINE(name, query_vector, options?) — run a stored retrieve→expand→
+    /// rerank pipeline. The definition lives in the `_rag_pipelines` collection
+    /// keyed by `name`:
+    /// ```json
+    /// { "_key": "faq", "seed_collection": "docs", "vector_index": "emb",
+    ///   "edge_collection": "links", "retrieve_options": { "hops": 1, "seed_limit": 20 },
+    ///   "rerank": { "mode": "lexical", "field": "doc.content", "limit": 5 } }
+    /// ```
+    /// `options` may carry `text_query` (for lexical/LLM rerank) and override `limit`.
+    pub(crate) fn eval_rag_pipeline(&self, args: &[Value]) -> DbResult<Value> {
+        if args.len() < 2 || args.len() > 3 {
+            return Err(DbError::BadRequest(
+                "RAG_PIPELINE requires 2-3 args: name, query_vector, [options]".to_string(),
+            ));
+        }
+        let name = args[0].as_str().ok_or_else(|| {
+            DbError::BadRequest("RAG_PIPELINE: name must be a string".to_string())
+        })?;
+        let query_vector = args[1].clone();
+        let call_opts = args.get(2);
+        check_options(call_opts, &[RAG_PIPELINE_OPTIONS], "RAG_PIPELINE")?;
+
+        // Load the pipeline definition.
+        let pipelines = self.get_collection("_rag_pipelines")?;
+        let def = pipelines.get(name).map_err(|_| {
+            DbError::BadRequest(format!("RAG_PIPELINE: pipeline '{}' not found", name))
+        })?;
+        let def = def.to_value();
+
+        let seed_collection = def
+            .get("seed_collection")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                DbError::BadRequest("RAG_PIPELINE: definition missing seed_collection".to_string())
+            })?;
+        let vector_index = def
+            .get("vector_index")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                DbError::BadRequest("RAG_PIPELINE: definition missing vector_index".to_string())
+            })?;
+        let edge_collection = def
+            .get("edge_collection")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                DbError::BadRequest("RAG_PIPELINE: definition missing edge_collection".to_string())
+            })?;
+        let retrieve_options = def
+            .get("retrieve_options")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+
+        // Retrieve via the existing, fully-validated GRAPH_RAG path.
+        let gr_args = vec![
+            json!(seed_collection),
+            json!(vector_index),
+            json!(edge_collection),
+            query_vector,
+            retrieve_options,
+        ];
+        let retrieved = self.eval_graph_rag(&gr_args)?;
+        let hits = match retrieved {
+            Value::Array(a) => a,
+            other => return Ok(other),
+        };
+
+        // Optional rerank stage.
+        let rerank_cfg = def.get("rerank");
+        let text_query = call_opts
+            .and_then(|o| o.get("text_query"))
+            .and_then(|v| v.as_str())
+            .or_else(|| {
+                rerank_cfg
+                    .and_then(|r| r.get("text_query"))
+                    .and_then(|v| v.as_str())
+            });
+
+        let mut result = hits;
+        if let (Some(cfg), Some(q)) = (rerank_cfg, text_query) {
+            let mode = cfg
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("lexical");
+            let field = cfg.get("field").and_then(|v| v.as_str());
+            let texts: Vec<String> = result
+                .iter()
+                .map(|d| rerank_extract_text(d, field))
+                .collect();
+            let order = if mode.eq_ignore_ascii_case("llm") {
+                let provider = cfg.get("provider").and_then(|v| v.as_str());
+                let model = cfg.get("model").and_then(|v| v.as_str());
+                self.rerank_llm(q, &texts, provider, model)
+                    .unwrap_or_else(|_| rerank_lexical_order(q, &texts))
+            } else {
+                rerank_lexical_order(q, &texts)
+            };
+            result = order.into_iter().map(|i| result[i].clone()).collect();
+        }
+
+        // Apply the final limit (call option wins over the stored one).
+        let limit = call_opts
+            .and_then(|o| o.get("limit"))
+            .and_then(|v| v.as_u64())
+            .or_else(|| {
+                rerank_cfg
+                    .and_then(|r| r.get("limit"))
+                    .and_then(|v| v.as_u64())
+            })
+            .map(|n| n as usize);
+        if let Some(l) = limit {
+            result.truncate(l);
+        }
+
+        Ok(Value::Array(result))
+    }
 }
 
 /// Pure scoring/dedup: fold seed similarities and per-seed BFS reaches into a
@@ -662,6 +972,101 @@ fn tokenize_lower(s: &str) -> Vec<String> {
         .filter(|w| w.len() >= 3)
         .map(|w| w.to_lowercase())
         .collect()
+}
+
+// ==================== RERANK helpers ====================
+
+/// Extract the text to rank a document by. Uses `field` (a dotted path) when
+/// given; otherwise probes common text fields, including under a `doc` wrapper
+/// (as produced by VECTOR_SEARCH / HYBRID_SEARCH / GRAPH_RAG).
+fn rerank_extract_text(doc: &Value, field: Option<&str>) -> String {
+    if let Some(f) = field {
+        return value_to_text(&extract_field_value(doc, f));
+    }
+    const CANDIDATES: &[&str] = &[
+        "content",
+        "text",
+        "summary",
+        "body",
+        "title",
+        "doc.content",
+        "doc.text",
+        "doc.summary",
+        "doc.body",
+        "doc.title",
+    ];
+    for cand in CANDIDATES {
+        if let Some(s) = extract_field_value(doc, cand).as_str() {
+            if !s.trim().is_empty() {
+                return s.to_string();
+            }
+        }
+    }
+    value_to_text(doc)
+}
+
+fn value_to_text(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+/// Order document indices best→worst by query-token overlap. Ties keep the input
+/// order (stable), so retrieval order is preserved when there's no signal.
+fn rerank_lexical_order(query: &str, texts: &[String]) -> Vec<usize> {
+    let q_tokens: HashSet<String> = tokenize_lower(query).into_iter().collect();
+    let mut scored: Vec<(usize, usize)> = texts
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let matches = if q_tokens.is_empty() {
+                0
+            } else {
+                tokenize_lower(t)
+                    .into_iter()
+                    .filter(|tok| q_tokens.contains(tok))
+                    .count()
+            };
+            (i, matches)
+        })
+        .collect();
+    // Higher score first; original index breaks ties (stable order).
+    scored.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    scored.into_iter().map(|(i, _)| i).collect()
+}
+
+/// Parse a JSON array of indices out of an LLM response (tolerating surrounding
+/// text/code fences) into a full permutation of `0..n`. Out-of-range and
+/// duplicate indices are dropped; omitted indices are appended in original order.
+fn parse_index_list(resp: &str, n: usize) -> DbResult<Vec<usize>> {
+    let start = resp.find('[').ok_or_else(|| {
+        DbError::ExecutionError("RERANK: no JSON array in LLM response".to_string())
+    })?;
+    let end = resp[start..]
+        .find(']')
+        .map(|e| start + e + 1)
+        .ok_or_else(|| {
+            DbError::ExecutionError("RERANK: unterminated JSON array in LLM response".to_string())
+        })?;
+    let arr: Vec<i64> = serde_json::from_str(&resp[start..end])
+        .map_err(|e| DbError::ExecutionError(format!("RERANK: bad index list: {}", e)))?;
+
+    let mut seen = vec![false; n];
+    let mut order = Vec::with_capacity(n);
+    for idx in arr {
+        if idx >= 0 && (idx as usize) < n && !seen[idx as usize] {
+            seen[idx as usize] = true;
+            order.push(idx as usize);
+        }
+    }
+    for (i, s) in seen.iter().enumerate() {
+        if !*s {
+            order.push(i);
+        }
+    }
+    Ok(order)
 }
 
 fn parse_direction(s: &str, fname: &str) -> DbResult<EdgeDirection> {

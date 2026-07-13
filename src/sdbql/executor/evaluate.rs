@@ -835,6 +835,69 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(results))
             }
 
+            // VECTOR_SEARCH(collection, index, query_vector, k, options?)
+            // k-NN search with an optional equality metadata filter. Options:
+            //   { filter: { field: value, ... }, overfetch: N, ef: N }
+            // Returns [{ doc, score }, ...] best-first, at most k after filtering.
+            "VECTOR_SEARCH" => {
+                if evaluated_args.len() < 4 || evaluated_args.len() > 5 {
+                    return Err(DbError::ExecutionError(
+                        "VECTOR_SEARCH requires 4-5 arguments: collection, index, query_vector, k, [options]"
+                            .to_string(),
+                    ));
+                }
+                let collection_name = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "VECTOR_SEARCH: collection must be a string".to_string(),
+                    )
+                })?;
+                let index_name = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("VECTOR_SEARCH: index must be a string".to_string())
+                })?;
+                let query_vector =
+                    Self::extract_vector_arg(&evaluated_args[2], "VECTOR_SEARCH: query_vector")?;
+                let k = evaluated_args[3].as_u64().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "VECTOR_SEARCH: k must be a non-negative integer".to_string(),
+                    )
+                })? as usize;
+
+                let mut overfetch: usize = 1;
+                let mut ef: Option<usize> = None;
+                let mut filter = serde_json::Map::new();
+                if evaluated_args.len() == 5 {
+                    if let Some(opts) = evaluated_args[4].as_object() {
+                        if let Some(o) = opts.get("overfetch").and_then(|v| v.as_u64()) {
+                            overfetch = o as usize;
+                        }
+                        if let Some(e) = opts.get("ef").and_then(|v| v.as_u64()) {
+                            ef = Some(e as usize);
+                        }
+                        if let Some(f) = opts.get("filter").and_then(|v| v.as_object()) {
+                            filter = f.clone();
+                        }
+                    }
+                }
+                // With a filter but no explicit over-fetch, widen the candidate pool
+                // so a selective filter still returns ~k rows.
+                if !filter.is_empty() && overfetch <= 1 {
+                    overfetch = 4;
+                }
+
+                let collection = self.get_collection(collection_name)?;
+                let results: Vec<Value> = collection
+                    .vector_search_filtered(index_name, &query_vector, k, overfetch, ef, &filter)?
+                    .into_iter()
+                    .map(|(doc, score)| {
+                        let mut obj = serde_json::Map::new();
+                        obj.insert("doc".to_string(), doc);
+                        obj.insert("score".to_string(), json!(score));
+                        Value::Object(obj)
+                    })
+                    .collect();
+                Ok(Value::Array(results))
+            }
+
             // NEIGHBORS(edge_collection, seeds, options?) - expand seeds N hops
             // over an edge collection, scored by hop distance (local Graph RAG).
             "NEIGHBORS" => self.eval_neighbors(&evaluated_args),
@@ -847,6 +910,58 @@ impl<'a> QueryExecutor<'a> {
             // of community summaries produced by a prior community build.
             "COMMUNITY_SEARCH" => self.eval_community_search(&evaluated_args),
 
+            // PAGERANK(edge_collection [, options?])
+            // Runs PageRank over the (undirected) graph defined by the edge collection.
+            // Returns array of objects: [{ node: "...", score: 0.123 }, ...] sorted by score desc.
+            "PAGERANK" => self.eval_pagerank(&evaluated_args),
+
+            // DEGREE_CENTRALITY(edge_collection)
+            "DEGREE_CENTRALITY" => self.eval_degree_centrality(&evaluated_args),
+
+            // RERANK(query, docs, options?) - reorder retrieved docs by relevance.
+            // options: { mode: "lexical"|"llm", field, limit, provider, model }.
+            "RERANK" => self.eval_rerank(&evaluated_args),
+
+            // RAG_PIPELINE(name, query_vector, options?) - run a stored retrieve→
+            // expand→rerank pipeline by name (see _rag_pipelines).
+            "RAG_PIPELINE" => self.eval_rag_pipeline(&evaluated_args),
+
+            // DOC_AS_OF(collection, key, timestamp) - point-in-time read of a
+            // versioned document. timestamp = epoch millis (number) or RFC3339 string.
+            "DOC_AS_OF" => {
+                if evaluated_args.len() != 3 {
+                    return Err(DbError::ExecutionError(
+                        "DOC_AS_OF requires 3 arguments: collection, key, timestamp".to_string(),
+                    ));
+                }
+                let coll_name = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("DOC_AS_OF: collection must be a string".to_string())
+                })?;
+                let key = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("DOC_AS_OF: key must be a string".to_string())
+                })?;
+                let as_of = parse_as_of_micros(&evaluated_args[2])?;
+                let collection = self.get_collection(coll_name)?;
+                Ok(collection.get_as_of(key, as_of)?.unwrap_or(Value::Null))
+            }
+
+            // DOC_HISTORY(collection, key) - version history, newest first.
+            "DOC_HISTORY" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "DOC_HISTORY requires 2 arguments: collection, key".to_string(),
+                    ));
+                }
+                let coll_name = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("DOC_HISTORY: collection must be a string".to_string())
+                })?;
+                let key = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("DOC_HISTORY: key must be a string".to_string())
+                })?;
+                let collection = self.get_collection(coll_name)?;
+                Ok(Value::Array(collection.doc_history(key)))
+            }
+
             // Unknown function
             _ => Err(DbError::ExecutionError(format!(
                 "Unknown function: {}",
@@ -854,4 +969,34 @@ impl<'a> QueryExecutor<'a> {
             ))),
         }
     }
+}
+
+/// Parse an `AS OF` timestamp argument into epoch microseconds (inclusive of the
+/// whole millisecond). Accepts a number (epoch milliseconds) or an RFC3339 string.
+fn parse_as_of_micros(v: &Value) -> DbResult<u64> {
+    let millis: u64 = if let Some(n) = v.as_u64() {
+        n
+    } else if let Some(f) = v.as_f64() {
+        if f < 0.0 {
+            return Err(DbError::ExecutionError(
+                "DOC_AS_OF: timestamp must be non-negative".to_string(),
+            ));
+        }
+        f as u64
+    } else if let Some(s) = v.as_str() {
+        match chrono::DateTime::parse_from_rfc3339(s) {
+            Ok(dt) => dt.timestamp_millis().max(0) as u64,
+            Err(_) => {
+                return Err(DbError::ExecutionError(
+                    "DOC_AS_OF: string timestamp must be RFC3339 (e.g. 2026-07-13T12:00:00Z)"
+                        .to_string(),
+                ))
+            }
+        }
+    } else {
+        return Err(DbError::ExecutionError(
+            "DOC_AS_OF: timestamp must be epoch millis (number) or an RFC3339 string".to_string(),
+        ));
+    };
+    Ok(millis.saturating_mul(1000).saturating_add(999))
 }

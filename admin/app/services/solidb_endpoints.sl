@@ -89,6 +89,10 @@ class SolidbEndpoints
     return SolidbEndpoints.collection(db, name) + "/stats"
   end
 
+  static def collection_properties(db, name)
+    return SolidbEndpoints.collection(db, name) + "/properties"
+  end
+
   static def collection_truncate(db, name)
     return SolidbEndpoints.collection(db, name) + "/truncate"
   end

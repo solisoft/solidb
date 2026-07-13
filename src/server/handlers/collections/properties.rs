@@ -29,6 +29,9 @@ pub struct UpdateCollectionPropertiesRequest {
     /// Validation mode: "off", "strict", or "lenient"
     #[serde(rename = "validationMode")]
     pub validation_mode: Option<String>,
+    /// Enable/disable document versioning (time-travel history) on the collection.
+    #[serde(default)]
+    pub versioning: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,6 +40,8 @@ pub struct CollectionPropertiesResponse {
     pub status: String,
     #[serde(rename = "shardConfig")]
     pub shard_config: crate::sharding::coordinator::CollectionShardConfig,
+    /// Whether document versioning (time-travel) is enabled on the collection.
+    pub versioning: bool,
 }
 
 // ==================== Handlers ====================
@@ -64,6 +69,21 @@ pub async fn update_collection_properties(
             db_name,
             coll_name,
             new_type
+        );
+    }
+
+    // Enable/disable document versioning if specified
+    if let Some(versioning) = payload.versioning {
+        if versioning {
+            collection.enable_versioning()?;
+        } else {
+            collection.disable_versioning()?;
+        }
+        tracing::info!(
+            "Set document versioning for {}/{} to {}",
+            db_name,
+            coll_name,
+            versioning
         );
     }
 
@@ -244,6 +264,8 @@ pub async fn update_collection_properties(
         }
     }
 
+    let versioning = collection.is_versioned();
+
     Ok(Json(CollectionPropertiesResponse {
         name: coll_name,
         status: if shard_count_changed {
@@ -252,5 +274,6 @@ pub async fn update_collection_properties(
             "updated".to_string()
         },
         shard_config: config,
+        versioning,
     }))
 }

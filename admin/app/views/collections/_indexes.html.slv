@@ -7,6 +7,26 @@
     <p class="console-label">indexes / <span class="text-teal-500"><%= collection_name %></span>
       <span class="text-zinc-700">(<%= indexes.length() %>)</span></p>
     <div class="flex gap-2">
+      <%# Time-travel versioning toggle. When on, every single-document
+          insert/update/delete records an immutable version; read the past with
+          the DOC_AS_OF / DOC_HISTORY SDBQL functions. %>
+      <% if versioning %>
+        <button class="btn-ghost text-teal-400"
+                hx-put="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/versioning"
+                hx-vals='{"versioning": "false"}'
+                hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML"
+                hx-confirm="Disable versioning on '<%= attr(collection_name) %>'? Existing history is kept, but new writes stop recording versions.">
+          Versioning: on
+        </button>
+      <% else %>
+        <button class="btn-ghost"
+                hx-put="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/versioning"
+                hx-vals='{"versioning": "true"}'
+                hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML"
+                hx-confirm="Enable time-travel versioning on '<%= attr(collection_name) %>'? Future single-document writes will record history (readable via DOC_AS_OF / DOC_HISTORY).">
+          Versioning: off
+        </button>
+      <% end %>
       <button class="btn-ghost"
               hx-put="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/indexes/rebuild"
               hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML"

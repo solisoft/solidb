@@ -29,6 +29,7 @@ pub mod schema;
 pub mod ttl;
 pub mod txn;
 pub mod vector;
+pub mod versioning;
 pub use self::hybrid::{FusionMethod, HybridSearchOptions, HybridSearchResult};
 pub use self::vector::QuantizationStats;
 
@@ -55,6 +56,9 @@ pub const CFO_IDX_PREFIX: &str = "cfo_idx:"; // Cuckoo filter index prefix
 pub const SCHEMA_KEY: &str = "_stats:schema"; // JSON Schema for validation
 pub const VEC_META_PREFIX: &str = "vec_meta:"; // Vector index metadata
 pub const VEC_DATA_PREFIX: &str = "vec_data:"; // Vector index data (serialized VectorIndex)
+pub const EMBED_PENDING_PREFIX: &str = "embed_pending:"; // Pending auto-embedding markers (index:doc_key -> empty)
+pub const DOCV_PREFIX: &str = "docv:"; // Document version history (docv:<key>:<inverted_ts> -> VersionRecord)
+pub const VERSIONING_META_KEY: &str = "versioning_enabled"; // Per-collection versioning flag
 pub const NGRAM_SIZE: usize = 3;
 
 /// Type of change event

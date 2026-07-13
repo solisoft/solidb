@@ -373,7 +373,7 @@ pub async fn nl_query(
     }
 
     // 2. Create LLM client from _env collection (checks current db, then _system, then OS env)
-    let client = LLMClient::from_storage(&state.storage, &db_name, req.provider.as_deref())?;
+    let client = LLMClient::from_storage(&state.storage, &db_name, req.provider.as_deref(), None)?;
 
     // 3. Load few-shot examples from history
     let examples = load_few_shot_examples(&state.storage, &db_name);

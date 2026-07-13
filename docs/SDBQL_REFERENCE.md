@@ -392,6 +392,24 @@ RETURN users[*].name -- Returns array of names
 | `VECTOR_DISTANCE(v1, v2, metric)` | Distance (cosine/euclidean/dot) | `VECTOR_DISTANCE(v1, v2, "euclidean")` |
 | `VECTOR_NORMALIZE(v)` | Normalize vector | `VECTOR_NORMALIZE([1,2,3])` |
 | `VECTOR_INDEX_STATS(coll, idx)` | Get index stats | |
+| `VECTOR_SEARCH(coll, idx, vec, k, opts?)` | k-NN search with optional metadata filter | `VECTOR_SEARCH("docs", "emb", @q, 10, { filter: { tenant: "acme" }, overfetch: 4 })` |
+
+`VECTOR_SEARCH` returns `[{ doc, score }, ...]` best-first. Options: `filter` (equality map on dotted field paths, applied after retrieval), `overfetch` (candidate multiplier so a selective filter still yields ~`k`; defaults to 4 when a filter is present), and `ef` (HNSW search breadth).
+
+**Auto-Embeddings:** When creating a vector index, specify `embedding_source: "content"`, `embedding_provider`, etc. Documents inserted without a vector in the target field get embeddings generated automatically using your configured provider (OpenAI/Ollama/Gemini). Generation happens **off the write path**: inserts record a lightweight "pending" marker and a background worker fills in vectors and persists them, so bulk/driver/replica writes never block on the embedding API. Perfect for Graph RAG.
+
+Example:
+```js
+POST /_api/database/mydb/collection/docs/vector-index
+{
+  "name": "emb",
+  "field": "embedding",
+  "dimension": 1536,
+  "embedding_source": "content",
+  "embedding_provider": "openai"
+}
+```
+Then simply `INSERT {title: "...", content: "hello world"} INTO docs` and `embedding` will be populated automatically. Great for GraphRAG.
 
 ### Fulltext Search
 
@@ -411,11 +429,56 @@ RETURN users[*].name -- Returns array of names
 | `GRAPH_RAG(coll, idx, edge, vec, opts?)` | Vector/hybrid seed retrieval then graph expansion | `GRAPH_RAG("docs", "emb", "links", @q, { hops: 1 })` |
 | `COMMUNITY_SEARCH(query, opts?)` | Search community summaries from a prior build | `COMMUNITY_SEARCH("vector db", { edge_collection: "links" })` |
 
+### Graph Analytics Functions
+
+| Function | Description | Example |
+| :--- | :--- | :--- |
+| `PAGERANK(edge_collection, opts?)` | PageRank over an edge-defined graph. Returns `[{node, score}, ...]` sorted desc. | `PAGERANK("follows", { damping: 0.85, limit: 50 })` |
+| `DEGREE_CENTRALITY(edge_collection)` | Simple degree centrality per vertex. | `DEGREE_CENTRALITY("follows")` |
+
 `GRAPH_RAG` options include all `NEIGHBORS` expansion options (`hops`, `direction`, `decay`, `combine`, `include_seeds`, `max_frontier`, `limit`) plus `seed_mode` (`vector` or `hybrid`), `seed_limit`, `ef`, `fulltext_field`, `text_query`, `vector_weight`, `text_weight`, and `fusion`. `seed_collection` is a `NEIGHBORS`-only option, used to qualify bare seed keys.
 
 Options are validated strictly: an unknown key, a wrongly typed value, or a `decay` outside `(0, 1]` is an error rather than a silent fallback to the default.
 
 `GRAPH_RAG` normalizes each seed's index score to a `(0, 1]` weight before applying hop decay, so `score` and `seed_score` are comparable regardless of the vector index metric (`cosine`, `euclidean`, or `dotProduct`). Ranking always follows similarity, never raw distance.
+
+### Reranking & RAG Pipelines
+
+| Function | Description | Example |
+| :--- | :--- | :--- |
+| `RERANK(query, docs, opts?)` | Reorder retrieved docs by relevance to `query`. | `RERANK("vector search", results, { field: "doc.content", limit: 5 })` |
+| `RAG_PIPELINE(name, query_vector, opts?)` | Run a stored retrieve→expand→rerank pipeline by name. | `RAG_PIPELINE("faq", @q, { text_query: "how to index", limit: 5 })` |
+
+`RERANK` options: `mode` (`lexical` default — query-token overlap, no LLM; or `llm` — chat model reorders, falling back to lexical on any failure), `field` (dotted path to each doc's text; auto-detected across `content`/`text`/`summary`/`title`, including under a `doc` wrapper), `limit`, `provider`, `model`.
+
+`RAG_PIPELINE` reads its definition from the `_rag_pipelines` collection (keyed by `name`):
+
+```json
+{ "_key": "faq", "seed_collection": "docs", "vector_index": "emb",
+  "edge_collection": "links", "retrieve_options": { "hops": 1, "seed_limit": 20 },
+  "rerank": { "mode": "lexical", "field": "doc.content", "limit": 5 } }
+```
+
+It retrieves via `GRAPH_RAG`, applies the configured rerank (when a `text_query` is supplied via call options or the definition), and truncates to `limit`.
+
+### Time-Travel (Document Versioning)
+
+Enable versioning per collection (`Collection::enable_versioning`, or `SOLIDB_MAX_VERSIONS` to cap retained versions, default 100). Each single-document insert/update/delete then records an immutable version in the same atomic write.
+
+| Function | Description | Example |
+| :--- | :--- | :--- |
+| `DOC_AS_OF(coll, key, ts)` | The document as of `ts` (epoch millis or RFC3339), or `null` if it did not exist. | `DOC_AS_OF("orders", "o1", "2026-07-01T00:00:00Z")` |
+| `DOC_HISTORY(coll, key)` | Full version history, newest first: `[{ ts, deleted, value }, ...]`. | `DOC_HISTORY("orders", "o1")` |
+
+Scope: `AS OF` answers primary-key reads over versioned single-document writes. Bulk (`insert_batch`) and transactional writes are not yet versioned, and secondary indexes are current-version only.
+
+### Semantic Response Cache
+
+Opt-in via `SEMANTIC_CACHE_ENABLED=1`. The `/ai/generate` endpoint embeds each prompt and returns a cached response when a previous prompt is cosine-similar (`SEMANTIC_CACHE_THRESHOLD`, default `0.95`) within `SEMANTIC_CACHE_TTL` seconds — skipping the LLM call. In-memory only (lost on restart); best-effort (never fails the request). `SEMANTIC_CACHE_PROVIDER` overrides the embedding provider (default OpenAI).
+
+### Scheduled Materialized Views
+
+`CREATE MATERIALIZED VIEW name REFRESH "5m" AS <query>` stores a refresh interval (`30s`/`5m`/`1h`/`2d`, or a plain seconds count) alongside the view. A background worker re-runs the view query on that cadence; `REFRESH MATERIALIZED VIEW name` still works for manual refresh.
 
 `COMMUNITY_SEARCH` accepts `run_id`, `edge_collection`, and `limit`. Given an `edge_collection` it resolves the latest build for it; a community build retires the output of the previous run for that edge collection, so results never mix runs.
 

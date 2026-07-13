@@ -20,6 +20,7 @@ pub mod index;
 pub mod pending_drops;
 pub mod query_cache;
 pub mod schema;
+pub mod semantic_query_cache;
 pub mod serializer;
 pub mod vector;
 

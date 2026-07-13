@@ -74,6 +74,8 @@ impl<'a> QueryExecutor<'a> {
                                // So simple name is fine if _views is per-db.
             "type": "materialized",
             "query": query_json,
+            // Optional auto-refresh cadence read by the background MV worker.
+            "refresh_schedule": clause.refresh_schedule,
             "created_at": chrono::Utc::now().to_rfc3339()
         });
 

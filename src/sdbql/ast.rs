@@ -141,13 +141,18 @@ pub struct CreateStreamClause {
     pub if_not_exists: bool,
 }
 
-/// CREATE MATERIALIZED VIEW name AS ...
+/// CREATE MATERIALIZED VIEW name [REFRESH "<interval>"] AS ...
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CreateMaterializedViewClause {
     pub name: String,
     pub if_not_exists: bool,
     /// The query definition
     pub query: Box<Query>,
+    /// Optional automatic refresh interval (e.g. "30s", "5m", "1h", "2d", or a
+    /// plain number of seconds). When set, a background worker re-runs the view
+    /// query on that cadence. `None` = manual `REFRESH MATERIALIZED VIEW` only.
+    #[serde(default)]
+    pub refresh_schedule: Option<String>,
 }
 
 /// REFRESH MATERIALIZED VIEW name

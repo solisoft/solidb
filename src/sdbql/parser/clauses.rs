@@ -90,6 +90,26 @@ impl Parser {
             return Err(DbError::ParseError("Expected view name".to_string()));
         };
 
+        // Optional auto-refresh: CREATE MATERIALIZED VIEW name REFRESH "5m" AS ...
+        let refresh_schedule = if matches!(self.current_token(), Token::Refresh) {
+            self.advance();
+            match self.current_token() {
+                Token::String(s) => {
+                    let interval = s.clone();
+                    self.advance();
+                    Some(interval)
+                }
+                _ => {
+                    return Err(DbError::ParseError(
+                        "Expected a refresh interval string after REFRESH, e.g. REFRESH \"5m\""
+                            .to_string(),
+                    ))
+                }
+            }
+        } else {
+            None
+        };
+
         self.expect(Token::As)?;
 
         // Parse the inner query - false means don't check for trailing tokens (as we might be inside a larger structure, though unlikely for MV)
@@ -100,6 +120,7 @@ impl Parser {
             name,
             if_not_exists: false,
             query: Box::new(query),
+            refresh_schedule,
         })
     }
 

@@ -64,6 +64,19 @@ pub struct VectorIndexConfig {
     /// Quantization method for storage compression (default: None)
     #[serde(default)]
     pub quantization: VectorQuantization,
+    /// Optional source text field for automatic embedding generation.
+    /// When set, on insert/update if the target `field` vector is missing,
+    /// the DB will generate an embedding from this text field using a configured LLM provider.
+    #[serde(default)]
+    pub embedding_source: Option<String>,
+    /// Optional embedding provider override ("openai", "ollama", "gemini").
+    /// Falls back to NL_DEFAULT_PROVIDER or ANTHROPIC/OPENAI etc. env.
+    #[serde(default)]
+    pub embedding_provider: Option<String>,
+    /// Optional specific embedding model (e.g. "text-embedding-3-small").
+    /// Provider-specific defaults are used if not provided.
+    #[serde(default)]
+    pub embedding_model: Option<String>,
 }
 
 fn default_hnsw_m() -> usize {
@@ -85,6 +98,9 @@ impl VectorIndexConfig {
             m: default_hnsw_m(),
             ef_construction: default_ef_construction(),
             quantization: VectorQuantization::default(),
+            embedding_source: None,
+            embedding_provider: None,
+            embedding_model: None,
         }
     }
 
@@ -109,6 +125,24 @@ impl VectorIndexConfig {
     /// Set quantization method
     pub fn with_quantization(mut self, quantization: VectorQuantization) -> Self {
         self.quantization = quantization;
+        self
+    }
+
+    /// Enable automatic embedding generation from a source text field.
+    pub fn with_embedding_source(mut self, source_field: String) -> Self {
+        self.embedding_source = Some(source_field);
+        self
+    }
+
+    /// Set embedding provider override.
+    pub fn with_embedding_provider(mut self, provider: String) -> Self {
+        self.embedding_provider = Some(provider);
+        self
+    }
+
+    /// Set specific embedding model.
+    pub fn with_embedding_model(mut self, model: String) -> Self {
+        self.embedding_model = Some(model);
         self
     }
 }

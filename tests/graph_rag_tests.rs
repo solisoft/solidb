@@ -148,6 +148,54 @@ fn setup_community_summaries(engine: &StorageEngine) {
 // ============================================================================
 
 #[test]
+fn test_rag_pipeline_runs_reranks_and_limits() {
+    let (engine, _tmp) = create_test_engine();
+    setup_graph_rag_corpus(&engine);
+
+    engine
+        .create_collection("_rag_pipelines".to_string(), None)
+        .unwrap();
+    let pipes = engine.get_collection("_rag_pipelines").unwrap();
+    pipes
+        .insert(json!({
+            "_key": "kb",
+            "seed_collection": "docs",
+            "vector_index": "emb",
+            "edge_collection": "links",
+            "retrieve_options": {"hops": 1, "include_seeds": true, "seed_limit": 5},
+            "rerank": {"mode": "lexical", "field": "doc.title"}
+        }))
+        .unwrap();
+
+    // Full run: retrieve (vector seeds + 1-hop expand) with the GRAPH_RAG hit shape.
+    let res = execute_query(
+        &engine,
+        r#"RETURN RAG_PIPELINE("kb", [1.0, 0.0, 0.0, 0.0])"#,
+    );
+    let all = res[0].as_array().unwrap();
+    assert!(
+        !all.is_empty(),
+        "pipeline should retrieve at least the seed"
+    );
+    assert!(all[0].get("doc").is_some());
+    assert!(all[0].get("score").is_some());
+
+    // Call-site limit truncates the assembled result.
+    let res = execute_query(
+        &engine,
+        r#"RETURN RAG_PIPELINE("kb", [1.0, 0.0, 0.0, 0.0], {limit: 1})"#,
+    );
+    assert_eq!(res[0].as_array().unwrap().len(), 1);
+
+    // Unknown pipeline errors clearly.
+    let err = execute_query_expect_err(
+        &engine,
+        r#"RETURN RAG_PIPELINE("nope", [1.0, 0.0, 0.0, 0.0])"#,
+    );
+    assert!(err.contains("not found"), "got: {}", err);
+}
+
+#[test]
 fn test_neighbors_expands_from_seeds() {
     let (engine, _tmp) = create_test_engine();
     setup_graph_rag_corpus(&engine);

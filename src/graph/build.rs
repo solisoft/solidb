@@ -89,7 +89,8 @@ pub async fn run_build(
         let summ_coll = database.get_or_create_collection("_community_summaries")?;
         // The LLM client is optional — fall back to keyword summaries if it
         // can't be constructed (no provider/keys configured in _env).
-        let client = LLMClient::from_storage(&storage, db_name, opts.provider.as_deref()).ok();
+        let client =
+            LLMClient::from_storage(&storage, db_name, opts.provider.as_deref(), None).ok();
 
         for c in communities.iter().take(opts.max_communities) {
             let member_docs = fetch_member_docs(&storage, db_name, &c.members, 30);

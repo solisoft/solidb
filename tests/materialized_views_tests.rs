@@ -116,3 +116,49 @@ fn test_refresh_materialized_view() {
     assert!(names.contains(&"B".to_string()));
     assert!(!names.contains(&"C".to_string()));
 }
+
+#[test]
+fn test_create_materialized_view_with_refresh_schedule() {
+    let (engine, _dir) = setup_test_db();
+    engine.create_collection("users".to_string(), None).unwrap();
+    let users = engine.get_collection("users").unwrap();
+    users.insert(json!({"name": "Alice", "age": 30})).unwrap();
+
+    let query_str =
+        "CREATE MATERIALIZED VIEW adults REFRESH \"5m\" AS FOR u IN users FILTER u.age >= 18 RETURN u";
+    let mut parser = Parser::new(query_str).unwrap();
+    let query = parser.parse().unwrap();
+
+    // The schedule is captured on the AST clause.
+    let clause = query.create_materialized_view_clause.as_ref().unwrap();
+    assert_eq!(clause.refresh_schedule.as_deref(), Some("5m"));
+
+    let executor = QueryExecutor::new(&engine);
+    executor.execute(&query).unwrap();
+
+    // ...and persisted into the _views metadata for the background worker.
+    let views = engine.get_collection("_system:_views").unwrap();
+    let meta = views.get("adults").unwrap();
+    assert_eq!(meta.get("refresh_schedule").unwrap(), "5m");
+}
+
+#[test]
+fn test_materialized_view_without_schedule_has_null_refresh() {
+    let (engine, _dir) = setup_test_db();
+    engine.create_collection("users".to_string(), None).unwrap();
+
+    let query_str = "CREATE MATERIALIZED VIEW everyone AS FOR u IN users RETURN u";
+    let mut parser = Parser::new(query_str).unwrap();
+    let query = parser.parse().unwrap();
+    let clause = query.create_materialized_view_clause.as_ref().unwrap();
+    assert_eq!(clause.refresh_schedule, None);
+
+    QueryExecutor::new(&engine).execute(&query).unwrap();
+    let views = engine.get_collection("_system:_views").unwrap();
+    let meta = views.get("everyone").unwrap();
+    // Stored as JSON null when there's no schedule.
+    assert!(meta
+        .get("refresh_schedule")
+        .map(|v| v.is_null())
+        .unwrap_or(true));
+}

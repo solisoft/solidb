@@ -101,6 +101,197 @@ fn test_vector_index_drop() {
 }
 
 #[test]
+fn test_vector_index_create_with_auto_embedding_source() {
+    let (engine, _tmp) = create_test_engine();
+
+    engine
+        .create_collection("articles".to_string(), None)
+        .unwrap();
+    let collection = engine.get_collection("articles").unwrap();
+
+    let config = VectorIndexConfig::new("content_emb".to_string(), "embedding".to_string(), 3)
+        .with_embedding_source("content".to_string())
+        .with_embedding_provider("openai".to_string())
+        .with_embedding_model("text-embedding-3-small".to_string());
+
+    let result = collection.create_vector_index(config);
+    assert!(
+        result.is_ok(),
+        "Should create vector index with embedding_source"
+    );
+
+    let stats = result.unwrap();
+    assert_eq!(stats.name, "content_emb");
+    assert_eq!(stats.field, "embedding");
+
+    // Verify config is persisted with new fields
+    let configs = collection.get_all_vector_index_configs();
+    let found = configs.iter().find(|c| c.name == "content_emb");
+    assert!(found.is_some());
+    let found = found.unwrap();
+    assert_eq!(found.embedding_source, Some("content".to_string()));
+    assert_eq!(found.embedding_provider, Some("openai".to_string()));
+    assert_eq!(
+        found.embedding_model,
+        Some("text-embedding-3-small".to_string())
+    );
+}
+
+#[test]
+fn test_auto_embed_skips_when_no_vector_and_source_but_no_llm() {
+    // Without LLM env, auto-embed should gracefully not add vector (no crash, no garbage)
+    let (engine, _tmp) = create_test_engine();
+
+    engine.create_collection("docs".to_string(), None).unwrap();
+    let collection = engine.get_collection("docs").unwrap();
+
+    let config = VectorIndexConfig::new("emb".to_string(), "embedding".to_string(), 4)
+        .with_embedding_source("text".to_string());
+    collection.create_vector_index(config).unwrap();
+
+    // Insert doc with source text but no vector
+    let res = collection.insert(json!({
+        "_key": "d1",
+        "text": "hello world for embedding"
+        // no "embedding" field
+    }));
+    assert!(res.is_ok());
+
+    let doc = collection.get("d1").unwrap();
+    // Should not have added a (wrong) vector: the storage path never embeds
+    // (embedding is done in the async API layer), so no vector field appears.
+    assert!(doc
+        .get("embedding")
+        .is_none_or(|v| v.as_array().is_none_or(|a| a.is_empty())));
+}
+
+#[test]
+fn test_auto_embed_enqueues_and_clears_pending_markers() {
+    // The write path never embeds; instead it records a cheap "pending" marker
+    // for the async embedding worker. Verify the enqueue/clear lifecycle.
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("docs".to_string(), None).unwrap();
+    let collection = engine.get_collection("docs").unwrap();
+
+    let config = VectorIndexConfig::new("emb".to_string(), "embedding".to_string(), 4)
+        .with_embedding_source("text".to_string());
+    collection.create_vector_index(config).unwrap();
+
+    // 1. Insert text-only doc → one pending marker enqueued.
+    collection
+        .insert(json!({"_key": "d1", "text": "hello world"}))
+        .unwrap();
+    assert_eq!(collection.count_embed_pending(), 1);
+    assert_eq!(
+        collection.list_embed_pending("emb", 10),
+        vec!["d1".to_string()]
+    );
+
+    // 2. Insert a doc that already carries a valid vector → no marker.
+    collection
+        .insert(json!({"_key": "d2", "embedding": [0.1, 0.2, 0.3, 0.4]}))
+        .unwrap();
+    assert_eq!(collection.count_embed_pending(), 1); // still just d1
+
+    // 3. Supply the vector for d1 → its marker is cleared.
+    collection
+        .update(
+            "d1",
+            json!({"_key": "d1", "text": "hello world", "embedding": [0.5, 0.6, 0.7, 0.8]}),
+        )
+        .unwrap();
+    assert_eq!(collection.count_embed_pending(), 0);
+    assert!(collection.list_embed_pending("emb", 10).is_empty());
+
+    // 4. Deleting a still-pending doc also clears its marker.
+    collection
+        .insert(json!({"_key": "d3", "text": "another one"}))
+        .unwrap();
+    assert_eq!(collection.count_embed_pending(), 1);
+    collection.delete("d3").unwrap();
+    assert_eq!(collection.count_embed_pending(), 0);
+}
+
+#[test]
+fn test_vector_search_with_metadata_filter() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("items".to_string(), None).unwrap();
+    let coll = engine.get_collection("items").unwrap();
+    coll.create_vector_index(VectorIndexConfig::new(
+        "emb".to_string(),
+        "embedding".to_string(),
+        3,
+    ))
+    .unwrap();
+
+    coll.insert(json!({"_key": "d1", "embedding": [1.0, 0.0, 0.0], "category": "a"}))
+        .unwrap();
+    // d2 is the 2nd-nearest to the query but is category "b".
+    coll.insert(json!({"_key": "d2", "embedding": [0.9, 0.1, 0.0], "category": "b"}))
+        .unwrap();
+    coll.insert(json!({"_key": "d3", "embedding": [0.8, 0.0, 0.2], "category": "a"}))
+        .unwrap();
+
+    // Unfiltered top-3 includes the category-"b" doc.
+    let res = execute_query(
+        &engine,
+        r#"RETURN VECTOR_SEARCH("items", "emb", [1.0, 0.0, 0.0], 3)"#,
+    );
+    assert_eq!(res[0].as_array().unwrap().len(), 3);
+
+    // Filtered to category "a": the closer d2 is excluded; d1 and d3 remain.
+    let res = execute_query(
+        &engine,
+        r#"RETURN VECTOR_SEARCH("items", "emb", [1.0, 0.0, 0.0], 2, {filter: {category: "a"}})"#,
+    );
+    let arr = res[0].as_array().unwrap();
+    assert!(!arr.is_empty());
+    let keys: Vec<&str> = arr
+        .iter()
+        .map(|h| h["doc"]["_key"].as_str().unwrap())
+        .collect();
+    assert!(arr
+        .iter()
+        .all(|h| h["doc"]["category"].as_str() == Some("a")));
+    assert!(keys.contains(&"d1"));
+    assert!(keys.contains(&"d3"));
+    assert!(!keys.contains(&"d2"));
+}
+
+#[test]
+fn test_vector_index_build_with_auto_embed_on_populated_collection() {
+    // Tests the batched embedding path during index creation on existing data
+    let (engine, _tmp) = create_test_engine();
+
+    engine
+        .create_collection("articles".to_string(), None)
+        .unwrap();
+    let collection = engine.get_collection("articles").unwrap();
+
+    // Populate first
+    for i in 0..5 {
+        collection
+            .insert(json!({
+                "_key": format!("a{}", i),
+                "content": format!("test document number {}", i)
+            }))
+            .unwrap();
+    }
+
+    // Now create auto-embed index; this exercises the collect + batch_blocking path
+    let config = VectorIndexConfig::new("content_emb".to_string(), "embedding".to_string(), 3)
+        .with_embedding_source("content".to_string());
+
+    let result = collection.create_vector_index(config);
+    // Will "fail" to embed (no LLM) but should succeed without panic and index created
+    assert!(result.is_ok());
+
+    // No vectors should have been added
+    let stats = result.unwrap();
+    assert_eq!(stats.indexed_vectors, 0);
+}
+
+#[test]
 fn test_vector_index_duplicate_name() {
     let (engine, _tmp) = create_test_engine();
 

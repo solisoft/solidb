@@ -336,6 +336,15 @@ pub struct CreateVectorIndexRequest {
     /// Quantization method: "none" (default) or "scalar" (4x compression)
     #[serde(default)]
     pub quantization: Option<String>,
+    /// Optional text field to auto-generate embeddings from (enables native auto-embeddings).
+    #[serde(default)]
+    pub embedding_source: Option<String>,
+    /// Optional provider for embeddings ("openai", "ollama", "gemini").
+    #[serde(default)]
+    pub embedding_provider: Option<String>,
+    /// Optional embedding model name.
+    #[serde(default)]
+    pub embedding_model: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -413,6 +422,15 @@ pub async fn create_vector_index(
     }
     if let Some(ef) = req.ef_construction {
         config = config.with_ef_construction(ef);
+    }
+    if let Some(src) = req.embedding_source {
+        config = config.with_embedding_source(src);
+    }
+    if let Some(p) = req.embedding_provider {
+        config = config.with_embedding_provider(p);
+    }
+    if let Some(mdl) = req.embedding_model {
+        config = config.with_embedding_model(mdl);
     }
 
     let stats = collection.create_vector_index(config)?;

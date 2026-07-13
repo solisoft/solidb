@@ -23,6 +23,9 @@ pub struct CollectionSummary {
     pub shard_config: Option<crate::sharding::coordinator::CollectionShardConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stats: Option<crate::storage::CollectionStats>,
+    /// Whether document versioning (time-travel) is enabled on the collection.
+    #[serde(default)]
+    pub versioning: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -244,6 +247,7 @@ pub async fn list_collections(
                 coll.stats()
             };
 
+            let versioning = coll.is_versioned();
             collections.push(CollectionSummary {
                 name,
                 count,
@@ -251,6 +255,7 @@ pub async fn list_collections(
                 collection_type,
                 shard_config,
                 stats: Some(stats),
+                versioning,
             });
         }
     }

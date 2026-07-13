@@ -103,6 +103,17 @@ class CollectionsController < Controller
     return this._render_indexes(result, "indexes rebuilt (" + str(indexed_count) + " documents)")
   end
 
+  # PUT /databases/:db/collections/:name/versioning
+  # Enable/disable document versioning (time-travel history) on the collection.
+  def set_versioning
+    this._ctx_indexes()
+    enabled = params["versioning"] == "true"
+    result = SolidbClient.put_api(SolidbEndpoints.collection_properties(@db, @collection_name),
+                                  { "versioning": enabled })
+    notice = enabled ? "versioning enabled" : "versioning disabled"
+    return this._render_indexes(result, notice)
+  end
+
   # DELETE /databases/:db/collections/:name/indexes/:index_name
   # The unified API drops standard / fulltext / geo / ttl indexes by name.
   def delete_index
@@ -154,6 +165,15 @@ class CollectionsController < Controller
   # display list of { name, fields, type, unique, detail } rows.
   def _load_indexes
     @indexes = []
+    # Current versioning (time-travel) state comes from the collection summary.
+    @versioning = false
+    coll_list = SolidbClient.get_api(SolidbEndpoints.collections(@db))
+    for entry in ((coll_list["data"] ?? {})["collections"] ?? [])
+      entry_name = entry["name"] ?? ""
+      if entry_name == @collection_name
+        @versioning = entry["versioning"] ?? false
+      end
+    end
     result = SolidbClient.get_api(SolidbEndpoints.collection_indexes(@db, @collection_name))
     if !result["ok"]
       @indexes_error = result["error"] ?? "request failed" if @indexes_error.blank?

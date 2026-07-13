@@ -133,6 +133,22 @@ describe("CollectionsController") do
       assert_contains(res_body(response), "index by_email dropped")
     end
 
+    test("enable then disable document versioning") do
+      response = put("/databases/admin_spec_colls/collections/idx_specs/versioning",
+                     { "versioning": "true" })
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "versioning enabled")
+      assert_contains(body, "Versioning: on")
+
+      response = put("/databases/admin_spec_colls/collections/idx_specs/versioning",
+                     { "versioning": "false" })
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "versioning disabled")
+      assert_contains(body, "Versioning: off")
+    end
+
     test("creates a multi-field hash index") do
       response = post("/databases/admin_spec_colls/collections/idx_specs/indexes",
                       { "index_name": "by_pair", "fields": "first, last", "index_type": "hash" })

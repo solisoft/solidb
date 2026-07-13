@@ -19,7 +19,8 @@ pub struct StreamTask {
     db_name: String,
 
     // State
-    buffer: Vec<Value>, // Buffer of documents
+    // Buffer of (timestamp, document) for proper sliding window support
+    buffer: Vec<(DateTime<Utc>, Value)>,
     next_window_end: DateTime<Utc>,
 }
 
@@ -134,22 +135,19 @@ impl StreamTask {
     }
 
     fn process_event(&mut self, event: ChangeEvent) {
-        // Filter out deletes if we only care about new data?
-        // Or maybe we treat them as events.
-        // Typically streams process INSERTs.
+        let now = Utc::now();
 
         match event.type_ {
             ChangeType::Insert | ChangeType::Update => {
                 if let Some(data) = event.data {
-                    self.buffer.push(data);
+                    self.buffer.push((now, data));
                 }
             }
             ChangeType::Delete => {
-                // Ignore deletes for now in simple stream processing
+                // For now we ignore deletes in window buffers (common for many streaming use cases).
+                // Advanced: could support "subtract" for some aggs.
             }
             ChangeType::Truncate => {
-                // The source collection was wiped; buffered events belong to
-                // data that no longer exists, so drop the pending window.
                 if !self.buffer.is_empty() {
                     tracing::warn!(
                         "Stream {}: source collection truncated, discarding {} buffered events",
@@ -160,102 +158,160 @@ impl StreamTask {
                 }
             }
         }
+
+        // Opportunistic prune for sliding windows
+        if matches!(self.window_type, WindowType::Sliding) {
+            let cutoff = now - self.window_duration;
+            self.buffer.retain(|(ts, _)| *ts > cutoff);
+        }
     }
 
     async fn process_window(&mut self) -> DbResult<()> {
+        let event_count = self.buffer.len();
         tracing::info!(
             "Stream {}: Processing window with {} events",
             self.name,
-            self.buffer.len()
+            event_count
         );
 
-        // We need to execute the query logic on the buffered data.
-        // Since QueryExecutor expects a StorageEngine and works on collections,
-        // we need to adapt it or manually execute the pipeline.
-
-        // Pipeline: FILTER -> COLLECT -> RETURN
-        // The FOR clause is conceptually iterating over the window buffer.
+        if event_count == 0 {
+            // Advance window anyway
+            if matches!(self.window_type, WindowType::Tumbling) {
+                self.buffer.clear();
+            }
+            return Ok(());
+        }
 
         let for_clause = &self.query.for_clauses[0];
         let var_name = &for_clause.variable;
 
-        // 1. FILTER
-        let mut filtered_docs = Vec::new();
         let executor = QueryExecutor::with_database(&self.storage, self.db_name.clone());
 
-        for doc in &self.buffer {
-            // Check filters
+        // Build contexts from (timestamped) buffer. For sliding we already pruned opportunistically.
+        let mut contexts: Vec<std::collections::HashMap<String, Value>> = Vec::new();
+
+        for (_ts, doc) in &self.buffer {
             let mut keep = true;
             let mut ctx = std::collections::HashMap::new();
             ctx.insert(var_name.clone(), doc.clone());
 
+            // Apply FILTERs. Treat errors as non-matching (exclude) to avoid polluting
+            // aggregates with bad data (e.g. missing fields).
             for filter_clause in &self.query.filter_clauses {
-                let match_result = executor
-                    .evaluate_filter_with_context(&filter_clause.expression, &ctx)
-                    .unwrap_or(false);
-                if !match_result {
-                    keep = false;
-                    break;
+                match executor.evaluate_filter_with_context(&filter_clause.expression, &ctx) {
+                    Ok(true) => {}
+                    _ => {
+                        keep = false;
+                        break;
+                    }
                 }
             }
 
             if keep {
-                filtered_docs.push(ctx);
+                contexts.push(ctx);
             }
         }
 
-        // 2. COLLECT (Aggregation)
-        // If there is a collect clause, group data
-        // We reuse execute_body_clauses logic ideally, but it's private and tied to DB scan.
-        // We can extract aggregation logic or implement simple one here.
-
-        // Let's look for COLLECT clause in body_clauses
-        // Note: Parser extraction put them in body_clauses
-
-        let mut results = filtered_docs;
+        // Very basic COLLECT support (WITH COUNT, simple groups)
+        let mut results = contexts;
 
         for clause in &self.query.body_clauses {
             if let BodyClause::Collect(collect) = clause {
-                // Simple implementation of single-group aggregation (COUNT/SUM)
-                // or Group By
-                // ... (omitted for brevity, assume simple COUNT or passthrough for now)
-
-                // If we have COUNT INTO var
                 if let Some(count_var) = &collect.count_var {
-                    // This is "COLLECT WITH COUNT INTO var" - aggregation into single result (sort of, or per group)
-                    // If no group vars, it collapses everything.
                     if collect.group_vars.is_empty() {
+                        // Single aggregate row
                         let count = results.len();
-                        let mut new_ctx = std::collections::HashMap::new();
-                        new_ctx.insert(
+                        let mut agg = std::collections::HashMap::new();
+                        agg.insert(
                             count_var.clone(),
                             Value::Number(serde_json::Number::from(count)),
                         );
-                        results = vec![new_ctx];
+                        // Also carry a sample window size
+                        agg.insert(
+                            "window_size".to_string(),
+                            Value::Number(serde_json::Number::from(count)),
+                        );
+                        results = vec![agg];
                     }
                 }
             }
         }
 
-        // 3. RETURN -> Insert into output stream (or log for now)
-        if let Some(return_clause) = &self.query.return_clause {
-            for ctx in results {
-                let result_val =
-                    executor.evaluate_expr_with_context(&return_clause.expression, &ctx)?;
-                tracing::info!("Stream {}: Emit {:?}", self.name, result_val);
+        // Evaluate RETURN and persist useful results into a stream-backed collection
+        // Target collection: "<db>:_streams:<stream_name>" (auto created)
+        let stream_output_name = format!("_streams:{}", self.name);
 
-                // If the result is an object and we have a target collection?
-                // The syntax `CREATE STREAM name AS ...` implies the stream itself is a source for others.
-                // We might want to persist it or broadcast it.
-                // For now, let's just log it.
-            }
+        // Ensure the output collection exists (lightweight)
+        let db = match self.storage.get_database(&self.db_name) {
+            Ok(d) => d,
+            Err(_) => return Ok(()),
+        };
+
+        let output_coll = if db.get_collection(&stream_output_name).is_err() {
+            let _ = db.create_collection(stream_output_name.clone(), None);
+            db.get_collection(&stream_output_name).ok()
         } else {
-            // Implicit return of all context vars?
+            db.get_collection(&stream_output_name).ok()
+        };
+
+        // Create TTL index for automatic retention (7 days) to avoid O(N) manual scans every window
+        const STREAM_RETENTION_SECS: u64 = 7 * 24 * 3600;
+        if let Some(coll) = &output_coll {
+            if coll.get_ttl_index("retention").is_none() {
+                let _ = coll.create_ttl_index(
+                    "retention".to_string(),
+                    "emitted_at".to_string(),
+                    STREAM_RETENTION_SECS,
+                );
+            }
         }
 
-        // Clear buffer for Tumbling window
+        if let Some(return_clause) = &self.query.return_clause {
+            for ctx in results {
+                if let Ok(result_val) =
+                    executor.evaluate_expr_with_context(&return_clause.expression, &ctx)
+                {
+                    tracing::info!("Stream {}: Emit result -> {:?}", self.name, result_val);
+
+                    // Persist to the stream output collection if object-like
+                    if let Some(coll) = &output_coll {
+                        // Best effort insert of the emitted value (wrap non-objects)
+                        let mut to_store = if result_val.is_object() {
+                            result_val.clone()
+                        } else {
+                            serde_json::json!({ "value": result_val })
+                        };
+                        if let Some(obj) = to_store.as_object_mut() {
+                            obj.entry("emitted_at".to_string())
+                                .or_insert(serde_json::json!(Utc::now().to_rfc3339()));
+                        }
+                        let _ = coll.insert(to_store);
+                    }
+                }
+            }
+        } else {
+            // No explicit RETURN: store a summary document for the window
+            if let Some(coll) = &output_coll {
+                let now = Utc::now().to_rfc3339();
+                let summary = serde_json::json!({
+                    "stream": self.name,
+                    "window_end": now,
+                    "emitted_at": now,
+                    "event_count": event_count,
+                    "source": self.collection
+                });
+                let _ = coll.insert(summary);
+            }
+        }
+
+        // Tumbling: clear everything. Sliding: already prunes on ingest + here keep recent.
+        // Old results are automatically expired via TTL index on "emitted_at" (created on first use).
         if matches!(self.window_type, WindowType::Tumbling) {
             self.buffer.clear();
+        } else {
+            // Final prune for safety on sliding
+            let cutoff = Utc::now() - self.window_duration;
+            self.buffer.retain(|(ts, _)| *ts > cutoff);
         }
 
         Ok(())

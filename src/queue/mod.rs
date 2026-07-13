@@ -1,5 +1,7 @@
 mod cron;
+mod embeddings;
 mod jobs;
+mod materialized_views;
 pub(crate) mod signing;
 mod types;
 
@@ -28,6 +30,9 @@ pub struct QueueWorker {
     worker_count: usize,
     notifier: broadcast::Sender<()>,
     pub(crate) claiming_lock: tokio::sync::Mutex<()>,
+    /// Per-node next-due times ("db:view" -> unix secs) for scheduled
+    /// materialized-view refreshes. In-memory (reset on restart).
+    pub(crate) mv_next_due: std::sync::Mutex<std::collections::HashMap<String, u64>>,
 }
 
 impl QueueWorker {
@@ -62,6 +67,7 @@ impl QueueWorker {
             worker_count,
             notifier,
             claiming_lock: tokio::sync::Mutex::new(()),
+            mv_next_due: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -91,6 +97,8 @@ impl QueueWorker {
 
                     worker.check_jobs().await;
                     worker.check_cron_jobs().await;
+                    worker.check_embeddings().await;
+                    worker.check_materialized_views().await;
                 }
             });
             workers.push(handle);
