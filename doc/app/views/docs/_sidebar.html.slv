@@ -1,0 +1,139 @@
+<%# Docs navigation. `current_page` is passed in by the docs layout. The IA
+    mirrors the original www docs site; active groups render their subitems. %>
+<%
+sections = [
+  { "title": "Getting Started", "items": [
+    { "slug": "getting-started", "label": "Getting Started", "icon": "fa-rocket", "subitems": [
+      { "slug": "getting-started", "label": "Quick Start" },
+      { "slug": "changelog", "label": "Changelog" }
+    ] },
+    { "slug": "api", "label": "API Reference", "icon": "fa-code", "subitems": [
+      { "slug": "api-databases", "label": "Databases" },
+      { "slug": "api-collections", "label": "Collections" },
+      { "slug": "api-documents", "label": "Documents" },
+      { "slug": "api-queries", "label": "Queries" },
+      { "slug": "api-indexes", "label": "Indexes" },
+      { "slug": "api-vector", "label": "Vector Search" },
+      { "slug": "api-scripting", "label": "Scripting" },
+      { "slug": "api-blobs", "label": "Blobs" },
+      { "slug": "api-transactions", "label": "Transactions" },
+      { "slug": "api-cluster", "label": "Cluster" },
+      { "slug": "api-auth", "label": "Auth & RBAC" },
+      { "slug": "api-jobs", "label": "Jobs & Queues" },
+      { "slug": "api-triggers", "label": "Triggers" },
+      { "slug": "api-monitoring", "label": "Monitoring" }
+    ] },
+    { "slug": "driver", "label": "Native Driver", "icon": "fa-plug" }
+  ] },
+  { "title": "Query Languages", "items": [
+    { "slug": "sdbql", "label": "SDBQL Reference", "icon": "fa-terminal", "subitems": [
+      { "slug": "sdbql-syntax", "label": "Syntax & Basics" },
+      { "slug": "sdbql-operators", "label": "Operators" },
+      { "slug": "sdbql-mutations", "label": "Data Mutations" },
+      { "slug": "sdbql-graphs", "label": "Graph Queries" },
+      { "slug": "sdbql-aggregations", "label": "Aggregations" },
+      { "slug": "sdbql-cte", "label": "CTEs (WITH)" },
+      { "slug": "sdbql-functions-string", "label": "String Functions" },
+      { "slug": "sdbql-functions-date", "label": "Date Functions" },
+      { "slug": "sdbql-functions-array", "label": "Array Functions" },
+      { "slug": "sdbql-functions-numeric", "label": "Numeric Functions" },
+      { "slug": "sdbql-functions-geo", "label": "Geo Functions" },
+      { "slug": "sdbql-functions-vector", "label": "Vector Functions" },
+      { "slug": "sdbql-functions-search", "label": "Search Functions" },
+      { "slug": "sdbql-functions-crypto", "label": "Crypto Functions" },
+      { "slug": "sdbql-functions-misc", "label": "Other Functions" },
+      { "slug": "sdbql-benchmarks", "label": "Benchmarks" }
+    ] },
+    { "slug": "sql", "label": "SQL Compatibility", "icon": "fa-database" },
+    { "slug": "nl-queries", "label": "Natural Language", "icon": "fa-magic" }
+  ] },
+  { "title": "Core Features", "items": [
+    { "slug": "transactions", "label": "ACID & Distributed Tx", "icon": "fa-shield-alt" },
+    { "slug": "indexes", "label": "Indexes", "icon": "fa-list-ol" },
+    { "slug": "vector-search", "label": "Vector Search", "icon": "fa-brain" },
+    { "slug": "hybrid-search", "label": "Hybrid Search", "icon": "fa-layer-group" },
+    { "slug": "graphs", "label": "Graphs & Edges", "icon": "fa-project-diagram" },
+    { "slug": "graph-rag", "label": "Graph RAG", "icon": "fa-diagram-project" },
+    { "slug": "views", "label": "Materialized Views", "icon": "fa-table-cells" },
+    { "slug": "scripting", "label": "Lua Scripting", "icon": "fa-scroll", "subitems": [
+      { "slug": "scripting-management", "label": "Management API" },
+      { "slug": "scripting-core", "label": "Core API" },
+      { "slug": "scripting-database", "label": "Database Access" },
+      { "slug": "scripting-ws", "label": "WebSockets" },
+      { "slug": "scripting-validation", "label": "Validation" },
+      { "slug": "scripting-files", "label": "Files & Media" },
+      { "slug": "scripting-utils", "label": "Utilities" },
+      { "slug": "scripting-streams", "label": "Streams" },
+      { "slug": "scripting-development", "label": "Development" },
+      { "slug": "scripting-tutorial-crud", "label": "Tutorial: CRUD API" },
+      { "slug": "scripting-tutorial-testing", "label": "Tutorial: Testing" }
+    ] },
+    { "slug": "queues", "label": "Queues & Jobs", "icon": "fa-tasks" },
+    { "slug": "triggers", "label": "Triggers", "icon": "fa-bolt" },
+    { "slug": "streams", "label": "Stream Processing", "icon": "fa-stream" }
+  ] },
+  { "title": "Real-Time", "items": [
+    { "slug": "changefeeds", "label": "Changefeeds", "icon": "fa-bolt" },
+    { "slug": "live-queries", "label": "Live Queries", "icon": "fa-satellite-dish" },
+    { "slug": "offline-sync", "label": "Offline Sync", "icon": "fa-sync-alt" }
+  ] },
+  { "title": "Storage Engines", "items": [
+    { "slug": "documents", "label": "Documents Storage", "icon": "fa-file-alt" },
+    { "slug": "timeseries", "label": "Time Series", "icon": "fa-chart-line" },
+    { "slug": "columnar", "label": "Columnar Storage", "icon": "fa-chart-bar" },
+    { "slug": "blobs", "label": "Blob Storage", "icon": "fa-database" }
+  ] },
+  { "title": "Distributed", "items": [
+    { "slug": "cluster", "label": "Clustering", "icon": "fa-network-wired" },
+    { "slug": "sharding", "label": "Sharding", "icon": "fa-cubes" }
+  ] },
+  { "title": "Reference", "items": [
+    { "slug": "architecture", "label": "Architecture", "icon": "fa-layer-group" },
+    { "slug": "observability", "label": "Observability", "icon": "fa-signal" },
+    { "slug": "security", "label": "Security", "icon": "fa-shield-alt" },
+    { "slug": "tooling", "label": "CLI Tools", "icon": "fa-wrench" },
+    { "slug": "clients", "label": "Official Clients", "icon": "fa-laptop-code", "subitems": [
+      { "slug": "clients-laravel", "label": "Laravel Eloquent" },
+      { "slug": "clients-go", "label": "Go" },
+      { "slug": "clients-python", "label": "Python" },
+      { "slug": "clients-nodejs", "label": "Node.js / Bun" },
+      { "slug": "clients-php", "label": "PHP" },
+      { "slug": "clients-ruby", "label": "Ruby" },
+      { "slug": "clients-elixir", "label": "Elixir" },
+      { "slug": "clients-rust", "label": "Rust" },
+      { "slug": "clients-ios", "label": "iOS (Swift)" },
+      { "slug": "clients-android", "label": "Android (Kotlin)" },
+      { "slug": "clients-react-native", "label": "React Native" },
+      { "slug": "clients-flutter", "label": "Flutter" }
+    ] },
+    { "slug": "comparison", "label": "DB Comparison", "icon": "fa-scale-balanced" }
+  ] }
+]
+%>
+
+<nav class="sb">
+  <a href="/docs" class="sb-home <%= current_page == "index" ? "active" : "" %>">
+    <i class="fas fa-house"></i>
+    <span>Documentation Home</span>
+  </a>
+
+  <% for section in sections %>
+    <div class="sb-sec">
+      <div class="sb-sec-title"><%= section["title"] %></div>
+      <% for item in section["items"] %>
+        <a href="/docs/<%= item["slug"] %>" class="sb-link <%= doc_group_active(item, current_page) ? "active" : "" %>">
+          <i class="fas <%= item["icon"] %>"></i>
+          <span><%= item["label"] %></span>
+          <% if item["subitems"].present? %><i class="fas fa-chevron-down chev"></i><% end %>
+        </a>
+        <% if item["subitems"].present? and doc_group_active(item, current_page) %>
+          <div class="sb-sub">
+            <% for sub in item["subitems"] %>
+              <a href="/docs/<%= sub["slug"] %>" class="sb-sublink <%= current_page == sub["slug"] ? "active" : "" %>"><%= sub["label"] %></a>
+            <% end %>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+  <% end %>
+</nav>

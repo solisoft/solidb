@@ -1,0 +1,266 @@
+<div class="max-w-4xl mx-auto">
+  <div class="mb-8">
+    <a href="/docs/scripting" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Lua Scripting Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"></div>
+      <div class="relative">
+        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">Database Access</h1>
+        <p class="text-lg text-gray-300 max-w-3xl leading-relaxed">
+          Interact with data, execute queries, and run transactions.
+        </p>
+      </div>
+    </div>
+
+    <!-- CRUD Operations -->
+    <section id="crud">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+            CRUD Operations
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Direct access via the <code>db</code> object.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">db:get(coll, key)</span> <span class="text-gray-500">-&gt; table|nil</span>
+              <div class="text-xs text-gray-500 mt-1">Retrieve a document by key.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">db:insert(coll, doc)</span> <span class="text-gray-500">-&gt; string (key)</span>
+              <div class="text-xs text-gray-500 mt-1">Insert a new document. Generates UUID if <code>_key</code> is missing.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">db:update(coll, key, updates)</span> <span class="text-gray-500">-&gt; bool</span>
+              <div class="text-xs text-gray-500 mt-1">Merge updates into existing document.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">db:replace(coll, key, doc)</span> <span class="text-gray-500">-&gt; bool</span>
+              <div class="text-xs text-gray-500 mt-1">Completely replace a document.</div>
+            </li>
+             <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">db:delete(coll, key)</span> <span class="text-gray-500">-&gt; bool</span>
+              <div class="text-xs text-gray-500 mt-1">Delete a document.</div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SDBQL Queries -->
+    <section id="queries">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
+            SDBQL Queries
+          </h2>
+        </div>
+        <div class="p-8">
+           <p class="text-gray-300 mb-4">
+             Execute complex queries using SDBQL (SoliDB Query Language).
+           </p>
+           <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-6">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-blue-400">local</span> results = <span class="text-purple-400">db:query</span>(<span class="text-green-400">"FOR u IN users FILTER u.age > @age RETURN u"</span>, {
+  age = <span class="text-purple-400">18</span>
+})
+
+<span class="text-blue-400">for</span> _, user <span class="text-blue-400">in</span> <span class="text-blue-400">ipairs</span>(results) <span class="text-blue-400">do</span>
+  <span class="text-purple-400">solidb.log</span>(<span class="text-green-400">"User: "</span> .. user.name)
+<span class="text-blue-400">end</span></pre>
+                </div>
+           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Transactions -->
+    <section id="transactions">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-yellow-500 mr-2"></span>
+            ACID Transactions with Row-Level Locking
+          </h2>
+        </div>
+        <div class="p-8">
+           <p class="text-gray-300 mb-4">
+             Perform atomic operations across multiple collections using <code>db:transaction</code>. 
+             Transactions use <strong>row-level locking</strong> - each document is independently locked.
+           </p>
+           <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-6">
+               <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-blue-400">local</span> success, err = <span class="text-purple-400">db:transaction</span>(<span class="text-blue-400">function</span>(tx)
+  <span class="text-gray-500">-- Get collection handle within transaction</span>
+  <span class="text-blue-400">local</span> accounts = tx:collection(<span class="text-green-300">"accounts"</span>)
+  
+  <span class="text-gray-500">-- Read operations acquire SHARED locks (multiple readers allowed)</span>
+  <span class="text-blue-400">local</span> sender = accounts:get(<span class="text-green-300">"A"</span>)
+  <span class="text-blue-400">local</span> receiver = accounts:get(<span class="text-green-300">"B"</span>)
+
+  <span class="text-blue-400">if</span> sender.balance &lt; <span class="text-purple-400">100</span> <span class="text-blue-400">then</span>
+    <span class="text-blue-400">error</span>(<span class="text-green-300">"Insufficient funds"</span>) <span class="text-gray-500">-- Will rollback automatically</span>
+  <span class="text-blue-400">end</span>
+
+  <span class="text-gray-500">-- Write operations acquire EXCLUSIVE locks</span>
+  accounts:update(<span class="text-green-300">"A"</span>, { balance = sender.balance - <span class="text-purple-400">100</span> })
+  accounts:update(<span class="text-green-300">"B"</span>, { balance = receiver.balance + <span class="text-purple-400">100</span> })
+
+  <span class="text-blue-400">return</span> <span class="text-green-300">"Transfer complete"</span>
+<span class="text-blue-400">end</span>)
+
+<span class="text-blue-400">if</span> <span class="text-blue-400">not</span> success <span class="text-blue-400">then</span>
+  <span class="text-purple-400">solidb.log</span>(<span class="text-green-300">"Tx failed: "</span> .. err)
+<span class="text-blue-400">end</span></pre>
+               </div>
+           </div>
+
+           <h3 class="text-lg font-semibold text-white mb-3">Transaction API</h3>
+           <ul class="space-y-3 font-mono text-sm text-gray-300 mb-6">
+             <li class="bg-black/20 p-3 rounded border border-white/5">
+               <span class="text-purple-400">tx:collection(name)</span> <span class="text-gray-500">-&gt; table</span>
+               <div class="text-xs text-gray-500 mt-1">Get a transactional collection handle.</div>
+             </li>
+           </ul>
+
+           <h3 class="text-lg font-semibold text-white mb-3">Collection Methods within Transaction</h3>
+           <ul class="space-y-3 font-mono text-sm text-gray-300 mb-6">
+             <li class="bg-black/20 p-3 rounded border border-cyan-500/30">
+               <span class="text-cyan-400">collection:get(key)</span> <span class="text-gray-500">-&gt; table|nil</span>
+               <div class="text-xs text-gray-500 mt-1"><strong>Shared lock</strong> - Read a document. Multiple transactions can read simultaneously.</div>
+             </li>
+             <li class="bg-black/20 p-3 rounded border border-amber-500/30">
+               <span class="text-amber-400">collection:insert(doc)</span> <span class="text-gray-500">-&gt; string (key)</span>
+               <div class="text-xs text-gray-500 mt-1"><strong>Exclusive lock</strong> - Insert new document.</div>
+             </li>
+             <li class="bg-black/20 p-3 rounded border border-amber-500/30">
+               <span class="text-amber-400">collection:update(key, doc)</span> <span class="text-gray-500">-&gt; table</span>
+               <div class="text-xs text-gray-500 mt-1"><strong>Exclusive lock</strong> - Update existing document.</div>
+             </li>
+             <li class="bg-black/20 p-3 rounded border border-amber-500/30">
+               <span class="text-amber-400">collection:delete(key)</span> <span class="text-gray-500">-&gt; bool</span>
+               <div class="text-xs text-gray-500 mt-1"><strong>Exclusive lock</strong> - Delete document.</div>
+             </li>
+           </ul>
+
+           <div class="mt-4 p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
+             <div class="flex items-start">
+               <svg class="w-5 h-5 text-cyan-400 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+               <div>
+                 <h4 class="text-cyan-400 font-semibold mb-1">Row-Level Locking</h4>
+                 <p class="text-sm text-gray-400">
+                   <strong>Shared locks</strong> (reads): Multiple transactions can read the same document.<br>
+                   <strong>Exclusive locks</strong> (writes): Only one transaction can modify a document.<br>
+                   Locks are acquired on first access and held until commit/rollback.
+                 </p>
+               </div>
+             </div>
+           </div>
+        </div>
+      </div>
+    </section>
+    <!-- Collection Object -->
+    <section id="collection">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-indigo-500 mr-2"></span>
+            Collection Object
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">
+            Access collections directly via <code>db:collection("name")</code> for cleaner, scoped operations.
+          </p>
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-6">
+            <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-blue-400">local</span> users = <span class="text-purple-400">db:collection</span>(<span class="text-green-400">"users"</span>)
+
+<span class="text-gray-500">-- CRUD operations</span>
+<span class="text-blue-400">local</span> user = users:<span class="text-purple-400">get</span>(<span class="text-green-400">"alice"</span>)              <span class="text-gray-500">-- Get by _key</span>
+<span class="text-blue-400">local</span> newKey = users:<span class="text-purple-400">insert</span>({name = <span class="text-green-400">"Bob"</span>})    <span class="text-gray-500">-- Insert, returns _key</span>
+users:<span class="text-purple-400">update</span>(<span class="text-green-400">"alice"</span>, {age = <span class="text-purple-400">30</span>})       <span class="text-gray-500">-- Update existing</span>
+users:<span class="text-purple-400">delete</span>(<span class="text-green-400">"alice"</span>)                     <span class="text-gray-500">-- Delete document</span>
+
+<span class="text-gray-500">-- Querying</span>
+<span class="text-blue-400">local</span> adults = users:<span class="text-purple-400">find</span>({age = {<span class="text-green-400">"$gte"</span> = <span class="text-purple-400">18</span>}})   <span class="text-gray-500">-- Find with filter</span>
+<span class="text-blue-400">local</span> bob = users:<span class="text-purple-400">find_one</span>({name = <span class="text-green-400">"Bob"</span>})       <span class="text-gray-500">-- Find single document</span>
+<span class="text-blue-400">local</span> count = users:<span class="text-purple-400">count</span>()                   <span class="text-gray-500">-- Count all documents</span>
+
+<span class="text-gray-500">-- Bulk operations</span>
+users:<span class="text-purple-400">bulk_insert</span>({                         <span class="text-gray-500">-- Insert multiple</span>
+  {name = <span class="text-green-400">"User1"</span>},
+  {name = <span class="text-green-400">"User2"</span>},
+  {name = <span class="text-green-400">"User3"</span>}
+})
+
+users:<span class="text-purple-400">upsert</span>(<span class="text-green-400">"user-key"</span>, {name = <span class="text-green-400">"Updated"</span>})  <span class="text-gray-500">-- Insert or update</span></pre>
+            </div>
+          </div>
+          <h3 class="text-lg font-semibold text-white mb-3">Collection Methods</h3>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:get(key)</span> <span class="text-gray-500">-&gt; table|nil</span>
+              <div class="text-xs text-gray-500 mt-1">Get document by <strong>_key</strong> (not _id). Returns nil if not found.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:insert(doc)</span> <span class="text-gray-500">-&gt; string (key)</span>
+              <div class="text-xs text-gray-500 mt-1">Insert document. Uses <code>_key</code> if provided, or generates UUID v7.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:update(key, doc)</span> <span class="text-gray-500">-&gt; bool</span>
+              <div class="text-xs text-gray-500 mt-1">Update document by key. Merges fields with existing document.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:delete(key)</span> <span class="text-gray-500">-&gt; bool</span>
+              <div class="text-xs text-gray-500 mt-1">Delete document by key. Returns true on success.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:count([filter])</span> <span class="text-gray-500">-&gt; number</span>
+              <div class="text-xs text-gray-500 mt-1">Count documents. Optional filter object for conditional counting.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:find(filter)</span> <span class="text-gray-500">-&gt; table[]</span>
+              <div class="text-xs text-gray-500 mt-1">Find all documents matching filter criteria.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:find_one(filter)</span> <span class="text-gray-500">-&gt; table|nil</span>
+              <div class="text-xs text-gray-500 mt-1">Find first document matching filter. Returns nil if not found.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:bulk_insert(docs)</span> <span class="text-gray-500">-&gt; table[]</span>
+              <div class="text-xs text-gray-500 mt-1">Insert array of documents efficiently. Returns array of inserted documents.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">collection:upsert(key_or_filter, doc)</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">Insert if not exists, update if exists. Accepts key string or filter table.</div>
+            </li>
+          </ul>
+          <div class="mt-6 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+            <div class="flex items-start">
+              <svg class="w-5 h-5 text-yellow-400 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              <div>
+                <h4 class="text-yellow-400 font-semibold mb-1">Important: get() uses _key, not _id</h4>
+                <p class="text-sm text-gray-400">
+                  The <code>collection:get()</code> method expects just the document key, not the full _id format (<code>collection/key</code>).
+                  <br><br>
+                  <strong>Correct:</strong> <code>users:get("019c243e-9d0b-756c-be78-e4cad62fa2a1")</code><br>
+                  <strong>Wrong:</strong> <code>users:get("users/019c243e-9d0b-756c-be78-e4cad62fa2a1")</code>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

@@ -1,0 +1,141 @@
+<div class="max-w-4xl mx-auto">
+  <!-- Header -->
+  <div class="relative mb-12">
+    <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"></div>
+    <div class="relative">
+      <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">Lua Scripting</h1>
+      <p class="text-lg text-gray-300 max-w-3xl leading-relaxed">
+        Build server-side logic, real-time apps, and secure APIs directly within SoliDB.
+      </p>
+    </div>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Overview -->
+    <section id="overview">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            Overview
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            SoliDB embeds a high-performance Lua 5.1 (LuaJIT) engine, allowing you to run custom code closer to your data.
+            Scripts are stored in the database, can be updated at runtime, and serve as custom HTTP endpoints or background workers.
+          </p>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3 class="text-lg font-bold text-white mb-2 mt-0">Use Cases</h3>
+              <ul class="space-y-2 text-sm text-gray-300">
+                  <li class="flex items-start"><span class="text-green-400 mr-2">✓</span> Custom REST APIs &amp; Webhooks</li>
+                  <li class="flex items-start"><span class="text-green-400 mr-2">✓</span> Complex Transactional Logic</li>
+                  <li class="flex items-start"><span class="text-green-400 mr-2">✓</span> Real-time WebSocket Apps</li>
+                  <li class="flex items-start"><span class="text-green-400 mr-2">✓</span> Data Validation &amp; Triggers</li>
+              </ul>
+            </div>
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3 class="text-lg font-bold text-white mb-2 mt-0">Key Features</h3>
+              <ul class="space-y-2 text-sm text-gray-300">
+                  <li class="flex items-start"><span class="text-blue-400 mr-2">⚡</span> Zero-latency database access</li>
+                  <li class="flex items-start"><span class="text-blue-400 mr-2">🔐</span> Sandboxed &amp; Secure execution</li>
+                  <li class="flex items-start"><span class="text-blue-400 mr-2">📦</span> Built-in crypto, json, and http libs</li>
+                  <li class="flex items-start"><span class="text-blue-400 mr-2">🔄</span> ACID Transactions support</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 flex items-start">
+            <svg class="w-6 h-6 text-blue-400 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <div class="text-sm text-blue-200">
+              <strong class="font-bold text-blue-100">Explore the Documentation:</strong> Use the sidebar to navigate through the different sections of the Lua Scripting API, from Core functions to Database access and WebSockets.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Security -->
+    <section id="security">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            Security Model
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-6 font-medium text-lg">Your scripts run in a restricted sandbox.</p>
+          <div class="flex flex-col md:flex-row items-start md:space-x-8 space-y-6 md:space-y-0 text-sm">
+              <div class="flex-1">
+                <h3 class="font-bold text-white mb-2 pb-1 border-b border-white/10 mt-0">Allowed</h3>
+                <ul class="space-y-2 text-gray-400">
+                  <li class="flex items-center"><span class="text-green-400 mr-2">✓</span> Standard Lua 5.1 Libraries (string, table, math, etc)</li>
+                  <li class="flex items-center"><span class="text-green-400 mr-2">✓</span> SoliDB APIs (db, solidb, request, response)</li>
+                  <li class="flex items-center"><span class="text-green-400 mr-2">✓</span> Safe helpers (json, crypto, time)</li>
+                </ul>
+              </div>
+              <div class="flex-1">
+                <h3 class="font-bold text-white mb-2 pb-1 border-b border-white/10 mt-0">Blocked</h3>
+                <ul class="space-y-2 text-gray-400">
+                  <li class="flex items-center"><span class="text-red-400 mr-2">✕</span> OS access (os.*, io.*, debug.*)</li>
+                  <li class="flex items-center"><span class="text-red-400 mr-2">✕</span> File system access (except via solidb APIs)</li>
+                  <li class="flex items-center"><span class="text-red-400 mr-2">✕</span> Creating excessive threads or consuming all memory</li>
+                </ul>
+              </div>
+          </div>
+          <div class="mt-6 pt-6 border-t border-white/10">
+              <p class="text-gray-400 text-xs italic">
+                Scripts are subject to execution time limits (default 5s) and memory limits (default 64MB) to prevent destabilizing the server.
+              </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Authentication -->
+      <section id="authentication">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+            Authentication &amp; Authorization
+          </h2>
+        </div>
+
+        <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Scripts have access to the current authenticated user via the <code class="text-yellow-400">solidb.auth</code> namespace. Use these functions to implement role-based access control.
+            </p>
+            
+            <ul class="space-y-3 font-mono text-sm text-gray-300 mb-8">
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-yellow-400">solidb.auth.user()</span> <span class="text-gray-500">-&gt; table</span>
+                <div class="text-xs text-gray-500 mt-1">Returns current user info: <code>{ username, roles, authenticated, scoped_databases, exp }</code></div>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-yellow-400">solidb.auth.require_role(role)</span> <span class="text-gray-500">-&gt; true | error</span>
+                <div class="text-xs text-gray-500 mt-1">Guard that throws 401/403 error if user doesn't have the role.</div>
+              </li>
+            </ul>
+
+            <h3 class="text-lg font-bold text-white mb-3 mt-0">Example: Protected Endpoint</h3>
+            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                  <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- 1. Ensure caller is authenticated</span>
+<span class="text-yellow-400">solidb.auth.require_auth</span>() 
+
+<span class="text-gray-500">-- 2. Check for specific role</span>
+<span class="text-yellow-400">solidb.auth.require_role</span>(<span class="text-green-400">"editor"</span>)
+
+<span class="text-blue-400">local</span> user = <span class="text-yellow-400">solidb.auth.user</span>()
+<span class="text-blue-400">return</span> { status = <span class="text-green-400">"authorized"</span>, user = user.username }</pre>
+                  </div>
+            </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

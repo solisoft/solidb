@@ -1,0 +1,1314 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs/clients" class="inline-flex items-center text-blue-400 hover:text-blue-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Clients Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header Section -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-teal-500 rounded-lg blur opacity-25"></div>
+      <div class="relative flex items-center">
+        <div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-500 text-white shadow-[0_0_30px_rgba(59,130,246,0.5)] mr-6">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="w-10 h-10">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-cyan-400 to-teal-400 mb-2 tracking-tight">
+            Flutter Client
+          </h1>
+          <div class="flex items-center gap-4">
+            <span class="px-3 py-1 bg-blue-500/10 text-blue-400 text-xs font-bold uppercase tracking-wider rounded-full border border-blue-500/20">Official SDK</span>
+            <span class="text-sm text-gray-400">v0.5.0</span>
+            <span class="text-sm text-gray-500">iOS 13+ / Android 8.0+</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <nav class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+      <h2 class="text-lg font-bold text-white mb-4">Table of Contents</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Getting Started</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#installation" class="hover:text-white transition-colors">Installation</a></li>
+            <li><a href="#quickstart" class="hover:text-white transition-colors">Quick Start</a></li>
+            <li><a href="#platform-setup" class="hover:text-white transition-colors">Platform Setup</a></li>
+            <li><a href="#configuration" class="hover:text-white transition-colors">Configuration</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Core Operations</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#collections" class="hover:text-white transition-colors">Collections</a></li>
+            <li><a href="#documents" class="hover:text-white transition-colors">Documents</a></li>
+            <li><a href="#queries" class="hover:text-white transition-colors">Queries</a></li>
+            <li><a href="#sync" class="hover:text-white transition-colors">Sync</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Widget API</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#solidbbuilder" class="hover:text-white transition-colors">SoliDBBuilder</a></li>
+            <li><a href="#solidbstreambuilder" class="hover:text-white transition-colors">SoliDBStreamBuilder</a></li>
+            <li><a href="#solidbdocument" class="hover:text-white transition-colors">SoliDBDocument</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Examples</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#offline-first" class="hover:text-white transition-colors">Offline-First</a></li>
+            <li><a href="#todo-example" class="hover:text-white transition-colors">Todo App</a></li>
+            <li><a href="#streams" class="hover:text-white transition-colors">Stream-based Sync</a></li>
+            <li><a href="#error-handling" class="hover:text-white transition-colors">Error Handling</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- GETTING STARTED -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 mr-4">
+          <i class="fas fa-rocket text-lg"></i>
+        </span>
+        Getting Started
+      </h2>
+
+      <!-- Installation -->
+      <section id="installation" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Installation</h3>
+        
+        <h4 class="text-lg font-semibold text-blue-400 mb-3">pub.dev (Recommended)</h4>
+        <p class="text-gray-400 mb-3">Add to your <code class="bg-gray-800 px-1 rounded">pubspec.yaml</code>:</p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-6">
+          <pre class="text-blue-400">dependencies:
+  flutter:
+    sdk: flutter
+  solidb_flutter: ^0.5.0
+  
+dev_dependencies:
+  build_runner: ^2.4.0
+  solidb_flutter_generator: ^0.5.0</pre>
+        </div>
+
+        <p class="text-gray-400 mb-3">Then run:</p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-6">
+          <pre class="text-blue-400">flutter pub get</pre>
+        </div>
+
+        <h4 class="text-lg font-semibold text-blue-400 mb-3">Platform-Specific Dependencies</h4>
+        <p class="text-gray-400 mb-3">The SDK automatically includes required native dependencies for offline storage.</p>
+
+        <div class="mt-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+          <div class="flex items-start">
+            <i class="fas fa-info-circle text-blue-400 mt-0.5 mr-3"></i>
+            <p class="text-sm text-blue-200">
+              <strong>Requirements:</strong> Flutter 3.16+, Dart 3.0+, iOS 13+, Android API 26+ (8.0+). The SDK uses FFI for high-performance native bindings.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Platform Setup -->
+      <section id="platform-setup" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Platform Setup</h3>
+        
+        <h4 class="text-lg font-semibold text-blue-400 mb-3">iOS Setup</h4>
+        <p class="text-gray-400 mb-3">Update <code class="bg-gray-800 px-1 rounded">ios/Podfile</code>:</p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre class="text-blue-400">platform :ios, '13.0'
+
+# Add to your target
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+  
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  
+  # SoliDB requires these permissions for background sync
+  pod 'Permission-LocationWhenInUse', '~> 1.0'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    
+    # Enable FFI support
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+    end
+  end
+end</pre>
+        </div>
+
+        <p class="text-gray-400 mb-3">Update <code class="bg-gray-800 px-1 rounded">ios/Runner/Info.plist</code>:</p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-6">
+          <pre class="text-blue-400">&lt;key&gt;NSAppTransportSecurity&lt;/key&gt;
+&lt;dict&gt;
+  &lt;key&gt;NSAllowsArbitraryLoads&lt;/key&gt;
+  &lt;false/&gt;
+  &lt;key&gt;NSExceptionDomains&lt;/key&gt;
+  &lt;dict&gt;
+    &lt;key&gt;your-api-server.com&lt;/key&gt;
+    &lt;dict&gt;
+      &lt;key&gt;NSIncludesSubdomains&lt;/key&gt;
+      &lt;true/&gt;
+    &lt;/dict&gt;
+  &lt;/dict&gt;
+&lt;/dict&gt;
+
+&lt;!-- Background sync (optional) --&gt;
+&lt;key&gt;UIBackgroundModes&lt;/key&gt;
+&lt;array&gt;
+  &lt;string&gt;fetch&lt;/string&gt;
+&lt;/array&gt;</pre>
+        </div>
+
+        <h4 class="text-lg font-semibold text-blue-400 mb-3">Android Setup</h4>
+        <p class="text-gray-400 mb-3">Update <code class="bg-gray-800 px-1 rounded">android/app/src/main/AndroidManifest.xml</code>:</p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre class="text-blue-400">&lt;uses-permission android:name="android.permission.INTERNET" /&gt;
+&lt;uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" /&gt;
+&lt;uses-permission android:name="android.permission.FOREGROUND_SERVICE" /&gt;
+&lt;uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" /&gt;
+
+&lt;application
+  android:label="Your App"
+  android:name="${applicationName}"
+  android:icon="@mipmap/ic_launcher"&gt;
+  
+  &lt;!-- SoliDB sync service --&gt;
+  &lt;service
+    android:name="com.solidb.flutter.SyncService"
+    android:foregroundServiceType="dataSync"
+    android:exported="false" /&gt;
+  
+  &lt;!-- ... rest of your application config --&gt;
+&lt;/application&gt;</pre>
+        </div>
+
+        <p class="text-gray-400 mb-3">Update <code class="bg-gray-800 px-1 rounded">android/app/build.gradle</code>:</p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre class="text-blue-400">android {
+  compileSdkVersion 34
+  
+  defaultConfig {
+    minSdkVersion 26  // Required for SoliDB
+    targetSdkVersion 34
+  }
+  
+  // Enable FFI support for native bindings
+  externalNativeBuild {
+    cmake {
+      version "3.22.1"
+    }
+  }
+}</pre>
+        </div>
+      </section>
+
+      <!-- Quick Start -->
+      <section id="quickstart" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Quick Start</h3>
+        <div class="bg-gray-950 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <pre class="relative z-10"><code class="language-dart">import 'package:flutter/material.dart';
+import 'package:solidb_flutter/solidb_flutter.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize SoliDB client
+  final client = SoliDBClient(
+    config: SoliDBConfig(
+      host: 'api.example.com',
+      port: 6745,
+      database: 'mydb',
+      username: 'admin',
+      password: 'password',
+      offlineMode: true,        // Enable offline-first
+      syncInterval: Duration(seconds: 30),
+    ),
+  );
+  
+  await client.connect();
+  
+  runApp(MyApp(client: client));
+}
+
+class MyApp extends StatelessWidget {
+  final SoliDBClient client;
+  
+  const MyApp({super.key, required this.client});
+
+  @override
+  Widget build(BuildContext context) {
+    return SoliDBProvider(
+      client: client,
+      child: MaterialApp(
+        title: 'SoliDB Demo',
+        home: TodoScreen(),
+      ),
+    );
+  }
+}
+
+class TodoScreen extends StatefulWidget {
+  @override
+  State&lt;TodoScreen&gt; createState() =&gt; _TodoScreenState();
+}
+
+class _TodoScreenState extends State&lt;TodoScreen&gt; {
+  List&lt;Map&lt;String, dynamic&gt;&gt; todos = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTodos();
+  }
+
+  Future&lt;void&gt; _loadTodos() async {
+    final client = SoliDBProvider.of(context).client;
+    final results = await client.query(
+      'FOR t IN todos SORT t.created_at DESC RETURN t',
+    );
+    setState(() {
+      todos = results;
+    });
+  }
+
+  Future&lt;void&gt; _addTodo(String title) async {
+    final client = SoliDBProvider.of(context).client;
+    await client.save('todos', {
+      'title': title,
+      'completed': false,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+    _loadTodos();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Todos')),
+      body: ListView.builder(
+        itemCount: todos.length,
+        itemBuilder: (context, index) {
+          final todo = todos[index];
+          return ListTile(
+            title: Text(todo['title']),
+          );
+        },
+      ),
+    );
+  }
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Configuration -->
+      <section id="configuration" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Client Configuration</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">import 'package:solidb_flutter/solidb_flutter.dart';
+
+final client = SoliDBClient(
+  config: SoliDBConfig(
+    // Connection settings
+    host: 'localhost',
+    port: 6745,
+    database: 'mydb',
+    username: 'admin',
+    password: 'password',
+    timeout: Duration(seconds: 30),
+    enableCompression: true,
+    enableSSL: false,          // Set to true for production
+    
+    // Offline settings
+    offlineMode: true,
+    syncInterval: Duration(seconds: 30),
+    syncOnConnectivityChange: true,
+    
+    // Storage configuration
+    storage: StorageConfig(
+      engine: StorageEngine.sqlite,  // or StorageEngine.asyncStorage
+      encryptionKey: 'optional-key', // Encrypt local data
+      maxCacheSize: 100 * 1024 * 1024, // 100 MB
+    ),
+    
+    // Conflict resolution
+    conflictResolution: ConflictResolution.lastWriteWins,
+    // Options: firstWriteWins, serverWins, clientWins, custom()
+    
+    // Retry configuration
+    retryAttempts: 5,
+    retryDelay: Duration(seconds: 2),
+  ),
+);
+
+// Connect with error handling
+try {
+  await client.connect();
+  print('Connected to SoliDB');
+} on SoliDBException catch (e) {
+  print('Connection failed: \${e.message}');
+}
+
+// Listen for connection state
+client.connectionStream.listen((state) {
+  print('Connection state: \$state');
+});
+
+// Disconnect when done
+@override
+void dispose() {
+  client.disconnect();
+  super.dispose();
+}</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Property</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Type</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Default</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">host</code></td><td class="px-4 py-3 text-gray-500">String</td><td class="px-4 py-3 text-gray-400">localhost</td><td class="px-4 py-3 text-gray-400">Server hostname or IP</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">port</code></td><td class="px-4 py-3 text-gray-500">int</td><td class="px-4 py-3 text-gray-400">6745</td><td class="px-4 py-3 text-gray-400">Server port</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">timeout</code></td><td class="px-4 py-3 text-gray-500">Duration</td><td class="px-4 py-3 text-gray-400">30s</td><td class="px-4 py-3 text-gray-400">Connection timeout</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">offlineMode</code></td><td class="px-4 py-3 text-gray-500">bool</td><td class="px-4 py-3 text-gray-400">false</td><td class="px-4 py-3 text-gray-400">Enable offline-first sync</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">syncInterval</code></td><td class="px-4 py-3 text-gray-500">Duration</td><td class="px-4 py-3 text-gray-400">30s</td><td class="px-4 py-3 text-gray-400">Auto-sync interval</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">storage.engine</code></td><td class="px-4 py-3 text-gray-500">StorageEngine</td><td class="px-4 py-3 text-gray-400">sqlite</td><td class="px-4 py-3 text-gray-400">Local storage engine</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- CORE OPERATIONS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-500/20 text-cyan-400 mr-4">
+          <i class="fas fa-database text-lg"></i>
+        </span>
+        Core Operations
+      </h2>
+
+      <!-- Collections -->
+      <section id="collections" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Collection Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">// List collections in a database
+final collections = await client.listCollections();
+// => ['users', 'orders', 'products']
+
+// Create a document collection
+await client.createCollection('products');
+
+// Create an edge collection (for graphs)
+await client.createCollection(
+  'relationships',
+  type: CollectionType.edge,
+);
+
+// Delete a collection
+await client.deleteCollection('old_collection');
+
+// Get collection statistics
+final stats = await client.collectionStats('users');
+print('Document count: \${stats['document_count']}');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">listCollections()</code></td><td class="px-4 py-3 text-gray-500">Future&lt;List&lt;String&gt;&gt;</td><td class="px-4 py-3 text-gray-400">List collections in database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">createCollection(name, type)</code></td><td class="px-4 py-3 text-gray-500">Future&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Create collection (document or edge)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">deleteCollection(name)</code></td><td class="px-4 py-3 text-gray-500">Future&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Delete collection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">collectionStats(name)</code></td><td class="px-4 py-3 text-gray-500">Future&lt;Map&gt;</td><td class="px-4 py-3 text-gray-400">Get collection statistics</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section id="documents" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Document Operations (CRUD)</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">// SAVE - Create or update a document
+final doc = await client.save('users', {
+  'name': 'Alice',
+  'email': 'alice@example.com',
+  'age': 30,
+  'tags': ['developer', 'flutter'],
+});
+print('Key: \${doc['_key']}');  // Auto-generated key
+
+// SAVE with custom key
+final docWithKey = await client.save(
+  'users',
+  {
+    '_key': 'user-123',
+    'name': 'Bob',
+    'email': 'bob@example.com',
+  },
+);
+
+// GET - Retrieve a document by key
+final user = await client.get('users', 'user-123');
+print('Name: \${user['name']}');
+
+// DELETE - Remove a document
+await client.delete('users', 'user-123');
+
+// LIST - Paginated document listing
+final result = await client.list(
+  'users',
+  limit: 50,
+  offset: 0,
+);
+print('Showing \${result.docs.length} of \${result.total} documents');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">save(collection, document)</code></td><td class="px-4 py-3 text-gray-500">Future&lt;Document&gt;</td><td class="px-4 py-3 text-gray-400">Insert document, returns with key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">get(collection, key)</code></td><td class="px-4 py-3 text-gray-500">Future&lt;Document&gt;</td><td class="px-4 py-3 text-gray-400">Get document by key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">delete(collection, key)</code></td><td class="px-4 py-3 text-gray-500">Future&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Delete document</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">list(collection, options)</code></td><td class="px-4 py-3 text-gray-500">Future&lt;ListResult&gt;</td><td class="px-4 py-3 text-gray-400">List documents with pagination</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Queries -->
+      <section id="queries" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SDBQL Queries</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">// Simple query
+final users = await client.query('FOR u IN users RETURN u');
+
+// Query with bind variables (recommended for security)
+final results = await client.query(
+  '''FOR u IN users
+      FILTER u.age >= @min_age AND u.status == @status
+      SORT u.created_at DESC
+      LIMIT @limit
+      RETURN { name: u.name, email: u.email }''',
+  bindVars: {
+    'min_age': 18,
+    'status': 'active',
+    'limit': 100,
+  },
+);
+
+// Aggregation query
+final stats = await client.query(
+  '''FOR u IN users
+      COLLECT status = u.status WITH COUNT INTO count
+      RETURN { status, count }''',
+);
+
+// Join query
+final orders = await client.query(
+  '''FOR o IN orders
+      FOR u IN users FILTER u._key == o.user_id
+      RETURN { order: o, user: u.name }''',
+);</code></pre>
+        </div>
+      </section>
+
+      <!-- Sync -->
+      <section id="sync" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Stream-based Sync & Subscriptions</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">// Subscribe to live query updates
+final subscription = client.sync
+  .subscribeQuery("FOR u IN users FILTER u.status == 'online' RETURN u")
+  .listen((docs) {
+    print('Received \${docs.length} updates');
+    // Update your UI
+  }, onError: (error) {
+    print('Sync error: \$error');
+  });
+
+// Subscribe to collection changes
+final collectionSub = client.sync
+  .subscribeCollection('users', filter: {'status': 'active'})
+  .listen((change) {
+    switch (change.type) {
+      case ChangeType.insert:
+        print('New document: \${change.key}');
+        break;
+      case ChangeType.update:
+        print('Updated: \${change.key}');
+        break;
+      case ChangeType.delete:
+        print('Deleted: \${change.key}');
+        break;
+    }
+  });
+
+// Cancel subscriptions when done (in dispose)
+@override
+void dispose() {
+  subscription.cancel();
+  collectionSub.cancel();
+  super.dispose();
+}
+
+// Manual sync (pull latest changes)
+await client.sync.pull();
+
+// Push local changes immediately
+await client.sync.push();
+
+// Get sync status
+final status = await client.sync.status;
+print('Pending changes: \${status.pendingChanges}');
+print('Last sync: \${status.lastSyncTime}');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">sync.subscribeQuery(query)</code></td><td class="px-4 py-3 text-gray-500">Stream&lt;List&gt;</td><td class="px-4 py-3 text-gray-400">Subscribe to query results</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">sync.subscribeCollection(name, filter)</code></td><td class="px-4 py-3 text-gray-500">Stream&lt;Change&gt;</td><td class="px-4 py-3 text-gray-400">Subscribe to collection changes</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">sync.pull()</code></td><td class="px-4 py-3 text-gray-500">Future&lt;SyncResult&gt;</td><td class="px-4 py-3 text-gray-400">Pull latest changes from server</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">sync.push()</code></td><td class="px-4 py-3 text-gray-500">Future&lt;SyncResult&gt;</td><td class="px-4 py-3 text-gray-400">Push local changes to server</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- WIDGET API -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 mr-4">
+          <i class="fas fa-layer-group text-lg"></i>
+        </span>
+        Widget API
+      </h2>
+
+      <p class="text-gray-400 mb-6">
+        SoliDB Flutter provides reactive widgets for declarative data binding. Build UI that automatically updates when data changes.
+      </p>
+
+      <!-- SoliDBBuilder -->
+      <section id="solidbbuilder" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SoliDBBuilder</h3>
+        <p class="text-gray-400 mb-4">
+          General-purpose builder widget for any SoliDB operation with loading, error, and data states.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">SoliDBBuilder&lt;List&lt;Map&gt;&gt;(
+  // Execute any SoliDB operation
+  future: (client) =&gt; client.query(
+    'FOR u IN users FILTER u.active == true RETURN u'
+  ),
+  
+  // Customize loading state
+  loading: (context) =&gt; const Center(
+    child: CircularProgressIndicator(),
+  ),
+  
+  // Customize error state
+  error: (context, error, retry) =&gt; Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('Error: \$error'),
+        ElevatedButton(
+          onPressed: retry,
+          child: const Text('Retry'),
+        ),
+      ],
+    ),
+  ),
+  
+  // Build with data
+  builder: (context, users) =&gt; ListView.builder(
+    itemCount: users.length,
+    itemBuilder: (context, index) {
+      final user = users[index];
+      return ListTile(
+        title: Text(user['name']),
+        subtitle: Text(user['email']),
+      );
+    },
+  ),
+)</code></pre>
+        </div>
+      </section>
+
+      <!-- SoliDBStreamBuilder -->
+      <section id="solidbstreambuilder" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SoliDBStreamBuilder</h3>
+        <p class="text-gray-400 mb-4">
+          Real-time stream builder that automatically rebuilds when data changes. Perfect for live updates.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">SoliDBStreamBuilder&lt;List&lt;Map&gt;&gt;(
+  // Subscribe to real-time updates
+  stream: (client) =&gt; client.sync
+    .subscribeQuery('FOR u IN users RETURN u'),
+  
+  // Optional: Initial data while loading
+  initialData: [],
+  
+  // Customize loading state
+  loading: (context) =&gt; const Center(
+    child: CircularProgressIndicator(),
+  ),
+  
+  // Build with data (rebuilds automatically on updates)
+  builder: (context, users) =&gt; ListView.builder(
+    itemCount: users.length,
+    itemBuilder: (context, index) {
+      final user = users[index];
+      return ListTile(
+        title: Text(user['name']),
+        trailing: Text('Active: \${user['active']}'),
+      );
+    },
+  ),
+)</code></pre>
+        </div>
+      </section>
+
+      <!-- SoliDBDocument -->
+      <section id="solidbdocument" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SoliDBDocument</h3>
+        <p class="text-gray-400 mb-4">
+          Specialized widget for single document operations with automatic updates.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">SoliDBDocument(
+  collection: 'users',
+  documentId: 'user-123',
+  
+  // Enable real-time updates
+  live: true,
+  
+  // Customize loading
+  loading: (context) =&gt; const Center(
+    child: CircularProgressIndicator(),
+  ),
+  
+  // Customize not found
+  notFound: (context) =&gt; const Center(
+    child: Text('User not found'),
+  ),
+  
+  // Build with document and update callback
+  builder: (context, user, update) =&gt; Column(
+    children: [
+      Text(user['name'], style: Theme.of(context).textTheme.headlineSmall),
+      Text(user['email']),
+      Switch(
+        value: user['active'],
+        onChanged: (value) async {
+          // Optimistic update
+          await update({'active': value});
+        },
+      ),
+    ],
+  ),
+)</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- OFFLINE SYNC -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 mr-4">
+          <i class="fas fa-wifi-slash text-lg"></i>
+        </span>
+        Offline-First Sync
+      </h2>
+
+      <!-- Offline-First -->
+      <section id="offline-first" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Offline-First Architecture</h3>
+        <p class="text-gray-400 mb-4">
+          SoliDB Flutter provides automatic offline-first capabilities using SQLite. All operations work seamlessly offline and sync when connectivity is restored.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">// Enable offline-first mode in configuration
+final client = SoliDBClient(
+  config: SoliDBConfig(
+    host: 'api.example.com',
+    port: 6745,
+    database: 'mydb',
+    username: 'admin',
+    password: 'password',
+    offlineMode: true,           // Enable offline support
+    syncInterval: Duration(seconds: 30),
+    
+    // SQLite storage configuration
+    storage: StorageConfig(
+      engine: StorageEngine.sqlite,
+      path: 'solidb_data',       // Database file name
+      encryptionKey: 'optional', // Encrypt local data
+      maxSize: 100 * 1024 * 1024, // 100 MB limit
+    ),
+    
+    // Conflict resolution
+    conflictResolution: ConflictResolution.lastWriteWins,
+    // Options: firstWriteWins, serverWins, clientWins, custom()
+    
+    // Delta sync (only sync changed fields)
+    enableDeltaSync: true,
+    deltaSyncThreshold: 1024,    // Use delta for docs > 1KB
+    
+    // Network handling
+    retryAttempts: 5,
+    retryDelay: Duration(seconds: 2),
+    syncOnConnectivityChange: true,
+  ),
+);
+
+// All operations work offline
+// Changes are automatically queued and synced
+final doc = await client.save('notes', {
+  'title': 'Important Note',
+  'content': '...',
+});
+// Works even without network! Automatically syncs later.
+
+// Listen for sync events
+client.syncEvents.listen((event) {
+  switch (event.type) {
+    case SyncEventType.start:
+      print('Sync started');
+      break;
+    case SyncEventType.complete:
+      print('Synced: \${event.pushed} up, \${event.pulled} down');
+      break;
+    case SyncEventType.error:
+      print('Sync failed: \${event.error}');
+      break;
+    case SyncEventType.conflict:
+      print('Conflict resolved for: \${event.documentKey}');
+      break;
+  }
+});</code></pre>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-bolt text-yellow-400 mr-2"></i>
+              <span class="font-semibold text-white">Instant Operations</span>
+            </div>
+            <p class="text-sm text-gray-400">All reads and writes happen immediately to local SQLite. Zero network latency.</p>
+          </div>
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-database text-blue-400 mr-2"></i>
+              <span class="font-semibold text-white">SQLite Storage</span>
+            </div>
+            <p class="text-sm text-gray-400">Uses SQLite for robust offline data persistence with full query capabilities.</p>
+          </div>
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-sync text-green-400 mr-2"></i>
+              <span class="font-semibold text-white">Auto Sync</span>
+            </div>
+            <p class="text-sm text-gray-400">Automatic background sync with configurable intervals. Respects battery and connectivity.</p>
+          </div>
+        </div>
+
+        <div class="mt-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+          <div class="flex items-start">
+            <i class="fas fa-book text-blue-400 mt-1 mr-3"></i>
+            <div>
+              <h4 class="text-blue-400 font-bold mb-1">Learn More</h4>
+              <p class="text-sm text-blue-200">
+                For advanced offline sync features like conflict resolution strategies, delta sync, and selective sync, 
+                see the <a href="/docs/offline-sync" class="underline">Offline Sync Documentation</a>.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- EXAMPLES -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-teal-500/20 text-teal-400 mr-4">
+          <i class="fas fa-code text-lg"></i>
+        </span>
+        Examples
+      </h2>
+
+      <!-- Todo Example -->
+      <section id="todo-example" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Complete Todo App</h3>
+        <p class="text-gray-400 mb-4">
+          A fully functional offline-first Todo app using reactive widgets, real-time sync, and optimistic updates.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">import 'package:flutter/material.dart';
+import 'package:solidb_flutter/solidb_flutter.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  final client = SoliDBClient(
+    config: SoliDBConfig(
+      host: 'api.example.com',
+      port: 6745,
+      database: 'todoapp',
+      username: 'user',
+      password: 'pass',
+      offlineMode: true,
+      syncInterval: Duration(seconds: 10),
+    ),
+  );
+  
+  await client.connect();
+  
+  runApp(TodoApp(client: client));
+}
+
+class TodoApp extends StatelessWidget {
+  final SoliDBClient client;
+  
+  const TodoApp({super.key, required this.client});
+
+  @override
+  Widget build(BuildContext context) {
+    return SoliDBProvider(
+      client: client,
+      child: MaterialApp(
+        title: 'SoliDB Todos',
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+          useMaterial3: true,
+        ),
+        home: const TodoScreen(),
+      ),
+    );
+  }
+}
+
+class TodoScreen extends StatefulWidget {
+  const TodoScreen({super.key});
+
+  @override
+  State&lt;TodoScreen&gt; createState() =&gt; _TodoScreenState();
+}
+
+class _TodoScreenState extends State&lt;TodoScreen&gt; {
+  final _textController = TextEditingController();
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    super.dispose();
+  }
+
+  Future&lt;void&gt; _addTodo(SoliDBClient client, String title) async {
+    if (title.trim().isEmpty) return;
+    
+    await client.save('todos', {
+      'title': title.trim(),
+      'completed': false,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+    
+    _textController.clear();
+  }
+
+  Future&lt;void&gt; _toggleTodo(
+    SoliDBClient client,
+    String key,
+    bool completed,
+  ) async {
+    await client.save('todos', {
+      '_key': key,
+      'completed': !completed,
+    });
+  }
+
+  Future&lt;void&gt; _deleteTodo(SoliDBClient client, String key) async {
+    await client.delete('todos', key);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final client = SoliDBProvider.of(context).client;
+    
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('My Todos'),
+        actions: [
+          // Sync status indicator
+          StreamBuilder&lt;SyncStatus&gt;(
+            stream: client.syncStatus,
+            builder: (context, snapshot) {
+              final status = snapshot.data;
+              return Row(
+                children: [
+                  if (status?.isSyncing == true)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  if (status?.pendingChanges != null && 
+                      status!.pendingChanges > 0)
+                    Badge(
+                      label: Text('${status.pendingChanges}'),
+                      child: const Icon(Icons.pending),
+                    ),
+                  IconButton(
+                    icon: Icon(
+                      status?.isConnected == true
+                        ? Icons.cloud_done
+                        : Icons.cloud_off,
+                    ),
+                    onPressed: () =&gt; client.sync.push(),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Add todo input
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _textController,
+                    decoration: const InputDecoration(
+                      hintText: 'Add new todo...',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: (value) =&gt; _addTodo(client, value),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: () =&gt; _addTodo(client, _textController.text),
+                ),
+              ],
+            ),
+          ),
+          
+          // Real-time todo list
+          Expanded(
+            child: SoliDBStreamBuilder&lt;List&lt;Map&gt;&gt;(
+              stream: (c) =&gt; c.sync.subscribeQuery(
+                'FOR t IN todos SORT t.created_at DESC RETURN t',
+              ),
+              loading: (_) =&gt; const Center(
+                child: CircularProgressIndicator(),
+              ),
+              builder: (context, todos) =&gt; ListView.builder(
+                itemCount: todos.length,
+                itemBuilder: (context, index) {
+                  final todo = todos[index];
+                  return TodoItem(
+                    todo: todo,
+                    onToggle: () =&gt; _toggleTodo(
+                      client,
+                      todo['_key'],
+                      todo['completed'],
+                    ),
+                    onDelete: () =&gt; _deleteTodo(client, todo['_key']),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class TodoItem extends StatelessWidget {
+  final Map&lt;String, dynamic&gt; todo;
+  final VoidCallback onToggle;
+  final VoidCallback onDelete;
+
+  const TodoItem({
+    super.key,
+    required this.todo,
+    required this.onToggle,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Checkbox(
+        value: todo['completed'] ?? false,
+        onChanged: (_) =&gt; onToggle(),
+      ),
+      title: Text(
+        todo['title'],
+        style: TextStyle(
+          decoration: (todo['completed'] ?? false)
+            ? TextDecoration.lineThrough
+            : null,
+          color: (todo['completed'] ?? false) ? Colors.grey : null,
+        ),
+      ),
+      trailing: IconButton(
+        icon: const Icon(Icons.delete, color: Colors.red),
+        onPressed: onDelete,
+      ),
+    );
+  }
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Stream-based Sync -->
+      <section id="streams" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Stream-based Sync Patterns</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">// Pattern 1: Real-time list with pagination
+class PaginatedTodos extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final client = SoliDBProvider.of(context).client;
+    
+    return StreamBuilder&lt;List&lt;Map&gt;&gt;(
+      stream: client.sync.subscribeQuery(
+        'FOR t IN todos SORT t.created_at DESC LIMIT 20 RETURN t',
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Text('Error: \${snapshot.error}');
+        }
+        
+        if (!snapshot.hasData) {
+          return const CircularProgressIndicator();
+        }
+        
+        return ListView.builder(
+          itemCount: snapshot.data!.length,
+          itemBuilder: (context, index) {
+            return TodoTile(todo: snapshot.data![index]);
+          },
+        );
+      },
+    );
+  }
+}
+
+// Pattern 2: Collection change events
+class ChangeNotifier extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final client = SoliDBProvider.of(context).client;
+    
+    return StreamBuilder&lt;CollectionChange&gt;(
+      stream: client.sync.subscribeCollection('notifications'),
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          final change = snapshot.data!;
+          
+          // Show snackbar for new notifications
+          if (change.type == ChangeType.insert) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('New: \${change.document['message']}'),
+                ),
+              );
+            });
+          }
+        }
+        
+        return Container(); // Or your actual UI
+      },
+    );
+  }
+}
+
+// Pattern 3: Combine multiple streams
+class Dashboard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final client = SoliDBProvider.of(context).client;
+    
+    return StreamBuilder&lt;Map&lt;String, dynamic&gt;&gt;(
+      stream: Rx.combineLatest3(
+        client.sync.subscribeQuery(
+          'FOR t IN todos FILTER !t.completed RETURN t',
+        ),
+        client.sync.subscribeQuery(
+          'FOR u IN users FILTER u.online RETURN u',
+        ),
+        client.sync.subscribeCollection('orders'),
+        (todos, users, orders) =&gt; {
+          'pendingTodos': todos,
+          'onlineUsers': users,
+          'recentOrders': orders,
+        },
+      ),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const CircularProgressIndicator();
+        
+        return Column(
+          children: [
+            StatsCard(
+              title: 'Pending Todos',
+              count: snapshot.data!['pendingTodos'].length,
+            ),
+            StatsCard(
+              title: 'Online Users',
+              count: snapshot.data!['onlineUsers'].length,
+            ),
+            // ...
+          ],
+        );
+      },
+    );
+  }
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Error Handling -->
+      <section id="error-handling" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Error Handling</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-dart">import 'package:solidb_flutter/solidb_flutter.dart';
+
+try {
+  await client.connect();
+} on SoliDBConnectionException catch (e) {
+  print('Connection failed: \${e.message}');
+  // Will auto-retry in offline mode
+} on SoliDBAuthenticationException catch (e) {
+  print('Authentication failed: \${e.message}');
+  // Handle invalid credentials
+} on SoliDBDocumentNotFoundException catch (e) {
+  print('Document not found: \${e.key}');
+} on SoliDBNetworkException catch (e) {
+  print('Network error: \${e.message}');
+  // Offline mode will queue for retry
+} on SoliDBSyncConflictException catch (e) {
+  print('Sync conflict: \${e.message}');
+  // Conflict was resolved automatically
+} on SoliDBException catch (e) {
+  print('SoliDB error [\${e.code}]: \${e.message}');
+} catch (e) {
+  print('Unexpected error: \$e');
+}
+
+// Error handling in widgets
+SoliDBBuilder&lt;List&gt;(
+  future: (client) =&gt; client.query('FOR u IN users RETURN u'),
+  error: (context, error, retry) {
+    String message = 'An error occurred';
+    
+    if (error is SoliDBNetworkException) {
+      message = 'No internet connection. Working offline.';
+    } else if (error is SoliDBAuthenticationException) {
+      message = 'Please log in again.';
+    }
+    
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.error_outline, color: Colors.red, size: 48),
+          SizedBox(height: 16),
+          Text(message),
+          SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: retry,
+            child: Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  },
+  builder: (context, data) =&gt; ListView(...),
+)</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- FOOTER -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <div class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+        <div class="flex items-start">
+          <i class="fas fa-book text-blue-400 mt-1 mr-4 text-xl"></i>
+          <div>
+            <h3 class="text-lg font-bold text-white mb-2">Next Steps</h3>
+            <p class="text-gray-400 mb-4">
+              Explore more features of the SoliDB Flutter SDK:
+            </p>
+            <ul class="space-y-2 text-sm text-gray-400">
+              <li><i class="fas fa-chevron-right text-blue-400 mr-2"></i><a href="/docs/query-language" class="hover:text-white transition-colors">Learn SDBQL Query Language</a></li>
+              <li><i class="fas fa-chevron-right text-blue-400 mr-2"></i><a href="/docs/offline-sync" class="hover:text-white transition-colors">Advanced Offline Sync Strategies</a></li>
+              <li><i class="fas fa-chevron-right text-blue-400 mr-2"></i><a href="https://github.com/solidb/flutter-sdk" class="hover:text-white transition-colors">GitHub Repository & Examples</a></li>
+              <li><i class="fas fa-chevron-right text-blue-400 mr-2"></i><a href="https://pub.dev/packages/solidb_flutter" class="hover:text-white transition-colors">pub.dev Package</a></li>
+              <li><i class="fas fa-chevron-right text-blue-400 mr-2"></i><a href="/docs/clients-ios" class="hover:text-white transition-colors">Native iOS SDK (for platform channels)</a></li>
+              <li><i class="fas fa-chevron-right text-blue-400 mr-2"></i><a href="/docs/clients-android" class="hover:text-white transition-colors">Native Android SDK (for platform channels)</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

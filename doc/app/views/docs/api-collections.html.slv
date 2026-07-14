@@ -1,0 +1,741 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/api" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to API Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+
+      <section id="collections" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+               Collections
+            </h2>
+          </div>
+          <div class="divide-y divide-white/5">
+             <!-- POST /_api/database/:db/collection -->
+    <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/collection</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a new collection.</p>
+
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">name</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">The name of the collection.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">type</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Collection type: <code class="bg-gray-800 px-1 rounded">document</code> (default), <code class="bg-gray-800 px-1 rounded">edge</code>, or <code class="bg-gray-800 px-1 rounded">blob</code>.</td>
+                         <td class="p-3">No</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">numShards</td>
+                         <td class="p-3 font-mono">integer</td>
+                         <td class="p-3">Number of shards. Default: 1.</td>
+                         <td class="p-3">No</td>
+                       </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">shardKey</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Field to shard by. Default: <code class="bg-gray-800 px-1 rounded">_key</code>.</td>
+                         <td class="p-3">No</td>
+                       </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">replicationFactor</td>
+                         <td class="p-3 font-mono">integer</td>
+                         <td class="p-3">Number of replicas. Default: 1.</td>
+                         <td class="p-3">No</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                {"name": "users", "type": "document", "numShards": 3}
+              </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "name": "users",
+                     "status": "created",
+                     "numShards": 3,
+                     "shardKey": "_key",
+                     "replicationFactor": 1
+                   }
+                 </div>
+               </div>
+            </div>
+
+             <!-- GET /_api/database/:db/collection -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/collection</code>
+              </div>
+              <p class="text-sm text-gray-400">List all collections in a database.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "collections": [
+                       {
+                         "name": "users",
+                         "count": 0,
+                         "type": "document",
+                         "shardConfig": { "num_shards": 3, ... },
+                         "stats": { ... }
+                       }
+                     ]
+                   }
+                 </div>
+               </div>
+            <!-- GET /_api/database/:db/collection/:name/sharding -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/sharding</code>
+              </div>
+              <p class="text-sm text-gray-400">Get sharding details (nodes, shards, status).</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "shards": [...],
+                     "nodes": [...]
+                   }
+                 </div>
+               </div>
+            </div>
+
+            <!-- GET /_api/database/:db/collection/:name/status -->
+
+            <!-- GET /_api/database/:db/collection/:name/stats -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/stats</code>
+              </div>
+              <p class="text-sm text-gray-400">Get collection statistics (count, size).</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "database": "my_db",
+                     "collection": "users",
+                     "document_count": 1250,
+                     "disk_usage": {
+                       "total_size": 40960,
+                       ...
+                     }
+                   }
+                 </div>
+               </div>
+            </div>
+
+             <!-- PUT /_api/database/:db/collection/:name/properties -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/properties</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Update collection properties (e.g. sharding).</p>
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">numShards</td>
+                         <td class="p-3 font-mono">integer</td>
+                         <td class="p-3">New number of shards (triggers rebalance).</td>
+                         <td class="p-3">No</td>
+                       </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">replicationFactor</td>
+                         <td class="p-3 font-mono">integer</td>
+                         <td class="p-3">New replication factor.</td>
+                         <td class="p-3">No</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+            </div>
+
+             <!-- PUT /_api/database/:db/collection/:name/truncate -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/truncate</code>
+              </div>
+              <p class="text-sm text-gray-400">Remove all documents from a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "database": "my_db",
+                     "collection": "users",
+                     "deleted": 1250,
+                     "status": "truncated"
+                   }
+                 </div>
+               </div>
+            </div>
+
+             <!-- PUT /_api/database/:db/collection/:name/compact -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/compact</code>
+              </div>
+              <p class="text-sm text-gray-400">Trigger compaction for a collection to reclaim space.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "database": "my_db",
+                     "collection": "users",
+                     "status": "compacted"
+                   }
+                 </div>
+               </div>
+            </div>
+
+             <!-- PUT /_api/database/:db/collection/:name/recount -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/recount</code>
+              </div>
+              <p class="text-sm text-gray-400">Recalculate collection document count.</p>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "count": 1250,
+                     "status": "recounted"
+                   }
+                 </div>
+               </div>
+            </div>
+
+             <!-- POST /_api/database/:db/collection/:name/repair -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/repair</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Repair collection shards (fix metadata inconsistencies).</p>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "status": "repaired",
+                     "details": "..."
+                   }
+                 </div>
+               </div>
+            </div>
+
+            <!-- GET /_api/database/:db/collection/:name/count -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/count</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Get document count for a collection.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "count": 12345 }
+                </div>
+              </div>
+            </div>
+
+            <!-- POST /_api/database/:db/collection/:name/prune -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/prune</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Delete old document revisions to free up space.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "pruned": 500 }
+                </div>
+              </div>
+            </div>
+
+            <!-- DELETE /_api/database/:db/collection/:name -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name</code>
+              </div>
+              <p class="text-sm text-gray-400">Drop a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">204 No Content</span>
+                   </div>
+                 </div>
+               </div>
+            </div>
+             <!-- Export/Import -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/export</code>
+              </div>
+              <p class="text-sm text-gray-400">Export collection data.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/x-ndjson</span>
+                   </div>
+                    <span class="italic text-gray-500">// Stream of JSON objects (new-line delimited). For blob collections, includes binary chunks.</span>
+                   {"_key": "123", "name": "Alice", "_collectionType": "document"}
+                   {"_key": "456", "name": "Bob", "_collectionType": "document"}
+                   ...
+                 </div>
+               </div>
+            </div>
+              <div class="p-6 hover:bg-white/5 transition-colors">
+                <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/collection/:name/import</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Import data into collection.</p>
+
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Supported Formats</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 font-mono text-xs p-3 text-gray-400">
+                   <p class="mb-2">Send raw data in the request body. Format is auto-detected:</p>
+                   <ul class="list-disc list-inside space-y-1 ml-2">
+                     <li><strong class="text-gray-300">JSON Array</strong>: <code class="bg-gray-800 px-1 rounded">[{"name": "a"}, {"name": "b"}]</code></li>
+                     <li><strong class="text-gray-300">JSONL</strong>: Newline-delimited JSON objects.</li>
+                     <li><strong class="text-gray-300">Mixed JSONL/Binary</strong>: For blob collections, streams JSON metadata followed immediately by raw binary data chunks.</li>
+                     <li><strong class="text-gray-300">CSV</strong>: Comma-separated values (first row as headers).</li>
+                   </ul>
+                 </div>
+               </div>
+             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Schema Management Section -->
+      <section id="schemas" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+               Schema Management
+            </h2>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- POST /_api/database/:db/collection/:name/schema -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/collection/:name/schema</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Set or update the JSON schema for a collection.</p>
+
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">name</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Schema name (e.g. "users_v1").</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">validation_mode</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">One of: <code class="bg-gray-800 px-1 rounded">off</code>, <code class="bg-gray-800 px-1 rounded">lenient</code>, <code class="bg-gray-800 px-1 rounded">strict</code>.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">schema</td>
+                         <td class="p-3 font-mono">object</td>
+                         <td class="p-3">The JSON Schema object (Draft 7+).</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                 {
+                   "name": "users_v1",
+                   "validation_mode": "strict",
+                   "schema": {
+                     "type": "object",
+                     "required": ["email"],
+                     "properties": { "email": { "type": "string" } }
+                   }
+                 }
+               </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "status": "schema_updated",
+                     "collection": "users"
+                   }
+                 </div>
+               </div>
+             </div>
+
+             <!-- GET /_api/database/:db/collection/:name/schema -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/schema</code>
+              </div>
+              <p class="text-sm text-gray-400">Get the current schema for a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "name": "users_v1",
+                     "validation_mode": "strict",
+                     "schema": { ... }
+                   }
+                 </div>
+               </div>
+            </div>
+
+             <!-- DELETE /_api/database/:db/collection/:name/schema -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/schema</code>
+              </div>
+               <p class="text-sm text-gray-400">Remove the schema (disables validation).</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "status": "schema_removed",
+                     "collection": "users"
+                   }
+                 </div>
+               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Columnar Collections Section -->
+      <section id="columnar" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+             <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+               Columnar Collections
+             </h2>
+           </div>
+           <div class="divide-y divide-white/5">
+
+             <!-- POST /_api/database/:db/columnar -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Create a new columnar collection.</p>
+
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   {
+                     "name": "metrics",
+                     "columns": [
+                       {"name": "timestamp", "type": "TIMESTAMP"},
+                       {"name": "value", "type": "FLOAT64"},
+                       {"name": "host", "type": "STRING"}
+                     ],
+                     "compression": "lz4"
+                   }
+                 </div>
+               </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                   </div>
+                   { "name": "metrics", "status": "created" }
+                 </div>
+               </div>
+             </div>
+
+             <!-- POST /_api/database/:db/columnar/:name/insert -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/insert</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Insert rows into a columnar collection.</p>
+
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   {
+                     "rows": [
+                       {"timestamp": "2024-01-15T10:00:00Z", "value": 42.5, "host": "server1"},
+                       {"timestamp": "2024-01-15T10:01:00Z", "value": 43.2, "host": "server1"}
+                     ]
+                   }
+                 </div>
+               </div>
+             </div>
+
+             <!-- POST /_api/database/:db/columnar/:name/query -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/query</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Query rows with filters (optimized scan).</p>
+
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   {
+                     "columns": ["timestamp", "value"],
+                     "filter": {"column": "host", "op": "EQ", "value": "server1"},
+                     "limit": 100
+                   }
+                 </div>
+               </div>
+             </div>
+
+             <!-- POST /_api/database/:db/columnar/:name/aggregate -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/aggregate</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Run aggregation functionality.</p>
+
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   {
+                     "column": "value",
+                     "operation": "AVG",
+                     "group_by": ["host"]
+                   }
+                 </div>
+               </div>
+             </div>
+
+             <!-- POST /_api/database/:db/columnar/:name/index -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/index</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Create an index on a columnar collection column.</p>
+
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   {
+                     "column": "host",
+                     "index_type": "sorted"
+                   }
+                 </div>
+               </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                   </div>
+                   { "status": "created", "column": "host", "index_type": "sorted" }
+                 </div>
+               </div>
+             </div>
+
+             <!-- GET /_api/database/:db/columnar/:name/indexes -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/indexes</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">List indexes on a columnar collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                   </div>
+                   {
+                     "indexes": [
+                       {"column": "host", "index_type": "sorted", "created_at": 1704067200}
+                     ],
+                     "count": 1
+                   }
+                 </div>
+               </div>
+             </div>
+
+             <!-- DELETE /_api/database/:db/columnar/:name/index/:column -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/index/:column</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Drop an index from a columnar collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                   </div>
+                   { "status": "deleted", "column": "host" }
+                 </div>
+               </div>
+             </div>
+
+           </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/api-databases" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Databases
+          </span>
+        </a>
+        <a href="/docs/api-documents" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Documents
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

@@ -1,0 +1,281 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-green-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-green-400 to-teal-400 mb-4 tracking-tight">
+            Data Mutations
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            INSERT, UPDATE, UPSERT, and REMOVE operations for modifying documents in your collections.
+          </p>
+        </div>
+      </div>
+
+      <!-- Data Modification -->
+      <section id="data-modification" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-emerald-500/10 to-green-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+              </svg>
+              Data Modification Operations
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              SDBQL supports data modification operations for inserting and updating documents directly within queries.
+            </p>
+
+            <!-- INSERT -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-emerald-300 flex items-center">
+                  <span class="bg-emerald-500/20 text-emerald-400 text-xs font-mono px-2 py-1 rounded mr-3">INSERT</span>
+                  Insert Documents
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Insert new documents into a collection.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">INSERT <span class="text-emerald-400">document</span> INTO <span class="text-cyan-400">collection</span></code>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Simple Insert</h4>
+                    <pre><code class="language-sql text-sm">LET nums = [1, 2, 3]
+FOR i IN nums
+  INSERT { value: i } INTO items
+  RETURN i</code></pre>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">With Computed Fields</h4>
+                    <pre><code class="language-sql text-sm">FOR i IN 1..5
+  INSERT {
+    name: CONCAT("User", i),
+    index: i
+  } INTO users
+  RETURN i</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- UPDATE -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-blue-300 flex items-center">
+                  <span class="bg-blue-500/20 text-blue-400 text-xs font-mono px-2 py-1 rounded mr-3">UPDATE</span>
+                  Update Documents
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  Update existing documents in a collection by merging changes into existing fields.
+                </p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">UPDATE <span class="text-emerald-400">document</span> WITH <span class="text-purple-400">{ changes }</span> IN <span class="text-cyan-400">collection</span></code>
+                </div>
+
+                <div class="bg-blue-900/10 border border-blue-500/30 rounded-lg p-4 flex items-start">
+                  <svg class="w-5 h-5 text-blue-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  <div>
+                    <h4 class="text-blue-300 font-bold mb-1 text-sm">Merge Behavior</h4>
+                    <p class="text-sm text-blue-200/70">
+                      UPDATE merges the changes into the existing document. Fields not specified in the changes object are preserved.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Update Single Document</h4>
+                    <pre><code class="language-sql text-sm">FOR doc IN users
+  FILTER doc.name == "Alice"
+  UPDATE doc WITH {
+    status: "premium"
+  } IN users
+  RETURN doc.name</code></pre>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Update Multiple Fields</h4>
+                    <pre><code class="language-sql text-sm">FOR doc IN users
+  FILTER doc.age >= 30
+  UPDATE doc WITH {
+    status: "vip",
+    level: 5,
+    verified: true
+  } IN users
+  RETURN doc._key</code></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">With Computed Values</h4>
+                  <pre><code class="language-sql text-sm">FOR doc IN users
+  FILTER doc.city == "Paris"
+  UPDATE doc WITH {
+    fullName: CONCAT(doc.name, " from ", doc.city),
+    region: "Europe"
+  } IN users
+  RETURN doc.name</code></pre>
+                </div>
+
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">With Bind Variables</h4>
+                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <pre><code class="language-sql text-sm">FOR doc IN users
+  FILTER doc.name == @name
+  UPDATE doc WITH { points: @points } IN users
+  RETURN doc.name</code></pre>
+                    <pre><code class="language-json text-sm">{
+  "name": "Alice",
+  "points": 100
+}</code></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Return Modified Document</h4>
+                  <p class="text-sm text-gray-400 mb-3">
+                    Use <code class="text-blue-300">RETURN NEW</code> to get the version of the document <em>after</em> the update.
+                  </p>
+                  <pre><code class="language-sql text-sm">FOR doc IN users
+  FILTER doc._key == "alice"
+  UPDATE doc WITH { status: "active" } IN users
+  RETURN NEW</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- UPSERT -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-amber-300 flex items-center">
+                  <span class="bg-amber-500/20 text-amber-400 text-xs font-mono px-2 py-1 rounded mr-3">UPSERT</span>
+                  Update or Insert
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  Atomically updates a document if it exists, or inserts it if it doesn't.
+                </p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">UPSERT <span class="text-emerald-400">{ search }</span> INSERT <span class="text-emerald-400">{ insert }</span> UPDATE <span class="text-purple-400">{ update }</span> IN <span class="text-cyan-400">collection</span></code>
+                </div>
+
+                <div class="bg-amber-900/10 border border-amber-500/30 rounded-lg p-4 flex items-start">
+                  <svg class="w-5 h-5 text-amber-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  <div>
+                    <h4 class="text-amber-300 font-bold mb-1 text-sm">Atomicity</h4>
+                    <p class="text-sm text-amber-200/70">
+                      In a transaction, UPSERT ensures that no other process inserts the document between the check and the insertion. The search condition should uniquely identify a single document (usually by <code>_key</code>).
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Example</h4>
+                  <pre><code class="language-sql text-sm">UPSERT { _key: "user123" }
+INSERT { _key: "user123", name: "Alice", visits: 1 }
+UPDATE { visits: 1 } --Merges if exists
+IN users
+RETURN NEW</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- REMOVE -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-red-300 flex items-center">
+                  <span class="bg-red-500/20 text-red-400 text-xs font-mono px-2 py-1 rounded mr-3">REMOVE</span>
+                  Delete Documents
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Remove documents from a collection.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">REMOVE <span class="text-emerald-400">document</span> IN <span class="text-cyan-400">collection</span></code>
+                </div>
+
+                <div class="bg-red-900/10 border border-red-500/30 rounded-lg p-4 flex items-start">
+                  <svg class="w-5 h-5 text-red-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                  </svg>
+                  <div>
+                    <h4 class="text-red-300 font-bold mb-1 text-sm">Caution</h4>
+                    <p class="text-sm text-red-200/70">
+                      REMOVE permanently deletes documents. Always use FILTER to target specific documents, or you'll delete all documents in the collection.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Remove by Key (Single)</h4>
+                    <pre><code class="language-sql text-sm">FOR doc IN users
+  FILTER doc._key == "alice"
+  REMOVE doc IN users
+  RETURN doc._key</code></pre>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Remove by Condition (Multiple)</h4>
+                    <pre><code class="language-sql text-sm">FOR doc IN users
+  FILTER doc.city == "Paris"
+  REMOVE doc IN users
+  RETURN doc.name</code></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Remove All (Use with Caution!)</h4>
+                  <pre><code class="language-sql text-sm">FOR doc IN users
+  REMOVE doc IN users
+  RETURN doc._key</code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/sdbql-operators" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Operators
+          </span>
+        </a>
+        <a href="/docs/sdbql-graphs" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Graph Queries
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

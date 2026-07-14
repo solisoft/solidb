@@ -1,0 +1,356 @@
+<div class="max-w-4xl mx-auto">
+  <div class="mb-8">
+    <a href="/docs/scripting" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Lua Scripting Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-green-500 to-teal-600 rounded-lg blur opacity-25"></div>
+      <div class="relative">
+        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-green-400 via-teal-400 to-cyan-400 mb-4 tracking-tight">Tutorial: Building a CRUD API</h1>
+        <p class="text-lg text-gray-300 max-w-3xl leading-relaxed">
+          Learn how to build a complete REST API for managing products using Lua scripts. This tutorial covers folder-based routing, HTTP methods, validation, and error handling.
+        </p>
+      </div>
+    </div>
+
+    <!-- Prerequisites -->
+    <section id="prerequisites">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            Prerequisites
+          </h2>
+        </div>
+        <div class="p-8">
+          <ul class="space-y-3 text-gray-300">
+            <li class="flex items-start"><span class="text-green-400 mr-2">1.</span> SoliDB server running on localhost:6745</li>
+            <li class="flex items-start"><span class="text-green-400 mr-2">2.</span> A database created (e.g., "myapp")</li>
+            <li class="flex items-start"><span class="text-green-400 mr-2">3.</span> The SoliDB CLI installed</li>
+          </ul>
+
+          <div class="mt-6 bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5">
+            <div class="text-gray-500"># Initialize your scripts directory</div>
+            <div class="text-green-400">$ solidb scripts init --db myapp --host localhost --port 6745</div>
+            <div class="text-gray-500 mt-2"># Login to save authentication</div>
+            <div class="text-green-400">$ solidb scripts login</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Folder Structure -->
+    <section id="structure">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+            Project Structure
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-6">
+            SoliDB uses <strong>folder-based routing</strong>. The file path determines the API endpoint URL.
+          </p>
+
+          <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5 mb-6">
+<pre class="text-gray-300">scripts/
+├── solidb-scripts.toml      <span class="text-gray-500"># Configuration</span>
+├── .env                      <span class="text-gray-500"># Environment variables</span>
+├── products.lua              <span class="text-cyan-400"># GET/POST /api/default/myapp/products</span>
+├── products/
+│   └── _id.lua               <span class="text-cyan-400"># GET/PUT/DELETE /api/default/myapp/products/:id</span>
+└── tests/                    <span class="text-gray-500"># Test files (not synced)</span>
+    └── products_test.lua</pre>
+          </div>
+
+          <div class="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 flex items-start">
+            <svg class="w-5 h-5 text-blue-400 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <div class="text-sm text-blue-200">
+              <strong>Routing Rules:</strong>
+              <ul class="mt-2 space-y-1">
+                <li>• <code>products.lua</code> → <code>/api/default/myapp/products</code></li>
+                <li>• <code>products/_id.lua</code> → <code>/api/default/myapp/products/:id</code> (underscore = URL parameter)</li>
+                <li>• Nested folders create nested routes</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- List & Create Endpoint -->
+    <section id="list-create">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+            Step 1: List & Create Products
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">Create <code class="text-cyan-400">products.lua</code> to handle listing and creating products.</p>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-6">
+            <div class="px-4 py-2 bg-gray-800/50 border-b border-white/5 flex items-center">
+              <span class="text-xs text-gray-400 font-mono">products.lua</span>
+            </div>
+            <div class="p-4 font-mono text-sm text-gray-300 overflow-x-auto">
+<pre class="language-lua"><span class="text-gray-500">-- @methods GET, POST</span>
+<span class="text-gray-500">-- @description List or create products</span>
+<span class="text-gray-500">-- @collection products</span>
+
+<span class="text-blue-400">local</span> products = db:collection(<span class="text-green-400">"products"</span>)
+
+<span class="text-gray-500">-- Handle GET: List all products</span>
+<span class="text-blue-400">if</span> request.method == <span class="text-green-400">"GET"</span> <span class="text-blue-400">then</span>
+  <span class="text-gray-500">-- Optional filtering by category</span>
+  <span class="text-blue-400">local</span> category = request.query.category
+
+  <span class="text-blue-400">local</span> results
+  <span class="text-blue-400">if</span> category <span class="text-blue-400">then</span>
+    results = products:find({ category = category })
+  <span class="text-blue-400">else</span>
+    results = products:find({})
+  <span class="text-blue-400">end</span>
+
+  <span class="text-blue-400">return</span> {
+    products = results,
+    count = <span class="text-yellow-400">#</span>results
+  }
+<span class="text-blue-400">end</span>
+
+<span class="text-gray-500">-- Handle POST: Create a new product</span>
+<span class="text-blue-400">if</span> request.method == <span class="text-green-400">"POST"</span> <span class="text-blue-400">then</span>
+  <span class="text-blue-400">local</span> body = request.body
+
+  <span class="text-gray-500">-- Validate required fields</span>
+  <span class="text-blue-400">if</span> <span class="text-yellow-400">not</span> body.name <span class="text-yellow-400">or</span> body.name == <span class="text-green-400">""</span> <span class="text-blue-400">then</span>
+    solidb.error(<span class="text-green-400">"Name is required"</span>, <span class="text-purple-400">400</span>)
+  <span class="text-blue-400">end</span>
+
+  <span class="text-blue-400">if</span> <span class="text-yellow-400">not</span> body.price <span class="text-yellow-400">or</span> body.price &lt;= <span class="text-purple-400">0</span> <span class="text-blue-400">then</span>
+    solidb.error(<span class="text-green-400">"Price must be a positive number"</span>, <span class="text-purple-400">400</span>)
+  <span class="text-blue-400">end</span>
+
+  <span class="text-gray-500">-- Create the product</span>
+  <span class="text-blue-400">local</span> product = products:insert({
+    name = body.name,
+    price = body.price,
+    category = body.category <span class="text-yellow-400">or</span> <span class="text-green-400">"uncategorized"</span>,
+    description = body.description <span class="text-yellow-400">or</span> <span class="text-green-400">""</span>,
+    in_stock = body.in_stock ~= <span class="text-purple-400">false</span>,
+    created_at = solidb.now()
+  })
+
+  <span class="text-gray-500">-- Return 201 Created</span>
+  solidb.status(<span class="text-purple-400">201</span>)
+  <span class="text-blue-400">return</span> {
+    message = <span class="text-green-400">"Product created"</span>,
+    product = product
+  }
+<span class="text-blue-400">end</span></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Single Product Endpoint -->
+    <section id="single-product">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
+            Step 2: Get, Update & Delete
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">Create <code class="text-cyan-400">products/_id.lua</code> for single product operations.</p>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-6">
+            <div class="px-4 py-2 bg-gray-800/50 border-b border-white/5 flex items-center">
+              <span class="text-xs text-gray-400 font-mono">products/_id.lua</span>
+            </div>
+            <div class="p-4 font-mono text-sm text-gray-300 overflow-x-auto">
+<pre class="language-lua"><span class="text-gray-500">-- @methods GET, PUT, DELETE</span>
+<span class="text-gray-500">-- @description Get, update or delete a product</span>
+<span class="text-gray-500">-- @collection products</span>
+
+<span class="text-blue-400">local</span> products = db:collection(<span class="text-green-400">"products"</span>)
+<span class="text-blue-400">local</span> id = request.params.id
+
+<span class="text-gray-500">-- Find the product first</span>
+<span class="text-blue-400">local</span> product = products:get(id)
+
+<span class="text-blue-400">if</span> <span class="text-yellow-400">not</span> product <span class="text-blue-400">then</span>
+  solidb.error(<span class="text-green-400">"Product not found"</span>, <span class="text-purple-400">404</span>)
+<span class="text-blue-400">end</span>
+
+<span class="text-gray-500">-- Handle GET: Return the product</span>
+<span class="text-blue-400">if</span> request.method == <span class="text-green-400">"GET"</span> <span class="text-blue-400">then</span>
+  <span class="text-blue-400">return</span> product
+<span class="text-blue-400">end</span>
+
+<span class="text-gray-500">-- Handle PUT: Update the product</span>
+<span class="text-blue-400">if</span> request.method == <span class="text-green-400">"PUT"</span> <span class="text-blue-400">then</span>
+  <span class="text-blue-400">local</span> body = request.body
+
+  <span class="text-gray-500">-- Build update object with only provided fields</span>
+  <span class="text-blue-400">local</span> updates = {
+    updated_at = solidb.now()
+  }
+
+  <span class="text-blue-400">if</span> body.name <span class="text-blue-400">then</span> updates.name = body.name <span class="text-blue-400">end</span>
+  <span class="text-blue-400">if</span> body.price <span class="text-blue-400">then</span>
+    <span class="text-blue-400">if</span> body.price &lt;= <span class="text-purple-400">0</span> <span class="text-blue-400">then</span>
+      solidb.error(<span class="text-green-400">"Price must be positive"</span>, <span class="text-purple-400">400</span>)
+    <span class="text-blue-400">end</span>
+    updates.price = body.price
+  <span class="text-blue-400">end</span>
+  <span class="text-blue-400">if</span> body.category <span class="text-blue-400">then</span> updates.category = body.category <span class="text-blue-400">end</span>
+  <span class="text-blue-400">if</span> body.description <span class="text-blue-400">then</span> updates.description = body.description <span class="text-blue-400">end</span>
+  <span class="text-blue-400">if</span> body.in_stock ~= <span class="text-purple-400">nil</span> <span class="text-blue-400">then</span> updates.in_stock = body.in_stock <span class="text-blue-400">end</span>
+
+  <span class="text-blue-400">local</span> updated = products:update(id, updates)
+
+  <span class="text-blue-400">return</span> {
+    message = <span class="text-green-400">"Product updated"</span>,
+    product = updated
+  }
+<span class="text-blue-400">end</span>
+
+<span class="text-gray-500">-- Handle DELETE: Remove the product</span>
+<span class="text-blue-400">if</span> request.method == <span class="text-green-400">"DELETE"</span> <span class="text-blue-400">then</span>
+  products:delete(id)
+
+  <span class="text-blue-400">return</span> {
+    message = <span class="text-green-400">"Product deleted"</span>,
+    id = id
+  }
+<span class="text-blue-400">end</span></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Deploy & Test -->
+    <section id="deploy">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-orange-500 mr-2"></span>
+            Step 3: Deploy & Test
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">Push your scripts to the server and test the API.</p>
+
+          <h3 class="text-lg font-bold text-white mb-3 mt-0">Deploy Scripts</h3>
+          <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5 mb-6">
+            <div class="text-gray-500"># Push all scripts to server</div>
+            <div class="text-green-400">$ solidb scripts push</div>
+            <div class="text-gray-400 mt-2">
+              Created: products.lua -> products [GET, POST]<br>
+              Created: products/_id.lua -> products/:id [GET, PUT, DELETE]
+            </div>
+          </div>
+
+          <h3 class="text-lg font-bold text-white mb-3 mt-0">Test with cURL</h3>
+          <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5 mb-6">
+            <div class="text-gray-500"># Create a product</div>
+            <div class="text-green-400 mb-2">$ curl -X POST http://localhost:6745/api/default/myapp/products \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Widget", "price": 29.99, "category": "gadgets"}'</div>
+
+            <div class="text-gray-500 mt-4"># List all products</div>
+            <div class="text-green-400 mb-2">$ curl http://localhost:6745/api/default/myapp/products</div>
+
+            <div class="text-gray-500 mt-4"># Get a specific product</div>
+            <div class="text-green-400 mb-2">$ curl http://localhost:6745/api/default/myapp/products/abc123</div>
+
+            <div class="text-gray-500 mt-4"># Update a product</div>
+            <div class="text-green-400 mb-2">$ curl -X PUT http://localhost:6745/api/default/myapp/products/abc123 \
+  -H "Content-Type: application/json" \
+  -d '{"price": 24.99}'</div>
+
+            <div class="text-gray-500 mt-4"># Delete a product</div>
+            <div class="text-green-400">$ curl -X DELETE http://localhost:6745/api/default/myapp/products/abc123</div>
+          </div>
+
+          <h3 class="text-lg font-bold text-white mb-3 mt-0">Watch Mode</h3>
+          <p class="text-gray-400 text-sm mb-3">During development, use watch mode to auto-sync changes:</p>
+          <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5">
+            <div class="text-green-400">$ solidb scripts watch</div>
+            <div class="text-gray-400 mt-2">Watching /path/to/scripts for changes...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Adding Validation -->
+    <section id="validation">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-cyan-500 mr-2"></span>
+            Step 4: Enhanced Validation
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">Use SoliDB's built-in validation helpers for cleaner code.</p>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+            <div class="p-4 font-mono text-sm text-gray-300 overflow-x-auto">
+<pre class="language-lua"><span class="text-gray-500">-- Using solidb.validate for cleaner validation</span>
+<span class="text-blue-400">local</span> body = request.body
+
+<span class="text-gray-500">-- Validate all fields at once</span>
+solidb.validate(body, {
+  name = { required = <span class="text-purple-400">true</span>, type = <span class="text-green-400">"string"</span>, min_length = <span class="text-purple-400">1</span> },
+  price = { required = <span class="text-purple-400">true</span>, type = <span class="text-green-400">"number"</span>, min = <span class="text-purple-400">0.01</span> },
+  category = { type = <span class="text-green-400">"string"</span> },
+  in_stock = { type = <span class="text-green-400">"boolean"</span> }
+})
+
+<span class="text-gray-500">-- Sanitize user input</span>
+<span class="text-blue-400">local</span> clean_name = solidb.sanitize.trim(body.name)
+<span class="text-blue-400">local</span> slug = solidb.sanitize.slug(body.name)</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Next Steps -->
+    <section id="next">
+      <div class="bg-gradient-to-r from-green-500/10 to-teal-500/10 border border-green-500/20 rounded-2xl p-8">
+        <h2 class="text-2xl font-bold text-white mb-4 mt-0">Next Steps</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <a href="/docs/scripting-tutorial-testing" class="bg-gray-900/60 rounded-xl p-4 border border-white/10 hover:border-green-500/30 transition-colors">
+            <h3 class="font-bold text-green-400 mb-2 mt-0">Tutorial: Testing</h3>
+            <p class="text-sm text-gray-400">Learn to write automated tests for your API</p>
+          </a>
+          <a href="/docs/scripting-validation" class="bg-gray-900/60 rounded-xl p-4 border border-white/10 hover:border-green-500/30 transition-colors">
+            <h3 class="font-bold text-green-400 mb-2 mt-0">Validation API</h3>
+            <p class="text-sm text-gray-400">Complete validation and sanitization reference</p>
+          </a>
+          <a href="/docs/scripting-database" class="bg-gray-900/60 rounded-xl p-4 border border-white/10 hover:border-green-500/30 transition-colors">
+            <h3 class="font-bold text-green-400 mb-2 mt-0">Database Access</h3>
+            <p class="text-sm text-gray-400">Advanced queries and transactions</p>
+          </a>
+          <a href="/docs/scripting-core" class="bg-gray-900/60 rounded-xl p-4 border border-white/10 hover:border-green-500/30 transition-colors">
+            <h3 class="font-bold text-green-400 mb-2 mt-0">Core API</h3>
+            <p class="text-sm text-gray-400">All solidb.* functions</p>
+          </a>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

@@ -1,0 +1,1028 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs/clients" class="inline-flex items-center text-blue-400 hover:text-blue-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Clients Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header Section -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-lg blur opacity-25"></div>
+      <div class="relative flex items-center">
+        <div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-500 text-white shadow-[0_0_30px_rgba(59,130,246,0.5)] mr-6">
+          <i class="fab fa-apple text-4xl"></i>
+        </div>
+        <div>
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-cyan-400 to-teal-400 mb-2 tracking-tight">
+            iOS Client
+          </h1>
+          <div class="flex items-center gap-4">
+            <span class="px-3 py-1 bg-blue-500/10 text-blue-400 text-xs font-bold uppercase tracking-wider rounded-full border border-blue-500/20">Official SDK</span>
+            <span class="text-sm text-gray-400">v0.5.0</span>
+            <span class="text-sm text-gray-500">iOS 14+</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <nav class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+      <h2 class="text-lg font-bold text-white mb-4">Table of Contents</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Getting Started</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#installation" class="hover:text-white transition-colors">Installation</a></li>
+            <li><a href="#quickstart" class="hover:text-white transition-colors">Quick Start</a></li>
+            <li><a href="#connection" class="hover:text-white transition-colors">Connection</a></li>
+            <li><a href="#authentication" class="hover:text-white transition-colors">Authentication</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Core Operations</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#collections" class="hover:text-white transition-colors">Collections</a></li>
+            <li><a href="#documents" class="hover:text-white transition-colors">Documents</a></li>
+            <li><a href="#queries" class="hover:text-white transition-colors">Queries</a></li>
+            <li><a href="#sync" class="hover:text-white transition-colors">Sync</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Offline Sync</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#offline-first" class="hover:text-white transition-colors">Offline-First</a></li>
+            <li><a href="#conflict-resolution" class="hover:text-white transition-colors">Conflict Resolution</a></li>
+            <li><a href="#delta-sync" class="hover:text-white transition-colors">Delta Sync</a></li>
+            <li><a href="#configuration" class="hover:text-white transition-colors">Configuration</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Examples</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#todo-example" class="hover:text-white transition-colors">Todo App</a></li>
+            <li><a href="#swiftui" class="hover:text-white transition-colors">SwiftUI Integration</a></li>
+            <li><a href="#error-handling" class="hover:text-white transition-colors">Error Handling</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- GETTING STARTED -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 mr-4">
+          <i class="fas fa-rocket text-lg"></i>
+        </span>
+        Getting Started
+      </h2>
+
+      <!-- Installation -->
+      <section id="installation" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Installation</h3>
+        
+        <h4 class="text-lg font-semibold text-blue-400 mb-3">Swift Package Manager (Recommended)</h4>
+        <p class="text-gray-400 mb-3">Add SoliDB to your `Package.swift`:</p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-6">
+          <pre class="text-blue-400">dependencies: [
+    .package(url: "https://github.com/solidb/ios-sdk.git", from: "0.5.0")
+]</pre>
+        </div>
+
+        <p class="text-gray-400 mb-3">Or add via Xcode:</p>
+        <ol class="list-decimal list-inside text-gray-400 space-y-2 mb-4">
+          <li>Open your project in Xcode</li>
+          <li>Go to <strong>File</strong> → <strong>Add Package Dependencies...</strong></li>
+          <li>Enter: <code class="bg-gray-800 px-1 rounded">https://github.com/solidb/ios-sdk.git</code></li>
+          <li>Click <strong>Add Package</strong></li>
+        </ol>
+
+        <h4 class="text-lg font-semibold text-blue-400 mb-3">CocoaPods</h4>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre class="text-blue-400">pod 'SoliDB', '~> 0.5.0'</pre>
+        </div>
+
+        <div class="mt-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+          <div class="flex items-start">
+            <i class="fas fa-info-circle text-blue-400 mt-0.5 mr-3"></i>
+            <p class="text-sm text-blue-200">
+              <strong>Requirements:</strong> iOS 14.0+, macOS 11.0+, tvOS 14.0+, watchOS 7.0+. The SDK uses Swift 5.7+ and UniFFI for native Rust bindings.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Start -->
+      <section id="quickstart" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Quick Start</h3>
+        <div class="bg-gray-950 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <pre class="relative z-10"><code class="language-swift">import SoliDB
+
+class ViewController: UIViewController {
+    var client: SoliDBClient?
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        Task {
+            await setupDatabase()
+        }
+    }
+    
+    func setupDatabase() async {
+        do {
+            // Create client with configuration
+            let config = SoliDBConfig(
+                host: "localhost",
+                port: 6745,
+                database: "mydb",
+                username: "admin",
+                password: "password"
+            )
+            
+            client = try await SoliDBClient(config: config)
+            
+            // Basic CRUD operations
+            let doc = try await client!.save(
+                collection: "users",
+                document: [
+                    "name": "Alice",
+                    "age": 30,
+                    "email": "alice@example.com"
+                ]
+            )
+            print("Created document with key: \(doc.key)")
+            
+            // Retrieve document
+            let user = try await client!.get(
+                collection: "users",
+                key: doc.key
+            )
+            print("Retrieved: \(user["name"])")
+            
+            // Query with SDBQL
+            let results = try await client!.query(
+                "FOR u IN users FILTER u.age > @min RETURN u",
+                bindVars: ["min": 25]
+            )
+            print("Found \(results.count) users")
+            
+        } catch {
+            print("Error: \(error)")
+        }
+    }
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Connection -->
+      <section id="connection" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Connection Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">// Configure connection
+let config = SoliDBConfig(
+    host: "localhost",
+    port: 6745,
+    database: "mydb",
+    username: "admin",
+    password: "password",
+    timeout: 30.0,
+    enableCompression: true
+)
+
+// Create client
+let client = try await SoliDBClient(config: config)
+
+// Check connection health
+let isHealthy = try await client.ping()
+print("Connection healthy: \(isHealthy)")
+
+// Disconnect when done
+try await client.disconnect()</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Property</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Type</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Default</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">host</code></td><td class="px-4 py-3 text-gray-500">String</td><td class="px-4 py-3 text-gray-400">localhost</td><td class="px-4 py-3 text-gray-400">Server hostname or IP</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">port</code></td><td class="px-4 py-3 text-gray-500">UInt16</td><td class="px-4 py-3 text-gray-400">6745</td><td class="px-4 py-3 text-gray-400">Server port</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">timeout</code></td><td class="px-4 py-3 text-gray-500">TimeInterval</td><td class="px-4 py-3 text-gray-400">30.0</td><td class="px-4 py-3 text-gray-400">Connection timeout (seconds)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">enableCompression</code></td><td class="px-4 py-3 text-gray-500">Bool</td><td class="px-4 py-3 text-gray-400">true</td><td class="px-4 py-3 text-gray-400">Enable MessagePack compression</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Authentication -->
+      <section id="authentication" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Authentication</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-swift">// Authentication is handled during client initialization
+let config = SoliDBConfig(
+    host: "localhost",
+    port: 6745,
+    database: "mydb",      // Target database
+    username: "admin",     // Username
+    password: "password"   // Password
+)
+
+let client = try await SoliDBClient(config: config)
+
+// The session remains authenticated until disconnected
+// Token is automatically refreshed when needed</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- CORE OPERATIONS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-500/20 text-cyan-400 mr-4">
+          <i class="fas fa-database text-lg"></i>
+        </span>
+        Core Operations
+      </h2>
+
+      <!-- Collections -->
+      <section id="collections" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Collection Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">// List collections in a database
+let collections = try await client.listCollections()
+// => ["users", "orders", "products"]
+
+// Create a document collection
+try await client.createCollection(name: "products")
+
+// Create an edge collection (for graphs)
+try await client.createCollection(
+    name: "relationships",
+    type: .edge
+)
+
+// Delete a collection
+try await client.deleteCollection(name: "old_collection")
+
+// Get collection statistics
+let stats = try await client.collectionStats(name: "users")
+print("Document count: \(stats["document_count"])")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">listCollections()</code></td><td class="px-4 py-3 text-gray-500">[String]</td><td class="px-4 py-3 text-gray-400">List collections in database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">createCollection(name:type:)</code></td><td class="px-4 py-3 text-gray-500">Void</td><td class="px-4 py-3 text-gray-400">Create collection (.document or .edge)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">deleteCollection(name:)</code></td><td class="px-4 py-3 text-gray-500">Void</td><td class="px-4 py-3 text-gray-400">Delete collection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">collectionStats(name:)</code></td><td class="px-4 py-3 text-gray-500">Document</td><td class="px-4 py-3 text-gray-400">Get collection statistics</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section id="documents" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Document Operations (CRUD)</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">// SAVE - Create or update a document
+let doc = try await client.save(
+    collection: "users",
+    document: [
+        "name": "Alice",
+        "email": "alice@example.com",
+        "age": 30,
+        "tags": ["developer", "ios"]
+    ]
+)
+print("Key: \(doc.key)")  // Auto-generated key
+
+// SAVE with custom key
+let docWithKey = try await client.save(
+    collection: "users",
+    key: "user-123",
+    document: [
+        "name": "Bob",
+        "email": "bob@example.com"
+    ]
+)
+
+// GET - Retrieve a document by key
+let user = try await client.get(
+    collection: "users",
+    key: "user-123"
+)
+print("Name: \(user["name"])")
+
+// DELETE - Remove a document
+try await client.delete(
+    collection: "users",
+    key: "user-123"
+)
+
+// LIST - Paginated document listing
+let (docs, total) = try await client.list(
+    collection: "users",
+    limit: 50,
+    offset: 0
+)
+print("Showing \(docs.count) of \(total) documents")</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">save(collection:document:)</code></td><td class="px-4 py-3 text-gray-500">Document</td><td class="px-4 py-3 text-gray-400">Insert document, returns with key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">save(collection:key:document:)</code></td><td class="px-4 py-3 text-gray-500">Document</td><td class="px-4 py-3 text-gray-400">Insert with custom key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">get(collection:key:)</code></td><td class="px-4 py-3 text-gray-500">Document</td><td class="px-4 py-3 text-gray-400">Get document by key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">delete(collection:key:)</code></td><td class="px-4 py-3 text-gray-500">Void</td><td class="px-4 py-3 text-gray-400">Delete document</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">list(collection:limit:offset:)</code></td><td class="px-4 py-3 text-gray-500">([Document], Int)</td><td class="px-4 py-3 text-gray-400">List documents with pagination</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Queries -->
+      <section id="queries" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SDBQL Queries</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">// Simple query
+let users = try await client.query("FOR u IN users RETURN u")
+
+// Query with bind variables (recommended for security)
+let results = try await client.query(
+    """
+    FOR u IN users
+    FILTER u.age >= @min_age AND u.status == @status
+    SORT u.created_at DESC
+    LIMIT @limit
+    RETURN { name: u.name, email: u.email }
+    """,
+    bindVars: [
+        "min_age": 18,
+        "status": "active",
+        "limit": 100
+    ]
+)
+
+// Aggregation query
+let stats = try await client.query(
+    """
+    FOR u IN users
+    COLLECT status = u.status WITH COUNT INTO count
+    RETURN { status, count }
+    """
+)
+
+// Join query
+let orders = try await client.query(
+    """
+    FOR o IN orders
+    FOR u IN users FILTER u._key == o.user_id
+    RETURN { order: o, user: u.name }
+    """
+)</code></pre>
+        </div>
+      </section>
+
+      <!-- Sync -->
+      <section id="sync" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Live Sync & Subscriptions</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">// Subscribe to live query updates
+let subscription = try await client.sync.subscribe(
+    query: "FOR u IN users FILTER u.status == 'online' RETURN u"
+) { result in
+    switch result {
+    case .success(let docs):
+        print("Received \(docs.count) updates")
+        // Update your UI
+    case .failure(let error):
+        print("Sync error: \(error)")
+    }
+}
+
+// Subscribe to collection changes
+let collectionSub = try await client.sync.subscribe(
+    collection: "users",
+    filter: ["status": "active"]
+) { change in
+    switch change.type {
+    case .insert:
+        print("New document: \(change.document.key)")
+    case .update:
+        print("Updated: \(change.document.key)")
+    case .delete:
+        print("Deleted: \(change.key)")
+    }
+}
+
+// Unsubscribe when done
+subscription.cancel()
+collectionSub.cancel()
+
+// Manual sync (pull latest changes)
+try await client.sync.pull()
+
+// Push local changes immediately
+try await client.sync.push()</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">subscribe(query:handler:)</code></td><td class="px-4 py-3 text-gray-400">Subscribe to query results</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">subscribe(collection:filter:handler:)</code></td><td class="px-4 py-3 text-gray-400">Subscribe to collection changes</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">pull()</code></td><td class="px-4 py-3 text-gray-400">Pull latest changes from server</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">push()</code></td><td class="px-4 py-3 text-gray-400">Push local changes to server</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- OFFLINE SYNC -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 mr-4">
+          <i class="fas fa-wifi-slash text-lg"></i>
+        </span>
+        Offline-First Sync
+      </h2>
+
+      <!-- Offline-First -->
+      <section id="offline-first" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Offline-First Architecture</h3>
+        <p class="text-gray-400 mb-4">
+          SoliDB iOS SDK provides automatic offline-first capabilities. All operations work seamlessly offline and sync when connectivity is restored.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">// Enable offline-first mode in configuration
+let config = SoliDBConfig(
+    host: "localhost",
+    port: 6745,
+    database: "mydb",
+    username: "admin",
+    password: "password",
+    offlineMode: .enabled,           // Enable offline support
+    enableLocalCache: true,          // Cache documents locally
+    syncInterval: 30.0               // Auto-sync every 30 seconds
+)
+
+// All operations work offline
+// Changes are automatically queued and synced
+let doc = try await client.save(
+    collection: "notes",
+    document: ["title": "Important Note", "content": "..."]
+)
+// Works even without network! Automatically syncs later.</code></pre>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-bolt text-yellow-400 mr-2"></i>
+              <span class="font-semibold text-white">Native Performance</span>
+            </div>
+            <p class="text-sm text-gray-400">UniFFI-powered Rust bindings deliver native speed for all operations.</p>
+          </div>
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-database text-blue-400 mr-2"></i>
+              <span class="font-semibold text-white">Local SQLite</span>
+            </div>
+            <p class="text-sm text-gray-400">Encrypted SQLite storage for offline data persistence.</p>
+          </div>
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">
+            <div class="flex items-center mb-2">
+              <i class="fas fa-sync text-green-400 mr-2"></i>
+              <span class="font-semibold text-white">Auto-Sync</span>
+            </div>
+            <p class="text-sm text-gray-400">Automatic background sync with configurable intervals.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Conflict Resolution -->
+      <section id="conflict-resolution" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Conflict Resolution</h3>
+        <p class="text-gray-400 mb-4">
+          When the same document is modified offline on multiple devices, SoliDB provides configurable conflict resolution strategies.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">// Configure conflict resolution strategy
+let config = SoliDBConfig(
+    // ... other options
+    conflictResolution: .lastWriteWins,     // Default: last write wins
+    // Other options:
+    // .firstWriteWins
+    // .serverWins
+    // .clientWins
+    // .custom(callback: myResolver)
+)
+
+// Custom conflict resolver
+let customConfig = SoliDBConfig(
+    conflictResolution: .custom { serverDoc, localDoc in
+        // Implement your own logic
+        if let localModified = localDoc["modified_at"] as? Date,
+           let serverModified = serverDoc["modified_at"] as? Date {
+            return localModified > serverModified ? localDoc : serverDoc
+        }
+        return localDoc  // Default to local
+    }
+)</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Strategy</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">lastWriteWins</code></td><td class="px-4 py-3 text-gray-400">Document with most recent timestamp wins</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">firstWriteWins</code></td><td class="px-4 py-3 text-gray-400">First write wins, subsequent rejected</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">serverWins</code></td><td class="px-4 py-3 text-gray-400">Always prefer server version</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">clientWins</code></td><td class="px-4 py-3 text-gray-400">Always prefer local version</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">custom</code></td><td class="px-4 py-3 text-gray-400">Provide your own resolution logic</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Delta Sync -->
+      <section id="delta-sync" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Delta Sync</h3>
+        <p class="text-gray-400 mb-4">
+          Delta sync only transmits changed fields, dramatically reducing bandwidth and improving sync speed.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">// Delta sync is enabled by default
+let config = SoliDBConfig(
+    // ... other options
+    enableDeltaSync: true,              // Only sync changed fields
+    deltaSyncThreshold: 1024            // Use delta for docs > 1KB
+)
+
+// Manual delta sync control
+// Force full sync when needed
+try await client.sync.pullFull()
+
+// Sync specific collections with delta
+try await client.sync.pull(
+    collections: ["users", "settings"],
+    mode: .delta
+)
+
+// Get sync statistics
+let syncStats = client.sync.statistics
+print("Bytes saved by delta sync: \(syncStats.bytesSaved)")
+print("Documents synced: \(syncStats.documentsSynced)")</code></pre>
+        </div>
+      </section>
+
+      <!-- Configuration -->
+      <section id="configuration" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Sync Configuration</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">let config = SoliDBConfig(
+    host: "localhost",
+    port: 6745,
+    database: "mydb",
+    username: "admin",
+    password: "password",
+    
+    // Offline settings
+    offlineMode: .enabled,
+    enableLocalCache: true,
+    localCacheSize: 100 * 1024 * 1024,  // 100 MB cache limit
+    
+    // Sync settings
+    syncInterval: 30.0,                  // Auto-sync every 30s
+    syncOnConnectivityChange: true,      // Sync when going online
+    retryAttempts: 5,                    // Retry failed syncs
+    retryDelay: 2.0,                     // Initial retry delay (seconds)
+    
+    // Conflict & delta
+    conflictResolution: .lastWriteWins,
+    enableDeltaSync: true,
+    
+    // Network
+    enableCompression: true,
+    timeout: 30.0
+)</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- EXAMPLES -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-teal-500/20 text-teal-400 mr-4">
+          <i class="fas fa-code text-lg"></i>
+        </span>
+        Examples
+      </h2>
+
+      <!-- Todo Example -->
+      <section id="todo-example" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Complete Todo App</h3>
+        <p class="text-gray-400 mb-4">
+          A fully functional Todo app demonstrating offline-first capabilities, real-time sync, and CRUD operations.
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">import SwiftUI
+import SoliDB
+
+// MARK: - Models
+
+struct Todo: Identifiable, Codable {
+    let id: String
+    var title: String
+    var completed: Bool
+    var createdAt: Date
+    
+    init(from document: Document) {
+        self.id = document.key
+        self.title = document["title"] as? String ?? ""
+        self.completed = document["completed"] as? Bool ?? false
+        self.createdAt = document["created_at"] as? Date ?? Date()
+    }
+    
+    func toDocument() -> [String: Any] {
+        [
+            "title": title,
+            "completed": completed,
+            "created_at": createdAt
+        ]
+    }
+}
+
+// MARK: - ViewModel
+
+@MainActor
+class TodoViewModel: ObservableObject {
+    @Published var todos: [Todo] = []
+    @Published var isSyncing = false
+    @Published var errorMessage: String?
+    
+    private var client: SoliDBClient?
+    private var subscription: SyncSubscription?
+    
+    func initialize() async {
+        let config = SoliDBConfig(
+            host: "api.example.com",
+            port: 6745,
+            database: "todoapp",
+            username: "user",
+            password: "pass",
+            offlineMode: .enabled,
+            syncInterval: 10.0
+        )
+        
+        do {
+            client = try await SoliDBClient(config: config)
+            await loadTodos()
+            await subscribeToChanges()
+        } catch {
+            errorMessage = "Failed to connect: \(error)"
+        }
+    }
+    
+    func loadTodos() async {
+        guard let client = client else { return }
+        
+        do {
+            let results = try await client.query(
+                "FOR t IN todos SORT t.created_at DESC RETURN t"
+            )
+            todos = results.map { Todo(from: $0) }
+        } catch {
+            errorMessage = "Failed to load: \(error)"
+        }
+    }
+    
+    func subscribeToChanges() async {
+        guard let client = client else { return }
+        
+        do {
+            subscription = try await client.sync.subscribe(
+                collection: "todos"
+            ) { [weak self] change in
+                Task { @MainActor in
+                    await self?.loadTodos()
+                }
+            }
+        } catch {
+            print("Subscription error: \(error)")
+        }
+    }
+    
+    func addTodo(title: String) async {
+        guard let client = client else { return }
+        
+        let todo = [
+            "title": title,
+            "completed": false,
+            "created_at": Date()
+        ]
+        
+        do {
+            _ = try await client.save(collection: "todos", document: todo)
+            // Real-time update will come through subscription
+        } catch {
+            errorMessage = "Failed to add: \(error)"
+        }
+    }
+    
+    func toggleTodo(_ todo: Todo) async {
+        guard let client = client else { return }
+        
+        var updated = todo
+        updated.completed.toggle()
+        
+        do {
+            _ = try await client.save(
+                collection: "todos",
+                key: todo.id,
+                document: updated.toDocument()
+            )
+        } catch {
+            errorMessage = "Failed to update: \(error)"
+        }
+    }
+    
+    func deleteTodo(_ todo: Todo) async {
+        guard let client = client else { return }
+        
+        do {
+            try await client.delete(collection: "todos", key: todo.id)
+        } catch {
+            errorMessage = "Failed to delete: \(error)"
+        }
+    }
+    
+    func syncNow() async {
+        guard let client = client else { return }
+        isSyncing = true
+        
+        do {
+            try await client.sync.push()
+            try await client.sync.pull()
+            await loadTodos()
+        } catch {
+            errorMessage = "Sync failed: \(error)"
+        }
+        
+        isSyncing = false
+    }
+}
+
+// MARK: - Views
+
+struct TodoListView: View {
+    @StateObject private var viewModel = TodoViewModel()
+    @State private var newTodoTitle = ""
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(viewModel.todos) { todo in
+                    TodoRow(todo: todo) {
+                        await viewModel.toggleTodo(todo)
+                    }
+                }
+                .onDelete { indexSet in
+                    for index in indexSet {
+                        Task {
+                            await viewModel.deleteTodo(viewModel.todos[index])
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Todos")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { Task { await viewModel.syncNow() } }) {
+                        Image(systemName: "arrow.clockwise")
+                            .rotationEffect(.degrees(viewModel.isSyncing ? 360 : 0))
+                            .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: viewModel.isSyncing)
+                    }
+                    .disabled(viewModel.isSyncing)
+                }
+            }
+            .task {
+                await viewModel.initialize()
+            }
+        }
+    }
+}
+
+struct TodoRow: View {
+    let todo: Todo
+    let onToggle: () async -> Void
+    
+    var body: some View {
+        HStack {
+            Button(action: { Task { await onToggle() } }) {
+                Image(systemName: todo.completed ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(todo.completed ? .green : .gray)
+            }
+            
+            Text(todo.title)
+                .strikethrough(todo.completed)
+                .foregroundColor(todo.completed ? .gray : .primary)
+            
+            Spacer()
+        }
+    }
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- SwiftUI Integration -->
+      <section id="swiftui" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SwiftUI Integration</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">// Property wrapper for reactive sync
+@propertyWrapper
+struct SoliDBQuery<T: Codable>: DynamicProperty {
+    @StateObject private var watcher: QueryWatcher<T>
+    
+    var wrappedValue: [T] { watcher.results }
+    var projectedValue: QueryWatcher<T> { watcher }
+    
+    init(query: String, collection: String) {
+        _watcher = StateObject(wrappedValue: QueryWatcher(query: query, collection: collection))
+    }
+}
+
+class QueryWatcher<T: Codable>: ObservableObject {
+    @Published var results: [T] = []
+    private var subscription: SyncSubscription?
+    
+    init(query: String, collection: String) {
+        Task {
+            await setupSubscription(query: query, collection: collection)
+        }
+    }
+    
+    private func setupSubscription(query: String, collection: String) async {
+        // Setup live query subscription
+    }
+}
+
+// Usage in SwiftUI
+struct ContentView: View {
+    @SoliDBQuery<Todo>(
+        query: "FOR t IN todos FILTER !t.completed RETURN t",
+        collection: "todos"
+    )
+    var incompleteTodos
+    
+    var body: some View {
+        List(incompleteTodos) { todo in
+            Text(todo.title)
+        }
+    }
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Error Handling -->
+      <section id="error-handling" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Error Handling</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-swift">do {
+    let client = try await SoliDBClient(config: config)
+} catch SoliDBError.connectionFailed(let message) {
+    print("Connection failed: \(message)")
+} catch SoliDBError.authenticationFailed(let message) {
+    print("Auth failed: \(message)")
+} catch SoliDBError.documentNotFound(let key) {
+    print("Document not found: \(key)")
+} catch SoliDBError.networkError(let message) {
+    print("Network error: \(message)")
+    // Will auto-retry in offline mode
+} catch SoliDBError.syncConflict(let message) {
+    print("Sync conflict: \(message)")
+    // Resolve manually if needed
+} catch {
+    print("Unknown error: \(error)")
+}</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- PERMISSIONS & INFO.PLIST -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-indigo-500/20 text-indigo-400 mr-4">
+          <i class="fas fa-shield-alt text-lg"></i>
+        </span>
+        Permissions & Setup
+      </h2>
+
+      <section id="permissions" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Info.plist Configuration</h3>
+        <p class="text-gray-400 mb-4">
+          Add the following to your Info.plist for network permissions and background sync:
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre class="text-indigo-400">&lt;key&gt;NSAppTransportSecurity&lt;/key&gt;
+&lt;dict&gt;
+    &lt;key&gt;NSAllowsArbitraryLoads&lt;/key&gt;
+    &lt;false/&gt;
+    &lt;key&gt;NSExceptionDomains&lt;/key&gt;
+    &lt;dict&gt;
+        &lt;key&gt;your-server.com&lt;/key&gt;
+        &lt;dict&gt;
+            &lt;key&gt;NSIncludesSubdomains&lt;/key&gt;
+            &lt;true/&gt;
+            &lt;key&gt;NSExceptionAllowsInsecureHTTPLoads&lt;/key&gt;
+            &lt;false/&gt;
+        &lt;/dict&gt;
+    &lt;/dict&gt;
+&lt;/dict&gt;
+
+&lt;!-- Background sync (optional) --&gt;
+&lt;key&gt;UIBackgroundModes&lt;/key&gt;
+&lt;array&gt;
+    &lt;string&gt;fetch&lt;/string&gt;
+&lt;/array&gt;</pre>
+        </div>
+
+        <h4 class="text-lg font-semibold text-indigo-400 mb-3 mt-6">App Sandbox (macOS)</h4>
+        <p class="text-gray-400 mb-3">
+          If using macOS, ensure your entitlements allow network connections:
+        </p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre class="text-indigo-400">&lt;key&gt;com.apple.security.network.client&lt;/key&gt;
+&lt;true/&gt;
+&lt;key&gt;com.apple.security.network.server&lt;/key&gt;
+&lt;false/&gt;</pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- FOOTER -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <div class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+        <div class="flex items-start">
+          <i class="fas fa-book text-blue-400 mt-1 mr-4 text-xl"></i>
+          <div>
+            <h3 class="text-lg font-bold text-white mb-2">Next Steps</h3>
+            <p class="text-gray-400 mb-4">
+              Explore more features of the SoliDB iOS SDK:
+            </p>
+            <ul class="space-y-2 text-sm text-gray-400">
+              <li><i class="fas fa-chevron-right text-blue-400 mr-2"></i><a href="/docs/query-language" class="hover:text-white transition-colors">Learn SDBQL Query Language</a></li>
+              <li><i class="fas fa-chevron-right text-blue-400 mr-2"></i><a href="/docs/sync" class="hover:text-white transition-colors">Advanced Sync Strategies</a></li>
+              <li><i class="fas fa-chevron-right text-blue-400 mr-2"></i><a href="https://github.com/solidb/ios-sdk" class="hover:text-white transition-colors">GitHub Repository & Examples</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

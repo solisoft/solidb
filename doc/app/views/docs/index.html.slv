@@ -1,0 +1,196 @@
+<%# Documentation home — phosphor identity, matching the landing page. Content
+    is data-driven: edit the arrays below to add a topic or method category.
+    Copy is trusted and static, so the escaping output tag is fine throughout. %>
+<%
+lead = [
+  { "slug": "getting-started", "icon": "fa-rocket", "label": "Getting Started",
+    "desc": "Install SoliDB, connect, and run your first query in under five minutes." },
+  { "slug": "sdbql", "icon": "fa-terminal", "label": "SDBQL Reference",
+    "desc": "The FOR / FILTER / RETURN language — joins, graph traversal, and 175 functions." },
+  { "slug": "api", "icon": "fa-code", "label": "API Reference",
+    "desc": "The complete HTTP + JSON surface: databases, documents, queries, and more." }
+]
+
+groups = [
+  { "title": "Query languages", "items": [
+    { "slug": "sdbql", "icon": "fa-terminal", "label": "SDBQL",
+      "desc": "The full query language reference." },
+    { "slug": "sql", "icon": "fa-database", "label": "SQL Compatibility",
+      "desc": "Write familiar SQL, auto-translated to SDBQL." },
+    { "slug": "nl-queries", "icon": "fa-wand-magic-sparkles", "label": "Natural Language",
+      "desc": "Ask in plain English, get an SDBQL query back." },
+    { "slug": "indexes", "icon": "fa-list-ol", "label": "Indexes",
+      "desc": "Persistent, hash, geo, fulltext, and TTL indexes." }
+  ] },
+  { "title": "Search and AI", "items": [
+    { "slug": "vector-search", "icon": "fa-brain", "label": "Vector Search",
+      "desc": "HNSW nearest-neighbor search over embeddings." },
+    { "slug": "hybrid-search", "icon": "fa-layer-group", "label": "Hybrid Search",
+      "desc": "Blend vector similarity with fulltext relevance." },
+    { "slug": "graphs", "icon": "fa-project-diagram", "label": "Graphs and Edges",
+      "desc": "Model edges and traverse them one to N hops out." },
+    { "slug": "graph-rag", "icon": "fa-diagram-project", "label": "Graph RAG",
+      "desc": "Retrieval-augmented generation over your graph." }
+  ] },
+  { "title": "Real-time and distributed", "items": [
+    { "slug": "live-queries", "icon": "fa-satellite-dish", "label": "Live Queries",
+      "desc": "Turn any SDBQL query into a live stream." },
+    { "slug": "changefeeds", "icon": "fa-tower-broadcast", "label": "Changefeeds",
+      "desc": "Subscribe to every change on a collection." },
+    { "slug": "triggers", "icon": "fa-bolt", "label": "Triggers",
+      "desc": "Run logic automatically on document events." },
+    { "slug": "streams", "icon": "fa-stream", "label": "Stream Processing",
+      "desc": "Continuous rollups with tumbling windows." },
+    { "slug": "offline-sync", "icon": "fa-sync-alt", "label": "Offline Sync",
+      "desc": "Reconcile local changes on reconnect." },
+    { "slug": "queues", "icon": "fa-tasks", "label": "Queues and Jobs",
+      "desc": "Background jobs with priorities and cron." },
+    { "slug": "cluster", "icon": "fa-network-wired", "label": "Clustering",
+      "desc": "Replication, leader election, and failover." },
+    { "slug": "sharding", "icon": "fa-cubes", "label": "Sharding",
+      "desc": "Horizontal partitioning with auto-rebalancing." }
+  ] },
+  { "title": "Storage and operations", "items": [
+    { "slug": "documents", "icon": "fa-file-lines", "label": "Documents",
+      "desc": "Schemaless JSON with secondary indexes." },
+    { "slug": "timeseries", "icon": "fa-chart-line", "label": "Time Series",
+      "desc": "Append-only metrics with time-bucket rollups." },
+    { "slug": "columnar", "icon": "fa-chart-bar", "label": "Columnar",
+      "desc": "LZ4-compressed columns for analytics." },
+    { "slug": "blobs", "icon": "fa-photo-film", "label": "Blob Storage",
+      "desc": "Binary storage with on-the-fly image transforms." },
+    { "slug": "transactions", "icon": "fa-shield-halved", "label": "Transactions",
+      "desc": "Atomic commits, rollbacks, 2PC across nodes." },
+    { "slug": "scripting", "icon": "fa-scroll", "label": "Lua Scripting",
+      "desc": "Custom API endpoints in embedded Lua 5.4." },
+    { "slug": "observability", "icon": "fa-signal", "label": "Observability",
+      "desc": "OpenTelemetry traces and Prometheus metrics." },
+    { "slug": "security", "icon": "fa-lock", "label": "Security",
+      "desc": "JWT auth, API keys, RBAC, and encryption." }
+  ] }
+]
+
+methods = [
+  { "suffix": "string",  "label": "String",  "count": 40 },
+  { "suffix": "numeric", "label": "Numeric", "count": 30 },
+  { "suffix": "array",   "label": "Array",   "count": 24 },
+  { "suffix": "date",    "label": "Date",    "count": 19 },
+  { "suffix": "geo",     "label": "Geo",     "count": 3 },
+  { "suffix": "vector",  "label": "Vector",  "count": 4 },
+  { "suffix": "search",  "label": "Search",  "count": 5 },
+  { "suffix": "crypto",  "label": "Crypto",  "count": 6 },
+  { "suffix": "misc",    "label": "Other",   "count": 44 }
+]
+%>
+
+<div class="dh">
+
+  <!-- ============================ HERO ============================ -->
+  <section class="dh-hero">
+    <span class="eyebrow">Documentation · v0.31.0</span>
+    <h1 class="dh-title">Build on SoliDB. <span class="accent">One engine, every model.</span></h1>
+    <p class="dh-lede">
+      Guides, API reference, and the complete SDBQL surface — documents, graphs, vectors and
+      time-series, with live queries, replication and sharding, all in one place.
+    </p>
+
+    <button type="button" class="dh-search" onclick="SoliDocsSearch.open()">
+      <i class="fas fa-search si" aria-hidden="true"></i>
+      <span class="stxt">Search pages and 175 SDBQL methods</span>
+      <kbd class="docs-kbd">⌘K</kbd>
+    </button>
+
+    <div class="dh-quick">
+      <a class="dh-chip" href="/docs/getting-started">Quick start</a>
+      <a class="dh-chip" href="/docs/sdbql">SDBQL</a>
+      <a class="dh-chip" href="/docs/api">API</a>
+      <a class="dh-chip" href="/docs/clients">Clients</a>
+      <a class="dh-chip" href="/docs/comparison">Compare</a>
+    </div>
+  </section>
+
+  <!-- ========================= START HERE ========================= -->
+  <section class="dh-sec">
+    <div class="dh-sec-head">
+      <h2 class="dh-sec-title">Start here</h2>
+    </div>
+    <div class="dh-cards dh-lead">
+      <% for item in lead %>
+        <a class="dh-card" href="/docs/<%= item["slug"] %>">
+          <span class="ci"><i class="fas <%= item["icon"] %>"></i></span>
+          <h3><%= item["label"] %></h3>
+          <p><%= item["desc"] %></p>
+          <span class="cgo">Read <i class="fas fa-arrow-right"></i></span>
+        </a>
+      <% end %>
+    </div>
+  </section>
+
+  <!-- ====================== SDBQL METHOD INDEX ==================== -->
+  <section class="dh-sec">
+    <div class="dh-sec-head">
+      <h2 class="dh-sec-title">SDBQL methods</h2>
+      <a class="dh-sec-link" href="/docs/sdbql">Full reference →</a>
+    </div>
+    <div class="dh-methods">
+      <% for cat in methods %>
+        <a class="dh-method" href="/docs/sdbql-functions-<%= cat["suffix"] %>">
+          <span class="mname"><%= cat["label"] %></span>
+          <span class="mcount"><%= cat["count"] %></span>
+        </a>
+      <% end %>
+    </div>
+    <p class="dh-methods-note">
+      <span class="amb">175 functions</span> across 9 categories. Press
+      <kbd>⌘K</kbd> to search any method by name or signature.
+    </p>
+  </section>
+
+  <!-- ======================= BROWSE THE DOCS ====================== -->
+  <% for group in groups %>
+    <section class="dh-sec">
+      <div class="dh-sec-head">
+        <h2 class="dh-sec-title"><%= group["title"] %></h2>
+      </div>
+      <div class="dh-cards">
+        <% for item in group["items"] %>
+          <a class="dh-card" href="/docs/<%= item["slug"] %>">
+            <span class="ci"><i class="fas <%= item["icon"] %>"></i></span>
+            <h3><%= item["label"] %></h3>
+            <p><%= item["desc"] %></p>
+          </a>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+
+  <!-- ========================= BENCHMARKS ========================= -->
+  <section class="dh-sec">
+    <div class="dh-sec-head">
+      <h2 class="dh-sec-title">Benchmarks</h2>
+      <a class="dh-sec-link" href="/docs/sdbql-benchmarks">Methodology →</a>
+    </div>
+    <div class="dh-bench">
+      <div class="dh-bench-card">
+        <div class="bk"><i class="fas fa-download"></i> Read</div>
+        <div class="bn"><em>70,000</em></div>
+        <div class="bu">req / sec</div>
+        <div class="bp"><span>p50 <b>0.19ms</b></span><span>p99 <b>0.39ms</b></span></div>
+      </div>
+      <div class="dh-bench-card">
+        <div class="bk"><i class="fas fa-plus"></i> Write</div>
+        <div class="bn"><em>35,000</em></div>
+        <div class="bu">req / sec</div>
+        <div class="bp"><span>p50 <b>0.43ms</b></span><span>p99 <b>1.01ms</b></span></div>
+      </div>
+      <div class="dh-bench-card">
+        <div class="bk"><i class="fas fa-layer-group"></i> Batch insert</div>
+        <div class="bn"><em>762,000</em></div>
+        <div class="bu">docs / sec</div>
+        <div class="bp"><span>500 docs / request</span></div>
+      </div>
+    </div>
+    <p class="dh-bench-note">Single node · JWT auth · 50 connections · 10K requests. No marketing fluff.</p>
+  </section>
+
+</div>

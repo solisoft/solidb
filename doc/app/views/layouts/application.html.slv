@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %></title>
+<% description = "SoliDB is a fast, lightweight multi-model database written in Rust — " +
+    "documents, graph, vector, time-series and columnar storage behind one SDBQL " +
+    "query engine, with live queries, replication and sharding." %>
+<% share_title = "SoliDB — Documents, graphs, vectors & time-series. One engine." %>
+<% share_image = site_url(public_path("images/og-cover.png")) %>
+<% page_url = site_url(current_path() ?? "/") %>
+    <meta name="description" content="<%= description %>">
+    <meta name="theme-color" content="#090c0b">
+    <link rel="canonical" href="<%= page_url %>">
+
+    <!-- Social share card — regenerate the image with ./tools/og/build.sh -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="SoliDB">
+    <meta property="og:url" content="<%= page_url %>">
+    <meta property="og:title" content="<%= share_title %>">
+    <meta property="og:description" content="<%= description %>">
+    <meta property="og:image" content="<%= share_image %>">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="The SoliDB logo beside a terminal running an SDBQL query and printing its JSON result.">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<%= share_title %>">
+    <meta name="twitter:description" content="<%= description %>">
+    <meta name="twitter:image" content="<%= share_image %>">
+
+    <!-- Favicon: amber 'S' mark, inline so there are no external asset requests -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23f5a623'/><text x='16' y='23' font-family='Space Grotesk,Inter,sans-serif' font-size='20' font-weight='700' fill='%231a1205' text-anchor='middle'>S</text></svg>">
+
+    <!-- Tailwind CSS (compiled) -->
+    <link rel="stylesheet" href="<%= public_path("css/application.css") %>">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="soli-body">
+    <%= yield %>
+
+    <!-- HTMx + Alpine.js (Soli's default client stack — see /docs/core-concepts/client-interactivity) -->
+    <script defer src="<%= public_path("js/htmx.min.js") %>"></script>
+    <script defer src="<%= public_path("js/alpine.min.js") %>"></script>
+</body>
+</html>

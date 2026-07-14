@@ -1,0 +1,160 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+
+      <section id="cte" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path></svg>
+              Common Table Expressions (CTE)
+            </h2>
+          </div>
+          <div class="divide-y divide-white/5">
+            <div class="p-6">
+              <h3 class="text-lg font-bold text-white mb-4">Overview</h3>
+              <p class="text-gray-400 mb-4">
+                Common Table Expressions (CTEs) allow you to define named temporary result sets that can be referenced within your query. They improve query readability and enable recursive data structures.
+              </p>
+              <p class="text-gray-400">
+                CTEs are defined using the <code class="text-orange-400">WITH</code> clause and can be referenced like collections using <code class="text-orange-400">FOR ... IN</code>.
+              </p>
+            </div>
+
+            <div class="p-6">
+              <h3 class="text-lg font-bold text-white mb-4">Simple CTE</h3>
+              <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                <div class="bg-black/20 px-4 py-2 border-b border-white/5">
+                  <span class="text-xs text-gray-400">Example Query</span>
+                </div>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Define a CTE to get active users
+WITH active_users AS (
+  FOR u IN users
+    FILTER u.active == true
+    RETURN u
+)
+-- Now iterate over the CTE like a collection
+FOR u IN active_users
+  SORT u.name ASC
+  RETURN u
+</code></pre>
+              </div>
+            </div>
+
+            <div class="p-6">
+              <h3 class="text-lg font-bold text-white mb-4">Multiple CTEs</h3>
+              <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                <div class="bg-black/20 px-4 py-2 border-b border-white/5">
+                  <span class="text-xs text-gray-400">Example Query</span>
+                </div>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Get high-value orders with customer details
+WITH 
+  high_value_orders AS (
+    FOR o IN orders
+      FILTER o.total > 1000
+      RETURN o
+  ),
+  vip_customers AS (
+    FOR c IN customers
+      FILTER c.tier == 'vip'
+      RETURN c
+  )
+-- Join the CTEs
+FOR o IN high_value_orders
+  FOR c IN vip_customers
+    FILTER o.customer_id == c._key
+    RETURN {order: o, customer: c}</code></pre>
+              </div>
+            </div>
+
+            <div class="p-6">
+              <h3 class="text-lg font-bold text-white mb-4">CTE with Column Names</h3>
+              <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                <div class="bg-black/20 px-4 py-2 border-b border-white/5">
+                  <span class="text-xs text-gray-400">Example Query</span>
+                </div>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">WITH summary(id, name, total) AS (
+  FOR o IN orders
+    FILTER o.status == 'completed'
+    RETURN {id: o._key, name: o.customer_name, total: o.total}
+)
+FOR s IN summary
+  SORT s.total DESC
+  RETURN s</code></pre>
+              </div>
+            </div>
+
+            <div class="p-6">
+              <h3 class="text-lg font-bold text-white mb-4">CTEs vs LET</h3>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                  <thead class="bg-white/5 text-gray-300">
+                    <tr>
+                      <th class="p-3">Feature</th>
+                      <th class="p-3">LET</th>
+                      <th class="p-3">CTE</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-3">Creates a named result set</td>
+                      <td class="p-3 text-center">❌</td>
+                      <td class="p-3 text-center">✅</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3">Can use FOR ... IN</td>
+                      <td class="p-3 text-center">✅</td>
+                      <td class="p-3 text-center">✅</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3">Supports multiple iterations</td>
+                      <td class="p-3 text-center">❌</td>
+                      <td class="p-3 text-center">✅</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3">Can reference earlier CTEs</td>
+                      <td class="p-3 text-center">❌</td>
+                      <td class="p-3 text-center">✅</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3">Use case</td>
+                      <td class="p-3">Computed values</td>
+                      <td class="p-3">Named subqueries</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="p-6">
+              <h3 class="text-lg font-bold text-white mb-4">Syntax</h3>
+              <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">WITH
+  cte_name [(col1, col2, ...)] AS ( query ),
+  cte_name2 [(col1, col2, ...)] AS ( query )
+query_body</code></pre>
+              </div>
+              <ul class="text-gray-400 space-y-1 mt-4 text-sm">
+                <li><code class="text-orange-400">cte_name</code> - Identifier for the CTE</li>
+                <li><code class="text-orange-400">(col1, col2, ...)</code> - Optional column names</li>
+                <li><code class="text-orange-400">query</code> - Any valid SDBQL query</li>
+                <li><code class="text-orange-400">query_body</code> - Main query that can reference CTEs</li>
+              </ul>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

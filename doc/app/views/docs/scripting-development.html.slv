@@ -1,0 +1,180 @@
+<div class="max-w-4xl mx-auto">
+  <div class="mb-8">
+    <a href="/docs/scripting" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Lua Scripting Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"></div>
+      <div class="relative">
+        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">Development</h1>
+        <p class="text-lg text-gray-300 max-w-3xl leading-relaxed">
+          Debugging, profiling, testing, and tooling to speed up your workflow.
+        </p>
+      </div>
+    </div>
+
+     <!-- Debug & Inspect -->
+    <section id="debug">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+           <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-cyan-500 mr-2"></span>
+            Debugging
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Inspect and debug values during development.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">solidb.debug(data)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">
+                Pretty-prints any value with formatting. Also logs to server tracing.
+              </div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">solidb.inspect(value)</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">
+                Returns detailed type info: <code>{ type, length?, value?, count?, is_array?, keys? }</code>
+              </div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">solidb.dump(value)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">
+                Returns JSON-like string representation of any value.
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Profiling -->
+    <section id="profiling">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+           <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            Profiling
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Measure and optimize performance.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">solidb.profile(fn, args?)</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">
+                Executes function and returns: <code>{ result, duration_ms, duration_us }</code>
+              </div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-cyan-400">solidb.benchmark(fn, iterations?)</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">
+                Runs function N times (default: 100). Returns: <code>{ iterations, total_ms, avg_ms, min_ms, max_ms, std_dev_ms }</code>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Testing -->
+    <section id="testing">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+           <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            Testing
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Assertions and mocking for unit tests.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+             <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-cyan-400">solidb.assert(condition, message?)</span> <span class="text-gray-500">-&gt; true</span>
+             </li>
+             <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-cyan-400">solidb.assert_eq(a, b, message?)</span> <span class="text-gray-500">-&gt; true</span>
+             </li>
+             <li class="bg-black/20 p-3 rounded border border-white/5">
+                <span class="text-cyan-400">solidb.mock(name, initial_data?)</span> <span class="text-gray-500">-&gt; mock</span>
+                <div class="text-xs text-gray-500 mt-2">
+                  Creates a mock collection for testing without touching real data.<br><br>
+                  <strong class="text-gray-400">Mock methods:</strong>
+                  <ul class="mt-1 ml-4 space-y-1">
+                    <li><code>mock:get(key)</code> - Get document by key</li>
+                    <li><code>mock:insert(doc)</code> - Insert document (auto-generates _key)</li>
+                    <li><code>mock:update(key, updates)</code> - Update document</li>
+                    <li><code>mock:delete(key)</code> - Delete document</li>
+                    <li><code>mock:all()</code> - Get all documents as array</li>
+                    <li><code>mock:count()</code> - Get document count</li>
+                    <li><code>mock:reset()</code> - Clear all data</li>
+                  </ul>
+                </div>
+              </li>
+           </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- REPL -->
+    <section id="repl">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            Interactive REPL
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            SoliDB includes an interactive Lua REPL (Read-Eval-Print Loop) for testing and debugging scripts. Use the CLI or web interface.
+          </p>
+          
+           <h3 class="text-xl font-bold text-white mb-4 flex items-center mt-0">
+              <i class="fas fa-terminal text-green-400 mr-2"></i> CLI REPL
+           </h3>
+           <pre class="bg-black/40 p-4 rounded-lg text-sm font-mono text-gray-300 border border-white/5 mb-6">$ solidb-repl
+_system> 1 + 1
+2</pre>
+
+           <h3 class="text-xl font-bold text-white mb-4 flex items-center mt-0">
+              <i class="fas fa-globe text-blue-400 mr-2"></i> Web REPL
+           </h3>
+           <p class="text-gray-400 text-sm">Access from the dashboard sidebar under "Lua REPL".</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- VSCode -->
+    <section id="vscode">
+       <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            VSCode Extension
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-6 leading-relaxed">
+             Get autocomplete, snippets, and deploy scripts directly from your editor.
+          </p>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h3 class="text-blue-400 font-bold mb-2 flex items-center mt-0"><i class="fas fa-magic mr-2"></i> Autocomplete</h3>
+              <p class="text-sm text-gray-400">IntelliSense for solidb APIs</p>
+            </div>
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h3 class="text-blue-400 font-bold mb-2 flex items-center mt-0"><i class="fas fa-puzzle-piece mr-2"></i> Snippets</h3>
+              <p class="text-sm text-gray-400">30+ code snippets</p>
+            </div>
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h3 class="text-blue-400 font-bold mb-2 flex items-center mt-0"><i class="fas fa-upload mr-2"></i> Deploy</h3>
+              <p class="text-sm text-gray-400">Deploy scripts with one command</p>
+            </div>
+          </div>
+        </div>
+       </div>
+    </section>
+  </div>
+</div>

@@ -1,0 +1,517 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/api" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to API Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+
+       <section id="indexes" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path></svg>
+               Indexes
+            </h2>
+          </div>
+          <div class="divide-y divide-white/5">
+    <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/index/:collection</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a new index for a collection.</p>
+
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">name</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">The name of the index.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">field</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">The document field to index (e.g., "email").</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">type</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">
+                           Index type. Options: <code class="bg-gray-800 px-1 rounded">persistent</code> (default), <code class="bg-gray-800 px-1 rounded">hash</code>, <code class="bg-gray-800 px-1 rounded">fulltext</code>.
+                         </td>
+                         <td class="p-3">No</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">unique</td>
+                         <td class="p-3 font-mono">boolean</td>
+                         <td class="p-3">If true, enforces uniqueness on the indexed field. Default: <code class="bg-gray-800 px-1 rounded">false</code>.</td>
+                         <td class="p-3">No</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                 {"type": "persistent", "field": "email", "unique": true}
+               </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "name": "idx_email",
+                     "field": "email",
+                     "type": "persistent",
+                     "unique": true,
+                     "status": "created"
+                   }
+                 </div>
+               </div>
+             </div>
+
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/index/:collection</code>
+              </div>
+               <p class="text-sm text-gray-400">List all indexes for a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "indexes": [
+                       { "name": "primary", "type": "primary", "fields": ["_key"], "...": "..." },
+                       { "name": "idx_email", "type": "persistent", "...": "..." }
+                     ]
+                   }
+                 </div>
+               </div>
+            </div>
+
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/index/:collection/rebuild</code>
+              </div>
+               <p class="text-sm text-gray-400">Rebuild all indexes for a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "database": "my_db",
+                     "collection": "users",
+                     "documents_indexed": 1250,
+                     "status": "rebuilt"
+                   }
+                 </div>
+               </div>
+            </div>
+
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/index/:collection/:name</code>
+              </div>
+               <p class="text-sm text-gray-400">Drop an index.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">204 No Content</span>
+                   </div>
+                 </div>
+               </div>
+            </div>
+
+             <!-- Geo Indexes -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/geo/:collection</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a geo-spatial index.</p>
+              <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">name</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Index name.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">field</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Field to index (must contain [lat, lon] array or object).</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "name": "geo_location_idx",
+                     "field": "location",
+                     "type": "geo",
+                     "status": "created"
+                   }
+                 </div>
+               </div>
+            </div>
+              <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/geo/:collection/:field/near</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Find documents near a coordinate.</p>
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">lat</td>
+                         <td class="p-3 font-mono">float</td>
+                         <td class="p-3">Latitude.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">lon</td>
+                         <td class="p-3 font-mono">float</td>
+                         <td class="p-3">Longitude.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">limit</td>
+                         <td class="p-3 font-mono">integer</td>
+                         <td class="p-3">Max results. Default: 10.</td>
+                         <td class="p-3">No</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "results": [
+                       { "document": { "_key": "...", "location": [34.05, -118.25] }, "distance": 123.45 },
+                       { "document": { "_key": "...", "location": [34.06, -118.26] }, "distance": 234.56 }
+                     ],
+                     "count": 2
+                   }
+                 </div>
+               </div>
+            </div>
+               <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/geo/:collection/:field/within</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Find documents within a radius.</p>
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">lat</td>
+                         <td class="p-3 font-mono">float</td>
+                         <td class="p-3">Latitude.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">lon</td>
+                         <td class="p-3 font-mono">float</td>
+                         <td class="p-3">Longitude.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">radius</td>
+                         <td class="p-3 font-mono">float</td>
+                         <td class="p-3">Radius in meters (approx).</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "results": [
+                       { "_key": "...", "location": [34.05, -118.25] },
+                       { "_key": "...", "location": [34.06, -118.26] }
+                     ],
+                     "count": 2
+                   }
+                 </div>
+               </div>
+            </div>
+
+            <!-- GET - List Geo Indexes -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/geo/:collection</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">List all geo indexes on a collection.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "indexes": [{ "name": "location_idx", "field": "location" }] }
+                </div>
+              </div>
+            </div>
+
+            <!-- DELETE - Delete Geo Index -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/geo/:collection/:name</code>
+              </div>
+              <p class="text-sm text-gray-400">Delete a geo index by name.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TTL Indexes Section -->
+      <section id="ttl-indexes" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+               TTL Indexes (Time-To-Live)
+            </h2>
+            <p class="text-gray-400 mt-2 text-sm">Automatically delete documents after a specified time period. Useful for session data, caches, and temporary records.</p>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- POST - Create TTL Index -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/ttl/:collection</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a TTL index on a timestamp field.</p>
+
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">name</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Index name.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">field</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Field containing Unix timestamp (seconds since epoch).</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">expire_after_seconds</td>
+                         <td class="p-3 font-mono">integer</td>
+                         <td class="p-3">Seconds after the timestamp value when documents expire. Use 0 to expire at the exact timestamp.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+
+               <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                {"name": "session_expiry", "field": "expires_at", "expire_after_seconds": 3600}
+              </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "name": "session_expiry",
+                     "field": "expires_at",
+                     "expire_after_seconds": 3600,
+                     "type": "ttl",
+                     "status": "created"
+                   }
+                 </div>
+               </div>
+            </div>
+
+            <!-- GET - List TTL Indexes -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/ttl/:collection</code>
+              </div>
+               <p class="text-sm text-gray-400">List all TTL indexes on a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "indexes": [
+                       {"name": "session_expiry", "field": "expires_at", "expire_after_seconds": 3600},
+                       {"name": "cache_ttl", "field": "created_at", "expire_after_seconds": 86400}
+                     ]
+                   }
+                 </div>
+               </div>
+            </div>
+
+            <!-- DELETE - Drop TTL Index -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/ttl/:collection/:name</code>
+              </div>
+               <p class="text-sm text-gray-400">Drop a TTL index. Documents will no longer be automatically deleted.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">204 No Content</span>
+                   </div>
+                 </div>
+               </div>
+            </div>
+
+            <!-- Usage Notes -->
+            <div class="p-6 bg-amber-500/5 border-t border-amber-500/20">
+              <h4 class="text-sm font-bold text-amber-400 mb-3 flex items-center">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                How TTL Indexes Work
+              </h4>
+              <ul class="text-xs text-gray-400 space-y-2">
+                <li>The timestamp field must contain a <strong class="text-gray-300">Unix timestamp</strong> (seconds since epoch)</li>
+                <li>Documents are deleted when: <code class="bg-gray-800 px-1 rounded text-amber-300">now >= timestamp + expire_after_seconds</code></li>
+                <li>A background worker checks for expired documents every <strong class="text-gray-300">60 seconds</strong></li>
+                <li>Documents without the timestamp field are <strong class="text-gray-300">not deleted</strong></li>
+                <li>Use <code class="bg-gray-800 px-1 rounded">expire_after_seconds: 0</code> to delete at the exact timestamp</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/api-queries" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Queries
+          </span>
+        </a>
+        <a href="/docs/api-scripting" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Scripting
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

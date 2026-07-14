@@ -1,0 +1,1190 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs/clients" class="inline-flex items-center text-green-400 hover:text-green-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Clients Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header Section -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg blur opacity-25"></div>
+      <div class="relative flex items-center">
+        <div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-green-500 text-white shadow-[0_0_30px_rgba(34,197,94,0.5)] mr-6">
+          <i class="fab fa-node-js text-4xl"></i>
+        </div>
+        <div>
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-green-400 via-emerald-400 to-teal-400 mb-2 tracking-tight">
+            Node.js / Bun Client
+          </h1>
+          <div class="flex items-center gap-4">
+            <span class="px-3 py-1 bg-green-500/10 text-green-400 text-xs font-bold uppercase tracking-wider rounded-full border border-green-500/20">Official SDK</span>
+            <span class="text-sm text-gray-400">v0.1.0</span>
+            <span class="text-sm text-gray-500">TypeScript / JavaScript</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <nav class="bg-gray-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6">
+      <h2 class="text-lg font-bold text-white mb-4">Table of Contents</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <h3 class="text-green-400 font-semibold mb-2">Getting Started</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#installation" class="hover:text-white transition-colors">Installation</a></li>
+            <li><a href="#quickstart" class="hover:text-white transition-colors">Quick Start</a></li>
+            <li><a href="#connection" class="hover:text-white transition-colors">Connection</a></li>
+            <li><a href="#authentication" class="hover:text-white transition-colors">Authentication</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-green-400 font-semibold mb-2">Core Operations</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#databases" class="hover:text-white transition-colors">Databases</a></li>
+            <li><a href="#collections" class="hover:text-white transition-colors">Collections</a></li>
+            <li><a href="#documents" class="hover:text-white transition-colors">Documents</a></li>
+            <li><a href="#queries" class="hover:text-white transition-colors">Queries</a></li>
+            <li><a href="#transactions" class="hover:text-white transition-colors">Transactions</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-green-400 font-semibold mb-2">Management APIs</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#scripts" class="hover:text-white transition-colors">Scripts</a></li>
+            <li><a href="#jobs" class="hover:text-white transition-colors">Jobs & Cron</a></li>
+            <li><a href="#triggers" class="hover:text-white transition-colors">Triggers</a></li>
+            <li><a href="#rbac" class="hover:text-white transition-colors">Roles & Users</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-green-400 font-semibold mb-2">Advanced Features</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#vector" class="hover:text-white transition-colors">Vector Search</a></li>
+            <li><a href="#geo" class="hover:text-white transition-colors">Geospatial</a></li>
+            <li><a href="#ttl" class="hover:text-white transition-colors">TTL Indexes</a></li>
+            <li><a href="#columnar" class="hover:text-white transition-colors">Columnar Storage</a></li>
+            <li><a href="#cluster" class="hover:text-white transition-colors">Cluster</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- GETTING STARTED -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-green-500/20 text-green-400 mr-4">
+          <i class="fas fa-rocket text-lg"></i>
+        </span>
+        Getting Started
+      </h2>
+
+      <!-- Installation -->
+      <section id="installation" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Installation</h3>
+        <div class="grid md:grid-cols-3 gap-4">
+          <div>
+            <p class="text-gray-400 text-sm mb-2">npm</p>
+            <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+              <pre class="text-green-400">npm install solidb-client</pre>
+            </div>
+          </div>
+          <div>
+            <p class="text-gray-400 text-sm mb-2">yarn</p>
+            <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+              <pre class="text-green-400">yarn add solidb-client</pre>
+            </div>
+          </div>
+          <div>
+            <p class="text-gray-400 text-sm mb-2">Bun</p>
+            <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+              <pre class="text-green-400">bun add solidb-client</pre>
+            </div>
+          </div>
+        </div>
+        <div class="mt-4 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+          <div class="flex items-start">
+            <i class="fas fa-info-circle text-amber-400 mt-0.5 mr-3"></i>
+            <p class="text-sm text-amber-200">
+              <strong>Requirements:</strong> Node.js 18+ or Bun 1.0+. The client uses the <code class="bg-gray-800 px-1 rounded">@msgpack/msgpack</code> package for binary serialization over TCP.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Start -->
+      <section id="quickstart" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Quick Start</h3>
+        <div class="bg-gray-950 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-green-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <pre class="relative z-10"><code class="language-typescript">import { Client } from 'solidb-client';
+
+// Create client instance
+const client = new Client('127.0.0.1', 6745);
+
+// Establish connection
+await client.connect();
+
+// Authenticate
+await client.auth('_system', 'admin', 'password');
+
+// Set database context (required for sub-clients)
+client.useDatabase('mydb');
+
+// Basic CRUD operations
+const doc = await client.insert('mydb', 'users', { name: 'Alice', age: 30 });
+console.log('Created:', doc._key);
+
+const user = await client.get('mydb', 'users', doc._key);
+console.log('Retrieved:', user.name);
+
+await client.update('mydb', 'users', doc._key, { age: 31 });
+
+// Query with SDBQL
+const results = await client.query('mydb', 'FOR u IN users FILTER u.age > @min RETURN u', { min: 25 });
+console.log('Found', results.length, 'users');
+
+// Use management sub-clients
+const scripts = await client.scripts.list();
+const triggers = await client.triggers.list();
+
+// Clean up
+client.close();</code></pre>
+        </div>
+      </section>
+
+      <!-- Connection -->
+      <section id="connection" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Connection Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">import { Client } from 'solidb-client';
+
+// Initialize with host and port
+const client = new Client('127.0.0.1', 6745);
+
+// Connect (establishes TCP socket)
+await client.connect();
+
+// Check connection latency (returns ms)
+const latency = await client.ping();
+console.log(`Latency: ${latency.toFixed(2)}ms`);
+
+// Close connection when done
+client.close();</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-green-400">new Client(host, port)</code></td><td class="px-4 py-3 text-gray-500">Client</td><td class="px-4 py-3 text-gray-400">Create client instance</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-green-400">connect()</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Establish TCP connection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-green-400">ping()</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;number&gt;</td><td class="px-4 py-3 text-gray-400">Latency in milliseconds</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-green-400">close()</code></td><td class="px-4 py-3 text-gray-500">void</td><td class="px-4 py-3 text-gray-400">Close connection</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-green-400">useDatabase(name)</code></td><td class="px-4 py-3 text-gray-500">this</td><td class="px-4 py-3 text-gray-400">Set database context for sub-clients</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Authentication -->
+      <section id="authentication" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Authentication</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-typescript">// Authenticate with database, username, and password
+await client.auth('_system', 'admin', 'password');
+
+// Authentication is required for most operations
+// The session remains authenticated until disconnected
+
+// Get authentication token for HTTP requests (if needed)
+const token = client.getToken();</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- CORE OPERATIONS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 mr-4">
+          <i class="fas fa-database text-lg"></i>
+        </span>
+        Core Operations
+      </h2>
+
+      <!-- Databases -->
+      <section id="databases" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Database Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">// List all databases
+const databases = await client.listDatabases();
+// => ['_system', 'mydb', 'testdb']
+
+// Create a new database
+await client.createDatabase('analytics');
+
+// Delete a database
+await client.deleteDatabase('old_db');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">listDatabases()</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;string[]&gt;</td><td class="px-4 py-3 text-gray-400">List all database names</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">createDatabase(name)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Create new database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">deleteDatabase(name)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Delete database</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Collections -->
+      <section id="collections" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Collection Operations</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">// List collections in a database
+const collections = await client.listCollections('mydb');
+// => [{name: 'users', type: 'document'}, ...]
+
+// Create a document collection
+await client.createCollection('mydb', 'products');
+
+// Create an edge collection (for graphs)
+await client.createCollection('mydb', 'relationships', 'edge');
+
+// Get collection statistics
+const stats = await client.collectionStats('mydb', 'users');
+// => {count: 1523, size: 245760, ...}
+
+// Delete a collection
+await client.deleteCollection('mydb', 'old_collection');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">listCollections(db)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;Collection[]&gt;</td><td class="px-4 py-3 text-gray-400">List collections in database</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">createCollection(db, name, type?)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Create collection (type: document/edge)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">collectionStats(db, name)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;Stats&gt;</td><td class="px-4 py-3 text-gray-400">Get collection statistics</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">deleteCollection(db, name)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Delete collection</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section id="documents" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Document Operations (CRUD)</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">// INSERT - Create a new document
+const doc = await client.insert('mydb', 'users', {
+  name: 'Alice',
+  email: 'alice@example.com',
+  age: 30
+});
+console.log(doc._key);  // Auto-generated key
+
+// INSERT with custom key
+const doc2 = await client.insert('mydb', 'users', { name: 'Bob' }, 'custom-key-123');
+
+// GET - Retrieve a document by key
+const user = await client.get('mydb', 'users', 'custom-key-123');
+// => {_key: 'custom-key-123', name: 'Bob', ...}
+
+// UPDATE - Modify a document (merge by default)
+await client.update('mydb', 'users', 'custom-key-123', { age: 25 });
+
+// UPDATE - Replace entire document (merge: false)
+await client.update('mydb', 'users', 'custom-key-123', { name: 'Robert' }, false);
+
+// DELETE - Remove a document
+await client.delete('mydb', 'users', 'custom-key-123');
+
+// LIST - Paginated document listing
+const docs = await client.list('mydb', 'users', 50, 0);  // limit: 50, offset: 0</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">insert(db, col, doc, key?)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;Document&gt;</td><td class="px-4 py-3 text-gray-400">Insert document, returns doc with _key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">get(db, col, key)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;Document&gt;</td><td class="px-4 py-3 text-gray-400">Get document by key</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">update(db, col, key, doc, merge?)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Update document (merge or replace)</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">delete(db, col, key)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Delete document</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">list(db, col, limit?, offset?)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;Document[]&gt;</td><td class="px-4 py-3 text-gray-400">List documents with pagination</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Queries -->
+      <section id="queries" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">SDBQL Queries</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">// Simple query
+const users = await client.query('mydb', 'FOR u IN users RETURN u');
+
+// Query with bind variables (recommended for security)
+const results = await client.query('mydb', `
+  FOR u IN users
+  FILTER u.age >= @minAge AND u.status == @status
+  SORT u.createdAt DESC
+  LIMIT @limit
+  RETURN { name: u.name, email: u.email }
+`, {
+  minAge: 18,
+  status: 'active',
+  limit: 100
+});
+
+// Aggregation query
+const stats = await client.query('mydb', `
+  FOR u IN users
+  COLLECT status = u.status WITH COUNT INTO count
+  RETURN { status, count }
+`);
+
+// Join query
+const orders = await client.query('mydb', `
+  FOR o IN orders
+  FOR u IN users FILTER u._key == o.userId
+  RETURN { order: o, user: u.name }
+`);
+
+// Explain query plan (for optimization)
+const plan = await client.explain('mydb', 'FOR u IN users FILTER u.age > 25 RETURN u');</code></pre>
+        </div>
+      </section>
+
+      <!-- Transactions -->
+      <section id="transactions" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">ACID Transactions</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">// Begin a transaction
+const txId = await client.beginTransaction('mydb', 'read_committed');
+// Isolation levels: read_uncommitted, read_committed, repeatable_read, serializable
+
+try {
+  // Perform operations within transaction
+  await client.insert('mydb', 'accounts', { id: 1, balance: 1000 });
+  await client.insert('mydb', 'accounts', { id: 2, balance: 500 });
+
+  // Commit if all operations succeed
+  await client.commitTransaction(txId);
+  console.log('Transaction committed');
+} catch (error) {
+  // Rollback on any error
+  await client.rollbackTransaction(txId);
+  console.log('Transaction rolled back:', error.message);
+}</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-blue-400">beginTransaction(db, isolation?)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;string&gt;</td><td class="px-4 py-3 text-gray-400">Start transaction, returns txId</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">commitTransaction(txId)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Commit transaction</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">rollbackTransaction(txId)</code></td><td class="px-4 py-3 text-gray-500">Promise&lt;void&gt;</td><td class="px-4 py-3 text-gray-400">Rollback transaction</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Indexes -->
+      <section id="indexes" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Index Management</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">// Create an index
+await client.createIndex('mydb', 'users', 'idx_email', ['email'], true, false);
+//                       db      col       name       fields   unique  sparse
+
+// List indexes on a collection
+const indexes = await client.listIndexes('mydb', 'users');
+
+// Delete an index
+await client.deleteIndex('mydb', 'users', 'idx_email');</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MANAGEMENT SUB-CLIENTS -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-4 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 mr-4">
+          <i class="fas fa-cubes text-lg"></i>
+        </span>
+        Management Sub-Clients
+      </h2>
+      <p class="text-gray-400 mb-8">
+        Sub-clients provide namespaced access to management APIs.
+        <strong class="text-white">Important:</strong> Call <code class="text-green-400">useDatabase(name)</code> first to set the database context.
+      </p>
+
+      <!-- Scripts -->
+      <section id="scripts" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 mr-3">
+            <i class="fas fa-scroll text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.scripts</h3>
+          <span class="ml-3 px-2 py-1 bg-purple-500/10 text-purple-400 text-xs rounded">Lua Script Endpoints</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">client.useDatabase('mydb');
+
+// Create a Lua script endpoint
+const script = await client.scripts.create({
+  name: 'hello',
+  path: '/api/hello',
+  methods: ['GET', 'POST'],
+  code: 'return { message = "Hello, " .. (req.params.name or "World") }',
+  description: 'Greeting endpoint',   // optional
+  collection: 'users'                 // optional: restrict to collection
+});
+console.log('Created script:', script._key);
+
+// List all scripts
+const scripts = await client.scripts.list();
+scripts.forEach(s => console.log(`${s.name} -> ${s.path}`));
+
+// Get a specific script
+const script = await client.scripts.get('script_key');
+
+// Update script code
+await client.scripts.update('script_key', {
+  code: 'return { message = "Updated!" }',
+  methods: ['GET']
+});
+
+// Delete a script
+await client.scripts.delete('script_key');
+
+// Get execution statistics
+const stats = await client.scripts.getStats();
+console.log('Total calls:', stats.totalCalls);</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Parameters</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-purple-400">create(options)</code></td><td class="px-4 py-3 text-gray-500">name, path, methods, code, description?, collection?</td><td class="px-4 py-3 text-gray-400">Create Lua endpoint</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">list()</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">List all scripts</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">get(scriptId)</code></td><td class="px-4 py-3 text-gray-500">scriptId</td><td class="px-4 py-3 text-gray-400">Get script details</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">update(scriptId, updates)</code></td><td class="px-4 py-3 text-gray-500">scriptId, object</td><td class="px-4 py-3 text-gray-400">Update script properties</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">delete(scriptId)</code></td><td class="px-4 py-3 text-gray-500">scriptId</td><td class="px-4 py-3 text-gray-400">Delete script</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-purple-400">getStats()</code></td><td class="px-4 py-3 text-gray-500">-</td><td class="px-4 py-3 text-gray-400">Execution statistics</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Jobs & Cron -->
+      <section id="jobs" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 mr-3">
+            <i class="fas fa-tasks text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.jobs & client.cron</h3>
+          <span class="ml-3 px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded">Background Processing</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">client.useDatabase('mydb');
+
+// === JOBS ===
+
+// List all queues
+const queues = await client.jobs.listQueues();
+// => [{name: 'default', pending: 5, running: 2}, ...]
+
+// List jobs in a queue with filters
+const jobs = await client.jobs.listJobs('default', {
+  status: 'pending',  // pending, running, completed, failed
+  limit: 50,
+  offset: 0
+});
+
+// Enqueue a new job
+const job = await client.jobs.enqueue('default', {
+  scriptPath: '/scripts/process-order',
+  params: { orderId: 12345 },
+  priority: 10,       // optional: higher = more urgent
+  runAt: null         // optional: ISO8601 datetime for delayed execution
+});
+console.log('Job ID:', job._key);
+
+// Get job details
+const jobDetails = await client.jobs.get('job_id');
+console.log('Status:', jobDetails.status);
+
+// Cancel a pending job
+await client.jobs.cancel('job_id');
+
+// === CRON ===
+
+// List scheduled jobs
+const crons = await client.cron.list();
+
+// Create a cron job
+const cron = await client.cron.create({
+  name: 'daily-cleanup',
+  schedule: '0 2 * * *',              // Every day at 2 AM
+  scriptPath: '/scripts/cleanup',
+  params: { daysOld: 30 },            // optional
+  enabled: true,                      // optional
+  description: 'Remove old records'   // optional
+});
+
+// Get cron job details
+const cronDetails = await client.cron.get('cron_id');
+
+// Update cron schedule
+await client.cron.update('cron_id', { schedule: '0 3 * * *' });
+
+// Toggle cron job on/off
+await client.cron.toggle('cron_id', false);  // disable
+await client.cron.toggle('cron_id', true);   // enable
+
+// Delete cron job
+await client.cron.delete('cron_id');</code></pre>
+        </div>
+      </section>
+
+      <!-- Triggers -->
+      <section id="triggers" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 mr-3">
+            <i class="fas fa-bolt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.triggers</h3>
+          <span class="ml-3 px-2 py-1 bg-orange-500/10 text-orange-400 text-xs rounded">Database Triggers</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">client.useDatabase('mydb');
+
+// List all triggers
+const triggers = await client.triggers.list();
+
+// List triggers for a specific collection
+const userTriggers = await client.triggers.listByCollection('users');
+
+// Create a trigger
+const trigger = await client.triggers.create({
+  name: 'on_user_created',
+  collection: 'users',
+  event: 'insert',                    // insert, update, delete
+  timing: 'after',                    // before, after
+  scriptPath: '/scripts/on-user-create',
+  enabled: true                       // optional
+});
+
+// Get trigger details
+const triggerDetails = await client.triggers.get('trigger_id');
+
+// Update trigger
+await client.triggers.update('trigger_id', {
+  scriptPath: '/scripts/new-handler',
+  enabled: false
+});
+
+// Toggle trigger on/off
+await client.triggers.toggle('trigger_id', true);   // enable
+await client.triggers.toggle('trigger_id', false);  // disable
+
+// Delete trigger
+await client.triggers.delete('trigger_id');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Event</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Timing</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-orange-400">insert</code></td><td class="px-4 py-3 text-gray-500">before / after</td><td class="px-4 py-3 text-gray-400">Fires on document creation</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-orange-400">update</code></td><td class="px-4 py-3 text-gray-500">before / after</td><td class="px-4 py-3 text-gray-400">Fires on document modification</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-orange-400">delete</code></td><td class="px-4 py-3 text-gray-500">before / after</td><td class="px-4 py-3 text-gray-400">Fires on document removal</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- RBAC: Roles & Users -->
+      <section id="rbac" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/20 text-red-400 mr-3">
+            <i class="fas fa-user-shield text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.roles & client.users</h3>
+          <span class="ml-3 px-2 py-1 bg-red-500/10 text-red-400 text-xs rounded">Role-Based Access Control</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">// === ROLES ===
+
+// List all roles
+const roles = await client.roles.list();
+
+// Create a role with permissions
+const role = await client.roles.create({
+  name: 'editor',
+  permissions: [
+    { action: 'read', scope: 'database', database: 'mydb' },
+    { action: 'write', scope: 'collection', database: 'mydb', collection: 'articles' },
+    { action: 'execute', scope: 'script', database: 'mydb' }
+  ],
+  description: 'Content editor role'
+});
+
+// Get role details
+const roleDetails = await client.roles.get('editor');
+
+// Update role permissions
+await client.roles.update('editor', {
+  permissions: [
+    { action: 'read', scope: 'database', database: 'mydb' },
+    { action: 'write', scope: 'database', database: 'mydb' }
+  ]
+});
+
+// Delete role
+await client.roles.delete('editor');
+
+// === USERS ===
+
+// List all users
+const users = await client.users.list();
+
+// Create a user
+const user = await client.users.create({
+  username: 'john',
+  password: 'secure_password',
+  roles: ['editor', 'viewer']  // optional
+});
+
+// Get user details
+const userDetails = await client.users.get('john');
+
+// Get user's assigned roles
+const userRoles = await client.users.getRoles('john');
+
+// Assign a role to user
+await client.users.assignRole('john', 'admin', { database: 'mydb' });
+
+// Revoke a role from user
+await client.users.revokeRole('john', 'admin', { database: 'mydb' });
+
+// Get current authenticated user
+const me = await client.users.me();
+
+// Get current user's permissions
+const permissions = await client.users.myPermissions();
+
+// Change password
+await client.users.changePassword('john', 'old_password', 'new_password');
+
+// Delete user
+await client.users.delete('john');</code></pre>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Action</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Scopes</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-red-400">read</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Read documents and query</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">write</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Create, update, delete documents</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">admin</code></td><td class="px-4 py-3 text-gray-500">database, collection</td><td class="px-4 py-3 text-gray-400">Manage indexes, schema, etc.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-red-400">execute</code></td><td class="px-4 py-3 text-gray-500">script</td><td class="px-4 py-3 text-gray-400">Execute Lua scripts</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ADVANCED FEATURES -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-pink-500/20 text-pink-400 mr-4">
+          <i class="fas fa-brain text-lg"></i>
+        </span>
+        Advanced Features
+      </h2>
+
+      <!-- Vector Search -->
+      <section id="vector" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-pink-500/20 text-pink-400 mr-3">
+            <i class="fas fa-brain text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.vector</h3>
+          <span class="ml-3 px-2 py-1 bg-pink-500/10 text-pink-400 text-xs rounded">Vector Search & AI</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">client.useDatabase('mydb');
+
+// Create a vector index
+const index = await client.vector.createIndex('products', {
+  name: 'product_embeddings',
+  field: 'embedding',
+  dimensions: 1536,
+  metric: 'cosine'  // cosine, euclidean, dot_product
+});
+
+// Search by vector (semantic search)
+const embedding = await getEmbedding("wireless headphones");  // Your embedding function
+const results = await client.vector.search('products', {
+  vector: embedding,
+  limit: 10,
+  filter: 'doc.category == "electronics"'  // optional SDBQL filter
+});
+
+results.forEach(result => {
+  console.log(`${result.doc.name} - Score: ${result.score}`);
+});
+
+// Search by existing document (find similar)
+const similar = await client.vector.searchByDocument('products', {
+  docKey: 'product-123',
+  field: 'embedding',
+  limit: 5
+});
+
+// Quantize index (reduce memory usage)
+await client.vector.quantize('products', 'product_embeddings', 'binary');
+
+// Dequantize (restore full precision)
+await client.vector.dequantize('products', 'product_embeddings');
+
+// Get index info
+const info = await client.vector.getIndexInfo('products', 'product_embeddings');
+
+// List vector indexes
+const indexes = await client.vector.listIndexes('products');
+
+// Delete index
+await client.vector.deleteIndex('products', 'product_embeddings');</code></pre>
+        </div>
+      </section>
+
+      <!-- Geo -->
+      <section id="geo" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 mr-3">
+            <i class="fas fa-map-marker-alt text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.geo</h3>
+          <span class="ml-3 px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded">Geospatial Queries</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">client.useDatabase('mydb');
+
+// Create a geo index
+await client.geo.createIndex('stores', {
+  name: 'location_idx',
+  fields: ['location'],     // Field containing [lat, lon] or GeoJSON
+  geoJson: true             // optional: true if using GeoJSON format
+});
+
+// Find nearby locations (radius search)
+const nearby = await client.geo.near('stores', {
+  latitude: 48.8566,
+  longitude: 2.3522,
+  radius: 5000,      // meters
+  limit: 20          // optional
+});
+
+nearby.forEach(result => {
+  console.log(`${result.doc.name} - ${result.distance}m away`);
+});
+
+// Find within polygon
+const polygon = {
+  type: 'Polygon',
+  coordinates: [[[2.3, 48.8], [2.4, 48.8], [2.4, 48.9], [2.3, 48.9], [2.3, 48.8]]]
+};
+const within = await client.geo.within('stores', { geometry: polygon });
+
+// Find intersecting geometries
+const intersects = await client.geo.intersects('zones', { geometry: polygon });
+
+// Calculate distance between two points
+const distance = await client.geo.distance({
+  lat1: 48.8566, lon1: 2.3522,
+  lat2: 51.5074, lon2: -0.1278
+});
+console.log(`Paris to London: ${distance / 1000}km`);
+
+// List geo indexes
+const indexes = await client.geo.listIndexes('stores');
+
+// Delete index
+await client.geo.deleteIndex('stores', 'location_idx');</code></pre>
+        </div>
+      </section>
+
+      <!-- TTL -->
+      <section id="ttl" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 mr-3">
+            <i class="fas fa-hourglass-half text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.ttl</h3>
+          <span class="ml-3 px-2 py-1 bg-rose-500/10 text-rose-400 text-xs rounded">Time-To-Live Indexes</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">client.useDatabase('mydb');
+
+// Create TTL index (auto-expire documents)
+await client.ttl.createIndex('sessions', {
+  name: 'session_ttl',
+  field: 'createdAt',             // DateTime field to check
+  expireAfterSeconds: 3600        // Expire after 1 hour
+});
+
+// Update expiration time
+await client.ttl.updateExpiration('sessions', 'session_ttl', 7200);  // 2 hours
+
+// Get index info
+const info = await client.ttl.getIndexInfo('sessions', 'session_ttl');
+console.log('Expires after:', info.expireAfterSeconds, 's');
+
+// Manually trigger cleanup (normally runs automatically)
+const result = await client.ttl.runCleanup('sessions');
+console.log('Deleted', result.deleted, 'expired documents');
+
+// List TTL indexes
+const indexes = await client.ttl.listIndexes('sessions');
+
+// Delete TTL index
+await client.ttl.deleteIndex('sessions', 'session_ttl');</code></pre>
+        </div>
+      </section>
+
+      <!-- Columnar -->
+      <section id="columnar" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-violet-500/20 text-violet-400 mr-3">
+            <i class="fas fa-chart-bar text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.columnar</h3>
+          <span class="ml-3 px-2 py-1 bg-violet-500/10 text-violet-400 text-xs rounded">Columnar/Analytics Storage</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">client.useDatabase('mydb');
+
+// Create a columnar table (optimized for analytics)
+const table = await client.columnar.create('metrics', [
+  { name: 'timestamp', type: 'datetime' },
+  { name: 'metricName', type: 'string' },
+  { name: 'value', type: 'float' },
+  { name: 'tags', type: 'string' }
+]);
+
+// Insert rows (batch insert is efficient)
+await client.columnar.insert('metrics', [
+  { timestamp: '2024-01-15T10:00:00Z', metricName: 'cpu_usage', value: 45.2, tags: 'server1' },
+  { timestamp: '2024-01-15T10:01:00Z', metricName: 'cpu_usage', value: 47.8, tags: 'server1' },
+  { timestamp: '2024-01-15T10:00:00Z', metricName: 'memory', value: 72.1, tags: 'server1' }
+]);
+
+// Query with SQL-like syntax
+const results = await client.columnar.query('metrics',
+  'SELECT * FROM metrics WHERE value > @min ORDER BY timestamp DESC LIMIT 100',
+  { params: { min: 40.0 } }
+);
+
+// Aggregation
+const agg = await client.columnar.aggregate('metrics', {
+  groupBy: ['metricName', 'tags'],
+  metrics: [
+    { column: 'value', function: 'avg' },
+    { column: 'value', function: 'max' },
+    { column: 'value', function: 'min' },
+    { column: 'value', function: 'count' }
+  ],
+  filters: { metricName: 'cpu_usage' }  // optional
+});
+
+// Get table statistics
+const stats = await client.columnar.stats('metrics');
+console.log('Row count:', stats.rowCount, 'Size:', stats.sizeBytes);
+
+// Add a column
+await client.columnar.addColumn('metrics', {
+  columnName: 'host',
+  columnType: 'string',
+  defaultValue: 'unknown'  // optional
+});
+
+// Drop a column
+await client.columnar.dropColumn('metrics', 'host');
+
+// Create index on columnar table
+await client.columnar.createIndex('metrics', {
+  indexName: 'idx_timestamp',
+  column: 'timestamp',
+  indexType: 'btree'  // optional
+});
+
+// List indexes
+const indexes = await client.columnar.listIndexes('metrics');
+
+// Delete index
+await client.columnar.deleteIndex('metrics', 'idx_timestamp');
+
+// List all columnar tables
+const tables = await client.columnar.list();
+
+// Get table info
+const tableInfo = await client.columnar.get('metrics');
+
+// Delete table
+await client.columnar.delete('metrics');</code></pre>
+        </div>
+      </section>
+
+      <!-- Cluster -->
+      <section id="cluster" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 mr-3">
+            <i class="fas fa-network-wired text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.cluster</h3>
+          <span class="ml-3 px-2 py-1 bg-indigo-500/10 text-indigo-400 text-xs rounded">Cluster Management</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">// Get cluster status
+const status = await client.cluster.status();
+console.log('Mode:', status.mode);  // standalone, cluster
+console.log('Nodes:', status.nodeCount);
+
+// Get detailed cluster info
+const info = await client.cluster.info();
+
+// Get all nodes
+const nodes = await client.cluster.getNodes();
+nodes.forEach(node => {
+  console.log(`${node.id}: ${node.address} (${node.status})`);
+});
+
+// Get shard distribution
+const shards = await client.cluster.getShards();
+
+// Remove a node from cluster
+await client.cluster.removeNode('node-id-to-remove');
+
+// Trigger data rebalancing
+await client.cluster.rebalance();
+
+// Cleanup orphaned data
+await client.cluster.cleanup();
+
+// Reshard cluster
+await client.cluster.reshard(16);  // new number of shards</code></pre>
+        </div>
+      </section>
+
+      <!-- Collection Operations -->
+      <section id="collection-ops" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 mr-3">
+            <i class="fas fa-database text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.collectionsOps</h3>
+          <span class="ml-3 px-2 py-1 bg-sky-500/10 text-sky-400 text-xs rounded">Advanced Collection Operations</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-typescript">client.useDatabase('mydb');
+
+// Truncate collection (delete all documents)
+await client.collectionsOps.truncate('logs');
+
+// Compact collection (reclaim disk space)
+await client.collectionsOps.compact('users');
+
+// Repair collection (fix inconsistencies)
+await client.collectionsOps.repair('orders');
+
+// Get collection statistics
+const stats = await client.collectionsOps.stats('users');
+
+// Prune old documents
+await client.collectionsOps.prune('logs', {
+  olderThan: '2024-01-01T00:00:00Z',
+  field: 'createdAt'
+});
+
+// Recount documents
+await client.collectionsOps.recount('users');
+
+// Set JSON schema validation
+await client.collectionsOps.setSchema('users', {
+  type: 'object',
+  required: ['name', 'email'],
+  properties: {
+    name: { type: 'string', minLength: 1 },
+    email: { type: 'string', format: 'email' },
+    age: { type: 'integer', minimum: 0 }
+  }
+});
+
+// Get current schema
+const schema = await client.collectionsOps.getSchema('users');
+
+// Remove schema validation
+await client.collectionsOps.deleteSchema('users');
+
+// Export collection
+const data = await client.collectionsOps.export('users', 'json');  // json, csv, msgpack
+
+// Import data
+await client.collectionsOps.import('users_backup', data, 'json');
+
+// Get sharding configuration
+const sharding = await client.collectionsOps.getSharding('orders');
+
+// Configure sharding
+await client.collectionsOps.setSharding('orders', {
+  numShards: 8,
+  shardKey: 'userId'
+});</code></pre>
+        </div>
+      </section>
+
+      <!-- Environment Variables -->
+      <section id="env" class="mb-12 scroll-mt-24">
+        <div class="flex items-center mb-4">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-teal-500/20 text-teal-400 mr-3">
+            <i class="fas fa-cog text-sm"></i>
+          </span>
+          <h3 class="text-xl font-bold text-white">client.env</h3>
+          <span class="ml-3 px-2 py-1 bg-teal-500/10 text-teal-400 text-xs rounded">Environment Variables</span>
+        </div>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5">
+          <pre><code class="language-typescript">client.useDatabase('mydb');
+
+// List environment variables (for Lua scripts)
+const vars = await client.env.list();
+
+// Set an environment variable
+await client.env.set('API_KEY', 'sk-xxx-your-api-key');
+await client.env.set('WEBHOOK_URL', 'https://example.com/webhook');
+
+// Delete an environment variable
+await client.env.delete('OLD_VAR');</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ERROR HANDLING -->
+    <!-- ========================================== -->
+    <div class="border-t border-white/10 pt-12">
+      <h2 class="text-3xl font-bold text-white mb-8 flex items-center">
+        <span class="flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 mr-4">
+          <i class="fas fa-exclamation-triangle text-lg"></i>
+        </span>
+        Error Handling
+      </h2>
+
+      <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-6">
+        <pre><code class="language-typescript">import { Client, ConnectionError, ServerError, ProtocolError } from 'solidb-client';
+
+const client = new Client('127.0.0.1', 6745);
+
+try {
+  await client.connect();
+  await client.auth('mydb', 'user', 'password');
+
+  const doc = await client.get('mydb', 'users', 'nonexistent-key');
+
+} catch (error) {
+  if (error instanceof ConnectionError) {
+    // Network/connection issues
+    console.log('Connection failed:', error.message);
+
+  } else if (error instanceof ServerError) {
+    // Server-side errors (not found, validation, etc.)
+    console.log('Server error:', error.message);
+
+  } else if (error instanceof ProtocolError) {
+    // Protocol/serialization errors
+    console.log('Protocol error:', error.message);
+  }
+
+} finally {
+  client.close();
+}</code></pre>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4">
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-red-400 font-semibold mb-2">ConnectionError</h4>
+          <p class="text-sm text-gray-400">Network failures, connection refused, timeouts, disconnections</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-orange-400 font-semibold mb-2">ServerError</h4>
+          <p class="text-sm text-gray-400">Document not found, permission denied, validation errors</p>
+        </div>
+        <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+          <h4 class="text-yellow-400 font-semibold mb-2">ProtocolError</h4>
+          <p class="text-sm text-gray-400">Invalid response format, message too large, serialization issues</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>

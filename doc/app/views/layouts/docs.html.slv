@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+<% description = "The SoliDB documentation — SDBQL, the HTTP API, Lua scripting, graphs, " +
+    "vectors, time-series and clustering, with runnable examples in every official client." %>
+<% share_image = site_url(public_path("images/og-docs.png")) %>
+<% page_url = site_url(current_path() ?? "/docs") %>
+  <meta name="description" content="<%= description %>">
+  <meta name="theme-color" content="#090c0b">
+  <link rel="canonical" href="<%= page_url %>">
+
+  <!-- Social share card — regenerate the image with ./tools/og/build.sh -->
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="SoliDB">
+  <meta property="og:url" content="<%= page_url %>">
+  <meta property="og:title" content="<%= title %>">
+  <meta property="og:description" content="<%= description %>">
+  <meta property="og:image" content="<%= share_image %>">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The SoliDB documentation — the logo beside a terminal running an SDBQL query and printing its JSON result.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="<%= title %>">
+  <meta name="twitter:description" content="<%= description %>">
+  <meta name="twitter:image" content="<%= share_image %>">
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23f5a623'/><text x='16' y='23' font-family='Space Grotesk,Inter,sans-serif' font-size='20' font-weight='700' fill='%231a1205' text-anchor='middle'>S</text></svg>">
+
+  <link rel="stylesheet" href="<%= public_path("css/application.css") %>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Font Awesome (icons used throughout the ported docs) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="soli-body docs-body">
+
+  <!-- top bar — redesigned: brand + centered command-palette trigger + links -->
+  <header class="nav docs-nav">
+    <div class="docs-nav-inner">
+      <div class="docs-nav-left">
+        <label for="docs-nav" class="docs-menu-btn" aria-label="Open navigation">
+          <i class="fas fa-bars"></i>
+        </label>
+        <a class="brand" href="/" aria-label="SoliDB home">
+          <span class="mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <ellipse cx="12" cy="6" rx="7.5" ry="3"></ellipse>
+              <path d="M4.5 6v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V6"></path>
+              <path d="M4.5 12v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"></path>
+            </svg>
+          </span>
+          SoliDB
+          <span class="docs-tag">Docs</span>
+        </a>
+      </div>
+
+      <button type="button" class="docs-omni" onclick="SoliDocsSearch.open()" aria-label="Search the documentation">
+        <i class="fas fa-search oi" aria-hidden="true"></i>
+        <span class="otxt">Search docs &amp; SDBQL methods…</span>
+        <kbd class="docs-kbd">⌘K</kbd>
+      </button>
+
+      <div class="docs-nav-right">
+        <span class="ver-pill">v0.31.0</span>
+        <a class="docs-nav-link" href="/">Home</a>
+        <a class="btn btn-ghost btn-sm" href="https://github.com/solisoft/solidb">
+          <i class="fab fa-github"></i> GitHub
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- mobile drawer toggle (checkbox drives the sidebar via CSS) -->
+  <input type="checkbox" id="docs-nav" class="docs-nav-toggle">
+
+  <div class="docs-shell">
+    <aside class="docs-side">
+      <%- partial("docs/sidebar", { "current_page": current_page }) %>
+    </aside>
+
+    <label for="docs-nav" class="docs-overlay" aria-hidden="true"></label>
+
+    <main class="docs-content">
+      <div class="docs-prose">
+        <%= yield %>
+      </div>
+    </main>
+  </div>
+
+  <!-- search modal -->
+  <div id="docs-search-modal" class="hidden" style="position:fixed; inset:0; z-index:200; display:none; align-items:flex-start; justify-content:center; padding-top:14vh; background:rgba(0,0,0,0.6); backdrop-filter:blur(3px);">
+    <div style="width:100%; max-width:600px; background:var(--ink-850); border:1px solid var(--line-strong); border-radius:14px; overflow:hidden; box-shadow:0 40px 90px -30px rgba(0,0,0,0.9);">
+      <div style="display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line);">
+        <i class="fas fa-search" style="color:var(--amber);"></i>
+        <input type="text" id="docs-search-input" placeholder="Search pages, SDBQL syntax &amp; functions…" autocomplete="off"
+               style="flex:1; background:transparent; border:0; outline:none; color:var(--paper); font-size:14px; font-family:var(--font-sans);">
+        <kbd style="font-family:var(--font-mono); font-size:10px; padding:2px 6px; border:1px solid var(--line); border-radius:4px; color:var(--paper-faint);">ESC</kbd>
+      </div>
+      <div id="docs-search-results" style="max-height:52vh; overflow-y:auto;"></div>
+      <div class="ds-foot">
+        <span><span class="kb">↑</span><span class="kb">↓</span> navigate</span>
+        <span><span class="kb">↵</span> open</span>
+        <span><span class="kb">esc</span> close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- syntax highlighting -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="<%= public_path("js/docs-search.js") %>"></script>
+  <script>
+    // SDBQL grammar for highlight.js (ported from the old docs site)
+    if (window.hljs) {
+      hljs.registerLanguage('sdbql', function(hljs) {
+        return {
+          name: 'SDBQL', case_insensitive: true,
+          keywords: {
+            keyword: 'FOR IN FILTER RETURN SORT LIMIT INSERT UPDATE REMOVE UPSERT WITH INTO LET COLLECT AGGREGATE GRAPH OUTBOUND INBOUND ANY ALL NONE AND OR NOT LIKE DISTINCT ASC DESC NEW OLD MERGE DOCUMENT FIRST LAST LENGTH COUNT SUM AVG MIN MAX CONCAT SUBSTRING CONTAINS STARTS_WITH ENDS_WITH LOWER UPPER TRIM DATE_NOW DATE_FORMAT TO_NUMBER TO_STRING PUSH APPEND UNSHIFT POP SHIFT SLICE REVERSE UNIQUE FLATTEN MINUS INTERSECTION UNION CREATE STREAM WINDOW TUMBLING SLIDING SIZE AS',
+            literal: 'true false null'
+          },
+          contains: [
+            hljs.QUOTE_STRING_MODE, hljs.NUMBER_MODE,
+            hljs.C_LINE_COMMENT_MODE, hljs.C_BLOCK_COMMENT_MODE,
+            { className: 'variable', begin: /doc\.|u\.|o\.|p\.|j\d+\./ },
+            { className: 'built_in', begin: /@[a-zA-Z_][a-zA-Z0-9_]*/ },
+            { className: 'symbol', begin: /\{|\}|\[|\]/ }
+          ]
+        };
+      });
+
+      var ETLUA_OPEN = '<' + '%', ETLUA_CLOSE = '%' + '>';
+      document.querySelectorAll('pre code').forEach(function(block) {
+        var text = block.textContent;
+        var hasLang = block.className && block.className.match(/language-(sql|sdbql|json|bash|javascript|typescript|python|rust|go|xml|lua)/);
+        if (!hasLang) {
+          block.className = (text.indexOf(ETLUA_OPEN) !== -1 || text.indexOf(ETLUA_CLOSE) !== -1) ? 'language-xml' : 'language-lua';
+        }
+        try { hljs.highlightElement(block); } catch (e) {}
+      });
+
+      // copy buttons
+      document.querySelectorAll('.docs-prose pre').forEach(function(pre) {
+        var wrap = document.createElement('div');
+        wrap.className = 'code-wrap';
+        pre.parentNode.insertBefore(wrap, pre);
+        wrap.appendChild(pre);
+        var btn = document.createElement('button');
+        btn.className = 'copy-btn';
+        btn.type = 'button';
+        btn.setAttribute('aria-label', 'Copy code');
+        btn.innerHTML = '<i class="fas fa-copy" style="font-size:12px;"></i>';
+        btn.addEventListener('click', function() {
+          var code = wrap.querySelector('code') || pre;
+          navigator.clipboard.writeText(code.textContent).then(function() {
+            btn.classList.add('copied');
+            btn.innerHTML = '<i class="fas fa-check" style="font-size:12px;"></i>';
+            setTimeout(function() {
+              btn.classList.remove('copied');
+              btn.innerHTML = '<i class="fas fa-copy" style="font-size:12px;"></i>';
+            }, 1800);
+          });
+        });
+        wrap.appendChild(btn);
+      });
+    }
+
+    // scroll the active sidebar item into view
+    (function() {
+      var active = document.querySelector('.docs-side .active');
+      if (active) active.scrollIntoView({ block: 'center' });
+    })();
+  </script>
+</body>
+</html>

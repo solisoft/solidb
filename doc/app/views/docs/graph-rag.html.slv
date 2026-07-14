@@ -1,0 +1,305 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-violet-500 to-fuchsia-600 rounded-lg blur opacity-25"></div>
+      <div class="relative">
+        <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 via-purple-400 to-fuchsia-400 mb-4 tracking-tight">Graph RAG</h1>
+        <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+          Retrieve seed documents by similarity, then expand across your knowledge graph to pull in related context — the classic <strong>retrieve → traverse</strong> pattern, expressible in a single SDBQL query with <code class="text-violet-300">GRAPH_RAG</code> and <code class="text-violet-300">NEIGHBORS</code>.
+          Combine with <strong>auto-embeddings</strong> (set <code>embedding_source</code> on your vector index) so you only ever insert raw text.
+        </p>
+      </div>
+    </div>
+
+    <!-- Overview -->
+    <section id="overview" class="scroll-mt-24">
+      <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-violet-500 text-white mr-4 shadow-[0_0_15px_rgba(139,92,246,0.5)]"><i class="fas fa-diagram-project text-sm"></i></div>
+          <h2 class="text-2xl font-bold text-white">What it does</h2>
+        </div>
+        <p class="text-gray-300 leading-relaxed mb-4">
+          Plain vector search returns the top-K most similar documents but ignores how they relate. <strong>Graph RAG</strong> combines two of SoliDB's primitives:
+        </p>
+        <ol class="list-decimal pl-6 text-gray-300 space-y-2 mb-6">
+          <li><strong>Seed retrieval</strong> — find the most relevant documents by vector (or hybrid) similarity.</li>
+          <li><strong>Graph expansion</strong> — walk the edge collection outward from those seeds, scoring each reached document by how many hops away it is.</li>
+        </ol>
+        <p class="text-gray-300 leading-relaxed mb-4">
+          The result is a context set that is both <em>semantically relevant</em> (the seeds) and <em>structurally connected</em> (their neighbors) — ideal for feeding an LLM richer, linked context than similarity alone provides. Two building blocks make this fast and ergonomic: <a href="#auto-index">automatic edge indexes</a> and the <a href="#neighbors">NEIGHBORS</a> / <a href="#graph-rag">GRAPH_RAG</a> functions.
+        </p>
+        <p class="text-gray-300 leading-relaxed">
+          That covers <strong>local</strong> questions — "what relates to <em>these</em> documents?". For <strong>global</strong> questions — "what themes run through the <em>whole</em> graph?" — SoliDB also detects <a href="#global">communities and summarizes them</a>, which you then query with <code>COMMUNITY_SEARCH</code>.
+        </p>
+      </div>
+    </section>
+
+    <!-- Auto-index (A) -->
+    <section id="auto-index" class="scroll-mt-24">
+      <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500 text-white mr-4"><i class="fas fa-bolt text-sm"></i></div>
+          <h2 class="text-2xl font-bold text-white">Automatic edge indexes</h2>
+        </div>
+        <p class="text-gray-300 leading-relaxed mb-4">
+          Graph traversal and expansion need to find an edge's neighbors quickly. When you create an <strong>edge collection</strong>, SoliDB now automatically builds persistent, non-unique indexes on <code>_from</code> and <code>_to</code>:
+        </p>
+<pre><code class="language-bash">POST /_api/database/mydb/collection   { "name": "links", "type": "edge" }
+# → creates indexes: _edge_from_idx (_from), _edge_to_idx (_to)</code></pre>
+        <p class="text-gray-300 leading-relaxed mt-4 mb-4">
+          Without these, every traversal falls back to a full scan of the edge collection to build an in-memory adjacency map. With them, neighbor lookups are indexed — traversals, <code>NEIGHBORS</code>, and <code>GRAPH_RAG</code> all benefit.
+        </p>
+        <div class="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm text-gray-300">
+          <span class="font-bold text-emerald-300"><i class="fas fa-wand-magic-sparkles mr-1"></i> Restored / mistyped edge collections are covered too.</span>
+          An edge collection that was created as a plain <code>document</code> type (e.g. by a generic import) gets its <code>_from</code>/<code>_to</code> index created <strong>lazily on its first traversal</strong>, so it is indexed from then on. Existing user indexes on those fields are respected and never duplicated.
+        </div>
+      </div>
+    </section>
+
+    <!-- NEIGHBORS (C) -->
+    <section id="neighbors" class="scroll-mt-24">
+      <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-500 text-white mr-4"><i class="fas fa-share-nodes text-sm"></i></div>
+          <h2 class="text-2xl font-bold text-white">NEIGHBORS — expand from known seeds</h2>
+        </div>
+        <p class="text-gray-300 mb-4"><code>NEIGHBORS</code> is the graph-expansion primitive: given seed vertices you already have, it walks the edge collection outward and returns the reached documents scored by hop distance.</p>
+        <div class="bg-gray-950 rounded-lg p-4 mb-6 font-mono text-sm overflow-x-auto border border-white/10">
+          <code class="text-green-400">NEIGHBORS(edge_collection, seeds, options?)</code>
+        </div>
+        <p class="text-gray-300 mb-2"><strong>seeds</strong> — an array of either <code>"collection/key"</code> strings, or objects <code>{ id: "coll/key", score: 0.9 }</code> carrying a per-seed weight (default weight <code>1.0</code>). Bare keys are qualified with <code>options.seed_collection</code> when provided.</p>
+
+        <h3 class="text-lg font-bold text-white mt-6 mb-3">Options</h3>
+        <div class="overflow-x-auto rounded-lg border border-white/5 mb-6">
+          <table class="w-full text-left text-sm text-gray-400">
+            <thead class="bg-white/5 text-gray-200"><tr><th class="px-4 py-2.5">Option</th><th class="px-4 py-2.5">Default</th><th class="px-4 py-2.5">Meaning</th></tr></thead>
+            <tbody class="divide-y divide-white/5">
+              <tr><td class="px-4 py-2 font-mono text-violet-300">hops</td><td class="px-4 py-2 font-mono">2</td><td class="px-4 py-2">Max expansion depth.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-violet-300">direction</td><td class="px-4 py-2 font-mono">"outbound"</td><td class="px-4 py-2"><code>outbound</code> | <code>inbound</code> | <code>any</code>.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-violet-300">decay</td><td class="px-4 py-2 font-mono">0.6</td><td class="px-4 py-2">Score multiplier per hop (0–1). Contribution = <code>seed_score · decay<sup>hops</sup></code>.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-violet-300">combine</td><td class="px-4 py-2 font-mono">"max"</td><td class="px-4 py-2"><code>max</code> keeps the strongest path; <code>sum</code> adds every contribution (centrality-style).</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-violet-300">include_seeds</td><td class="px-4 py-2 font-mono">true</td><td class="px-4 py-2">Whether the seeds themselves appear in the result (at hop 0).</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-violet-300">limit</td><td class="px-4 py-2 font-mono">20</td><td class="px-4 py-2">Max results after ranking.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-violet-300">max_frontier</td><td class="px-4 py-2 font-mono">10000</td><td class="px-4 py-2">Caps vertices visited per seed (safety on high-fan-out graphs).</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-violet-300">seed_collection</td><td class="px-4 py-2 font-mono">—</td><td class="px-4 py-2">Qualifies bare-key seeds into <code>"coll/key"</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="text-lg font-bold text-white mb-3">Example</h3>
+        <p class="text-gray-400 text-sm mb-2">Function calls are used through a <code>LET</code> binding, then iterated with <code>FOR</code> (the same idiom as <code>HYBRID_SEARCH</code>):</p>
+<pre><code class="language-sdbql">LET res = NEIGHBORS("links", ["docs/a"], { hops: 2, direction: "outbound", decay: 0.5 })
+FOR n IN res
+  RETURN { id: n.id, hops: n.hops, score: n.score, seed: n.seed }</code></pre>
+<pre><code class="language-json">[
+  { "id": "docs/a", "hops": 0, "score": 1.0,  "seed": true  },
+  { "id": "docs/b", "hops": 1, "score": 0.5,  "seed": false },
+  { "id": "docs/d", "hops": 1, "score": 0.5,  "seed": false },
+  { "id": "docs/c", "hops": 2, "score": 0.25, "seed": false }
+]</code></pre>
+        <p class="text-gray-400 text-sm mt-3">Seed <code>a</code> scores <code>1.0</code> at hop 0; its direct neighbours <code>b</code>/<code>d</code> score <code>1.0 · 0.5<sup>1</sup> = 0.5</code>; <code>c</code> (two hops away) scores <code>0.5<sup>2</sup> = 0.25</code>.</p>
+      </div>
+    </section>
+
+    <!-- GRAPH_RAG (C) -->
+    <section id="graph-rag" class="scroll-mt-24">
+      <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-fuchsia-500 text-white mr-4"><i class="fas fa-wand-sparkles text-sm"></i></div>
+          <h2 class="text-2xl font-bold text-white">GRAPH_RAG — retrieve, then expand</h2>
+        </div>
+        <p class="text-gray-300 mb-4"><code>GRAPH_RAG</code> is the full pipeline: it retrieves seeds by similarity from a document collection, then hands them to the same expansion engine as <code>NEIGHBORS</code>.</p>
+        <div class="bg-gray-950 rounded-lg p-4 mb-6 font-mono text-sm overflow-x-auto border border-white/10">
+          <code class="text-green-400">GRAPH_RAG(seed_collection, vector_index, edge_collection, query_vector, options?)</code>
+        </div>
+        <p class="text-gray-300 mb-4">It accepts every <a href="#neighbors">NEIGHBORS option</a> (hops, direction, decay, combine, limit…) plus seed-retrieval options:</p>
+        <div class="overflow-x-auto rounded-lg border border-white/5 mb-6">
+          <table class="w-full text-left text-sm text-gray-400">
+            <thead class="bg-white/5 text-gray-200"><tr><th class="px-4 py-2.5">Option</th><th class="px-4 py-2.5">Default</th><th class="px-4 py-2.5">Meaning</th></tr></thead>
+            <tbody class="divide-y divide-white/5">
+              <tr><td class="px-4 py-2 font-mono text-fuchsia-300">seed_mode</td><td class="px-4 py-2 font-mono">"vector"</td><td class="px-4 py-2"><code>vector</code> (ANN on <code>vector_index</code>) or <code>hybrid</code> (vector + fulltext fusion).</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-fuchsia-300">seed_limit</td><td class="px-4 py-2 font-mono">10</td><td class="px-4 py-2">How many seeds to retrieve (the <code>k</code>).</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-fuchsia-300">ef</td><td class="px-4 py-2 font-mono">—</td><td class="px-4 py-2">HNSW <code>ef_search</code> for the vector leg.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-fuchsia-300">fulltext_field</td><td class="px-4 py-2 font-mono">—</td><td class="px-4 py-2">Required when <code>seed_mode = "hybrid"</code>.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-fuchsia-300">text_query</td><td class="px-4 py-2 font-mono">—</td><td class="px-4 py-2">Required when <code>seed_mode = "hybrid"</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="text-lg font-bold text-white mb-3">Example</h3>
+<pre><code class="language-sdbql">LET res = GRAPH_RAG("docs", "emb", "links", @query_vector,
+                    { hops: 1, seed_limit: 2, direction: "outbound" })
+FOR r IN res
+  RETURN { id: r.id, hops: r.hops, seed: r.seed, score: r.score }</code></pre>
+<pre><code class="language-json">[
+  { "id": "docs/a", "hops": 0, "seed": true,  "score": 1.0   },
+  { "id": "docs/d", "hops": 0, "seed": true,  "score": 0.994 },
+  { "id": "docs/b", "hops": 1, "seed": false, "score": 0.6   }
+]</code></pre>
+        <p class="text-gray-400 text-sm mt-3">The query vector retrieves <code>a</code> and <code>d</code> as seeds (cosine <code>1.0</code> and <code>0.994</code>), then a 1-hop outbound expansion adds <code>b</code> (reached from <code>a</code>, score <code>1.0 · 0.6</code>).</p>
+
+        <h3 class="text-lg font-bold text-white mt-6 mb-3">Hybrid seeding</h3>
+<pre><code class="language-sdbql">LET res = GRAPH_RAG("docs", "emb", "links", @query_vector, {
+  seed_mode: "hybrid", fulltext_field: "text", text_query: "vector database",
+  seed_limit: 5, hops: 2
+})
+FOR r IN res RETURN r</code></pre>
+      </div>
+    </section>
+
+    <!-- Result shape -->
+    <section id="result" class="scroll-mt-24">
+      <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-teal-500 text-white mr-4"><i class="fas fa-table-list text-sm"></i></div>
+          <h2 class="text-2xl font-bold text-white">Result shape</h2>
+        </div>
+        <p class="text-gray-300 mb-4">Both functions return an array of hits, ranked by <code>score</code> descending:</p>
+        <div class="overflow-x-auto rounded-lg border border-white/5">
+          <table class="w-full text-left text-sm text-gray-400">
+            <thead class="bg-white/5 text-gray-200"><tr><th class="px-4 py-2.5">Field</th><th class="px-4 py-2.5">Description</th></tr></thead>
+            <tbody class="divide-y divide-white/5">
+              <tr><td class="px-4 py-2 font-mono text-teal-300">doc</td><td class="px-4 py-2">The full reached document.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-teal-300">id</td><td class="px-4 py-2">Vertex id, <code>"collection/key"</code>.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-teal-300">score</td><td class="px-4 py-2">Combined relevance (seed similarity × hop decay).</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-teal-300">hops</td><td class="px-4 py-2">Minimum hop distance from any seed (<code>0</code> for seeds).</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-teal-300">seed</td><td class="px-4 py-2"><code>true</code> if this document was one of the retrieved seeds.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-teal-300">seed_score</td><td class="px-4 py-2">The seed's own similarity score (null for pure neighbors).</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-teal-300">via</td><td class="px-4 py-2">The seed responsible for this hit's strongest contribution.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Global GraphRAG (D) -->
+    <section id="global" class="scroll-mt-24">
+      <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-purple-500 text-white mr-4"><i class="fas fa-sitemap text-sm"></i></div>
+          <h2 class="text-2xl font-bold text-white">Global GraphRAG — communities &amp; summaries</h2>
+        </div>
+        <p class="text-gray-300 leading-relaxed mb-4">
+          <a href="#neighbors">NEIGHBORS</a> and <a href="#graph-rag">GRAPH_RAG</a> answer <em>local</em> questions ("what is connected to these documents?"). For <em>global</em> questions ("what themes exist across the whole graph?"), SoliDB detects <strong>communities</strong> — densely connected clusters of vertices — summarizes each, and lets you retrieve the relevant summaries.
+        </p>
+        <ol class="list-decimal pl-6 text-gray-300 space-y-2 mb-6">
+          <li><strong>Detect</strong> communities over an edge collection with the Louvain method.</li>
+          <li><strong>Summarize</strong> each community (keyword extraction by default, or an LLM when one is configured).</li>
+          <li><strong>Retrieve</strong> the relevant summaries with <code>COMMUNITY_SEARCH</code>.</li>
+        </ol>
+
+        <h3 class="text-lg font-bold text-white mb-3">1. Build communities</h3>
+        <p class="text-gray-300 mb-2">The build runs asynchronously and returns a <code>request_id</code> to poll:</p>
+<pre><code class="language-bash">POST /_api/database/{db}/graph/community/build
+{ "edge_collection": "links", "min_community_size": 3, "summarize": true }
+# → { "request_id": "...", "run_id": "run_...", "status": "pending" }
+
+GET /_api/database/{db}/graph/community/build/{request_id}      # poll: pending → done | failed
+GET /_api/database/{db}/graph/communities?edge_collection=links # list detected communities</code></pre>
+        <div class="overflow-x-auto rounded-lg border border-white/5 my-6">
+          <table class="w-full text-left text-sm text-gray-400">
+            <thead class="bg-white/5 text-gray-200"><tr><th class="px-4 py-2.5">Body field</th><th class="px-4 py-2.5">Default</th><th class="px-4 py-2.5">Meaning</th></tr></thead>
+            <tbody class="divide-y divide-white/5">
+              <tr><td class="px-4 py-2 font-mono text-purple-300">edge_collection</td><td class="px-4 py-2 font-mono">—</td><td class="px-4 py-2">Required. The graph to analyze.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-purple-300">resolution</td><td class="px-4 py-2 font-mono">1.0</td><td class="px-4 py-2">Louvain resolution — higher yields more, smaller communities.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-purple-300">min_community_size</td><td class="px-4 py-2 font-mono">3</td><td class="px-4 py-2">Drop communities smaller than this.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-purple-300">summarize</td><td class="px-4 py-2 font-mono">false</td><td class="px-4 py-2">Generate a title / summary / keywords per community.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-purple-300">max_communities</td><td class="px-4 py-2 font-mono">50</td><td class="px-4 py-2">Cap on how many (largest) communities get summarized.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-purple-300">provider</td><td class="px-4 py-2 font-mono">—</td><td class="px-4 py-2">LLM provider (openai/anthropic/ollama/gemini); read from <code>_env</code> if omitted.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-gray-400 text-sm mb-6">
+          Output is stored in <code>_graph_communities</code> (membership) and <code>_community_summaries</code> (title/summary/keywords), with the latest run per edge collection tracked in <code>_graph_runs</code>. Summaries use deterministic keyword extraction unless an LLM provider is configured (e.g. <code>OPENAI_API_KEY</code> in the database <code>_env</code>), in which case the model writes the summary with a keyword fallback on failure.
+        </p>
+
+        <h3 class="text-lg font-bold text-white mb-3">2. COMMUNITY_SEARCH</h3>
+        <div class="bg-gray-950 rounded-lg p-4 mb-4 font-mono text-sm overflow-x-auto border border-white/10">
+          <code class="text-green-400">COMMUNITY_SEARCH(query_text, options?)</code>
+        </div>
+        <p class="text-gray-300 mb-4"><code>options</code>: <code>{ run_id?, edge_collection?, limit: 5 }</code>. When <code>run_id</code> is omitted it defaults to the latest run recorded for <code>edge_collection</code>.</p>
+<pre><code class="language-sdbql">LET res = COMMUNITY_SEARCH("vector database", { edge_collection: "links", limit: 3 })
+FOR c IN res
+  RETURN { community_id: c.community_id, title: c.title, summary: c.summary, score: c.score }</code></pre>
+<pre><code class="language-json">[
+  {
+    "community_id": 0,
+    "title": "entities/c",
+    "summary": "A community of 3 connected entities. Key topics: database, vector, embedding, search.",
+    "score": 1.0
+  }
+]</code></pre>
+        <p class="text-gray-400 text-sm mt-3">Returns the community summaries whose text best matches the query — the entry point for broad questions that no single document answers.</p>
+      </div>
+    </section>
+
+    <!-- RAG_PIPELINE -->
+    <section id="rag-pipeline" class="scroll-mt-24">
+      <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-purple-500 text-white mr-4"><i class="fas fa-diagram-project text-sm"></i></div>
+          <h2 class="text-2xl font-bold text-white">RAG_PIPELINE — a named retrieve→rerank pipeline</h2>
+        </div>
+        <p class="text-gray-300 mb-4">Store a retrieval pipeline once, run it by name. <code class="text-green-400">RAG_PIPELINE(name, query_vector, options?)</code> loads a definition from the <code>_rag_pipelines</code> collection, runs <code>GRAPH_RAG</code> retrieval with its stored parameters, applies the configured rerank, and truncates to the limit.</p>
+        <p class="text-gray-400 text-sm mb-3">Define a pipeline (one document keyed by name):</p>
+<pre><code class="language-json">{
+  "_key": "faq",
+  "seed_collection": "docs",
+  "vector_index": "emb",
+  "edge_collection": "links",
+  "retrieve_options": { "hops": 1, "seed_limit": 20 },
+  "rerank": { "mode": "lexical", "field": "doc.content", "limit": 5 }
+}</code></pre>
+        <p class="text-gray-400 text-sm mt-4 mb-3">Then run it — pass <code>text_query</code> for the rerank stage, and override <code>limit</code> per call:</p>
+<pre><code class="language-sdbql">LET hits = RAG_PIPELINE("faq", @query_vector, { text_query: "how to index", limit: 5 })
+FOR h IN hits RETURN h.doc</code></pre>
+        <p class="text-gray-400 text-sm mt-3">Returns the <code>GRAPH_RAG</code> hit shape (<code>{ doc, score, hops, ... }</code>), reranked and limited.</p>
+      </div>
+    </section>
+
+    <!-- RERANK -->
+    <section id="rerank" class="scroll-mt-24">
+      <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-cyan-500 text-white mr-4"><i class="fas fa-arrow-down-1-9 text-sm"></i></div>
+          <h2 class="text-2xl font-bold text-white">RERANK — reorder retrieved docs</h2>
+        </div>
+        <p class="text-gray-300 mb-4"><code class="text-green-400">RERANK(query, docs, options?)</code> reorders an array of retrieved documents by relevance to <code>query</code>, most relevant first.</p>
+        <ul class="list-disc pl-6 text-gray-300 space-y-2 mb-4">
+          <li><code>mode</code> — <code>"lexical"</code> (default): query-token overlap, no LLM, no extra round-trip. <code>"llm"</code>: a chat model reorders the candidates, falling back to lexical on any failure.</li>
+          <li><code>field</code> — dotted path to each doc's text (auto-detected across <code>content</code>/<code>text</code>/<code>summary</code>/<code>title</code>, including under a <code>doc</code> wrapper).</li>
+          <li><code>limit</code>, <code>provider</code>, <code>model</code>.</li>
+        </ul>
+<pre><code class="language-sdbql">LET hits = VECTOR_SEARCH("docs", "emb", @query_vector, 20)
+RETURN RERANK("hnsw index tuning", hits, { field: "doc.content", limit: 5 })</code></pre>
+      </div>
+    </section>
+
+    <!-- Notes -->
+    <section id="notes" class="scroll-mt-24">
+      <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-amber-500 text-white mr-4"><i class="fas fa-circle-info text-sm"></i></div>
+          <h2 class="text-2xl font-bold text-white">Notes &amp; tips</h2>
+        </div>
+        <ul class="list-disc pl-6 text-gray-300 space-y-2">
+          <li>Vertex ids are <code>"collection/key"</code> (no database prefix). Edges reference vertices through their <code>_from</code>/<code>_to</code> strings of the same form.</li>
+          <li>Make sure the <code>seed_collection</code> matches the collection your edges point into, or expansion finds nothing.</li>
+          <li><code>combine: "max"</code> (default) avoids over-ranking hub nodes; use <code>"sum"</code> when you want recall/centrality to matter.</li>
+          <li>Empty seed retrieval returns <code>[]</code> — not an error.</li>
+          <li>Edge collections are auto-indexed (see <a href="#auto-index">above</a>), so expansion is indexed out of the box.</li>
+          <li>A <a href="#global">community build</a> is a point-in-time snapshot tagged by <code>run_id</code>; re-run the build to refresh it after the graph changes.</li>
+          <li>For seed retrieval details, see <a href="/docs/vector-search">Vector Search</a> and <a href="/docs/hybrid-search">Hybrid Search</a>; for raw traversal, see <a href="/docs/sdbql-graphs">Graph Queries</a>.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+</div>

@@ -1,0 +1,135 @@
+<div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-12">
+    <h1 class="text-4xl font-bold tracking-tight text-white sm:text-5xl mb-6">
+      <span class="bg-gradient-to-r from-lime-400 via-emerald-400 to-cyan-400 bg-clip-text text-transparent">Changelog</span>
+    </h1>
+    <p class="text-xl text-gray-300 leading-8">
+      Notable changes to SoliDB, newest first. For the full commit-level history see
+      <code class="text-cyan-400">CHANGELOG.md</code> in the repository.
+    </p>
+  </div>
+
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li class="italic text-gray-500">No unreleased changes yet.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 0.31.0 -->
+  <section id="v0-31-0" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v0.31.0</h2>
+      <span class="text-sm font-medium text-gray-400">July 14, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Document versioning &amp; time-travel</strong> &mdash; opt-in per-collection history; read the past with <code class="text-cyan-400">DOC_AS_OF</code> / <code class="text-cyan-400">DOC_HISTORY</code>. Enable it when creating a collection (new option in the admin modal and a <code class="text-cyan-400">versioning</code> flag on the create-collection API) or toggle it later from the collection page. Covers single-document writes; history is capped by <code>SOLIDB_MAX_VERSIONS</code> (default 100).</li>
+        <li><strong class="text-white">Semantic query cache</strong> &mdash; opt-in (<code class="text-cyan-400">SEMANTIC_CACHE_ENABLED</code>) in-memory cosine-nearest cache for generated-content queries.</li>
+        <li><strong class="text-white">Filtered vector search</strong> &mdash; <code class="text-cyan-400">VECTOR_SEARCH(coll, idx, vec, k, {filter, overfetch, ef})</code> over-fetches then post-filters, returning <code>{doc, score}</code> rows.</li>
+        <li><strong class="text-white">RERANK &amp; RAG_PIPELINE</strong> &mdash; new SDBQL functions for lexical or LLM reranking and for composing GRAPH_RAG + rerank retrieval pipelines.</li>
+        <li><strong class="text-white">Scheduled materialized views</strong> &mdash; <code class="text-cyan-400">CREATE MATERIALIZED VIEW &hellip; REFRESH "5m"</code> recomputes a view on an interval.</li>
+        <li><strong class="text-white">Auto-embeddings for vector indexes</strong> &mdash; Create a vector index with <code class="text-cyan-400">embedding_source</code> and SoliDB will automatically generate embeddings on insert using your configured LLM provider (OpenAI, Ollama, Gemini). Works in REST, driver, and SDBQL paths.</li>
+        <li><strong class="text-white">Improved stream processing</strong> &mdash; <code>CREATE STREAM</code> windows now properly process events, support sliding/tumbling, and persist results into <code>_streams:&lt;name&gt;</code> collections that are fully queryable and live-queryable.</li>
+        <li><strong class="text-white">Graph analytics functions</strong> &mdash; New SDBQL functions <code class="text-cyan-400">PAGERANK(edge_collection, opts?)</code> and <code class="text-cyan-400">DEGREE_CENTRALITY(edge_collection)</code> for computing centrality directly in queries.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 0.26.4 -->
+  <section id="v0-26-4" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v0.26.4</h2>
+      <span class="text-sm font-medium text-gray-400">June 11, 2026</span>
+    </div>
+
+    <nav class="flex flex-wrap gap-2 mb-10 text-sm">
+      <a href="#v0264-security" class="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-gray-300 hover:text-white hover:border-white/20">Security</a>
+      <a href="#v0264-fixes" class="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-gray-300 hover:text-white hover:border-white/20">Fixes</a>
+      <a href="#v0264-performance" class="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-gray-300 hover:text-white hover:border-white/20">Performance</a>
+    </nav>
+
+    <h3 id="v0264-security" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Security</h3>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Per-database authorization on the data plane</strong> &mdash; every <code>/_api/database/{db}/...</code> route now enforces role permissions and API-key database scope. Set <code>SOLIDB_DB_AUTHZ_MODE=warn</code> for dry-run.</li>
+        <li><strong class="text-white">Cluster control messages are HMAC-signed</strong> &mdash; when a keyfile is configured, membership/heartbeat/rebalance messages are signed. All nodes must upgrade together.</li>
+        <li><strong class="text-white">Keyfile required for clusters</strong> and replication slowloris protection.</li>
+        <li><strong class="text-white">Lua resource limits</strong> &mdash; 64 MB memory cap and 30 s execution deadline.</li>
+      </ul>
+    </div>
+
+    <h3 id="v0264-fixes" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Fixes</h3>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li>Truncate now replicates from every path.</li>
+        <li>Stream processors clear buffered window on truncate.</li>
+        <li>Materialized-view refresh reports removed document counts.</li>
+      </ul>
+    </div>
+
+    <h3 id="v0264-performance" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Performance</h3>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li>JOINs scan the joined collection once.</li>
+        <li>Graph traversals and shortest-path queries optimized (single edge scan).</li>
+        <li>Role lookups and key cache improvements.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Older releases summary -->
+  <section class="mb-16">
+    <h2 class="text-2xl font-bold text-white mb-6">Previous Releases</h2>
+    <div class="space-y-8 text-sm text-gray-400">
+
+      <div>
+        <div class="flex items-baseline gap-3 mb-2">
+          <span class="font-semibold text-white">v0.21.2</span>
+          <span class="text-gray-500">(2026-03-24)</span>
+        </div>
+        <ul class="list-disc pl-5">
+          <li>SORT performance &amp; correctness improvements (stable sort, index optimization, pre-evaluation).</li>
+        </ul>
+      </div>
+
+      <div>
+        <div class="flex items-baseline gap-3 mb-2">
+          <span class="font-semibold text-white">v0.9.0 / v0.8.0</span>
+          <span class="text-gray-500">(2026-02)</span>
+        </div>
+        <ul class="list-disc pl-5">
+          <li>ACID transactions on node.</li>
+          <li>Columnar storage and indexes.</li>
+          <li>Vector quantization, HNSW, JOIN support, schema validation, many SDBQL enhancements.</li>
+          <li>Full list of features and fixes in <code>CHANGELOG.md</code>.</li>
+        </ul>
+      </div>
+
+    </div>
+    <p class="mt-8 text-xs text-gray-500">
+      For the complete detailed history including all minor commits, see the
+      <a href="https://github.com/solisoft/solidb/blob/main/CHANGELOG.md" class="text-cyan-400 hover:underline">CHANGELOG.md</a> file in the repository.
+    </p>
+  </section>
+</div>
+
+<script>
+  // Simple image zoom (if any future images are added)
+  document.querySelectorAll('.changelog-zoom').forEach(function (el) {
+    el.addEventListener('click', function () {
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:zoom-out';
+      var img = el.cloneNode(true);
+      img.style.maxWidth = '90vw';
+      img.style.maxHeight = '90vh';
+      img.style.border = 'none';
+      overlay.appendChild(img);
+      overlay.onclick = function () { document.body.removeChild(overlay); };
+      document.body.appendChild(overlay);
+    });
+  });
+</script>

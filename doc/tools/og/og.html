@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en" data-variant="home">
+<head>
+<meta charset="utf-8">
+<title>SoliDB — Open Graph card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink-900: #090c0b;
+    --ink-850: #0d1211;
+    --ink-800: #101716;
+    --line:        rgba(236, 230, 214, 0.09);
+    --line-strong: rgba(236, 230, 214, 0.16);
+    --paper:       #ece6d6;
+    --paper-dim:   #9ba39c;
+    --paper-faint: #6b746c;
+    --amber:      #f5a623;
+    --amber-soft: #ffce85;
+    --teal:      #4fd1c5;
+    --teal-soft: #8fe6dd;
+    --font-sans: Inter, system-ui, sans-serif;
+    --font-display: "Space Grotesk", Inter, system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { background: #000; }
+
+  /* Exactly the Open Graph canvas: 1200x630 (1.91:1). */
+  .card {
+    position: relative;
+    width: 1200px;
+    height: 630px;
+    overflow: hidden;
+    background-color: var(--ink-900);
+    color: var(--paper);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The engineered grid from the landing page, plus two light sources:
+     an amber sun behind the headline, a cool teal wash under the console. */
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(ellipse 90% 80% at 30% 45%, #000 35%, transparent 100%);
+  }
+  .card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(640px 480px at 6% -14%, rgba(245, 166, 35, 0.21), transparent 70%),
+      radial-gradient(520px 420px at 92% 112%, rgba(79, 209, 197, 0.11), transparent 72%),
+      /* Vignette — keeps the card's edges from dissolving into a white timeline. */
+      radial-gradient(140% 120% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+  }
+
+  /* Amber scanline across the very top — the terminal tell. */
+  .scan {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--amber) 0%, var(--amber-soft) 22%, rgba(79, 209, 197, 0.55) 62%, transparent 100%);
+    z-index: 3;
+  }
+
+  .inner {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    padding: 54px 56px;
+    display: grid;
+    grid-template-columns: 1fr 424px;
+    gap: 44px;
+    align-items: center;
+  }
+
+  /* ---------- left column ---------- */
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 30px;
+  }
+  .brand .mark {
+    width: 34px; height: 34px;
+    color: var(--amber);
+    filter: drop-shadow(0 0 14px rgba(245, 166, 35, 0.35));
+  }
+  .brand .mark svg { width: 100%; height: 100%; display: block; }
+  .brand .word {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 30px;
+    letter-spacing: -0.015em;
+  }
+  .brand .tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--amber);
+    border: 1px solid rgba(245, 166, 35, 0.34);
+    background: rgba(245, 166, 35, 0.09);
+    border-radius: 6px;
+    padding: 3px 8px 2px;
+    margin-left: 2px;
+  }
+  html[data-variant="home"] .brand .tag { display: none; }
+
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--paper-faint);
+    margin-bottom: 20px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 24px; height: 1px;
+    background: var(--amber);
+    flex: none;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 55px;
+    line-height: 1.06;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+  h1 .accent {
+    color: var(--amber);
+    text-shadow: 0 0 34px rgba(245, 166, 35, 0.28);
+  }
+
+  .lede {
+    margin-top: 22px;
+    font-size: 20px;
+    line-height: 1.55;
+    color: var(--paper-dim);
+    max-width: 27em;
+  }
+
+  .meta {
+    margin-top: 30px;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    color: var(--paper-dim);
+  }
+  .meta span { display: flex; align-items: center; gap: 8px; }
+  .meta i {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--teal);
+    box-shadow: 0 0 9px rgba(79, 209, 197, 0.75);
+  }
+
+  /* ---------- right column: the SDBQL console ---------- */
+
+  .console {
+    border: 1px solid var(--line-strong);
+    border-radius: 14px;
+    background: linear-gradient(180deg, var(--ink-800), var(--ink-850));
+    box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(245, 166, 35, 0.05);
+    overflow: hidden;
+    font-family: var(--font-mono);
+  }
+  .console-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(0, 0, 0, 0.24);
+  }
+  .console-bar .tl { display: flex; gap: 7px; }
+  .console-bar .tl i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+  .console-bar .tl i:nth-child(1) { background: #ff5f56; }
+  .console-bar .tl i:nth-child(2) { background: #ffbd2e; }
+  .console-bar .tl i:nth-child(3) { background: #27c93f; }
+  .console-bar .title { margin-left: 6px; font-size: 11.5px; color: var(--paper-faint); letter-spacing: 0.04em; }
+  .console-bar .lang { margin-left: auto; font-size: 10.5px; color: var(--amber); letter-spacing: 0.14em; }
+
+  .console-body { padding: 18px 18px 12px; font-size: 14px; line-height: 1.82; }
+  .console-body pre { margin: 0; }
+  .console-body .prompt { color: var(--amber); }
+
+  /* JetBrains Mono has no U+276F, and the fallback glyph reads as a paren.
+     Draw the chevron instead, sized to exactly one character advance so the
+     `sdb❯ ` prompt still measures 5ch and the query lines stay aligned. */
+  .chev {
+    display: inline-block;
+    width: 1ch;
+    height: 1em;
+    vertical-align: -0.16em;
+  }
+
+  .tok-kw   { color: var(--amber); }
+  .tok-str  { color: var(--teal); }
+  .tok-num  { color: #d7c98a; }
+  .tok-punc { color: var(--paper-dim); }
+
+  .cursor {
+    display: inline-block;
+    width: 8px; height: 15px;
+    margin-left: 3px;
+    background: var(--amber);
+    vertical-align: -2px;
+  }
+
+  .console-result {
+    border-top: 1px solid var(--line);
+    padding: 13px 18px 17px;
+    background: rgba(79, 209, 197, 0.035);
+  }
+  .console-result .rlabel {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--paper-faint);
+    margin-bottom: 10px;
+  }
+  .console-result .rlabel .ok {
+    color: var(--teal);
+    border: 1px solid rgba(79, 209, 197, 0.3);
+    border-radius: 5px;
+    padding: 1px 7px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+  .console-result pre {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.72;
+    color: var(--paper-dim);
+  }
+
+  .caption {
+    margin-top: 16px;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    color: var(--paper-faint);
+  }
+  .caption b { color: var(--paper-dim); font-weight: 500; }
+
+  /* ---------- variant copy switching ---------- */
+  html[data-variant="home"] .v-docs { display: none; }
+  html[data-variant="docs"] .v-home { display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="scan"></div>
+
+  <div class="inner">
+    <div class="col-left">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="6" rx="7.5" ry="3"></ellipse>
+            <path d="M4.5 6v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V6"></path>
+            <path d="M4.5 12v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"></path>
+          </svg>
+        </span>
+        <span class="word">SoliDB</span>
+        <span class="tag">Docs</span>
+      </div>
+
+      <p class="eyebrow">
+        <span class="v-home">Multi-model database · Written in Rust</span>
+        <span class="v-docs">Documentation · Guides &amp; reference</span>
+      </p>
+
+      <h1 class="v-home">
+        Documents, graphs,<br>
+        vectors &amp; time-series.<br>
+        <span class="accent">One engine.</span>
+      </h1>
+      <h1 class="v-docs">
+        Every query, index<br>
+        and cluster knob.<br>
+        <span class="accent">Documented.</span>
+      </h1>
+
+      <p class="lede v-home">
+        One query language for every shape your data takes. Live queries, hybrid
+        vector search, replication and sharding — from a single Rust binary.
+      </p>
+      <p class="lede v-docs">
+        SDBQL, the HTTP API, Lua scripting, graphs, vectors and time-series —
+        with runnable examples in every official client.
+      </p>
+
+      <div class="meta">
+        <span class="v-home"><i></i> RocksDB persistence</span>
+        <span class="v-home"><i></i> ACID transactions</span>
+        <span class="v-home"><i></i> Live queries</span>
+        <span class="v-docs"><i></i> 175 SDBQL functions</span>
+        <span class="v-docs"><i></i> 12 official clients</span>
+        <span class="v-docs"><i></i> Copy-paste ready</span>
+      </div>
+    </div>
+
+    <div class="col-right">
+      <div class="console">
+        <div class="console-bar">
+          <span class="tl" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="title">solidb · shell</span>
+          <span class="lang">SDBQL</span>
+        </div>
+        <div class="console-body">
+<pre><span class="prompt">sdb<svg class="chev" viewBox="0 0 10 16" aria-hidden="true"><path d="M2.6 3.6 8 8 2.6 12.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg> </span><span class="tok-kw">FOR</span> u <span class="tok-kw">IN</span> users
+     <span class="tok-kw">FILTER</span> u.plan <span class="tok-punc">==</span> <span class="tok-str">"pro"</span>
+     <span class="tok-kw">SORT</span> u.created <span class="tok-kw">DESC</span>
+     <span class="tok-kw">LIMIT</span> <span class="tok-num">3</span>
+     <span class="tok-kw">RETURN</span> <span class="tok-punc">{</span> u.name, u.seats <span class="tok-punc">}</span><span class="cursor"></span></pre>
+        </div>
+        <div class="console-result">
+          <div class="rlabel"><span class="ok">OK</span> 3 rows · 0.8 ms</div>
+<pre>[
+  { <span class="tok-punc">"name":</span> <span class="tok-str">"Aria Chen"</span>,   <span class="tok-punc">"seats":</span> <span class="tok-num">24</span> },
+  { <span class="tok-punc">"name":</span> <span class="tok-str">"Devon Okoro"</span>, <span class="tok-punc">"seats":</span> <span class="tok-num">12</span> },
+  { <span class="tok-punc">"name":</span> <span class="tok-str">"Mira Solano"</span>,  <span class="tok-punc">"seats":</span>  <span class="tok-num">8</span> }
+]</pre>
+        </div>
+      </div>
+      <p class="caption"><b>solidb.solisoft.net</b></p>
+    </div>
+  </div>
+</div>
+
+<script>
+  // `og.html#docs` renders the documentation variant; no hash = the home card.
+  var variant = location.hash.replace("#", "");
+  if (variant === "docs") {
+    document.documentElement.dataset.variant = "docs";
+  }
+</script>
+</body>
+</html>

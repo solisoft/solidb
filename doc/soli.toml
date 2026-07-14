@@ -1,0 +1,5 @@
+[package]
+name = "doc"
+version = "0.1.0"
+main = "app.sl"
+# soli_version = "1.16.0"   # uncomment to require a minimum soli version to run this project

@@ -1,0 +1,1050 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a
+      href="/docs"
+      class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group"
+    >
+      <svg
+        class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M15 19l-7-7 7-7"
+        ></path>
+      </svg>
+      Back to Documentation
+    </a>
+    <a href="/docs/changelog" class="ml-4 text-sm text-emerald-400 hover:text-emerald-300">View full Changelog →</a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Sidebar Partial -->
+
+    <!-- Main Content -->
+    <main class="col-span-12 lg:col-span-12 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div
+          class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"
+        ></div>
+        <div class="relative">
+          <h1
+            class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight"
+          >
+            Getting Started
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Get up and running with SoliDB in minutes. Learn the basics of
+            installation, connecting, and running your first queries.
+          </p>
+        </div>
+      </div>
+
+      <!-- Installation Section -->
+      <section id="installation" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-blue-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                ></path>
+              </svg>
+              Installation
+            </h2>
+          </div>
+
+          <div class="p-8 space-y-8">
+            <div class="group">
+              <h3
+                class="text-lg font-semibold text-white mb-3 flex items-center"
+              >
+                <span
+                  class="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold mr-3 border border-emerald-500/30"
+                  >1</span
+                >
+                Quick Install (Recommended)
+              </h3>
+              <div
+                class="bg-gray-950/50 rounded-xl border border-white/5 p-4 group-hover:border-emerald-500/30 transition-colors"
+              >
+                <div class="flex items-center justify-between mb-2">
+                  <span
+                    class="text-xs font-bold text-gray-500 uppercase tracking-widest"
+                    >Terminal</span
+                  >
+                  <button
+                    class="text-gray-500 hover:text-white transition-colors"
+                    onclick="navigator.clipboard.writeText('curl -sSL https://raw.githubusercontent.com/solisoft/solidb/main/install.sh | sh')"
+                  >
+                    <svg
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      ></path>
+                    </svg>
+                  </button>
+                </div>
+                <code class="font-mono text-sm text-emerald-300"
+                  >curl -sSL https://raw.githubusercontent.com/solisoft/solidb/main/install.sh | sh</code
+                >
+              </div>
+              <div class="mt-4 bg-emerald-900/20 border border-emerald-500/20 rounded-lg p-3">
+                <p class="text-sm text-emerald-200">
+                  Installs the latest pre-built binary to <code class="text-emerald-400">~/.local/bin</code>. Use <code class="text-emerald-400">--system</code> flag for system-wide install to <code class="text-emerald-400">/usr/local/bin</code>.
+                </p>
+              </div>
+            </div>
+
+            <div class="group">
+              <h3
+                class="text-lg font-semibold text-white mb-3 flex items-center"
+              >
+                <span
+                  class="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm font-bold mr-3 border border-blue-500/30"
+                  >2</span
+                >
+                Using Cargo
+              </h3>
+              <div
+                class="bg-gray-950/50 rounded-xl border border-white/5 p-4 group-hover:border-blue-500/30 transition-colors"
+              >
+                <div class="flex items-center justify-between mb-2">
+                  <span
+                    class="text-xs font-bold text-gray-500 uppercase tracking-widest"
+                    >Terminal</span
+                  >
+                  <button
+                    class="text-gray-500 hover:text-white transition-colors"
+                    onclick="navigator.clipboard.writeText('cargo install solidb')"
+                  >
+                    <svg
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      ></path>
+                    </svg>
+                  </button>
+                </div>
+                <code class="font-mono text-sm text-blue-300"
+                  >cargo install solidb</code
+                >
+              </div>
+            </div>
+
+            <div class="group">
+              <h3
+                class="text-lg font-semibold text-white mb-3 flex items-center"
+              >
+                <span
+                  class="w-8 h-8 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center text-sm font-bold mr-3 border border-purple-500/30"
+                  >3</span
+                >
+                From Source
+              </h3>
+              <div
+                class="bg-gray-950/50 rounded-xl border border-white/5 p-4 group-hover:border-purple-500/30 transition-colors"
+              >
+                <div class="flex items-center justify-between mb-2">
+                  <span
+                    class="text-xs font-bold text-gray-500 uppercase tracking-widest"
+                    >Terminal</span
+                  >
+                </div>
+                <div class="space-y-2 font-mono text-sm">
+                  <div class="flex">
+                    <span class="text-purple-400 mr-2">$</span
+                    ><span class="text-gray-300"
+                      >git clone https://github.com/solisoft/solidb</span
+                    >
+                  </div>
+                  <div class="flex">
+                    <span class="text-purple-400 mr-2">$</span
+                    ><span class="text-gray-300">cd solidb</span>
+                  </div>
+                  <div class="flex">
+                    <span class="text-purple-400 mr-2">$</span
+                    ><span class="text-gray-300">cargo build --release</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="group">
+              <h3
+                class="text-lg font-semibold text-white mb-3 flex items-center"
+              >
+                <span
+                  class="w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-sm font-bold mr-3 border border-cyan-500/30"
+                  >4</span
+                >
+                Using Docker
+              </h3>
+              <div
+                class="bg-gray-950/50 rounded-xl border border-white/5 p-4 group-hover:border-cyan-500/30 transition-colors"
+              >
+                <div class="flex items-center justify-between mb-2">
+                  <span
+                    class="text-xs font-bold text-gray-500 uppercase tracking-widest"
+                    >Terminal</span
+                  >
+                </div>
+                <div class="space-y-2 font-mono text-sm">
+                  <div class="flex">
+                    <span class="text-cyan-400 mr-2">$</span
+                    ><span class="text-gray-300"
+                      >docker run -d --name solidb \</span
+                    >
+                  </div>
+                  <div class="flex pl-6">
+                    <span class="text-gray-300"
+                      >-p 6745:6745 \</span
+                    >
+                  </div>
+                  <div class="flex pl-6">
+                    <span class="text-gray-300"
+                      >-v solidb-data:/data \</span
+                    >
+                  </div>
+                  <div class="flex pl-6">
+                    <span class="text-gray-300"
+                      >ghcr.io/solisoft/solidb:latest</span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="mt-4 bg-cyan-900/20 border border-cyan-500/20 rounded-lg p-3">
+                <p class="text-sm text-cyan-200">
+                  <strong>Docker Compose:</strong> For production deployments, use docker-compose.yml from the repository.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Docker Section -->
+      <section id="docker" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-cyan-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
+                ></path>
+              </svg>
+              Docker Deployment
+            </h2>
+          </div>
+
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB publishes official Docker images to the GitHub Container Registry at
+              <code class="text-cyan-400">ghcr.io/solisoft/solidb</code> for easy deployment in containerized environments.
+              Images are tagged <code class="text-cyan-400">:latest</code> and per release (e.g. <code class="text-cyan-400">:v0.31.0</code>).
+              If the package is private, run <code class="text-cyan-400">docker login ghcr.io</code> with a token that has <code class="text-cyan-400">read:packages</code> first.
+            </p>
+
+            <!-- Docker Compose -->
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3 class="text-cyan-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Docker Compose (Recommended)
+              </h3>
+              <div class="bg-gray-950 p-4 rounded-lg font-mono text-xs text-gray-300 border border-white/10 overflow-x-auto">
+                <pre>version: '3.8'
+
+services:
+  solidb:
+    image: ghcr.io/solisoft/solidb:latest
+    ports:
+      - "6745:6745"
+    volumes:
+      - solidb-data:/data
+    environment:
+      - SOLIDB_PORT=6745
+      - RUST_LOG=solidb=info
+    restart: unless-stopped
+
+volumes:
+  solidb-data:</pre>
+              </div>
+            </div>
+
+            <!-- Environment Variables -->
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3 class="text-cyan-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Environment Variables
+              </h3>
+              <div class="overflow-hidden border border-white/5 rounded-lg">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-3">Variable</th>
+                      <th class="p-3">Default</th>
+                      <th class="p-3">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLIDB_PORT</td>
+                      <td class="p-3">6745</td>
+                      <td class="p-3">HTTP server port</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLIDB_DATA_DIR</td>
+                      <td class="p-3">/data</td>
+                      <td class="p-3">Data directory path</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLIDB_LOG_LEVEL</td>
+                      <td class="p-3">info</td>
+                      <td class="p-3">Log verbosity level</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLIDB_ADMIN_PASSWORD</td>
+                      <td class="p-3"><em>auto-generated</em></td>
+                      <td class="p-3">Admin user password</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">JWT_SECRET</td>
+                      <td class="p-3"><em>auto-generated</em></td>
+                      <td class="p-3">Secret for signing JWT tokens</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">QUEUE_WORKERS</td>
+                      <td class="p-3">4</td>
+                      <td class="p-3">Background job workers per node</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLI_WEBHOOK_SECRET</td>
+                      <td class="p-3"><em>unset</em></td>
+                      <td class="p-3">Default HMAC-SHA256 key used to sign outbound webhook jobs &amp; triggers via <code>X-Webhook-Signature</code>. Per-target <code>webhook_secret</code> wins; if both are unset the signature header is omitted. See <a href="/docs/queues#configuration" class="text-cyan-400 hover:underline">Queues → Configuration</a>.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLI_JOBS_SECRET</td>
+                      <td class="p-3"><em>unset</em></td>
+                      <td class="p-3">Legacy fallback used only when <code>SOLI_WEBHOOK_SECRET</code> is unset. Prefer the latter for new setups.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLIDB_LUA_POOL_SIZE</td>
+                      <td class="p-3"><em>CPU cores</em></td>
+                      <td class="p-3">Number of Lua VM pool states</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLIDB_LUA_FAST_MODE</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Skip Lua global reset between requests</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLIDB_CLUSTER_SCHEME</td>
+                      <td class="p-3">http</td>
+                      <td class="p-3">Protocol for cluster communication</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Build from Source -->
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3 class="text-cyan-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Build Image Locally
+              </h3>
+              <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 space-y-2">
+                <div class="flex">
+                  <span class="text-cyan-400 mr-2">$</span>
+                  <span>git clone https://github.com/solisoft/solidb</span>
+                </div>
+                <div class="flex">
+                  <span class="text-cyan-400 mr-2">$</span>
+                  <span>cd solidb</span>
+                </div>
+                <div class="flex">
+                  <span class="text-cyan-400 mr-2">$</span>
+                  <span>docker build -t ghcr.io/solisoft/solidb:latest .</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Health Check Info -->
+            <div class="bg-green-900/10 border border-green-500/20 rounded-xl p-4">
+              <p class="text-sm text-green-300">
+                <strong>Health Check:</strong> The Docker image includes a built-in health check at
+                <code class="text-green-400">/_api/health</code>. Container orchestrators can use this to monitor instance health.
+              </p>
+            </div>
+
+            <!-- Docker Cluster -->
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3 class="text-cyan-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Docker Cluster Setup
+              </h3>
+              <p class="text-gray-300 text-sm mb-4">
+                For high availability, use the cluster compose file to run multiple nodes.
+              </p>
+              <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 space-y-2">
+                <div class="flex">
+                  <span class="text-gray-500 mr-2">#</span>
+                  <span class="text-gray-500">Generate shared keyfile for cluster auth</span>
+                </div>
+                <div class="flex">
+                  <span class="text-cyan-400 mr-2">$</span>
+                  <span>openssl rand -hex 32 > solidb.key</span>
+                </div>
+                <div class="flex mt-2">
+                  <span class="text-gray-500 mr-2">#</span>
+                  <span class="text-gray-500">Start 3-node cluster</span>
+                </div>
+                <div class="flex">
+                  <span class="text-cyan-400 mr-2">$</span>
+                  <span>docker-compose -f docker-compose-cluster.yml up -d</span>
+                </div>
+              </div>
+              <div class="mt-4 grid grid-cols-3 gap-3 text-center text-xs">
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <div class="text-cyan-400 font-bold">Node 1</div>
+                  <div class="text-gray-500">localhost:6745</div>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <div class="text-cyan-400 font-bold">Node 2</div>
+                  <div class="text-gray-500">localhost:6746</div>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <div class="text-cyan-400 font-bold">Node 3</div>
+                  <div class="text-gray-500">localhost:6747</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Kubernetes Section -->
+      <section id="kubernetes" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-blue-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                ></path>
+              </svg>
+              Kubernetes Deployment
+            </h2>
+          </div>
+
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              Deploy SoliDB on Kubernetes using the provided manifests for single-node or cluster deployments.
+            </p>
+
+            <!-- Single Node K8s -->
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3 class="text-blue-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Single Node Deployment
+              </h3>
+              <div class="bg-gray-950 p-4 rounded-lg font-mono text-xs text-gray-300 border border-white/10 overflow-x-auto">
+                <pre><span class="text-gray-500"># Apply manifests</span>
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secret.yaml
+kubectl apply -f k8s/single/
+
+<span class="text-gray-500"># Verify deployment</span>
+kubectl -n solidb get pods
+kubectl -n solidb port-forward svc/solidb 6745:6745</pre>
+              </div>
+            </div>
+
+            <!-- Cluster K8s -->
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3 class="text-blue-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Cluster Deployment (StatefulSet)
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">
+                Uses StatefulSet with headless service for automatic peer discovery via DNS.
+              </p>
+              <div class="bg-gray-950 p-4 rounded-lg font-mono text-xs text-gray-300 border border-white/10 overflow-x-auto">
+                <pre><span class="text-gray-500"># Generate keyfile for cluster auth</span>
+openssl rand -hex 32 > keyfile.txt
+
+<span class="text-gray-500"># Create secret with keyfile</span>
+kubectl create namespace solidb
+kubectl create secret generic solidb-secret \
+  -n solidb --from-file=keyfile=keyfile.txt
+
+<span class="text-gray-500"># Deploy 3-node cluster</span>
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/cluster/
+
+<span class="text-gray-500"># Watch pods come up</span>
+kubectl -n solidb get pods -w</pre>
+              </div>
+            </div>
+
+            <!-- Architecture Diagram -->
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3 class="text-blue-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Cluster Architecture
+              </h3>
+              <div class="grid grid-cols-3 gap-4 mb-4">
+                <div class="bg-gray-950/50 p-4 rounded border border-blue-500/30 text-center">
+                  <div class="text-blue-400 font-bold text-sm">solidb-0</div>
+                  <div class="text-gray-500 text-xs mt-1">PVC: data-solidb-0</div>
+                </div>
+                <div class="bg-gray-950/50 p-4 rounded border border-blue-500/30 text-center">
+                  <div class="text-blue-400 font-bold text-sm">solidb-1</div>
+                  <div class="text-gray-500 text-xs mt-1">PVC: data-solidb-1</div>
+                </div>
+                <div class="bg-gray-950/50 p-4 rounded border border-blue-500/30 text-center">
+                  <div class="text-blue-400 font-bold text-sm">solidb-2</div>
+                  <div class="text-gray-500 text-xs mt-1">PVC: data-solidb-2</div>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div class="bg-gray-950/50 p-3 rounded border border-white/10 text-center">
+                  <div class="text-white font-bold text-xs">solidb (ClusterIP)</div>
+                  <div class="text-gray-500 text-xs">Client connections</div>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/10 text-center">
+                  <div class="text-white font-bold text-xs">solidb-headless</div>
+                  <div class="text-gray-500 text-xs">Peer DNS discovery</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Features -->
+            <div class="grid grid-cols-2 gap-4">
+              <div class="bg-blue-900/10 border border-blue-500/20 rounded-lg p-4">
+                <h4 class="text-blue-400 font-bold text-xs uppercase mb-2">Included Features</h4>
+                <ul class="text-sm text-gray-300 space-y-1">
+                  <li>• Liveness & readiness probes</li>
+                  <li>• Prometheus annotations</li>
+                  <li>• Pod anti-affinity</li>
+                  <li>• PodDisruptionBudget</li>
+                </ul>
+              </div>
+              <div class="bg-green-900/10 border border-green-500/20 rounded-lg p-4">
+                <h4 class="text-green-400 font-bold text-xs uppercase mb-2">Scaling</h4>
+                <div class="text-sm text-gray-300">
+                  <code class="text-green-400 text-xs">kubectl -n solidb scale statefulset solidb --replicas=5</code>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Basic Usage Section -->
+      <section id="basic-usage" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-green-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                ></path>
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                ></path>
+              </svg>
+              Basic Usage
+            </h2>
+          </div>
+
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              Start the server and interact with the HTTP API using curl or your
+              preferred client.
+            </p>
+
+            <div class="space-y-6">
+              <!-- Step 1 -->
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <h3
+                  class="text-green-400 font-bold mb-3 text-sm uppercase tracking-wider"
+                >
+                  1. Start Server
+                </h3>
+                <div
+                  class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 mb-3"
+                >
+                  ./target/release/solidb
+                </div>
+                <div class="flex items-start bg-blue-900/20 border border-blue-500/20 rounded-lg p-3">
+                  <svg
+                    class="w-5 h-5 text-blue-400 mt-0.5 mr-3 flex-shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    ></path>
+                  </svg>
+                  <p class="text-sm text-blue-200">
+                    Check the terminal output for the generated
+                    <strong class="text-white">admin</strong> password. You will
+                    need it to authenticate.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Step 2 -->
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <h3
+                  class="text-green-400 font-bold mb-3 text-sm uppercase tracking-wider"
+                >
+                  2. Create Database
+                </h3>
+                <div
+                  class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 mb-3"
+                >
+                  curl -X POST http://localhost:8080/_api/database -d '{"name":
+                  "mydb"}'
+                </div>
+                <p class="text-xs text-gray-500">
+                  Creates a new database namespace called "mydb".
+                </p>
+              </div>
+
+              <!-- Step 3 -->
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <h3
+                  class="text-green-400 font-bold mb-3 text-sm uppercase tracking-wider"
+                >
+                  3. Insert Document
+                </h3>
+                <div
+                  class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 mb-3"
+                >
+                  curl -X POST http://localhost:8080/_api/document/mydb/users
+                  \<br />
+                  &nbsp;&nbsp;-d '{"name": "Alice", "age": 30, "city": "Paris"}'
+                </div>
+                <p class="text-xs text-gray-500">
+                  Inserts a JSON document into the "users" collection within
+                  "mydb".
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Admin UI Section -->
+      <section id="admin-ui" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-purple-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"
+                ></path>
+              </svg>
+              Admin UI
+            </h2>
+          </div>
+
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB includes a web-based Admin UI for managing databases, collections, documents, and running queries.
+            </p>
+
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3
+                class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider"
+              >
+                Launch Admin UI
+              </h3>
+              <div
+                class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 mb-3"
+              >
+                <div class="flex">
+                  <span class="text-purple-400 mr-2">$</span
+                  ><span class="text-gray-300">cd www</span>
+                </div>
+                <div class="flex">
+                  <span class="text-purple-400 mr-2">$</span
+                  ><span class="text-gray-300">./luaonbeans -D .</span>
+                </div>
+              </div>
+              <p class="text-sm text-gray-400">
+                The Admin UI will be available at <code class="text-purple-400">http://localhost:8080</code>
+              </p>
+            </div>
+
+            <div class="bg-purple-900/10 border border-purple-500/20 rounded-lg p-4">
+              <p class="text-sm text-purple-200">
+                <strong>Note:</strong> The Admin UI requires SoliDB to be running on port 6745 (or accessible at a configured URL).
+                Configure the connection in the UI login screen.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Configuration Section -->
+      <section id="configuration" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-amber-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                ></path>
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                ></path>
+              </svg>
+              Configuration
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB can be configured using command-line arguments, environment
+              variables, or an <code class="text-amber-400">.env</code> file
+              located in the same directory as the executable.
+            </p>
+
+            <!-- Security -->
+            <div class="bg-amber-900/10 border border-amber-500/20 rounded-xl p-6">
+              <h3 class="text-amber-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Security
+              </h3>
+              <div class="overflow-hidden border border-white/5 rounded-lg">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-3">Variable</th>
+                      <th class="p-3">Default</th>
+                      <th class="p-3">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_ADMIN_PASSWORD</td>
+                      <td class="p-3"><em>auto-generated</em></td>
+                      <td class="p-3">Override the default admin user password. If not set, a random password is generated and printed at startup.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">JWT_SECRET</td>
+                      <td class="p-3"><em>auto-generated</em></td>
+                      <td class="p-3">Secret key for signing JSON Web Tokens. 32+ characters recommended. If not set, a random secret is generated (warning logged).</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Performance Tuning -->
+            <div class="bg-cyan-900/10 border border-cyan-500/20 rounded-xl p-6">
+              <h3 class="text-cyan-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Performance Tuning
+              </h3>
+              <div class="overflow-hidden border border-white/5 rounded-lg">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-3">Variable</th>
+                      <th class="p-3">Default</th>
+                      <th class="p-3">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_LUA_POOL_SIZE</td>
+                      <td class="p-3"><em>CPU cores</em> (min 4)</td>
+                      <td class="p-3">Number of pre-initialized Lua VM states in the pool. Each state handles one script at a time. Increase beyond CPU core count (e.g. 32 or 64) to reduce contention under high concurrency.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_LUA_FAST_MODE</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Set to <code class="text-amber-400">1</code> or <code class="text-amber-400">true</code> to skip Lua global reset between requests. Provides maximum throughput for stateless scripts. Do not enable if scripts rely on clean global state.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">QUEUE_WORKERS</td>
+                      <td class="p-3">4</td>
+                      <td class="p-3">Number of concurrent background job workers per node. Each worker polls for queued jobs and cron tasks.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Cluster -->
+            <div class="bg-green-900/10 border border-green-500/20 rounded-xl p-6">
+              <h3 class="text-green-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Cluster & Networking
+              </h3>
+              <div class="overflow-hidden border border-white/5 rounded-lg">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-3">Variable</th>
+                      <th class="p-3">Default</th>
+                      <th class="p-3">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_CLUSTER_SCHEME</td>
+                      <td class="p-3">http</td>
+                      <td class="p-3">Protocol for inter-node communication (<code class="text-amber-400">http</code> or <code class="text-amber-400">https</code>). Used for replication, sharding, blob sync, and scatter-gather queries.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- CLI -->
+            <div class="bg-purple-900/10 border border-purple-500/20 rounded-xl p-6">
+              <h3 class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                CLI (solidb scripts)
+              </h3>
+              <div class="overflow-hidden border border-white/5 rounded-lg">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-3">Variable</th>
+                      <th class="p-3">Default</th>
+                      <th class="p-3">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_API_KEY</td>
+                      <td class="p-3"><em>none</em></td>
+                      <td class="p-3">API key for CLI authentication. Overrides the value in <code class="text-amber-400">.solidb.json</code> config file.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_HOST</td>
+                      <td class="p-3"><em>none</em></td>
+                      <td class="p-3">Server hostname for CLI commands. Overrides config file.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_PORT</td>
+                      <td class="p-3"><em>none</em></td>
+                      <td class="p-3">Server port for CLI commands. Overrides config file.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_DATABASE</td>
+                      <td class="p-3"><em>none</em></td>
+                      <td class="p-3">Target database for CLI commands. Overrides config file.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_SERVICE</td>
+                      <td class="p-3">default</td>
+                      <td class="p-3">Default service name for script API routing.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="group">
+              <h3 class="text-lg font-semibold text-white mb-3">Example .env</h3>
+              <div
+                class="bg-gray-950 p-4 rounded-xl border border-white/10 font-mono text-sm text-gray-300 whitespace-pre"
+              >SOLIDB_ADMIN_PASSWORD=my_secure_password
+JWT_SECRET=your-secure-jwt-secret-32-chars-min
+QUEUE_WORKERS=8
+SOLIDB_LUA_POOL_SIZE=32
+SOLIDB_LUA_FAST_MODE=1
+SOLIDB_CLUSTER_SCHEME=https</div>
+            </div>
+
+            <div class="bg-blue-900/10 border border-blue-500/20 rounded-xl p-6 mt-6">
+              <h3 class="text-blue-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Cluster Authentication (Keyfile)
+              </h3>
+              <p class="text-gray-300 text-sm mb-4">
+                For cluster mode, inter-node authentication uses a shared keyfile instead of environment variables.
+                All nodes must use the same keyfile content.
+              </p>
+              <div class="space-y-3">
+                <div class="bg-gray-950 p-3 rounded-lg font-mono text-sm text-gray-300 border border-white/10">
+                  <span class="text-gray-500"># Generate a keyfile</span><br/>
+                  openssl rand -hex 32 > solidb.key
+                </div>
+                <div class="bg-gray-950 p-3 rounded-lg font-mono text-sm text-gray-300 border border-white/10">
+                  <span class="text-gray-500"># Start with keyfile</span><br/>
+                  ./solidb --keyfile solidb.key --cluster-peers "node2:6746"
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Next Steps -->
+      <section id="next-steps" class="scroll-mt-24">
+        <h2 class="text-2xl font-bold text-white mb-6">Next Steps</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <a
+            href="/docs/sdbql"
+            class="group bg-gray-800/40 border border-white/5 p-6 rounded-2xl hover:bg-gray-800/60 transition-all hover:scale-[1.02]"
+          >
+            <div
+              class="w-12 h-12 bg-indigo-500/20 rounded-xl flex items-center justify-center mb-4 group-hover:bg-indigo-500/30 transition-colors"
+            >
+              <svg
+                class="w-6 h-6 text-indigo-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                ></path>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2">Learn SDBQL</h3>
+            <p class="text-sm text-gray-400">Master the query language.</p>
+          </a>
+
+          <a
+            href="/docs/api"
+            class="group bg-gray-800/40 border border-white/5 p-6 rounded-2xl hover:bg-gray-800/60 transition-all hover:scale-[1.02]"
+          >
+            <div
+              class="w-12 h-12 bg-purple-500/20 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-500/30 transition-colors"
+            >
+              <svg
+                class="w-6 h-6 text-purple-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                ></path>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2">API Reference</h3>
+            <p class="text-sm text-gray-400">Explore HTTP endpoints.</p>
+          </a>
+
+          <a
+            href="/docs/cluster"
+            class="group bg-gray-800/40 border border-white/5 p-6 rounded-2xl hover:bg-gray-800/60 transition-all hover:scale-[1.02]"
+          >
+            <div
+              class="w-12 h-12 bg-pink-500/20 rounded-xl flex items-center justify-center mb-4 group-hover:bg-pink-500/30 transition-colors"
+            >
+              <svg
+                class="w-6 h-6 text-pink-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                ></path>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2">Cluster</h3>
+            <p class="text-sm text-gray-400">Setup high availability.</p>
+          </a>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>

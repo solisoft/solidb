@@ -1,0 +1,1624 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-blue-400 hover:text-blue-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header Section -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"></div>
+      <div class="relative flex items-center">
+        <div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-[0_0_30px_rgba(59,130,246,0.5)] mr-6">
+          <i class="fas fa-sync-alt text-3xl"></i>
+        </div>
+        <div>
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-2 tracking-tight">
+            Offline Sync
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Build resilient applications that work anywhere. SoliDB's offline sync enables local-first data with automatic conflict resolution.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <nav class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-6">
+      <h2 class="text-lg font-bold text-white mb-4">Table of Contents</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Overview</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#introduction" class="hover:text-white transition-colors">Introduction</a></li>
+            <li><a href="#architecture" class="hover:text-white transition-colors">Architecture</a></li>
+            <li><a href="#features" class="hover:text-white transition-colors">Key Features</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Getting Started</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#quickstart" class="hover:text-white transition-colors">Quick Start</a></li>
+            <li><a href="#sdk" class="hover:text-white transition-colors">Client SDK</a></li>
+            <li><a href="#configuration" class="hover:text-white transition-colors">Configuration</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Core Concepts</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#api-endpoints" class="hover:text-white transition-colors">API Endpoints</a></li>
+            <li><a href="#conflict-resolution" class="hover:text-white transition-colors">Conflict Resolution</a></li>
+            <li><a href="#version-vectors" class="hover:text-white transition-colors">Version Vectors</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Local Queries</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#local-queries" class="hover:text-white transition-colors">SDBQL Offline</a></li>
+            <li><a href="#supported-features" class="hover:text-white transition-colors">Supported Features</a></li>
+            <li><a href="#builtin-functions" class="hover:text-white transition-colors">Builtin Functions</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-blue-400 font-semibold mb-2">Advanced</h3>
+          <ul class="space-y-1 text-gray-400">
+            <li><a href="#advanced-features" class="hover:text-white transition-colors">Advanced Features</a></li>
+            <li><a href="#best-practices" class="hover:text-white transition-colors">Best Practices</a></li>
+            <li><a href="#troubleshooting" class="hover:text-white transition-colors">Troubleshooting</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Introduction Section -->
+    <section id="introduction" class="scroll-mt-24">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+            <i class="fas fa-info-circle text-sm"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">Introduction</h2>
+        </div>
+
+        <p class="text-gray-300 mb-6 leading-relaxed">
+          Offline Sync is SoliDB's solution for building local-first applications. It allows clients to maintain a local replica of their data, work offline, and seamlessly synchronize changes when connectivity is restored.
+        </p>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <div class="flex items-center mb-3">
+              <i class="fas fa-wifi-slash text-red-400 mr-3"></i>
+              <h4 class="text-white font-semibold">Offline-First</h4>
+            </div>
+            <p class="text-sm text-gray-400">Applications work without network connectivity. All operations are performed locally and synced automatically when online.</p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <div class="flex items-center mb-3">
+              <i class="fas fa-bolt text-yellow-400 mr-3"></i>
+              <h4 class="text-white font-semibold">Instant Response</h4>
+            </div>
+            <p class="text-sm text-gray-400">Zero-latency reads and writes from local storage. No waiting for network round-trips.</p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <div class="flex items-center mb-3">
+              <i class="fas fa-handshake text-green-400 mr-3"></i>
+              <h4 class="text-white font-semibold">Auto Conflict Resolution</h4>
+            </div>
+            <p class="text-sm text-gray-400">Sophisticated conflict resolution using version vectors ensures data consistency across all devices.</p>
+          </div>
+        </div>
+
+        <div class="bg-blue-900/10 rounded-xl p-5 border border-blue-500/20">
+          <div class="flex items-start">
+            <i class="fas fa-lightbulb text-blue-400 mt-1 mr-3"></i>
+            <div>
+              <h4 class="text-blue-400 font-bold mb-1">Why Offline Sync Matters</h4>
+              <p class="text-sm text-gray-300">
+                Modern applications need to work everywhere - from subway tunnels to airplanes. Offline sync ensures your users have a consistent experience regardless of connectivity. It's essential for mobile apps, field tools, and any application where reliability is critical.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Architecture Section -->
+    <section id="architecture" class="scroll-mt-24">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(99,102,241,0.5)]">
+            <i class="fas fa-sitemap text-sm"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">Architecture</h2>
+        </div>
+
+        <p class="text-gray-300 mb-6 leading-relaxed">
+          SoliDB's offline sync uses a sophisticated architecture combining <strong>version vectors</strong>, <strong>delta encoding</strong>, and <strong>CRDT principles</strong> to ensure data consistency across distributed clients.
+        </p>
+
+        <!-- Sync Flow Diagram -->
+        <div class="bg-gray-950/50 rounded-xl p-6 border border-white/5 mb-8">
+          <h4 class="text-indigo-400 font-bold mb-4 flex items-center">
+            <i class="fas fa-project-diagram mr-3"></i> Sync Flow
+          </h4>
+          <div class="flex flex-wrap items-center justify-center gap-2 md:gap-0">
+            <div class="bg-blue-500/20 border border-blue-500/30 rounded-lg px-4 py-3 text-center">
+              <i class="fas fa-mobile-alt text-blue-400 mb-1"></i>
+              <div class="text-white font-medium text-sm">Local Write</div>
+              <div class="text-xs text-gray-500">SQLite/RocksDB</div>
+            </div>
+            <div class="text-gray-600 mx-2">→</div>
+            <div class="bg-purple-500/20 border border-purple-500/30 rounded-lg px-4 py-3 text-center">
+              <i class="fas fa-clock text-purple-400 mb-1"></i>
+              <div class="text-white font-medium text-sm">Version Vector</div>
+              <div class="text-xs text-gray-500">{node: counter}</div>
+            </div>
+            <div class="text-gray-600 mx-2">→</div>
+            <div class="bg-cyan-500/20 border border-cyan-500/30 rounded-lg px-4 py-3 text-center">
+              <i class="fas fa-exchange-alt text-cyan-400 mb-1"></i>
+              <div class="text-white font-medium text-sm">Delta Sync</div>
+              <div class="text-xs text-gray-500">Changes only</div>
+            </div>
+            <div class="text-gray-600 mx-2">→</div>
+            <div class="bg-green-500/20 border border-green-500/30 rounded-lg px-4 py-3 text-center">
+              <i class="fas fa-server text-green-400 mb-1"></i>
+              <div class="text-white font-medium text-sm">Merge & Resolve</div>
+              <div class="text-xs text-gray-500">Server reconciles</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Version Vectors -->
+        <div id="version-vectors" class="scroll-mt-24 mb-8">
+          <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+            <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 mr-3">
+              <i class="fas fa-code-branch text-sm"></i>
+            </span>
+            Version Vectors
+          </h3>
+          <p class="text-gray-300 mb-4">
+            Version vectors track the history of each document across all nodes. Unlike simple timestamps, they can detect concurrent modifications and establish causal relationships between changes.
+          </p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <pre class="text-gray-300"><code>{
+  "_key": "user-123",
+  "name": "Alice",
+  "_version": {
+    "client-A": 5,    // Client A has made 5 edits
+    "client-B": 2,    // Client B has made 2 edits
+    "server": 8       // Server has processed 8 total changes
+  },
+  "_timestamp": "2024-01-15T10:30:00Z"
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Sync Modes -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-indigo-400 font-bold mb-3 flex items-center">
+              <i class="fas fa-upload mr-2"></i> Push Sync
+            </h4>
+            <p class="text-sm text-gray-400 mb-3">
+              Client-initiated sync sending local changes to the server:
+            </p>
+            <ul class="text-xs text-gray-500 space-y-1 font-mono">
+              <li>1. Collect pending changes from local store</li>
+              <li>2. Send delta to server with version vector</li>
+              <li>3. Server validates and merges changes</li>
+              <li>4. Server returns updated version vector</li>
+              <li>5. Client marks changes as synced</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-indigo-400 font-bold mb-3 flex items-center">
+              <i class="fas fa-download mr-2"></i> Pull Sync
+            </h4>
+            <p class="text-sm text-gray-400 mb-3">
+              Client retrieves changes from the server:
+            </p>
+            <ul class="text-xs text-gray-500 space-y-1 font-mono">
+              <li>1. Send current version vector to server</li>
+              <li>2. Server computes changes since last sync</li>
+              <li>3. Server returns delta with new version vector</li>
+              <li>4. Client applies changes to local store</li>
+              <li>5. Client resolves any local conflicts</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Key Features -->
+    <section id="features" class="scroll-mt-24">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(16,185,129,0.5)]">
+            <i class="fas fa-star text-sm"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">Key Features</h2>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <div class="flex items-center mb-3">
+              <i class="fas fa-compress-alt text-blue-400 mr-3"></i>
+              <h4 class="text-white font-semibold">Delta Sync</h4>
+            </div>
+            <p class="text-sm text-gray-400">Only changed fields are transmitted. Bandwidth-efficient sync for mobile and low-bandwidth environments.</p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <div class="flex items-center mb-3">
+              <i class="fas fa-random text-purple-400 mr-3"></i>
+              <h4 class="text-white font-semibold">CRDT Types</h4>
+            </div>
+            <p class="text-sm text-gray-400">Built-in CRDT types (counters, registers, sets, maps) that merge automatically without conflicts.</p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <div class="flex items-center mb-3">
+              <i class="fas fa-shield-alt text-green-400 mr-3"></i>
+              <h4 class="text-white font-semibold">Automatic Retry</h4>
+            </div>
+            <p class="text-sm text-gray-400">Failed syncs are automatically retried with exponential backoff. No manual intervention required.</p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <div class="flex items-center mb-3">
+              <i class="fas fa-database text-cyan-400 mr-3"></i>
+              <h4 class="text-white font-semibold">Local Storage</h4>
+            </div>
+            <p class="text-sm text-gray-400">Uses SQLite or RocksDB locally. Full query capabilities on local data, even when offline.</p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <div class="flex items-center mb-3">
+              <i class="fas fa-filter text-orange-400 mr-3"></i>
+              <h4 class="text-white font-semibold">Selective Sync</h4>
+            </div>
+            <p class="text-sm text-gray-400">Sync only the data you need. Filter by user, date range, or any query criteria to save storage.</p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <div class="flex items-center mb-3">
+              <i class="fas fa-bell text-yellow-400 mr-3"></i>
+              <h4 class="text-white font-semibold">Change Notifications</h4>
+            </div>
+            <p class="text-sm text-gray-400">Subscribe to local and remote changes. Real-time UI updates as data syncs across devices.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Start Section -->
+    <section id="quickstart" class="scroll-mt-24">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-green-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(34,197,94,0.5)]">
+            <i class="fas fa-rocket text-sm"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">Quick Start</h2>
+        </div>
+
+        <p class="text-gray-300 mb-6">
+          Get started with offline sync in minutes using the Rust client SDK. This example shows basic setup, local operations, and sync.
+        </p>
+
+        <div class="bg-gray-950/50 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <pre class="relative z-10"><code class="language-rust">use solidb_client::{SyncManager, SyncConfig, HttpClient, LocalStore};
+use serde_json::json;
+use std::collections::HashMap;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Set up local storage and HTTP client
+    let local_store = LocalStore::open_default("myapp", "device-123".to_string())?;
+    let client = HttpClient::new("localhost:6745", 5000);
+
+    // 2. Configure and create sync manager
+    let config = SyncConfig {
+        sync_interval_secs: 30,
+        batch_size: 100,
+        max_retries: 5,
+        auto_sync: true,
+        collections: vec!["users".to_string(), "orders".to_string()],
+    };
+
+    let mut sync_manager = SyncManager::new(local_store, client, config);
+    let cmd_tx = sync_manager.start().await;  // Start background sync
+
+    // 3. Work offline - changes stored locally
+    sync_manager.save_document("users", "user-1", &json!({
+        "name": "Alice",
+        "email": "alice@example.com",
+        "status": "active",
+    })).await?;
+
+    println!("Document saved locally");
+
+    // 4. Query local data with full SDBQL (works offline!)
+    let mut bind_vars = HashMap::new();
+    bind_vars.insert("name".to_string(), json!("Alice"));
+
+    let users = sync_manager.query(
+        "FOR u IN users FILTER u.name == @name RETURN u",
+        Some(bind_vars)
+    ).await?;
+
+    println!("Found {} local users", users.len());
+
+    // 5. Trigger sync when online
+    let sync_result = sync_manager.sync_now().await?;
+    println!("Synced: {} pushed, {} pulled", sync_result.pushed, sync_result.pulled);
+
+    // 6. Stop sync when done
+    cmd_tx.send(SyncCommand::Stop).await?;
+
+    Ok(())
+}</code></pre>
+        </div>
+
+        <div class="mt-6 bg-green-900/10 rounded-xl p-5 border border-green-500/20">
+          <div class="flex items-start">
+            <i class="fas fa-check-circle text-green-400 mt-1 mr-3"></i>
+            <div>
+              <h4 class="text-green-400 font-bold mb-1">That's It!</h4>
+              <p class="text-sm text-gray-300">
+                With just a few lines of code, your application can now work offline, automatically sync when online, and handle conflicts intelligently. The sync manager handles all the complexity for you.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Client SDK Section -->
+    <section id="sdk" class="scroll-mt-24">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-orange-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(249,115,22,0.5)]">
+            <i class="fab fa-rust text-sm"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">Rust Client SDK</h2>
+        </div>
+
+        <p class="text-gray-300 mb-6">
+          The <code class="text-orange-400">OfflineSyncManager</code> provides a comprehensive API for offline-first applications. All operations are async and work seamlessly with Tokio.
+        </p>
+
+        <!-- Configuration -->
+        <section id="configuration" class="mb-12 scroll-mt-24">
+          <h3 class="text-xl font-bold text-white mb-4">Configuration</h3>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+            <pre><code class="language-rust">use solidb_client::{SyncManager, SyncConfig, HttpClient, LocalStore};
+
+// Local storage configuration
+let local_store = LocalStore::open(
+    "/path/to/sync_data.db",   // SQLite database path
+    "device-unique-id".to_string()
+)?;
+
+// Or use default path (~/.solidb/app_name/)
+let local_store = LocalStore::open_default(
+    "my_app",                  // Application name
+    "device-uuid".to_string()  // Unique device identifier
+)?;
+
+// HTTP client for server communication
+let client = HttpClient::new(
+    "localhost:6745",          // Server address
+    5000                       // Timeout in milliseconds
+);
+
+// Sync configuration
+let config = SyncConfig {
+    // Sync interval when online (seconds)
+    sync_interval_secs: 30,
+
+    // Maximum changes to push/pull per batch
+    batch_size: 100,
+
+    // Retry attempts for failed syncs
+    max_retries: 5,
+
+    // Enable automatic background sync
+    auto_sync: true,
+
+    // Collections to sync (empty = all collections)
+    collections: vec![
+        "users".to_string(),
+        "orders".to_string(),
+    ],
+};
+
+// Create and start sync manager
+let mut sync_manager = SyncManager::new(local_store, client, config);
+let cmd_tx = sync_manager.start().await;</code></pre>
+          </div>
+        </section>
+
+        <!-- Local Operations -->
+        <section class="mb-12 scroll-mt-24">
+          <h3 class="text-xl font-bold text-white mb-4">Local Operations</h3>
+          <p class="text-gray-300 mb-4">
+            All CRUD operations work on local data. Changes are automatically queued for sync.
+          </p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+            <pre><code class="language-rust">use serde_json::json;
+
+// Save document locally (insert or update)
+sync_manager.save_document(
+    "users",                    // collection
+    "user-456",                 // document key
+    &json!({
+        "name": "Bob",
+        "email": "bob@example.com",
+        "created_at": "2024-01-15T10:00:00Z",
+    })
+).await?;
+
+// Get document from local store
+let user = sync_manager.get_document("users", "user-456").await?;
+// Returns: Option&lt;Value&gt; - None if not found
+
+// Update existing document
+sync_manager.save_document(
+    "users",
+    "user-456",
+    &json!({"email": "bob.new@example.com", "status": "active"})
+).await?;
+
+// Delete document locally (queued for sync)
+sync_manager.delete_document("users", "user-456").await?;
+
+// List all documents in a collection
+let docs = sync_manager.query_documents("users").await?;
+// Returns: Vec&lt;(String, Value)&gt; - (key, document) pairs</code></pre>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead class="bg-white/5">
+                <tr>
+                  <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                  <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                  <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/5 text-sm">
+                <tr><td class="px-4 py-3"><code class="text-orange-400">save_document(col, key, doc)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Insert or update document locally</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">get_document(col, key)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Option&lt;Value&gt;&gt;</td><td class="px-4 py-3 text-gray-400">Get document from local store</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">delete_document(col, key)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Delete document locally</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">query_documents(col)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Vec&lt;(String, Value)&gt;&gt;</td><td class="px-4 py-3 text-gray-400">List all documents in collection</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">query(sdbql, bind_vars)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Vec&lt;Value&gt;&gt;</td><td class="px-4 py-3 text-gray-400">Execute SDBQL query on local data</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Querying Local Data -->
+        <section class="mb-12 scroll-mt-24">
+          <h3 class="text-xl font-bold text-white mb-4">Querying Local Data</h3>
+          <p class="text-gray-300 mb-4">
+            Run full SDBQL queries against local data using the <code class="text-orange-400">query()</code> method.
+            The query engine works identically whether online or offline, powered by the <code class="text-violet-400">sdbql-core</code> crate.
+          </p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+            <pre><code class="language-rust">use std::collections::HashMap;
+use serde_json::json;
+
+// Simple query without bind variables
+let active_users = sync_manager.query(
+    "FOR u IN users FILTER u.status == 'active' RETURN u",
+    None
+).await?;
+
+// Query with bind variables (recommended for security)
+let mut bind_vars = HashMap::new();
+bind_vars.insert("min_age".to_string(), json!(18));
+bind_vars.insert("status".to_string(), json!("premium"));
+
+let premium_users = sync_manager.query(
+    r#"FOR u IN users
+       FILTER u.age >= @min_age AND u.status == @status
+       SORT u.created_at DESC
+       LIMIT 50
+       RETURN { name: u.name, email: u.email }"#,
+    Some(bind_vars)
+).await?;
+
+// Aggregation queries with COLLECT
+let stats = sync_manager.query(
+    r#"FOR u IN users
+       COLLECT status = u.status WITH COUNT INTO count
+       RETURN { status, count }"#,
+    None
+).await?;
+
+// Joins across local collections
+let orders_with_users = sync_manager.query(
+    r#"FOR o IN orders
+       FOR u IN users FILTER u._key == o.user_id
+       RETURN { order: o, customer: u.name }"#,
+    None
+).await?;
+
+// Higher-order functions (FILTER, MAP, etc.)
+let filtered = sync_manager.query(
+    r#"LET adults = FILTER(users, u -> u.age >= 18)
+       FOR u IN adults
+       RETURN u.name"#,
+    None
+).await?;</code></pre>
+          </div>
+          <div class="p-4 bg-violet-500/10 border border-violet-500/20 rounded-lg">
+            <div class="flex items-start">
+              <i class="fas fa-bolt text-violet-400 mt-0.5 mr-3"></i>
+              <p class="text-sm text-gray-300">
+                <strong>Performance tip:</strong> Local queries execute instantly with no network latency.
+                All data is stored in SQLite and queries use the same SDBQL syntax as server queries.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Sync Operations -->
+        <section class="mb-12 scroll-mt-24">
+          <h3 class="text-xl font-bold text-white mb-4">Manual Sync Control</h3>
+          <p class="text-gray-300 mb-4">
+            While auto-sync runs in the background, you can manually trigger syncs and send commands.
+          </p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+            <pre><code class="language-rust">use solidb_client::SyncCommand;
+
+// Start the sync manager (returns command channel)
+let cmd_tx = sync_manager.start().await;
+
+// Trigger immediate sync
+let result = sync_manager.sync_now().await?;
+println!("Pushed: {}, Pulled: {}", result.pushed, result.pulled);
+println!("Conflicts: {}, Errors: {}", result.conflicts, result.errors.len());
+
+// Or send sync command through channel
+cmd_tx.send(SyncCommand::SyncNow).await?;
+
+// Subscribe to a specific collection
+cmd_tx.send(SyncCommand::Subscribe {
+    collection: "users".to_string(),
+    filter: Some("status == 'active'".to_string()),
+}).await?;
+
+// Unsubscribe from a collection
+cmd_tx.send(SyncCommand::Unsubscribe {
+    collection: "old_collection".to_string(),
+}).await?;
+
+// Set online/offline status manually
+cmd_tx.send(SyncCommand::SetOnline(false)).await?;  // Go offline
+cmd_tx.send(SyncCommand::SetOnline(true)).await?;   // Go online
+
+// Check if currently syncing
+let is_syncing = sync_manager.is_syncing().await;
+
+// Check if online
+let is_online = sync_manager.is_online().await;
+
+// Stop the sync manager
+cmd_tx.send(SyncCommand::Stop).await?;</code></pre>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead class="bg-white/5">
+                <tr>
+                  <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Command</th>
+                  <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/5 text-sm">
+                <tr><td class="px-4 py-3"><code class="text-orange-400">SyncCommand::SyncNow</code></td><td class="px-4 py-3 text-gray-400">Trigger immediate bidirectional sync</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">SyncCommand::Subscribe { collection, filter }</code></td><td class="px-4 py-3 text-gray-400">Start syncing a collection</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">SyncCommand::Unsubscribe { collection }</code></td><td class="px-4 py-3 text-gray-400">Stop syncing a collection</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">SyncCommand::SetOnline(bool)</code></td><td class="px-4 py-3 text-gray-400">Set online/offline status</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">SyncCommand::Stop</code></td><td class="px-4 py-3 text-gray-400">Stop the sync manager</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Local Store API -->
+        <section class="mb-12 scroll-mt-24">
+          <h3 class="text-xl font-bold text-white mb-4">LocalStore Direct Access</h3>
+          <p class="text-gray-300 mb-4">
+            For advanced use cases, you can work directly with the underlying SQLite store.
+          </p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <pre><code class="language-rust">use solidb_client::LocalStore;
+
+// Open store at specific path
+let store = LocalStore::open(
+    "/path/to/data.db",
+    "device-id".to_string()
+)?;
+
+// Or use default path
+let store = LocalStore::open_default("app_name", "device-id".to_string())?;
+
+// Direct document operations
+store.put_document("users", "key", &json!({...}), &version_vector)?;
+let doc = store.get_document("users", "key")?;
+store.delete_document("users", "key", &version_vector)?;
+
+// List documents in collection
+let docs = store.list_documents("users")?;
+// Returns: Vec&lt;(key, document, version_vector)&gt;
+
+// List all collections
+let collections = store.list_collections()?;
+
+// Pending changes (for sync)
+store.add_pending_change(collection, key, operation, data, vector)?;
+let pending = store.get_pending_changes()?;
+store.mark_change_synced(change_id)?;
+
+// Subscriptions (for selective sync)
+store.add_subscription(collection, filter)?;
+let subs = store.list_subscriptions()?;
+store.remove_subscription(collection)?;</code></pre>
+          </div>
+        </section>
+
+        <!-- Method Reference Table -->
+        <section class="scroll-mt-24">
+          <h3 class="text-xl font-bold text-white mb-4">SyncManager Method Reference</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead class="bg-white/5">
+                <tr>
+                  <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Method</th>
+                  <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Returns</th>
+                  <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/5 text-sm">
+                <tr><td class="px-4 py-3"><code class="text-orange-400">new(store, client, config)</code></td><td class="px-4 py-3 text-gray-500">Self</td><td class="px-4 py-3 text-gray-400">Create new sync manager</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">start()</code></td><td class="px-4 py-3 text-gray-500">Sender&lt;SyncCommand&gt;</td><td class="px-4 py-3 text-gray-400">Start background sync, returns command channel</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">save_document(col, key, doc)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Save (insert/update) document locally</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">get_document(col, key)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Option&lt;Value&gt;&gt;</td><td class="px-4 py-3 text-gray-400">Get document from local store</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">delete_document(col, key)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;()&gt;</td><td class="px-4 py-3 text-gray-400">Delete document locally</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">query_documents(col)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Vec&lt;(String, Value)&gt;&gt;</td><td class="px-4 py-3 text-gray-400">List all documents in collection</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">query(sdbql, bind_vars)</code></td><td class="px-4 py-3 text-gray-500">Result&lt;Vec&lt;Value&gt;&gt;</td><td class="px-4 py-3 text-gray-400">Execute full SDBQL query on local data</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">sync_now()</code></td><td class="px-4 py-3 text-gray-500">Result&lt;SyncResult&gt;</td><td class="px-4 py-3 text-gray-400">Trigger immediate bidirectional sync</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">is_syncing()</code></td><td class="px-4 py-3 text-gray-500">bool</td><td class="px-4 py-3 text-gray-400">Check if sync is currently running</td></tr>
+                <tr><td class="px-4 py-3"><code class="text-orange-400">is_online()</code></td><td class="px-4 py-3 text-gray-500">bool</td><td class="px-4 py-3 text-gray-400">Check if client is online</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h4 class="text-lg font-bold text-white mt-8 mb-4">SyncResult Structure</h4>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <pre><code class="language-rust">pub struct SyncResult {
+    pub success: bool,      // Whether sync completed successfully
+    pub pulled: usize,      // Number of documents pulled from server
+    pub pushed: usize,      // Number of documents pushed to server
+    pub conflicts: usize,   // Number of conflicts detected
+    pub errors: Vec&lt;String&gt;, // Error messages if any
+}</code></pre>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- API Endpoints Section -->
+    <section id="api-endpoints" class="scroll-mt-24">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-purple-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(168,85,247,0.5)]">
+            <i class="fas fa-plug text-sm"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">API Endpoints</h2>
+        </div>
+
+        <p class="text-gray-300 mb-6">
+          The sync protocol uses standard HTTP endpoints for compatibility. You can also use these endpoints directly for custom sync implementations.
+        </p>
+
+        <!-- Delta Sync Endpoint -->
+        <div class="mb-8">
+          <div class="flex items-center mb-3">
+            <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-mono rounded mr-3">POST</span>
+            <code class="text-white font-mono">/_api/sync/delta</code>
+          </div>
+          <p class="text-sm text-gray-400 mb-3">Push local changes and receive server delta in one request.</p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <div class="text-gray-500 mb-2">// Request</div>
+            <pre><code class="language-json">{
+  "database": "mydb",
+  "client_id": "client-A",
+  "version_vector": {
+    "client-A": 5,
+    "server": 8
+  },
+  "changes": [
+    {
+      "collection": "users",
+      "key": "user-123",
+      "operation": "insert",
+      "document": { "name": "Alice", "email": "alice@example.com" },
+      "timestamp": "2024-01-15T10:30:00Z"
+    }
+  ]
+}</code></pre>
+            <div class="text-gray-500 mt-4 mb-2">// Response</div>
+            <pre><code class="language-json">{
+  "server_version": {
+    "client-A": 6,
+    "client-B": 2,
+    "server": 9
+  },
+  "server_changes": [
+    {
+      "collection": "users",
+      "key": "user-456",
+      "operation": "update",
+      "delta": { "status": "active" },
+      "version_vector": { "client-B": 2, "server": 9 }
+    }
+  ],
+  "conflicts": []
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Pull Endpoint -->
+        <div class="mb-8">
+          <div class="flex items-center mb-3">
+            <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-mono rounded mr-3">GET</span>
+            <code class="text-white font-mono">/_api/sync/pull/:database</code>
+          </div>
+          <p class="text-sm text-gray-400 mb-3">Get changes from server since last sync.</p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <div class="text-gray-500 mb-2">// Query Parameters</div>
+            <pre><code class="language-text">?client_id=client-A
+&version_vector={"client-A":5,"server":8}
+&collections=users,orders  // Optional: filter by collections
+&limit=100                 // Optional: max changes to return</code></pre>
+          </div>
+        </div>
+
+        <!-- Push Endpoint -->
+        <div class="mb-8">
+          <div class="flex items-center mb-3">
+            <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-mono rounded mr-3">POST</span>
+            <code class="text-white font-mono">/_api/sync/push/:database</code>
+          </div>
+          <p class="text-sm text-gray-400 mb-3">Send local changes to server.</p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <div class="text-gray-500 mb-2">// Request Body</div>
+            <pre><code class="language-json">{
+  "client_id": "client-A",
+  "changes": [
+    {
+      "collection": "users",
+      "key": "user-123",
+      "operation": "update",
+      "delta": { "email": "new@example.com" },
+      "base_version": { "client-A": 5, "server": 8 }
+    }
+  ]
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Sync Status Endpoint -->
+        <div>
+          <div class="flex items-center mb-3">
+            <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-mono rounded mr-3">GET</span>
+            <code class="text-white font-mono">/_api/sync/status/:database</code>
+          </div>
+          <p class="text-sm text-gray-400 mb-3">Get server-side sync status for a client.</p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <div class="text-gray-500 mb-2">// Response</div>
+            <pre><code class="language-json">{
+  "client_id": "client-A",
+  "server_version": {
+    "client-A": 10,
+    "client-B": 5,
+    "server": 15
+  },
+  "pending_for_client": 3,
+  "last_sync": "2024-01-15T10:30:00Z",
+  "collections_synced": ["users", "orders"]
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Conflict Resolution Section -->
+    <section id="conflict-resolution" class="scroll-mt-24">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(239,68,68,0.5)]">
+            <i class="fas fa-handshake text-sm"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">Conflict Resolution</h2>
+        </div>
+
+        <p class="text-gray-300 mb-6">
+          When the same document is modified on multiple clients simultaneously, SoliDB uses version vectors to detect conflicts and applies configurable resolution strategies.
+        </p>
+
+        <!-- Conflict Detection -->
+        <div class="mb-8">
+          <h3 class="text-xl font-bold text-white mb-4">Conflict Detection</h3>
+          <p class="text-gray-300 mb-4">
+            A conflict occurs when two changes have version vectors that are neither descendants nor ancestors of each other (concurrent modifications).
+          </p>
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h4 class="text-red-400 font-bold mb-2">Client A</h4>
+                <pre class="text-xs text-gray-400"><code>Version: {A: 2, S: 1}
+Change: name = "Alice"</code></pre>
+              </div>
+              <div>
+                <h4 class="text-blue-400 font-bold mb-2">Client B</h4>
+                <pre class="text-xs text-gray-400"><code>Version: {B: 2, S: 1}
+Change: name = "Alicia"</code></pre>
+              </div>
+            </div>
+            <div class="mt-4 p-3 bg-red-500/10 rounded border border-red-500/20">
+              <p class="text-sm text-red-300">
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                Conflict detected: Neither version dominates the other. Both clients modified the same document based on the same server version.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Resolution Strategies -->
+        <div class="mb-8">
+          <h3 class="text-xl font-bold text-white mb-4">Resolution Strategies</h3>
+          
+          <div class="space-y-4">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-red-400 font-bold mb-2 flex items-center">
+                <i class="fas fa-clock mr-2"></i> Last Write Wins (LWW)
+              </h4>
+              <p class="text-sm text-gray-400 mb-3">
+                The most recent change based on server timestamp wins. Simple but may lose data.
+              </p>
+              <pre class="text-xs font-mono text-gray-500"><code class="language-rust">ConflictStrategy::LastWriteWins</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-orange-400 font-bold mb-2 flex items-center">
+                <i class="fas fa-history mr-2"></i> First Write Wins (FWW)
+              </h4>
+              <p class="text-sm text-gray-400 mb-3">
+                The first change to arrive at the server wins. Later changes are rejected.
+              </p>
+              <pre class="text-xs font-mono text-gray-500"><code class="language-rust">ConflictStrategy::FirstWriteWins</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-green-400 font-bold mb-2 flex items-center">
+                <i class="fas fa-object-group mr-2"></i> Merge Fields
+              </h4>
+              <p class="text-sm text-gray-400 mb-3">
+                Automatically merge non-conflicting fields. Conflicting fields use LWW or are marked for manual resolution.
+              </p>
+              <pre class="text-xs font-mono text-gray-500"><code class="language-rust">ConflictStrategy::MergeFields</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-purple-400 font-bold mb-2 flex items-center">
+                <i class="fas fa-code mr-2"></i> Custom Resolver
+              </h4>
+              <p class="text-sm text-gray-400 mb-3">
+                Provide your own conflict resolution function for full control.
+              </p>
+              <div class="bg-gray-950 rounded-lg p-3 font-mono text-xs border border-white/5">
+                <pre><code class="language-rust">ConflictStrategy::Custom(Box::new(|local, remote, base| {
+    // Custom merge logic
+    let mut resolved = local.clone();
+    if remote["timestamp"] > local["timestamp"] {
+        resolved["status"] = remote["status"].clone();
+    }
+    Ok(resolved)
+}))</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Handling Conflicts Example -->
+        <div>
+          <h3 class="text-xl font-bold text-white mb-4">Handling Conflicts in Code</h3>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <pre><code class="language-rust">// Check for conflicts after sync
+let result = sync_manager.sync().await?;
+
+if !result.conflicts.is_empty() {
+    for conflict in &result.conflicts {
+        println!("Conflict in {}:{}", 
+            conflict.collection, conflict.document_key);
+        
+        // Access conflicting versions
+        let local_version = &conflict.local_version;
+        let remote_version = &conflict.remote_version;
+        let base_version = &conflict.base_version;
+        
+        // Manual resolution
+        let resolved = resolve_manually(
+            local_version, 
+            remote_version,
+            base_version
+        );
+        
+        // Apply resolution
+        sync_manager.resolve_conflict(
+            &conflict.collection,
+            &conflict.document_key,
+            resolved
+        ).await?;
+    }
+}
+
+// Or handle conflicts via callback
+sync_manager.on_conflict(|conflict| {
+    // Show UI for user to choose
+    // Or auto-resolve based on business logic
+    ConflictResolution::AcceptRemote  // or AcceptLocal, Merge(doc)
+});</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- LOCAL SDBQL QUERIES -->
+    <!-- ========================================== -->
+    <section id="local-queries" class="scroll-mt-24">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-violet-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(139,92,246,0.5)]">
+            <i class="fas fa-code text-sm"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">Local SDBQL Queries</h2>
+        </div>
+
+        <p class="text-gray-300 mb-6 leading-relaxed">
+          The Rust client supports <strong>full SDBQL query execution</strong> against local data, even when completely offline.
+          This is powered by the <code class="text-violet-400">sdbql-core</code> crate, which provides a storage-independent query engine
+          that works with SQLite, RocksDB, or any custom data source.
+        </p>
+
+        <div class="bg-violet-900/10 rounded-xl p-5 border border-violet-500/20 mb-8">
+          <div class="flex items-start">
+            <i class="fas fa-lightbulb text-violet-400 mt-1 mr-3"></i>
+            <div>
+              <h4 class="text-violet-400 font-bold mb-1">Why This Matters</h4>
+              <p class="text-sm text-gray-300">
+                Unlike simple key-value lookups, full SDBQL support means you can run complex queries with filters, sorts,
+                aggregations, and joins - all locally. Your application logic doesn't need to change between online and offline modes.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Query API -->
+        <div class="mb-8">
+          <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+            <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-violet-500/20 text-violet-400 mr-3">
+              <i class="fas fa-terminal text-sm"></i>
+            </span>
+            Query API
+          </h3>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+            <pre><code class="language-rust">use std::collections::HashMap;
+use serde_json::json;
+
+// Simple query - no bind variables
+let users = sync_manager.query(
+    "FOR u IN users FILTER u.status == 'active' RETURN u",
+    None
+).await?;
+
+// Query with bind variables (recommended)
+let mut bind_vars = HashMap::new();
+bind_vars.insert("min_age".to_string(), json!(18));
+bind_vars.insert("status".to_string(), json!("premium"));
+
+let premium_users = sync_manager.query(
+    r#"FOR u IN users
+       FILTER u.age >= @min_age AND u.status == @status
+       SORT u.created_at DESC
+       LIMIT 50
+       RETURN { name: u.name, email: u.email }"#,
+    Some(bind_vars)
+).await?;
+
+// Aggregations work locally
+let stats = sync_manager.query(
+    r#"FOR u IN users
+       COLLECT status = u.status WITH COUNT INTO count
+       RETURN { status, count }"#,
+    None
+).await?;
+
+// Joins between local collections
+let orders_with_users = sync_manager.query(
+    r#"FOR o IN orders
+       FOR u IN users FILTER u._key == o.user_id
+       RETURN { order: o, customer: u.name }"#,
+    None
+).await?;</code></pre>
+          </div>
+        </div>
+
+        <!-- Supported Features -->
+        <section id="supported-features" class="mb-8 scroll-mt-24">
+          <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+            <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-green-500/20 text-green-400 mr-3">
+              <i class="fas fa-check-circle text-sm"></i>
+            </span>
+            Supported SDBQL Features
+          </h3>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-green-500/10">
+              <h4 class="text-green-400 font-bold mb-3 flex items-center">
+                <i class="fas fa-check mr-2 text-sm"></i> Fully Supported
+              </h4>
+              <ul class="text-sm text-gray-400 space-y-2">
+                <li><code class="text-green-300">FOR doc IN collection</code> - Collection iteration</li>
+                <li><code class="text-green-300">FOR item IN array</code> - Array iteration</li>
+                <li><code class="text-green-300">FOR i IN 1..10</code> - Numeric ranges</li>
+                <li><code class="text-green-300">FILTER condition</code> - All comparison operators</li>
+                <li><code class="text-green-300">SORT field ASC/DESC</code> - Multi-field sorting</li>
+                <li><code class="text-green-300">LIMIT offset, count</code> - Pagination</li>
+                <li><code class="text-green-300">RETURN expression</code> - Any expression</li>
+                <li><code class="text-green-300">LET var = expr</code> - Variable bindings</li>
+                <li><code class="text-green-300">COLLECT/GROUP BY</code> - Aggregations</li>
+                <li><code class="text-green-300">JOIN / LEFT JOIN</code> - Local collections only</li>
+                <li><code class="text-green-300">Nested FOR loops</code> - Full support</li>
+                <li><code class="text-green-300">Bind variables</code> - @var syntax</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-red-500/10">
+              <h4 class="text-red-400 font-bold mb-3 flex items-center">
+                <i class="fas fa-times mr-2 text-sm"></i> Server-Only Features
+              </h4>
+              <ul class="text-sm text-gray-400 space-y-2">
+                <li><code class="text-red-300">INSERT/UPDATE/DELETE</code> - Use save_document() instead</li>
+                <li><code class="text-red-300">UPSERT</code> - Use save_document() instead</li>
+                <li><code class="text-red-300">Graph traversal</code> - OUTBOUND/INBOUND/ANY</li>
+                <li><code class="text-red-300">GEO_* functions</code> - Requires geo index</li>
+                <li><code class="text-red-300">FULLTEXT()</code> - Requires fulltext index</li>
+                <li><code class="text-red-300">SEARCH</code> - Requires server search</li>
+                <li><code class="text-red-300">DOCUMENT()</code> - Cross-collection lookups</li>
+                <li><code class="text-red-300">Crypto functions</code> - Server keys required</li>
+              </ul>
+              <p class="text-xs text-gray-500 mt-3">
+                These features require server-side resources. Use them when online or sync first.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Builtin Functions -->
+        <section id="builtin-functions" class="scroll-mt-24">
+          <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+            <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 mr-3">
+              <i class="fas fa-function text-sm"></i>
+            </span>
+            Available Builtin Functions
+          </h3>
+          <p class="text-gray-300 mb-4">
+            Over 60 builtin functions are available for offline queries across these categories:
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- String Functions -->
+            <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+              <h4 class="text-blue-400 font-bold mb-2 flex items-center">
+                <i class="fas fa-font mr-2"></i> String
+              </h4>
+              <div class="text-xs text-gray-400 font-mono space-y-1">
+                <div>UPPER, LOWER, TRIM, LTRIM, RTRIM</div>
+                <div>LENGTH, CHAR_LENGTH, BYTE_LENGTH</div>
+                <div>CONCAT, CONCAT_SEPARATOR</div>
+                <div>CONTAINS, STARTS_WITH, ENDS_WITH</div>
+                <div>SUBSTRING, LEFT, RIGHT</div>
+                <div>SPLIT, JOIN, REVERSE</div>
+                <div>REPLACE, REPEAT</div>
+                <div>PAD_LEFT, PAD_RIGHT, LPAD, RPAD</div>
+                <div>FIND_FIRST, FIND_LAST</div>
+                <div>REGEX_REPLACE, REGEX_TEST, REGEX_MATCHES</div>
+                <div>TO_STRING</div>
+              </div>
+            </div>
+
+            <!-- Array Functions -->
+            <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+              <h4 class="text-green-400 font-bold mb-2 flex items-center">
+                <i class="fas fa-list mr-2"></i> Array
+              </h4>
+              <div class="text-xs text-gray-400 font-mono space-y-1">
+                <div>FIRST, LAST, NTH</div>
+                <div>PUSH, POP, SHIFT, UNSHIFT</div>
+                <div>APPEND, SLICE, RANGE</div>
+                <div>UNIQUE, FLATTEN, REVERSE</div>
+                <div>SORTED, SORTED_UNIQUE</div>
+                <div>MIN, MAX, SUM, AVG</div>
+                <div>COUNT, LENGTH</div>
+                <div>FILTER, MAP, REDUCE</div>
+                <div>ANY, ALL, NONE</div>
+                <div>POSITION, CONTAINS</div>
+              </div>
+            </div>
+
+            <!-- Math Functions -->
+            <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+              <h4 class="text-yellow-400 font-bold mb-2 flex items-center">
+                <i class="fas fa-calculator mr-2"></i> Math
+              </h4>
+              <div class="text-xs text-gray-400 font-mono space-y-1">
+                <div>FLOOR, CEIL, ROUND, TRUNC</div>
+                <div>ABS, SIGN</div>
+                <div>SQRT, POW, EXP, LOG, LOG2, LOG10</div>
+                <div>SIN, COS, TAN</div>
+                <div>ASIN, ACOS, ATAN, ATAN2</div>
+                <div>DEGREES, RADIANS</div>
+                <div>MIN, MAX</div>
+                <div>RANDOM, RAND</div>
+                <div>PI, E</div>
+              </div>
+            </div>
+
+            <!-- DateTime Functions -->
+            <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+              <h4 class="text-orange-400 font-bold mb-2 flex items-center">
+                <i class="fas fa-clock mr-2"></i> Date & Time
+              </h4>
+              <div class="text-xs text-gray-400 font-mono space-y-1">
+                <div>NOW, DATE_NOW</div>
+                <div>DATE_YEAR, DATE_MONTH, DATE_DAY</div>
+                <div>DATE_HOUR, DATE_MINUTE, DATE_SECOND</div>
+                <div>DATE_DAYOFWEEK, DATE_DAYOFYEAR</div>
+                <div>DATE_WEEK, DATE_ISOWEEK</div>
+                <div>DATE_ADD, DATE_SUBTRACT</div>
+                <div>DATE_DIFF</div>
+                <div>DATE_FORMAT, DATE_ISO8601</div>
+                <div>DATE_TIMESTAMP, DATE_UTCTOLOCAL</div>
+              </div>
+            </div>
+
+            <!-- Type Functions -->
+            <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+              <h4 class="text-purple-400 font-bold mb-2 flex items-center">
+                <i class="fas fa-shapes mr-2"></i> Type Checking
+              </h4>
+              <div class="text-xs text-gray-400 font-mono space-y-1">
+                <div>IS_ARRAY, IS_LIST</div>
+                <div>IS_BOOL, IS_BOOLEAN</div>
+                <div>IS_NUMBER, IS_NUMERIC</div>
+                <div>IS_INTEGER, IS_INT</div>
+                <div>IS_STRING</div>
+                <div>IS_NULL</div>
+                <div>IS_OBJECT, IS_DOCUMENT</div>
+                <div>IS_EMPTY</div>
+                <div>TYPENAME, TYPE_OF</div>
+                <div>TO_BOOL, TO_NUMBER, TO_ARRAY</div>
+                <div>NOT_NULL, FIRST_NOT_NULL</div>
+              </div>
+            </div>
+
+            <!-- JSON Functions -->
+            <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+              <h4 class="text-cyan-400 font-bold mb-2 flex items-center">
+                <i class="fas fa-code mr-2"></i> JSON / Object
+              </h4>
+              <div class="text-xs text-gray-400 font-mono space-y-1">
+                <div>JSON_PARSE, JSON_STRINGIFY</div>
+                <div>KEYS, VALUES</div>
+                <div>MERGE, MERGE_RECURSIVE</div>
+                <div>HAS</div>
+                <div>UNSET, KEEP</div>
+                <div>ZIP, ENTRIES, FROM_ENTRIES</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-6 bg-blue-900/10 rounded-xl p-5 border border-blue-500/20">
+            <div class="flex items-start">
+              <i class="fas fa-info-circle text-blue-400 mt-1 mr-3"></i>
+              <div>
+                <h4 class="text-blue-400 font-bold mb-1">Higher-Order Functions</h4>
+                <p class="text-sm text-gray-300">
+                  Lambda expressions are supported for FILTER, MAP, REDUCE, ANY, ALL, and NONE:
+                </p>
+                <div class="bg-gray-950 rounded-lg p-3 font-mono text-xs mt-2 border border-white/5">
+                  <code class="text-gray-300">FILTER(users, u -> u.age > 18 AND u.status == 'active')</code>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- Advanced Features Section -->
+    <section id="advanced-features" class="scroll-mt-24">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-cyan-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+            <i class="fas fa-cogs text-sm"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">Advanced Features</h2>
+        </div>
+
+        <!-- CRDT Types -->
+        <div class="mb-8">
+          <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+            <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 mr-3">
+              <i class="fas fa-calculator text-sm"></i>
+            </span>
+            CRDT Data Types
+          </h3>
+          <p class="text-gray-300 mb-4">
+            Conflict-free Replicated Data Types (CRDTs) provide automatic conflict resolution for specific data structures. Use these when you need guaranteed convergence without conflicts.
+          </p>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-cyan-400 font-bold mb-3">PNCounter (Counter)</h4>
+              <p class="text-sm text-gray-400 mb-3">Increment/decrement counter that never loses operations.</p>
+              <pre class="text-xs font-mono text-gray-500"><code class="language-rust">// Increment counter locally
+sync_manager.crdt_increment(
+    "users", 
+    "user-123", 
+    "login_count", 
+    1
+).await?;
+
+// Decrement
+sync_manager.crdt_decrement(
+    "inventory",
+    "item-456",
+    "stock",
+    1
+).await?;</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-cyan-400 font-bold mb-3">LWWRegister</h4>
+              <p class="text-sm text-gray-400 mb-3">Last-write-wins register for single values.</p>
+              <pre class="text-xs font-mono text-gray-500"><code class="language-rust">// Set value with automatic LWW semantics
+sync_manager.crdt_set(
+    "users",
+    "user-123",
+    "last_seen",
+    json!("2024-01-15T10:00:00Z")
+).await?;</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-cyan-400 font-bold mb-3">GSet (Grow-only Set)</h4>
+              <p class="text-sm text-gray-400 mb-3">Set that only grows - elements can be added but never removed.</p>
+              <pre class="text-xs font-mono text-gray-500"><code class="language-rust">// Add to set
+sync_manager.crdt_add_to_set(
+    "users",
+    "user-123",
+    "tags",
+    json!("premium")
+).await?;</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-cyan-400 font-bold mb-3">ORMap (Observed-Remove Map)</h4>
+              <p class="text-sm text-gray-400 mb-3">Map with observable add/remove operations.</p>
+              <pre class="text-xs font-mono text-gray-500"><code class="language-rust">// Put value in map
+sync_manager.crdt_map_put(
+    "users",
+    "user-123",
+    "preferences",
+    "theme",
+    json!("dark")
+).await?;
+
+// Remove from map
+sync_manager.crdt_map_remove(
+    "users",
+    "user-123",
+    "preferences",
+    "theme"
+).await?;</code></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Delta Encoding -->
+        <div class="mb-8">
+          <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+            <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 mr-3">
+              <i class="fas fa-compress text-sm"></i>
+            </span>
+            Delta Encoding
+          </h3>
+          <p class="text-gray-300 mb-4">
+            Delta encoding reduces bandwidth by transmitting only changed fields. SoliDB automatically computes and applies deltas.
+          </p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <pre><code class="language-rust">// Enable delta compression for a collection
+sync_manager.enable_delta_sync("users", true).await?;
+
+// Delta sync is automatic, but you can access delta info
+let delta_info = sync_manager.get_last_delta_stats().await?;
+println!("Last sync: {} bytes delta vs {} bytes full", 
+    delta_info.delta_size, delta_info.full_size);
+
+// Configure delta threshold (sync full doc if delta > 50%)
+sync_manager.set_delta_threshold(0.5).await?;</code></pre>
+          </div>
+        </div>
+
+        <!-- Selective Sync -->
+        <div class="mb-8">
+          <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+            <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-yellow-500/20 text-yellow-400 mr-3">
+              <i class="fas fa-filter text-sm"></i>
+            </span>
+            Selective Sync
+          </h3>
+          <p class="text-gray-300 mb-4">
+            Sync only the data you need. Useful for large datasets where clients only need a subset.
+          </p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <pre><code class="language-rust">// Sync only current user's data
+sync_manager.set_sync_filter(
+    "FOR u IN users FILTER u._key == @user_id RETURN u",
+    vec![("user_id", json!("user-123"))].into_iter().collect()
+).await?;
+
+// Sync recent orders only
+sync_manager.set_sync_filter(
+    "FOR o IN orders FILTER o.created_at > @since RETURN o",
+    vec![("since", json!("2024-01-01T00:00:00Z"))].into_iter().collect()
+).await?;
+
+// Multi-collection sync with different filters
+sync_manager.set_collection_sync_filters(vec![
+    ("users", None, None),  // Sync all users
+    ("orders", 
+     Some("FOR o IN orders FILTER o.user_id == @id RETURN o"),
+     Some(vec![("id", json!("user-123"))].into_iter().collect())),
+]).await?;</code></pre>
+          </div>
+        </div>
+
+        <!-- Encryption -->
+        <div>
+          <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+            <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-green-500/20 text-green-400 mr-3">
+              <i class="fas fa-lock text-sm"></i>
+            </span>
+            Local Storage Encryption
+          </h3>
+          <p class="text-gray-300 mb-4">
+            Encrypt local storage to protect data at rest. Uses AES-256-GCM with your provided key.
+          </p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <pre><code class="language-rust">// Configure encryption in SyncConfig
+let config = SyncConfig {
+    database: "mydb".to_string(),
+    local_storage_path: "./encrypted_data".to_string(),
+    encryption_key: Some("your-32-byte-secret-key-here!!".to_string()),
+    ..Default::default()
+};
+
+// Or enable encryption on existing store
+sync_manager.enable_encryption("your-32-byte-secret-key-here!!").await?;
+
+// Rotate encryption key
+sync_manager.rotate_encryption_key("new-32-byte-secret-key-here").await?;
+
+// Disable encryption (decrypts all data)
+sync_manager.disable_encryption().await?;</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Best Practices Section -->
+    <section id="best-practices" class="scroll-mt-24">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(16,185,129,0.5)]">
+            <i class="fas fa-check-double text-sm"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">Best Practices</h2>
+        </div>
+
+        <div class="space-y-6">
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-emerald-400 font-bold mb-2 flex items-center">
+              <i class="fas fa-lightbulb mr-2"></i> 1. Design for Offline-First
+            </h4>
+            <p class="text-sm text-gray-400">
+              Build your application assuming it's offline by default. Use local data for all UI rendering and treat server sync as a background optimization. This ensures your app works smoothly regardless of connectivity.
+            </p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-emerald-400 font-bold mb-2 flex items-center">
+              <i class="fas fa-compress-arrows-alt mr-2"></i> 2. Sync Selectively
+            </h4>
+            <p class="text-sm text-gray-400">
+              Don't sync everything. Use selective sync filters to limit data to what the user actually needs. This reduces storage usage, sync time, and bandwidth consumption.
+            </p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-emerald-400 font-bold mb-2 flex items-center">
+              <i class="fas fa-exclamation-triangle mr-2"></i> 3. Handle Conflicts Gracefully
+            </h4>
+            <p class="text-sm text-gray-400">
+              Don't ignore conflicts. Either use automatic resolution strategies that match your use case, or implement UI flows for manual resolution when necessary. Always log conflicts for debugging.
+            </p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-emerald-400 font-bold mb-2 flex items-center">
+              <i class="fas fa-lock mr-2"></i> 4. Encrypt Sensitive Data
+            </h4>
+            <p class="text-sm text-gray-400">
+              Always enable local storage encryption for sensitive data. Mobile devices can be lost or stolen, and local storage should be treated as untrusted.
+            </p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-emerald-400 font-bold mb-2 flex items-center">
+              <i class="fas fa-tachometer-alt mr-2"></i> 5. Monitor Sync Health
+            </h4>
+            <p class="text-sm text-gray-400">
+              Track sync metrics: pending changes, sync duration, conflict rates, and error counts. Set up alerts for sync failures and investigate recurring issues.
+            </p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-emerald-400 font-bold mb-2 flex items-center">
+              <i class="fas fa-broom mr-2"></i> 6. Clean Up Old Data
+            </h4>
+            <p class="text-sm text-gray-400">
+              Implement data retention policies. Use TTL indexes or periodic cleanup to remove old local data that no longer needs to be synced. This keeps local storage performant.
+            </p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-emerald-400 font-bold mb-2 flex items-center">
+              <i class="fas fa-code-branch mr-2"></i> 7. Test Offline Scenarios
+            </h4>
+            <p class="text-sm text-gray-400">
+              Test your app in airplane mode, with intermittent connectivity, and with high latency. Use network link conditioners to simulate real-world conditions during development.
+            </p>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-emerald-400 font-bold mb-2 flex items-center">
+              <i class="fas fa-database mr-2"></i> 8. Handle Storage Limits
+            </h4>
+            <p class="text-sm text-gray-400">
+              Monitor local storage usage and implement eviction policies when approaching limits. Inform users when local storage is full and provide options to free space.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Troubleshooting Section -->
+    <section id="troubleshooting" class="scroll-mt-24">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <div class="flex items-center mb-6">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-yellow-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(234,179,8,0.5)]">
+            <i class="fas fa-wrench text-sm"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">Troubleshooting</h2>
+        </div>
+
+        <div class="space-y-4">
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-yellow-400 font-bold mb-2">Sync Stuck or Hanging</h4>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• Check network connectivity with <code class="text-yellow-300">ping()</code></li>
+              <li>• Verify authentication hasn't expired</li>
+              <li>• Check for large payloads that may timeout</li>
+              <li>• Review server logs for errors</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-yellow-400 font-bold mb-2">High Conflict Rates</h4>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• Reduce sync interval to catch changes faster</li>
+              <li>• Use CRDT types for frequently modified fields</li>
+              <li>• Review data model for concurrent write hotspots</li>
+              <li>• Consider implementing field-level locking in UI</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-yellow-400 font-bold mb-2">Local Storage Errors</h4>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• Check available disk space</li>
+              <li>• Verify write permissions for storage path</li>
+              <li>• Reset local storage with <code class="text-yellow-300">full_resync()</code></li>
+              <li>• Enable encryption only after storage initialization</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-yellow-400 font-bold mb-2">Data Not Syncing</h4>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• Verify sync filter isn't too restrictive</li>
+              <li>• Check that collections are in sync list</li>
+              <li>• Ensure version vectors are incrementing</li>
+              <li>• Verify server has sync endpoint enabled</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Next Steps -->
+    <section class="scroll-mt-24">
+      <div class="bg-gradient-to-r from-blue-500/10 to-indigo-500/10 backdrop-blur-sm border border-blue-500/20 rounded-2xl p-8">
+        <h2 class="text-2xl font-bold text-white mb-4 flex items-center">
+          <i class="fas fa-arrow-right text-blue-400 mr-3"></i>
+          Next Steps
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <a href="/docs/clients-rust" class="bg-gray-950/50 rounded-xl p-5 border border-white/5 hover:border-blue-500/30 transition-colors group">
+            <h4 class="text-white font-semibold mb-2 group-hover:text-blue-400 transition-colors">Rust Client SDK</h4>
+            <p class="text-sm text-gray-400">Complete reference for the Rust client with offline sync.</p>
+          </a>
+          <a href="/docs/sdbql" class="bg-gray-950/50 rounded-xl p-5 border border-white/5 hover:border-violet-500/30 transition-colors group">
+            <h4 class="text-white font-semibold mb-2 group-hover:text-violet-400 transition-colors">SDBQL Reference</h4>
+            <p class="text-sm text-gray-400">Full query language documentation for online and offline queries.</p>
+          </a>
+          <a href="/docs/live-queries" class="bg-gray-950/50 rounded-xl p-5 border border-white/5 hover:border-green-500/30 transition-colors group">
+            <h4 class="text-white font-semibold mb-2 group-hover:text-green-400 transition-colors">Live Queries</h4>
+            <p class="text-sm text-gray-400">Combine offline sync with real-time updates when online.</p>
+          </a>
+        </div>
+
+        <!-- sdbql-core info box -->
+        <div class="mt-6 bg-violet-900/10 rounded-xl p-5 border border-violet-500/20">
+          <div class="flex items-start">
+            <i class="fab fa-rust text-violet-400 mt-1 mr-3 text-xl"></i>
+            <div>
+              <h4 class="text-violet-400 font-bold mb-1">sdbql-core Crate</h4>
+              <p class="text-sm text-gray-300">
+                The offline query engine is powered by <code class="text-violet-300">sdbql-core</code>, a storage-independent SDBQL
+                parser and executor. It's available as a standalone crate for building custom offline-first applications.
+              </p>
+              <div class="mt-2 font-mono text-xs text-gray-400">
+                <code>cargo add sdbql-core</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
