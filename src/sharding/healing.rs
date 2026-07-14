@@ -626,7 +626,7 @@ pub async fn heal_shards(
             let source_count = if let Some(source_addr) = mgr.get_node_api_address(&source_node) {
                 let url = format!(
                     "http://{}/_api/database/{}/collection/{}/count",
-                    source_addr, database, &physical_coll
+                    source_addr, database, physical_coll
                 );
                 let client = get_http_client();
 

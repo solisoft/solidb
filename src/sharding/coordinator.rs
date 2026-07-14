@@ -1305,7 +1305,7 @@ impl ShardCoordinator {
                 {
                     let url = format!(
                         "http://{}/_api/database/{}/collection/{}/count",
-                        source_addr, database, &physical_coll
+                        source_addr, database, physical_coll
                     );
                     let secret = self.cluster_secret();
                     let client = get_http_client();

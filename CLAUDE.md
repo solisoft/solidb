@@ -27,6 +27,12 @@ cargo fmt -- --check           # Check formatting
 cargo clippy -- -D warnings    # Lint checks
 ```
 
+## Releasing
+
+When bumping the version, keep the docs site in sync — **always** update the
+version pill in `doc/app/views/home/index.html.slv` (`<span class="ver-pill">vX.Y.Z</span>`)
+to match `version` in `Cargo.toml`. Both must be updated in the same release.
+
 ## Architecture
 
 ### Core Modules
