@@ -95,56 +95,23 @@ macOS: Xcode Command Line Tools (macFUSE for FUSE support)
 
 Benchmark all clients: `./bench_all.sh`
 
-## Web Application (www/)
+## Web Applications
 
-The `www/` folder contains a **LuaOnBeans** application with Riot.js components and TailwindCSS.
+Two **Soli** framework apps live alongside the database engine, each with its own `CLAUDE.md`:
 
-### Structure
-
-```
-www/
-├── app/
-│   ├── components/      # Riot.js components (.riot files)
-│   ├── controllers/     # Lua controllers (name_controller.lua)
-│   ├── models/          # Data models
-│   └── views/           # Etlua templates
-│       ├── dashboard/   # Database management UI
-│       └── docs/        # Documentation website
-├── config/
-│   ├── database.json    # DB connection config
-│   └── routes.lua       # URL routing
-├── public/              # Built assets (CSS, JS)
-└── beans.lua            # LuaOnBeans initialization
-```
-
-### Applications
-
-- **Dashboard** (`/dashboard`) - Database management UI for browsing collections, running queries, managing indexes
-- **Documentation** (`/docs`) - SoliDB documentation website
+- **`admin/`** — the database management / admin UI: browse collections and documents, run SDBQL, manage indexes, cluster, users, queues, and more. Soli app with `.sl` controllers and `.html.slv` views.
+- **`doc/`** — the SoliDB documentation website and landing page. Also a Soli app.
 
 ### Development Commands
 
 ```bash
-cd www
+cd admin        # or cd doc
 
-# TailwindCSS
-npm run build:css         # Build CSS
-npm run watch:css         # Watch mode
-
-# Riot components
-npm run build:riot        # Compile .riot to JS
-
-# LuaOnBeans scaffolding
-lua beans.lua create controller <name>
-lua beans.lua create model <name>
-lua beans.lua db:migrate
-lua beans.lua specs       # Run tests
+soli serve . --dev     # dev server, hot reload
+soli test              # run specs
+soli lint              # static analysis
 ```
 
-### Key Patterns
+See `admin/CLAUDE.md` and `doc/CLAUDE.md` for the Soli language and framework conventions.
 
-- **Routing**: `config/routes.lua` maps URLs to `controller#action`
-- **Views**: Etlua templates with `<%= %>` for output, `<% %>` for Lua code
-- **Components**: Riot.js components compiled via `npm run build:riot`
-- **Real-time**: LiveQuery WebSocket subscriptions for instant updates
-- **Auth**: Session cookies with Argon2 password hashing
+> The former LuaOnBeans `www/` app (old dashboard + docs website) has been removed; `admin/` and `doc/` supersede it.

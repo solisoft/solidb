@@ -2,12 +2,9 @@
 /data*
 *.pid
 *.log
-www/deploy.sh
 tmp
 node_modules
 .env
-www/.env
-www/config/database.json
 .claude/
 /clients/solidb-laravel-eloquent/vendor
 /clients/solidb-laravel-eloquent/composer.lock

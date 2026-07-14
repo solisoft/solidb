@@ -15,11 +15,6 @@ SoliDB is a high-performance, ACID-compliant, distributed database written in **
   - Routing: Custom router in `talks-app.riot`.
 - **Real-time**: WebSockets for Live Queries and monitoring.
 
-## Talks Application
-- **Concept**: A mini Slack-like communication platform built on top of SoliDB.
-- **Features**: Real-time channels, messaging, threading, and huddle/video calls.
-- **Implementation**: Uses Riot.js for the UI (components are `talks-*.riot` files) and WebSockets for real-time updates. Located at `www/app/views/talks/`.
-
 ## SDBQL (SoliDB Query Language)
 - Supports standard CRUD operations.
 - Advanced operators: `LIKE`, `NOT LIKE`, `=~` (RegEx), `!~` (Not RegEx).
@@ -39,9 +34,8 @@ SoliDB is a high-performance, ACID-compliant, distributed database written in **
   - `src/sdbql/`: Parser and executor for SDBQL.
   - `src/scripting/`: Lua environment integration.
   - `src/server/`: HTTP and WebSocket server routes.
-- `www/`: Web management interface.
-  - `www/app/views/`: Etlua templates.
-  - `www/static/`: Frontend assets (Riot components, JS, CSS).
+- `admin/`: Database management / admin UI (Soli app — `.sl` controllers, `.html.slv` views).
+- `doc/`: Documentation website and landing page (Soli app).
 - `clients/`: Client libraries for various languages (Rust, PHP, Ruby, Python, Go, Elixir, Bun).
 - `docs/`: Project documentation.
 

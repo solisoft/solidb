@@ -43,9 +43,6 @@ clients/
 !clients/rust-client/Cargo.toml
 !clients/rust-client/src/
 
-# Web application (optional - uncomment if you want to include www/)
-# www/
-
 # Benchmarks
 benchmarks/
 
