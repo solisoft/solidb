@@ -50,6 +50,7 @@ class CollectionsController < Controller
     payload["shardKey"] = shard_key unless shard_key.blank?
     replication_factor = (params["replication_factor"] ?? "").trim()
     payload["replicationFactor"] = replication_factor.to_int() unless replication_factor.blank?
+    payload["versioning"] = true if params["versioning"] == "true"
     return payload
   end
 

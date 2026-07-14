@@ -34,6 +34,9 @@ pub struct CreateCollectionRequest {
     /// Validation mode: "off", "strict", or "lenient"
     #[serde(rename = "validationMode", default = "default_validation_mode")]
     pub validation_mode: String,
+    /// Enable document versioning (time-travel history) on creation.
+    #[serde(default)]
+    pub versioning: Option<bool>,
 }
 
 fn default_validation_mode() -> String {
@@ -81,6 +84,11 @@ pub async fn create_collection(
             schema,
             validation_mode,
         ))?;
+    }
+
+    // Enable document versioning if requested at creation time
+    if req.versioning == Some(true) {
+        collection.enable_versioning()?;
     }
 
     // Store sharding configuration if specified

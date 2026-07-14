@@ -100,6 +100,19 @@
           </div>
         </div>
 
+        <%# Time-travel versioning. Records an immutable version on every
+            single-document write; the same toggle lives on the collection
+            page (see _indexes) so it can be flipped after creation. %>
+        <div x-show="collType != 'columnar'" class="border-t border-zinc-800 pt-3">
+          <p class="console-label mb-2">versioning <span class="text-zinc-700">— optional</span></p>
+          <label class="flex cursor-pointer items-start gap-2 font-mono text-xs leading-relaxed text-zinc-500">
+            <input type="checkbox" name="versioning" value="true" class="mt-0.5 accent-teal-500">
+            <span>record time-travel history — every single-document insert / update / delete keeps
+              an immutable version, readable via <span class="text-zinc-300">DOC_AS_OF</span> /
+              <span class="text-zinc-300">DOC_HISTORY</span>. can be toggled later from the collection page.</span>
+          </label>
+        </div>
+
         <p x-show="collType != 'columnar'" class="border-t border-zinc-800 pt-3 font-mono text-xs text-zinc-600">
           json schema validation is configured from the collection page once created
         </p>
