@@ -138,6 +138,10 @@ pub struct Collection {
     pub(crate) count_dirty: Arc<AtomicBool>,
     /// Last flush time in seconds since UNIX epoch (for throttling)
     pub(crate) last_flush_time: Arc<std::sync::atomic::AtomicU64>,
+    /// Whether in-memory vector indexes have changes not yet persisted to disk
+    pub(crate) vec_dirty: Arc<AtomicBool>,
+    /// Last vector-index persist time in seconds since UNIX epoch (throttling)
+    pub(crate) vec_last_persist: Arc<std::sync::atomic::AtomicU64>,
     /// Broadcast channel for real-time change events
     pub change_sender: Arc<tokio::sync::broadcast::Sender<ChangeEvent>>,
     /// Collection type (document, edge, blob)
@@ -163,6 +167,8 @@ impl Clone for Collection {
             chunk_count: self.chunk_count.clone(),
             count_dirty: self.count_dirty.clone(),
             last_flush_time: self.last_flush_time.clone(),
+            vec_dirty: self.vec_dirty.clone(),
+            vec_last_persist: self.vec_last_persist.clone(),
             change_sender: self.change_sender.clone(),
             collection_type: self.collection_type.clone(),
             bloom_filters: self.bloom_filters.clone(),

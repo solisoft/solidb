@@ -410,6 +410,11 @@ impl Collection {
                     self.extract_vector(doc_value, &config.field, config.dimension)
                 {
                     let _ = index.insert(doc_key, &vector);
+                    // Mark for (throttled) persistence; the actual disk write is
+                    // deferred so a bulk load doesn't re-serialize the whole
+                    // index per batch.
+                    self.vec_dirty
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                     if config.embedding_source.is_some() {
                         // Vector is now present; drop any stale pending-embed marker.
                         self.clear_embed_pending(&config.name, doc_key);
@@ -436,8 +441,15 @@ impl Collection {
 
     /// Update vector indexes on doc delete
     pub(crate) fn update_vector_indexes_on_delete(&self, doc_key: &str) {
+        let mut changed = false;
         for entry in self.vector_indexes.iter() {
-            let _ = entry.remove(doc_key);
+            if let Ok(true) = entry.remove(doc_key) {
+                changed = true;
+            }
+        }
+        if changed {
+            self.vec_dirty
+                .store(true, std::sync::atomic::Ordering::Relaxed);
         }
         // Drop any pending-embed markers for this doc across all auto-embed indexes.
         for config in self.get_all_vector_index_configs() {
@@ -445,6 +457,24 @@ impl Collection {
                 self.clear_embed_pending(&config.name, doc_key);
             }
         }
+    }
+
+    /// Whether a document UPDATE leaves every vector index's embedding
+    /// unchanged. When true, the caller can skip the delete+reinsert into the
+    /// vector index entirely — no HNSW churn and no dirty flag (hence no
+    /// persist). This is the dominant case for an incremental graph sync, which
+    /// rewrites node documents to refresh metadata / a content hash while their
+    /// embeddings stay byte-identical. Compared on the extracted `f32` vectors,
+    /// so it matches exactly what would otherwise be re-indexed.
+    pub(crate) fn vector_index_unchanged(&self, old_value: &Value, new_value: &Value) -> bool {
+        for config in self.get_all_vector_index_configs() {
+            let old_vec = self.extract_vector(old_value, &config.field, config.dimension);
+            let new_vec = self.extract_vector(new_value, &config.field, config.dimension);
+            if old_vec != new_vec {
+                return false;
+            }
+        }
+        true
     }
 
     /// Helper to extract vector from document

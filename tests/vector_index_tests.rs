@@ -760,3 +760,117 @@ fn test_vector_index_delete_and_search() {
         "Second closest 'b' should now be first"
     );
 }
+
+// ============================================================================
+// Throttled-persist durability (batch write path -> shutdown flush -> reopen)
+// ============================================================================
+
+#[test]
+fn test_vector_index_batch_write_survives_flush_and_reopen() {
+    // The batch write paths now persist the vector index on a throttle rather
+    // than after every batch (avoiding a full re-serialize per chunk on a bulk
+    // load). Durability of the deferred window is provided by the shutdown
+    // flush. This exercises that whole contract end to end.
+    let tmp = TempDir::new().expect("temp dir");
+    let path = tmp.path().to_str().unwrap().to_string();
+
+    {
+        let engine = StorageEngine::new(&path).expect("engine");
+        engine
+            .create_collection("products".to_string(), None)
+            .unwrap();
+        let collection = engine.get_collection("products").unwrap();
+        collection
+            .create_vector_index(VectorIndexConfig::new(
+                "embedding_idx".to_string(),
+                "embedding".to_string(),
+                3,
+            ))
+            .unwrap();
+
+        // Bulk write path: marks the index dirty and defers the disk persist.
+        collection
+            .insert_batch(vec![
+                json!({"_key": "d1", "embedding": [1.0, 0.0, 0.0]}),
+                json!({"_key": "d2", "embedding": [0.0, 1.0, 0.0]}),
+                json!({"_key": "d3", "embedding": [0.0, 0.0, 1.0]}),
+            ])
+            .unwrap();
+
+        // In-memory index must be correct immediately after the batch, even if
+        // the disk persist was throttled out.
+        let live = collection
+            .vector_search("embedding_idx", &[1.0, 0.0, 0.0], 1, None)
+            .unwrap();
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].doc_key, "d1");
+
+        // The shutdown flush makes the deferred state durable.
+        collection.flush_vector_indexes();
+    }
+
+    // Reopen at the same path: the index must load from disk with the vectors.
+    {
+        let engine = StorageEngine::new(&path).expect("reopen engine");
+        let collection = engine.get_collection("products").unwrap();
+        let hits = collection
+            .vector_search("embedding_idx", &[0.0, 1.0, 0.0], 1, None)
+            .expect("search after reopen");
+        assert_eq!(hits.len(), 1, "index should have survived reopen");
+        assert_eq!(hits[0].doc_key, "d2");
+    }
+}
+
+#[test]
+fn test_vector_update_skips_reindex_when_embedding_unchanged() {
+    // A document UPDATE that leaves the embedding untouched must not disturb the
+    // vector index (the fast path that avoids HNSW churn), while an UPDATE that
+    // changes the embedding must re-index correctly.
+    let (engine, _tmp) = create_test_engine();
+    engine
+        .create_collection("products".to_string(), None)
+        .unwrap();
+    let coll = engine.get_collection("products").unwrap();
+    coll.create_vector_index(VectorIndexConfig::new(
+        "embedding_idx".to_string(),
+        "embedding".to_string(),
+        3,
+    ))
+    .unwrap();
+
+    coll.insert(json!({"_key": "d1", "embedding": [1.0, 0.0, 0.0], "label": "a"}))
+        .unwrap();
+    coll.insert(json!({"_key": "d2", "embedding": [0.0, 1.0, 0.0], "label": "b"}))
+        .unwrap();
+
+    // Non-embedding field change: vector unchanged, index must still hold it.
+    coll.update("d1", json!({"label": "a2"})).unwrap();
+    let hits = coll
+        .vector_search("embedding_idx", &[1.0, 0.0, 0.0], 1, None)
+        .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(
+        hits[0].doc_key, "d1",
+        "unchanged-embedding update must not drop the vector"
+    );
+
+    // Embedding change: index must reflect the new vector.
+    coll.update("d1", json!({"embedding": [0.0, 0.0, 1.0]}))
+        .unwrap();
+    let z = coll
+        .vector_search("embedding_idx", &[0.0, 0.0, 1.0], 1, None)
+        .unwrap();
+    assert_eq!(z[0].doc_key, "d1", "changed embedding must be re-indexed");
+    let x = coll
+        .vector_search("embedding_idx", &[1.0, 0.0, 0.0], 2, None)
+        .unwrap();
+    let d1_score = x
+        .iter()
+        .find(|r| r.doc_key == "d1")
+        .map(|r| r.score)
+        .unwrap();
+    assert!(
+        d1_score < 0.5,
+        "d1 should have moved off its old direction; score={d1_score}"
+    );
+}

@@ -381,8 +381,9 @@ impl StorageEngine {
         }
     }
 
-    /// Flush all collection stats to disk
-    /// Called on shutdown to ensure counts are persisted
+    /// Flush all collection stats and vector indexes to disk.
+    /// Called on shutdown to ensure counts and the throttled vector-index
+    /// persistence window are durable across a graceful restart.
     pub fn flush_all_stats(&self) {
         let databases = self.list_databases();
 
@@ -392,6 +393,9 @@ impl StorageEngine {
                 for coll_name in collections {
                     if let Ok(collection) = database.get_collection(&coll_name) {
                         collection.flush_stats();
+                        // Persist any vector-index changes that the per-write
+                        // throttle deferred (see `persist_vector_indexes_throttled`).
+                        collection.flush_vector_indexes();
                     }
                 }
             }
