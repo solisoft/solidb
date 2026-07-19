@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.32.0](https://github.com/solisoft/solidb/compare/v0.31.0...v0.32.0) (2026-07-19)
+
+### Features
+
+* **Windows x86_64 builds**: releases now include `solidb-windows-amd64.zip` (`solidb.exe`, `solidb-dump.exe`, `solidb-restore.exe`) alongside the Linux and macOS tarballs. Two caveats for operators:
+  * `--daemon` is Unix-only and exits with an error. Run SoliDB in a console, or wrap it with a service manager such as NSSM or `sc.exe`.
+  * The generated `.admin_password` file is written with default ACLs rather than the owner-only permissions used on Unix. Restrict the data directory yourself on a shared machine.
+  * FUSE (`solidb-fuse`) remains Unix-only, and `solidb update` still does not support Windows.
+
+### Changes
+
+* **TLS moves from OpenSSL to rustls.** OpenSSL is no longer in the dependency graph at all. The Docker image no longer installs `libssl3`, and building from source no longer needs `libssl-dev` (or Perl/NASM on Windows). Certificate validation now uses the platform trust store via rustls rather than OpenSSL; `ca-certificates` is still required in the container image.
+
+### Performance
+
+* Vector-index persistence is throttled to at most once per 5s behind a dirty flag, with a shutdown flush, instead of re-serializing the whole index (all vectors + HNSW graph) after every write batch. Bulk loads into embedding-bearing collections are no longer O(batches × index size).
+* Document updates that leave every vector index's embedding unchanged skip the delete+reinsert entirely, so an incremental sync that only rewrites metadata pays no HNSW churn.
+
 ## [0.26.4](https://github.com/solisoft/solidb/compare/v0.26.3...v0.26.4) (2026-06-11)
 
 ### Security
