@@ -29,7 +29,7 @@ async-trait = "0.1"
 
 # WebSocket Client (for global changefeed aggregation)
 
-tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 url = "2.4"
 
 # JSON serialization
@@ -76,6 +76,9 @@ cron = "0.15"
 
 # Authentication
 argon2 = "0.5"
+# Keep the aws_lc_rs backend: the `rust_crypto` alternative pulls in the `rsa` crate, which
+# commit 7320477 deliberately removed (RUSTSEC-2023-0071, no fixed version). See the
+# windows-gated aws-lc-rs entry below for how this stays buildable on windows-msvc.
 jsonwebtoken = { version = "10.3", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 once_cell = "1.19"
 rand_core = "0.6"
@@ -91,10 +94,18 @@ subtle = "2.6"
 tempfile = "3.10"
 
 # HTTP client (for benchmarks)
-reqwest = { version = "0.13", features = ["json", "blocking", "multipart"] }
-
-# Vendored OpenSSL for cross-compilation support
-openssl = { version = "0.10", features = ["vendored"] }
+# rustls rather than the default native-tls: it keeps the build free of OpenSSL, which
+# otherwise needs Perl + NASM on Windows. default-features = false drops http2 and charset
+# along with native-tls, so both are re-added explicitly.
+reqwest = { version = "0.13", default-features = false, features = [
+    "json",
+    "blocking",
+    "multipart",
+    "rustls",
+    "http2",
+    "charset",
+    "system-proxy",
+] }
 
 # FUSE filesystem (requires macFUSE on macOS)
 fuser = { version = "0.16", optional = true }
@@ -190,6 +201,14 @@ solidb-client = { path = "clients/rust-client" }
 # RSS tracking the actual working set. Not used under MSVC (Windows).
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"
+
+# aws-lc-sys (pulled in by jsonwebtoken and by reqwest's rustls provider) assembles its
+# x86_64 asm with NASM on windows-msvc, which is not on the GitHub runner image. The
+# prebuilt-nasm feature uses the object files shipped in the crate instead, leaving CMake +
+# MSVC as the only build requirements — both preinstalled on windows-latest. Feature
+# unification applies this to every aws-lc-rs in the graph.
+[target.'cfg(windows)'.dependencies]
+aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
 
 [features]
 fuse = ["dep:fuser"]

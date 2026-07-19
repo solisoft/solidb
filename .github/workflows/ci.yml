@@ -27,7 +27,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config
+          sudo apt-get install -y pkg-config
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -46,6 +46,37 @@ jobs:
       - name: Run tests
         run: cargo test --release
 
+  # Compile-only gate for Windows. The full test suite is not run here: a cold RocksDB C++
+  # build on windows-latest is slow enough to dominate CI, and the value of this job is
+  # catching portability breakage on the PR rather than at tag time in build-binaries.
+  windows-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install LLVM
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "18.1"
+          env: true
+
+      - name: Cargo cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/
+            ~/.cargo/git/
+            target/
+          key: ${{ runner.os }}-cargo-check-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-check-
+
+      - name: Check
+        run: cargo check --all-targets
+
   clippy:
     runs-on: ubuntu-latest
     steps:
@@ -54,7 +85,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config
+          sudo apt-get install -y pkg-config
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -114,6 +145,9 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: solidb-linux-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: solidb-windows-amd64
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -129,7 +163,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config
+          sudo apt-get install -y pkg-config
 
       - name: Install system dependencies (Linux ARM64 cross)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -137,17 +171,43 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
+      # librocksdb-sys runs bindgen, which needs libclang. MSVC and CMake are already on
+      # the windows-latest image; LLVM is not.
+      - name: Install LLVM (Windows)
+        if: runner.os == 'Windows'
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "18.1"
+          env: true
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package binaries
+        if: runner.os != 'Windows'
         run: |
           tar -czf ${{ matrix.artifact }}.tar.gz -C target/${{ matrix.target }}/release solidb solidb-dump solidb-restore
 
+      - name: Package binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $rel = "target/${{ matrix.target }}/release"
+          Compress-Archive -Path "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe" `
+            -DestinationPath "${{ matrix.artifact }}.zip"
+
       - name: Upload to release
+        if: runner.os != 'Windows'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload --clobber ${{ github.ref_name }} ${{ matrix.artifact }}.tar.gz
+
+      - name: Upload to release (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload --clobber ${{ github.ref_name }} ${{ matrix.artifact }}.zip
 
   publish-release:
     needs: [build-binaries]
@@ -209,7 +269,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config
+          sudo apt-get install -y pkg-config
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

@@ -27,6 +27,13 @@ OS="$(uname -s)"
 case "$OS" in
   Linux*)  OS="linux" ;;
   Darwin*) OS="darwin" ;;
+  MINGW*|MSYS*|CYGWIN*)
+    echo "Error: this installer does not support Windows."
+    echo "Download solidb-windows-amd64.zip from:"
+    echo "  https://github.com/solisoft/solidb/releases/latest"
+    echo "then extract it and add the folder to your PATH."
+    exit 1
+    ;;
   *) echo "Error: unsupported operating system: $OS"; exit 1 ;;
 esac
 

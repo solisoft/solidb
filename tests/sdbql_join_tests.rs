@@ -3,14 +3,17 @@ use serde_json::json;
 use solidb::error::DbResult;
 use solidb::sdbql::{parse, QueryExecutor};
 use solidb::storage::StorageEngine;
+use tempfile::TempDir;
 use uuid::Uuid;
 
-// Helper to create a test storage engine with sample data
-fn setup_test_data() -> DbResult<(StorageEngine, String)> {
-    // Use unique paths and database names to avoid conflicts
+// Helper to create a test storage engine with sample data.
+// The returned TempDir owns the on-disk database and must be kept alive for as long as the
+// engine is used — dropping it deletes the directory.
+fn setup_test_data() -> DbResult<(StorageEngine, String, TempDir)> {
+    // Use unique database names to avoid conflicts
     let uuid = Uuid::new_v4();
-    let db_path = format!("/tmp/test_join_db_{}", uuid);
-    let storage = StorageEngine::new(&db_path)?;
+    let tmp = TempDir::new().expect("Failed to create temp dir");
+    let storage = StorageEngine::new(tmp.path().to_str().unwrap())?;
     let db_name = format!("test_db_{}", uuid);
 
     storage.create_database(db_name.clone())?;
@@ -39,7 +42,7 @@ fn setup_test_data() -> DbResult<(StorageEngine, String)> {
     profiles_coll.insert(json!({"_key": "p2", "user_key": "u2", "bio": "Designer"}))?;
     // Note: u3 (Charlie) has no profile
 
-    Ok((storage, db_name))
+    Ok((storage, db_name, tmp))
 }
 
 #[test]
@@ -89,7 +92,7 @@ fn test_parse_multiple_joins() -> DbResult<()> {
 
 #[test]
 fn test_execute_basic_inner_join() -> DbResult<()> {
-    let (storage, db_name) = setup_test_data()?;
+    let (storage, db_name, _tmp) = setup_test_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query_str = r#"
@@ -118,7 +121,7 @@ fn test_execute_basic_inner_join() -> DbResult<()> {
 
 #[test]
 fn test_execute_left_join() -> DbResult<()> {
-    let (storage, db_name) = setup_test_data()?;
+    let (storage, db_name, _tmp) = setup_test_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query_str = r#"
@@ -150,7 +153,7 @@ fn test_execute_left_join() -> DbResult<()> {
 
 #[test]
 fn test_multiple_joins() -> DbResult<()> {
-    let (storage, db_name) = setup_test_data()?;
+    let (storage, db_name, _tmp) = setup_test_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query_str = r#"
@@ -186,7 +189,7 @@ fn test_multiple_joins() -> DbResult<()> {
 
 #[test]
 fn test_join_with_filter() -> DbResult<()> {
-    let (storage, db_name) = setup_test_data()?;
+    let (storage, db_name, _tmp) = setup_test_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query_str = r#"
@@ -210,7 +213,7 @@ fn test_join_with_filter() -> DbResult<()> {
 
 #[test]
 fn test_join_with_complex_condition() -> DbResult<()> {
-    let (storage, db_name) = setup_test_data()?;
+    let (storage, db_name, _tmp) = setup_test_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query_str = r#"
@@ -237,7 +240,7 @@ fn test_join_with_complex_condition() -> DbResult<()> {
 
 #[test]
 fn test_join_with_aggregation() -> DbResult<()> {
-    let (storage, db_name) = setup_test_data()?;
+    let (storage, db_name, _tmp) = setup_test_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query_str = r#"
@@ -266,7 +269,8 @@ fn test_join_with_aggregation() -> DbResult<()> {
 #[test]
 fn test_join_empty_collection() -> DbResult<()> {
     let uuid = Uuid::new_v4();
-    let storage = StorageEngine::new(format!("/tmp/test_join_empty_db_{}", uuid))?;
+    let _tmp = TempDir::new().expect("Failed to create temp dir");
+    let storage = StorageEngine::new(_tmp.path().to_str().unwrap())?;
 
     let db_name = format!("empty_test_{}", uuid);
 
@@ -341,7 +345,7 @@ fn test_parse_full_join_without_outer() -> DbResult<()> {
 
 #[test]
 fn test_execute_right_join() -> DbResult<()> {
-    let (storage, db_name) = setup_test_data()?;
+    let (storage, db_name, _tmp) = setup_test_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query_str = r#"
@@ -367,7 +371,7 @@ fn test_execute_right_join() -> DbResult<()> {
 
 #[test]
 fn test_execute_full_outer_join() -> DbResult<()> {
-    let (storage, db_name) = setup_test_data()?;
+    let (storage, db_name, _tmp) = setup_test_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query_str = r#"
@@ -402,7 +406,8 @@ fn test_execute_full_outer_join() -> DbResult<()> {
 #[test]
 fn test_right_join_with_no_left_matches() -> DbResult<()> {
     let uuid = Uuid::new_v4();
-    let storage = StorageEngine::new(format!("/tmp/test_right_join_db_{}", uuid))?;
+    let _tmp = TempDir::new().expect("Failed to create temp dir");
+    let storage = StorageEngine::new(_tmp.path().to_str().unwrap())?;
 
     let db_name = format!("right_test_{}", uuid);
 
@@ -431,7 +436,8 @@ fn test_right_join_with_no_left_matches() -> DbResult<()> {
 #[test]
 fn test_full_outer_join_comprehensive() -> DbResult<()> {
     let uuid = Uuid::new_v4();
-    let storage = StorageEngine::new(format!("/tmp/test_full_outer_db_{}", uuid))?;
+    let _tmp = TempDir::new().expect("Failed to create temp dir");
+    let storage = StorageEngine::new(_tmp.path().to_str().unwrap())?;
 
     let db_name = format!("full_test_{}", uuid);
 
@@ -495,10 +501,10 @@ fn test_full_outer_join_comprehensive() -> DbResult<()> {
 // edge cases where hash-key equality must match values_equal semantics)
 // ============================================================================
 
-fn setup_hash_join_data() -> DbResult<(StorageEngine, String)> {
+fn setup_hash_join_data() -> DbResult<(StorageEngine, String, TempDir)> {
     let uuid = Uuid::new_v4();
-    let db_path = format!("/tmp/test_hashjoin_db_{}", uuid);
-    let storage = StorageEngine::new(&db_path)?;
+    let tmp = TempDir::new().expect("Failed to create temp dir");
+    let storage = StorageEngine::new(tmp.path().to_str().unwrap())?;
     let db_name = format!("test_db_{}", uuid);
     storage.create_database(db_name.clone())?;
     storage.create_collection(format!("{}:left_docs", db_name), None)?;
@@ -516,7 +522,7 @@ fn setup_hash_join_data() -> DbResult<(StorageEngine, String)> {
     right.insert(json!({"_key": "r3", "val": null, "flag": true}))?; // null matches null
     right.insert(json!({"_key": "r4", "val": 99, "flag": true}))?; // matches nothing
 
-    Ok((storage, db_name))
+    Ok((storage, db_name, tmp))
 }
 
 /// Int and float forms of the same number must join (values_equal compares
@@ -524,7 +530,7 @@ fn setup_hash_join_data() -> DbResult<(StorageEngine, String)> {
 /// reads as null on both sides.
 #[test]
 fn test_hash_join_number_normalization_and_null() -> DbResult<()> {
-    let (storage, db_name) = setup_hash_join_data()?;
+    let (storage, db_name, _tmp) = setup_hash_join_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query = parse(
@@ -545,7 +551,7 @@ fn test_hash_join_number_normalization_and_null() -> DbResult<()> {
 /// the remaining conjuncts per candidate.
 #[test]
 fn test_hash_join_with_residual_condition() -> DbResult<()> {
-    let (storage, db_name) = setup_hash_join_data()?;
+    let (storage, db_name, _tmp) = setup_hash_join_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query = parse(
@@ -566,7 +572,7 @@ fn test_hash_join_with_residual_condition() -> DbResult<()> {
 /// nested loop with identical results.
 #[test]
 fn test_join_non_equi_fallback() -> DbResult<()> {
-    let (storage, db_name) = setup_hash_join_data()?;
+    let (storage, db_name, _tmp) = setup_hash_join_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query = parse(
@@ -586,7 +592,7 @@ fn test_join_non_equi_fallback() -> DbResult<()> {
 /// match array.
 #[test]
 fn test_hash_left_join_keeps_unmatched() -> DbResult<()> {
-    let (storage, db_name) = setup_hash_join_data()?;
+    let (storage, db_name, _tmp) = setup_hash_join_data()?;
     let executor = QueryExecutor::with_database(&storage, db_name);
 
     let query = parse(
