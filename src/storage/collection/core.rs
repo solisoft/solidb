@@ -135,14 +135,14 @@ impl Collection {
         }
     }
 
-    /// Persist vector indexes to disk, but at most once per second and only when
-    /// there are unpersisted changes.
+    /// Persist vector indexes to disk, but at most once per
+    /// `VEC_PERSIST_THROTTLE_SECS` and only when there are unpersisted changes.
     ///
     /// `persist_vector_indexes()` re-serializes the *entire* index (all vectors +
     /// the HNSW graph) into a single blob, so calling it after every write batch
     /// during a bulk load is O(batches × index size) — the dominant cost when a
     /// large embedding-bearing collection is (re)loaded. Throttling collapses that
-    /// burst to roughly one persist per second. The trailing window is made
+    /// burst to roughly one persist per window. The trailing window is made
     /// durable by `flush_vector_indexes()` on shutdown — the same
     /// throttle-on-write + flush-on-shutdown model already used for collection
     /// stats (`flush_stats` / `flush_stats_throttled`). A hard crash can lose at
