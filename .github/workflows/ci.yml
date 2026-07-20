@@ -57,11 +57,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install LLVM
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "18.1"
-          env: true
+      # See the note in build-binaries: point bindgen at the preinstalled libclang, but
+      # leave CC/CXX alone so RocksDB is built by cl.exe rather than clang++.
+      - name: Configure libclang
+        shell: pwsh
+        run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
       - name: Cargo cache
         uses: actions/cache@v5
@@ -171,14 +171,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
-      # librocksdb-sys runs bindgen, which needs libclang. MSVC and CMake are already on
-      # the windows-latest image; LLVM is not.
-      - name: Install LLVM (Windows)
+      # librocksdb-sys runs bindgen, which needs libclang. LLVM, MSVC and CMake are all
+      # preinstalled on windows-latest, so this only points bindgen at libclang.dll.
+      # Do NOT export CC/CXX=clang here: the target is *-pc-windows-msvc, so cc-rs emits
+      # MSVC-style flags (-EHsc, -std:c++20) that plain clang++ rejects. RocksDB must be
+      # compiled by cl.exe.
+      - name: Configure libclang (Windows)
         if: runner.os == 'Windows'
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "18.1"
-          env: true
+        shell: pwsh
+        run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
