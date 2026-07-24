@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.32.1](https://github.com/solisoft/solidb/compare/v0.32.0...v0.32.1) (2026-07-24)
+
+### Fixes
+
+* **`solidb-restore` now honours `--database` / `--collection`.** Both flags are documented as overrides, but the target was resolved as "name embedded in the dump, falling back to the flag". Since every dump emits `_database` and `_collection`, the fallback was unreachable and both flags were silently ignored — `solidb-restore -d staging --input prod.dump` restored into `prod`. The CLI flag now wins and the dump's name is the fallback, across document, blob-chunk and index records. **Operators who relied on the old behaviour to restore a dump back into its original database can simply omit `-d`.**
+
 ## [0.32.0](https://github.com/solisoft/solidb/compare/v0.31.0...v0.32.0) (2026-07-19)
 
 ### Features
