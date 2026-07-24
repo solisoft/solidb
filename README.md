@@ -87,17 +87,44 @@ The server starts on `http://localhost:6745` with a web dashboard.
 
 > **Note**: A default admin user is created on startup with a randomly generated password displayed in the logs.
 
+## 💻 Platforms
+
+Prebuilt binaries are published for each release:
+
+| Platform | Artifact |
+|---|---|
+| Linux x86_64 | `solidb-linux-amd64.tar.gz` |
+| Linux arm64 | `solidb-linux-arm64.tar.gz` |
+| macOS arm64 | `solidb-darwin-arm64.tar.gz` |
+| Windows x86_64 | `solidb-windows-amd64.zip` |
+
+On Linux and macOS, `install.sh` fetches and installs the right one. On Windows, extract the
+`.zip` and add the folder to your `PATH`, then run `solidb.exe --port 6745 --data-dir .\data`.
+
+Two Windows caveats: `--daemon` is Unix-only and exits with an error — run SoliDB in a
+console, or wrap it with a service manager such as [NSSM](https://nssm.cc) or `sc.exe`. And
+the generated `.admin_password` file under the data directory is written with default ACLs
+rather than the owner-only permissions used on Unix, so restrict the data directory yourself
+on a shared machine.
+
 ## 📋 Build Requirements
 
 ### Ubuntu/Debian
 ```bash
-sudo apt-get install -y build-essential clang libclang-dev pkg-config libssl-dev libzstd-dev
+sudo apt-get install -y build-essential clang libclang-dev pkg-config libzstd-dev
 ```
 
 ### Arch Linux
 ```bash
-sudo pacman -S base-devel clang gcc pkg-config openssl zstd
+sudo pacman -S base-devel clang gcc pkg-config zstd
 ```
+
+### Windows
+Requires the MSVC build tools, CMake, and LLVM (RocksDB's bindgen needs `libclang`):
+```powershell
+winget install Microsoft.VisualStudio.2022.BuildTools Kitware.CMake LLVM.LLVM
+```
+Expect a long first build — RocksDB is a large C++ tree.
 
 ## 📚 Learn More
 

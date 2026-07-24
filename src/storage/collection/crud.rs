@@ -265,9 +265,14 @@ impl Collection {
         db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
 
-        // Update vector indexes in-memory (separate from WriteBatch)
-        self.update_vector_indexes_on_delete(key);
-        self.update_vector_indexes_on_upsert(key, &new_value);
+        // Update vector indexes in-memory (separate from WriteBatch). Skip the
+        // delete+reinsert entirely when the embedding is unchanged — a document
+        // rewritten for non-embedding fields must not pay HNSW churn or dirty
+        // the index (which would trigger a full re-serialize on persist).
+        if !self.vector_index_unchanged(&old_value, &new_value) {
+            self.update_vector_indexes_on_delete(key);
+            self.update_vector_indexes_on_upsert(key, &new_value);
+        }
 
         // Enforce version retention (best-effort, off the atomic write).
         if versioned {
@@ -392,9 +397,14 @@ impl Collection {
             });
         }
 
-        // Update vector indexes in-memory (separate from WriteBatch)
-        self.update_vector_indexes_on_delete(key);
-        self.update_vector_indexes_on_upsert(key, &new_value);
+        // Update vector indexes in-memory (separate from WriteBatch). Skip the
+        // delete+reinsert entirely when the embedding is unchanged — a document
+        // rewritten for non-embedding fields must not pay HNSW churn or dirty
+        // the index (which would trigger a full re-serialize on persist).
+        if !self.vector_index_unchanged(&old_value, &new_value) {
+            self.update_vector_indexes_on_delete(key);
+            self.update_vector_indexes_on_upsert(key, &new_value);
+        }
 
         // Enforce version retention (best-effort, off the atomic write).
         if versioned {
@@ -576,9 +586,7 @@ impl Collection {
             self.update_vector_indexes_on_upsert(key, doc_value);
         }
         // Persist vector indexes after batch
-        if let Err(e) = self.persist_vector_indexes() {
-            tracing::warn!("Failed to persist vector indexes: {}", e);
-        }
+        self.persist_vector_indexes_throttled();
 
         Ok(count)
     }
@@ -659,9 +667,7 @@ impl Collection {
         }
 
         // Persist vector indexes after batch delete
-        if let Err(e) = self.persist_vector_indexes() {
-            tracing::warn!("Failed to persist vector indexes: {}", e);
-        }
+        self.persist_vector_indexes_throttled();
 
         // Commit batch atomically: all document deletions + index removals together
         db.write(&batch)
@@ -803,9 +809,15 @@ impl Collection {
                         batch.put_cf(&cf, entry_key, Vec::new());
                     }
 
-                    // Update vector indexes in-memory (separate from WriteBatch)
-                    self.update_vector_indexes_on_delete(key);
-                    self.update_vector_indexes_on_upsert(key, &new_value);
+                    // Update vector indexes in-memory (separate from
+                    // WriteBatch). Skip the delete+reinsert when the embedding is
+                    // unchanged so a bulk update that only rewrites metadata
+                    // (e.g. an incremental graph sync) pays no HNSW churn and
+                    // doesn't dirty the index into a full re-serialize.
+                    if !self.vector_index_unchanged(&old_value, &new_value) {
+                        self.update_vector_indexes_on_delete(key);
+                        self.update_vector_indexes_on_upsert(key, &new_value);
+                    }
 
                     change_events.push((key.clone(), old_value, new_value));
                     updated_docs.push(doc);
@@ -818,9 +830,7 @@ impl Collection {
         }
 
         // Persist vector indexes after batch update
-        if let Err(e) = self.persist_vector_indexes() {
-            tracing::warn!("Failed to persist vector indexes: {}", e);
-        }
+        self.persist_vector_indexes_throttled();
 
         // Commit batch atomically: all document updates + index updates together
         db.write(&batch)
@@ -958,9 +968,7 @@ impl Collection {
             self.update_vector_indexes_on_upsert(key, doc_value);
         }
         // Persist vector indexes after batch
-        if let Err(e) = self.persist_vector_indexes() {
-            tracing::warn!("Failed to persist vector indexes: {}", e);
-        }
+        self.persist_vector_indexes_throttled();
 
         // Update document count
         let count = inserted_docs.len();

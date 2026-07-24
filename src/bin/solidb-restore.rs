@@ -415,18 +415,27 @@ async fn process_index_record(
     total_imported: &mut u64,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let db = record
-        .get("_database")
-        .and_then(|s| s.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| args.database.clone())
+    // CLI flags are overrides: they win over the names embedded in the dump.
+    let db = args
+        .database
+        .clone()
+        .or_else(|| {
+            record
+                .get("_database")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+        })
         .ok_or("No database specified in index record or args")?;
 
-    let coll = record
-        .get("_collection")
-        .and_then(|s| s.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| args.collection.clone())
+    let coll = args
+        .collection
+        .clone()
+        .or_else(|| {
+            record
+                .get("_collection")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+        })
         .ok_or("No collection specified in index record or args")?;
 
     // Make sure DB and collection exist before posting the index
@@ -547,19 +556,28 @@ async fn process_blob_chunk(
     total_imported: &mut u64,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Determine target DB and Collection from header
-    let db = header_doc
-        .get("_database")
-        .and_then(|s| s.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| args.database.clone())
+    // Determine target DB and Collection from header.
+    // CLI flags are overrides: they win over the names embedded in the dump.
+    let db = args
+        .database
+        .clone()
+        .or_else(|| {
+            header_doc
+                .get("_database")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+        })
         .ok_or("No database specified in chunk or args")?;
 
-    let coll = header_doc
-        .get("_collection")
-        .and_then(|s| s.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| args.collection.clone())
+    let coll = args
+        .collection
+        .clone()
+        .or_else(|| {
+            header_doc
+                .get("_collection")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+        })
         .ok_or("No collection specified in chunk or args")?;
 
     // Create DB/Collection if needed
@@ -649,19 +667,26 @@ async fn process_doc(
     total_imported: &mut u64,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Determine target DB and Collection
-    let db = doc
-        .get("_database")
-        .and_then(|s| s.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| args.database.clone())
+    // Determine target DB and Collection.
+    // CLI flags are overrides: they win over the names embedded in the dump.
+    let db = args
+        .database
+        .clone()
+        .or_else(|| {
+            doc.get("_database")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+        })
         .ok_or("No database specified in doc or args")?;
 
-    let coll = doc
-        .get("_collection")
-        .and_then(|s| s.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| args.collection.clone())
+    let coll = args
+        .collection
+        .clone()
+        .or_else(|| {
+            doc.get("_collection")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+        })
         .ok_or("No collection specified in doc or args")?;
 
     // Create DB/Collection if needed

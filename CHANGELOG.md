@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.32.1](https://github.com/solisoft/solidb/compare/v0.32.0...v0.32.1) (2026-07-24)
+
+### Fixes
+
+* **`solidb-restore` now honours `--database` / `--collection`.** Both flags are documented as overrides, but the target was resolved as "name embedded in the dump, falling back to the flag". Since every dump emits `_database` and `_collection`, the fallback was unreachable and both flags were silently ignored — `solidb-restore -d staging --input prod.dump` restored into `prod`. The CLI flag now wins and the dump's name is the fallback, across document, blob-chunk and index records. **Operators who relied on the old behaviour to restore a dump back into its original database can simply omit `-d`.**
+
+## [0.32.0](https://github.com/solisoft/solidb/compare/v0.31.0...v0.32.0) (2026-07-19)
+
+### Features
+
+* **Windows x86_64 builds**: releases now include `solidb-windows-amd64.zip` (`solidb.exe`, `solidb-dump.exe`, `solidb-restore.exe`) alongside the Linux and macOS tarballs. Two caveats for operators:
+  * `--daemon` is Unix-only and exits with an error. Run SoliDB in a console, or wrap it with a service manager such as NSSM or `sc.exe`.
+  * The generated `.admin_password` file is written with default ACLs rather than the owner-only permissions used on Unix. Restrict the data directory yourself on a shared machine.
+  * FUSE (`solidb-fuse`) remains Unix-only, and `solidb update` still does not support Windows.
+
+### Changes
+
+* **TLS moves from OpenSSL to rustls.** OpenSSL is no longer in the dependency graph at all. The Docker image no longer installs `libssl3`, and building from source no longer needs `libssl-dev` (or Perl/NASM on Windows). Certificate validation now uses the platform trust store via rustls rather than OpenSSL; `ca-certificates` is still required in the container image.
+
+### Performance
+
+* Vector-index persistence is throttled to at most once per 5s behind a dirty flag, with a shutdown flush, instead of re-serializing the whole index (all vectors + HNSW graph) after every write batch. Bulk loads into embedding-bearing collections are no longer O(batches × index size).
+* Document updates that leave every vector index's embedding unchanged skip the delete+reinsert entirely, so an incremental sync that only rewrites metadata pays no HNSW churn.
+
 ## [0.26.4](https://github.com/solisoft/solidb/compare/v0.26.3...v0.26.4) (2026-06-11)
 
 ### Security

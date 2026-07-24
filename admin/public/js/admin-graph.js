@@ -18,6 +18,30 @@ window.AdminGraph = (function () {
   var docs = {};    // id -> full document (vertices and edges)
   var colors = {};  // collection name -> palette color
   var rootId = null;
+  var physicsFrozen = false;  // solver off? big graphs never rest on their own
+  var settleTimer = null;     // safety cap so motion always stops
+
+  // Physics lays the graph out, then we switch it off so the canvas stops
+  // churning - a 500-node / depth-4 graph never reaches a true rest state, so
+  // without this it drifts forever. Dragging still works while frozen; merging
+  // new nodes (double-click expand) re-runs the solver via runPhysics().
+  function freezePhysics() {
+    if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+    if (network && !physicsFrozen) {
+      physicsFrozen = true;
+      network.setOptions({ physics: { enabled: false } });
+    }
+  }
+
+  function runPhysics() {
+    if (!network) return;
+    physicsFrozen = false;
+    network.setOptions({ physics: { enabled: true } });
+    // Fallback in case neither stabilized nor stabilizationIterationsDone fires
+    // after a dynamic re-enable (varies by vis-network version).
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = setTimeout(freezePhysics, 4000);
+  }
 
   function colorFor(collection) {
     if (!colors[collection]) {
@@ -99,11 +123,18 @@ window.AdminGraph = (function () {
         smooth: { type: "continuous" }
       },
       physics: {
-        barnesHut: { gravitationalConstant: -2600, springLength: 140, springConstant: 0.04 },
-        stabilization: { iterations: 120 }
+        barnesHut: { gravitationalConstant: -2600, springLength: 140, springConstant: 0.04, damping: 0.3 },
+        stabilization: { iterations: 200, updateInterval: 25, fit: true },
+        // Stop the solver once nodes are basically at rest rather than letting
+        // it oscillate; freezePhysics() then pins it. Both matter at 500 nodes.
+        minVelocity: 1
       },
       interaction: { hover: true, tooltipDelay: 120 }
     });
+    // Freeze once the layout settles (stabilized), and hard-freeze after the
+    // iteration budget in case a large hairball never fully settles.
+    network.on("stabilized", freezePhysics);
+    network.on("stabilizationIterationsDone", freezePhysics);
     network.on("click", function (params) {
       if (params.nodes.length > 0) inspect(params.nodes[0]);
       else if (params.edges.length > 0) inspect(params.edges[0]);
@@ -136,9 +167,10 @@ window.AdminGraph = (function () {
   function merge(data) {
     ensureNetwork();
     if (!network) { showError("vis-network failed to load (CDN unreachable?)"); return; }
+    var addedNode = false;
     (data.nodes || []).forEach(function (node) {
       if (node.doc) docs[node.id] = node.doc;
-      if (!nodeSet.get(node.id)) nodeSet.add(nodeVisual(node));
+      if (!nodeSet.get(node.id)) { nodeSet.add(nodeVisual(node)); addedNode = true; }
       else if (node.doc) nodeSet.update(nodeVisual(node)); // placeholder got resolved
     });
     (data.edges || []).forEach(function (edge) {
@@ -147,6 +179,8 @@ window.AdminGraph = (function () {
         edgeSet.add({ id: edge.id, from: edge.from, to: edge.to, title: edge.id });
       }
     });
+    // New nodes need the solver to place them; re-run it, then it freezes again.
+    if (addedNode && physicsFrozen) runPhysics();
     updateStats();
   }
 

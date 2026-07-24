@@ -265,8 +265,12 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     if !args.peers.is_empty() && cluster_config.keyfile.is_none() {
         anyhow::bail!(
             "Cluster peers are configured but no keyfile is available. \
-             Create a shared secret (e.g. `openssl rand -hex 32 > solidb.key`, \
-             same file on every node) and pass it with --keyfile. \
+             Create a shared secret of 32 cryptographically random bytes, hex-encoded, \
+             and pass it with --keyfile (the same file on every node). \
+             Unix: `openssl rand -hex 32 > solidb.key`. PowerShell: \
+             `$b=[byte[]]::new(32);[Security.Cryptography.RandomNumberGenerator]::Fill($b);\
+             [BitConverter]::ToString($b).Replace('-','').ToLower() \
+             | Out-File -Encoding ascii solidb.key`. \
              Refusing to start an unauthenticated cluster."
         );
     }

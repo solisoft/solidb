@@ -23,7 +23,16 @@ serde_json = "1.0"
 rmp-serde = "1.3"
 thiserror = "2.0"
 chrono = { version = "0.4", features = ["serde"] }
-reqwest = { version = "0.12", features = ["json"] }
+# rustls rather than the default native-tls: this crate is a dev-dependency of solidb, so
+# native-tls here would drag openssl-sys back into `cargo test` and require a system OpenSSL
+# on Windows. No native-tls-specific API is used.
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls-native-roots",
+    "http2",
+    "charset",
+    "system-proxy",
+] }
 # Offline sync dependencies
 rusqlite = { version = "0.31", features = ["bundled", "chrono", "serde_json", "uuid"] }
 uuid = { version = "1.7", features = ["v4", "serde"] }

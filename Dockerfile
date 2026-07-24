@@ -14,9 +14,10 @@ LABEL org.opencontainers.image.vendor="Solisoft"
 LABEL org.opencontainers.image.licenses="MIT"
 
 # Install runtime dependencies
+# libssl3 is no longer needed: TLS is rustls, statically linked into the binary.
+# ca-certificates still is — rustls reads the system trust store.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libssl3 \
     libzstd1 \
     curl \
     && rm -rf /var/lib/apt/lists/* \

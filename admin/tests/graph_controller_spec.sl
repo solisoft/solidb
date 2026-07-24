@@ -128,6 +128,42 @@ describe("GraphController") do
       assert_not(data["ok"])
       assert_contains(data["error"], "not found")
     end
+
+    test("joins nodes whose keys contain colons (code-graph ids)") do
+      # Regression: _plain_id used to split on every ":" and keep the last
+      # segment, so a cursor id "db:code_nodes/external:Some.Ns" normalized to
+      # "Some.Ns" - a slashless id that crashed _node_entry (index out of
+      # bounds) and never matched an edge's _from/_to, orphaning every node.
+      SolidbClient.post_api(SolidbEndpoints.collections("admin_spec_graph"), { "name": "code_nodes" })
+      SolidbClient.post_api(SolidbEndpoints.collections("admin_spec_graph"), { "name": "code_edges", "type": "edge" })
+      SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_graph", "code_nodes"),
+                            { "_key": "file:api:Foo.cs", "name": "Foo.cs" })
+      SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_graph", "code_nodes"),
+                            { "_key": "external:Some.Namespace", "name": "Some.Namespace" })
+      SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_graph", "code_edges"),
+                            { "_from": "code_nodes/file:api:Foo.cs", "_to": "code_nodes/external:Some.Namespace" })
+
+      response = post("/databases/admin_spec_graph/graph/traverse",
+                      { "start": "code_nodes/file:api:Foo.cs", "edge": "code_edges",
+                        "direction": "outbound", "depth": "1" })
+      assert_eq(res_status(response), 200)
+      data = res_json(response)
+      assert(data["ok"])
+      node_ids = data["nodes"].map do |node| node["id"] end
+      # Full "collection/key" ids survive normalization and line up with the edge.
+      assert_contains(node_ids, "code_nodes/file:api:Foo.cs")
+      assert_contains(node_ids, "code_nodes/external:Some.Namespace")
+      # The key's last colon segment must NOT leak out as a bare, slashless id.
+      assert_not(node_ids.includes?("Some.Namespace"))
+      edge = data["edges"][0]
+      assert_eq(edge["from"], "code_nodes/file:api:Foo.cs")
+      assert_eq(edge["to"], "code_nodes/external:Some.Namespace")
+      # The traversed neighbor resolves to its document, not a dashed placeholder,
+      # and its rendered key is everything after the collection prefix.
+      neighbor = data["nodes"].filter do |node| node["id"] == "code_nodes/external:Some.Namespace" end
+      assert_not_null(neighbor[0]["doc"])
+      assert_eq(neighbor[0]["key"], "external:Some.Namespace")
+    end
   end
 
   describe("POST /databases/:db/graph/demo") do

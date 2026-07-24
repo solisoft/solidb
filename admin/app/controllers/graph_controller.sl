@@ -135,6 +135,7 @@ class GraphController < Controller
   # so the canvas always has a root. nil when the id does not resolve.
   def _fetch_vertex(vertex_id)
     parts = vertex_id.split("/")
+    return nil if parts.length() < 2
     result = SolidbClient.get_api(SolidbEndpoints.document(@db, parts[0], parts[1]))
     return nil unless result["ok"]
     return result["data"]
@@ -211,14 +212,26 @@ class GraphController < Controller
   end
 
   def _node_entry(vertex_id, doc)
+    # Ids are normally "collection/key", but a placeholder endpoint (an edge
+    # _from/_to that lacks a slash) splits to a single element. Indexing past
+    # the end throws in Soli, so guard on length rather than relying on ??.
     parts = vertex_id.split("/")
-    return { "id": vertex_id, "key": parts[1] ?? vertex_id, "collection": parts[0], "doc": doc }
+    key = parts.length() > 1 ? parts[1] : vertex_id
+    return { "id": vertex_id, "key": key, "collection": parts[0], "doc": doc }
   end
 
-  # "db:people/bob" -> "people/bob"; plain ids pass through.
+  # "edifice_rag:soli_graph_nodes/file:api:Foo.cs" -> "soli_graph_nodes/file:api:Foo.cs".
+  # The cursor prefixes _id with "<db>:"; the database name never contains "/",
+  # so the prefix always sits before the first slash. Keys themselves may hold
+  # colons (code-graph ids like "file:api:...:Foo.cs" or "external:Some.Ns"), so
+  # we strip ONLY the leading "<db>:" - splitting on every ":" mangled the key
+  # into its last segment, producing a slashless id that both crashed
+  # _node_entry and never matched an edge's _from/_to. Plain ids pass through.
   def _plain_id(full_id)
-    parts = full_id.split(":")
-    return parts[parts.length() - 1]
+    head = full_id.split("/")[0]
+    return full_id unless head.includes?(":")
+    prefix_length = head.split(":")[0].length() + 1
+    return full_id.substring(prefix_length, full_id.length())
   end
 
   # Route context + collection lists for the toolbar: edge collections are

@@ -7,6 +7,11 @@ use parking_lot::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+/// Minimum seconds between throttled vector-index persists during bulk writes.
+/// The trailing window is made durable by the shutdown flush
+/// (`flush_vector_indexes` via the engine's flush-all).
+const VEC_PERSIST_THROTTLE_SECS: u64 = 5;
+
 impl Collection {
     /// Create a new collection handle
     pub fn new(name: String, db: Arc<DB>) -> Self {
@@ -57,6 +62,8 @@ impl Collection {
             chunk_count: Arc::new(AtomicUsize::new(chunk_count)),
             count_dirty: Arc::new(AtomicBool::new(false)),
             last_flush_time: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            vec_dirty: Arc::new(AtomicBool::new(false)),
+            vec_last_persist: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             change_sender: Arc::new(change_sender),
             collection_type: Arc::new(RwLock::new(collection_type)),
             bloom_filters: Arc::new(DashMap::new()),
@@ -126,6 +133,62 @@ impl Collection {
         if now > last {
             self.flush_stats();
         }
+    }
+
+    /// Persist vector indexes to disk, but at most once per
+    /// `VEC_PERSIST_THROTTLE_SECS` and only when there are unpersisted changes.
+    ///
+    /// `persist_vector_indexes()` re-serializes the *entire* index (all vectors +
+    /// the HNSW graph) into a single blob, so calling it after every write batch
+    /// during a bulk load is O(batches × index size) — the dominant cost when a
+    /// large embedding-bearing collection is (re)loaded. Throttling collapses that
+    /// burst to roughly one persist per window. The trailing window is made
+    /// durable by `flush_vector_indexes()` on shutdown — the same
+    /// throttle-on-write + flush-on-shutdown model already used for collection
+    /// stats (`flush_stats` / `flush_stats_throttled`). A hard crash can lose at
+    /// most the last window of index updates, which are recoverable by rebuilding
+    /// the index from the documents' embedding fields.
+    pub fn persist_vector_indexes_throttled(&self) {
+        if !self.vec_dirty.load(Ordering::Relaxed) {
+            return; // Nothing to persist
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        // Persist at most once per VEC_PERSIST_THROTTLE_SECS. This interval is
+        // deliberately larger than one second: a single write batch against a
+        // big index can itself take >1s (full-index re-serialize), so a 1s
+        // window would still persist on every batch and defeat the throttle.
+        if now.saturating_sub(self.vec_last_persist.load(Ordering::Relaxed))
+            < VEC_PERSIST_THROTTLE_SECS
+        {
+            return;
+        }
+        self.flush_vector_indexes();
+    }
+
+    /// Persist vector indexes to disk if there are unpersisted changes,
+    /// regardless of throttle. Called on shutdown (via the engine's flush-all)
+    /// so the trailing throttle window can't be lost across a graceful restart.
+    pub fn flush_vector_indexes(&self) {
+        // Claim the dirty flag up front so a writer that dirties again after we
+        // snapshot the index isn't wrongly cleared (mirrors `flush_stats`).
+        if !self.vec_dirty.swap(false, Ordering::Relaxed) {
+            return; // Nothing to persist
+        }
+        if let Err(e) = self.persist_vector_indexes() {
+            tracing::warn!("Failed to persist vector indexes: {}", e);
+            // Re-arm so a later throttled call / shutdown flush retries rather
+            // than silently dropping the change.
+            self.vec_dirty.store(true, Ordering::Relaxed);
+            return;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.vec_last_persist.store(now, Ordering::Relaxed);
     }
 
     /// Compact the collection to remove tombstones and reclaim space

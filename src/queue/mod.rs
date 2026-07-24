@@ -52,10 +52,13 @@ impl QueueWorker {
             .build()
             .expect("reqwest::Client builds with defaults");
 
+        // Under rustls, danger_accept_invalid_certs(true) installs a verifier that skips
+        // hostname verification as well as chain validation, so it alone is equivalent to the
+        // native-tls certs+hostnames pair this used to set. danger_accept_invalid_hostnames
+        // does not exist outside the native-tls backend — do not re-add it.
         let dev_http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .danger_accept_invalid_certs(true)
-            .danger_accept_invalid_hostnames(true)
             .build()
             .expect("reqwest::Client builds with permissive TLS");
 
