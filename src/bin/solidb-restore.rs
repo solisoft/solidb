@@ -4,6 +4,71 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Records that named no target database/collection and could not be routed.
+static SKIPPED_UNROUTABLE: AtomicU64 = AtomicU64::new(0);
+
+/// Rows per POST to the columnar insert endpoint.
+const MAX_COLUMNAR_ROWS_PER_INSERT: usize = 10_000;
+
+/// Resolve the target database and collection for a record.
+///
+/// CLI flags are overrides: they win over the names embedded in the dump.
+/// Returns `None` when neither the record nor the flags name a target.
+fn resolve_target(record: &Value, args: &Args) -> Option<(String, String)> {
+    let db = args.database.clone().or_else(|| {
+        record
+            .get("_database")
+            .and_then(|s| s.as_str())
+            .map(String::from)
+    })?;
+    let coll = args.collection.clone().or_else(|| {
+        record
+            .get("_collection")
+            .and_then(|s| s.as_str())
+            .map(String::from)
+    })?;
+    Some((db, coll))
+}
+
+/// Classify a dump record as one of the control records solidb-dump emits
+/// (`collection`, `index`, `columnar`, `columnar_row`, `columnar_index`,
+/// `blob_chunk`) rather than a document to import.
+///
+/// A stored document always carries a `_key`, and no control record ever does.
+/// Requiring that keeps a user document that happens to have a field named
+/// `_type` from being mistaken for a control record and silently dropped.
+fn control_record_type(record: &Value) -> Option<String> {
+    if record.get("_key").is_some() {
+        return None;
+    }
+    let t = record.get("_type")?.as_str()?;
+    matches!(
+        t,
+        "collection" | "index" | "columnar" | "columnar_row" | "columnar_index" | "blob_chunk"
+    )
+    .then(|| t.to_string())
+}
+
+/// Report a record that carries no routing metadata.
+///
+/// Dumps produced before the blob-metadata fix contain blob records with no
+/// `_database`/`_collection`, because solidb-dump streamed the server's
+/// single-collection `/export` output verbatim. Skipping is strictly better
+/// than the previous behaviour (abort the entire restore) and than guessing a
+/// target, which would silently file the records under the wrong collection.
+fn note_unroutable() {
+    let seen = SKIPPED_UNROUTABLE.fetch_add(1, Ordering::Relaxed);
+    if seen == 0 {
+        eprintln!(
+            "  {} record with no _database/_collection — skipping. This dump \
+             predates the blob metadata fix; re-run solidb-dump with an updated \
+             binary, or restore that collection on its own with -d/-c.",
+            "Warning:".yellow().bold()
+        );
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "solidb-restore")]
@@ -159,6 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // We can keep a set of "initialized collections".
 
     let mut initialized_collections: HashMap<String, bool> = HashMap::new();
+    let mut columnar_batch = ColumnarBatch::default();
     let mut total_imported = 0;
     let mut total_failed = 0;
 
@@ -254,7 +320,111 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Try parse JSON
             match serde_json::from_slice::<Value>(line_slice) {
                 Ok(doc) => {
-                    let record_type = doc.get("_type").and_then(|t| t.as_str()).map(String::from);
+                    let record_type = control_record_type(&doc);
+
+                    // Columnar records use a separate API and a separate row
+                    // buffer, so they are handled before anything else.
+                    match record_type.as_deref() {
+                        Some("columnar") => {
+                            flush_columnar_batch(
+                                &mut columnar_batch,
+                                &client,
+                                &base_url,
+                                &mut total_imported,
+                                &mut total_failed,
+                            )
+                            .await?;
+                            process_columnar_record(
+                                doc,
+                                &args,
+                                &client,
+                                &base_url,
+                                &mut initialized_collections,
+                                &mut total_failed,
+                            )
+                            .await?;
+                            buffer.clear();
+                            continue;
+                        }
+                        Some("columnar_index") => {
+                            process_columnar_index_record(
+                                doc,
+                                &args,
+                                &client,
+                                &base_url,
+                                &mut total_imported,
+                                &mut total_failed,
+                            )
+                            .await?;
+                            buffer.clear();
+                            continue;
+                        }
+                        Some("columnar_row") => {
+                            let Some(target) = resolve_target(&doc, &args) else {
+                                note_unroutable();
+                                buffer.clear();
+                                continue;
+                            };
+                            if columnar_batch.target.as_ref() != Some(&target) {
+                                flush_columnar_batch(
+                                    &mut columnar_batch,
+                                    &client,
+                                    &base_url,
+                                    &mut total_imported,
+                                    &mut total_failed,
+                                )
+                                .await?;
+                                columnar_batch.target = Some(target);
+                            }
+                            if let Some(row) = doc.get("row") {
+                                columnar_batch.rows.push(row.clone());
+                            }
+                            if columnar_batch.rows.len() >= MAX_COLUMNAR_ROWS_PER_INSERT {
+                                flush_columnar_batch(
+                                    &mut columnar_batch,
+                                    &client,
+                                    &base_url,
+                                    &mut total_imported,
+                                    &mut total_failed,
+                                )
+                                .await?;
+                            }
+                            buffer.clear();
+                            continue;
+                        }
+                        _ => {}
+                    }
+
+                    // Collection declaration: creates the collection with its
+                    // real type up front, so empty collections survive the
+                    // round trip and edge/blob/timeseries collections do not
+                    // come back as plain document collections.
+                    if record_type.as_deref() == Some("collection") {
+                        if let Some((db, coll)) = current_batch_meta.clone() {
+                            flush_batch(
+                                &mut current_batch,
+                                &mut current_batch_size,
+                                &client,
+                                &base_url,
+                                &db,
+                                &coll,
+                                &mut total_imported,
+                                &mut total_failed,
+                            )
+                            .await?;
+                            current_batch_meta = None;
+                        }
+                        process_collection_record(
+                            doc,
+                            &args,
+                            &client,
+                            &base_url,
+                            &mut initialized_collections,
+                        )
+                        .await?;
+                        buffer.clear();
+                        continue;
+                    }
 
                     // Index definition record: must be applied after the
                     // collection exists but before mass-imports finish so
@@ -297,18 +467,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // 1. Process header (create db/coll, add to batch)
                             // We treat the header as a "doc" but we need to handle the data following it immediately.
 
-                            // We need to read the data bytes
+                            // The header is followed by exactly `_data_length`
+                            // raw bytes and a newline delimiter.
                             let mut data_buffer = vec![0u8; data_len as usize];
-                            reader.read_exact(&mut data_buffer)?;
+                            reader.read_exact(&mut data_buffer).map_err(|e| {
+                                format!(
+                                    "Truncated dump: expected {} bytes of blob data for key '{}' \
+                                     chunk {}: {}",
+                                    data_len,
+                                    doc.get("_doc_key").and_then(|v| v.as_str()).unwrap_or("?"),
+                                    doc.get("_chunk_index")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0),
+                                    e
+                                )
+                            })?;
 
-                            // Read (and discard) trailing newline of data
+                            // Consume the trailing newline. If it is not a
+                            // newline the stream is misframed and every
+                            // following record would be garbage, so stop
+                            // rather than silently corrupt the restore.
                             let mut newline_buf = [0u8; 1];
-                            if reader.read_exact(&mut newline_buf).is_ok()
-                                && newline_buf[0] != b'\n'
-                            {
-                                // Put it back? verify logic.
-                                // My export emits \n after data.
-                                // So we consume it.
+                            reader.read_exact(&mut newline_buf)?;
+                            if newline_buf[0] != b'\n' {
+                                return Err(format!(
+                                    "Misframed dump: expected newline after {} bytes of blob data \
+                                     for key '{}' chunk {}, found byte 0x{:02x}",
+                                    data_len,
+                                    doc.get("_doc_key").and_then(|v| v.as_str()).unwrap_or("?"),
+                                    doc.get("_chunk_index")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0),
+                                    newline_buf[0]
+                                )
+                                .into());
                             }
 
                             process_blob_chunk(
@@ -388,17 +580,261 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         }
     }
+    flush_columnar_batch(
+        &mut columnar_batch,
+        &client,
+        &base_url,
+        &mut total_imported,
+        &mut total_failed,
+    )
+    .await?;
 
     eprintln!("✓ Restore completed");
     eprintln!("  → {} items imported", total_imported.to_string().green());
     if total_failed > 0 {
         eprintln!("  → {} items failed", total_failed.to_string().red());
     }
+    let skipped = SKIPPED_UNROUTABLE.load(Ordering::Relaxed);
+    if skipped > 0 {
+        eprintln!(
+            "  → {} items skipped (no target collection in dump)",
+            skipped.to_string().yellow()
+        );
+    }
 
     Ok(())
 }
 
 use std::io::Read; // Needed for read_exact
+
+/// Buffered rows for a columnar collection, keyed by "{db}/{collection}".
+///
+/// Columnar rows go to their own insert endpoint with a different payload
+/// shape than document imports, so they cannot ride along in the normal batch.
+#[derive(Default)]
+struct ColumnarBatch {
+    target: Option<(String, String)>,
+    rows: Vec<Value>,
+}
+
+/// Create a columnar collection from a `_type: "columnar"` record.
+async fn process_columnar_record(
+    record: Value,
+    args: &Args,
+    client: &reqwest::Client,
+    base_url: &str,
+    initialized_cols: &mut HashMap<String, bool>,
+    total_failed: &mut u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some((db, coll)) = resolve_target(&record, args) else {
+        note_unroutable();
+        return Ok(());
+    };
+
+    if args.create_database {
+        create_database_if_not_exists(client, base_url, &db, initialized_cols).await?;
+    }
+
+    if args.drop {
+        let url = format!("{}/_api/database/{}/columnar/{}", base_url, db, coll);
+        let _ = client.delete(&url).send().await; // Ignore errors (e.g. not found)
+    }
+
+    let url = format!("{}/_api/database/{}/columnar", base_url, db);
+    let payload = serde_json::json!({
+        "name": coll,
+        "columns": record.get("columns").cloned().unwrap_or_else(|| Value::Array(vec![])),
+        "compression": record.get("compression").cloned().unwrap_or(Value::Null),
+    });
+
+    let response = client.post(&url).json(&payload).send().await?;
+    let status = response.status();
+    if !status.is_success() && status.as_u16() != 409 {
+        let body = response.text().await.unwrap_or_default();
+        eprintln!(
+            "  {} failed to create columnar collection {}/{}: {} {}",
+            "Warning:".yellow().bold(),
+            db,
+            coll,
+            status,
+            body
+        );
+        *total_failed += 1;
+    }
+
+    initialized_cols.insert(format!("{}/{}", db, coll), true);
+    Ok(())
+}
+
+/// Recreate a columnar index from a `_type: "columnar_index"` record.
+async fn process_columnar_index_record(
+    record: Value,
+    args: &Args,
+    client: &reqwest::Client,
+    base_url: &str,
+    total_imported: &mut u64,
+    total_failed: &mut u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some((db, coll)) = resolve_target(&record, args) else {
+        note_unroutable();
+        return Ok(());
+    };
+
+    let url = format!("{}/_api/database/{}/columnar/{}/index", base_url, db, coll);
+    let payload = serde_json::json!({
+        "column": record.get("column").cloned().unwrap_or(Value::Null),
+        "index_type": record.get("index_type").cloned().unwrap_or(Value::Null),
+    });
+
+    let response = client.post(&url).json(&payload).send().await?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    // A column declared `indexed` in the schema is already indexed by the
+    // create call, so "already has an index" is the expected outcome, not a
+    // failure.
+    if status.is_success() || body.contains("already has an index") {
+        *total_imported += 1;
+    } else {
+        eprintln!(
+            "  {} failed to create columnar index on {}/{}.{}: {} {}",
+            "Warning:".yellow().bold(),
+            db,
+            coll,
+            record
+                .get("column")
+                .and_then(|v| v.as_str())
+                .unwrap_or("<unknown>"),
+            status,
+            body
+        );
+        *total_failed += 1;
+    }
+    Ok(())
+}
+
+/// Send the buffered columnar rows to the insert endpoint.
+async fn flush_columnar_batch(
+    batch: &mut ColumnarBatch,
+    client: &reqwest::Client,
+    base_url: &str,
+    total_imported: &mut u64,
+    total_failed: &mut u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some((db, coll)) = batch.target.clone() else {
+        batch.rows.clear();
+        return Ok(());
+    };
+    if batch.rows.is_empty() {
+        return Ok(());
+    }
+
+    let url = format!("{}/_api/database/{}/columnar/{}/insert", base_url, db, coll);
+    let count = batch.rows.len();
+    let response = client
+        .post(&url)
+        .json(&serde_json::json!({ "rows": batch.rows }))
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        let result: Value = response.json().await.unwrap_or(Value::Null);
+        *total_imported += result
+            .get("inserted")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(count as u64);
+    } else {
+        eprintln!(
+            "  {} columnar insert into {}/{} failed: {}",
+            "Warning:".yellow().bold(),
+            db,
+            coll,
+            response.status()
+        );
+        *total_failed += count as u64;
+    }
+
+    batch.rows.clear();
+    Ok(())
+}
+
+/// Create a collection from a `_type: "collection"` record produced by
+/// solidb-dump.
+///
+/// This is the first record emitted for every collection, so it is where the
+/// collection gets created, dropped (with `--drop`) and given its real type.
+/// Creating it here rather than lazily on the first document is what lets an
+/// empty collection survive a round trip.
+async fn process_collection_record(
+    record: Value,
+    args: &Args,
+    client: &reqwest::Client,
+    base_url: &str,
+    initialized_cols: &mut HashMap<String, bool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some((db, coll)) = resolve_target(&record, args) else {
+        note_unroutable();
+        return Ok(());
+    };
+
+    let key = format!("{}/{}", db, coll);
+    if initialized_cols.contains_key(&key) {
+        return Ok(());
+    }
+
+    if args.create_database {
+        create_database_if_not_exists(client, base_url, &db, initialized_cols).await?;
+    }
+
+    let shard_config = record.get("_shardConfig");
+    let collection_type = record.get("_collectionType").and_then(|v| v.as_str());
+    ensure_collection_exists(
+        client,
+        base_url,
+        &db,
+        &coll,
+        shard_config,
+        collection_type,
+        args.drop,
+    )
+    .await?;
+
+    // POST /collection only honours `type` for blob collections, and does not
+    // honour it at all when the collection already exists (409). Setting the
+    // type explicitly is the only way "edge" and "timeseries" survive.
+    if let Some(ctype) = collection_type {
+        if ctype != "document" {
+            let url = format!(
+                "{}/_api/database/{}/collection/{}/properties",
+                base_url, db, coll
+            );
+            let mut payload = serde_json::json!({ "type": ctype });
+            // Echo the existing shard settings back so this call cannot
+            // reset them.
+            if let Some(config) = shard_config {
+                if let Some(num_shards) = config.get("num_shards") {
+                    payload["numShards"] = num_shards.clone();
+                }
+                if let Some(rf) = config.get("replication_factor") {
+                    payload["replicationFactor"] = rf.clone();
+                }
+            }
+            let response = client.put(&url).json(&payload).send().await?;
+            if !response.status().is_success() {
+                eprintln!(
+                    "  {} could not set type '{}' on {}/{}: {}",
+                    "Warning:".yellow().bold(),
+                    ctype,
+                    db,
+                    coll,
+                    response.status()
+                );
+            }
+        }
+    }
+
+    initialized_cols.insert(key, true);
+    Ok(())
+}
 
 /// Recreate an index from a `_type: "index"` record produced by solidb-dump.
 ///
@@ -415,37 +851,32 @@ async fn process_index_record(
     total_imported: &mut u64,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // CLI flags are overrides: they win over the names embedded in the dump.
-    let db = args
-        .database
-        .clone()
-        .or_else(|| {
-            record
-                .get("_database")
-                .and_then(|s| s.as_str())
-                .map(|s| s.to_string())
-        })
-        .ok_or("No database specified in index record or args")?;
+    let Some((db, coll)) = resolve_target(&record, args) else {
+        note_unroutable();
+        return Ok(());
+    };
 
-    let coll = args
-        .collection
-        .clone()
-        .or_else(|| {
-            record
-                .get("_collection")
-                .and_then(|s| s.as_str())
-                .map(|s| s.to_string())
-        })
-        .ok_or("No collection specified in index record or args")?;
-
-    // Make sure DB and collection exist before posting the index
+    // Make sure DB and collection exist before posting the index.
+    // Pass the collection type through: an index record is often the first
+    // record seen for a collection, and creating a blob collection as a plain
+    // document collection here would leave its chunks unreadable.
     let key = format!("{}/{}", db, coll);
-    if let std::collections::hash_map::Entry::Vacant(entry) = initialized_cols.entry(key) {
+    if !initialized_cols.contains_key(&key) {
         if args.create_database {
-            create_database_if_not_exists(client, base_url, &db).await?;
+            create_database_if_not_exists(client, base_url, &db, initialized_cols).await?;
         }
-        ensure_collection_exists(client, base_url, &db, &coll, None, None, args.drop).await?;
-        entry.insert(true);
+        let collection_type = record.get("_collectionType").and_then(|v| v.as_str());
+        ensure_collection_exists(
+            client,
+            base_url,
+            &db,
+            &coll,
+            None,
+            collection_type,
+            args.drop,
+        )
+        .await?;
+        initialized_cols.insert(key, true);
     }
 
     let kind = record
@@ -519,10 +950,13 @@ async fn process_index_record(
 
     let response = client.post(&url).json(&payload).send().await?;
     let status = response.status();
-    if status.is_success() || status.as_u16() == 409 {
+    let body = response.text().await.unwrap_or_default();
+    // An index that is already there is a success for restore purposes. Edge
+    // collections create `_edge_from_idx`/`_edge_to_idx` themselves and report
+    // the clash as 400 rather than 409, so the body has to be checked too.
+    if status.is_success() || status.as_u16() == 409 || body.contains("already exists") {
         *total_imported += 1;
     } else {
-        let body = response.text().await.unwrap_or_default();
         eprintln!(
             "  Failed to create {} index '{}' on {}/{}: {} {}",
             kind,
@@ -557,34 +991,16 @@ async fn process_blob_chunk(
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Determine target DB and Collection from header.
-    // CLI flags are overrides: they win over the names embedded in the dump.
-    let db = args
-        .database
-        .clone()
-        .or_else(|| {
-            header_doc
-                .get("_database")
-                .and_then(|s| s.as_str())
-                .map(|s| s.to_string())
-        })
-        .ok_or("No database specified in chunk or args")?;
-
-    let coll = args
-        .collection
-        .clone()
-        .or_else(|| {
-            header_doc
-                .get("_collection")
-                .and_then(|s| s.as_str())
-                .map(|s| s.to_string())
-        })
-        .ok_or("No collection specified in chunk or args")?;
+    let Some((db, coll)) = resolve_target(&header_doc, args) else {
+        note_unroutable();
+        return Ok(());
+    };
 
     // Create DB/Collection if needed
     let key = format!("{}/{}", db, coll);
     if !initialized_cols.contains_key(&key) {
         if args.create_database {
-            create_database_if_not_exists(client, base_url, &db).await?;
+            create_database_if_not_exists(client, base_url, &db, initialized_cols).await?;
         }
         let shard_config = header_doc.get("_shardConfig");
         let collection_type = header_doc.get("_collectionType").and_then(|v| v.as_str());
@@ -668,33 +1084,17 @@ async fn process_doc(
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Determine target DB and Collection.
-    // CLI flags are overrides: they win over the names embedded in the dump.
-    let db = args
-        .database
-        .clone()
-        .or_else(|| {
-            doc.get("_database")
-                .and_then(|s| s.as_str())
-                .map(|s| s.to_string())
-        })
-        .ok_or("No database specified in doc or args")?;
-
-    let coll = args
-        .collection
-        .clone()
-        .or_else(|| {
-            doc.get("_collection")
-                .and_then(|s| s.as_str())
-                .map(|s| s.to_string())
-        })
-        .ok_or("No collection specified in doc or args")?;
+    let Some((db, coll)) = resolve_target(&doc, args) else {
+        note_unroutable();
+        return Ok(());
+    };
 
     // Create DB/Collection if needed
     let key = format!("{}/{}", db, coll);
     if !initialized_cols.contains_key(&key) {
         // Try create DB
         if args.create_database {
-            create_database_if_not_exists(client, base_url, &db).await?;
+            create_database_if_not_exists(client, base_url, &db, initialized_cols).await?;
         }
 
         let shard_config = doc.get("_shardConfig");
@@ -914,11 +1314,22 @@ async fn ensure_collection_exists(
     Ok(())
 }
 
+/// Create the database unless we already tried during this run.
+///
+/// `ensured` is the same map used for collections; collection keys are
+/// `"{db}/{coll}"`, so a bare database name cannot collide. Without this the
+/// database is re-created once per collection, which does nothing but print
+/// "Database already exists" on every collection boundary.
 async fn create_database_if_not_exists(
     client: &reqwest::Client,
     base_url: &str,
     database: &str,
+    ensured: &mut HashMap<String, bool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if ensured.contains_key(database) {
+        return Ok(());
+    }
+
     let url = format!("{}/_api/database", base_url);
 
     let response = client
@@ -927,15 +1338,96 @@ async fn create_database_if_not_exists(
         .send()
         .await?;
 
-    if response.status().is_success() {
+    let status = response.status();
+    if status.is_success() {
         eprintln!("  Created database: {}", database);
-    } else if response.status().as_u16() == 409 {
+    } else if status.as_u16() == 409 {
         eprintln!("  Database already exists: {}", database);
     } else {
-        return Err(format!("Failed to create database: {}", response.status()).into());
+        return Err(format!("Failed to create database: {}", status).into());
     }
 
+    ensured.insert(database.to_string(), true);
     Ok(())
 }
 
 use colored::*;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn args(database: Option<&str>, collection: Option<&str>) -> Args {
+        Args {
+            host: "localhost".to_string(),
+            port: 6745,
+            input: "dump.jsonl".to_string(),
+            database: database.map(String::from),
+            collection: collection.map(String::from),
+            create_database: false,
+            drop: false,
+            user: None,
+            password: None,
+        }
+    }
+
+    #[test]
+    fn control_records_are_recognised() {
+        for t in [
+            "collection",
+            "index",
+            "columnar",
+            "columnar_row",
+            "columnar_index",
+            "blob_chunk",
+        ] {
+            let rec = json!({"_type": t, "_database": "db", "_collection": "c"});
+            assert_eq!(control_record_type(&rec).as_deref(), Some(t));
+        }
+    }
+
+    #[test]
+    fn documents_are_never_control_records() {
+        // A document that happens to carry a `_type` field must be imported,
+        // not swallowed as an index definition.
+        let doc = json!({
+            "_key": "42",
+            "_type": "index",
+            "_database": "db",
+            "_collection": "articles",
+            "title": "Indexing for beginners",
+        });
+        assert_eq!(control_record_type(&doc), None);
+    }
+
+    #[test]
+    fn unknown_type_values_are_documents() {
+        let doc = json!({"_type": "invoice", "_database": "db", "_collection": "c"});
+        assert_eq!(control_record_type(&doc), None);
+    }
+
+    #[test]
+    fn cli_flags_override_the_names_in_the_dump() {
+        let rec = json!({"_database": "prod", "_collection": "users"});
+        assert_eq!(
+            resolve_target(&rec, &args(Some("staging"), None)),
+            Some(("staging".to_string(), "users".to_string()))
+        );
+        assert_eq!(
+            resolve_target(&rec, &args(Some("staging"), Some("people"))),
+            Some(("staging".to_string(), "people".to_string()))
+        );
+    }
+
+    #[test]
+    fn records_without_a_target_are_unroutable() {
+        // Blob records from a pre-fix dump: no routing metadata at all.
+        let rec = json!({"_type": "blob_chunk", "_doc_key": "k", "_chunk_index": 0});
+        assert_eq!(resolve_target(&rec, &args(None, None)), None);
+        // A database override alone is not enough to place the record.
+        assert_eq!(resolve_target(&rec, &args(Some("db"), None)), None);
+        // Both overrides given: routable again.
+        assert!(resolve_target(&rec, &args(Some("db"), Some("c"))).is_some());
+    }
+}
