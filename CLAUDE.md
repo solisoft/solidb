@@ -29,9 +29,24 @@ cargo clippy -- -D warnings    # Lint checks
 
 ## Releasing
 
-When bumping the version, keep the docs site in sync — **always** update the
-version pill in `doc/app/views/home/index.html.slv` (`<span class="ver-pill">vX.Y.Z</span>`)
-to match `version` in `Cargo.toml`. Both must be updated in the same release.
+When bumping the version, update all three of these in the same commit:
+
+1. `version` in `Cargo.toml` (and `Cargo.lock` — `cargo update -p solidb --offline`).
+2. The version pill in `doc/app/views/home/index.html.slv`
+   (`<span class="ver-pill">vX.Y.Z</span>`).
+3. **A section for the new version in `doc/app/views/docs/changelog.html.slv`**,
+   and move anything under *Unreleased* into it.
+
+Step 3 is the one that gets forgotten: the docs changelog is hand-written and
+duplicates `CHANGELOG.md` (which release-please generates from conventional
+commits). Between v0.31.0 and v0.32.2 the page was never touched, so the docs
+site advertised a release three versions behind the shipped binary. Copy the
+`CHANGELOG.md` entry across, or write the section directly if the release was
+tagged by hand.
+
+Tag releases as annotated tags on the release commit (`git tag -a vX.Y.Z`),
+matching the existing `v0.32.1` style — CI's `release` job triggers on
+`refs/tags/v*`.
 
 ## Architecture
 

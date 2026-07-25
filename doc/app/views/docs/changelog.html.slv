@@ -14,7 +14,85 @@
     <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
-        <li class="italic text-gray-500">No unreleased changes yet.</li>
+        <li><strong class="text-white">Index definitions replicate</strong> &mdash; an index created on one node existed only on that node: there was no <code>CreateIndex</code> operation in the sync protocol, so peers ran unindexed scans and never enforced a unique index they did not have. Worst, the TTL sweep skips a collection with no TTL index, so documents expired on the node where the index was created and lived forever on every other node. Index creation is also shard-aware now &mdash; previously an index on a sharded collection was built on the logical collection, which holds no documents.</li>
+        <li><strong class="text-white">Physical backup</strong> &mdash; <code class="text-cyan-400">POST /_api/backup</code> (admin) takes a RocksDB checkpoint of the whole instance: near-instant, hard-linked, point-in-time consistent across collections. Restore by pointing a server at the directory. <code>solidb-dump</code> remains the per-database and cross-version path. Because a checkpoint hard-links SSTs on the same filesystem, copy it elsewhere &mdash; it is not protection against losing that volume.</li>
+        <li><strong class="text-white">Offline sync writes are persisted</strong> &mdash; <code class="text-cyan-400">/_api/sync/push</code> validated the session, appended to the replication log and returned <code>{"accepted": N}</code> without ever writing to storage, so pushed documents never existed. <code>/_api/sync/conflicts</code> and <code>/_api/sync/resolve</code> now return <code>501</code> instead of an empty list and <code>{"success": true}</code>; real conflict detection needs per-document version vectors, which storage does not yet carry.</li>
+        <li><strong class="text-white">Blob under-replication repair</strong> &mdash; blob chunks replicate inline at upload and are absent from both recovery paths, so a chunk missed while a peer was down stayed missing. The rebalance worker now scans for under-replicated chunks and re-pushes them.</li>
+        <li><strong class="text-white">Supply-chain checks in CI</strong> &mdash; <code>cargo-deny</code> (advisories, bans, licenses, sources), clippy widened to <code>--all-targets --all-features</code>, and a declared MSRV verified by a job that builds it. Two advisories were fixed by version bumps rather than ignored.</li>
+        <li><strong class="text-white">Safer <code>solidb-dump</code> / <code>solidb-restore</code></strong> &mdash; columnar indexes go through <code>columnar_index</code> records rather than schema <code>indexed</code> flags, document dumps are enveloped to avoid field collisions, index-list failures surface, and a partial dump or restore exits non-zero. Adds <code>--scheme</code>, <code>--overwrite</code> (import <code>mode=upsert</code>), path encoding and auth validation.</li>
+        <li><strong class="text-white">Dropping a database requires typing its name</strong> &mdash; the admin confirm modal takes a name confirmation, and the endpoint rejects the delete unless it matches.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 0.32.2 -->
+  <section id="v0-32-2" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v0.32.2</h2>
+      <span class="text-sm font-medium text-gray-400">July 25, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Blob collections are restorable from a whole-database dump</strong> &mdash; <code>solidb-dump</code> streamed the server's single-collection <code>/export</code> output verbatim, and those records name neither the database nor the collection, so <code>solidb-restore</code> aborted on the first one with <em>"No collection specified in doc or args"</em>. The dump now injects the routing metadata, copying binary payloads through byte for byte.</li>
+        <li><strong class="text-white">Collections larger than 10,000 documents are no longer silently truncated</strong> &mdash; the dump asked for <code>batchSize</code> 1,000,000 and read only the first response, but the server clamps it to 10,000. It now follows the cursor, and warns when the number of documents dumped differs from the reported count.</li>
+        <li><strong class="text-white">Empty collections survive a round trip</strong> &mdash; a collection with no documents and no indexes wrote nothing at all and disappeared from the dump. Every collection now leads with a declaration record carrying its type, so edge, blob and timeseries collections come back as themselves rather than plain document collections.</li>
+        <li><strong class="text-white">Columnar collections are dumped and restored</strong> &mdash; they live behind their own API and were skipped entirely, while their backing <code>_columnar_*</code> column family was exported as a phantom empty document collection.</li>
+        <li>Restore skips an unroutable record instead of aborting the whole run, creates the database once per run rather than once per collection, and treats "already exists" index clashes as success.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 0.32.1 -->
+  <section id="v0-32-1" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v0.32.1</h2>
+      <span class="text-sm font-medium text-gray-400">July 24, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white"><code>solidb-restore</code> honours <code class="text-cyan-400">--database</code> / <code class="text-cyan-400">--collection</code></strong> &mdash; both are documented as overrides, but the target was resolved as "name embedded in the dump, falling back to the flag". Since every dump emits <code>_database</code> and <code>_collection</code>, the fallback was unreachable and both flags were silently ignored: <code>solidb-restore -d staging --input prod.dump</code> restored into <code>prod</code>. The flag now wins and the dump's name is the fallback, across document, blob-chunk and index records. <strong class="text-white">Operators who relied on the old behaviour to restore a dump back into its original database can simply omit <code>-d</code>.</strong></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 0.32.0 -->
+  <section id="v0-32-0" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v0.32.0</h2>
+      <span class="text-sm font-medium text-gray-400">July 19, 2026</span>
+    </div>
+
+    <nav class="flex flex-wrap gap-2 mb-10 text-sm">
+      <a href="#v0320-features" class="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-gray-300 hover:text-white hover:border-white/20">Features</a>
+      <a href="#v0320-changes" class="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-gray-300 hover:text-white hover:border-white/20">Changes</a>
+      <a href="#v0320-performance" class="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-gray-300 hover:text-white hover:border-white/20">Performance</a>
+    </nav>
+
+    <h3 id="v0320-features" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Features</h3>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Windows x86_64 builds</strong> &mdash; releases now include <code>solidb-windows-amd64.zip</code> (<code>solidb.exe</code>, <code>solidb-dump.exe</code>, <code>solidb-restore.exe</code>) alongside the Linux and macOS tarballs. Three caveats for operators:
+          <ul class="list-disc pl-5 mt-2 space-y-1">
+            <li><code>--daemon</code> is Unix-only and exits with an error. Run SoliDB in a console, or wrap it with a service manager such as NSSM or <code>sc.exe</code>.</li>
+            <li>The generated <code>.admin_password</code> file is written with default ACLs rather than the owner-only permissions used on Unix. Restrict the data directory yourself on a shared machine.</li>
+            <li>FUSE (<code>solidb-fuse</code>) remains Unix-only, and <code>solidb update</code> still does not support Windows.</li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+
+    <h3 id="v0320-changes" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Changes</h3>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">TLS moves from OpenSSL to rustls</strong> &mdash; OpenSSL is no longer in the dependency graph at all. The Docker image no longer installs <code>libssl3</code>, and building from source no longer needs <code>libssl-dev</code> (or Perl/NASM on Windows). Certificate validation now uses the platform trust store via rustls; <code>ca-certificates</code> is still required in the container image.</li>
+      </ul>
+    </div>
+
+    <h3 id="v0320-performance" class="text-xl font-semibold text-white mb-4 scroll-mt-24">Performance</h3>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li>Vector-index persistence is throttled to at most once per 5s behind a dirty flag, with a shutdown flush, instead of re-serializing the whole index (all vectors + HNSW graph) after every write batch. Bulk loads into embedding-bearing collections are no longer O(batches &times; index size).</li>
+        <li>Document updates that leave every vector index's embedding unchanged skip the delete+reinsert entirely, so an incremental sync that only rewrites metadata pays no HNSW churn.</li>
       </ul>
     </div>
   </section>
