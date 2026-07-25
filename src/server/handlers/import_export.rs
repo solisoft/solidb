@@ -3,15 +3,55 @@ use crate::error::DbError;
 use crate::storage::http_client::get_http_client;
 use axum::{
     body::Body,
-    extract::{Multipart, Path, State},
+    extract::{Multipart, Path, Query, State},
     http::HeaderMap,
     response::{Json, Response},
 };
 use base64::{engine::general_purpose, Engine as _};
 use futures::stream::StreamExt;
+use serde::Deserialize;
 use serde_json::Value;
 
 const MAX_BLOB_CHUNK_SIZE: usize = 16 * 1024 * 1024; // 16 MiB
+
+#[derive(Debug, Default, Deserialize)]
+pub struct ImportQuery {
+    /// Import mode: "insert" (default) or "upsert".
+    /// Upsert updates existing `_key`s instead of failing the batch.
+    #[serde(default)]
+    pub mode: Option<String>,
+}
+
+/// Apply a batch of documents using insert or upsert semantics.
+fn import_doc_batch(
+    collection: &crate::storage::Collection,
+    batch_docs: Vec<Value>,
+    upsert: bool,
+) -> Result<usize, DbError> {
+    let batch_len = batch_docs.len();
+    if upsert {
+        let mut pairs: Vec<(String, Value)> = Vec::with_capacity(batch_len);
+        for mut doc in batch_docs {
+            let key = if let Some(obj) = doc.as_object_mut() {
+                if let Some(k) = obj.get("_key").and_then(|v| v.as_str()) {
+                    k.to_string()
+                } else {
+                    let k = uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
+                    obj.insert("_key".to_string(), Value::String(k.clone()));
+                    k
+                }
+            } else {
+                uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
+            };
+            pairs.push((key, doc));
+        }
+        collection.upsert_batch(pairs)?;
+        Ok(batch_len)
+    } else {
+        collection.insert_batch(batch_docs)?;
+        Ok(batch_len)
+    }
+}
 
 pub async fn export_collection(
     State(state): State<AppState>,
@@ -235,8 +275,15 @@ pub async fn export_collection(
 pub async fn import_collection(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
+    Query(query): Query<ImportQuery>,
     mut multipart: Multipart,
 ) -> Result<Json<Value>, DbError> {
+    let upsert = query
+        .mode
+        .as_deref()
+        .map(|m| m.eq_ignore_ascii_case("upsert"))
+        .unwrap_or(false);
+
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name).or_else(|_| {
         // Auto-create
@@ -392,15 +439,14 @@ pub async fn import_collection(
                                     batch_docs.push(doc);
                                     if batch_docs.len() >= 1000 {
                                         let batch_len = batch_docs.len();
-                                        let result = collection.insert_batch(batch_docs.clone());
-                                        match result {
-                                            Ok(_) => imported_count += batch_len,
+                                        let to_write = std::mem::take(&mut batch_docs);
+                                        match import_doc_batch(&collection, to_write, upsert) {
+                                            Ok(n) => imported_count += n,
                                             Err(e) => {
                                                 tracing::error!("Batch import error: {}", e);
-                                                failed_count += batch_len; // Simplified error tracking
+                                                failed_count += batch_len;
                                             }
                                         }
-                                        batch_docs.clear();
                                     }
                                 }
                             }
@@ -422,9 +468,8 @@ pub async fn import_collection(
                 // Process remaining documents
                 if !batch_docs.is_empty() {
                     let batch_len = batch_docs.len();
-                    let result = collection.insert_batch(batch_docs);
-                    match result {
-                        Ok(_) => imported_count += batch_len,
+                    match import_doc_batch(&collection, batch_docs, upsert) {
+                        Ok(n) => imported_count += n,
                         Err(e) => {
                             tracing::error!("Batch import error: {}", e);
                             failed_count += batch_len;
@@ -447,17 +492,17 @@ pub async fn import_collection(
 
                 if let Some(arr) = json.as_array() {
                     let batch_docs = arr.clone();
-                    let batch_len = batch_docs.len();
-                    let result = collection.insert_batch(batch_docs);
-                    match result {
-                        Ok(_) => imported_count += batch_len,
-                        Err(e) => {
-                            return Err(e);
-                        }
+                    match import_doc_batch(&collection, batch_docs, upsert) {
+                        Ok(n) => imported_count += n,
+                        Err(e) => return Err(e),
                     }
                 } else if let Some(_obj) = json.as_object() {
                     // Single document import
-                    collection.insert(json)?;
+                    if upsert {
+                        import_doc_batch(&collection, vec![json], true)?;
+                    } else {
+                        collection.insert(json)?;
+                    }
                     imported_count += 1;
                 }
             }

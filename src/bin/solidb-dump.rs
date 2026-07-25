@@ -1,11 +1,78 @@
 use clap::Parser;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Non-fatal problems (failed index GETs, count mismatches, …). Non-zero at end
+/// makes the process exit with an error so DR pipelines notice incomplete dumps.
+static DUMP_WARNINGS: AtomicU64 = AtomicU64::new(0);
+
+fn note_warning() {
+    DUMP_WARNINGS.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Percent-encode a single URL path segment (RFC 3986 unreserved left alone).
+fn path_seg(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
+/// Quote a collection name for SDBQL (backtick identifier; double embedded ticks).
+fn quote_sdbql_ident(name: &str) -> String {
+    format!("`{}`", name.replace('`', "``"))
+}
+
+/// Build column defs for a columnar declaration.
+///
+/// Always emits `indexed: false`. Real indexes are dumped as separate
+/// `columnar_index` records so restore can call `POST .../index` (create only
+/// stores the flag; it does not build index structures).
+fn columnar_columns_for_dump(detail_columns: &[Value]) -> Vec<Value> {
+    detail_columns
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "name": c.get("name").cloned().unwrap_or(Value::Null),
+                "type": c.get("data_type").cloned().unwrap_or(Value::Null),
+                "nullable": c.get("nullable").cloned().unwrap_or(Value::Bool(false)),
+                "indexed": false,
+            })
+        })
+        .collect()
+}
+
+/// Columns marked indexed in live metadata that did not appear in the indexes list.
+fn synthetic_columnar_index_columns(
+    detail_columns: &[Value],
+    listed_columns: &HashSet<String>,
+) -> Vec<String> {
+    detail_columns
+        .iter()
+        .filter_map(|c| {
+            let name = c.get("name")?.as_str()?;
+            let indexed = c.get("indexed").and_then(|v| v.as_bool()).unwrap_or(false);
+            if indexed && !listed_columns.contains(name) {
+                Some(name.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "solidb-dump")]
-#[command(about = "Export SoliDB database or collection to JSON", long_about = None)]
+#[command(about = "Export SoliDB database or collection to JSONL", long_about = None)]
 struct Args {
     /// Database host
     #[arg(short = 'H', long, default_value = "localhost")]
@@ -14,6 +81,10 @@ struct Args {
     /// Database port
     #[arg(short = 'P', long, default_value = "6745")]
     port: u16,
+
+    /// URL scheme (http or https)
+    #[arg(long, default_value = "http")]
+    scheme: String,
 
     /// Database name
     #[arg(short, long)]
@@ -27,8 +98,9 @@ struct Args {
     #[arg(short, long)]
     output: Option<String>,
 
-    /// Pretty-print JSON
-    #[arg(long)]
+    /// Deprecated: JSONL is line-oriented; pretty multi-line JSON breaks restore.
+    /// Accepted for compatibility and ignored with a warning.
+    #[arg(long, hide = true)]
     pretty: bool,
 
     /// Username for authentication
@@ -43,35 +115,53 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let base_url = format!("http://{}:{}", args.host, args.port);
 
-    // Authentication
-    let token = if let (Some(user), Some(password)) = (&args.user, &args.password) {
-        let login_url = format!("{}/auth/login", base_url);
-        let client = reqwest::Client::new();
-        eprintln!("Authenticating as user: {}", user);
+    if args.pretty {
+        eprintln!(
+            "  {} --pretty is ignored: JSONL dumps must stay single-line so \
+             solidb-restore can stream them (and so blob framing stays valid).",
+            "Warning:".yellow().bold()
+        );
+        note_warning();
+    }
 
-        let response = client
-            .post(&login_url)
-            .json(&serde_json::json!({
-                "username": user,
-                "password": password
-            }))
-            .send()
-            .await?;
+    let scheme = args.scheme.to_lowercase();
+    if scheme != "http" && scheme != "https" {
+        return Err(format!("Invalid --scheme '{}': expected http or https", args.scheme).into());
+    }
+    let base_url = format!("{}://{}:{}", scheme, args.host, args.port);
 
-        if !response.status().is_success() {
-            return Err(format!("Authentication failed: {}", response.status()).into());
+    // Authentication: both credentials required, or neither.
+    let token = match (&args.user, &args.password) {
+        (None, None) => None,
+        (Some(user), Some(password)) => {
+            let login_url = format!("{}/auth/login", base_url);
+            let client = reqwest::Client::new();
+            eprintln!("Authenticating as user: {}", user);
+
+            let response = client
+                .post(&login_url)
+                .json(&serde_json::json!({
+                    "username": user,
+                    "password": password
+                }))
+                .send()
+                .await?;
+
+            if !response.status().is_success() {
+                return Err(format!("Authentication failed: {}", response.status()).into());
+            }
+
+            let login_data: Value = response.json().await?;
+            if let Some(token) = login_data["token"].as_str() {
+                Some(token.to_string())
+            } else {
+                return Err("Authentication response missing token".into());
+            }
         }
-
-        let login_data: Value = response.json().await?;
-        if let Some(token) = login_data["token"].as_str() {
-            Some(token.to_string())
-        } else {
-            return Err("Authentication response missing token".into());
+        _ => {
+            return Err("Both -u/--user and -p/--password are required for authentication".into());
         }
-    } else {
-        None
     };
 
     let mut headers = reqwest::header::HeaderMap::new();
@@ -85,7 +175,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .default_headers(headers)
         .build()?;
 
-    // Write output
     let mut output: Box<dyn Write> = if let Some(output_file) = &args.output {
         Box::new(File::create(output_file)?)
     } else {
@@ -128,7 +217,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     } else {
-        // Dump all collections
         dump_database_jsonl(
             &client,
             &base_url,
@@ -141,6 +229,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(output) = &args.output {
         eprintln!("✓ Dump written to {}", output);
+    }
+
+    let warnings = DUMP_WARNINGS.load(Ordering::Relaxed);
+    if warnings > 0 {
+        return Err(format!(
+            "Dump finished with {} warning(s); output may be incomplete (e.g. missing indexes)",
+            warnings
+        )
+        .into());
     }
 
     Ok(())
@@ -158,12 +255,49 @@ const CURSOR_BATCH_SIZE: usize = 10_000;
 /// the ordinary collection list but must be dumped through the /columnar API.
 const COLUMNAR_CF_PREFIX: &str = "_columnar_";
 
+async fn get_json_or_warn(client: &reqwest::Client, url: &str, what: &str) -> Option<Value> {
+    match client.get(url).send().await {
+        Ok(resp) if resp.status().is_success() => match resp.json::<Value>().await {
+            Ok(body) => Some(body),
+            Err(e) => {
+                eprintln!(
+                    "  {} failed to parse {} response: {}",
+                    "Warning:".yellow().bold(),
+                    what,
+                    e
+                );
+                note_warning();
+                None
+            }
+        },
+        Ok(resp) => {
+            eprintln!(
+                "  {} could not {}: {}",
+                "Warning:".yellow().bold(),
+                what,
+                resp.status()
+            );
+            note_warning();
+            None
+        }
+        Err(e) => {
+            eprintln!("  {} could not {}: {}", "Warning:".yellow().bold(), what, e);
+            note_warning();
+            None
+        }
+    }
+}
+
 async fn fetch_collections(
     client: &reqwest::Client,
     base_url: &str,
     database: &str,
 ) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
-    let collections_url = format!("{}/_api/database/{}/collection", base_url, database);
+    let collections_url = format!(
+        "{}/_api/database/{}/collection",
+        base_url,
+        path_seg(database)
+    );
     let response = client.get(&collections_url).send().await?;
 
     if !response.status().is_success() {
@@ -206,7 +340,6 @@ async fn dump_database_jsonl(
             continue;
         }
 
-        // We'll trust dump_collection_jsonl to handle its own UI/progress
         dump_collection_jsonl(
             client,
             base_url,
@@ -234,7 +367,7 @@ async fn dump_columnar_collections(
     database: &str,
     output: &mut dyn Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let list_url = format!("{}/_api/database/{}/columnar", base_url, database);
+    let list_url = format!("{}/_api/database/{}/columnar", base_url, path_seg(database));
     let response = match client.get(&list_url).send().await {
         Ok(r) if r.status().is_success() => r,
         // A server too old to know about columnar collections has nothing to
@@ -246,6 +379,7 @@ async fn dump_columnar_collections(
                 "Warning:".yellow().bold(),
                 r.status()
             );
+            note_warning();
             return Ok(());
         }
         Err(e) => {
@@ -254,6 +388,7 @@ async fn dump_columnar_collections(
                 "Warning:".yellow().bold(),
                 e
             );
+            note_warning();
             return Ok(());
         }
     };
@@ -300,7 +435,9 @@ async fn dump_columnar_collection(
     // accepts ("lz4"), where the list emits Rust's Debug form ("Lz4").
     let detail_url = format!(
         "{}/_api/database/{}/columnar/{}",
-        base_url, database, collection
+        base_url,
+        path_seg(database),
+        path_seg(collection)
     );
     let response = client.get(&detail_url).send().await?;
     if !response.status().is_success() {
@@ -313,21 +450,10 @@ async fn dump_columnar_collection(
     }
     let detail: Value = response.json().await?;
 
-    // The create endpoint wants {name, type, nullable, indexed}; the read side
-    // returns `data_type` rather than `type`.
-    let columns: Vec<Value> = detail["columns"]
+    let detail_columns = detail["columns"]
         .as_array()
-        .ok_or("Columnar collection has no column definitions")?
-        .iter()
-        .map(|c| {
-            serde_json::json!({
-                "name": c.get("name").cloned().unwrap_or(Value::Null),
-                "type": c.get("data_type").cloned().unwrap_or(Value::Null),
-                "nullable": c.get("nullable").cloned().unwrap_or(Value::Bool(false)),
-                "indexed": c.get("indexed").cloned().unwrap_or(Value::Bool(false)),
-            })
-        })
-        .collect();
+        .ok_or("Columnar collection has no column definitions")?;
+    let columns = columnar_columns_for_dump(detail_columns);
 
     let declaration = serde_json::json!({
         "_type": "columnar",
@@ -338,37 +464,67 @@ async fn dump_columnar_collection(
     });
     writeln!(output, "{}", serde_json::to_string(&declaration)?)?;
 
-    // Explicitly created indexes. Columns flagged `indexed` in the schema get
-    // their index back from the declaration above, so those are not repeated
-    // here.
+    // Indexes are always separate records. The create endpoint only stores
+    // `indexed` as a flag; real structures come from POST .../index.
     let indexes_url = format!(
         "{}/_api/database/{}/columnar/{}/indexes",
-        base_url, database, collection
+        base_url,
+        path_seg(database),
+        path_seg(collection)
     );
-    if let Ok(resp) = client.get(&indexes_url).send().await {
-        if resp.status().is_success() {
-            if let Ok(body) = resp.json::<Value>().await {
-                if let Some(arr) = body["indexes"].as_array() {
-                    for idx in arr {
-                        let record = serde_json::json!({
-                            "_type": "columnar_index",
-                            "_database": database,
-                            "_collection": collection,
-                            "column": idx.get("column").cloned().unwrap_or(Value::Null),
-                            "index_type": idx.get("index_type").cloned().unwrap_or(Value::Null),
-                        });
-                        writeln!(output, "{}", serde_json::to_string(&record)?)?;
-                    }
+    let mut listed: HashSet<String> = HashSet::new();
+    if let Some(body) = get_json_or_warn(
+        client,
+        &indexes_url,
+        &format!("list columnar indexes for '{}'", collection),
+    )
+    .await
+    {
+        if let Some(arr) = body["indexes"].as_array() {
+            for idx in arr {
+                if let Some(col) = idx.get("column").and_then(|v| v.as_str()) {
+                    listed.insert(col.to_string());
                 }
+                let record = serde_json::json!({
+                    "_type": "columnar_index",
+                    "_database": database,
+                    "_collection": collection,
+                    "column": idx.get("column").cloned().unwrap_or(Value::Null),
+                    "index_type": idx.get("index_type").cloned().unwrap_or(Value::Null),
+                });
+                writeln!(output, "{}", serde_json::to_string(&record)?)?;
             }
         }
+    }
+
+    // Columns still marked indexed in live metadata but missing from the list
+    // (e.g. create-with-indexed without a successful create_index) get a
+    // synthetic sorted index so restore still recreates *something*.
+    for col_name in synthetic_columnar_index_columns(detail_columns, &listed) {
+        eprintln!(
+            "  {} column '{}' is marked indexed but has no index metadata; \
+             emitting a default sorted columnar_index",
+            "Warning:".yellow().bold(),
+            col_name
+        );
+        note_warning();
+        let record = serde_json::json!({
+            "_type": "columnar_index",
+            "_database": database,
+            "_collection": collection,
+            "column": col_name,
+            "index_type": "sorted",
+        });
+        writeln!(output, "{}", serde_json::to_string(&record)?)?;
     }
 
     // Rows. The query endpoint returns everything when no limit is given.
     let column_names: Vec<&str> = columns.iter().filter_map(|c| c["name"].as_str()).collect();
     let query_url = format!(
         "{}/_api/database/{}/columnar/{}/query",
-        base_url, database, collection
+        base_url,
+        path_seg(database),
+        path_seg(collection)
     );
     let response = client
         .post(&query_url)
@@ -407,6 +563,7 @@ async fn dump_columnar_collection(
             expected,
             rows.len()
         );
+        note_warning();
     }
 
     Ok(())
@@ -424,7 +581,6 @@ async fn dump_collection_jsonl(
 
     let count = collection_info["count"].as_u64().unwrap_or(0);
 
-    // Setup Progress Bar
     let pb = ProgressBar::new(count);
     pb.set_style(
         ProgressStyle::default_bar()
@@ -434,7 +590,6 @@ async fn dump_collection_jsonl(
             .progress_chars("#>-"),
     );
 
-    // Check collection type to decide dump method
     let collection_type = collection_info["type"].as_str().unwrap_or("document");
 
     // Declare the collection before anything else. Without this record a
@@ -484,8 +639,8 @@ async fn dump_collection_jsonl(
         // The server caps batchSize at CURSOR_BATCH_SIZE and returns a cursor
         // id when more results remain — page through it, otherwise every
         // collection larger than the cap is silently truncated.
-        let query = format!("FOR doc IN {} RETURN doc", collection);
-        let query_url = format!("{}/_api/database/{}/cursor", base_url, database);
+        let query = format!("FOR doc IN {} RETURN doc", quote_sdbql_ident(collection));
+        let query_url = format!("{}/_api/database/{}/cursor", base_url, path_seg(database));
 
         let response = client
             .post(&query_url)
@@ -511,27 +666,22 @@ async fn dump_collection_jsonl(
                 .as_array()
                 .ok_or("Invalid query result")?;
 
-            // Write each document as JSONL with metadata
+            // Envelope form: routing metadata stays outside `doc` so a
+            // user field named `_database` / `_collection` / `_type` cannot
+            // collide with dump control fields.
             for doc in documents {
-                let mut doc_with_meta = serde_json::json!({
+                let mut record = serde_json::json!({
+                    "_type": "document",
                     "_database": database,
                     "_collection": collection,
                     "_collectionType": collection_type,
+                    "doc": doc,
                 });
-
-                // Add shard config if present
                 if let Some(shard_config) = collection_info.get("shardConfig") {
-                    doc_with_meta["_shardConfig"] = shard_config.clone();
+                    record["_shardConfig"] = shard_config.clone();
                 }
 
-                // Merge document data
-                if let Some(obj) = doc.as_object() {
-                    for (k, v) in obj {
-                        doc_with_meta[k] = v.clone();
-                    }
-                }
-
-                writeln!(output, "{}", serde_json::to_string(&doc_with_meta)?)?;
+                writeln!(output, "{}", serde_json::to_string(&record)?)?;
                 dumped += 1;
                 pb.inc(1);
             }
@@ -539,14 +689,12 @@ async fn dump_collection_jsonl(
             let has_more = query_result["has_more"].as_bool().unwrap_or(false);
             let cursor_id = query_result["id"].as_str().map(String::from);
 
-            let (has_more, cursor_id) = match (has_more, cursor_id) {
-                (true, Some(id)) => (true, id),
+            let cursor_id = match (has_more, cursor_id) {
+                (true, Some(id)) => id,
                 _ => break,
             };
-            let _ = has_more;
 
-            // PUT /_api/cursor/{id} returns the next batch
-            let next_url = format!("{}/_api/cursor/{}", base_url, cursor_id);
+            let next_url = format!("{}/_api/cursor/{}", base_url, path_seg(&cursor_id));
             let response = client.put(&next_url).send().await?;
             if !response.status().is_success() {
                 pb.finish_with_message("Cursor failed");
@@ -571,6 +719,7 @@ async fn dump_collection_jsonl(
                 count,
                 dumped
             );
+            note_warning();
         }
     }
 
@@ -604,7 +753,9 @@ async fn dump_blob_collection(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let export_url = format!(
         "{}/_api/database/{}/collection/{}/export",
-        base_url, database, collection
+        base_url,
+        path_seg(database),
+        path_seg(collection)
     );
     let mut response = client.get(&export_url).send().await?;
 
@@ -616,7 +767,6 @@ async fn dump_blob_collection(
     let mut eof = false;
     let mut chunk_count: u64 = 0;
 
-    // Pull more bytes from the response into `buffer`; returns false at EOF.
     macro_rules! fill {
         () => {
             match response.chunk().await? {
@@ -630,7 +780,6 @@ async fn dump_blob_collection(
     }
 
     loop {
-        // Extract one line
         let newline_pos = loop {
             if let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                 break Some(pos);
@@ -646,8 +795,6 @@ async fn dump_blob_collection(
         let line_bytes: Vec<u8> = match newline_pos {
             Some(pos) => buffer.drain(0..=pos).collect(),
             None => {
-                // Trailing bytes with no newline: emit as a final line if
-                // they hold anything, then stop.
                 if buffer.iter().all(|b| b.is_ascii_whitespace()) {
                     break;
                 }
@@ -699,8 +846,6 @@ async fn dump_blob_collection(
 
         writeln!(output, "{}", serde_json::to_string(&record)?)?;
 
-        // A chunk header is followed by exactly `_data_length` raw bytes plus
-        // a newline; copy them through untouched.
         if is_blob_chunk {
             if let Some(len) = data_length {
                 let len = len as usize;
@@ -731,13 +876,14 @@ async fn dump_blob_collection(
                 let data: Vec<u8> = buffer.drain(0..len).collect();
                 output.write_all(&data)?;
                 output.write_all(b"\n")?;
-                // Consume the delimiter the server wrote after the payload
                 if !buffer.is_empty() && buffer[0] == b'\n' {
                     buffer.drain(0..1);
                 }
                 chunk_count += 1;
             }
         } else {
+            // Blob metadata docs: re-emit as document envelopes when the
+            // export line is a plain document (not a chunk header).
             pb.inc(1);
         }
 
@@ -772,136 +918,188 @@ async fn dump_collection_indexes(
     collection_type: &str,
     output: &mut dyn Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let db = path_seg(database);
+    let coll = path_seg(collection);
+
     // Regular indexes (hash, persistent, fulltext, bloom, cuckoo)
-    let url = format!(
-        "{}/_api/database/{}/index/{}",
-        base_url, database, collection
-    );
-    if let Ok(resp) = client.get(&url).send().await {
-        if resp.status().is_success() {
-            if let Ok(body) = resp.json::<Value>().await {
-                if let Some(arr) = body["indexes"].as_array() {
-                    for idx in arr {
-                        // Server-side IndexType is serialized with PascalCase
-                        // ("Persistent", "Hash", ...). Lowercase it for the
-                        // create endpoint, which expects strings like
-                        // "persistent", "hash", "fulltext".
-                        let kind = idx["index_type"]
-                            .as_str()
-                            .map(|s| s.to_lowercase())
-                            .unwrap_or_else(|| "persistent".to_string());
-                        let mut record = serde_json::json!({
-                            "_type": "index",
-                            "_database": database,
-                            "_collection": collection,
-                            "_collectionType": collection_type,
-                            "_index_kind": kind,
-                            "name": idx.get("name").cloned().unwrap_or(Value::Null),
-                            "fields": idx.get("fields").cloned().unwrap_or_else(|| Value::Array(vec![])),
-                            "unique": idx.get("unique").cloned().unwrap_or(Value::Bool(false)),
-                        });
-                        if let Some(field) = idx.get("field") {
-                            record["field"] = field.clone();
-                        }
-                        writeln!(output, "{}", serde_json::to_string(&record)?)?;
-                    }
+    let url = format!("{}/_api/database/{}/index/{}", base_url, db, coll);
+    if let Some(body) = get_json_or_warn(
+        client,
+        &url,
+        &format!("list indexes for '{}/{}'", database, collection),
+    )
+    .await
+    {
+        if let Some(arr) = body["indexes"].as_array() {
+            for idx in arr {
+                // Server-side IndexType is serialized with PascalCase
+                // ("Persistent", "Hash", ...). Lowercase it for the
+                // create endpoint, which expects strings like
+                // "persistent", "hash", "fulltext".
+                let kind = idx["index_type"]
+                    .as_str()
+                    .map(|s| s.to_lowercase())
+                    .unwrap_or_else(|| "persistent".to_string());
+                let mut record = serde_json::json!({
+                    "_type": "index",
+                    "_database": database,
+                    "_collection": collection,
+                    "_collectionType": collection_type,
+                    "_index_kind": kind,
+                    "name": idx.get("name").cloned().unwrap_or(Value::Null),
+                    "fields": idx.get("fields").cloned().unwrap_or_else(|| Value::Array(vec![])),
+                    "unique": idx.get("unique").cloned().unwrap_or(Value::Bool(false)),
+                });
+                if let Some(field) = idx.get("field") {
+                    record["field"] = field.clone();
                 }
+                writeln!(output, "{}", serde_json::to_string(&record)?)?;
             }
         }
     }
 
     // Geo indexes
-    let url = format!("{}/_api/database/{}/geo/{}", base_url, database, collection);
-    if let Ok(resp) = client.get(&url).send().await {
-        if resp.status().is_success() {
-            if let Ok(body) = resp.json::<Value>().await {
-                if let Some(arr) = body["indexes"].as_array() {
-                    for idx in arr {
-                        let record = serde_json::json!({
-                            "_type": "index",
-                            "_database": database,
-                            "_collection": collection,
-                            "_collectionType": collection_type,
-                            "_index_kind": "geo",
-                            "name": idx.get("name").cloned().unwrap_or(Value::Null),
-                            "field": idx.get("field").cloned().unwrap_or(Value::Null),
-                        });
-                        writeln!(output, "{}", serde_json::to_string(&record)?)?;
-                    }
-                }
+    let url = format!("{}/_api/database/{}/geo/{}", base_url, db, coll);
+    if let Some(body) = get_json_or_warn(
+        client,
+        &url,
+        &format!("list geo indexes for '{}/{}'", database, collection),
+    )
+    .await
+    {
+        if let Some(arr) = body["indexes"].as_array() {
+            for idx in arr {
+                let record = serde_json::json!({
+                    "_type": "index",
+                    "_database": database,
+                    "_collection": collection,
+                    "_collectionType": collection_type,
+                    "_index_kind": "geo",
+                    "name": idx.get("name").cloned().unwrap_or(Value::Null),
+                    "field": idx.get("field").cloned().unwrap_or(Value::Null),
+                });
+                writeln!(output, "{}", serde_json::to_string(&record)?)?;
             }
         }
     }
 
     // TTL indexes
-    let url = format!("{}/_api/database/{}/ttl/{}", base_url, database, collection);
-    if let Ok(resp) = client.get(&url).send().await {
-        if resp.status().is_success() {
-            if let Ok(body) = resp.json::<Value>().await {
-                if let Some(arr) = body["indexes"].as_array() {
-                    for idx in arr {
-                        let record = serde_json::json!({
-                            "_type": "index",
-                            "_database": database,
-                            "_collection": collection,
-                            "_collectionType": collection_type,
-                            "_index_kind": "ttl",
-                            "name": idx.get("name").cloned().unwrap_or(Value::Null),
-                            "field": idx.get("field").cloned().unwrap_or(Value::Null),
-                            "expire_after_seconds": idx.get("expire_after_seconds").cloned().unwrap_or(Value::Null),
-                        });
-                        writeln!(output, "{}", serde_json::to_string(&record)?)?;
-                    }
-                }
+    let url = format!("{}/_api/database/{}/ttl/{}", base_url, db, coll);
+    if let Some(body) = get_json_or_warn(
+        client,
+        &url,
+        &format!("list TTL indexes for '{}/{}'", database, collection),
+    )
+    .await
+    {
+        if let Some(arr) = body["indexes"].as_array() {
+            for idx in arr {
+                let record = serde_json::json!({
+                    "_type": "index",
+                    "_database": database,
+                    "_collection": collection,
+                    "_collectionType": collection_type,
+                    "_index_kind": "ttl",
+                    "name": idx.get("name").cloned().unwrap_or(Value::Null),
+                    "field": idx.get("field").cloned().unwrap_or(Value::Null),
+                    "expire_after_seconds": idx.get("expire_after_seconds").cloned().unwrap_or(Value::Null),
+                });
+                writeln!(output, "{}", serde_json::to_string(&record)?)?;
             }
         }
     }
 
     // Vector indexes
-    let url = format!(
-        "{}/_api/database/{}/vector/{}",
-        base_url, database, collection
-    );
-    if let Ok(resp) = client.get(&url).send().await {
-        if resp.status().is_success() {
-            if let Ok(body) = resp.json::<Value>().await {
-                if let Some(arr) = body["indexes"].as_array() {
-                    for idx in arr {
-                        // VectorMetric serializes as PascalCase ("Cosine", "Euclidean", "DotProduct")
-                        // but the create endpoint expects lowercase ("cosine", "euclidean", "dot")
-                        let metric = idx
-                            .get("metric")
-                            .and_then(|v| v.as_str())
-                            .map(|s| match s.to_lowercase().as_str() {
-                                "dotproduct" => "dot".to_string(),
-                                other => other.to_string(),
-                            })
-                            .unwrap_or_else(|| "cosine".to_string());
-                        let quantization = idx
-                            .get("quantization")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_lowercase())
-                            .unwrap_or_else(|| "none".to_string());
-                        let record = serde_json::json!({
-                            "_type": "index",
-                            "_database": database,
-                            "_collection": collection,
-                            "_collectionType": collection_type,
-                            "_index_kind": "vector",
-                            "name": idx.get("name").cloned().unwrap_or(Value::Null),
-                            "field": idx.get("field").cloned().unwrap_or(Value::Null),
-                            "dimension": idx.get("dimension").cloned().unwrap_or(Value::Null),
-                            "metric": metric,
-                            "m": idx.get("m").cloned().unwrap_or(Value::Null),
-                            "ef_construction": idx.get("ef_construction").cloned().unwrap_or(Value::Null),
-                            "quantization": quantization,
-                        });
-                        writeln!(output, "{}", serde_json::to_string(&record)?)?;
-                    }
-                }
+    let url = format!("{}/_api/database/{}/vector/{}", base_url, db, coll);
+    if let Some(body) = get_json_or_warn(
+        client,
+        &url,
+        &format!("list vector indexes for '{}/{}'", database, collection),
+    )
+    .await
+    {
+        if let Some(arr) = body["indexes"].as_array() {
+            for idx in arr {
+                // VectorMetric serializes as PascalCase ("Cosine", "Euclidean", "DotProduct")
+                // but the create endpoint expects lowercase ("cosine", "euclidean", "dot")
+                let metric = idx
+                    .get("metric")
+                    .and_then(|v| v.as_str())
+                    .map(|s| match s.to_lowercase().as_str() {
+                        "dotproduct" => "dot".to_string(),
+                        other => other.to_string(),
+                    })
+                    .unwrap_or_else(|| "cosine".to_string());
+                let quantization = idx
+                    .get("quantization")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_lowercase())
+                    .unwrap_or_else(|| "none".to_string());
+                let record = serde_json::json!({
+                    "_type": "index",
+                    "_database": database,
+                    "_collection": collection,
+                    "_collectionType": collection_type,
+                    "_index_kind": "vector",
+                    "name": idx.get("name").cloned().unwrap_or(Value::Null),
+                    "field": idx.get("field").cloned().unwrap_or(Value::Null),
+                    "dimension": idx.get("dimension").cloned().unwrap_or(Value::Null),
+                    "metric": metric,
+                    "m": idx.get("m").cloned().unwrap_or(Value::Null),
+                    "ef_construction": idx.get("ef_construction").cloned().unwrap_or(Value::Null),
+                    "quantization": quantization,
+                });
+                writeln!(output, "{}", serde_json::to_string(&record)?)?;
             }
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn path_seg_encodes_special_chars() {
+        assert_eq!(path_seg("users"), "users");
+        assert_eq!(path_seg("a b"), "a%20b");
+        assert_eq!(path_seg("foo/bar"), "foo%2Fbar");
+    }
+
+    #[test]
+    fn quote_sdbql_escapes_backticks() {
+        assert_eq!(quote_sdbql_ident("users"), "`users`");
+        assert_eq!(quote_sdbql_ident("a`b"), "`a``b`");
+        assert_eq!(quote_sdbql_ident("my-coll"), "`my-coll`");
+    }
+
+    #[test]
+    fn columnar_columns_force_indexed_false() {
+        let cols = vec![json!({
+            "name": "host",
+            "data_type": "string",
+            "nullable": false,
+            "indexed": true,
+        })];
+        let out = columnar_columns_for_dump(&cols);
+        assert_eq!(out[0]["indexed"], false);
+        assert_eq!(out[0]["name"], "host");
+        assert_eq!(out[0]["type"], "string");
+    }
+
+    #[test]
+    fn synthetic_indexes_for_orphaned_flags() {
+        let cols = vec![
+            json!({"name": "a", "indexed": true}),
+            json!({"name": "b", "indexed": false}),
+            json!({"name": "c", "indexed": true}),
+        ];
+        let mut listed = HashSet::new();
+        listed.insert("a".to_string());
+        let synth = synthetic_columnar_index_columns(&cols, &listed);
+        assert_eq!(synth, vec!["c".to_string()]);
+    }
 }

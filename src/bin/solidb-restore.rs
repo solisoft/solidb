@@ -4,13 +4,30 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Records that named no target database/collection and could not be routed.
 static SKIPPED_UNROUTABLE: AtomicU64 = AtomicU64::new(0);
 
+/// One-shot warning when `-c` overrides a record's embedded collection.
+static WARNED_COLLECTION_OVERRIDE: AtomicBool = AtomicBool::new(false);
+
 /// Rows per POST to the columnar insert endpoint.
 const MAX_COLUMNAR_ROWS_PER_INSERT: usize = 10_000;
+
+/// Percent-encode a single URL path segment (RFC 3986 unreserved left alone).
+fn path_seg(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
 
 /// Resolve the target database and collection for a record.
 ///
@@ -29,16 +46,34 @@ fn resolve_target(record: &Value, args: &Args) -> Option<(String, String)> {
             .and_then(|s| s.as_str())
             .map(String::from)
     })?;
+
+    // Warn once when -c forces a different collection than the dump named.
+    if let Some(ref override_coll) = args.collection {
+        if let Some(embedded) = record.get("_collection").and_then(|s| s.as_str()) {
+            if embedded != override_coll.as_str()
+                && !WARNED_COLLECTION_OVERRIDE.swap(true, Ordering::Relaxed)
+            {
+                eprintln!(
+                    "  {} -c/--collection overrides dump collection names \
+                     (e.g. '{}' → '{}'); every record will land in that collection.",
+                    "Warning:".yellow().bold(),
+                    embedded,
+                    override_coll
+                );
+            }
+        }
+    }
+
     Some((db, coll))
 }
 
 /// Classify a dump record as one of the control records solidb-dump emits
-/// (`collection`, `index`, `columnar`, `columnar_row`, `columnar_index`,
-/// `blob_chunk`) rather than a document to import.
+/// rather than a document to import.
 ///
-/// A stored document always carries a `_key`, and no control record ever does.
-/// Requiring that keeps a user document that happens to have a field named
-/// `_type` from being mistaken for a control record and silently dropped.
+/// A stored document always carries a `_key`, and no control record ever does
+/// (document envelopes use `_type: "document"` with the payload nested under
+/// `doc`). Requiring the absence of `_key` keeps a user document that happens
+/// to have a field named `_type` from being mistaken for a control record.
 fn control_record_type(record: &Value) -> Option<String> {
     if record.get("_key").is_some() {
         return None;
@@ -46,18 +81,43 @@ fn control_record_type(record: &Value) -> Option<String> {
     let t = record.get("_type")?.as_str()?;
     matches!(
         t,
-        "collection" | "index" | "columnar" | "columnar_row" | "columnar_index" | "blob_chunk"
+        "collection"
+            | "index"
+            | "document"
+            | "columnar"
+            | "columnar_row"
+            | "columnar_index"
+            | "blob_chunk"
     )
     .then(|| t.to_string())
 }
 
-/// Report a record that carries no routing metadata.
+/// Force every column's `indexed` flag off for columnar create.
 ///
-/// Dumps produced before the blob-metadata fix contain blob records with no
-/// `_database`/`_collection`, because solidb-dump streamed the server's
-/// single-collection `/export` output verbatim. Skipping is strictly better
-/// than the previous behaviour (abort the entire restore) and than guessing a
-/// target, which would silently file the records under the wrong collection.
+/// Server create only stores the flag; real indexes must be created via
+/// `columnar_index` records. Older dumps may still ship `indexed: true`.
+fn sanitize_columnar_columns(columns: &Value) -> Value {
+    match columns.as_array() {
+        Some(arr) => Value::Array(
+            arr.iter()
+                .map(|c| {
+                    let mut obj = c.as_object().cloned().unwrap_or_default();
+                    obj.insert("indexed".to_string(), Value::Bool(false));
+                    // Prefer create-endpoint field name `type` over `data_type`.
+                    if !obj.contains_key("type") {
+                        if let Some(dt) = obj.remove("data_type") {
+                            obj.insert("type".to_string(), dt);
+                        }
+                    }
+                    Value::Object(obj)
+                })
+                .collect(),
+        ),
+        None => Value::Array(vec![]),
+    }
+}
+
+/// Report a record that carries no routing metadata.
 fn note_unroutable() {
     let seen = SKIPPED_UNROUTABLE.fetch_add(1, Ordering::Relaxed);
     if seen == 0 {
@@ -72,7 +132,10 @@ fn note_unroutable() {
 
 #[derive(Parser, Debug)]
 #[command(name = "solidb-restore")]
-#[command(about = "Import SoliDB database or collection from dump. Supports JSONL, JSON Array, CSV, and SQL formats.", long_about = None)]
+#[command(
+    about = "Import SoliDB database or collection from dump (JSONL, JSON Array, CSV). SQL is not supported.",
+    long_about = None
+)]
 struct Args {
     /// Database host
     #[arg(short = 'H', long, default_value = "localhost")]
@@ -82,7 +145,11 @@ struct Args {
     #[arg(short = 'P', long, default_value = "6745")]
     port: u16,
 
-    /// Input file (JSONL, JSON Array, CSV, or SQL)
+    /// URL scheme (http or https)
+    #[arg(long, default_value = "http")]
+    scheme: String,
+
+    /// Input file (JSONL, JSON Array, or CSV)
     #[arg(short, long)]
     input: String,
 
@@ -90,7 +157,7 @@ struct Args {
     #[arg(short = 'd', long)]
     database: Option<String>,
 
-    /// Override collection name (only when restoring single collection)
+    /// Override collection name (routes every record into this collection)
     #[arg(short = 'c', long)]
     collection: Option<String>,
 
@@ -101,6 +168,17 @@ struct Args {
     /// Drop existing collections before restore
     #[arg(long)]
     drop: bool,
+
+    /// Upsert documents by `_key` instead of failing when a key already exists.
+    /// Requires a server that accepts `?mode=upsert` on the import endpoint.
+    /// Prefer `--drop` for a clean restore when possible.
+    #[arg(long)]
+    overwrite: bool,
+
+    /// Do not fail the process when records lack routing metadata (legacy dumps).
+    /// Failed imports still cause a non-zero exit.
+    #[arg(long)]
+    allow_skipped: bool,
 
     /// Username for authentication
     #[arg(short = 'u', long)]
@@ -114,35 +192,43 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let base_url = format!("http://{}:{}", args.host, args.port);
 
-    // Authentication
-    let token = if let (Some(user), Some(password)) = (&args.user, &args.password) {
-        let login_url = format!("{}/auth/login", base_url);
-        let client = reqwest::Client::new();
-        eprintln!("Authenticating as user: {}", user);
+    let scheme = args.scheme.to_lowercase();
+    if scheme != "http" && scheme != "https" {
+        return Err(format!("Invalid --scheme '{}': expected http or https", args.scheme).into());
+    }
+    let base_url = format!("{}://{}:{}", scheme, args.host, args.port);
 
-        let response = client
-            .post(&login_url)
-            .json(&serde_json::json!({
-                "username": user,
-                "password": password
-            }))
-            .send()
-            .await?;
+    let token = match (&args.user, &args.password) {
+        (None, None) => None,
+        (Some(user), Some(password)) => {
+            let login_url = format!("{}/auth/login", base_url);
+            let client = reqwest::Client::new();
+            eprintln!("Authenticating as user: {}", user);
 
-        if !response.status().is_success() {
-            return Err(format!("Authentication failed: {}", response.status()).into());
+            let response = client
+                .post(&login_url)
+                .json(&serde_json::json!({
+                    "username": user,
+                    "password": password
+                }))
+                .send()
+                .await?;
+
+            if !response.status().is_success() {
+                return Err(format!("Authentication failed: {}", response.status()).into());
+            }
+
+            let login_data: Value = response.json().await?;
+            if let Some(token) = login_data["token"].as_str() {
+                Some(token.to_string())
+            } else {
+                return Err("Authentication response missing token".into());
+            }
         }
-
-        let login_data: Value = response.json().await?;
-        if let Some(token) = login_data["token"].as_str() {
-            Some(token.to_string())
-        } else {
-            return Err("Authentication response missing token".into());
+        _ => {
+            return Err("Both -u/--user and -p/--password are required for authentication".into());
         }
-    } else {
-        None
     };
 
     let mut headers = reqwest::header::HeaderMap::new();
@@ -156,7 +242,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .default_headers(headers)
         .build()?;
 
-    // Read Input file
     let file = File::open(&args.input)?;
     let metadata = file.metadata()?;
     let total_size = metadata.len();
@@ -169,19 +254,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut reader = BufReader::new(pb.wrap_read(file));
 
-    // Peek to detect format
-    // JSON Array: Starts with '['
-    // JSONL: Starts with '{'
-    // CSV: Anything else (assume header row)
-    let mut format = "csv"; // default
+    let mut format = "csv";
 
-    // Check extension first
     if args.input.to_lowercase().ends_with(".sql") {
         format = "sql";
     }
 
     if format == "csv" {
-        // Check start of file for partial content to guess format
         let buf = reader.fill_buf()?;
         for &byte in buf {
             if !byte.is_ascii_whitespace() {
@@ -190,8 +269,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else if byte == b'{' {
                     format = "jsonl";
                 } else {
-                    // Check for SQL INSERT
-                    // precise check to avoid confusing CSV header "Id" with SQL
                     let start_idx = buf
                         .iter()
                         .position(|&b| !b.is_ascii_whitespace())
@@ -208,35 +285,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Use Vec<u8> to avoid re-serialization
     let mut current_batch: Vec<Vec<u8>> = Vec::new();
     let mut current_batch_size = 0;
     let mut current_batch_meta: Option<(String, String)> = None;
     let max_batch_count = 20000;
     let max_batch_size = 25 * 1024 * 1024; // 25MB
 
-    // We need to track collections to create them first?
-    // If we stream, we might encounter a doc for Collection A, then B, then A.
-    // But solidb-dump groups by collection.
-    // However, to be robust, we should create on the fly or pre-scan?
-    // Pre-scanning a huge file is bad.
-    // Solution: "Upsert" collection logic or just try to create when we see a new collection name?
-    // We can keep a set of "initialized collections".
-
     let mut initialized_collections: HashMap<String, bool> = HashMap::new();
     let mut columnar_batch = ColumnarBatch::default();
     let mut total_imported = 0;
     let mut total_failed = 0;
-
-    // We assume JSONL for streaming restore of dumps
-    // For other formats (which were loaded fully before), we can just fail or support strictly JSONL for big dumps
-    // The previous code supported CSV/SQL/JSONArray by loading ALL.
-    // Let's implement streaming for JSONL, and keep full-load for others?
-    // But the variable `all_documents` is gone now if we stream.
-    // Let's simplify: Only JSONL supports streaming. A Blob dump IS JSONL.
-
-    // Check format first
-    // Note: format variable was already set by detection logic above (lines 110-133)
 
     if format == "csv" {
         let mut csv_reader = csv::ReaderBuilder::new()
@@ -271,10 +329,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         }
     } else if format == "sql" {
-        eprintln!(
-            "Error: SQL restore is not yet fully implemented. Please convert to CSV or JSONL."
+        return Err(
+            "SQL restore is not implemented. Convert to JSONL or CSV and re-run solidb-restore."
+                .into(),
         );
-        return Ok(());
     } else if format == "json_array" {
         eprintln!("Warning: JSON Array format loads all data into memory. Not recommended for large restores.");
         let all_documents: Vec<Value> = serde_json::from_reader(reader)?;
@@ -296,7 +354,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         }
     } else {
-        // Assume JSONL
         eprintln!("Restoring using streaming mode (JSONL/Mixed)...");
         let mut buffer = Vec::new();
 
@@ -306,7 +363,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
 
-            // Check if line is empty or just whitespace
             let line_slice = if buffer.ends_with(b"\n") {
                 &buffer[..buffer.len() - 1]
             } else {
@@ -317,13 +373,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
 
-            // Try parse JSON
             match serde_json::from_slice::<Value>(line_slice) {
                 Ok(doc) => {
                     let record_type = control_record_type(&doc);
 
-                    // Columnar records use a separate API and a separate row
-                    // buffer, so they are handled before anything else.
                     match record_type.as_deref() {
                         Some("columnar") => {
                             flush_columnar_batch(
@@ -392,13 +445,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             buffer.clear();
                             continue;
                         }
+                        Some("document") => {
+                            // Envelope: routing on the outer record, payload in `doc`.
+                            // Do not merge routing into the payload — user documents
+                            // may legitimately store fields named `_database` etc.
+                            let Some((db, coll)) = resolve_target(&doc, &args) else {
+                                note_unroutable();
+                                buffer.clear();
+                                continue;
+                            };
+                            let payload = doc
+                                .get("doc")
+                                .cloned()
+                                .unwrap_or(Value::Object(Default::default()));
+                            let collection_type =
+                                doc.get("_collectionType").and_then(|v| v.as_str());
+                            let shard_config = doc.get("_shardConfig");
+                            process_doc_routed(
+                                payload,
+                                &db,
+                                &coll,
+                                collection_type,
+                                shard_config,
+                                &args,
+                                &client,
+                                &base_url,
+                                &mut current_batch,
+                                &mut current_batch_size,
+                                &mut current_batch_meta,
+                                max_batch_count,
+                                max_batch_size,
+                                &mut initialized_collections,
+                                &mut total_imported,
+                                &mut total_failed,
+                            )
+                            .await?;
+                            buffer.clear();
+                            continue;
+                        }
                         _ => {}
                     }
 
-                    // Collection declaration: creates the collection with its
-                    // real type up front, so empty collections survive the
-                    // round trip and edge/blob/timeseries collections do not
-                    // come back as plain document collections.
                     if record_type.as_deref() == Some("collection") {
                         if let Some((db, coll)) = current_batch_meta.clone() {
                             flush_batch(
@@ -408,6 +495,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &base_url,
                                 &db,
                                 &coll,
+                                args.overwrite,
                                 &mut total_imported,
                                 &mut total_failed,
                             )
@@ -426,10 +514,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
 
-                    // Index definition record: must be applied after the
-                    // collection exists but before mass-imports finish so
-                    // newly inserted documents are indexed as they arrive.
-                    // Flush the current batch first to keep ordering sane.
                     if record_type.as_deref() == Some("index") {
                         if let Some((db, coll)) = current_batch_meta.clone() {
                             flush_batch(
@@ -439,6 +523,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &base_url,
                                 &db,
                                 &coll,
+                                args.overwrite,
                                 &mut total_imported,
                                 &mut total_failed,
                             )
@@ -458,17 +543,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
 
-                    // Check for Blob Chunk Header
                     let is_blob_chunk = record_type.as_deref() == Some("blob_chunk");
 
                     if is_blob_chunk {
                         if let Some(data_len) = doc.get("_data_length").and_then(|v| v.as_u64()) {
-                            // It is a binary chunk header.
-                            // 1. Process header (create db/coll, add to batch)
-                            // We treat the header as a "doc" but we need to handle the data following it immediately.
-
-                            // The header is followed by exactly `_data_length`
-                            // raw bytes and a newline delimiter.
                             let mut data_buffer = vec![0u8; data_len as usize];
                             reader.read_exact(&mut data_buffer).map_err(|e| {
                                 format!(
@@ -483,10 +561,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 )
                             })?;
 
-                            // Consume the trailing newline. If it is not a
-                            // newline the stream is misframed and every
-                            // following record would be garbage, so stop
-                            // rather than silently corrupt the restore.
                             let mut newline_buf = [0u8; 1];
                             reader.read_exact(&mut newline_buf)?;
                             if newline_buf[0] != b'\n' {
@@ -520,7 +594,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             )
                             .await?;
                         } else {
-                            // Legacy chunk
                             process_doc(
                                 doc,
                                 &args,
@@ -564,7 +637,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Flush remaining
     if !current_batch.is_empty() {
         if let Some((db, coll)) = &current_batch_meta {
             flush_batch(
@@ -574,6 +646,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &base_url,
                 db,
                 coll,
+                args.overwrite,
                 &mut total_imported,
                 &mut total_failed,
             )
@@ -602,22 +675,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    if total_failed > 0 {
+        return Err(format!("Restore finished with {} failed item(s)", total_failed).into());
+    }
+    if skipped > 0 && !args.allow_skipped {
+        return Err(format!(
+            "Restore skipped {} unroutable record(s); re-dump with a current solidb-dump, \
+             pass -d/-c, or use --allow-skipped",
+            skipped
+        )
+        .into());
+    }
+
     Ok(())
 }
 
-use std::io::Read; // Needed for read_exact
+use std::io::Read;
 
-/// Buffered rows for a columnar collection, keyed by "{db}/{collection}".
-///
-/// Columnar rows go to their own insert endpoint with a different payload
-/// shape than document imports, so they cannot ride along in the normal batch.
 #[derive(Default)]
 struct ColumnarBatch {
     target: Option<(String, String)>,
     rows: Vec<Value>,
 }
 
-/// Create a columnar collection from a `_type: "columnar"` record.
 async fn process_columnar_record(
     record: Value,
     args: &Args,
@@ -636,14 +716,25 @@ async fn process_columnar_record(
     }
 
     if args.drop {
-        let url = format!("{}/_api/database/{}/columnar/{}", base_url, db, coll);
-        let _ = client.delete(&url).send().await; // Ignore errors (e.g. not found)
+        let url = format!(
+            "{}/_api/database/{}/columnar/{}",
+            base_url,
+            path_seg(&db),
+            path_seg(&coll)
+        );
+        let _ = client.delete(&url).send().await;
     }
 
-    let url = format!("{}/_api/database/{}/columnar", base_url, db);
+    let url = format!("{}/_api/database/{}/columnar", base_url, path_seg(&db));
+    let columns = sanitize_columnar_columns(
+        &record
+            .get("columns")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(vec![])),
+    );
     let payload = serde_json::json!({
         "name": coll,
-        "columns": record.get("columns").cloned().unwrap_or_else(|| Value::Array(vec![])),
+        "columns": columns,
         "compression": record.get("compression").cloned().unwrap_or(Value::Null),
     });
 
@@ -666,7 +757,6 @@ async fn process_columnar_record(
     Ok(())
 }
 
-/// Recreate a columnar index from a `_type: "columnar_index"` record.
 async fn process_columnar_index_record(
     record: Value,
     args: &Args,
@@ -680,7 +770,12 @@ async fn process_columnar_index_record(
         return Ok(());
     };
 
-    let url = format!("{}/_api/database/{}/columnar/{}/index", base_url, db, coll);
+    let url = format!(
+        "{}/_api/database/{}/columnar/{}/index",
+        base_url,
+        path_seg(&db),
+        path_seg(&coll)
+    );
     let payload = serde_json::json!({
         "column": record.get("column").cloned().unwrap_or(Value::Null),
         "index_type": record.get("index_type").cloned().unwrap_or(Value::Null),
@@ -689,10 +784,9 @@ async fn process_columnar_index_record(
     let response = client.post(&url).json(&payload).send().await?;
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
-    // A column declared `indexed` in the schema is already indexed by the
-    // create call, so "already has an index" is the expected outcome, not a
-    // failure.
-    if status.is_success() || body.contains("already has an index") {
+    // 409 / "already has an index" is acceptable on re-run without --drop.
+    // It is NOT expected on a fresh create after sanitize_columnar_columns.
+    if status.is_success() || status.as_u16() == 409 || body.contains("already has an index") {
         *total_imported += 1;
     } else {
         eprintln!(
@@ -712,7 +806,6 @@ async fn process_columnar_index_record(
     Ok(())
 }
 
-/// Send the buffered columnar rows to the insert endpoint.
 async fn flush_columnar_batch(
     batch: &mut ColumnarBatch,
     client: &reqwest::Client,
@@ -728,7 +821,12 @@ async fn flush_columnar_batch(
         return Ok(());
     }
 
-    let url = format!("{}/_api/database/{}/columnar/{}/insert", base_url, db, coll);
+    let url = format!(
+        "{}/_api/database/{}/columnar/{}/insert",
+        base_url,
+        path_seg(&db),
+        path_seg(&coll)
+    );
     let count = batch.rows.len();
     let response = client
         .post(&url)
@@ -757,13 +855,6 @@ async fn flush_columnar_batch(
     Ok(())
 }
 
-/// Create a collection from a `_type: "collection"` record produced by
-/// solidb-dump.
-///
-/// This is the first record emitted for every collection, so it is where the
-/// collection gets created, dropped (with `--drop`) and given its real type.
-/// Creating it here rather than lazily on the first document is what lets an
-/// empty collection survive a round trip.
 async fn process_collection_record(
     record: Value,
     args: &Args,
@@ -805,11 +896,11 @@ async fn process_collection_record(
         if ctype != "document" {
             let url = format!(
                 "{}/_api/database/{}/collection/{}/properties",
-                base_url, db, coll
+                base_url,
+                path_seg(&db),
+                path_seg(&coll)
             );
             let mut payload = serde_json::json!({ "type": ctype });
-            // Echo the existing shard settings back so this call cannot
-            // reset them.
             if let Some(config) = shard_config {
                 if let Some(num_shards) = config.get("num_shards") {
                     payload["numShards"] = num_shards.clone();
@@ -836,11 +927,6 @@ async fn process_collection_record(
     Ok(())
 }
 
-/// Recreate an index from a `_type: "index"` record produced by solidb-dump.
-///
-/// Routes to the appropriate create endpoint based on `_index_kind`:
-/// regular indexes → `/index`, geo → `/geo`, ttl → `/ttl`, vector → `/vector`.
-/// Existing indexes (409) are tolerated; other errors are counted as failed.
 #[allow(clippy::too_many_arguments)]
 async fn process_index_record(
     record: Value,
@@ -856,10 +942,6 @@ async fn process_index_record(
         return Ok(());
     };
 
-    // Make sure DB and collection exist before posting the index.
-    // Pass the collection type through: an index record is often the first
-    // record seen for a collection, and creating a blob collection as a plain
-    // document collection here would leave its chunks unreadable.
     let key = format!("{}/{}", db, coll);
     if !initialized_cols.contains_key(&key) {
         if args.create_database {
@@ -884,9 +966,12 @@ async fn process_index_record(
         .and_then(|v| v.as_str())
         .unwrap_or("persistent");
 
+    let db_enc = path_seg(&db);
+    let coll_enc = path_seg(&coll);
+
     let (url, payload) = match kind {
         "geo" => {
-            let url = format!("{}/_api/database/{}/geo/{}", base_url, db, coll);
+            let url = format!("{}/_api/database/{}/geo/{}", base_url, db_enc, coll_enc);
             let payload = serde_json::json!({
                 "name": record.get("name").cloned().unwrap_or(Value::Null),
                 "field": record.get("field").cloned().unwrap_or(Value::Null),
@@ -894,7 +979,7 @@ async fn process_index_record(
             (url, payload)
         }
         "ttl" => {
-            let url = format!("{}/_api/database/{}/ttl/{}", base_url, db, coll);
+            let url = format!("{}/_api/database/{}/ttl/{}", base_url, db_enc, coll_enc);
             let payload = serde_json::json!({
                 "name": record.get("name").cloned().unwrap_or(Value::Null),
                 "field": record.get("field").cloned().unwrap_or(Value::Null),
@@ -906,7 +991,7 @@ async fn process_index_record(
             (url, payload)
         }
         "vector" => {
-            let url = format!("{}/_api/database/{}/vector/{}", base_url, db, coll);
+            let url = format!("{}/_api/database/{}/vector/{}", base_url, db_enc, coll_enc);
             let mut payload = serde_json::json!({
                 "name": record.get("name").cloned().unwrap_or(Value::Null),
                 "field": record.get("field").cloned().unwrap_or(Value::Null),
@@ -930,9 +1015,8 @@ async fn process_index_record(
             }
             (url, payload)
         }
-        // hash / persistent / fulltext / bloom / cuckoo
         other => {
-            let url = format!("{}/_api/database/{}/index/{}", base_url, db, coll);
+            let url = format!("{}/_api/database/{}/index/{}", base_url, db_enc, coll_enc);
             let mut payload = serde_json::json!({
                 "name": record.get("name").cloned().unwrap_or(Value::Null),
                 "type": other,
@@ -950,26 +1034,28 @@ async fn process_index_record(
 
     let response = client.post(&url).json(&payload).send().await?;
     let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    // An index that is already there is a success for restore purposes. Edge
-    // collections create `_edge_from_idx`/`_edge_to_idx` themselves and report
-    // the clash as 400 rather than 409, so the body has to be checked too.
-    if status.is_success() || status.as_u16() == 409 || body.contains("already exists") {
+    if status.is_success() || status.as_u16() == 409 {
         *total_imported += 1;
     } else {
-        eprintln!(
-            "  Failed to create {} index '{}' on {}/{}: {} {}",
-            kind,
-            record
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("<unknown>"),
-            db,
-            coll,
-            status,
-            body
-        );
-        *total_failed += 1;
+        let body = response.text().await.unwrap_or_default();
+        // Edge collections sometimes report duplicate indexes as 400.
+        if body.to_lowercase().contains("already exists") {
+            *total_imported += 1;
+        } else {
+            eprintln!(
+                "  Failed to create {} index '{}' on {}/{}: {} {}",
+                kind,
+                record
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("<unknown>"),
+                db,
+                coll,
+                status,
+                body
+            );
+            *total_failed += 1;
+        }
     }
     Ok(())
 }
@@ -990,13 +1076,11 @@ async fn process_blob_chunk(
     total_imported: &mut u64,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Determine target DB and Collection from header.
     let Some((db, coll)) = resolve_target(&header_doc, args) else {
         note_unroutable();
         return Ok(());
     };
 
-    // Create DB/Collection if needed
     let key = format!("{}/{}", db, coll);
     if !initialized_cols.contains_key(&key) {
         if args.create_database {
@@ -1017,7 +1101,6 @@ async fn process_blob_chunk(
         initialized_cols.insert(key.clone(), true);
     }
 
-    // Check batch consistency
     if let Some((curr_db, curr_coll)) = batch_meta {
         if curr_db != &db || curr_coll != &coll {
             flush_batch(
@@ -1027,6 +1110,7 @@ async fn process_blob_chunk(
                 base_url,
                 curr_db,
                 curr_coll,
+                args.overwrite,
                 total_imported,
                 total_failed,
             )
@@ -1039,16 +1123,13 @@ async fn process_blob_chunk(
         *batch_meta = Some((db.clone(), coll.clone()));
     }
 
-    // Add Header
     let header_bytes = serde_json::to_vec(&header_doc)?;
     *batch_size += header_bytes.len();
     batch.push(header_bytes);
 
-    // Add Data
     *batch_size += data.len();
     batch.push(data);
 
-    // Flush if full
     if batch.len() >= max_count || *batch_size >= max_size {
         if let Some((curr_db, curr_coll)) = batch_meta {
             flush_batch(
@@ -1058,6 +1139,7 @@ async fn process_blob_chunk(
                 base_url,
                 curr_db,
                 curr_coll,
+                args.overwrite,
                 total_imported,
                 total_failed,
             )
@@ -1083,40 +1165,89 @@ async fn process_doc(
     total_imported: &mut u64,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Determine target DB and Collection.
+    // Legacy flat records: routing fields live on the same object as user data.
     let Some((db, coll)) = resolve_target(&doc, args) else {
         note_unroutable();
         return Ok(());
     };
+    let collection_type = doc
+        .get("_collectionType")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let shard_config = doc.get("_shardConfig").cloned();
 
-    // Create DB/Collection if needed
+    let mut clean_doc = doc;
+    if let Some(obj) = clean_doc.as_object_mut() {
+        obj.remove("_database");
+        obj.remove("_collection");
+        obj.remove("_shardConfig");
+        obj.remove("_collectionType");
+    }
+
+    process_doc_routed(
+        clean_doc,
+        &db,
+        &coll,
+        collection_type.as_deref(),
+        shard_config.as_ref(),
+        args,
+        client,
+        base_url,
+        batch,
+        batch_size,
+        batch_meta,
+        max_count,
+        max_size,
+        initialized_cols,
+        total_imported,
+        total_failed,
+    )
+    .await
+}
+
+/// Import a document whose target collection is already known.
+///
+/// Used by envelope dumps (routing is outside the payload) and by the legacy
+/// flat path after routing fields have been stripped.
+#[allow(clippy::too_many_arguments)]
+async fn process_doc_routed(
+    clean_doc: Value,
+    db: &str,
+    coll: &str,
+    collection_type: Option<&str>,
+    shard_config: Option<&Value>,
+    args: &Args,
+    client: &reqwest::Client,
+    base_url: &str,
+    batch: &mut Vec<Vec<u8>>,
+    batch_size: &mut usize,
+    batch_meta: &mut Option<(String, String)>,
+    max_count: usize,
+    max_size: usize,
+    initialized_cols: &mut HashMap<String, bool>,
+    total_imported: &mut u64,
+    total_failed: &mut u64,
+) -> Result<(), Box<dyn std::error::Error>> {
     let key = format!("{}/{}", db, coll);
     if !initialized_cols.contains_key(&key) {
-        // Try create DB
         if args.create_database {
-            create_database_if_not_exists(client, base_url, &db, initialized_cols).await?;
+            create_database_if_not_exists(client, base_url, db, initialized_cols).await?;
         }
-
-        let shard_config = doc.get("_shardConfig");
-        let collection_type = doc.get("_collectionType").and_then(|v| v.as_str());
         ensure_collection_exists(
             client,
             base_url,
-            &db,
-            &coll,
+            db,
+            coll,
             shard_config,
             collection_type,
             args.drop,
         )
         .await?;
-
         initialized_cols.insert(key.clone(), true);
     }
 
-    // Check batch consistency
     if let Some((curr_db, curr_coll)) = batch_meta {
-        if curr_db != &db || curr_coll != &coll {
-            // Flush because collection changed
+        if curr_db != db || curr_coll != coll {
             flush_batch(
                 batch,
                 batch_size,
@@ -1124,6 +1255,7 @@ async fn process_doc(
                 base_url,
                 curr_db,
                 curr_coll,
+                args.overwrite,
                 total_imported,
                 total_failed,
             )
@@ -1133,25 +1265,13 @@ async fn process_doc(
     }
 
     if batch_meta.is_none() {
-        *batch_meta = Some((db.clone(), coll.clone()));
+        *batch_meta = Some((db.to_string(), coll.to_string()));
     }
 
-    // Strip restore metadata fields so they don't end up persisted as
-    // document fields. The dump tool adds these as routing hints, not data.
-    let mut clean_doc = doc;
-    if let Some(obj) = clean_doc.as_object_mut() {
-        obj.remove("_database");
-        obj.remove("_collection");
-        obj.remove("_shardConfig");
-        obj.remove("_collectionType");
-    }
-
-    // Add doc to batch (Pre-serialize to avoid double serialization)
     let doc_bytes = serde_json::to_vec(&clean_doc)?;
     *batch_size += doc_bytes.len();
     batch.push(doc_bytes);
 
-    // Flush if full
     if batch.len() >= max_count || *batch_size >= max_size {
         if let Some((curr_db, curr_coll)) = batch_meta {
             flush_batch(
@@ -1161,6 +1281,7 @@ async fn process_doc(
                 base_url,
                 curr_db,
                 curr_coll,
+                args.overwrite,
                 total_imported,
                 total_failed,
             )
@@ -1179,6 +1300,7 @@ async fn flush_batch(
     base_url: &str,
     db: &str,
     coll: &str,
+    overwrite: bool,
     total_imported: &mut u64,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1186,13 +1308,17 @@ async fn flush_batch(
         return Ok(());
     }
 
-    let url = format!(
+    let mut url = format!(
         "{}/_api/database/{}/collection/{}/import",
-        base_url, db, coll
+        base_url,
+        path_seg(db),
+        path_seg(coll)
     );
+    if overwrite {
+        url.push_str("?mode=upsert");
+    }
 
-    // Create JSONL payload from pre-serialized bytes
-    let mut jsonl_data = Vec::with_capacity(*batch_size + batch.len()); // + newlines
+    let mut jsonl_data = Vec::with_capacity(*batch_size + batch.len());
     for doc_bytes in batch.iter() {
         jsonl_data.extend_from_slice(doc_bytes);
         jsonl_data.push(b'\n');
@@ -1211,7 +1337,6 @@ async fn flush_batch(
         *total_failed += batch.len() as u64;
     } else {
         let result: Value = response.json().await?;
-        // Server returns `count` for imported documents; older versions used `imported`
         let imported = result
             .get("count")
             .and_then(|v| v.as_u64())
@@ -1235,21 +1360,22 @@ async fn ensure_collection_exists(
     collection_type: Option<&str>,
     drop: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Logic similar to restore_collection but handles single init
-
     if drop {
         let url = format!(
             "{}/_api/database/{}/collection/{}",
-            base_url, database, collection
+            base_url,
+            path_seg(database),
+            path_seg(collection)
         );
-        let _ = client.delete(&url).send().await; // Ignore errors (e.g. not found)
+        let _ = client.delete(&url).send().await;
     }
 
-    let url = format!("{}/_api/database/{}/collection", base_url, database);
+    let url = format!(
+        "{}/_api/database/{}/collection",
+        base_url,
+        path_seg(database)
+    );
     let mut create_payload = serde_json::json!({ "name": collection });
-
-    // In dump, blob chunks also have _shardConfig if replicated?
-    // The dump logic adds _shardConfig to every doc.
 
     if let Some(config) = shard_config {
         if let Some(num_shards) = config.get("num_shards") {
@@ -1267,41 +1393,8 @@ async fn ensure_collection_exists(
         create_payload["type"] = serde_json::Value::String(ctype.to_string());
     }
 
-    // Are we restoring a blob collection?
-    // The dump format for blob chunks: {"_type": "blob_chunk", ...}.
-    // But the dump *does not* explicitly say "this is a blob collection" in the doc metadata,
-    // UNLESS the prompt explicitly asked to include it?
-    // Wait, `export_collection` DOES NOT include collection type in the output JSONL.
-    // It yields `doc`.
-    // It yields `chunk_doc`.
-    // The chunks have `_type: blob_chunk`.
-    // If simple docs come first, we might create as "document" type default.
-    // Then chunks arrive. Import will try to put_blob_chunk on a "document" collection -> Error?
-    // Correct. `put_blob_chunk` might fail if collection type is not blob?
-    // `Collection::put_blob_chunk` implementation: It doesn't check type strictly?
-    // But `handlers.rs:upload_blob` checks type.
-    // `handlers.rs:import_collection` (my update) calls `put_blob_chunk` directly.
-    // Does `put_blob_chunk` enforce type?
-    // `src/storage/collection.rs`: `put_blob_chunk` writes to `blo:...`. It doesn't check `self.collection_type`.
-    // SO it might "work" but metadata says "document".
-    // Ideally we should create as "blob" if we see chunks. BUT we create collection at first doc.
-    // Issue: First doc is metadata doc. It looks like standard doc.
-    // We create "document" collection.
-    // Then chunks come. We write chunks.
-    // Collection thinks it's "document".
-    // API logic might block regular blob upload later.
-    // FIX: We need `type` in the dump!
-    // `solidb-dump` does NOT export `type`.
-    // I should fix `solidb-dump` (`export_collection` and `dump_collection_jsonl`) to include `collectionType: "blob"` in the metadata of every doc?
-    // Or just `_type: blob`?
-    // Let's assume standard collections for now or default.
-    // Wait, `export_collection` handler does: `yield ... json`.
-    // I should insert `_collectionType` into that JSON.
-
-    // Let's assume for now user creates collection manually or we default to document.
-    // But for "blob restore" to work fully, we probably want the type.
-    // However, I can't easily change previous logic too much in this single Step.
-    // I'll stick to basic create.
+    // Type is also set via PUT .../properties for non-document collections
+    // (see process_collection_record). Blob is honoured on create.
 
     let response = client.post(&url).json(&create_payload).send().await?;
     if !response.status().is_success() && response.status().as_u16() != 409 {
@@ -1317,9 +1410,7 @@ async fn ensure_collection_exists(
 /// Create the database unless we already tried during this run.
 ///
 /// `ensured` is the same map used for collections; collection keys are
-/// `"{db}/{coll}"`, so a bare database name cannot collide. Without this the
-/// database is re-created once per collection, which does nothing but print
-/// "Database already exists" on every collection boundary.
+/// `"{db}/{coll}"`, so a bare database name cannot collide.
 async fn create_database_if_not_exists(
     client: &reqwest::Client,
     base_url: &str,
@@ -1358,15 +1449,23 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn args(database: Option<&str>, collection: Option<&str>) -> Args {
+    fn args(
+        database: Option<&str>,
+        collection: Option<&str>,
+        overwrite: bool,
+        allow_skipped: bool,
+    ) -> Args {
         Args {
             host: "localhost".to_string(),
             port: 6745,
+            scheme: "http".to_string(),
             input: "dump.jsonl".to_string(),
             database: database.map(String::from),
             collection: collection.map(String::from),
             create_database: false,
             drop: false,
+            overwrite,
+            allow_skipped,
             user: None,
             password: None,
         }
@@ -1377,6 +1476,7 @@ mod tests {
         for t in [
             "collection",
             "index",
+            "document",
             "columnar",
             "columnar_row",
             "columnar_index",
@@ -1389,8 +1489,6 @@ mod tests {
 
     #[test]
     fn documents_are_never_control_records() {
-        // A document that happens to carry a `_type` field must be imported,
-        // not swallowed as an index definition.
         let doc = json!({
             "_key": "42",
             "_type": "index",
@@ -1411,23 +1509,44 @@ mod tests {
     fn cli_flags_override_the_names_in_the_dump() {
         let rec = json!({"_database": "prod", "_collection": "users"});
         assert_eq!(
-            resolve_target(&rec, &args(Some("staging"), None)),
+            resolve_target(&rec, &args(Some("staging"), None, false, false)),
             Some(("staging".to_string(), "users".to_string()))
         );
         assert_eq!(
-            resolve_target(&rec, &args(Some("staging"), Some("people"))),
+            resolve_target(&rec, &args(Some("staging"), Some("people"), false, false)),
             Some(("staging".to_string(), "people".to_string()))
         );
     }
 
     #[test]
     fn records_without_a_target_are_unroutable() {
-        // Blob records from a pre-fix dump: no routing metadata at all.
         let rec = json!({"_type": "blob_chunk", "_doc_key": "k", "_chunk_index": 0});
-        assert_eq!(resolve_target(&rec, &args(None, None)), None);
-        // A database override alone is not enough to place the record.
-        assert_eq!(resolve_target(&rec, &args(Some("db"), None)), None);
-        // Both overrides given: routable again.
-        assert!(resolve_target(&rec, &args(Some("db"), Some("c"))).is_some());
+        assert_eq!(resolve_target(&rec, &args(None, None, false, false)), None);
+        assert_eq!(
+            resolve_target(&rec, &args(Some("db"), None, false, false)),
+            None
+        );
+        assert!(resolve_target(&rec, &args(Some("db"), Some("c"), false, false)).is_some());
+    }
+
+    #[test]
+    fn sanitize_columnar_forces_indexed_false() {
+        let cols = json!([
+            {"name": "host", "type": "string", "indexed": true},
+            {"name": "ts", "data_type": "timestamp", "indexed": true},
+        ]);
+        let out = sanitize_columnar_columns(&cols);
+        let arr = out.as_array().unwrap();
+        assert_eq!(arr[0]["indexed"], false);
+        assert_eq!(arr[1]["indexed"], false);
+        // data_type promoted to type for create endpoint
+        assert_eq!(arr[1]["type"], "timestamp");
+        assert!(arr[1].get("data_type").is_none());
+    }
+
+    #[test]
+    fn path_seg_encodes_special_chars() {
+        assert_eq!(path_seg("users"), "users");
+        assert_eq!(path_seg("a b"), "a%20b");
     }
 }
