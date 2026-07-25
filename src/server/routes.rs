@@ -336,6 +336,10 @@ pub fn create_router(
         .route("/_api/database", post(create_database))
         .route("/_api/databases", get(list_databases))
         .route("/_api/database/{name}", delete(delete_database))
+        // Physical backup (whole instance). Admin is enforced in the handler:
+        // this route has no {db} segment, so the path-based authz middleware
+        // cannot scope it to a database.
+        .route("/_api/backup", post(create_backup))
         // Collection routes
         .route("/_api/database/{db}/collection", post(create_collection))
         .route("/_api/database/{db}/collection", get(list_collections))

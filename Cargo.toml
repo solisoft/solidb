@@ -5,6 +5,9 @@ members = ["clients/rust-client", "sdbql-core", "benchmarks"]
 name = "solidb"
 version = "0.32.2"
 edition = "2021"
+# Floor imposed by the dependency tree (rust-rocksdb 0.46 declares 1.89.0).
+# Enforced by the `msrv` CI job, which builds with exactly this toolchain.
+rust-version = "1.89"
 default-run = "solidb"
 description = "A lightweight, high-performance structured database server written in Rust."
 license-file = "LICENCE.md"

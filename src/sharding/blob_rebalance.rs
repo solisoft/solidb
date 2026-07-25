@@ -11,7 +11,9 @@ use tokio::time::{interval, Duration};
 
 use crate::cluster::manager::ClusterManager;
 use crate::sharding::coordinator::ShardCoordinator;
+use crate::storage::http_client::get_http_client;
 use crate::storage::StorageEngine;
+use crate::sync::blob_replication::replicate_blob_to_node;
 
 /// Configuration for blob rebalancing behavior
 #[derive(Debug, Clone)]
@@ -56,6 +58,36 @@ pub struct CollectionBlobStats {
     pub total_bytes: u64,
 }
 
+/// Peers that should hold a copy of `chunk_index`.
+///
+/// This must stay identical to the placement the upload path uses in
+/// `server/handlers/blobs.rs` — start at `chunk_index % peers`, then take
+/// `replication_factor` consecutive peers, wrapping. If the two diverge,
+/// repair re-pushes to peers the upload never targeted and the copies spread
+/// instead of converging.
+fn replica_targets(chunk_index: u32, peers: &[String], replication_factor: usize) -> Vec<&str> {
+    if peers.is_empty() {
+        return Vec::new();
+    }
+    let start = (chunk_index as usize) % peers.len();
+    (0..replication_factor.min(peers.len()))
+        .map(|i| peers[(start + i) % peers.len()].as_str())
+        .collect()
+}
+
+/// Outcome of an under-replication repair pass.
+#[derive(Debug, Default, Clone)]
+pub struct RepairSummary {
+    /// Local chunks examined.
+    pub chunks_checked: usize,
+    /// Replica slots found empty on a peer that should hold them.
+    pub replicas_missing: usize,
+    /// Replica slots successfully re-pushed.
+    pub replicas_restored: usize,
+    /// Probes or pushes that errored (peer unreachable, transfer failed).
+    pub failures: usize,
+}
+
 /// Information about a blob chunk to migrate
 #[derive(Debug)]
 pub struct ChunkMigration {
@@ -72,7 +104,7 @@ pub struct ChunkMigration {
 #[derive(Clone)]
 pub struct BlobRebalanceWorker {
     storage: Arc<StorageEngine>,
-    _coordinator: Arc<ShardCoordinator>,
+    coordinator: Arc<ShardCoordinator>,
     cluster_manager: Option<Arc<ClusterManager>>,
     config: Arc<RebalanceConfig>,
     is_rebalancing: Arc<AtomicBool>,
@@ -88,7 +120,7 @@ impl BlobRebalanceWorker {
     ) -> Self {
         Self {
             storage,
-            _coordinator: coordinator,
+            coordinator,
             cluster_manager,
             config,
             is_rebalancing: Arc::new(AtomicBool::new(false)),
@@ -152,8 +184,210 @@ impl BlobRebalanceWorker {
         self.calculate_distribution_metrics_internal(node_stats)
     }
 
+    /// Re-push blob chunks that are missing from the peers meant to hold them.
+    ///
+    /// Blob replication happens inline on upload and is best-effort: when a
+    /// peer is down the upload handler logs "chunk is safe locally" and moves
+    /// on. Document writes queue in the replication log and retry; blobs have
+    /// no such queue, so without this pass a blob uploaded during a peer
+    /// outage stays under-replicated forever.
+    ///
+    /// Target selection mirrors the upload path in `handlers/blobs.rs` exactly
+    /// (`start = chunk_index % peers`, then `replication_factor` consecutive
+    /// peers) so repair converges on the same placement rather than scattering
+    /// copies.
+    pub async fn repair_under_replicated(&self) -> Result<RepairSummary, String> {
+        let mut summary = RepairSummary::default();
+
+        let my_address = self.coordinator.my_address();
+        let peer_addresses: Vec<String> = self
+            .coordinator
+            .get_node_addresses()
+            .into_iter()
+            .filter(|addr| addr != &my_address && addr != "local")
+            .collect();
+
+        // Single-node deployment: local storage is the only copy by design.
+        if peer_addresses.is_empty() {
+            return Ok(summary);
+        }
+
+        let replication_factor = std::cmp::min(2, peer_addresses.len());
+        let cluster_secret = self.coordinator.cluster_secret();
+        let client = get_http_client();
+
+        for db_name in self.storage.list_databases() {
+            let Ok(db) = self.storage.get_database(&db_name) else {
+                continue;
+            };
+
+            for coll_name in db.list_collections() {
+                if coll_name.starts_with('_') {
+                    continue;
+                }
+                let Ok(coll) = db.get_collection(&coll_name) else {
+                    continue;
+                };
+                if coll.get_type() != "blob" {
+                    continue;
+                }
+
+                // Documents in a blob collection are the per-blob metadata
+                // records, so their keys are the blob keys.
+                for doc in coll.scan(None) {
+                    let blob_key = doc.key;
+                    let mut chunk_index: u32 = 0;
+
+                    // Chunks are contiguous from 0; the first gap ends the blob.
+                    while let Ok(Some(data)) = coll.get_blob_chunk(&blob_key, chunk_index) {
+                        summary.chunks_checked += 1;
+
+                        for target in
+                            replica_targets(chunk_index, &peer_addresses, replication_factor)
+                        {
+                            match self
+                                .peer_has_chunk(
+                                    &client,
+                                    target,
+                                    &db_name,
+                                    &coll_name,
+                                    &blob_key,
+                                    chunk_index,
+                                    &cluster_secret,
+                                )
+                                .await
+                            {
+                                Some(true) => {}
+                                Some(false) => {
+                                    summary.replicas_missing += 1;
+                                    match replicate_blob_to_node(
+                                        target,
+                                        &db_name,
+                                        &coll_name,
+                                        &blob_key,
+                                        &[(chunk_index, data.clone())],
+                                        None,
+                                        &cluster_secret,
+                                    )
+                                    .await
+                                    {
+                                        Ok(()) => summary.replicas_restored += 1,
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                "Blob repair: failed to restore chunk {} of {}/{}/{} to {}: {}",
+                                                chunk_index,
+                                                db_name,
+                                                coll_name,
+                                                blob_key,
+                                                target,
+                                                e
+                                            );
+                                            summary.failures += 1;
+                                        }
+                                    }
+                                }
+                                // Unreachable peer: not a missing replica, we
+                                // simply do not know. Retry next cycle.
+                                None => summary.failures += 1,
+                            }
+                        }
+
+                        chunk_index += 1;
+                    }
+                }
+            }
+        }
+
+        Ok(summary)
+    }
+
+    /// Probe whether a peer holds a chunk.
+    ///
+    /// `Some(true)`/`Some(false)` when the peer answered, `None` when it could
+    /// not be reached — an unreachable peer must not be mistaken for a missing
+    /// replica, or every outage would trigger a pointless re-push storm.
+    ///
+    /// Uses HEAD: axum serves HEAD from the same handler as GET and drops the
+    /// body, so this avoids pulling whole chunks over the wire just to test
+    /// existence.
+    #[allow(clippy::too_many_arguments)]
+    async fn peer_has_chunk(
+        &self,
+        client: &reqwest::Client,
+        target_node_address: &str,
+        database: &str,
+        collection: &str,
+        blob_key: &str,
+        chunk_index: u32,
+        cluster_secret: &str,
+    ) -> Option<bool> {
+        let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
+        let url_base = if target_node_address.contains("://") {
+            target_node_address.to_string()
+        } else {
+            format!("{}://{}", scheme, target_node_address)
+        };
+        let url = format!(
+            "{}/_internal/blob/replicate/{}/{}/{}/chunk/{}",
+            url_base, database, collection, blob_key, chunk_index
+        );
+
+        match client
+            .head(&url)
+            .header("X-Cluster-Secret", cluster_secret)
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => Some(true),
+            Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => Some(false),
+            // Anything else (auth failure, 5xx) is an unknown, not an absence.
+            Ok(resp) => {
+                tracing::debug!(
+                    "Blob repair: unexpected {} probing chunk {} of {} on {}",
+                    resp.status(),
+                    chunk_index,
+                    blob_key,
+                    target_node_address
+                );
+                None
+            }
+            Err(e) => {
+                tracing::debug!(
+                    "Blob repair: peer {} unreachable while probing {}: {}",
+                    target_node_address,
+                    blob_key,
+                    e
+                );
+                None
+            }
+        }
+    }
+
     /// Check for imbalance and trigger rebalancing if needed
     async fn check_and_rebalance_inner(&self) -> Result<(), String> {
+        // Repair first, and unconditionally. An under-replicated blob is not
+        // an *imbalance*, so it would never be fixed by the distribution logic
+        // below — which additionally returns early when the cluster holds
+        // fewer than `min_chunks_to_rebalance` chunks or looks evenly spread.
+        match self.repair_under_replicated().await {
+            Ok(summary) if summary.replicas_missing > 0 || summary.failures > 0 => {
+                tracing::info!(
+                    "Blob repair: {} chunks checked, {} replicas missing, {} restored, {} failures",
+                    summary.chunks_checked,
+                    summary.replicas_missing,
+                    summary.replicas_restored,
+                    summary.failures
+                );
+            }
+            Ok(summary) => {
+                tracing::debug!(
+                    "Blob repair: {} chunks checked, all replicas present",
+                    summary.chunks_checked
+                );
+            }
+            Err(e) => tracing::error!("Blob repair pass failed: {}", e),
+        }
+
         // Collect stats from all healthy nodes
         let all_stats = self.collect_node_stats_internal().await?;
 
@@ -826,5 +1060,84 @@ mod tests {
             && imbalance_ratio >= config.imbalance_threshold;
 
         assert!(should_rebalance); // Should trigger rebalance
+    }
+
+    // =======================================================================
+    // replica_targets — under-replication repair placement
+    // =======================================================================
+
+    fn peers(n: usize) -> Vec<String> {
+        (0..n).map(|i| format!("10.0.0.{}:6745", i)).collect()
+    }
+
+    /// The repair pass must pick exactly the peers the upload path picked, or
+    /// it re-pushes copies to nodes the original upload never targeted.
+    ///
+    /// Reference implementation, from `server/handlers/blobs.rs`:
+    ///     let start_node = (chunk_idx as usize) % peer_addresses.len();
+    ///     for i in 0..replication_factor {
+    ///         peer_addresses[(start_node + i) % peer_addresses.len()]
+    ///     }
+    #[test]
+    fn replica_targets_match_the_upload_path_placement() {
+        let p = peers(3);
+        let replication_factor = 2;
+
+        for chunk_index in 0u32..12 {
+            let expected: Vec<&str> = {
+                let start = (chunk_index as usize) % p.len();
+                (0..replication_factor)
+                    .map(|i| p[(start + i) % p.len()].as_str())
+                    .collect()
+            };
+            assert_eq!(
+                replica_targets(chunk_index, &p, replication_factor),
+                expected,
+                "placement diverged at chunk {chunk_index}"
+            );
+        }
+    }
+
+    #[test]
+    fn replica_targets_rotate_across_chunks() {
+        let p = peers(3);
+        // Consecutive chunks start on consecutive peers, so load spreads.
+        assert_eq!(
+            replica_targets(0, &p, 1),
+            vec!["10.0.0.0:6745"],
+            "chunk 0 starts at peer 0"
+        );
+        assert_eq!(replica_targets(1, &p, 1), vec!["10.0.0.1:6745"]);
+        assert_eq!(replica_targets(2, &p, 1), vec!["10.0.0.2:6745"]);
+        // ...and wrap.
+        assert_eq!(replica_targets(3, &p, 1), vec!["10.0.0.0:6745"]);
+    }
+
+    #[test]
+    fn replica_targets_wrap_without_duplicating_a_peer() {
+        let p = peers(2);
+        // factor 2 over 2 peers: both peers, each once.
+        let targets = replica_targets(1, &p, 2);
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0], "10.0.0.1:6745");
+        assert_eq!(targets[1], "10.0.0.0:6745");
+    }
+
+    /// A replication factor above the peer count must not hand the same peer
+    /// two copies of one chunk — that would report replicas that do not exist.
+    #[test]
+    fn replica_targets_are_capped_at_the_peer_count() {
+        let p = peers(2);
+        let targets = replica_targets(0, &p, 5);
+        assert_eq!(targets.len(), 2, "cannot exceed the number of peers");
+        let unique: std::collections::HashSet<_> = targets.iter().collect();
+        assert_eq!(unique.len(), 2, "no peer should appear twice");
+    }
+
+    /// Single-node deployment: no peers, so nothing to repair and no panic
+    /// from the modulo.
+    #[test]
+    fn replica_targets_is_empty_without_peers() {
+        assert!(replica_targets(7, &[], 2).is_empty());
     }
 }

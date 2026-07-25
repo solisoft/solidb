@@ -51,9 +51,25 @@ to match `version` in `Cargo.toml`. Both must be updated in the same release.
 ### Entry Points
 
 - `src/main.rs` - Server startup, CLI argument parsing, daemon mode
-- `src/bin/solidb-dump.rs` - Database export utility
+- `src/bin/solidb-dump.rs` - Database export utility (logical, per-database)
 - `src/bin/solidb-restore.rs` - Database restore utility
 - `src/bin/solidb-fuse.rs` - FUSE filesystem mount (optional feature)
+
+### Backups
+
+Two mechanisms, and they are not interchangeable:
+
+- **Physical** — `POST /_api/backup` (admin) takes a RocksDB checkpoint of the
+  *whole instance* via `StorageEngine::create_checkpoint`. Near-instant,
+  hard-linked, point-in-time consistent across collections. Restore by pointing
+  a server at the directory. All databases share one RocksDB instance (a column
+  family per collection), so there is no per-database checkpoint.
+- **Logical** — `solidb-dump` / `solidb-restore`. Per-database or per-collection,
+  portable JSONL, but several times the on-disk size and much slower to restore.
+  Use it to move data between versions or to edit a dump.
+
+Because a checkpoint hard-links SSTs on the same filesystem, it is not
+protection against losing that filesystem — copy it elsewhere.
 
 ### Key Patterns
 

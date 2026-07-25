@@ -484,3 +484,96 @@ fn test_multiple_databases_isolation() {
     assert_eq!(col2.count(), 0);
     assert_eq!(col1.count(), 1);
 }
+
+// ===========================================================================
+// create_checkpoint — physical backup
+// ===========================================================================
+
+/// A checkpoint must be openable as a standalone database containing the data
+/// that existed when it was taken. This is the whole point of the mechanism:
+/// `solidb-dump` is a logical export, and nothing else produces a physical,
+/// point-in-time-consistent copy.
+#[test]
+fn test_checkpoint_is_a_usable_standalone_copy() {
+    let (engine, _tmp) = create_test_engine();
+    engine.initialize().unwrap();
+
+    engine.create_database("shop".to_string()).unwrap();
+    let db = engine.get_database("shop").unwrap();
+    db.create_collection("orders".to_string(), None).unwrap();
+    let orders = db.get_collection("orders").unwrap();
+    orders.insert(json!({"_key": "o1", "total": 42})).unwrap();
+    orders.insert(json!({"_key": "o2", "total": 7})).unwrap();
+
+    let backup_dir = TempDir::new().unwrap();
+    let target = backup_dir.path().join("snapshot");
+    engine.create_checkpoint(&target).unwrap();
+    assert!(target.exists(), "checkpoint directory should be created");
+
+    // Open the checkpoint as its own engine — a backup you cannot open is not
+    // a backup.
+    let restored = StorageEngine::new(target.to_str().unwrap()).expect("open checkpoint");
+    let rdb = restored
+        .get_database("shop")
+        .expect("database in checkpoint");
+    let rorders = rdb
+        .get_collection("orders")
+        .expect("collection in checkpoint");
+    assert_eq!(rorders.count(), 2);
+    assert_eq!(rorders.get("o1").unwrap().data["total"], 42);
+    assert_eq!(rorders.get("o2").unwrap().data["total"], 7);
+}
+
+/// Writes made after the checkpoint must not appear in it, or it is not a
+/// point-in-time snapshot.
+#[test]
+fn test_checkpoint_does_not_capture_later_writes() {
+    let (engine, _tmp) = create_test_engine();
+    engine.initialize().unwrap();
+    engine.create_database("shop".to_string()).unwrap();
+    let db = engine.get_database("shop").unwrap();
+    db.create_collection("orders".to_string(), None).unwrap();
+    let orders = db.get_collection("orders").unwrap();
+    orders.insert(json!({"_key": "before", "n": 1})).unwrap();
+
+    let backup_dir = TempDir::new().unwrap();
+    let target = backup_dir.path().join("snapshot");
+    engine.create_checkpoint(&target).unwrap();
+
+    orders.insert(json!({"_key": "after", "n": 2})).unwrap();
+
+    let restored = StorageEngine::new(target.to_str().unwrap()).unwrap();
+    let rorders = restored
+        .get_database("shop")
+        .unwrap()
+        .get_collection("orders")
+        .unwrap();
+    assert!(
+        rorders.get("before").is_ok(),
+        "pre-checkpoint write present"
+    );
+    assert!(
+        rorders.get("after").is_err(),
+        "post-checkpoint write must not be in the snapshot"
+    );
+    // The live database still has both.
+    assert_eq!(orders.count(), 2);
+}
+
+/// RocksDB refuses to checkpoint into an existing directory; fail with a clear
+/// message rather than a raw engine error.
+#[test]
+fn test_checkpoint_refuses_existing_target() {
+    let (engine, _tmp) = create_test_engine();
+    engine.initialize().unwrap();
+
+    let backup_dir = TempDir::new().unwrap();
+    let target = backup_dir.path().join("already-here");
+    std::fs::create_dir_all(&target).unwrap();
+
+    let err = engine.create_checkpoint(&target).unwrap_err();
+    assert!(
+        err.to_string().contains("already exists"),
+        "expected a clear 'already exists' error, got: {err}"
+    );
+}

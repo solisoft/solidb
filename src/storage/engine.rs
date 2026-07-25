@@ -322,6 +322,57 @@ impl StorageEngine {
         self.path.to_str().unwrap_or("./data")
     }
 
+    /// Create a consistent physical snapshot of the whole instance at `target`.
+    ///
+    /// This is the only physical backup mechanism: `solidb-dump` is a *logical*
+    /// export, which is an order of magnitude larger on disk, far slower to
+    /// restore, and offers no point-in-time consistency across collections.
+    ///
+    /// Scope is the entire RocksDB instance — every database and collection —
+    /// because they all share one instance, with a column family per
+    /// collection. There is no per-database checkpoint; use `solidb-dump` when
+    /// you need a single database or cross-version portability.
+    ///
+    /// RocksDB hard-links SST files where the target is on the same
+    /// filesystem, so the snapshot is near-instant and initially costs almost
+    /// no extra space. It diverges from the live database as compaction
+    /// rewrites files, so a checkpoint on the same volume is *not* protection
+    /// against losing that volume — copy it off afterwards.
+    ///
+    /// `target` must not already exist; RocksDB refuses to write into an
+    /// existing directory.
+    pub fn create_checkpoint<P: AsRef<Path>>(&self, target: P) -> DbResult<()> {
+        let target = target.as_ref();
+
+        if target.exists() {
+            return Err(DbError::BadRequest(format!(
+                "checkpoint target '{}' already exists",
+                target.display()
+            )));
+        }
+
+        // Flush memtables first so the checkpoint reflects recent writes
+        // without depending on WAL replay at restore time.
+        if let Err(e) = self.db.flush() {
+            tracing::warn!("checkpoint: flush before snapshot failed: {}", e);
+        }
+
+        let checkpoint = rust_rocksdb::checkpoint::Checkpoint::new(&*self.db).map_err(|e| {
+            DbError::InternalError(format!("Failed to open checkpoint handle: {}", e))
+        })?;
+
+        checkpoint.create_checkpoint(target).map_err(|e| {
+            DbError::InternalError(format!(
+                "Failed to create checkpoint at '{}': {}",
+                target.display(),
+                e
+            ))
+        })?;
+
+        tracing::info!("Created checkpoint at {}", target.display());
+        Ok(())
+    }
+
     /// Initialize the storage engine with default _system database
     pub fn initialize(&self) -> DbResult<()> {
         // Check if _system database exists

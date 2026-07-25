@@ -460,6 +460,63 @@ pub async fn pull_changes(
     })))
 }
 
+/// Write a single pushed change into storage.
+///
+/// Creates the database and collection on demand, mirroring what the cluster
+/// replication worker does when it receives an entry for something this node
+/// has not seen yet (`sync/worker.rs`).
+///
+/// Delta changes are rejected rather than silently dropped: `SyncChange`
+/// carries `is_delta`/`delta_patch`, but no patch application exists anywhere
+/// in the codebase yet, so accepting one would lose the write.
+fn apply_sync_change(state: &AppState, change: &SyncChange) -> Result<(), DbError> {
+    if change.is_delta {
+        return Err(DbError::OperationNotSupported(
+            "delta sync changes are not supported; push the full document".to_string(),
+        ));
+    }
+
+    if matches!(
+        change.operation,
+        ChangeOperation::Insert | ChangeOperation::Update
+    ) {
+        if state.storage.get_database(&change.database).is_err() {
+            let _ = state.storage.create_database(change.database.clone());
+        }
+        if let Ok(db) = state.storage.get_database(&change.database) {
+            if db.get_collection(&change.collection).is_err() {
+                let _ = db.create_collection(change.collection.clone(), None);
+            }
+        }
+    }
+
+    let db = state.storage.get_database(&change.database)?;
+    let collection = db.get_collection(&change.collection)?;
+
+    match change.operation {
+        ChangeOperation::Insert | ChangeOperation::Update => {
+            let data = change.document_data.clone().ok_or_else(|| {
+                DbError::BadRequest(format!(
+                    "change for '{}' has no document_data",
+                    change.document_key
+                ))
+            })?;
+            collection.upsert_batch(vec![(change.document_key.clone(), data)])?;
+        }
+        ChangeOperation::Delete => {
+            // A delete for a key that is already gone is the desired end state,
+            // not a failure — clients retry pushes after a dropped connection.
+            if let Err(e) = collection.delete(&change.document_key) {
+                if !matches!(e, DbError::DocumentNotFound(_)) {
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// POST /_api/sync/push
 /// Push changes from client to server
 pub async fn push_changes(
@@ -531,8 +588,31 @@ pub async fn push_changes(
             continue;
         }
 
-        // TODO: Apply change to database and detect conflicts
-        // For now, simulate acceptance
+        // Apply the change to storage.
+        //
+        // This handler used to count the change as accepted without writing
+        // anything: a client got {"accepted": N} back and the document never
+        // existed. `pull` reads from the replication log rather than storage,
+        // so push→pull still round-tripped and hid it.
+        //
+        // Semantics match the cluster replication worker (`sync/worker.rs`):
+        // an upsert, so the last write to arrive wins. Deliberately *not* a
+        // timestamp comparison against the stored document — `change.timestamp`
+        // is the client's HLC while `_updated_at` is set by this server's wall
+        // clock, and dropping writes on that comparison would silently discard
+        // data from any client whose clock runs behind.
+        if let Err(e) = apply_sync_change(&state, change) {
+            tracing::warn!(
+                "sync push: failed to apply {:?} on {}/{} key {}: {}",
+                change.operation,
+                change.database,
+                change.collection,
+                change.document_key,
+                e
+            );
+            rejected += 1;
+            continue;
+        }
         accepted += 1;
 
         // Log to replication log if available
@@ -635,13 +715,20 @@ pub async fn list_conflicts(
         .await
         .ok_or_else(|| DbError::BadRequest(format!("Session '{}' not found", params.session_id)))?;
 
-    // TODO: Query conflict store for unresolved conflicts
-    // For now, return empty list
-    let conflicts: Vec<serde_json::Value> = vec![];
-
-    Ok(Json(serde_json::json!({
-        "conflicts": conflicts,
-    })))
+    // No conflict store exists. This endpoint used to return an empty list,
+    // which is indistinguishable from "there are no conflicts" — a client
+    // could not tell that nothing was ever recorded.
+    //
+    // Detecting conflicts needs a per-document version vector, and documents
+    // carry none (`storage::Document` has _key/_id/_rev/_created_at/_updated_at
+    // and nothing else). Until vectors are persisted, `push` resolves by
+    // last-write-wins and no conflict can be reported.
+    Err(DbError::OperationNotSupported(
+        "conflict listing is not implemented: documents do not carry version \
+         vectors, so concurrent writes cannot be detected. Pushes currently \
+         resolve last-write-wins."
+            .to_string(),
+    ))
 }
 
 /// POST /_api/sync/resolve
@@ -687,26 +774,22 @@ pub async fn resolve_conflict(
         ));
     }
 
-    // TODO: Apply resolution to conflict store
-    // - "local": Keep server version
-    // - "remote": Accept client version
-    // - "merged": Apply merged data
-
-    tracing::info!(
-        "Resolving conflict for document {} with resolution {}",
-        document_key,
-        resolution
-    );
-
     if resolution == "merged" && merged_data.is_none() {
         return Err(DbError::BadRequest(
             "merged_data is required when resolution is 'merged'".to_string(),
         ));
     }
 
-    Ok(Json(serde_json::json!({
-        "success": true,
-        "document_key": document_key,
-        "resolution": resolution,
-    })))
+    // The request is well-formed, but there is nothing to resolve against:
+    // no conflict store exists, so no conflict was ever recorded for this key.
+    // This used to return {"success": true} without touching anything, which
+    // told a client its resolution had been applied when it had not.
+    //
+    // See `list_conflicts` for why detection is blocked on per-document
+    // version vectors.
+    Err(DbError::OperationNotSupported(format!(
+        "conflict resolution is not implemented: no conflict is recorded for \
+         document '{}'. Pushes currently resolve last-write-wins.",
+        document_key
+    )))
 }

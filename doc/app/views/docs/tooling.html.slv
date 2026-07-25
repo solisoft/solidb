@@ -513,6 +513,67 @@ end
                <i class="fas fa-info-circle text-blue-400 mt-1 mr-3"></i>
                <p class="text-sm text-gray-300"><strong>Shard-Aware:</strong> queries all shards across all nodes for sharded collections, ensuring complete backups.</p>
             </div>
+
+            <div class="mt-4 bg-amber-900/10 border border-amber-500/20 rounded-xl p-4 flex items-start">
+               <i class="fas fa-hard-drive text-amber-400 mt-1 mr-3"></i>
+               <p class="text-sm text-gray-300"><strong>Logical, not physical.</strong> <code class="text-green-400">solidb-dump</code> re-serialises every document as JSONL, so the file is several times the on-disk size and a restore replays every write. Use it for per-database backups, moving data between versions, or editing a dump by hand. For a fast whole-instance snapshot, use <a href="#backup" class="text-indigo-400 hover:underline">physical backup</a> instead.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- physical backup -->
+      <section id="backup" class="scroll-mt-24">
+        <div class="bg-white/5 border border-white/10 rounded-2xl overflow-hidden mb-12">
+          <div class="p-6 border-b border-white/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <i class="fas fa-camera text-amber-400 mr-3"></i>
+              Physical backup
+            </h2>
+            <p class="text-gray-400 mt-2">Point-in-time RocksDB checkpoint of the entire instance.</p>
+          </div>
+          <div class="p-6">
+            <h3 class="text-lg font-bold text-white mb-3 flex items-center"><span class="bg-amber-500/20 text-amber-300 text-xs px-2 py-1 rounded border border-amber-500/30 mr-2">USAGE</span></h3>
+            <div class="bg-black/40 border border-white/10 rounded-xl overflow-hidden mb-6">
+               <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">POST /_api/backup &mdash; requires admin</div>
+               <div class="p-4 font-mono text-sm text-gray-300">
+                 curl -X POST http://localhost:6745/_api/backup \<br>
+                 &nbsp;&nbsp;-H <span class="text-amber-300">"Authorization: Bearer $TOKEN"</span> \<br>
+                 &nbsp;&nbsp;-H <span class="text-amber-300">"Content-Type: application/json"</span> \<br>
+                 &nbsp;&nbsp;-d <span class="text-amber-300">'{"path": "/var/backups/solidb-2026-07-25"}'</span>
+               </div>
+            </div>
+
+            <p class="text-sm text-gray-300 mb-4">The checkpoint is written by the server process, so <code class="text-green-400">path</code> is a path on the server. It must not already exist.</p>
+
+            <h3 class="text-lg font-bold text-white mb-4">Restoring</h3>
+            <p class="text-sm text-gray-300 mb-4">A checkpoint is a complete database directory &mdash; point a server at it and it starts:</p>
+            <div class="bg-black/40 border border-white/10 rounded-xl overflow-hidden mb-6">
+               <div class="p-4 font-mono text-sm text-gray-300">
+                 <span class="text-green-400">solidb</span> --data-dir /var/backups/solidb-2026-07-25
+               </div>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Which one should I use?</h3>
+            <div class="overflow-x-auto mb-6">
+              <table class="w-full text-sm text-left text-gray-300">
+                <thead class="text-xs uppercase text-gray-400 border-b border-white/10">
+                  <tr><th class="py-2 pr-4"></th><th class="py-2 pr-4">Physical backup</th><th class="py-2">solidb-dump</th></tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr><td class="py-2 pr-4 font-bold text-white">Scope</td><td class="py-2 pr-4">Whole instance</td><td class="py-2">One database or collection</td></tr>
+                  <tr><td class="py-2 pr-4 font-bold text-white">Speed</td><td class="py-2 pr-4">Near-instant</td><td class="py-2">Scales with document count</td></tr>
+                  <tr><td class="py-2 pr-4 font-bold text-white">Size</td><td class="py-2 pr-4">Hard-linked, ~0 extra at first</td><td class="py-2">Several times the on-disk size</td></tr>
+                  <tr><td class="py-2 pr-4 font-bold text-white">Consistency</td><td class="py-2 pr-4">Point-in-time across all collections</td><td class="py-2">Per collection, as read</td></tr>
+                  <tr><td class="py-2 pr-4 font-bold text-white">Portable</td><td class="py-2 pr-4">Same storage format only</td><td class="py-2">JSONL &mdash; readable, editable, portable</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="mt-4 bg-red-900/10 border border-red-500/20 rounded-xl p-4 flex items-start">
+               <i class="fas fa-triangle-exclamation text-red-400 mt-1 mr-3"></i>
+               <p class="text-sm text-gray-300"><strong>Copy it off the volume.</strong> RocksDB hard-links SST files, so a fresh checkpoint costs almost no space &mdash; but it shares those files with the live database and lives on the same disk. It protects against a bad write or a dropped collection, <em>not</em> against losing the volume. Move it to separate storage once taken.</p>
+            </div>
           </div>
         </div>
       </section>

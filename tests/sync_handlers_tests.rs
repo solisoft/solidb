@@ -472,11 +472,146 @@ async fn ack_unknown_session_returns_400() {
 }
 
 // ===========================================================================
+// push_changes — storage effects
+// ===========================================================================
+
+/// Pushed changes must land in storage, not just in the replication log.
+///
+/// This is the assertion the suite was missing. `push_changes` used to count a
+/// change as accepted without writing anything, and no test could catch it:
+/// `pull` reads back from the replication log, so push→pull round-tripped
+/// while the document never existed. Reading through the document endpoint
+/// goes to storage and is the only thing that distinguishes the two.
+#[tokio::test]
+async fn pushed_document_is_readable_from_storage() {
+    let (_tmp, app, token) = create_app();
+    let session = register(&app, &token, baseline_register_payload()).await;
+    let session_id = session["session_id"].as_str().unwrap();
+
+    let resp = app
+        .clone()
+        .oneshot(json_post(
+            "/_api/sync/push",
+            &token,
+            json!({
+                "session_id": session_id,
+                "client_vector": empty_version_vector(),
+                "changes": [sync_change("items", "k-store", "Insert", 1)],
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(body_json(resp).await["accepted"], 1);
+
+    let resp = app
+        .clone()
+        .oneshot(auth_get(
+            "/_api/database/appdb/document/items/k-store",
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "pushed document should exist in storage"
+    );
+    let doc = body_json(resp).await;
+    assert_eq!(doc["_key"], "k-store");
+    assert_eq!(doc["name"], "k-store");
+}
+
+/// A pushed delete removes the document from storage.
+#[tokio::test]
+async fn pushed_delete_removes_document_from_storage() {
+    let (_tmp, app, token) = create_app();
+    let session = register(&app, &token, baseline_register_payload()).await;
+    let session_id = session["session_id"].as_str().unwrap();
+
+    let push = |changes: Value| {
+        json_post(
+            "/_api/sync/push",
+            &token,
+            json!({
+                "session_id": session_id,
+                "client_vector": empty_version_vector(),
+                "changes": changes,
+            }),
+        )
+    };
+
+    let resp = app
+        .clone()
+        .oneshot(push(json!([sync_change("items", "k-del", "Insert", 1)])))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let resp = app
+        .clone()
+        .oneshot(push(json!([sync_change("items", "k-del", "Delete", 2)])))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(body_json(resp).await["accepted"], 1);
+
+    let resp = app
+        .clone()
+        .oneshot(auth_get(
+            "/_api/database/appdb/document/items/k-del",
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::NOT_FOUND,
+        "deleted document should be gone from storage"
+    );
+}
+
+/// Delta changes are rejected rather than counted as accepted — no patch
+/// application exists, so accepting one would silently drop the write.
+#[tokio::test]
+async fn pushed_delta_change_is_rejected() {
+    let (_tmp, app, token) = create_app();
+    let session = register(&app, &token, baseline_register_payload()).await;
+    let session_id = session["session_id"].as_str().unwrap();
+
+    let mut change = sync_change("items", "k-delta", "Update", 1);
+    change["is_delta"] = json!(true);
+    change["delta_patch"] = json!({"name": "patched"});
+
+    let resp = app
+        .clone()
+        .oneshot(json_post(
+            "/_api/sync/push",
+            &token,
+            json!({
+                "session_id": session_id,
+                "client_vector": empty_version_vector(),
+                "changes": [change],
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert_eq!(body["accepted"], 0);
+    assert_eq!(body["rejected"], 1);
+}
+
+// ===========================================================================
 // list_conflicts — GET /_api/sync/conflicts?session_id=...
 // ===========================================================================
 
+/// Conflict listing reports that it is unimplemented rather than returning an
+/// empty array. An empty array is indistinguishable from "no conflicts exist",
+/// so a client could not tell that nothing is ever recorded. Detection needs
+/// per-document version vectors, which storage does not carry.
 #[tokio::test]
-async fn list_conflicts_empty_for_fresh_session() {
+async fn list_conflicts_reports_unimplemented() {
     let (_tmp, app, token) = create_app();
     let session = register(&app, &token, baseline_register_payload()).await;
     let session_id = session["session_id"].as_str().unwrap();
@@ -484,9 +619,7 @@ async fn list_conflicts_empty_for_fresh_session() {
     // session_id format is "device_id-uuid.hex" — URL-safe, no encoding needed.
     let url = format!("/_api/sync/conflicts?session_id={}", session_id);
     let resp = app.clone().oneshot(auth_get(&url, &token)).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body = body_json(resp).await;
-    assert!(body["conflicts"].as_array().unwrap().is_empty());
+    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
 }
 
 #[tokio::test]
@@ -504,8 +637,12 @@ async fn list_conflicts_unknown_session_returns_400() {
 // resolve_conflict — POST /_api/sync/resolve
 // ===========================================================================
 
+/// A well-formed resolution request reports that it is unimplemented rather
+/// than returning `{"success": true}`. There is no conflict store, so the old
+/// response told clients their resolution had been applied when nothing had
+/// been touched. Request validation still runs first — see the 400 tests below.
 #[tokio::test]
-async fn resolve_local_remote_and_merged_happy_paths() {
+async fn resolve_reports_unimplemented_for_valid_requests() {
     let (_tmp, app, token) = create_app();
     let session = register(&app, &token, baseline_register_payload()).await;
     let session_id = session["session_id"].as_str().unwrap();
@@ -524,13 +661,14 @@ async fn resolve_local_remote_and_merged_happy_paths() {
             ))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK, "resolution={resolution}");
-        let body = body_json(resp).await;
-        assert_eq!(body["resolution"], resolution);
-        assert_eq!(body["document_key"], "doc1");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_IMPLEMENTED,
+            "resolution={resolution}"
+        );
     }
 
-    // "merged" requires merged_data.
+    // "merged" with its required data gets the same treatment.
     let resp = app
         .clone()
         .oneshot(json_post(
@@ -545,7 +683,7 @@ async fn resolve_local_remote_and_merged_happy_paths() {
         ))
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
 }
 
 #[tokio::test]
