@@ -1,23 +1,66 @@
 <%# Global confirm modal. A plain-JS listener intercepts every htmx:confirm
     (fired by hx-confirm attributes), cancels the native dialog and re-emits
-    an Alpine-friendly window event carrying the question + resume callback. %>
-<div x-data="{ open: false, question: '', issue: null }"
-     x-on:confirm-modal.window="question = $event.detail.question; issue = $event.detail.issue; open = true"
-     x-on:keydown.escape.window="open = false">
+    an Alpine-friendly window event carrying the question + resume callback.
+
+    Optional name confirmation: put data-confirm-name="exact-name" on the
+    triggering element. The Confirm button stays disabled until the user types
+    that name, and the typed value is sent as confirm_name on the request so
+    the server can re-check. %>
+<div x-data="{
+       open: false,
+       question: '',
+       expectedName: '',
+       typed: '',
+       issue: null,
+       canConfirm() {
+         return this.expectedName === '' || this.typed === this.expectedName;
+       },
+       close() {
+         this.open = false;
+         this.typed = '';
+         this.expectedName = '';
+         this.issue = null;
+         this.question = '';
+       }
+     }"
+     x-on:confirm-modal.window="
+       question = $event.detail.question;
+       expectedName = $event.detail.expectedName || '';
+       typed = '';
+       issue = $event.detail.issue;
+       open = true;
+       $nextTick(() => { if (expectedName) { $refs.confirmInput && $refs.confirmInput.focus(); } });
+     "
+     x-on:keydown.escape.window="if (open) close()"
+     x-effect="document.body.style.overflow = open ? 'hidden' : ''">
   <div x-show="open" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="open = false"></div>
-    <div class="relative w-full max-w-md border border-red-900/70 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" x-on:click="close()"></div>
+    <div class="relative w-full max-w-md border border-red-900/70 bg-zinc-900 shadow-2xl shadow-black/60 animate-fade-up"
+         role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
       <div class="flex items-center gap-2.5 border-b border-zinc-800 px-5 py-3">
         <span class="relative flex h-2 w-2">
           <span class="absolute inline-flex h-full w-full animate-pulse-dot bg-red-500"></span>
         </span>
-        <p class="console-label text-red-400">confirm destructive action</p>
+        <p id="confirm-modal-title" class="console-label text-red-400">confirm destructive action</p>
       </div>
-      <p class="px-5 py-5 text-sm leading-relaxed text-zinc-200" x-text="question"></p>
+      <div class="space-y-4 px-5 py-5">
+        <p class="text-sm leading-relaxed text-zinc-200" x-text="question"></p>
+        <div x-show="expectedName !== ''" x-cloak class="space-y-2">
+          <label class="console-label" for="confirm-modal-input">
+            type <span class="font-mono text-red-300" x-text="expectedName"></span> to confirm
+          </label>
+          <input id="confirm-modal-input" type="text" x-ref="confirmInput"
+                 x-model="typed" autocomplete="off" spellcheck="false"
+                 class="console-input w-full font-mono"
+                 x-on:keydown.enter.prevent="if (canConfirm() && issue) { issue(typed); close(); }">
+        </div>
+      </div>
       <div class="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
-        <button type="button" class="btn-ghost" x-on:click="open = false">Cancel</button>
+        <button type="button" class="btn-ghost" x-on:click="close()">Cancel</button>
         <button type="button" class="btn-danger"
-                x-on:click="open = false; if (issue) { issue(); issue = null }">
+                x-bind:disabled="!canConfirm()"
+                x-bind:class="!canConfirm() ? 'opacity-40 cursor-not-allowed' : ''"
+                x-on:click="if (canConfirm() && issue) { issue(typed); close(); }">
           Confirm
         </button>
       </div>
@@ -29,10 +72,29 @@
   document.addEventListener("htmx:confirm", function (evt) {
     if (!evt.detail.question) return;
     evt.preventDefault();
+    var el = evt.detail.elt || evt.target;
+    var expected = (el && el.getAttribute("data-confirm-name")) || "";
     window.dispatchEvent(new CustomEvent("confirm-modal", {
       detail: {
         question: evt.detail.question,
-        issue: function () { evt.detail.issueRequest(true); }
+        expectedName: expected,
+        issue: function (typed) {
+          if (expected) {
+            var name = typed || expected;
+            var inject = function (e) {
+              if (e.detail.elt !== el) return;
+              // Prefer query string: DELETE bodies are not always parsed by
+              // the server (or by intermediate proxies).
+              e.detail.parameters["confirm_name"] = name;
+              var path = e.detail.path || "";
+              var sep = path.indexOf("?") >= 0 ? "&" : "?";
+              e.detail.path = path + sep + "confirm_name=" + encodeURIComponent(name);
+              document.removeEventListener("htmx:configRequest", inject);
+            };
+            document.addEventListener("htmx:configRequest", inject);
+          }
+          evt.detail.issueRequest(true);
+        }
       }
     }));
   });

@@ -1260,6 +1260,10 @@ label.console-label {
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
+.cursor-not-allowed {
+  cursor: not-allowed;
+}
+
 .cursor-pointer {
   cursor: pointer;
 }
@@ -2094,6 +2098,10 @@ label.console-label {
 
 .accent-teal-500 {
   accent-color: rgb(var(--accent-500) / 1);
+}
+
+.opacity-40 {
+  opacity: 0.4;
 }
 
 .shadow-2xl {
