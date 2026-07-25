@@ -39,6 +39,21 @@ if ! command -v cargo-release &> /dev/null; then
     cargo install cargo-release
 fi
 
+# The docs site is not touched by `cargo release`, so it drifts unless someone
+# remembers. Check it up front: failing here costs nothing, whereas noticing
+# after the tag and crates.io publish means a follow-up release.
+#
+# This checks the *current* version. Bump the version pill and add the
+# changelog section for the version you are about to release, then re-run.
+echo ""
+echo "Checking the docs site is in sync..."
+if ! ./scripts/check_docs_sync.sh; then
+    echo ""
+    echo "Refusing to release with a stale docs site." >&2
+    echo "Update doc/ for the version being released, then re-run." >&2
+    exit 1
+fi
+
 # Show current versions
 echo ""
 echo "Current versions:"

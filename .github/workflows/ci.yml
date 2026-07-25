@@ -125,6 +125,17 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
+  # The docs site must describe the version in Cargo.toml. This is a plain
+  # grep, not a build, so it runs in seconds and gates the release job below.
+  # Without it the changelog page silently fell three releases behind.
+  docs-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Docs site matches Cargo.toml version
+        run: ./scripts/check_docs_sync.sh
+
   # Dependency supply chain. The tree is ~640 crates deep; without this nothing
   # tells us about a RUSTSEC advisory or a licence change in a transitive dep.
   audit:
@@ -175,9 +186,11 @@ jobs:
   release:
     # `msrv` gates the release because cargo publish ships the declared
     # rust-version; publishing an MSRV nothing verified is a lie to consumers.
+    # `docs-sync` gates it because a release whose changelog page does not
+    # mention it is how the site fell three versions behind.
     # `audit` deliberately does not gate: an unfixable transitive advisory
     # should raise a flag, not block a release.
-    needs: [test, clippy, fmt, msrv]
+    needs: [test, clippy, fmt, msrv, docs-sync]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:

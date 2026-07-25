@@ -37,12 +37,18 @@ When bumping the version, update all three of these in the same commit:
 3. **A section for the new version in `doc/app/views/docs/changelog.html.slv`**,
    and move anything under *Unreleased* into it.
 
-Step 3 is the one that gets forgotten: the docs changelog is hand-written and
-duplicates `CHANGELOG.md` (which release-please generates from conventional
-commits). Between v0.31.0 and v0.32.2 the page was never touched, so the docs
-site advertised a release three versions behind the shipped binary. Copy the
-`CHANGELOG.md` entry across, or write the section directly if the release was
-tagged by hand.
+Steps 2 and 3 are enforced by `scripts/check_docs_sync.sh`, which fails when
+the docs site does not describe the version in `Cargo.toml`. It runs as the
+`docs-sync` CI job (which gates `release`) and at the top of
+`scripts/release.sh`, so a stale docs site stops the release before a tag or a
+crates.io publish exists.
+
+Step 3 is the one that used to get forgotten: the docs changelog is
+hand-written and duplicates `CHANGELOG.md` (which release-please generates from
+conventional commits). Between v0.31.0 and v0.32.2 the page was never touched,
+so the docs site advertised a release three versions behind the shipped binary.
+Copy the `CHANGELOG.md` entry across, or write the section directly if the
+release was tagged by hand.
 
 Tag releases as annotated tags on the release commit (`git tag -a vX.Y.Z`),
 matching the existing `v0.32.1` style — CI's `release` job triggers on
