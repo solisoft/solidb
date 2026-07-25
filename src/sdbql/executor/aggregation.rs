@@ -125,6 +125,9 @@ impl<'a> QueryExecutor<'a> {
 
         // Process aggregations
         let mut result_obj: serde_json::Map<String, Value> = serde_json::Map::new();
+        // Grouped results, merged across aggregates by group key.
+        let mut grouped: std::collections::BTreeMap<String, serde_json::Map<String, Value>> =
+            std::collections::BTreeMap::new();
 
         for agg in &collect_clause.aggregates {
             let var_name = &agg.variable;
@@ -171,19 +174,67 @@ impl<'a> QueryExecutor<'a> {
                     Err(_) => return Ok(None),
                 }
             } else {
-                // Group by aggregation
-                match columnar.group_by(&group_defs, &field, op) {
-                    Ok(grouped_results) => {
-                        // For group by, we need to return an array
-                        return Ok(Some(grouped_results));
-                    }
+                // Grouped aggregation. Each aggregate is a separate column-native
+                // pass; merge them on the group key.
+                //
+                // This used to `return` inside the loop with the raw storage
+                // rows, which meant every aggregate after the first was
+                // silently dropped and the column was reported under storage's
+                // internal `_agg` name instead of the COLLECT variable.
+                let rows = match columnar.group_by(&group_defs, &field, op) {
+                    Ok(rows) => rows,
                     Err(_) => return Ok(None),
+                };
+
+                for row in rows {
+                    let Some(obj) = row.as_object() else {
+                        return Ok(None);
+                    };
+                    let key = group_key_of(obj, &group_defs);
+                    let entry = grouped.entry(key).or_default();
+
+                    // Group columns are keyed by column name; re-key them to the
+                    // COLLECT variable, which is what the RETURN clause refers to
+                    // (`COLLECT h = m.host` binds `h`, not `host`).
+                    for ((collect_var, _), col_def) in
+                        collect_clause.group_vars.iter().zip(group_defs.iter())
+                    {
+                        if let Some(v) = obj.get(col_def.name()) {
+                            entry.insert(collect_var.clone(), v.clone());
+                        }
+                    }
+                    if let Some(v) = obj.get("_agg") {
+                        entry.insert(var_name.clone(), v.clone());
+                    }
                 }
             }
         }
 
-        // Return single result object
-        Ok(Some(vec![Value::Object(result_obj)]))
+        // Build the rows this optimization produces, then run them through the
+        // query's RETURN clause. Returning the aggregate rows directly ignored
+        // RETURN entirely: `RETURN {sum: total}` came back as `{"total": ...}`
+        // and `RETURN total` came back as an object instead of a scalar.
+        let rows: Vec<serde_json::Map<String, Value>> = if group_defs.is_empty() {
+            vec![result_obj]
+        } else {
+            grouped.into_values().collect()
+        };
+
+        let return_expr = &query
+            .return_clause
+            .as_ref()
+            .expect("checked above")
+            .expression;
+
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let mut ctx: Context = _initial_bindings.clone();
+            for (k, v) in row {
+                ctx.insert(k, v);
+            }
+            out.push(self.evaluate_expr_with_context(return_expr, &ctx)?);
+        }
+        Ok(Some(out))
     }
 
     /// Execute query and return results only (backwards compatible)
@@ -335,4 +386,24 @@ impl<'a> QueryExecutor<'a> {
             ))),
         }
     }
+}
+
+/// Stable identity for a group across per-aggregate passes.
+///
+/// Each aggregate is computed in its own `group_by` call, so their rows have to
+/// be merged. The group columns are what identify a group; `_agg` is the value
+/// being merged in and is deliberately excluded.
+fn group_key_of(
+    obj: &serde_json::Map<String, Value>,
+    group_defs: &[crate::storage::columnar::GroupByColumn],
+) -> String {
+    group_defs
+        .iter()
+        .map(|d| match obj.get(d.name()) {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => other.to_string(),
+            None => String::new(),
+        })
+        .collect::<Vec<_>>()
+        .join("\u{1}")
 }

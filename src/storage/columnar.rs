@@ -832,7 +832,14 @@ impl ColumnarCollection {
                 let v = self.read_column_value(col_def.name(), row_uuid)?;
                 match col_def {
                     GroupByColumn::Simple(_) => {
-                        group_key_parts.push(v.to_string());
+                        // `Value::to_string` JSON-encodes, so a string column
+                        // yielded `"\"a\""` — the quotes then survived into the
+                        // result because the key is split and re-wrapped in
+                        // `Value::String` below. Use the string's contents.
+                        group_key_parts.push(match &v {
+                            Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        });
                     }
                     GroupByColumn::TimeBucket(_, interval) => {
                         // Try to parse timestamp and bucket it

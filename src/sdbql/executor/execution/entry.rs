@@ -312,6 +312,27 @@ impl<'a> QueryExecutor<'a> {
                                         (offset, count)
                                     });
 
+                                    // This fast path bypasses `get_for_source_docs`,
+                                    // so it needs its own columnar check —
+                                    // otherwise the simplest query of all,
+                                    // `FOR x IN c RETURN x`, is the one shape
+                                    // that still reports CollectionNotFound.
+                                    if let Some(rows) = self.columnar_source_rows(
+                                        &for_clause.collection,
+                                        scan_limit.map(|(offset, count)| offset + count),
+                                    )? {
+                                        let results = match scan_limit {
+                                            Some((offset, _)) => {
+                                                rows.into_iter().skip(offset).collect()
+                                            }
+                                            None => rows,
+                                        };
+                                        return Ok(QueryExecutionResult {
+                                            results,
+                                            mutations: MutationStats::new(),
+                                        });
+                                    }
+
                                     let collection = self.get_collection(&for_clause.collection)?;
                                     let results = if let Some((offset, count)) = scan_limit {
                                         collection.scan_values_range(offset, Some(count))

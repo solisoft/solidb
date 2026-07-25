@@ -27,6 +27,45 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
+    /// Read rows from a columnar collection as a FOR source.
+    ///
+    /// Returns `Ok(None)` when `name` is not a columnar collection, so the
+    /// caller falls through to the ordinary document path.
+    ///
+    /// Every column is materialised. A narrower read is possible — the storage
+    /// layer supports column pruning via `read_columns` and index-aware chunk
+    /// skipping via `scan_filtered` — but the projection and filter live in
+    /// clauses this function cannot see. Pushing them down is the obvious next
+    /// step and is what turns this from "columnar is queryable" into "columnar
+    /// is fast to query".
+    pub(crate) fn columnar_source_rows(
+        &self,
+        name: &str,
+        limit: Option<usize>,
+    ) -> DbResult<Option<Vec<Value>>> {
+        let Some(ref db_name) = self.database else {
+            return Ok(None);
+        };
+        let Ok(database) = self.storage.get_database(db_name) else {
+            return Ok(None);
+        };
+        if !database.is_columnar_collection(name) {
+            return Ok(None);
+        }
+
+        let columnar =
+            crate::storage::ColumnarCollection::load(name.to_string(), db_name, database.db_arc())?;
+
+        let meta = columnar.metadata()?;
+        let column_names: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
+
+        let mut rows = columnar.read_columns(&column_names, None)?;
+        if let Some(n) = limit {
+            rows.truncate(n);
+        }
+        Ok(Some(rows))
+    }
+
     /// Try to optimize columnar aggregation queries
     /// Pattern: FOR x IN columnar_collection COLLECT AGGREGATE sum = SUM(x.field) RETURN ...
     pub(super) fn get_for_source_docs(
@@ -80,6 +119,16 @@ impl<'a> QueryExecutor<'a> {
                 "Source '{}' NOT found in context, checking if it's a collection",
                 source_name
             );
+        }
+
+        // Columnar collections are a separate storage layout, not documents, so
+        // the document scan below finds nothing under the `doc:` prefix and
+        // `get_collection` reports CollectionNotFound. Before this, a columnar
+        // collection was only reachable from SDBQL through one hard-coded
+        // shape (`FOR x IN c COLLECT AGGREGATE ...`); adding a FILTER, SORT or
+        // LIMIT made the same collection appear not to exist.
+        if let Some(rows) = self.columnar_source_rows(&for_clause.collection, limit)? {
+            return Ok(rows);
         }
 
         // Otherwise it's a collection - use scan with limit for optimization
