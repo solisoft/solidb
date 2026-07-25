@@ -23,8 +23,17 @@ class DatabasesController < Controller
   end
 
   # DELETE /databases/:db
+  # Requires confirm_name to match the database name (typed in the confirm modal).
   def delete
     db_name = params["db"] ?? ""
+    confirm = (params["confirm_name"] ?? "").trim()
+    if confirm.blank? || confirm != db_name
+      return this._respond({
+        "ok": false,
+        "status": 422,
+        "error": "type the database name '" + db_name + "' to confirm drop"
+      }, "")
+    end
     result = SolidbClient.delete_api(SolidbEndpoints.database(db_name))
     return this._respond(result, "database " + db_name + " dropped")
   end

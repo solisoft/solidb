@@ -59,10 +59,11 @@
                 <a href="<%= attr(db_collections_path(db_name)) %>" class="btn-ghost">Collections</a>
                 <a href="<%= attr(db_query_path(db_name)) %>" class="btn-ghost">Query</a>
                 <% if db_name != "_system" %>
-                  <button class="btn-danger"
+                  <button type="button" class="btn-danger"
                           hx-delete="<%= databases_path() %>/<%= url(db_name) %>"
                           hx-target="#content" hx-swap="innerHTML show:top"
-                          hx-confirm="Drop database '<%= attr(db_name) %>' and ALL its data?">
+                          hx-confirm="This permanently deletes database '<%= attr(db_name) %>' and ALL its collections, documents, scripts, queues and triggers. There is no undo."
+                          data-confirm-name="<%= attr(db_name) %>">
                     Drop
                   </button>
                 <% end %>
