@@ -131,7 +131,11 @@ jobs:
   docs-sync:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 for the tags — the Unreleased check compares HEAD
+      # against the last release tag, and a shallow clone has neither.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Docs site matches Cargo.toml version
         run: ./scripts/check_docs_sync.sh

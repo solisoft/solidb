@@ -58,9 +58,35 @@ EOF
     status=1
 fi
 
+# --- 3. unreleased work must be described ---------------------------------
+# The two checks above are keyed off the version, so they pass unchanged while
+# feature after feature lands between releases — which is how the columnar
+# SDBQL work shipped with an Unreleased section that predated it.
+#
+# This cannot verify the section is *complete*, only that it is not still the
+# placeholder while commits exist since the last tag. Needs tags, so CI must
+# check out with fetch-depth: 0.
+if git rev-parse --git-dir >/dev/null 2>&1 && git describe --tags --abbrev=0 >/dev/null 2>&1; then
+    last_tag="$(git describe --tags --abbrev=0)"
+    commits_since="$(git rev-list --count "${last_tag}..HEAD")"
+
+    if [ "$commits_since" -gt 0 ] &&
+       sed -n '/<!-- Unreleased -->/,/<\/section>/p' "$CHANGELOG_VIEW" \
+         | grep -q "No unreleased changes yet"; then
+        cat >&2 <<EOF
+  FAIL $commits_since commit(s) since $last_tag but the Unreleased section is
+        still the placeholder. Describe what changed, or move it into a
+        version section if you are cutting a release.
+EOF
+        status=1
+    else
+        echo "  ok   Unreleased section ($commits_since commit(s) since $last_tag)"
+    fi
+fi
+
 if [ "$status" -ne 0 ]; then
     echo >&2
-    echo "docs site is out of sync with Cargo.toml — see the failures above." >&2
+    echo "docs site is out of sync — see the failures above." >&2
     exit 1
 fi
 

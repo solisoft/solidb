@@ -324,7 +324,40 @@
           </div>
 
           <p class="text-gray-300 mb-6">
-            Query raw data with column projection and filtering. Filters are applied <em>before</em> projection to minimize IO.
+            Columnar collections are a first-class SDBQL data source: <code class="text-cyan-400">FOR</code> reads
+            them like any other collection, so <code class="text-cyan-400">FILTER</code>,
+            <code class="text-cyan-400">SORT</code>, <code class="text-cyan-400">LIMIT</code>, joins and subqueries
+            all work, and you can combine columnar data with documents, edges and vector search in a single query.
+          </p>
+
+          <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6 mb-6">
+             <div class="text-xs font-bold text-gray-500 uppercase mb-3">SDBQL</div>
+            <pre><code class="language-sql text-sm">FOR m IN cpu_logs
+  FILTER m.host == "us-east-1a"
+  SORT m.timestamp DESC
+  LIMIT 100
+  RETURN { ts: m.timestamp, cpu: m.cpu_usage }</code></pre>
+          </div>
+
+          <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6 mb-6">
+             <div class="text-xs font-bold text-gray-500 uppercase mb-3">Joining columnar data with documents</div>
+            <pre><code class="language-sql text-sm">FOR m IN cpu_logs
+  FOR h IN hosts
+    FILTER h._key == m.host
+    RETURN { cpu: m.cpu_usage, region: h.region }</code></pre>
+          </div>
+
+          <div class="bg-amber-900/10 border border-amber-500/20 rounded-xl p-4 flex items-start mb-6">
+            <i class="fas fa-gauge-high text-amber-400 mt-1 mr-3"></i>
+            <p class="text-sm text-gray-300"><strong class="text-white">Performance note.</strong> An SDBQL
+              <code>FILTER</code> is applied after the rows are read, so it does not yet benefit from column pruning
+              or index-aware chunk skipping. For a selective filter over a large collection, the REST endpoint below
+              still reads less. Pushdown is planned.</p>
+          </div>
+
+          <p class="text-gray-300 mb-4">
+            The REST endpoint remains available and pushes the filter into the storage layer, applying it
+            <em>before</em> projection to minimize IO:
           </p>
 
           <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
@@ -343,7 +376,7 @@
   "limit": 100
 }</code></pre>
           </div>
-          
+
            <div class="mt-6">
             <h4 class="text-sm font-bold text-white mb-3">Filter Operators</h4>
             <div class="flex flex-wrap gap-2">
