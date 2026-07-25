@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-use super::protocol::{NodeStats, Operation, SyncEntry, SyncMessage};
+use super::protocol::{NodeStats, Operation, ShardConfig, SyncEntry, SyncMessage};
 use super::state::SyncState;
 use super::transport::{ConnectionPool, SyncServer, TransportError};
 use crate::storage::StorageEngine;
@@ -836,7 +836,53 @@ impl SyncWorker {
                 }
             }
             Operation::PutBlobChunk | Operation::DeleteBlob => {
-                // TODO: Handle blob operations
+                // Intentionally a no-op: blob chunks do not travel through the
+                // replication log. They are pushed directly at upload time
+                // (`sync::blob_replication`) and any that were missed are
+                // repaired by `sharding::BlobRebalanceWorker`, because chunks
+                // are far too large to buffer in the log.
+            }
+            Operation::CreateIndex => {
+                // The entry names either the logical collection or a physical
+                // shard; a node applies whichever of those it actually holds
+                // and ignores the rest.
+                if let Some(ref data) = entry.document_data {
+                    let spec: crate::storage::IndexSpec =
+                        serde_json::from_slice(data).map_err(|e| {
+                            TransportError::DecodeError(format!("Invalid index spec: {}", e))
+                        })?;
+                    if let Ok(db) = self.storage.get_database(&entry.database) {
+                        if let Ok(coll) = db.get_collection(&entry.collection) {
+                            if let Err(e) = coll.apply_index_spec(&spec) {
+                                warn!(
+                                    "apply_entry: failed to create index '{}' on {}.{}: {}",
+                                    spec.name(),
+                                    entry.database,
+                                    entry.collection,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            Operation::DropIndex => {
+                if let Some(ref data) = entry.document_data {
+                    let index_ref: crate::storage::IndexRef = serde_json::from_slice(data)
+                        .map_err(|e| {
+                            TransportError::DecodeError(format!("Invalid index ref: {}", e))
+                        })?;
+                    if let Ok(db) = self.storage.get_database(&entry.database) {
+                        if let Ok(coll) = db.get_collection(&entry.collection) {
+                            if let Err(e) = coll.apply_index_drop(index_ref.kind, &index_ref.name) {
+                                warn!(
+                                    "apply_entry: failed to drop index '{}' on {}.{}: {}",
+                                    index_ref.name, entry.database, entry.collection, e
+                                );
+                            }
+                        }
+                    }
+                }
             }
             Operation::ColumnarInsert => {
                 if let Some(ref data) = entry.document_data {
@@ -986,9 +1032,23 @@ impl SyncWorker {
                 SyncMessage::FullSyncDatabase { name } => {
                     let _ = self.storage.create_database(name.clone());
                 }
-                SyncMessage::FullSyncCollection { database, name, .. } => {
+                SyncMessage::FullSyncCollection {
+                    database,
+                    name,
+                    collection_type,
+                    ..
+                } => {
                     if let Ok(db) = self.storage.get_database(&database) {
-                        let _ = db.create_collection(name.clone(), None);
+                        let _ = db.create_collection(name.clone(), collection_type.clone());
+                        // The collection may already exist from an earlier sync
+                        // with the type unset; make the type stick either way.
+                        if let (Some(ref ctype), Ok(coll)) =
+                            (collection_type, db.get_collection(&name))
+                        {
+                            if coll.get_type() != *ctype {
+                                let _ = coll.set_type(ctype);
+                            }
+                        }
                     }
                 }
                 SyncMessage::FullSyncDocuments {
@@ -1374,10 +1434,27 @@ impl SyncWorker {
                             let colls = db.list_collections();
                             for coll_name in colls {
                                 // Send collection
+                                // Carry the collection's real type and shard
+                                // config; recreating everything as an untyped
+                                // document collection silently downgraded blob
+                                // and timeseries collections on the receiver.
+                                let (collection_type, shard_config) =
+                                    match db.get_collection(&coll_name) {
+                                        Ok(c) => (
+                                            Some(c.get_type().to_string()),
+                                            c.get_shard_config().map(|cfg| ShardConfig {
+                                                num_shards: cfg.num_shards,
+                                                shard_key: cfg.shard_key.clone(),
+                                                replication_factor: cfg.replication_factor,
+                                            }),
+                                        ),
+                                        Err(_) => (None, None),
+                                    };
                                 let coll_msg = SyncMessage::FullSyncCollection {
                                     database: db_name.clone(),
                                     name: coll_name.clone(),
-                                    shard_config: None, // TODO: get from collection
+                                    shard_config,
+                                    collection_type,
                                 };
                                 let _ = tokio::io::AsyncWriteExt::write_all(
                                     &mut stream,

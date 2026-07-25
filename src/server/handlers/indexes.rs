@@ -1,7 +1,11 @@
 use super::system::AppState;
 use crate::{
     error::DbError,
-    storage::{GeoIndexStats, IndexStats, IndexType, TtlIndexStats, VectorIndexStats},
+    storage::{
+        GeoIndexStats, IndexKind, IndexRef, IndexSpec, IndexStats, IndexType, TtlIndexStats,
+        VectorIndexStats,
+    },
+    sync::{log::LogEntry, protocol::Operation},
 };
 use axum::{
     extract::{Path, State},
@@ -10,6 +14,149 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+// ==================== Index propagation ====================
+
+/// Physical shard names for a sharded collection, or empty when it is not
+/// sharded.
+///
+/// A sharded collection keeps its documents in `<name>_s0..._sN`; the logical
+/// collection itself holds nothing. An index applied only to the logical
+/// collection therefore indexes an empty collection — which is what happened
+/// before this existed.
+fn physical_shard_names(state: &AppState, db_name: &str, coll_name: &str) -> Vec<String> {
+    let Ok(db) = state.storage.get_database(db_name) else {
+        return Vec::new();
+    };
+    let Ok(coll) = db.get_collection(coll_name) else {
+        return Vec::new();
+    };
+    match coll.get_shard_config() {
+        Some(config) if config.num_shards > 0 => (0..config.num_shards)
+            .map(|shard_id| format!("{}_s{}", coll_name, shard_id))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Apply an index to every physical shard this node holds, and replicate the
+/// definition to the rest of the cluster.
+///
+/// Index creation used to be purely local and purely logical: nothing reached
+/// the replication log, so peers never built the index (an unindexed peer runs
+/// full scans, and a peer without a replicated TTL index never expires its
+/// documents); and nothing reached the shards, so indexes on sharded
+/// collections indexed nothing.
+///
+/// One log entry is emitted per target collection — the logical one plus each
+/// shard — and each node applies whichever of those it actually holds.
+async fn propagate_index_create(
+    state: &AppState,
+    db_name: &str,
+    coll_name: &str,
+    spec: &IndexSpec,
+) {
+    let payload = match serde_json::to_vec(spec) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            tracing::error!("Failed to serialise index spec for replication: {}", e);
+            return;
+        }
+    };
+
+    let mut targets = vec![coll_name.to_string()];
+    targets.extend(physical_shard_names(state, db_name, coll_name));
+
+    for target in &targets {
+        // Apply locally to shards we hold. The logical collection was already
+        // handled by the caller.
+        if target != coll_name {
+            if let Ok(db) = state.storage.get_database(db_name) {
+                if let Ok(shard) = db.get_collection(target) {
+                    if let Err(e) = shard.apply_index_spec(spec) {
+                        tracing::warn!(
+                            "Failed to create index '{}' on local shard {}.{}: {}",
+                            spec.name(),
+                            db_name,
+                            target,
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        if let Some(ref log) = state.replication_log {
+            let _ = log.append(LogEntry {
+                sequence: 0,
+                node_id: String::new(),
+                database: db_name.to_string(),
+                collection: target.clone(),
+                operation: Operation::CreateIndex,
+                key: spec.name().to_string(),
+                data: Some(payload.clone()),
+                timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                origin_sequence: None,
+            });
+        }
+    }
+}
+
+/// Mirror of [`propagate_index_create`] for drops.
+async fn propagate_index_drop(
+    state: &AppState,
+    db_name: &str,
+    coll_name: &str,
+    kind: IndexKind,
+    name: &str,
+) {
+    let index_ref = IndexRef {
+        kind,
+        name: name.to_string(),
+    };
+    let payload = match serde_json::to_vec(&index_ref) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            tracing::error!("Failed to serialise index ref for replication: {}", e);
+            return;
+        }
+    };
+
+    let mut targets = vec![coll_name.to_string()];
+    targets.extend(physical_shard_names(state, db_name, coll_name));
+
+    for target in &targets {
+        if target != coll_name {
+            if let Ok(db) = state.storage.get_database(db_name) {
+                if let Ok(shard) = db.get_collection(target) {
+                    if let Err(e) = shard.apply_index_drop(kind, name) {
+                        tracing::warn!(
+                            "Failed to drop index '{}' on local shard {}.{}: {}",
+                            name,
+                            db_name,
+                            target,
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        if let Some(ref log) = state.replication_log {
+            let _ = log.append(LogEntry {
+                sequence: 0,
+                node_id: String::new(),
+                database: db_name.to_string(),
+                collection: target.clone(),
+                operation: Operation::DropIndex,
+                key: name.to_string(),
+                data: Some(payload.clone()),
+                timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                origin_sequence: None,
+            });
+        }
+    }
+}
 
 // ==================== Index Handlers ====================
 
@@ -76,23 +223,22 @@ pub async fn create_index(
         }
     };
 
-    match index_type {
-        IndexType::Fulltext => {
-            collection.create_fulltext_index(
-                req.name.clone(),
-                fields.clone(),
-                None, // Use default min_length
-            )?;
-        }
-        _ => {
-            collection.create_index(
-                req.name.clone(),
-                fields.clone(),
-                index_type.clone(),
-                req.unique,
-            )?;
-        }
-    }
+    let spec = match index_type {
+        IndexType::Fulltext => IndexSpec::Fulltext {
+            name: req.name.clone(),
+            fields: fields.clone(),
+            min_length: None, // Use default
+        },
+        _ => IndexSpec::Regular {
+            name: req.name.clone(),
+            fields: fields.clone(),
+            index_type: index_type.clone(),
+            unique: req.unique,
+        },
+    };
+
+    collection.create_index_from_spec(&spec)?;
+    propagate_index_create(&state, &db_name, &coll_name, &spec).await;
 
     Ok(Json(CreateIndexResponse {
         name: req.name,
@@ -144,21 +290,40 @@ pub async fn delete_index(
 
     // Try dropping as standard index
     if collection.drop_index(&index_name).is_ok() {
+        propagate_index_drop(
+            &state,
+            &db_name,
+            &coll_name,
+            IndexKind::Regular,
+            &index_name,
+        )
+        .await;
         return Ok(StatusCode::NO_CONTENT);
     }
 
     // Try dropping as fulltext index
     if collection.drop_fulltext_index(&index_name).is_ok() {
+        // Fulltext lives in the Regular family for drop purposes.
+        propagate_index_drop(
+            &state,
+            &db_name,
+            &coll_name,
+            IndexKind::Regular,
+            &index_name,
+        )
+        .await;
         return Ok(StatusCode::NO_CONTENT);
     }
 
     // Try dropping as geo index
     if collection.drop_geo_index(&index_name).is_ok() {
+        propagate_index_drop(&state, &db_name, &coll_name, IndexKind::Geo, &index_name).await;
         return Ok(StatusCode::NO_CONTENT);
     }
 
     // Try dropping as TTL index
     if collection.drop_ttl_index(&index_name).is_ok() {
+        propagate_index_drop(&state, &db_name, &coll_name, IndexKind::Ttl, &index_name).await;
         return Ok(StatusCode::NO_CONTENT);
     }
 
@@ -229,7 +394,12 @@ pub async fn create_geo_index(
 ) -> Result<Json<CreateGeoIndexResponse>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
-    collection.create_geo_index(req.name.clone(), req.field.clone())?;
+    let spec = IndexSpec::Geo {
+        name: req.name.clone(),
+        field: req.field.clone(),
+    };
+    collection.create_index_from_spec(&spec)?;
+    propagate_index_create(&state, &db_name, &coll_name, &spec).await;
 
     Ok(Json(CreateGeoIndexResponse {
         name: req.name,
@@ -256,6 +426,7 @@ pub async fn delete_geo_index(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
     collection.drop_geo_index(&index_name)?;
+    propagate_index_drop(&state, &db_name, &coll_name, IndexKind::Geo, &index_name).await;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -433,7 +604,9 @@ pub async fn create_vector_index(
         config = config.with_embedding_model(mdl);
     }
 
+    let spec = IndexSpec::Vector(config.clone());
     let stats = collection.create_vector_index(config)?;
+    propagate_index_create(&state, &db_name, &coll_name, &spec).await;
 
     let metric_str = match stats.metric {
         VectorMetric::Cosine => "cosine",
@@ -477,6 +650,7 @@ pub async fn delete_vector_index(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
     collection.drop_vector_index(&index_name)?;
+    propagate_index_drop(&state, &db_name, &coll_name, IndexKind::Vector, &index_name).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -606,11 +780,17 @@ pub async fn create_ttl_index(
 ) -> Result<Json<CreateTtlIndexResponse>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
-    collection.create_ttl_index(
-        req.name.clone(),
-        req.field.clone(),
-        req.expire_after_seconds,
-    )?;
+    // TTL is the index family where non-replication was worst: the expiry
+    // sweep skips a collection with no TTL index, so before this the same
+    // documents expired on one node and lived forever on every other.
+    let spec = IndexSpec::Ttl {
+        name: req.name.clone(),
+        field: req.field.clone(),
+        expire_after_seconds: req.expire_after_seconds,
+    };
+    collection.create_index_from_spec(&spec)?;
+    propagate_index_create(&state, &db_name, &coll_name, &spec).await;
+
     Ok(Json(CreateTtlIndexResponse {
         name: req.name,
         field: req.field,
@@ -637,6 +817,7 @@ pub async fn delete_ttl_index(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
     collection.drop_ttl_index(&index_name)?;
+    propagate_index_drop(&state, &db_name, &coll_name, IndexKind::Ttl, &index_name).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -557,8 +557,50 @@ impl ClusterManager {
                     // Ignore error if database doesn't exist (idempotency)
                     let _ = storage.delete_database(&entry.database);
                 }
+                Operation::CreateIndex => {
+                    // Index definitions replicate like any other schema change.
+                    // The entry may name a physical shard this node does not
+                    // hold, in which case there is nothing to do here.
+                    if let Some(data) = &entry.document_data {
+                        let spec: crate::storage::IndexSpec = serde_json::from_slice(data)?;
+                        if let Ok(db) = storage.get_database(&entry.database) {
+                            if let Ok(coll) = db.get_collection(&entry.collection) {
+                                if let Err(e) = coll.apply_index_spec(&spec) {
+                                    tracing::warn!(
+                                        "Failed to apply replicated index '{}' on {}.{}: {}",
+                                        spec.name(),
+                                        entry.database,
+                                        entry.collection,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Operation::DropIndex => {
+                    if let Some(data) = &entry.document_data {
+                        let index_ref: crate::storage::IndexRef = serde_json::from_slice(data)?;
+                        if let Ok(db) = storage.get_database(&entry.database) {
+                            if let Ok(coll) = db.get_collection(&entry.collection) {
+                                if let Err(e) =
+                                    coll.apply_index_drop(index_ref.kind, &index_ref.name)
+                                {
+                                    tracing::warn!(
+                                        "Failed to apply replicated index drop '{}' on {}.{}: {}",
+                                        index_ref.name,
+                                        entry.database,
+                                        entry.collection,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
                 _ => {
-                    // PutBlobChunk, DeleteBlob - implement later if needed
+                    // PutBlobChunk / DeleteBlob: blobs replicate out-of-band via
+                    // `sync::blob_replication`, not through this log.
                     tracing::debug!("Unhandled sync operation: {:?}", entry.operation);
                 }
             }

@@ -21,6 +21,89 @@ pub enum IndexType {
     Vector,
 }
 
+/// A complete, serialisable description of an index.
+///
+/// Index creation used to exist only as a local side effect: nothing was
+/// written to the replication log and nothing was forwarded to physical
+/// shards, so an index created on one node existed only on that node, and an
+/// index on a sharded collection indexed the (empty) logical collection rather
+/// than the shards holding the data.
+///
+/// This type is the payload that makes both possible — one description that
+/// the HTTP handlers, the replication worker, and the shard fan-out all apply
+/// through `Collection::create_index_from_spec`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum IndexSpec {
+    /// hash / persistent / bloom / cuckoo
+    Regular {
+        name: String,
+        fields: Vec<String>,
+        index_type: IndexType,
+        #[serde(default)]
+        unique: bool,
+    },
+    Fulltext {
+        name: String,
+        fields: Vec<String>,
+        #[serde(default)]
+        min_length: Option<usize>,
+    },
+    Geo {
+        name: String,
+        field: String,
+    },
+    Ttl {
+        name: String,
+        field: String,
+        expire_after_seconds: u64,
+    },
+    Vector(VectorIndexConfig),
+}
+
+impl IndexSpec {
+    /// Index name, used as the replication log entry key.
+    pub fn name(&self) -> &str {
+        match self {
+            IndexSpec::Regular { name, .. }
+            | IndexSpec::Fulltext { name, .. }
+            | IndexSpec::Geo { name, .. }
+            | IndexSpec::Ttl { name, .. } => name,
+            IndexSpec::Vector(config) => &config.name,
+        }
+    }
+
+    /// The family this index belongs to, so a drop can be routed to the right
+    /// `drop_*` call without re-reading the index metadata.
+    pub fn kind(&self) -> IndexKind {
+        match self {
+            IndexSpec::Regular { .. } | IndexSpec::Fulltext { .. } => IndexKind::Regular,
+            IndexSpec::Geo { .. } => IndexKind::Geo,
+            IndexSpec::Ttl { .. } => IndexKind::Ttl,
+            IndexSpec::Vector(_) => IndexKind::Vector,
+        }
+    }
+}
+
+/// Which family an index belongs to. Each has its own storage and its own
+/// `drop_*` entry point, so a drop has to say which one it means.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IndexKind {
+    /// hash / persistent / fulltext / bloom / cuckoo — all via `drop_index`
+    Regular,
+    Geo,
+    Ttl,
+    Vector,
+}
+
+/// Identifies an index to drop.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IndexRef {
+    pub kind: IndexKind,
+    pub name: String,
+}
+
 /// Distance metric for vector similarity search
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub enum VectorMetric {

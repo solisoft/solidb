@@ -27,6 +27,24 @@ pub enum Operation {
     ColumnarCreateCollection,
     ColumnarDropCollection,
     ColumnarTruncate,
+
+    // ---------------------------------------------------------------------
+    // APPEND ONLY BELOW THIS LINE.
+    //
+    // `SyncMessage` goes over the wire as bincode (see `encode`), which
+    // identifies enum variants by their *position*. Inserting a variant in the
+    // middle renumbers every variant after it, so a node running the new build
+    // would send `ColumnarInsert` and a node running the old build would decode
+    // it as whatever now sits at that index — silent misinterpretation during a
+    // rolling upgrade. Appending is safe: an old node hits an unknown index and
+    // fails the decode loudly instead.
+    // ---------------------------------------------------------------------
+    /// Index definitions. Without these an index created on one node existed
+    /// only on that node: peers ran unindexed scans, and a TTL index on one
+    /// node meant documents expired there and lived forever everywhere else.
+    /// Payload is a JSON `IndexSpec` (create) or `IndexRef` (drop).
+    CreateIndex,
+    DropIndex,
 }
 
 /// A single entry in the sync log
@@ -153,6 +171,21 @@ pub enum SyncMessage {
         database: String,
         name: String,
         shard_config: Option<ShardConfig>,
+        /// "document" / "edge" / "blob" / "timeseries".
+        ///
+        /// Full sync used to recreate every collection with `None`, so a blob
+        /// collection came back as a document collection (making its blobs
+        /// unreadable) and a timeseries collection lost the type its insert
+        /// path keys off.
+        ///
+        /// Adding this field changes the bincode layout: bincode is not
+        /// self-describing and `#[serde(default)]` cannot fill a field that is
+        /// simply absent from the byte stream. Both ends of a full sync must
+        /// therefore run the same build. That is acceptable because full sync
+        /// is a manual `SyncCommand::RequestFullSync`, and a mixed-version run
+        /// already produced a wrongly-typed collection — but it is a real
+        /// constraint, not a compatible addition.
+        collection_type: Option<String>,
     },
     /// Batch of documents (LZ4 compressed if large)
     FullSyncDocuments {

@@ -38,8 +38,8 @@ pub use geo::{distance_meters, GeoIndex, GeoIndexStats, GeoPoint};
 pub use index::{
     bm25_score, calculate_idf, deserialize_fields, extract_field_value, generate_ngrams,
     levenshtein_distance, ngram_similarity, normalize_text, tokenize, FulltextMatch, Index,
-    IndexStats, IndexType, TtlIndex, TtlIndexStats, VectorIndexConfig, VectorIndexStats,
-    VectorMetric, BM25_B, BM25_K1, NGRAM_SIZE,
+    IndexKind, IndexRef, IndexSpec, IndexStats, IndexType, TtlIndex, TtlIndexStats,
+    VectorIndexConfig, VectorIndexStats, VectorMetric, BM25_B, BM25_K1, NGRAM_SIZE,
 };
 pub use schema::{
     CollectionSchema, SchemaCompilationError, SchemaValidationError, SchemaValidationMode,

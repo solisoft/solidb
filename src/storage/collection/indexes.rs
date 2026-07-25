@@ -11,8 +11,107 @@ type IndexEntry = (Vec<u8>, Vec<u8>);
 type IndexEntries = Vec<IndexEntry>;
 type IndexKeys = Vec<Vec<u8>>;
 
+/// Every index family reports a duplicate as `DbError::InvalidDocument` with a
+/// "... already exists" message, and there is no distinct variant to match on.
+/// These two helpers keep that string dependency in one place; they are only
+/// used to make index creation and dropping idempotent, so a false negative
+/// degrades to a propagated error rather than silent corruption.
+fn is_already_exists(e: &DbError) -> bool {
+    matches!(e, DbError::InvalidDocument(msg) if msg.contains("already exists"))
+}
+
+fn is_not_found(e: &DbError) -> bool {
+    matches!(e, DbError::InvalidDocument(msg) if msg.contains("not found"))
+}
+
 impl Collection {
     // ==================== Index Operations ====================
+
+    /// Create an index from a serialised [`IndexSpec`].
+    ///
+    /// Strict: a duplicate name is an error, matching what a client issuing
+    /// `POST .../index` expects. Replication and the shard fan-out want the
+    /// opposite — use [`Collection::apply_index_spec`] there.
+    pub fn create_index_from_spec(&self, spec: &crate::storage::index::IndexSpec) -> DbResult<()> {
+        use crate::storage::index::IndexSpec;
+
+        match spec {
+            IndexSpec::Regular {
+                name,
+                fields,
+                index_type,
+                unique,
+            } => self
+                .create_index(name.clone(), fields.clone(), index_type.clone(), *unique)
+                .map(|_| ()),
+            IndexSpec::Fulltext {
+                name,
+                fields,
+                min_length,
+            } => self
+                .create_fulltext_index(name.clone(), fields.clone(), *min_length)
+                .map(|_| ()),
+            IndexSpec::Geo { name, field } => self
+                .create_geo_index(name.clone(), field.clone())
+                .map(|_| ()),
+            IndexSpec::Ttl {
+                name,
+                field,
+                expire_after_seconds,
+            } => self
+                .create_ttl_index(name.clone(), field.clone(), *expire_after_seconds)
+                .map(|_| ()),
+            IndexSpec::Vector(config) => self.create_vector_index(config.clone()).map(|_| ()),
+        }
+    }
+
+    /// Idempotent [`Collection::create_index_from_spec`], for replication and
+    /// the shard fan-out.
+    ///
+    /// Log entries are replayed at least once and the fan-out can overlap with
+    /// an entry a node already applied, so an existing index is the expected
+    /// outcome rather than a failure. Kept separate from the strict version so
+    /// that tolerance never reaches a client's own create request.
+    pub fn apply_index_spec(&self, spec: &crate::storage::index::IndexSpec) -> DbResult<()> {
+        match self.create_index_from_spec(spec) {
+            Ok(()) => Ok(()),
+            Err(e) if is_already_exists(&e) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Drop an index, routing to the right family.
+    ///
+    /// Strict: a missing index is an error. Replication should use
+    /// [`Collection::apply_index_drop`].
+    pub fn drop_index_of_kind(
+        &self,
+        kind: crate::storage::index::IndexKind,
+        name: &str,
+    ) -> DbResult<()> {
+        use crate::storage::index::IndexKind;
+
+        match kind {
+            IndexKind::Regular => self.drop_index(name),
+            IndexKind::Geo => self.drop_geo_index(name),
+            IndexKind::Ttl => self.drop_ttl_index(name),
+            IndexKind::Vector => self.drop_vector_index(name),
+        }
+    }
+
+    /// Idempotent [`Collection::drop_index_of_kind`], for replication and the
+    /// shard fan-out: a replayed drop may arrive after the index is gone.
+    pub fn apply_index_drop(
+        &self,
+        kind: crate::storage::index::IndexKind,
+        name: &str,
+    ) -> DbResult<()> {
+        match self.drop_index_of_kind(kind, name) {
+            Ok(()) => Ok(()),
+            Err(e) if is_not_found(&e) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
 
     /// Get all index metadata
     pub fn get_all_indexes(&self) -> Vec<Index> {
