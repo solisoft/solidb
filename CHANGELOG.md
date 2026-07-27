@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.33.0](https://github.com/solisoft/solidb/compare/v0.32.2...v0.33.0) (2026-07-27)
+
+### Features
+
+* **Columnar collections are a first-class SDBQL data source.** A columnar collection was reachable from SDBQL through exactly one shape, `FOR x IN c COLLECT AGGREGATE … RETURN …`. Adding a `FILTER`, `SORT`, `LIMIT` or join made the same collection report *CollectionNotFound*, because columnar rows are not stored under the document prefix the scanner walks. `FOR` now resolves columnar collections directly, so filters, sorts, limits, joins and subqueries work, and columnar data can be combined with documents, edges and vector search in one query. Filter and projection pushdown are not implemented yet, so a selective filter over a large collection still reads less through the `/columnar/…/query` endpoint.
+* **Physical backup.** `POST /_api/backup` (admin) takes a RocksDB checkpoint of the whole instance: near-instant, hard-linked, point-in-time consistent across collections. Restore by pointing a server at the directory. `solidb-dump` remains the per-database and cross-version path. Because a checkpoint hard-links SSTs on the same filesystem, copy it elsewhere — it is not protection against losing that volume.
+
+### Fixes
+
+* **Columnar aggregates returned wrong results rather than errors.** Four bugs: the `RETURN` clause was ignored (`RETURN {sum: total}` came back as `{"total": …}`, and a scalar `RETURN` came back as an object); grouped queries dropped every aggregate after the first, so `AGGREGATE lo = MIN(…), hi = MAX(…)` lost `hi`; group and aggregate columns were reported under internal storage names instead of the `COLLECT` variables; and string group keys were double-encoded, so `a` came back as `"\"a\""`. The last of these was fixed in the storage layer, so the `/columnar` REST endpoint benefits too.
+* **Index definitions replicate.** An index created on one node existed only on that node: there was no `CreateIndex` operation in the sync protocol, so peers ran unindexed scans and never enforced a unique index they did not have. Worst, the TTL sweep skips a collection with no TTL index, so documents expired on the node where the index was created and lived forever on every other node. Index creation is also shard-aware now — previously an index on a sharded collection was built on the logical collection, which holds no documents.
+* **Offline sync writes are persisted.** `/_api/sync/push` validated the session, appended to the replication log and returned `{"accepted": N}` without ever writing to storage, so pushed documents never existed. `/_api/sync/conflicts` and `/_api/sync/resolve` now return `501` instead of an empty list and `{"success": true}`; real conflict detection needs per-document version vectors, which storage does not yet carry.
+* **Blob under-replication repair.** Blob chunks replicate inline at upload and are absent from both recovery paths, so a chunk missed while a peer was down stayed missing. The rebalance worker now scans for under-replicated chunks and re-pushes them.
+* **Safer `solidb-dump` / `solidb-restore`.** Columnar indexes go through `columnar_index` records rather than schema `indexed` flags, document dumps are enveloped to avoid field collisions, index-list failures surface, and a partial dump or restore exits non-zero. Adds `--scheme`, `--overwrite` (import `mode=upsert`), path encoding and auth validation.
+* **Dropping a database requires typing its name.** The admin confirm modal takes a name confirmation, and the endpoint rejects the delete unless it matches.
+
+### Performance
+
+* **Small responses are no longer gzip-ed.** Compression had a 32-byte floor, so every client sending `Accept-Encoding` paid a fixed per-response CPU cost on replies too small to benefit: a ~300B cursor response spent ~216µs compressing (65% of the request envelope) and a 65B health response *grew* to 88B. The 1-doc query path measured 42.7k req/s with compression against 103k req/s without. The floor is now 4 KB, overridable with `SOLIDB_GZIP_MIN_BYTES` if you are bandwidth-bound rather than CPU-bound.
+
+### Build
+
+* **Supply-chain checks in CI.** `cargo-deny` (advisories, bans, licenses, sources), clippy widened to `--all-targets --all-features`, and a declared MSRV verified by a job that builds it. Two advisories were fixed by version bumps rather than ignored.
+* **Releases are gated on the docs site matching `Cargo.toml`.** `scripts/check_docs_sync.sh` runs as the `docs-sync` CI job and at the top of `scripts/release.sh`, so a stale version pill or a missing changelog section stops the release before a tag or a crates.io publish exists.
+
+## [0.32.2](https://github.com/solisoft/solidb/compare/v0.32.1...v0.32.2) (2026-07-25)
+
+### Fixes
+
+* **Blob collections are restorable from a whole-database dump.** `solidb-dump` streamed the server's single-collection `/export` output verbatim, and those records name neither the database nor the collection, so `solidb-restore` aborted on the first one with *"No collection specified in doc or args"*. The dump now injects the routing metadata, copying binary payloads through byte for byte.
+* **Collections larger than 10,000 documents are no longer silently truncated.** The dump asked for `batchSize` 1,000,000 and read only the first response, but the server clamps it to 10,000. It now follows the cursor, and warns when the number of documents dumped differs from the reported count.
+* **Empty collections survive a round trip.** A collection with no documents and no indexes wrote nothing at all and disappeared from the dump. Every collection now leads with a declaration record carrying its type, so edge, blob and timeseries collections come back as themselves rather than plain document collections.
+* **Columnar collections are dumped and restored.** They live behind their own API and were skipped entirely, while their backing `_columnar_*` column family was exported as a phantom empty document collection.
+* Restore skips an unroutable record instead of aborting the whole run, creates the database once per run rather than once per collection, and treats "already exists" index clashes as success.
+
 ## [0.32.1](https://github.com/solisoft/solidb/compare/v0.32.0...v0.32.1) (2026-07-24)
 
 ### Fixes

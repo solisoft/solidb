@@ -3,7 +3,7 @@ members = ["clients/rust-client", "sdbql-core", "benchmarks"]
 
 [package]
 name = "solidb"
-version = "0.32.2"
+version = "0.33.0"
 edition = "2021"
 # Floor imposed by the dependency tree (rust-rocksdb 0.46 declares 1.89.0).
 # Enforced by the `msrv` CI job, which builds with exactly this toolchain.
