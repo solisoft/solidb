@@ -1144,8 +1144,27 @@ pub fn create_router(
                 // replies (avoids the encode + Content-Length negotiation on
                 // every error), and skip already-compressed video/audio.
                 .compress_when({
-                    use tower_http::compression::predicate::{DefaultPredicate, Predicate};
-                    DefaultPredicate::new().and(
+                    use tower_http::compression::predicate::{
+                        DefaultPredicate, Predicate, SizeAbove,
+                    };
+                    // Gzip has a fixed per-response CPU cost that dwarfs its
+                    // benefit on small bodies: measured on the cursor endpoint,
+                    // compressing a ~300B JSON response cost ~216µs of server
+                    // CPU per request — 65% of the entire request envelope —
+                    // and a 65B health response actually *grew* to 88B. Any
+                    // client that sends Accept-Encoding (every browser, most
+                    // load generators) silently paid it on every call: the
+                    // 1-doc query path measured 42.7k req/s with compression
+                    // and 103k req/s without. DefaultPredicate's floor is only
+                    // 32 bytes, so raise it: don't compress anything below
+                    // SOLIDB_GZIP_MIN_BYTES (default 4096 — below that, even a
+                    // 3:1 ratio saves at most ~2.7KB per response, well under
+                    // one MTU, while the CPU cost stays the same).
+                    let min_bytes: u16 = std::env::var("SOLIDB_GZIP_MIN_BYTES")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(4096);
+                    DefaultPredicate::new().and(SizeAbove::new(min_bytes)).and(
                         |status: axum::http::StatusCode,
                          _version: axum::http::Version,
                          headers: &axum::http::HeaderMap,
