@@ -482,7 +482,7 @@ fn setup_env_table_cached(
     let mut env_vars = std::collections::HashMap::new();
 
     if let Ok(db) = engine.storage.get_database(db_name) {
-        if let Ok(collection) = db.get_collection("_env") {
+        if let Ok(collection) = db.system_collection("_env") {
             let collection: &crate::storage::Collection = &collection;
             let all_docs = collection.scan(None);
             for doc in all_docs {
@@ -1788,7 +1788,7 @@ pub fn setup_lua_globals(
 
     // Populate env table from _env collection
     if let Ok(db) = engine.storage.get_database(db_name) {
-        if let Ok(collection) = db.get_collection("_env") {
+        if let Ok(collection) = db.system_collection("_env") {
             let collection: &crate::storage::Collection = &collection;
             let all_docs = collection.scan(None);
             for doc in all_docs {

@@ -35,7 +35,7 @@ pub async fn handle_auth(
 
     // Username/password authentication
     // Get admins collection (username is the _key)
-    let admins = match system_db.get_collection("_admins") {
+    let admins = match system_db.system_collection("_admins") {
         Ok(coll) => coll,
         Err(_) => {
             return Response::error(DriverError::AuthError(

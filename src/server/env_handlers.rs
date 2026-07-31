@@ -1,9 +1,11 @@
 use crate::error::DbError;
+use crate::server::auth::Claims;
+use crate::server::authorization::PermissionAction;
 use crate::server::handlers;
 use axum::{
     extract::{Path, State},
     response::IntoResponse,
-    Json,
+    Extension, Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -12,20 +14,37 @@ pub struct EnvVarValue {
     pub value: String,
 }
 
+/// `_env` holds provider credentials (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+/// ...), so every operation on it requires Admin on the target database — the
+/// route layer would otherwise settle for Read on GET and Write on PUT/DELETE,
+/// which is how a read-only principal used to be able to dump every key
+/// (SEC-176). This matches what the docs have always promised: "API keys
+/// stored in `_env` are accessible to database administrators."
+async fn require_env_admin(
+    claims: &Claims,
+    state: &handlers::AppState,
+    db_name: &str,
+) -> Result<(), DbError> {
+    crate::server::authz_middleware::enforce(claims, state, PermissionAction::Admin, Some(db_name))
+        .await
+}
+
 /// GET /_api/database/{db}/env
 /// List all environment variables for a database
 pub async fn list_env_vars_handler(
     State(state): State<handlers::AppState>,
+    Extension(claims): Extension<Claims>,
     Path(db_name): Path<String>,
 ) -> Result<impl IntoResponse, DbError> {
+    require_env_admin(&claims, &state, &db_name).await?;
     let db = state.storage.get_database(&db_name)?;
 
     // Ensure _env collection exists
-    if db.get_collection("_env").is_err() {
+    if db.system_collection("_env").is_err() {
         return Ok(Json(std::collections::HashMap::new()));
     }
 
-    let collection = db.get_collection("_env")?;
+    let collection = db.system_collection("_env")?;
     let all_docs = collection.scan(None);
 
     let mut env_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -51,17 +70,19 @@ pub async fn list_env_vars_handler(
 /// Set an environment variable
 pub async fn set_env_var_handler(
     State(state): State<handlers::AppState>,
+    Extension(claims): Extension<Claims>,
     Path((db_name, key)): Path<(String, String)>,
     Json(payload): Json<EnvVarValue>,
 ) -> Result<impl IntoResponse, DbError> {
+    require_env_admin(&claims, &state, &db_name).await?;
     let db = state.storage.get_database(&db_name)?;
 
     // Ensure _env collection exists
-    if db.get_collection("_env").is_err() {
+    if db.system_collection("_env").is_err() {
         db.create_collection("_env".to_string(), None)?;
     }
 
-    let collection = db.get_collection("_env")?;
+    let collection = db.system_collection("_env")?;
 
     let doc = serde_json::json!({
         "_key": key,
@@ -78,18 +99,20 @@ pub async fn set_env_var_handler(
 /// Delete an environment variable
 pub async fn delete_env_var_handler(
     State(state): State<handlers::AppState>,
+    Extension(claims): Extension<Claims>,
     Path((db_name, key)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, DbError> {
+    require_env_admin(&claims, &state, &db_name).await?;
     let db = state.storage.get_database(&db_name)?;
 
-    if db.get_collection("_env").is_err() {
+    if db.system_collection("_env").is_err() {
         return Err(DbError::DocumentNotFound(format!(
             "Environment variable {} not found",
             key
         )));
     }
 
-    let collection = db.get_collection("_env")?;
+    let collection = db.system_collection("_env")?;
 
     match collection.delete(&key) {
         Ok(_) => Ok(Json(serde_json::json!({ "status": "deleted", "key": key }))),

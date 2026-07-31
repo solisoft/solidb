@@ -141,7 +141,7 @@ pub(crate) fn generate_cluster_status(
             let coll_names = db.list_collections();
             collection_count += coll_names.len();
             for coll_name in coll_names {
-                if let Ok(coll) = db.get_collection(&coll_name) {
+                if let Ok(coll) = db.system_collection(&coll_name) {
                     let stats = coll.stats();
                     document_count += stats.document_count as u64;
                     total_file_count += stats.disk_usage.num_sst_files;

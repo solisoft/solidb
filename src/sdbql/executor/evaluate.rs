@@ -331,7 +331,7 @@ impl<'a> QueryExecutor<'a> {
                                 if let Some((collection_name, key)) = id.split_once('/') {
                                     let collection = if collection_name.contains(':') {
                                         // Absolute path (e.g. "db:col") - bypass context
-                                        self.storage.get_collection(collection_name)
+                                        self.qualified_collection(collection_name)
                                     } else {
                                         // Relative path - use context
                                         self.get_collection(collection_name)
@@ -356,7 +356,7 @@ impl<'a> QueryExecutor<'a> {
                                         if let Some((collection_name, key)) = id.split_once('/') {
                                             let collection_result = if collection_name.contains(':')
                                             {
-                                                self.storage.get_collection(collection_name)
+                                                self.qualified_collection(collection_name)
                                             } else {
                                                 self.get_collection(collection_name)
                                             };
@@ -385,7 +385,7 @@ impl<'a> QueryExecutor<'a> {
                             )
                         })?;
                         let collection = if collection_name.contains(':') {
-                            self.storage.get_collection(collection_name)?
+                            self.qualified_collection(collection_name)?
                         } else {
                             self.get_collection(collection_name)?
                         };

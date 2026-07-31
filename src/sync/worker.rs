@@ -1242,7 +1242,7 @@ impl SyncWorker {
                 let colls = db.list_collections();
                 collections_count = collections_count.saturating_add(colls.len() as u32);
                 for coll_name in colls {
-                    if let Ok(coll) = db.get_collection(&coll_name) {
+                    if let Ok(coll) = db.system_collection(&coll_name) {
                         document_count = document_count.saturating_add(coll.count() as u64);
                     }
                 }
@@ -1407,7 +1407,7 @@ impl SyncWorker {
                             let colls = db.list_collections();
                             total_collections += colls.len() as u32;
                             for coll_name in &colls {
-                                if let Ok(coll) = db.get_collection(coll_name) {
+                                if let Ok(coll) = db.system_collection(coll_name) {
                                     total_documents += coll.count() as u64;
                                 }
                             }
@@ -1439,7 +1439,7 @@ impl SyncWorker {
                                 // document collection silently downgraded blob
                                 // and timeseries collections on the receiver.
                                 let (collection_type, shard_config) =
-                                    match db.get_collection(&coll_name) {
+                                    match db.system_collection(&coll_name) {
                                         Ok(c) => (
                                             Some(c.get_type().to_string()),
                                             c.get_shard_config().map(|cfg| ShardConfig {

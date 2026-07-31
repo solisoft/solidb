@@ -53,7 +53,7 @@ impl QueueWorker {
                 Err(_) => continue,
             };
             for coll_name in db.list_collections() {
-                let coll = match db.get_collection(&coll_name) {
+                let coll = match db.system_collection(&coll_name) {
                     Ok(c) => c,
                     Err(_) => continue,
                 };

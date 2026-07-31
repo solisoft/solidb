@@ -416,7 +416,7 @@ impl StorageEngine {
             if let Ok(database) = self.get_database(&db_name) {
                 let collections = database.list_collections();
                 for coll_name in collections {
-                    if let Ok(collection) = database.get_collection(&coll_name) {
+                    if let Ok(collection) = database.system_collection(&coll_name) {
                         collection.recalculate_count();
                         total_collections += 1;
                     }
@@ -442,7 +442,7 @@ impl StorageEngine {
             if let Ok(database) = self.get_database(&db_name) {
                 let collections = database.list_collections();
                 for coll_name in collections {
-                    if let Ok(collection) = database.get_collection(&coll_name) {
+                    if let Ok(collection) = database.system_collection(&coll_name) {
                         collection.flush_stats();
                         // Persist any vector-index changes that the per-write
                         // throttle deferred (see `persist_vector_indexes_throttled`).
@@ -660,9 +660,27 @@ impl StorageEngine {
         Ok(())
     }
 
-    /// Get a collection (legacy method - checks both database-prefixed and plain names)
-    /// Uses cached collection handles for performance
+    /// Get a collection by a name that came from a caller (legacy method -
+    /// checks both database-prefixed and plain names).
+    ///
+    /// Refuses the credential collections, for the same reason as
+    /// [`Database::get_collection`] (SEC-176). This level needs its own guard:
+    /// the transactional handlers resolve caller-supplied collection names
+    /// here rather than through a `Database`, so guarding only the `Database`
+    /// accessor left `/transaction/{tx}/document/_env/...` open — and because
+    /// an unqualified name falls back to `_system:{name}` below, that reached
+    /// the *instance-wide* credentials from any database.
     pub fn get_collection(&self, name: &str) -> DbResult<Collection> {
+        if crate::storage::is_protected_collection(name) {
+            return Err(crate::storage::protected_collection_error(name));
+        }
+        self.system_collection(name)
+    }
+
+    /// Unrestricted variant of [`Self::get_collection`], for server-side code
+    /// applying already-authorized work (e.g. committing a transaction's
+    /// operations). Never pass a caller-supplied name to this.
+    pub fn system_collection(&self, name: &str) -> DbResult<Collection> {
         // A CF scheduled for background drop must read as already deleted —
         // serving it (cached or fresh) hands out a handle whose CF can vanish
         // mid-operation.
@@ -839,7 +857,7 @@ impl StorageEngine {
 
             // Apply operations for each collection
             for (coll_name, ops) in ops_by_collection {
-                if let Ok(collection) = self.get_collection(&coll_name) {
+                if let Ok(collection) = self.system_collection(&coll_name) {
                     collection.apply_transaction_operations(ops)?;
                 } else {
                     tracing::warn!(
@@ -890,7 +908,7 @@ impl StorageEngine {
 
         // Apply operations for each collection
         for (coll_name, ops) in ops_by_collection {
-            let collection = self.get_collection(&coll_name)?;
+            let collection = self.system_collection(&coll_name)?;
             collection.apply_transaction_operations(ops)?;
         }
 

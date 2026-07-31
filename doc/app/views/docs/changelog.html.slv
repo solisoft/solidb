@@ -13,7 +13,9 @@
   <section id="unreleased" class="mb-16 scroll-mt-24">
     <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
-      <p class="text-gray-400 text-sm leading-relaxed">No unreleased changes yet.</p>
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Credential collections are no longer readable at <code>Read</code></strong> &mdash; <code class="text-cyan-400">_env</code> is where SoliDB tells you to put provider API keys, but it was an ordinary collection: any principal with <code>Read</code> on the database could dump every key through <code class="text-cyan-400">GET /_api/database/&#123;db&#125;/env</code>, the document API, SDBQL (<code>FOR d IN _env</code>), or the driver protocol. The same held for <code class="text-cyan-400">_admins</code> (argon2 password hashes) and <code class="text-cyan-400">_api_keys</code>. These three are now refused by every path that takes a caller-supplied collection name, and the <code>/env</code> endpoints require <code>Admin</code> on the database &mdash; which is what the documentation already promised. Server-side readers (the LLM client, authentication, the Lua <code>solidb.env</code> binding) are unaffected. Because credentials are no longer reachable through the query API, <code class="text-cyan-400">solidb-dump</code> skips them and says so; capture them with a physical backup (<code class="text-cyan-400">POST /_api/backup</code>).</li>
+      </ul>
     </div>
   </section>
 

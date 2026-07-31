@@ -87,7 +87,7 @@ pub struct LLMClient {
 fn get_env_var(storage: &StorageEngine, db_name: &str, key: &str) -> Option<String> {
     // First, try the current database's _env collection
     if let Ok(db) = storage.get_database(db_name) {
-        if let Ok(coll) = db.get_collection("_env") {
+        if let Ok(coll) = db.system_collection("_env") {
             if let Ok(doc) = coll.get(key) {
                 if let Some(value) = doc.get("value") {
                     if let Some(s) = value.as_str() {
@@ -100,7 +100,7 @@ fn get_env_var(storage: &StorageEngine, db_name: &str, key: &str) -> Option<Stri
     // Then try _system database's _env collection
     if db_name != "_system" {
         if let Ok(db) = storage.get_database("_system") {
-            if let Ok(coll) = db.get_collection("_env") {
+            if let Ok(coll) = db.system_collection("_env") {
                 if let Ok(doc) = coll.get(key) {
                     if let Some(value) = doc.get("value") {
                         if let Some(s) = value.as_str() {

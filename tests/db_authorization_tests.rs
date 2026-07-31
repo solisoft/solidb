@@ -406,3 +406,287 @@ async fn role_less_token_denied_on_data_plane() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+// ==================== SEC-176: credential collections ====================
+//
+// `_env` is where SoliDB tells users to put provider API keys, `_admins`
+// holds argon2 password hashes and `_api_keys` holds key hashes — but they
+// are ordinary collections, so every generic read path served them to any
+// principal with Read. These tests pin each of the four paths shut.
+
+/// Admin stores a secret in `_env` through the admin-only endpoint.
+async fn seed_env_secret(app: &App, db: &str, key: &str, value: &str) {
+    let (status, body) = send(
+        &app.router,
+        "PUT",
+        &format!("/_api/database/{}/env/{}", db, key),
+        &app.admin,
+        Some(json!({ "value": value })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "admin seeds env var: {}", body);
+}
+
+#[tokio::test]
+async fn env_endpoints_require_admin_not_read_or_write() {
+    let app = create_app();
+    setup_db(&app, "envperm").await;
+    seed_env_secret(&app, "envperm", "OPENAI_API_KEY", "sk-secret").await;
+
+    // Admin still round-trips the value — the endpoint has to stay usable.
+    let (status, body) = send(
+        &app.router,
+        "GET",
+        "/_api/database/envperm/env",
+        &app.admin,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["OPENAI_API_KEY"], "sk-secret");
+
+    // Read is no longer enough to list.
+    let (status, _) = send(
+        &app.router,
+        "GET",
+        "/_api/database/envperm/env",
+        &app.viewer,
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "viewer must not list env vars"
+    );
+
+    // Write is no longer enough to set — this is also what kept a tenant from
+    // pointing OLLAMA_URL at an internal host (SEC-177).
+    let (status, _) = send(
+        &app.router,
+        "PUT",
+        "/_api/database/envperm/env/OLLAMA_URL",
+        &app.editor,
+        Some(json!({ "value": "http://169.254.169.254" })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "editor must not set env vars"
+    );
+
+    let (status, _) = send(
+        &app.router,
+        "DELETE",
+        "/_api/database/envperm/env/OPENAI_API_KEY",
+        &app.editor,
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "editor must not delete env vars"
+    );
+}
+
+#[tokio::test]
+async fn credential_collections_are_unreachable_via_document_api() {
+    let app = create_app();
+    setup_db(&app, "envdoc").await;
+    seed_env_secret(&app, "envdoc", "OPENAI_API_KEY", "sk-secret").await;
+
+    for token in [&app.viewer, &app.editor, &app.admin] {
+        let (status, body) = send(
+            &app.router,
+            "GET",
+            "/_api/database/envdoc/document/_env/OPENAI_API_KEY",
+            token,
+            None,
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "document API leaked: {}",
+            body
+        );
+        assert!(
+            !body.to_string().contains("sk-secret"),
+            "secret present in body: {}",
+            body
+        );
+    }
+}
+
+#[tokio::test]
+async fn credential_collections_are_unreachable_via_sdbql() {
+    let app = create_app();
+    setup_db(&app, "envq").await;
+    seed_env_secret(&app, "envq", "OPENAI_API_KEY", "sk-secret").await;
+
+    // Every shape that names the collection: a FOR source, DOCUMENT() with a
+    // relative id, and DOCUMENT() with a fully-qualified `db:collection` id
+    // (which used to reach the storage engine directly, bypassing the
+    // database context entirely).
+    for query in [
+        "FOR d IN _env RETURN d",
+        "RETURN DOCUMENT(\"_env/OPENAI_API_KEY\")",
+        "RETURN DOCUMENT(\"envq:_env/OPENAI_API_KEY\")",
+        "RETURN DOCUMENT(\"_env\", \"OPENAI_API_KEY\")",
+        "FOR d IN _admins RETURN d",
+        "RETURN DOCUMENT(\"_system:_admins/admin\")",
+    ] {
+        let (status, body) = send(
+            &app.router,
+            "POST",
+            "/_api/database/envq/cursor",
+            &app.viewer,
+            Some(json!({ "query": query })),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "query leaked: {} => {}",
+            query,
+            body
+        );
+        assert!(
+            !body.to_string().contains("sk-secret"),
+            "secret present for {}: {}",
+            query,
+            body
+        );
+        assert!(
+            !body.to_string().contains("password_hash"),
+            "password hash present for {}: {}",
+            query,
+            body
+        );
+    }
+}
+
+#[tokio::test]
+async fn ordinary_collections_are_unaffected_by_the_guard() {
+    let app = create_app();
+    setup_db(&app, "envok").await;
+
+    // The guard is name-based, so prove it does not over-match: a normal
+    // collection and an unrelated underscore collection both still work.
+    let (status, _) = send(
+        &app.router,
+        "POST",
+        "/_api/database/envok/cursor",
+        &app.viewer,
+        Some(json!({ "query": "FOR d IN items RETURN d" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = send(
+        &app.router,
+        "GET",
+        "/_api/database/envok/document/items/k1",
+        &app.viewer,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = send(
+        &app.router,
+        "POST",
+        "/_api/database/envok/collection",
+        &app.admin,
+        Some(json!({"name": "_env_like"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "near-miss name must be creatable");
+
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/database/envok/cursor",
+        &app.viewer,
+        Some(json!({ "query": "FOR d IN _env_like RETURN d" })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "near-miss name must be queryable: {}",
+        body
+    );
+}
+
+#[tokio::test]
+async fn credential_collections_are_unreachable_via_transactions() {
+    let app = create_app();
+    setup_db(&app, "envtx").await;
+    seed_env_secret(&app, "envtx", "OPENAI_API_KEY", "sk-secret").await;
+
+    // The transactional handlers resolve the collection through the storage
+    // engine rather than through a Database, so the guard has to exist at
+    // both levels. Worse, the engine falls back to `_system:{name}` for an
+    // unqualified name, so this path reached the instance-wide credentials
+    // from any database (see SEC-179 for that defect itself).
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/database/envtx/transaction/begin",
+        &app.editor,
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "editor begins transaction: {}",
+        body
+    );
+    let tx_id = body["transaction_id"]
+        .as_str()
+        .or_else(|| body["id"].as_str())
+        .expect("transaction id")
+        .to_string();
+
+    let (status, body) = send(
+        &app.router,
+        "PUT",
+        &format!(
+            "/_api/database/envtx/transaction/{}/document/_env/OPENAI_API_KEY",
+            tx_id
+        ),
+        &app.editor,
+        Some(json!({ "value": "sk-hijacked" })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "transactional write to _env: {}",
+        body
+    );
+
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        &format!("/_api/database/envtx/transaction/{}/query", tx_id),
+        &app.editor,
+        Some(json!({ "query": "FOR d IN _env RETURN d" })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "transactional query on _env: {}",
+        body
+    );
+    assert!(
+        !body.to_string().contains("sk-secret"),
+        "secret present: {}",
+        body
+    );
+}

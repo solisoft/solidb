@@ -315,17 +315,17 @@
 
             <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
               <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Via API</p>
-              <pre><code class="language-bash text-sm"># Set Anthropic API key
-curl -X POST http://localhost:7777/_api/database/_system/collection/_env \
+              <pre><code class="language-bash text-sm"># Set Anthropic API key (requires Admin on the database)
+curl -X PUT http://localhost:7777/_api/database/_system/env/ANTHROPIC_API_KEY \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"_key": "ANTHROPIC_API_KEY", "value": "sk-ant-..."}'
+  -d '{"value": "sk-ant-..."}'
 
 # Set default provider
-curl -X POST http://localhost:7777/_api/database/_system/collection/_env \
+curl -X PUT http://localhost:7777/_api/database/_system/env/NL_DEFAULT_PROVIDER \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"_key": "NL_DEFAULT_PROVIDER", "value": "anthropic"}'</code></pre>
+  -d '{"value": "anthropic"}'</code></pre>
             </div>
 
             <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4 mt-4">
@@ -345,8 +345,16 @@ curl -X POST http://localhost:7777/_api/database/_system/collection/_env \
                 Security Note
               </h4>
               <p class="text-sm text-gray-400">
-                API keys stored in <code class="text-yellow-300">_env</code> are accessible to database administrators.
-                Ensure proper access controls are in place for your SoliDB instance.
+                API keys stored in <code class="text-yellow-300">_env</code> are accessible to database administrators
+                only. Every operation on <code class="text-yellow-300">_env</code> — listing, setting, deleting —
+                requires the <code class="text-yellow-300">Admin</code> permission on that database, and the
+                collection is not readable through the document API, SDBQL, or the driver protocol
+                (a <code class="text-yellow-300">Read</code> grant used to be enough to dump every key).
+                The same applies to <code class="text-yellow-300">_admins</code> and
+                <code class="text-yellow-300">_api_keys</code>. Because credentials are not reachable
+                through the query API, they are also excluded from
+                <code class="text-yellow-300">solidb-dump</code> — capture them with a physical backup
+                (<code class="text-yellow-300">POST /_api/backup</code>) instead.
               </p>
             </div>
           </div>

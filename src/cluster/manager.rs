@@ -164,7 +164,7 @@ impl ClusterManager {
                     for db_name in databases {
                         if let Ok(db) = storage.get_database(&db_name) {
                             for coll_name in db.list_collections() {
-                                if let Ok(coll) = db.get_collection(&coll_name) {
+                                if let Ok(coll) = db.system_collection(&coll_name) {
                                     let s = coll.stats();
                                     total_chunk_count += s.chunk_count as u64;
                                     total_file_count += s.disk_usage.num_sst_files;

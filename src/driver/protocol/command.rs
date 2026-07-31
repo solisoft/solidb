@@ -676,7 +676,6 @@ impl Command {
             | ListTriggers { .. }
             | ListCollectionTriggers { .. }
             | GetTrigger { .. }
-            | ListEnvVars { .. }
             | GetCollectionSharding { .. }
             | ExportCollection { .. }
             | GetCollectionSchema { .. }
@@ -706,6 +705,11 @@ impl Command {
             TruncateCollection { .. } | DeleteCollection { .. } | DeleteColumnar { .. } => {
                 Some(A::Admin)
             }
+
+            // `_env` holds provider credentials, so reading it is an Admin
+            // operation on this database — matching the HTTP env endpoints.
+            // Listing used to be a plain Read (SEC-176).
+            ListEnvVars { .. } | SetEnvVar { .. } | DeleteEnvVar { .. } => Some(A::Admin),
 
             // Global management commands — Admin (and denied outright for
             // database-scoped API keys since database() is None)

@@ -311,7 +311,7 @@ impl AuthService {
         let should_skip_defaults = is_joining_cluster && !has_override_password;
 
         // Ensure _admins collection exists
-        if let Err(DbError::CollectionNotFound(_)) = db.get_collection(ADMIN_COLL) {
+        if let Err(DbError::CollectionNotFound(_)) = db.system_collection(ADMIN_COLL) {
             if should_skip_defaults {
                 tracing::info!(
                     "Cluster join detected: Skipping {} creation (waiting for sync)",
@@ -324,7 +324,7 @@ impl AuthService {
         }
 
         // Ensure _api_keys collection exists
-        if let Err(DbError::CollectionNotFound(_)) = db.get_collection(API_KEYS_COLL) {
+        if let Err(DbError::CollectionNotFound(_)) = db.system_collection(API_KEYS_COLL) {
             if should_skip_defaults {
                 tracing::info!(
                     "Cluster join detected: Skipping {} creation (waiting for sync)",
@@ -338,7 +338,7 @@ impl AuthService {
 
         // Check if any admin exists
         // Use if let Ok to handle case where we skipped creation above
-        if let Ok(collection) = db.get_collection(ADMIN_COLL) {
+        if let Ok(collection) = db.system_collection(ADMIN_COLL) {
             if collection.count() == 0 {
                 if should_skip_defaults {
                     tracing::info!("Cluster join detected: Skipping default admin user creation (waiting for sync)");
@@ -586,7 +586,7 @@ impl AuthService {
         replication_log: Option<&SyncLog>,
     ) -> Result<(), DbError> {
         let db = storage.get_database(ADMIN_DB)?;
-        let admins_coll = db.get_collection(ADMIN_COLL)?;
+        let admins_coll = db.system_collection(ADMIN_COLL)?;
         let user_roles_coll = db.get_collection(USER_ROLES_COLL)?;
 
         // Get all existing admin users
@@ -641,7 +641,7 @@ impl AuthService {
         replication_log: Option<&SyncLog>,
     ) -> Result<(), DbError> {
         let db = storage.get_database(ADMIN_DB)?;
-        let api_keys_coll = db.get_collection(API_KEYS_COLL)?;
+        let api_keys_coll = db.system_collection(API_KEYS_COLL)?;
 
         // Get all existing API keys and add admin role if not already set
         for doc in api_keys_coll.scan(None) {
@@ -853,7 +853,7 @@ impl AuthService {
             Ok(db) => db,
             Err(_) => return Err(DbError::BadRequest("Invalid API key".to_string())),
         };
-        let collection = match db.get_collection(API_KEYS_COLL) {
+        let collection = match db.system_collection(API_KEYS_COLL) {
             Ok(c) => c,
             Err(DbError::CollectionNotFound(_)) => {
                 return Err(DbError::BadRequest("Invalid API key".to_string()));
@@ -881,7 +881,7 @@ impl AuthService {
     pub fn load_api_key_cache(storage: &StorageEngine) -> Result<usize, DbError> {
         let mut loaded = 0;
         if let Ok(db) = storage.get_database(ADMIN_DB) {
-            if let Ok(collection) = db.get_collection(API_KEYS_COLL) {
+            if let Ok(collection) = db.system_collection(API_KEYS_COLL) {
                 for doc in collection.scan(None) {
                     if let Ok(api_key) = serde_json::from_value::<ApiKey>(doc.to_value()) {
                         api_key_cache().insert(api_key);
@@ -1227,7 +1227,7 @@ pub async fn auth_middleware(
 
                         // Validate against _admins collection
                         if let Ok(db) = state.storage.get_database("_system") {
-                            if let Ok(collection) = db.get_collection("_admins") {
+                            if let Ok(collection) = db.system_collection("_admins") {
                                 if let Ok(doc) = collection.get(username) {
                                     if let Ok(user) = serde_json::from_value::<User>(doc.to_value())
                                     {
@@ -1336,7 +1336,7 @@ pub async fn permissive_auth_middleware(
                     if let Some((username, password)) = credentials.split_once(':') {
                         // Validate against _admins collection
                         if let Ok(db) = state.storage.get_database("_system") {
-                            if let Ok(collection) = db.get_collection("_admins") {
+                            if let Ok(collection) = db.system_collection("_admins") {
                                 if let Ok(doc) = collection.get(username) {
                                     if let Ok(user) = serde_json::from_value::<User>(doc.to_value())
                                     {

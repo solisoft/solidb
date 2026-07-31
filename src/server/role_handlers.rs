@@ -480,7 +480,7 @@ pub async fn assign_role(
     }
 
     // Verify user exists
-    let admins_coll = db.get_collection(ADMIN_COLL)?;
+    let admins_coll = db.system_collection(ADMIN_COLL)?;
     if admins_coll.get(&username).is_err() {
         return Err(DbError::DocumentNotFound(format!(
             "User '{}' not found",
@@ -685,7 +685,7 @@ pub async fn list_users(
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
     let db = state.storage.get_database("_system")?;
-    let collection = db.get_collection(ADMIN_COLL)?;
+    let collection = db.system_collection(ADMIN_COLL)?;
 
     // Collect users with their created_at timestamps from documents
     let users_with_timestamps: Vec<(crate::server::auth::User, Option<String>)> = collection
@@ -768,7 +768,7 @@ pub async fn create_user(
     }
 
     let db = state.storage.get_database("_system")?;
-    let collection = db.get_collection(ADMIN_COLL)?;
+    let collection = db.system_collection(ADMIN_COLL)?;
 
     // Check if user already exists
     if collection.get(&req.username).is_ok() {
@@ -880,7 +880,7 @@ pub async fn delete_user(
     }
 
     let db = state.storage.get_database("_system")?;
-    let collection = db.get_collection(ADMIN_COLL)?;
+    let collection = db.system_collection(ADMIN_COLL)?;
 
     // Check if user exists
     if collection.get(&username).is_err() {

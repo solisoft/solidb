@@ -18,6 +18,7 @@ pub mod geo;
 pub mod http_client;
 pub mod index;
 pub mod pending_drops;
+pub mod protected;
 pub mod query_cache;
 pub mod schema;
 pub mod semantic_query_cache;
@@ -41,6 +42,7 @@ pub use index::{
     IndexKind, IndexRef, IndexSpec, IndexStats, IndexType, TtlIndex, TtlIndexStats,
     VectorIndexConfig, VectorIndexStats, VectorMetric, BM25_B, BM25_K1, NGRAM_SIZE,
 };
+pub use protected::{is_protected_collection, protected_collection_error, PROTECTED_COLLECTIONS};
 pub use schema::{
     CollectionSchema, SchemaCompilationError, SchemaValidationError, SchemaValidationMode,
     SchemaValidator, ValidationResult, ValidationViolation,

@@ -40,7 +40,7 @@ impl TtlWorker {
 
             let collections = db.list_collections();
             for coll_name in collections {
-                let collection = match db.get_collection(&coll_name) {
+                let collection = match db.system_collection(&coll_name) {
                     Ok(coll) => coll,
                     Err(_) => continue,
                 };

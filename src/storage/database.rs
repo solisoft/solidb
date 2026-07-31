@@ -181,8 +181,27 @@ impl Database {
         collections
     }
 
-    /// Get a collection handle (cached for consistent atomic counters)
+    /// Get a collection handle by a name that came from a caller — an HTTP
+    /// path segment, SDBQL query text, or a driver command.
+    ///
+    /// Refuses the credential collections (`_env`, `_admins`, `_api_keys`):
+    /// they are ordinary column families, so every generic read path reached
+    /// them with only `Read` permission (SEC-176). Server-side code that owns
+    /// these collections calls [`Self::system_collection`] instead.
     pub fn get_collection(&self, collection_name: &str) -> DbResult<Collection> {
+        if crate::storage::is_protected_collection(collection_name) {
+            return Err(crate::storage::protected_collection_error(collection_name));
+        }
+        self.system_collection(collection_name)
+    }
+
+    /// Unrestricted collection lookup, for server-side code that legitimately
+    /// owns a credential collection (`AuthService`, the env endpoints, the
+    /// Lua `solidb.env` binding).
+    ///
+    /// Never pass a caller-supplied name to this — that is what
+    /// [`Self::get_collection`] is for.
+    pub fn system_collection(&self, collection_name: &str) -> DbResult<Collection> {
         // Check cache first (DashMap allows concurrent read without locking)
         if let Some(collection) = self.collections.get(collection_name) {
             return Ok(collection.clone());
@@ -210,11 +229,21 @@ impl Database {
 
     /// Get a collection handle, creating it if it doesn't exist
     pub fn get_or_create_collection(&self, collection_name: &str) -> DbResult<Collection> {
-        match self.get_collection(collection_name) {
+        if crate::storage::is_protected_collection(collection_name) {
+            return Err(crate::storage::protected_collection_error(collection_name));
+        }
+        self.get_or_create_system_collection(collection_name)
+    }
+
+    /// [`Self::get_or_create_collection`] without the credential-collection
+    /// guard. Same contract as [`Self::system_collection`]: server-side
+    /// callers only, never a caller-supplied name.
+    pub fn get_or_create_system_collection(&self, collection_name: &str) -> DbResult<Collection> {
+        match self.system_collection(collection_name) {
             Ok(collection) => Ok(collection),
             Err(DbError::CollectionNotFound(_)) => {
                 self.create_collection(collection_name.to_string(), None)?;
-                self.get_collection(collection_name)
+                self.system_collection(collection_name)
             }
             Err(e) => Err(e),
         }

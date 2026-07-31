@@ -16,6 +16,15 @@ use crate::storage::http_client::get_blocking_http_client;
 
 impl<'a> QueryExecutor<'a> {
     pub(super) fn get_collection(&self, name: &str) -> DbResult<crate::storage::Collection> {
+        // Credential collections (`_env`, `_admins`, `_api_keys`) are ordinary
+        // column families, so without this a `FOR d IN _env RETURN d` hands
+        // provider API keys to anyone with Read on the database. Server-side
+        // readers of these collections use the storage API directly and do not
+        // come through here. See tasks/review/SEC-176.
+        if crate::storage::is_protected_collection(name) {
+            return Err(crate::storage::protected_collection_error(name));
+        }
+
         // If we have a database context, get collection through the database
         // This ensures we use the same cached Collection instances as the handlers
         if let Some(ref db_name) = self.database {
@@ -25,6 +34,25 @@ impl<'a> QueryExecutor<'a> {
             // No database context - fall back to legacy storage method
             self.storage.get_collection(name)
         }
+    }
+
+    /// Resolve a fully-qualified `{database}:{collection}` name supplied by a
+    /// query (only `DOCUMENT()` accepts this form).
+    ///
+    /// Applies the same credential-collection guard as [`Self::get_collection`],
+    /// which the raw `storage.get_collection` path would otherwise skip —
+    /// `DOCUMENT("otherdb:_env/OPENAI_API_KEY")` reached the storage engine
+    /// directly before this existed.
+    ///
+    /// NOTE: this still resolves collections in *other* databases, which is a
+    /// separate and more serious authorization hole tracked as SEC-178 — the
+    /// executor has no `Claims` to check the second database against. That
+    /// fix belongs here, in this function.
+    pub(super) fn qualified_collection(&self, name: &str) -> DbResult<crate::storage::Collection> {
+        if crate::storage::is_protected_collection(name) {
+            return Err(crate::storage::protected_collection_error(name));
+        }
+        self.storage.get_collection(name)
     }
 
     /// Read rows from a columnar collection as a FOR source.
@@ -43,6 +71,14 @@ impl<'a> QueryExecutor<'a> {
         name: &str,
         limit: Option<usize>,
     ) -> DbResult<Option<Vec<Value>>> {
+        // This runs before the document path's guard, so keep the invariant
+        // uniform: a credential name is never served from a query, whatever
+        // storage layout happens to sit behind it. (A columnar collection
+        // named `_env` is a different column family from the real `_env`, so
+        // this shadows rather than leaks — but the shadow is confusing.)
+        if crate::storage::is_protected_collection(name) {
+            return Err(crate::storage::protected_collection_error(name));
+        }
         let Some(ref db_name) = self.database else {
             return Ok(None);
         };

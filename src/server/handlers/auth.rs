@@ -78,7 +78,7 @@ pub async fn change_password_handler(
     let db = state.storage.get_database("_system")?;
 
     // 2. Get _admins collection
-    let collection = db.get_collection("_admins")?;
+    let collection = db.system_collection("_admins")?;
 
     // 3. Get current user document
     let doc = match collection.get(&claims.sub) {
@@ -156,12 +156,12 @@ pub async fn create_api_key_handler(
 
     // Ensure collection exists
     if let Err(DbError::CollectionNotFound(_)) =
-        db.get_collection(crate::server::auth::API_KEYS_COLL)
+        db.system_collection(crate::server::auth::API_KEYS_COLL)
     {
         db.create_collection(crate::server::auth::API_KEYS_COLL.to_string(), None)?;
     }
 
-    let collection = db.get_collection(crate::server::auth::API_KEYS_COLL)?;
+    let collection = db.system_collection(crate::server::auth::API_KEYS_COLL)?;
 
     // Use provided roles, default to admin if empty
     let roles = if req.roles.is_empty() {
@@ -228,7 +228,7 @@ pub async fn list_api_keys_handler(
     let db = state.storage.get_database("_system")?;
 
     // Return empty if collection doesn't exist
-    let collection = match db.get_collection(crate::server::auth::API_KEYS_COLL) {
+    let collection = match db.system_collection(crate::server::auth::API_KEYS_COLL) {
         Ok(c) => c,
         Err(DbError::CollectionNotFound(_)) => {
             return Ok(Json(ListApiKeysResponse { keys: vec![] }));
@@ -261,7 +261,7 @@ pub async fn delete_api_key_handler(
 ) -> Result<Json<DeleteApiKeyResponse>, DbError> {
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
     let db = state.storage.get_database("_system")?;
-    let collection = db.get_collection(crate::server::auth::API_KEYS_COLL)?;
+    let collection = db.system_collection(crate::server::auth::API_KEYS_COLL)?;
 
     collection.delete(&key_id)?;
 
@@ -338,7 +338,7 @@ pub async fn login_handler(
     let db = state.storage.get_database("_system")?;
 
     // 2. Get _admins collection (create with default admin if missing)
-    let collection = match db.get_collection("_admins") {
+    let collection = match db.system_collection("_admins") {
         Ok(c) => c,
         Err(DbError::CollectionNotFound(_)) => {
             // Collection doesn't exist - initialize auth (creates collection and default admin)
@@ -348,7 +348,7 @@ pub async fn login_handler(
                 state.replication_log.as_deref(),
                 state.storage.data_dir(),
             )?;
-            db.get_collection("_admins")?
+            db.system_collection("_admins")?
         }
         Err(e) => return Err(e),
     };

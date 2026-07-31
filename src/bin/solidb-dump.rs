@@ -187,6 +187,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let collections = fetch_collections(&client, &base_url, &args.database).await?;
 
     if let Some(collection_name) = &args.collection {
+        // Asked for a credential collection by name: say why rather than
+        // letting the query API return a bare 403 (SEC-176).
+        if solidb::storage::is_protected_collection(collection_name) {
+            return Err(format!(
+                "'{}' stores credentials and is not exported by a logical dump. \
+                 Use a physical backup (POST /_api/backup) to capture it.",
+                collection_name
+            )
+            .into());
+        }
+
         // Dump single collection. A columnar collection is not in this list
         // under its own name, so fall back to the columnar API before giving up.
         match collections
@@ -337,6 +348,21 @@ async fn dump_database_jsonl(
         // Dumping it would emit a phantom collection and none of the actual
         // columnar data; they are dumped properly via /columnar below.
         if collection_name.starts_with(COLUMNAR_CF_PREFIX) {
+            continue;
+        }
+
+        // Credential collections (`_env`, `_admins`, `_api_keys`) are not
+        // readable through the query API — a logical dump would otherwise
+        // write argon2 password hashes and provider API keys into a plaintext
+        // JSONL file (SEC-176). They are covered by the physical backup
+        // (`POST /_api/backup`), which is the documented way to capture a
+        // whole instance including its credentials.
+        if solidb::storage::is_protected_collection(collection_name) {
+            eprintln!(
+                "{} skipping {} (credentials are only captured by a physical backup)",
+                "Note:".yellow().bold(),
+                collection_name.cyan()
+            );
             continue;
         }
 

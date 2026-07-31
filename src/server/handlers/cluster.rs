@@ -261,7 +261,7 @@ pub fn generate_cluster_status(state: &AppState, sysinfo: &SysInfo) -> ClusterSt
             let coll_names = db.list_collections();
             collection_count += coll_names.len();
             for coll_name in coll_names {
-                if let Ok(coll) = db.get_collection(&coll_name) {
+                if let Ok(coll) = db.system_collection(&coll_name) {
                     let coll_stats = coll.stats();
                     document_count += coll_stats.document_count as u64;
                     total_file_count += coll_stats.disk_usage.num_sst_files;

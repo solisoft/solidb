@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 pub async fn handle_list_env_vars(handler: &DriverHandler, database: String) -> Response {
     match handler.storage.get_database(&database) {
-        Ok(db) => match db.get_collection("_env") {
+        Ok(db) => match db.system_collection("_env") {
             Ok(coll) => {
                 let mut vars: HashMap<String, String> = HashMap::new();
                 for doc in coll.scan(None) {
@@ -33,7 +33,7 @@ pub async fn handle_set_env_var(
 ) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => {
-            let env_coll = match db.get_or_create_collection("_env") {
+            let env_coll = match db.get_or_create_system_collection("_env") {
                 Ok(c) => c,
                 Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
             };
@@ -65,7 +65,7 @@ pub async fn handle_delete_env_var(
     key: String,
 ) -> Response {
     match handler.storage.get_database(&database) {
-        Ok(db) => match db.get_collection("_env") {
+        Ok(db) => match db.system_collection("_env") {
             Ok(coll) => match coll.delete(&key) {
                 Ok(_) => Response::ok_empty(),
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -186,7 +186,7 @@ pub async fn handle_delete_role(handler: &DriverHandler, name: String) -> Respon
 
 pub async fn handle_list_users(handler: &DriverHandler) -> Response {
     match handler.storage.get_database("_system") {
-        Ok(db) => match db.get_collection("_admins") {
+        Ok(db) => match db.system_collection("_admins") {
             Ok(coll) => {
                 let users: Vec<_> = coll
                     .scan(None)
@@ -216,7 +216,7 @@ pub async fn handle_create_user(
 ) -> Response {
     match handler.storage.get_database("_system") {
         Ok(db) => {
-            let admins_coll = match db.get_or_create_collection("_admins") {
+            let admins_coll = match db.get_or_create_system_collection("_admins") {
                 Ok(c) => c,
                 Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
             };
@@ -261,7 +261,7 @@ pub async fn handle_delete_user(handler: &DriverHandler, username: String) -> Re
     }
 
     match handler.storage.get_database("_system") {
-        Ok(db) => match db.get_collection("_admins") {
+        Ok(db) => match db.system_collection("_admins") {
             Ok(coll) => match coll.delete(&username) {
                 Ok(_) => Response::ok_empty(),
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -369,7 +369,7 @@ pub async fn handle_revoke_role(
 
 pub async fn handle_list_api_keys(handler: &DriverHandler) -> Response {
     match handler.storage.get_database("_system") {
-        Ok(db) => match db.get_collection("_api_keys") {
+        Ok(db) => match db.system_collection("_api_keys") {
             Ok(coll) => {
                 let keys: Vec<_> = coll
                     .scan(None)
@@ -399,7 +399,7 @@ pub async fn handle_create_api_key(
 ) -> Response {
     match handler.storage.get_database("_system") {
         Ok(db) => {
-            let api_keys_coll = match db.get_or_create_collection("_api_keys") {
+            let api_keys_coll = match db.get_or_create_system_collection("_api_keys") {
                 Ok(c) => c,
                 Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
             };
@@ -433,7 +433,7 @@ pub async fn handle_create_api_key(
 
 pub async fn handle_delete_api_key(handler: &DriverHandler, key_id: String) -> Response {
     match handler.storage.get_database("_system") {
-        Ok(db) => match db.get_collection("_api_keys") {
+        Ok(db) => match db.system_collection("_api_keys") {
             Ok(coll) => match coll.delete(&key_id) {
                 Ok(_) => Response::ok_empty(),
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
