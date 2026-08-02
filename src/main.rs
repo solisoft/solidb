@@ -491,7 +491,15 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         worker_keyfile.clone(),
     ));
 
-    let (_tx, worker_cmd_rx) = solidb::sync::worker::create_command_channel();
+    // The sender was discarded as `_tx`, which made every `SyncCommand`
+    // unreachable — including `RequestFullSync`, the only thing that gives a
+    // joining node the data that existed before it arrived. `request_full_sync`
+    // was implemented, its handler was implemented, and nothing could call it.
+    //
+    // The visible symptom on two real nodes: the join succeeded, replication
+    // carried new writes, and `_admins` — created before the peer joined —
+    // never arrived, so the peer answered 401 to everything for good.
+    let (sync_cmd_tx, worker_cmd_rx) = solidb::sync::worker::create_command_channel();
     let sync_config = solidb::sync::worker::SyncConfig::default();
 
     // Create base worker with ClusterManager for peer discovery
@@ -514,6 +522,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     if !args.peers.is_empty() {
         let mgr_clone3 = cluster_manager.clone();
         let seeds = args.peers.clone();
+        let full_sync_tx = sync_cmd_tx.clone();
 
         // Use the shared coordinator for startup cleanup (same cache as healing/rebalancing)
         let startup_coordinator = shared_coordinator.clone();
@@ -522,11 +531,13 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
             // Wait for server to start
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             let mut joined = false;
+            let mut joined_via = String::new();
             for seed in seeds {
                 if let Err(e) = mgr_clone3.join_cluster(&seed).await {
                     tracing::warn!("Failed to join cluster via seed {}: {}", seed, e);
                 } else {
                     tracing::info!("Sent join request to {}", seed);
+                    joined_via = seed.clone();
                     joined = true;
                     break; // Only need one successful contact
                 }
@@ -534,6 +545,26 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
 
             // If we joined the cluster, wait for shard tables to sync then cleanup orphaned data
             if joined {
+                // Ask for everything that existed before this node did.
+                //
+                // Replication carries writes forward; it has no opinion about
+                // the past. Without this the node holds whatever arrives from
+                // now on and nothing else — which for a fresh peer means no
+                // `_admins`, and therefore no way to authenticate against it.
+                tracing::info!("Requesting a full sync from {joined_via}");
+                if let Err(e) = full_sync_tx
+                    .send(solidb::sync::worker::SyncCommand::RequestFullSync {
+                        peer_addr: joined_via.clone(),
+                    })
+                    .await
+                {
+                    tracing::error!(
+                        "Could not request a full sync from {joined_via}: {e}. This node will \
+                         only receive writes made from now on, and will not have the data that \
+                         already existed."
+                    );
+                }
+
                 tracing::info!(
                     "Waiting for shard tables to sync before cleaning up orphaned shards..."
                 );

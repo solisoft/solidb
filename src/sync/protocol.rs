@@ -342,11 +342,32 @@ pub struct ConflictEntry {
 }
 
 impl SyncMessage {
-    /// Encode message to bincode bytes with length prefix
+    /// Encode a message in the frame the connection pool reads.
+    ///
+    /// `[compressed: 1 byte][length: 4 bytes BE][bincode]` — the same shape
+    /// `ConnectionPool::send` writes, because the only reader of these bytes is
+    /// `ConnectionPool::receive`.
+    ///
+    /// This used to emit `[length][bincode]` with no leading byte, one byte
+    /// short of what the reader expects. Everything shifted: the reader took
+    /// the first length byte as the compressed flag, and bincode was handed the
+    /// length prefix as the start of a message — "invalid value: integer
+    /// 33554432, expected variant index 0 <= i < 27", which is `2u32` big-endian
+    /// read as a little-endian discriminant.
+    ///
+    /// It was never noticed because nothing had ever run a full sync: the only
+    /// caller is the responder below, and the request that triggers it could
+    /// not be sent — the sync worker's command sender was discarded at
+    /// construction.
+    ///
+    /// The flag is always 0. Compression belongs to the pool, and the one
+    /// message that carries bulk data (`FullSyncDocuments`) compresses its own
+    /// payload already.
     pub fn encode(&self) -> Vec<u8> {
         let payload = bincode::serialize(self).expect("Failed to serialize SyncMessage");
         let len = payload.len() as u32;
-        let mut result = Vec::with_capacity(4 + payload.len());
+        let mut result = Vec::with_capacity(5 + payload.len());
+        result.push(0);
         result.extend_from_slice(&len.to_be_bytes());
         result.extend(payload);
         result
@@ -478,7 +499,8 @@ mod tests {
 
         let encoded = msg.encode();
         // Skip length prefix (4 bytes)
-        let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+        // 1 flag byte + 4 length bytes, matching what the pool reads.
+        let decoded = SyncMessage::decode(&encoded[5..]).unwrap();
 
         match decoded {
             SyncMessage::Heartbeat {
