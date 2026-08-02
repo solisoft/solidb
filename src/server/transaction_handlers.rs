@@ -115,9 +115,32 @@ pub async fn rollback_transaction(
 
 // Transaction document operations
 
+/// Resolve a collection for a transactional document operation.
+///
+/// SEC-179: these handlers used to discard the `{db}` path segment and pass the
+/// bare collection name to `StorageEngine::get_collection`, which resolves a
+/// column family by literal name and then falls back to `_system:{name}`. A
+/// principal scoped to one database could therefore write into `_system`
+/// collections — authorization had already run against the `{db}` it ignored —
+/// while ordinary collections were unreachable, because `{db}:{collection}` was
+/// never tried.
+///
+/// Going through `Database` applies the `{db}:` prefix and the
+/// credential-collection guard, exactly as every non-transactional handler does.
+fn collection_in_database(
+    state: &AppState,
+    db_name: &str,
+    coll_name: &str,
+) -> Result<crate::storage::Collection, DbError> {
+    state
+        .storage
+        .get_database(db_name)?
+        .get_collection(coll_name)
+}
+
 pub async fn insert_document_tx(
     State(state): State<AppState>,
-    Path((_db_name, tx_id_str, coll_name)): Path<(String, String, String)>,
+    Path((db_name, tx_id_str, coll_name)): Path<(String, String, String)>,
     Json(data): Json<Value>,
 ) -> Result<Json<Value>, DbError> {
     // Parse transaction ID
@@ -135,8 +158,8 @@ pub async fn insert_document_tx(
     let tx_arc = tx_manager.get(tx_id)?;
     let mut tx = tx_arc.write().unwrap();
 
-    // Get collection
-    let collection = state.storage.get_collection(&coll_name)?;
+    // Get collection, scoped to the database named in the path (SEC-179).
+    let collection = collection_in_database(&state, &db_name, &coll_name)?;
 
     // Perform transactional insert
     let wal = tx_manager.wal().clone();
@@ -148,7 +171,7 @@ pub async fn insert_document_tx(
 
 pub async fn update_document_tx(
     State(state): State<AppState>,
-    Path((_db_name, tx_id_str, coll_name, key)): Path<(String, String, String, String)>,
+    Path((db_name, tx_id_str, coll_name, key)): Path<(String, String, String, String)>,
     Json(data): Json<Value>,
 ) -> Result<Json<Value>, DbError> {
     // Parse transaction ID
@@ -166,8 +189,8 @@ pub async fn update_document_tx(
     let tx_arc = tx_manager.get(tx_id)?;
     let mut tx = tx_arc.write().unwrap();
 
-    // Get collection
-    let collection = state.storage.get_collection(&coll_name)?;
+    // Get collection, scoped to the database named in the path (SEC-179).
+    let collection = collection_in_database(&state, &db_name, &coll_name)?;
 
     // Perform transactional update
     let wal = tx_manager.wal().clone();
@@ -179,7 +202,7 @@ pub async fn update_document_tx(
 
 pub async fn delete_document_tx(
     State(state): State<AppState>,
-    Path((_db_name, tx_id_str, coll_name, key)): Path<(String, String, String, String)>,
+    Path((db_name, tx_id_str, coll_name, key)): Path<(String, String, String, String)>,
 ) -> Result<StatusCode, DbError> {
     // Parse transaction ID
     let tx_id_value: u64 = tx_id_str
@@ -196,8 +219,8 @@ pub async fn delete_document_tx(
     let tx_arc = tx_manager.get(tx_id)?;
     let mut tx = tx_arc.write().unwrap();
 
-    // Get collection
-    let collection = state.storage.get_collection(&coll_name)?;
+    // Get collection, scoped to the database named in the path (SEC-179).
+    let collection = collection_in_database(&state, &db_name, &coll_name)?;
 
     // Perform transactional delete
     let wal = tx_manager.wal().clone();

@@ -299,6 +299,274 @@ async fn scoped_key_cannot_do_global_ops_or_cross_db() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
 
+/// SEC-178: `DOCUMENT("otherdb:collection/key")` used to hand a caller-supplied
+/// `{db}:{collection}` name straight to the storage engine, which resolves a
+/// column family by literal name. A read-only key scoped to one database could
+/// therefore read every other database on the instance — including
+/// `_system:_admins` password hashes — because per-database authorization is
+/// checked once against the `{db}` path parameter, which `DOCUMENT()` never
+/// touches.
+#[tokio::test]
+async fn document_qualified_name_cannot_cross_database_boundary() {
+    let app = create_app();
+    setup_db(&app, "victim").await;
+    setup_db(&app, "attacker").await;
+
+    // Plant a document in the victim database, as its owner.
+    let (status, _) = send(
+        &app.router,
+        "POST",
+        "/_api/database/victim/document/items",
+        &app.admin,
+        Some(json!({"_key": "k1", "card": "4111-1111-1111-1111"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // A read-only key scoped to `attacker` only.
+    let scoped = AuthService::create_jwt_with_roles(
+        "attacker_key",
+        Some(vec!["viewer".to_string()]),
+        Some(vec!["attacker".to_string()]),
+    )
+    .expect("scoped jwt");
+
+    // Control: direct access to the victim database is refused, so anything the
+    // query path returns is a genuine bypass rather than a mis-scoped key.
+    let (status, _) = send(
+        &app.router,
+        "GET",
+        "/_api/database/victim/document/items/k1",
+        &scoped,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // The attack: query the key's *own* database, reach across with a qualified
+    // name. Every shape that accepts one.
+    for query in [
+        "RETURN DOCUMENT(\"victim:items/k1\")",
+        "RETURN DOCUMENT([\"victim:items/k1\"])",
+        "RETURN DOCUMENT(\"victim:items\", \"k1\")",
+        "RETURN DOCUMENT(\"_system:_admins/admin\")",
+        "RETURN DOCUMENT(\"victim:_env/OPENAI_API_KEY\")",
+    ] {
+        let (_, body) = send(
+            &app.router,
+            "POST",
+            "/_api/database/attacker/cursor",
+            &scoped,
+            Some(json!({"query": query})),
+        )
+        .await;
+
+        let serialized = body.to_string();
+        assert!(
+            !serialized.contains("4111-1111-1111-1111"),
+            "victim document leaked via `{}`: {}",
+            query,
+            serialized
+        );
+        assert!(
+            !serialized.contains("argon2"),
+            "password hash leaked via `{}`: {}",
+            query,
+            serialized
+        );
+    }
+
+    // The qualified form still works for the executor's own database, so the
+    // fix removed the boundary crossing rather than the feature.
+    let (status, _) = send(
+        &app.router,
+        "POST",
+        "/_api/database/attacker/document/items",
+        &app.admin,
+        Some(json!({"_key": "mine", "value": "own-data"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/database/attacker/cursor",
+        &scoped,
+        Some(json!({"query": "RETURN DOCUMENT(\"attacker:items/mine\")"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.to_string().contains("own-data"),
+        "same-database qualified lookup broke: {}",
+        body
+    );
+}
+
+/// SEC-178: the refusal must not double as a directory of the instance. A
+/// foreign database and a database that does not exist have to answer alike,
+/// or `DOCUMENT()` becomes an oracle for enumerating tenants.
+#[tokio::test]
+async fn document_cross_database_refusal_does_not_confirm_existence() {
+    let app = create_app();
+    setup_db(&app, "real_neighbour").await;
+    setup_db(&app, "mine").await;
+
+    let scoped = AuthService::create_jwt_with_roles(
+        "probe_key",
+        Some(vec!["viewer".to_string()]),
+        Some(vec!["mine".to_string()]),
+    )
+    .expect("scoped jwt");
+
+    let ask = |query: &'static str| {
+        let router = app.router.clone();
+        let token = scoped.clone();
+        async move {
+            send(
+                &router,
+                "POST",
+                "/_api/database/mine/cursor",
+                &token,
+                Some(json!({ "query": query })),
+            )
+            .await
+        }
+    };
+
+    let (existing_status, existing_body) =
+        ask("RETURN DOCUMENT(\"real_neighbour:items/k1\")").await;
+    let (absent_status, absent_body) = ask("RETURN DOCUMENT(\"no_such_db:items/k1\")").await;
+
+    assert_eq!(
+        existing_status, absent_status,
+        "status differs between an existing and an absent database: {} vs {}",
+        existing_body, absent_body
+    );
+    assert!(
+        !existing_body.to_string().contains("real_neighbour")
+            || absent_body.to_string().contains("no_such_db"),
+        "error body reveals which databases exist: {} vs {}",
+        existing_body,
+        absent_body
+    );
+}
+
+/// SEC-179: the transactional document endpoints bound the `{db}` path segment
+/// to `_db_name` and never used it, passing the bare collection name to the
+/// storage engine — which tries the literal name, then falls back to
+/// `_system:{name}`. A key scoped to one database could therefore write into
+/// `_system` collections, and ordinary collections were unreachable because
+/// `{db}:{collection}` was never tried.
+#[tokio::test]
+async fn transactional_document_ops_are_scoped_to_the_path_database() {
+    let app = create_app();
+    setup_db(&app, "tenant_x").await;
+
+    let scoped = AuthService::create_jwt_with_roles(
+        "tenant_key",
+        Some(vec!["editor".to_string()]),
+        Some(vec!["tenant_x".to_string()]),
+    )
+    .expect("scoped jwt");
+
+    let begin = |token: String| {
+        let router = app.router.clone();
+        async move {
+            let (status, body) = send(
+                &router,
+                "POST",
+                "/_api/database/tenant_x/transaction/begin",
+                &token,
+                Some(json!({})),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "begin transaction: {}", body);
+            body["id"].as_str().expect("transaction id").to_string()
+        }
+    };
+
+    // The correctness half of the ticket: a transactional insert into an
+    // ordinary collection of the named database must work. It used to 404,
+    // because only the bare name and `_system:` were ever tried.
+    let tx = begin(scoped.clone()).await;
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        &format!("/_api/database/tenant_x/transaction/{}/document/items", tx),
+        &scoped,
+        Some(json!({"_key": "in_tx", "value": 1})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "transactional insert into an ordinary collection failed: {}",
+        body
+    );
+    assert!(
+        body["_id"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("tenant_x:"),
+        "document landed outside the path database: {}",
+        body
+    );
+
+    let (status, _) = send(
+        &app.router,
+        "POST",
+        &format!("/_api/database/tenant_x/transaction/{}/commit", tx),
+        &scoped,
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // The security half: naming a `_system` collection must not reach it. The
+    // request is scoped to tenant_x, so it can only ever mean
+    // `tenant_x:_env` — which the credential guard refuses.
+    let tx = begin(scoped.clone()).await;
+    let (status, body) = send(
+        &app.router,
+        "PUT",
+        &format!(
+            "/_api/database/tenant_x/transaction/{}/document/_env/OPENAI_API_KEY",
+            tx
+        ),
+        &scoped,
+        Some(json!({"value": "sk-HIJACKED"})),
+    )
+    .await;
+    assert!(
+        status != StatusCode::OK,
+        "transactional write reached a credential collection: {} {}",
+        status,
+        body
+    );
+    assert!(
+        !body.to_string().contains("_system:"),
+        "response references a _system collection: {}",
+        body
+    );
+
+    // And the instance-wide credential is untouched.
+    let (_, body) = send(
+        &app.router,
+        "GET",
+        "/_api/database/_system/env",
+        &app.admin,
+        None,
+    )
+    .await;
+    assert!(
+        !body.to_string().contains("sk-HIJACKED"),
+        "global _env was overwritten from a scoped transaction: {}",
+        body
+    );
+}
+
 #[tokio::test]
 async fn list_databases_filtered_by_permission() {
     let app = create_app();
@@ -526,17 +794,22 @@ async fn credential_collections_are_unreachable_via_sdbql() {
     setup_db(&app, "envq").await;
     seed_env_secret(&app, "envq", "OPENAI_API_KEY", "sk-secret").await;
 
-    // Every shape that names the collection: a FOR source, DOCUMENT() with a
-    // relative id, and DOCUMENT() with a fully-qualified `db:collection` id
-    // (which used to reach the storage engine directly, bypassing the
-    // database context entirely).
+    // Every shape that names the collection *within this database*: a FOR
+    // source, DOCUMENT() with a relative id, and DOCUMENT() with a qualified
+    // `envq:collection` id (which used to reach the storage engine directly,
+    // bypassing the database context entirely).
+    //
+    // `_system:_admins` is deliberately not in this list: since SEC-178 a
+    // qualified name pointing at another database is rejected as
+    // `CollectionNotFound` before the credential guard is consulted, which
+    // leaks strictly less — 403 would confirm that `_system:_admins` exists.
+    // It is asserted separately below.
     for query in [
         "FOR d IN _env RETURN d",
         "RETURN DOCUMENT(\"_env/OPENAI_API_KEY\")",
         "RETURN DOCUMENT(\"envq:_env/OPENAI_API_KEY\")",
         "RETURN DOCUMENT(\"_env\", \"OPENAI_API_KEY\")",
         "FOR d IN _admins RETURN d",
-        "RETURN DOCUMENT(\"_system:_admins/admin\")",
     ] {
         let (status, body) = send(
             &app.router,
@@ -566,6 +839,23 @@ async fn credential_collections_are_unreachable_via_sdbql() {
             body
         );
     }
+
+    // A qualified name reaching into `_system` is refused as a foreign
+    // database, and must still surrender nothing.
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/database/envq/cursor",
+        &app.viewer,
+        Some(json!({"query": "RETURN DOCUMENT(\"_system:_admins/admin\")"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "unexpected status: {}", body);
+    assert!(
+        !body.to_string().contains("password_hash") && !body.to_string().contains("argon2"),
+        "password hash present: {}",
+        body
+    );
 }
 
 #[tokio::test]
