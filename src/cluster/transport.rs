@@ -238,7 +238,8 @@ mod cluster_auth_tests {
 
     #[test]
     fn a_message_signed_with_another_secret_is_rejected() {
-        let sealed = seal_cluster_message(&message(), Some("some-other-cluster-secret-32b")).unwrap();
+        let sealed =
+            seal_cluster_message(&message(), Some("some-other-cluster-secret-32b")).unwrap();
         assert!(open_cluster_message(&sealed, Some(SECRET)).is_err());
     }
 
@@ -262,7 +263,9 @@ mod cluster_auth_tests {
     fn the_refusal_says_what_to_configure() {
         // An operator meets this at cluster start-up. "Refused" alone sends
         // them to the network; naming the setting sends them to the fix.
-        let err = seal_cluster_message(&message(), None).unwrap_err().to_string();
+        let err = seal_cluster_message(&message(), None)
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("cluster.keyfile"), "{err}");
         assert!(err.contains("every node"), "{err}");
     }

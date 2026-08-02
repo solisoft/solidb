@@ -37,6 +37,14 @@ struct Args {
     #[arg(long)]
     node_id: Option<String>,
 
+    /// The address peers should use to reach this node.
+    ///
+    /// Defaults to --host. Required when --host is 0.0.0.0, because a node
+    /// cannot guess which of its addresses a peer can route to, and guessing
+    /// loopback means advertising "me" to everyone.
+    #[arg(long)]
+    advertise: Option<String>,
+
     /// Peer nodes to replicate with (e.g., --peer 192.168.1.2:6746)
     #[arg(long = "peer")]
     peers: Vec<String>,
@@ -234,8 +242,38 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     // Default to multiplexing (same port) if replication_port is not set
     let replication_port = args.replication_port.unwrap_or(args.port);
 
-    let api_address = format!("127.0.0.1:{}", args.port);
-    let repl_address = format!("127.0.0.1:{}", replication_port);
+    // The address peers are told to reach this node on.
+    //
+    // Both of these were hardcoded to `127.0.0.1`, which means a node in a
+    // multi-machine cluster advertised itself as "me" to every peer. The
+    // cluster came up, logged nothing unusual, and replicated nothing —
+    // measured on two Scaleway instances. Same shape as the SoliKV gossip
+    // server, which bound loopback unconditionally for the same reason: the
+    // address a node *listens* on and the address it *advertises* are
+    // different questions, and only one of them can be guessed.
+    //
+    // `--host 0.0.0.0` is precisely the case that cannot be guessed, so with
+    // peers configured it is refused rather than defaulted. A cluster that
+    // silently cannot replicate is worse than one that will not start.
+    let advertise = args
+        .advertise
+        .clone()
+        .or_else(|| args.host.clone())
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+    if !args.peers.is_empty() && is_unroutable_advertise(&advertise) {
+        eprintln!(
+            "ERROR: --peer is set but this node would advertise itself as {advertise:?}, which \
+             every peer reads as its own loopback."
+        );
+        eprintln!(
+            "       Set --advertise to the address peers can reach this node on, or bind \
+             --host to that address."
+        );
+        std::process::exit(1);
+    }
+
+    let api_address = format!("{}:{}", advertise, args.port);
+    let repl_address = format!("{}:{}", advertise, replication_port);
 
     let local_node = solidb::cluster::node::Node::new(
         node_id.clone(),
@@ -936,4 +974,67 @@ async fn shutdown_signal(storage: Arc<StorageEngine>) {
     tracing::info!("Shutdown signal received, flushing stats...");
     storage.flush_all_stats();
     tracing::info!("Shutdown complete");
+}
+
+/// Whether an advertised address is one a peer could never use.
+///
+/// Loopback tells a peer to talk to itself. The unspecified address is the one
+/// that looks harmless in a systemd unit and means "every interface" — a fine
+/// thing to *bind* and a meaningless thing to *advertise*.
+fn is_unroutable_advertise(address: &str) -> bool {
+    let host = address.trim();
+    if host.is_empty()
+        || host == "0.0.0.0"
+        || host == "::"
+        || host == "[::]"
+        || host.eq_ignore_ascii_case("localhost")
+    {
+        return true;
+    }
+    host.parse::<std::net::IpAddr>()
+        .map(|ip| ip.is_loopback() || ip.is_unspecified())
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod advertise_tests {
+    use super::is_unroutable_advertise;
+
+    #[test]
+    fn loopback_cannot_be_advertised_to_a_peer() {
+        // The value that shipped: every node told every peer to talk to
+        // itself, and the cluster replicated nothing while logging nothing
+        // unusual. Measured on two Scaleway instances.
+        assert!(is_unroutable_advertise("127.0.0.1"));
+        assert!(is_unroutable_advertise("::1"));
+        // The written-out form too: it does not parse as an address, so the
+        // IP check never sees it, and advertising it is the same mistake.
+        assert!(is_unroutable_advertise("localhost"));
+    }
+
+    #[test]
+    fn the_unspecified_address_cannot_be_advertised_either() {
+        // Fine to bind, meaningless to advertise — and it is the value that
+        // looks harmless in a systemd unit.
+        assert!(is_unroutable_advertise("0.0.0.0"));
+        assert!(is_unroutable_advertise("::"));
+        assert!(is_unroutable_advertise("[::]"));
+        assert!(is_unroutable_advertise(""));
+        assert!(is_unroutable_advertise("   "));
+    }
+
+    #[test]
+    fn a_routable_address_is_accepted() {
+        assert!(!is_unroutable_advertise("51.15.248.118"));
+        assert!(!is_unroutable_advertise("10.0.0.7"));
+        assert!(!is_unroutable_advertise("2001:db8::1"));
+    }
+
+    #[test]
+    fn a_hostname_is_accepted_rather_than_resolved() {
+        // Resolving here would let a DNS answer decide whether a node may
+        // start, and the answer can differ from the one a peer gets. An
+        // operator who writes a name has said what they mean.
+        assert!(!is_unroutable_advertise("db1.internal.example"));
+    }
 }
