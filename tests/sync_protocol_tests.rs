@@ -212,7 +212,7 @@ fn test_sync_message_auth_challenge() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::AuthChallenge {
@@ -235,7 +235,7 @@ fn test_sync_message_auth_response() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::AuthResponse { hmac } => {
@@ -253,7 +253,7 @@ fn test_sync_message_auth_result() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::AuthResult { success, message } => {
@@ -273,7 +273,7 @@ fn test_sync_message_incremental_sync_request() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::IncrementalSyncRequest {
@@ -296,7 +296,7 @@ fn test_sync_message_full_sync_request() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::FullSyncRequest { from_node } => {
@@ -315,7 +315,7 @@ fn test_sync_message_full_sync_start() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::FullSyncStart {
@@ -340,7 +340,7 @@ fn test_sync_message_heartbeat() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::Heartbeat {
@@ -360,7 +360,7 @@ fn test_sync_message_heartbeat_ack() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::HeartbeatAck { node_id } => {
@@ -379,7 +379,7 @@ fn test_sync_message_node_join() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::NodeJoin {
@@ -402,7 +402,7 @@ fn test_sync_message_node_leave() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::NodeLeave { node_id } => {
@@ -419,7 +419,7 @@ fn test_sync_message_node_dead() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::NodeDead { node_id } => {
@@ -453,7 +453,7 @@ fn test_sync_message_sync_batch() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::SyncBatch {
@@ -493,7 +493,7 @@ fn test_sync_message_shard_rebalance() {
     };
 
     let encoded = msg.encode();
-    let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+    let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
     match decoded {
         SyncMessage::ShardRebalance {

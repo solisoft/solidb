@@ -236,9 +236,20 @@ impl ClusterManager {
                     peers,
                 };
 
-                // We would need to send back response here.
-                // Currently Transport specific send requires address.
-                let _ = self.transport.send(&node.address, response).await;
+                // Logged, not discarded. This used to be `let _ = …`, and it is
+                // the only thing that tells the joiner who else is in the
+                // cluster: a failure here leaves a node that joined
+                // successfully from the seed's point of view and knows nobody
+                // from its own. That asymmetry looks like a working cluster
+                // until someone reads the new node's own view.
+                if let Err(e) = self.transport.send(&node.address, response).await {
+                    error!(
+                        "Could not answer {}'s join at {}: {}. It is a member here, and it \
+                         does not know that — it will keep its own node list empty until it \
+                         retries.",
+                        node.id, node.address, e
+                    );
+                }
             }
             ClusterMessage::JoinResponse { success, peers } => {
                 if success {

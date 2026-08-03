@@ -412,6 +412,45 @@ impl SyncMessage {
     pub fn decode(bytes: &[u8]) -> Result<Self, bincode::Error> {
         bincode::deserialize(bytes)
     }
+
+    /// Bytes of frame header [`encode`] writes before the payload.
+    ///
+    /// Named rather than left as a literal, because thirteen tests hard-coded
+    /// `4` and went on hard-coding it after the header grew to five. They kept
+    /// failing with the same "expected variant index 0 <= i < 27" error the
+    /// header change was made to fix, which reads as a regression in the thing
+    /// that was just repaired.
+    pub const HEADER_LEN: usize = 5;
+
+    /// Decodes a whole frame, header included.
+    ///
+    /// The counterpart to [`encode`], and the reason it exists: `encode` returns
+    /// a *frame* while `decode` takes a *body*, so every caller had to slice off
+    /// a header whose length only lives in `encode`. That asymmetry is what let a
+    /// one-byte change break a suite of tests silently — they were slicing a
+    /// constant nobody had told them about.
+    pub fn decode_frame(frame: &[u8]) -> Result<Self, bincode::Error> {
+        use bincode::ErrorKind;
+        if frame.len() < Self::HEADER_LEN {
+            return Err(Box::new(ErrorKind::Custom(format!(
+                "frame is {} bytes, shorter than the {}-byte header",
+                frame.len(),
+                Self::HEADER_LEN
+            ))));
+        }
+        let declared = u32::from_be_bytes([frame[1], frame[2], frame[3], frame[4]]) as usize;
+        let body = &frame[Self::HEADER_LEN..];
+        if body.len() != declared {
+            // Checked rather than trusted: a body shorter than its own header
+            // claims is a truncated read, and decoding it anyway produces the
+            // same unhelpful discriminant error as a framing mistake.
+            return Err(Box::new(ErrorKind::Custom(format!(
+                "frame declares {declared} bytes of payload and carries {}",
+                body.len()
+            ))));
+        }
+        Self::decode(body)
+    }
 }
 
 impl SyncEntry {
@@ -533,9 +572,7 @@ mod tests {
         };
 
         let encoded = msg.encode();
-        // Skip length prefix (4 bytes)
-        // 1 flag byte + 4 length bytes, matching what the pool reads.
-        let decoded = SyncMessage::decode(&encoded[5..]).unwrap();
+        let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
         match decoded {
             SyncMessage::Heartbeat {
@@ -601,5 +638,33 @@ mod tests {
         let decoded = decode_documents(&encode_documents(&admins).unwrap()).unwrap();
         assert_eq!(decoded, admins);
         assert_eq!(decoded[0]["username"], "admin");
+    }
+
+    #[test]
+    fn a_frame_shorter_than_its_own_header_is_refused() {
+        // A truncated read. Decoding it anyway yields the same "expected variant
+        // index" error a framing mistake does, which is how one gets mistaken
+        // for the other.
+        let error = SyncMessage::decode_frame(&[0, 0, 0])
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("shorter than"), "{error}");
+    }
+
+    #[test]
+    fn a_frame_that_lies_about_its_length_is_refused() {
+        let mut frame = SyncMessage::FullSyncComplete { final_sequence: 7 }.encode();
+        frame.push(0xff);
+        let error = SyncMessage::decode_frame(&frame).unwrap_err().to_string();
+        assert!(error.contains("declares"), "{error}");
+    }
+
+    #[test]
+    fn the_header_length_matches_what_encode_writes() {
+        // The constant and the writer must agree. They did not for one commit,
+        // and thirteen tests carried the old value.
+        let frame = SyncMessage::FullSyncComplete { final_sequence: 1 }.encode();
+        let declared = u32::from_be_bytes([frame[1], frame[2], frame[3], frame[4]]) as usize;
+        assert_eq!(frame.len(), SyncMessage::HEADER_LEN + declared);
     }
 }

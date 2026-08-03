@@ -39,6 +39,10 @@ struct Args {
 
     /// The address peers should use to reach this node.
     ///
+    /// Either a bare host (`10.0.0.1`) or a host with a port
+    /// (`10.0.0.1:6746`). With a port, that is the port peers dial for
+    /// replication; without one, --replication-port is appended.
+    ///
     /// Defaults to --host. Required when --host is 0.0.0.0, because a node
     /// cannot guess which of its addresses a peer can route to, and guessing
     /// loopback means advertising "me" to everyone.
@@ -260,11 +264,8 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         .clone()
         .or_else(|| args.host.clone())
         .unwrap_or_else(|| "127.0.0.1".to_string());
-    if !args.peers.is_empty() && is_unroutable_advertise(&advertise) {
-        eprintln!(
-            "ERROR: --peer is set but this node would advertise itself as {advertise:?}, which \
-             every peer reads as its own loopback."
-        );
+    if let Err(reason) = check_advertise(&advertise, &args.peers) {
+        eprintln!("ERROR: {reason}");
         eprintln!(
             "       Set --advertise to the address peers can reach this node on, or bind \
              --host to that address."
@@ -272,8 +273,17 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         std::process::exit(1);
     }
 
-    let api_address = format!("{}:{}", advertise, args.port);
-    let repl_address = format!("{}:{}", advertise, replication_port);
+    // `--advertise` may already carry a port, and appending a second one used to
+    // produce `10.0.0.1:6746:6746`. That address fails to resolve, the failure
+    // was on a discarded `Result`, and the result was a cluster that looked
+    // healthy from the seed while the joining node's own node list stayed empty
+    // — the join succeeded, the answer never arrived.
+    //
+    // Accepted in both forms rather than refused, because both are things people
+    // write: the flag's own help says "the address peers should use", which reads
+    // as host:port, and its default is `--host`, which is a bare host.
+    let api_address = with_port(&advertise, args.port);
+    let repl_address = with_port(&advertise, replication_port);
 
     let local_node = solidb::cluster::node::Node::new(
         node_id.clone(),
@@ -1007,17 +1017,110 @@ async fn shutdown_signal(storage: Arc<StorageEngine>) {
     tracing::info!("Shutdown complete");
 }
 
+/// Whether this node can be reached at what it is about to advertise.
+///
+/// The rule is about the *pair*, not the address alone. Advertising loopback to a
+/// peer on another machine is meaningless — that peer reads it as itself, the
+/// cluster comes up, and nothing replicates while nothing looks wrong; measured
+/// on two Scaleway instances. But when every peer is *also* loopback, the whole
+/// cluster is on one host, and `127.0.0.1:6746` and `127.0.0.1:6747` are two
+/// genuinely different endpoints.
+///
+/// An earlier version refused loopback whenever `--peer` was set, which made a
+/// single-host cluster unstartable — and single-host is how anyone first tries
+/// this. It survived only because a related bug let the `host:port` form slip
+/// past the check entirely.
+fn check_advertise(advertise: &str, peers: &[String]) -> Result<(), String> {
+    if peers.is_empty() {
+        return Ok(());
+    }
+    if !is_unroutable_advertise(advertise) {
+        return Ok(());
+    }
+
+    // The unspecified address is never advertisable, on one host or a hundred:
+    // it is a bind address, and no peer can dial "every interface".
+    let host = advertised_host(advertise);
+    let unspecified = host.is_empty()
+        || host == "0.0.0.0"
+        || host == "::"
+        || host
+            .parse::<std::net::IpAddr>()
+            .map(|ip| ip.is_unspecified())
+            .unwrap_or(false);
+    if unspecified {
+        return Err(format!(
+            "--peer is set but this node would advertise itself as {advertise:?}, which is a \
+             bind address, not one a peer can dial"
+        ));
+    }
+
+    // Loopback, then. Fine if and only if every peer is loopback too.
+    let elsewhere: Vec<&String> = peers
+        .iter()
+        .filter(|peer| !is_unroutable_advertise(peer))
+        .collect();
+    if elsewhere.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "--peer is set but this node would advertise itself as {advertise:?}, which every peer \
+         reads as its own loopback — and {} is not on this host",
+        elsewhere[0]
+    ))
+}
+
+/// Attaches a port to an advertised address, unless it already has one.
+///
+/// `--advertise` is written both ways in practice, and appending unconditionally
+/// turned `10.0.0.1:6746` into `10.0.0.1:6746:6746`. That does not resolve, and
+/// the one place it mattered swallowed the error: a joining node was admitted by
+/// the seed and never received the answer naming its peers, so the seed's view
+/// was complete and the joiner's was empty. Nothing logged, nothing failed.
+///
+/// "Already has one" is decided by parsing, not by counting colons. A bare IPv6
+/// address is full of them (`::1`), and treating its last group as a port is the
+/// same class of mistake in the other direction.
+fn with_port(advertise: &str, port: u16) -> String {
+    let host = advertise.trim();
+    // `[::1]:6746` and `10.0.0.1:6746` both parse; `::1` and `10.0.0.1` do not.
+    if host.parse::<std::net::SocketAddr>().is_ok() {
+        return host.to_string();
+    }
+    // A bracketed IPv6 host with no port: `[::1]`.
+    if host.starts_with('[') && host.ends_with(']') {
+        return format!("{host}:{port}");
+    }
+    // A bare IPv6 address needs brackets before a port can be appended, or the
+    // result is unparseable in a way that only shows up at connect time.
+    if host.parse::<std::net::Ipv6Addr>().is_ok() {
+        return format!("[{host}]:{port}");
+    }
+    // A hostname with a port, which no IP parser will accept: `db1.example.com:6746`.
+    if let Some((name, tail)) = host.rsplit_once(':') {
+        if !name.is_empty() && !name.contains(':') && tail.parse::<u16>().is_ok() {
+            return host.to_string();
+        }
+    }
+    format!("{host}:{port}")
+}
+
 /// Whether an advertised address is one a peer could never use.
 ///
 /// Loopback tells a peer to talk to itself. The unspecified address is the one
 /// that looks harmless in a systemd unit and means "every interface" — a fine
 /// thing to *bind* and a meaningless thing to *advertise*.
+///
+/// Takes the value as written, so it has to cope with a port being present.
 fn is_unroutable_advertise(address: &str) -> bool {
-    let host = address.trim();
+    // The port is stripped first. Without this, `--advertise 127.0.0.1:6746`
+    // stopped parsing as an IP address and slipped straight through the guard —
+    // the guard caught the bare form and missed the one an operator following the
+    // error message would actually type.
+    let host = advertised_host(address);
     if host.is_empty()
         || host == "0.0.0.0"
         || host == "::"
-        || host == "[::]"
         || host.eq_ignore_ascii_case("localhost")
     {
         return true;
@@ -1027,9 +1130,28 @@ fn is_unroutable_advertise(address: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// The host part of an advertised address, with any port and brackets removed.
+fn advertised_host(address: &str) -> String {
+    let value = address.trim();
+    if let Ok(socket) = value.parse::<std::net::SocketAddr>() {
+        return socket.ip().to_string();
+    }
+    if let Some(inner) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return inner.to_string();
+    }
+    // Bare IPv6 keeps all its colons; only split when the tail is a port and the
+    // head holds none.
+    if let Some((name, tail)) = value.rsplit_once(':') {
+        if !name.is_empty() && !name.contains(':') && tail.parse::<u16>().is_ok() {
+            return name.to_string();
+        }
+    }
+    value.to_string()
+}
+
 #[cfg(test)]
 mod advertise_tests {
-    use super::is_unroutable_advertise;
+    use super::{advertised_host, check_advertise, is_unroutable_advertise, with_port};
 
     #[test]
     fn loopback_cannot_be_advertised_to_a_peer() {
@@ -1067,5 +1189,125 @@ mod advertise_tests {
         // start, and the answer can differ from the one a peer gets. An
         // operator who writes a name has said what they mean.
         assert!(!is_unroutable_advertise("db1.internal.example"));
+    }
+
+    #[test]
+    fn an_advertise_that_already_has_a_port_does_not_get_a_second_one() {
+        // The bug, exactly. `10.0.0.1:6746:6746` does not resolve, the failure
+        // was on a discarded Result, and a joining node ended up admitted by the
+        // seed while knowing nobody itself.
+        assert_eq!(with_port("10.0.0.1:6746", 6746), "10.0.0.1:6746");
+        assert_eq!(with_port("10.0.0.1:6746", 9999), "10.0.0.1:6746");
+    }
+
+    #[test]
+    fn a_bare_host_still_gets_the_port_appended() {
+        assert_eq!(with_port("10.0.0.1", 6746), "10.0.0.1:6746");
+        assert_eq!(with_port("db1.example.com", 6746), "db1.example.com:6746");
+    }
+
+    #[test]
+    fn a_hostname_carrying_a_port_is_recognised_even_though_no_ip_parser_accepts_it() {
+        assert_eq!(
+            with_port("db1.example.com:6746", 9999),
+            "db1.example.com:6746"
+        );
+    }
+
+    #[test]
+    fn a_bare_ipv6_address_is_bracketed_before_a_port_is_added() {
+        // Its own colons are not a port. Appending one without brackets gives
+        // `::1:6746`, which parses as a different IPv6 address entirely — a
+        // failure that only appears at connect time.
+        assert_eq!(with_port("2001:db8::1", 6746), "[2001:db8::1]:6746");
+        assert_eq!(with_port("::1", 6746), "[::1]:6746");
+    }
+
+    #[test]
+    fn a_bracketed_ipv6_address_is_handled_both_ways() {
+        assert_eq!(with_port("[2001:db8::1]", 6746), "[2001:db8::1]:6746");
+        assert_eq!(with_port("[2001:db8::1]:6746", 9999), "[2001:db8::1]:6746");
+    }
+
+    #[test]
+    fn a_port_does_not_let_loopback_past_the_guard() {
+        // The hole the fix opened and closed in the same change: with a port
+        // attached the value stopped parsing as an IP, so the guard caught the
+        // bare form and missed the one an operator would type after reading its
+        // own error message.
+        assert!(is_unroutable_advertise("127.0.0.1:6746"));
+        assert!(is_unroutable_advertise("[::1]:6746"));
+        assert!(is_unroutable_advertise("localhost:6746"));
+        assert!(is_unroutable_advertise("0.0.0.0:6746"));
+    }
+
+    #[test]
+    fn a_routable_address_passes_in_either_form() {
+        assert!(!is_unroutable_advertise("10.0.0.1"));
+        assert!(!is_unroutable_advertise("10.0.0.1:6746"));
+        assert!(!is_unroutable_advertise("db1.example.com:6746"));
+        assert!(!is_unroutable_advertise("[2001:db8::1]:6746"));
+    }
+
+    #[test]
+    fn the_host_is_extracted_without_brackets_or_port() {
+        assert_eq!(advertised_host("10.0.0.1:6746"), "10.0.0.1");
+        assert_eq!(advertised_host("[2001:db8::1]:6746"), "2001:db8::1");
+        assert_eq!(advertised_host("2001:db8::1"), "2001:db8::1");
+        assert_eq!(advertised_host("db1.example.com"), "db1.example.com");
+    }
+
+    fn peers(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_single_host_cluster_on_loopback_is_allowed() {
+        // How anyone first tries this. Two ports on one machine are two real
+        // endpoints, and an earlier version of the guard refused it — making the
+        // first thing a person does impossible.
+        assert!(check_advertise("127.0.0.1:6747", &peers(&["127.0.0.1:6746"])).is_ok());
+        assert!(check_advertise("[::1]:6747", &peers(&["[::1]:6746"])).is_ok());
+    }
+
+    #[test]
+    fn loopback_is_refused_the_moment_one_peer_is_elsewhere() {
+        // The case the guard exists for: that peer reads 127.0.0.1 as itself.
+        let error = check_advertise("127.0.0.1:6746", &peers(&["10.0.0.2:6746"])).unwrap_err();
+        assert!(error.contains("its own loopback"), "{error}");
+        assert!(error.contains("10.0.0.2:6746"), "{error}");
+    }
+
+    #[test]
+    fn a_mixed_peer_list_is_refused_rather_than_averaged() {
+        // One remote peer is enough. A guard that allowed this because *most*
+        // peers were local would fail exactly where it matters.
+        assert!(check_advertise(
+            "127.0.0.1:6746",
+            &peers(&["127.0.0.1:6747", "10.0.0.2:6746"])
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn the_unspecified_address_is_refused_even_on_one_host() {
+        // Not a routing question: no peer can dial "every interface", however
+        // close it is.
+        let error = check_advertise("0.0.0.0:6746", &peers(&["127.0.0.1:6747"])).unwrap_err();
+        assert!(error.contains("bind address"), "{error}");
+        assert!(check_advertise("::", &peers(&["127.0.0.1:6747"])).is_err());
+    }
+
+    #[test]
+    fn no_peers_means_nothing_to_check() {
+        // A single node advertises to nobody, so any value is harmless.
+        assert!(check_advertise("127.0.0.1", &[]).is_ok());
+        assert!(check_advertise("0.0.0.0", &[]).is_ok());
+    }
+
+    #[test]
+    fn a_routable_advertise_passes_whatever_the_peers_are() {
+        assert!(check_advertise("10.0.0.1:6746", &peers(&["10.0.0.2:6746"])).is_ok());
+        assert!(check_advertise("10.0.0.1:6746", &peers(&["127.0.0.1:6747"])).is_ok());
     }
 }
