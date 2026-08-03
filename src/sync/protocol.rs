@@ -191,7 +191,9 @@ pub enum SyncMessage {
     FullSyncDocuments {
         database: String,
         collection: String,
-        /// Raw bincode-encoded documents, possibly LZ4 compressed
+        /// The batch, encoded by [`encode_documents`] and possibly LZ4
+        /// compressed. Opaque here on purpose: only that pair of functions may
+        /// decide what is inside.
         data: Vec<u8>,
         compressed: bool,
         doc_count: u32,
@@ -339,6 +341,39 @@ pub struct ConflictEntry {
     pub remote_data: Option<Vec<u8>>,
     /// Timestamp when conflict was detected
     pub detected_at: u64,
+}
+
+/// Encodes a batch of documents for [`SyncMessage::FullSyncDocuments`].
+///
+/// # Why not bincode
+///
+/// It was bincode, and **every full sync failed at its first batch**. The error
+/// is worth quoting because it names its own cause:
+///
+/// ```text
+/// Full sync request failed: Decode error: Bincode does not support the
+/// serde::Deserializer::deserialize_any method
+/// ```
+///
+/// A document is a `serde_json::Value`, which is self-describing: deserialising
+/// one means asking the format "what comes next?", and bincode cannot answer
+/// because it writes no type information. Serialising worked, so the sender
+/// reported success and the receiver could never decode a single batch. That
+/// asymmetry is why the bug survived: the seed's own view showed the new member
+/// as healthy while the member had nothing.
+///
+/// JSON for the payload, then. It is bulkier, which is what the LZ4 layer above
+/// is for, and it is the format the documents are already in.
+///
+/// Both directions live in one place so the two ends cannot be changed apart —
+/// which is exactly how they came to disagree.
+pub fn encode_documents(batch: &[serde_json::Value]) -> Result<Vec<u8>, String> {
+    serde_json::to_vec(batch).map_err(|e| format!("encoding {} document(s): {e}", batch.len()))
+}
+
+/// Decodes what [`encode_documents`] produced.
+pub fn decode_documents(data: &[u8]) -> Result<Vec<serde_json::Value>, String> {
+    serde_json::from_slice(data).map_err(|e| format!("decoding a document batch: {e}"))
 }
 
 impl SyncMessage {
@@ -520,5 +555,51 @@ mod tests {
 
         // Same key should give same shard
         assert_eq!(compute_shard_id("doc123", 8), shard);
+    }
+
+    #[test]
+    fn a_document_batch_survives_a_round_trip() {
+        // The test that was missing. Encoding used to succeed and decoding used
+        // to fail every single time, so nothing short of a round trip would have
+        // caught it — and no round trip existed.
+        let batch = vec![
+            serde_json::json!({"_key": "a", "n": 1, "nested": {"deep": [1, 2, 3]}}),
+            serde_json::json!({"_key": "b", "text": "héllo", "flag": true, "nil": null}),
+            serde_json::json!({"_key": "c", "float": 1.5, "big": 9007199254740991i64}),
+        ];
+        let encoded = encode_documents(&batch).expect("encodes");
+        let decoded = decode_documents(&encoded).expect("decodes");
+        assert_eq!(decoded, batch);
+    }
+
+    #[test]
+    fn an_empty_batch_round_trips_as_empty() {
+        // Distinguishable from a failure that used to produce empty bytes.
+        let encoded = encode_documents(&[]).expect("encodes");
+        assert!(decode_documents(&encoded).expect("decodes").is_empty());
+    }
+
+    #[test]
+    fn garbage_fails_to_decode_rather_than_yielding_no_documents() {
+        // "Zero documents" and "could not read the batch" must not be the same
+        // outcome: the first reports a successful sync of nothing.
+        assert!(decode_documents(b"\x00\x01\x02not json").is_err());
+    }
+
+    #[test]
+    fn the_system_collections_a_second_node_needs_survive_the_round_trip() {
+        // The shape that actually mattered: `_admins` is what makes a joining
+        // node authenticatable, and it never arrived because this batch could
+        // not be decoded.
+        let admins = vec![serde_json::json!({
+            "_key": "admin",
+            "username": "admin",
+            "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA",
+            "roles": ["admin"],
+            "created_at": 1785000000
+        })];
+        let decoded = decode_documents(&encode_documents(&admins).unwrap()).unwrap();
+        assert_eq!(decoded, admins);
+        assert_eq!(decoded[0]["username"], "admin");
     }
 }
