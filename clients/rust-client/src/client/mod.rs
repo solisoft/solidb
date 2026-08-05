@@ -67,14 +67,29 @@ impl SoliDBClient {
         })
     }
 
-    fn get_next_connection(&mut self) -> &mut PooledConnection {
+    fn next_connection_index(&mut self) -> usize {
         let idx = self.next_index;
         self.next_index = (self.next_index + 1) % self.pool.len();
-        &mut self.pool[idx]
+        idx
     }
 
     pub(crate) async fn send_command(&mut self, command: Command) -> Result<Response, DriverError> {
-        let conn = self.get_next_connection();
+        let idx = self.next_connection_index();
+        self.send_command_on(idx, command).await
+    }
+
+    /// Send on one specific pooled connection.
+    ///
+    /// Needed because **authentication is per-socket state** in this protocol:
+    /// the server records it against the connection, not against a client
+    /// identity or token. `auth()` therefore has to reach every connection in
+    /// the pool, which it cannot do through the round-robin `send_command`.
+    pub(crate) async fn send_command_on(
+        &mut self,
+        idx: usize,
+        command: Command,
+    ) -> Result<Response, DriverError> {
+        let conn = &mut self.pool[idx];
 
         let data = encode_command(&command)?;
         conn.write
@@ -147,22 +162,13 @@ impl SoliDBClient {
         username: &str,
         password: &str,
     ) -> Result<(), DriverError> {
-        let response = self
-            .send_command(Command::Auth {
-                database: database.to_string(),
-                username: username.to_string(),
-                password: password.to_string(),
-                api_key: None,
-            })
-            .await?;
-
-        match response {
-            Response::Ok { .. } => Ok(()),
-            Response::Error { error } => Err(error),
-            _ => Err(DriverError::ProtocolError(
-                "Unexpected response".to_string(),
-            )),
-        }
+        self.authenticate_pool(Command::Auth {
+            database: database.to_string(),
+            username: username.to_string(),
+            password: password.to_string(),
+            api_key: None,
+        })
+        .await
     }
 
     pub async fn auth_with_api_key(
@@ -170,21 +176,36 @@ impl SoliDBClient {
         database: &str,
         api_key: &str,
     ) -> Result<(), DriverError> {
-        let response = self
-            .send_command(Command::Auth {
-                database: database.to_string(),
-                username: String::new(),
-                password: String::new(),
-                api_key: Some(api_key.to_string()),
-            })
-            .await?;
+        self.authenticate_pool(Command::Auth {
+            database: database.to_string(),
+            username: String::new(),
+            password: String::new(),
+            api_key: Some(api_key.to_string()),
+        })
+        .await
+    }
 
-        match response {
-            Response::Ok { .. } => Ok(()),
-            Response::Error { error } => Err(error),
-            _ => Err(DriverError::ProtocolError(
-                "Unexpected response".to_string(),
-            )),
+    /// Authenticate **every** connection in the pool.
+    ///
+    /// Authentication is per-socket state here, so sending `Auth` through the
+    /// round-robin `send_command` authenticates exactly one connection and
+    /// leaves the rest bare. The next command lands on a bare one and fails with
+    /// `Authentication required` — which made every `pool_size > 1` client
+    /// unusable, including the `benchmark` binary in this crate, and is why the
+    /// TCP transport looked broken rather than merely unmeasured.
+    async fn authenticate_pool(&mut self, command: Command) -> Result<(), DriverError> {
+        for idx in 0..self.pool.len() {
+            let response = self.send_command_on(idx, command.clone()).await?;
+            match response {
+                Response::Ok { .. } => {}
+                Response::Error { error } => return Err(error),
+                _ => {
+                    return Err(DriverError::ProtocolError(
+                        "Unexpected response".to_string(),
+                    ))
+                }
+            }
         }
+        Ok(())
     }
 }

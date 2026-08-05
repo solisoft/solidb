@@ -84,7 +84,12 @@ fn is_long_running_query(query: &Query) -> bool {
 }
 
 /// Get collection names affected by mutation clauses for targeted cache invalidation.
-fn mutated_collections(query: &Query) -> std::collections::HashSet<&str> {
+/// Collections a query mutates, for cache invalidation.
+///
+/// `pub(crate)` so the native-driver query handler can invalidate on the same
+/// terms as this one — it used to skip invalidation entirely because it had no
+/// access to this.
+pub(crate) fn mutated_collections(query: &Query) -> std::collections::HashSet<&str> {
     query
         .body_clauses
         .iter()

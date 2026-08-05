@@ -105,9 +105,20 @@ let client = SoliDBClientBuilder::new("localhost:6745")
 
 ### Connection
 
-- `SoliDBClient::connect(addr)` - Connect to a server
-- `client.ping()` - Check server connectivity
-- `client.auth(database, username, password)` - Authenticate
+- `SoliDBClient::connect(addr)` - Connect to a server (pool of 4)
+- `SoliDBClient::connect_with_pool(addr, n)` - Connect with `n` connections
+- `client.ping()` - Check server connectivity (answered without auth)
+- `client.auth(database, username, password)` - Authenticate **every** pooled
+  connection
+
+Authentication is per-socket state over the TCP transport: the server records it
+against the connection, not against a client identity or a bearer token. `auth()`
+therefore sends its handshake on each connection in the pool, and must be called
+before any gated command. Commands are handed out round-robin, so authenticating
+a single connection is not enough — one bare socket in the pool surfaces as an
+intermittent `Authentication required` on whichever request happens to land on
+it. `ping` is not gated, so it will succeed on an unauthenticated connection and
+cannot be used to probe for this.
 
 ### Databases
 
