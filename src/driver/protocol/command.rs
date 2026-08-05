@@ -71,6 +71,12 @@ pub enum Command {
         database: String,
         sdbql: String,
         bind_vars: Option<std::collections::HashMap<String, Value>>,
+        /// Memoize the result for read-only queries (same as HTTP `/cursor`
+        /// `cache`). Defaults to true so older clients keep the cached path.
+        /// Set false to force a real execution — used by Soli's
+        /// `SOLI_DB_NO_QUERY_CACHE=1` diagnostic.
+        #[serde(default = "default_true")]
+        cache: bool,
     },
     Explain {
         database: String,

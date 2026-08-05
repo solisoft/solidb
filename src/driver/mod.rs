@@ -7,7 +7,7 @@
 //! # Protocol Overview
 //!
 //! The driver protocol uses a simple framed message format:
-//! - **Magic Header**: `solidb-drv-v1` (14 bytes, sent once on connection)
+//! - **Magic Header**: `solidb-drv-v1\0` (14 bytes including NUL, sent once on connection)
 //! - **Request Frame**: `[length: 4 bytes BE][msgpack payload]`
 //! - **Response Frame**: `[length: 4 bytes BE][msgpack payload]`
 

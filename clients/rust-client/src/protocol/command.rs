@@ -71,6 +71,10 @@ pub enum Command {
         database: String,
         sdbql: String,
         bind_vars: Option<std::collections::HashMap<String, Value>>,
+        /// Memoize the result for read-only queries (same as HTTP `/cursor`
+        /// `cache`). Defaults to true so older clients keep the cached path.
+        #[serde(default = "default_true")]
+        cache: bool,
     },
     Explain {
         database: String,

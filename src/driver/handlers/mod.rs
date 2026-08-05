@@ -262,7 +262,8 @@ impl DriverHandler {
                 database,
                 sdbql,
                 bind_vars,
-            } => query::handle_query(self, database, sdbql, bind_vars),
+                cache,
+            } => query::handle_query(self, database, sdbql, bind_vars, cache),
 
             Command::Explain {
                 database,

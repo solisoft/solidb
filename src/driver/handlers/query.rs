@@ -19,11 +19,14 @@ use std::collections::HashMap;
 /// doubling (127 -> 216us), because the driver was executing the query for real
 /// while HTTP replayed a memoized result. That reads as "the binary protocol is
 /// slow at queries" and was really "one handler caches and the other does not".
+/// `cache` — when false, skip the result-cache lookup and store (HTTP
+/// `/cursor` `cache: false`). Prepared-statement caching still applies.
 pub fn handle_query(
     handler: &DriverHandler,
     database: String,
     sdbql: String,
     bind_vars: Option<HashMap<String, serde_json::Value>>,
+    cache: bool,
 ) -> Response {
     let bind_vars = bind_vars.unwrap_or_default();
 
@@ -50,9 +53,10 @@ pub fn handle_query(
         }
     }
 
-    // Result cache, read-only queries only. Keyed on the database too, so two
-    // databases running the same query text cannot share entries.
-    let cache_key = if mutates {
+    // Result cache, read-only queries only (and only when the client opts in).
+    // Keyed on the database too, so two databases running the same query text
+    // cannot share entries.
+    let cache_key = if mutates || !cache {
         None
     } else {
         Some(query_cache::hash_query(&database, &sdbql, &bind_vars))
