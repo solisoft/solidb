@@ -66,11 +66,21 @@ fi
 # This cannot verify the section is *complete*, only that it is not still the
 # placeholder while commits exist since the last tag. Needs tags, so CI must
 # check out with fetch-depth: 0.
+#
+# Only applies once the version in Cargo.toml has been tagged. While a release
+# is being prepared, Cargo.toml is bumped ahead of the newest tag and the
+# entries have just been moved out of Unreleased and into the section for the
+# version being shipped — which checks 1 and 2 above have already confirmed
+# exists. Demanding a non-placeholder Unreleased then would make cutting a
+# release impossible: scripts/release.sh runs this check *before* it tags, and
+# so does the CI run for the release commit on main.
 if git rev-parse --git-dir >/dev/null 2>&1 && git describe --tags --abbrev=0 >/dev/null 2>&1; then
     last_tag="$(git describe --tags --abbrev=0)"
     commits_since="$(git rev-list --count "${last_tag}..HEAD")"
 
-    if [ "$commits_since" -gt 0 ] &&
+    if [ "$last_tag" != "v$VERSION" ]; then
+        echo "  ok   Unreleased section (releasing v$VERSION, newest tag is $last_tag)"
+    elif [ "$commits_since" -gt 0 ] &&
        sed -n '/<!-- Unreleased -->/,/<\/section>/p' "$CHANGELOG_VIEW" \
          | grep -q "No unreleased changes yet"; then
         cat >&2 <<EOF
