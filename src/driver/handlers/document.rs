@@ -1,6 +1,18 @@
 use crate::driver::protocol::{DriverError, Response};
 use crate::driver::DriverHandler;
+use crate::storage::query_cache;
 use crate::sync::protocol::Operation;
+
+/// Drop memoized read results for `collection`.
+///
+/// The HTTP document handlers do this on every insert/update/delete; without it
+/// a write over the driver leaves the shared query-result cache serving stale
+/// rows to both the driver and `/cursor` paths. The driver query handler
+/// started using that cache, so missing invalidation here is a correctness bug
+/// rather than a pure performance gap.
+fn invalidate_query_cache(collection: &str) {
+    query_cache::get_query_cache().invalidate_collection(collection);
+}
 
 pub fn handle_get(
     handler: &DriverHandler,
@@ -43,6 +55,7 @@ pub fn handle_insert(
                         &doc.key,
                         Some(&value),
                     );
+                    invalidate_query_cache(&collection);
                     Response::ok(value)
                 }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -92,6 +105,7 @@ pub fn handle_update(
                         &doc.key,
                         Some(&value),
                     );
+                    invalidate_query_cache(&collection);
                     Response::ok(value)
                 }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -111,6 +125,7 @@ pub fn handle_delete(
         Ok(coll) => match coll.delete(&key) {
             Ok(_) => {
                 handler.log_replication(&database, &collection, Operation::Delete, &key, None);
+                invalidate_query_cache(&collection);
                 Response::ok_empty()
             }
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -164,6 +179,7 @@ pub fn handle_bulk_insert(
             match coll.insert_batch(documents) {
                 Ok(docs) => {
                     handler.log_replication_batch(&database, &collection, Operation::Insert, &docs);
+                    invalidate_query_cache(&collection);
                     Response::ok_count(docs.len())
                 }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),

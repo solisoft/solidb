@@ -6,7 +6,7 @@
  * stale-while-revalidate keyed by full URL, so the ?v= fingerprint that
  * public_path() appends naturally busts the cache on deploys.
  */
-var CACHE = "solidb-admin-v2";
+var CACHE = "solidb-admin-v3";
 var OFFLINE_URL = "/offline.html";
 
 self.addEventListener("install", function (event) {
@@ -35,17 +35,38 @@ function isStaticAsset(url) {
      url.pathname === "/manifest.json");
 }
 
+function wait(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+/* A single failed navigation is NOT proof that we are offline: an installed
+ * PWA resuming from background (iOS especially) routinely rejects its first
+ * fetch while the network stack is still waking up, and a dev-server restart
+ * is a blip of the same length. Showing the offline card on that first
+ * failure strands the user on a dead page while the server is perfectly fine,
+ * so retry once after a short pause before giving up. */
+function navigate(request) {
+  return fetch(request).catch(function () {
+    return wait(600).then(function () {
+      return fetch(request);
+    });
+  }).catch(function () {
+    return caches.match(OFFLINE_URL).then(function (cached) {
+      // No cached fallback (evicted, or install never completed): let the
+      // browser show its own network error, which names the real failure
+      // instead of hiding it behind a generic card.
+      return cached || Response.error();
+    });
+  });
+}
+
 self.addEventListener("fetch", function (event) {
   var request = event.request;
   if (request.method !== "GET") return;
 
   // Navigations: network only, offline fallback. Never serve stale pages.
   if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request).catch(function () {
-        return caches.match(OFFLINE_URL);
-      })
-    );
+    event.respondWith(navigate(request));
     return;
   }
 

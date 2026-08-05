@@ -39,20 +39,39 @@ impl<'a> QueryExecutor<'a> {
     /// Resolve a fully-qualified `{database}:{collection}` name supplied by a
     /// query (only `DOCUMENT()` accepts this form).
     ///
-    /// Applies the same credential-collection guard as [`Self::get_collection`],
-    /// which the raw `storage.get_collection` path would otherwise skip —
-    /// `DOCUMENT("otherdb:_env/OPENAI_API_KEY")` reached the storage engine
-    /// directly before this existed.
+    /// SEC-178: the qualified form resolves **only inside the executor's own
+    /// database**. Collections are column families named `"{db}:{collection}"`,
+    /// so handing a caller-supplied qualified name to the storage engine opened
+    /// any column family on the instance by name — a read-only key scoped to one
+    /// database could read every other tenant's documents, plus
+    /// `_system:_admins` password hashes, via
+    /// `DOCUMENT("victim:secrets/k1")`. Per-database authorization is enforced
+    /// once, against the `{db}` path parameter, and `DOCUMENT()` never touches
+    /// that parameter.
     ///
-    /// NOTE: this still resolves collections in *other* databases, which is a
-    /// separate and more serious authorization hole tracked as SEC-178 — the
-    /// executor has no `Claims` to check the second database against. That
-    /// fix belongs here, in this function.
+    /// This is fixed by removing the cross-database capability rather than by
+    /// permission-checking it: the executor holds no `Claims` to check a second
+    /// database against, and nothing needs the capability.
+    ///
+    /// A foreign database is reported as `CollectionNotFound` on the name as
+    /// given — deliberately the same answer as a genuinely absent collection, so
+    /// the error cannot be used to probe which databases exist.
     pub(super) fn qualified_collection(&self, name: &str) -> DbResult<crate::storage::Collection> {
-        if crate::storage::is_protected_collection(name) {
-            return Err(crate::storage::protected_collection_error(name));
+        let Some((database, collection)) = name.split_once(':') else {
+            // Callers only reach here when the name contains ':'.
+            return Err(DbError::CollectionNotFound(name.to_string()));
+        };
+
+        // An executor with no database context has nothing to authorize
+        // against, so the qualified form is unusable there too.
+        if self.database.as_deref() != Some(database) {
+            return Err(DbError::CollectionNotFound(name.to_string()));
         }
-        self.storage.get_collection(name)
+
+        // Resolve the bare name through the ordinary context path, which
+        // applies the credential-collection guard and reuses the handlers'
+        // cached `Collection` instances.
+        self.get_collection(collection)
     }
 
     /// Read rows from a columnar collection as a FOR source.

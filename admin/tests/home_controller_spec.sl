@@ -62,5 +62,22 @@ describe("HomeController") do
       assert_contains(res_body(response), "stale-while-revalidate")
       assert_contains(res_body(response), "offline.html")
     end
+
+    test("service worker retries a navigation before falling back to the offline page") do
+      body = res_body(get("/sw.js"))
+      # Bumping the cache name is what makes clients pick up a new offline page.
+      assert_contains(body, "solidb-admin-v3")
+      assert_contains(body, "function navigate(request)")
+      # No cached fallback: surface the browser's real network error instead.
+      assert_contains(body, "Response.error()")
+    end
+
+    test("offline page names the unreachable host and recovers on its own") do
+      body = res_body(get("/offline.html"))
+      assert_contains(body, "location.origin")
+      assert_contains(body, "navigator.onLine")
+      assert_contains(body, "/health?_pwa_probe=")
+      assert_contains(body, "location.reload()")
+    end
   end
 end

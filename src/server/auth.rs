@@ -341,7 +341,25 @@ impl AuthService {
         if let Ok(collection) = db.system_collection(ADMIN_COLL) {
             if collection.count() == 0 {
                 if should_skip_defaults {
-                    tracing::info!("Cluster join detected: Skipping default admin user creation (waiting for sync)");
+                    // WARN, not INFO, and it names both ways out.
+                    //
+                    // `is_joining_cluster` is only "peers is not empty", so a
+                    // cluster whose nodes all list each other skips this on
+                    // *every* node — the first one included. Nothing then
+                    // creates an admin, nothing errors, and the cluster comes
+                    // up answering 401 to everything with four INFO lines to
+                    // explain it. Measured on two fresh nodes started together.
+                    //
+                    // The database cannot tell "I am joining an existing
+                    // cluster" from "we are all starting at once", because
+                    // both look like a non-empty peer list. So it says what it
+                    // did and what to do instead.
+                    tracing::warn!(
+                        "No admin user, and none will be created: this node has peers, so it \
+                         expects to receive one by sync. If every node was started at once \
+                         nothing will ever arrive and the cluster stays unusable — start the \
+                         first node with no --peer, or set SOLIDB_ADMIN_PASSWORD."
+                    );
                 } else {
                     // Check for override password (for testing/development)
                     // If SOLIDB_ADMIN_PASSWORD is set, use it; otherwise generate random

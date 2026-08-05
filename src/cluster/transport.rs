@@ -68,7 +68,24 @@ fn hmac_hex(secret: &str, ts: u64, nonce: &str, payload: &str) -> String {
     hex::encode(mac.finalize().into_bytes())
 }
 
-/// Serialize a cluster message for the wire, signing it when a secret is set.
+/// Serialize a cluster message for the wire, signed.
+///
+/// **Fails closed.** Without a secret this used to fall through to
+/// `Ok(payload.into_bytes())` — an unsigned message on the wire, with nothing
+/// in the logs to say so. The matching reader accepted unsigned messages under
+/// the same condition, so a cluster started without a keyfile had *no*
+/// authentication on its replication bus and looked identical to one that did.
+///
+/// The asymmetry was the dangerous part: a node **with** a secret rejects
+/// unsigned messages, while a node **without** one accepts both. One
+/// misconfigured member is therefore an open door into the replicated state of
+/// the whole cluster, and the misconfiguration is invisible from every other
+/// node.
+///
+/// So an absent secret is now an error. A cluster that cannot authenticate its
+/// own traffic must refuse to exchange it rather than exchange it in the clear
+/// — the same rule the workload credential probe follows: less isolation still
+/// works, no secret does not.
 pub fn seal_cluster_message(msg: &ClusterMessage, secret: Option<&str>) -> Result<Vec<u8>> {
     let payload = serde_json::to_string(msg)?;
     match secret {
@@ -84,12 +101,21 @@ pub fn seal_cluster_message(msg: &ClusterMessage, secret: Option<&str>) -> Resul
                 payload,
             })?)
         }
-        _ => Ok(payload.into_bytes()),
+        _ => anyhow::bail!(
+            "refusing to send an unauthenticated cluster message: no cluster secret is \
+             configured. Set `cluster.keyfile` to a file containing a shared secret of at \
+             least 32 bytes, identical on every node."
+        ),
     }
 }
 
-/// Parse (and verify, when a secret is configured) an incoming cluster
-/// message. With a secret set, unsigned or invalid messages are rejected.
+/// Parse and verify an incoming cluster message.
+///
+/// **Fails closed**, for the reason given on [`seal_cluster_message`]: the
+/// no-secret branch used to `serde_json::from_slice` whatever arrived and hand
+/// it to `handle_message`, which applies membership changes and rebalances. On
+/// a host with a public address — every OVH VPS — that is remote control of the
+/// replicated state by anyone who can reach the port.
 pub fn open_cluster_message(data: &[u8], secret: Option<&str>) -> Result<ClusterMessage> {
     match secret {
         Some(secret) if !secret.is_empty() => {
@@ -106,7 +132,10 @@ pub fn open_cluster_message(data: &[u8], secret: Option<&str>) -> Result<Cluster
             }
             Ok(serde_json::from_str(&envelope.payload)?)
         }
-        _ => Ok(serde_json::from_slice(data)?),
+        _ => anyhow::bail!(
+            "refusing to accept an unauthenticated cluster message: no cluster secret is \
+             configured. Until one is, this node cannot take part in a cluster."
+        ),
     }
 }
 
@@ -155,5 +184,89 @@ impl Transport for TcpTransport {
     async fn broadcast(&self, _msg: ClusterMessage) -> Result<()> {
         // Broadcast implementation requires knowing peers, usually passed or managed higher up
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod cluster_auth_tests {
+    use super::*;
+
+    /// A `Leave` on purpose: forging one evicts a node from the cluster, which
+    /// is precisely what an unauthenticated bus lets a stranger do.
+    fn message() -> ClusterMessage {
+        ClusterMessage::Leave {
+            from: "node-a".to_string(),
+        }
+    }
+
+    const SECRET: &str = "a-shared-cluster-secret-at-least-32-bytes";
+
+    #[test]
+    fn a_signed_message_round_trips() {
+        let sealed = seal_cluster_message(&message(), Some(SECRET)).unwrap();
+        assert!(open_cluster_message(&sealed, Some(SECRET)).is_ok());
+    }
+
+    #[test]
+    fn sending_without_a_secret_is_refused_rather_than_sent_in_the_clear() {
+        // The regression this test exists for: both arms used to fall through
+        // to the raw payload, so a cluster with no keyfile ran unauthenticated
+        // and looked exactly like one that did not.
+        for absent in [None, Some(""), Some("   ")] {
+            let result = seal_cluster_message(&message(), absent.map(str::trim));
+            assert!(result.is_err(), "sent unauthenticated for {absent:?}");
+        }
+    }
+
+    #[test]
+    fn receiving_without_a_secret_is_refused_rather_than_trusted() {
+        // The dangerous half. `handle_message` applies membership changes and
+        // rebalances, so accepting an unsigned message is remote control of the
+        // replicated state by anyone who can reach the port.
+        let raw = serde_json::to_vec(&message()).unwrap();
+        assert!(open_cluster_message(&raw, None).is_err());
+        assert!(open_cluster_message(&raw, Some("")).is_err());
+    }
+
+    #[test]
+    fn a_node_with_a_secret_still_rejects_an_unsigned_message() {
+        // This half already worked. Asserted so the fix above cannot be
+        // "simplified" by making both arms permissive again.
+        let raw = serde_json::to_vec(&message()).unwrap();
+        assert!(open_cluster_message(&raw, Some(SECRET)).is_err());
+    }
+
+    #[test]
+    fn a_message_signed_with_another_secret_is_rejected() {
+        let sealed =
+            seal_cluster_message(&message(), Some("some-other-cluster-secret-32b")).unwrap();
+        assert!(open_cluster_message(&sealed, Some(SECRET)).is_err());
+    }
+
+    #[test]
+    fn a_tampered_payload_is_rejected() {
+        // The signature covers the payload, so altering it after signing must
+        // fail rather than replicate the attacker's version.
+        let sealed = seal_cluster_message(&message(), Some(SECRET)).unwrap();
+        let mut envelope: serde_json::Value = serde_json::from_slice(&sealed).unwrap();
+        envelope["payload"] = serde_json::Value::String(
+            serde_json::to_string(&ClusterMessage::Leave {
+                from: "a-node-the-attacker-wants-evicted".into(),
+            })
+            .unwrap(),
+        );
+        let altered = serde_json::to_vec(&envelope).unwrap();
+        assert!(open_cluster_message(&altered, Some(SECRET)).is_err());
+    }
+
+    #[test]
+    fn the_refusal_says_what_to_configure() {
+        // An operator meets this at cluster start-up. "Refused" alone sends
+        // them to the network; naming the setting sends them to the fix.
+        let err = seal_cluster_message(&message(), None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("cluster.keyfile"), "{err}");
+        assert!(err.contains("every node"), "{err}");
     }
 }

@@ -14,6 +14,8 @@
     .dot { display: inline-block; width: 10px; height: 10px; background: #f87171; border-radius: 9999px; margin-right: .6rem; }
     h1 { font-size: 1rem; letter-spacing: .2em; text-transform: uppercase; color: #f4f4f5; }
     p { font-size: .85rem; color: #71717a; max-width: 28rem; line-height: 1.6; }
+    .target { font-size: .75rem; color: #a1a1aa; word-break: break-all; }
+    .status { font-size: .7rem; color: #52525b; letter-spacing: .1em; text-transform: uppercase; margin-top: 1.2rem; }
     button {
       margin-top: 1rem; padding: .5rem 1rem; font: inherit; font-size: .8rem; cursor: pointer;
       color: #5eead4; background: rgba(45, 212, 191, .1); border: 1px solid rgba(45, 212, 191, .5);
@@ -23,8 +25,56 @@
 <body>
   <div class="card">
     <h1><span class="dot"></span>SoliDB Admin — offline</h1>
-    <p>The admin console can't reach the server right now. Check your connection (or the server), then retry.</p>
+    <p id="reason">The admin console can't reach the server right now. Check your connection (or the server), then retry.</p>
+    <p class="target" id="target"></p>
     <button onclick="location.reload()">Retry</button>
+    <p class="status" id="status">Retrying automatically…</p>
   </div>
+
+  <script>
+    /* This page is served by the service worker at the URL that failed, so
+     * location tells the user exactly which host went dark — "offline" alone
+     * hides the far more common causes (host not resolvable from this device,
+     * untrusted dev certificate, server not running on that port).
+     *
+     * We also poll /health until the server answers and then reload, so the
+     * PWA recovers on its own instead of stranding the user on a dead card. */
+    var reason = document.getElementById("reason");
+    var status = document.getElementById("status");
+    document.getElementById("target").textContent = location.origin;
+
+    function describe() {
+      reason.textContent = navigator.onLine
+        ? "This device has a network connection, but " + location.host + " did not answer. " +
+          "Check that the server is running, that this device can resolve that host, " +
+          "and that it trusts the certificate."
+        : "This device has no network connection. The console will come back automatically once it does.";
+    }
+
+    var attempt = 0;
+
+    function probe() {
+      attempt += 1;
+      status.textContent = "Checking… (attempt " + attempt + ")";
+      // /health is a tiny public JSON endpoint and is not one of the paths the
+      // service worker caches, so this always hits the real network.
+      fetch("/health?_pwa_probe=" + attempt, { cache: "no-store", credentials: "same-origin" })
+        .then(function (response) {
+          if (!response.ok) throw new Error("unhealthy");
+          status.textContent = "Server is back — reloading…";
+          location.reload();
+        })
+        .catch(function () {
+          describe();
+          var delay = Math.min(2000 * attempt, 15000);
+          status.textContent = "Retrying in " + Math.round(delay / 1000) + "s…";
+          setTimeout(probe, delay);
+        });
+    }
+
+    describe();
+    window.addEventListener("online", function () { attempt = 0; probe(); });
+    probe();
+  </script>
 </body>
 </html>

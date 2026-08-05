@@ -191,7 +191,9 @@ pub enum SyncMessage {
     FullSyncDocuments {
         database: String,
         collection: String,
-        /// Raw bincode-encoded documents, possibly LZ4 compressed
+        /// The batch, encoded by [`encode_documents`] and possibly LZ4
+        /// compressed. Opaque here on purpose: only that pair of functions may
+        /// decide what is inside.
         data: Vec<u8>,
         compressed: bool,
         doc_count: u32,
@@ -341,12 +343,66 @@ pub struct ConflictEntry {
     pub detected_at: u64,
 }
 
+/// Encodes a batch of documents for [`SyncMessage::FullSyncDocuments`].
+///
+/// # Why not bincode
+///
+/// It was bincode, and **every full sync failed at its first batch**. The error
+/// is worth quoting because it names its own cause:
+///
+/// ```text
+/// Full sync request failed: Decode error: Bincode does not support the
+/// serde::Deserializer::deserialize_any method
+/// ```
+///
+/// A document is a `serde_json::Value`, which is self-describing: deserialising
+/// one means asking the format "what comes next?", and bincode cannot answer
+/// because it writes no type information. Serialising worked, so the sender
+/// reported success and the receiver could never decode a single batch. That
+/// asymmetry is why the bug survived: the seed's own view showed the new member
+/// as healthy while the member had nothing.
+///
+/// JSON for the payload, then. It is bulkier, which is what the LZ4 layer above
+/// is for, and it is the format the documents are already in.
+///
+/// Both directions live in one place so the two ends cannot be changed apart —
+/// which is exactly how they came to disagree.
+pub fn encode_documents(batch: &[serde_json::Value]) -> Result<Vec<u8>, String> {
+    serde_json::to_vec(batch).map_err(|e| format!("encoding {} document(s): {e}", batch.len()))
+}
+
+/// Decodes what [`encode_documents`] produced.
+pub fn decode_documents(data: &[u8]) -> Result<Vec<serde_json::Value>, String> {
+    serde_json::from_slice(data).map_err(|e| format!("decoding a document batch: {e}"))
+}
+
 impl SyncMessage {
-    /// Encode message to bincode bytes with length prefix
+    /// Encode a message in the frame the connection pool reads.
+    ///
+    /// `[compressed: 1 byte][length: 4 bytes BE][bincode]` — the same shape
+    /// `ConnectionPool::send` writes, because the only reader of these bytes is
+    /// `ConnectionPool::receive`.
+    ///
+    /// This used to emit `[length][bincode]` with no leading byte, one byte
+    /// short of what the reader expects. Everything shifted: the reader took
+    /// the first length byte as the compressed flag, and bincode was handed the
+    /// length prefix as the start of a message — "invalid value: integer
+    /// 33554432, expected variant index 0 <= i < 27", which is `2u32` big-endian
+    /// read as a little-endian discriminant.
+    ///
+    /// It was never noticed because nothing had ever run a full sync: the only
+    /// caller is the responder below, and the request that triggers it could
+    /// not be sent — the sync worker's command sender was discarded at
+    /// construction.
+    ///
+    /// The flag is always 0. Compression belongs to the pool, and the one
+    /// message that carries bulk data (`FullSyncDocuments`) compresses its own
+    /// payload already.
     pub fn encode(&self) -> Vec<u8> {
         let payload = bincode::serialize(self).expect("Failed to serialize SyncMessage");
         let len = payload.len() as u32;
-        let mut result = Vec::with_capacity(4 + payload.len());
+        let mut result = Vec::with_capacity(5 + payload.len());
+        result.push(0);
         result.extend_from_slice(&len.to_be_bytes());
         result.extend(payload);
         result
@@ -355,6 +411,45 @@ impl SyncMessage {
     /// Decode message from bincode bytes (without length prefix)
     pub fn decode(bytes: &[u8]) -> Result<Self, bincode::Error> {
         bincode::deserialize(bytes)
+    }
+
+    /// Bytes of frame header [`encode`] writes before the payload.
+    ///
+    /// Named rather than left as a literal, because thirteen tests hard-coded
+    /// `4` and went on hard-coding it after the header grew to five. They kept
+    /// failing with the same "expected variant index 0 <= i < 27" error the
+    /// header change was made to fix, which reads as a regression in the thing
+    /// that was just repaired.
+    pub const HEADER_LEN: usize = 5;
+
+    /// Decodes a whole frame, header included.
+    ///
+    /// The counterpart to [`encode`], and the reason it exists: `encode` returns
+    /// a *frame* while `decode` takes a *body*, so every caller had to slice off
+    /// a header whose length only lives in `encode`. That asymmetry is what let a
+    /// one-byte change break a suite of tests silently — they were slicing a
+    /// constant nobody had told them about.
+    pub fn decode_frame(frame: &[u8]) -> Result<Self, bincode::Error> {
+        use bincode::ErrorKind;
+        if frame.len() < Self::HEADER_LEN {
+            return Err(Box::new(ErrorKind::Custom(format!(
+                "frame is {} bytes, shorter than the {}-byte header",
+                frame.len(),
+                Self::HEADER_LEN
+            ))));
+        }
+        let declared = u32::from_be_bytes([frame[1], frame[2], frame[3], frame[4]]) as usize;
+        let body = &frame[Self::HEADER_LEN..];
+        if body.len() != declared {
+            // Checked rather than trusted: a body shorter than its own header
+            // claims is a truncated read, and decoding it anyway produces the
+            // same unhelpful discriminant error as a framing mistake.
+            return Err(Box::new(ErrorKind::Custom(format!(
+                "frame declares {declared} bytes of payload and carries {}",
+                body.len()
+            ))));
+        }
+        Self::decode(body)
     }
 }
 
@@ -477,8 +572,7 @@ mod tests {
         };
 
         let encoded = msg.encode();
-        // Skip length prefix (4 bytes)
-        let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
+        let decoded = SyncMessage::decode_frame(&encoded).unwrap();
 
         match decoded {
             SyncMessage::Heartbeat {
@@ -498,5 +592,79 @@ mod tests {
 
         // Same key should give same shard
         assert_eq!(compute_shard_id("doc123", 8), shard);
+    }
+
+    #[test]
+    fn a_document_batch_survives_a_round_trip() {
+        // The test that was missing. Encoding used to succeed and decoding used
+        // to fail every single time, so nothing short of a round trip would have
+        // caught it — and no round trip existed.
+        let batch = vec![
+            serde_json::json!({"_key": "a", "n": 1, "nested": {"deep": [1, 2, 3]}}),
+            serde_json::json!({"_key": "b", "text": "héllo", "flag": true, "nil": null}),
+            serde_json::json!({"_key": "c", "float": 1.5, "big": 9007199254740991i64}),
+        ];
+        let encoded = encode_documents(&batch).expect("encodes");
+        let decoded = decode_documents(&encoded).expect("decodes");
+        assert_eq!(decoded, batch);
+    }
+
+    #[test]
+    fn an_empty_batch_round_trips_as_empty() {
+        // Distinguishable from a failure that used to produce empty bytes.
+        let encoded = encode_documents(&[]).expect("encodes");
+        assert!(decode_documents(&encoded).expect("decodes").is_empty());
+    }
+
+    #[test]
+    fn garbage_fails_to_decode_rather_than_yielding_no_documents() {
+        // "Zero documents" and "could not read the batch" must not be the same
+        // outcome: the first reports a successful sync of nothing.
+        assert!(decode_documents(b"\x00\x01\x02not json").is_err());
+    }
+
+    #[test]
+    fn the_system_collections_a_second_node_needs_survive_the_round_trip() {
+        // The shape that actually mattered: `_admins` is what makes a joining
+        // node authenticatable, and it never arrived because this batch could
+        // not be decoded.
+        let admins = vec![serde_json::json!({
+            "_key": "admin",
+            "username": "admin",
+            "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA",
+            "roles": ["admin"],
+            "created_at": 1785000000
+        })];
+        let decoded = decode_documents(&encode_documents(&admins).unwrap()).unwrap();
+        assert_eq!(decoded, admins);
+        assert_eq!(decoded[0]["username"], "admin");
+    }
+
+    #[test]
+    fn a_frame_shorter_than_its_own_header_is_refused() {
+        // A truncated read. Decoding it anyway yields the same "expected variant
+        // index" error a framing mistake does, which is how one gets mistaken
+        // for the other.
+        let error = SyncMessage::decode_frame(&[0, 0, 0])
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("shorter than"), "{error}");
+    }
+
+    #[test]
+    fn a_frame_that_lies_about_its_length_is_refused() {
+        let mut frame = SyncMessage::FullSyncComplete { final_sequence: 7 }.encode();
+        frame.push(0xff);
+        let error = SyncMessage::decode_frame(&frame).unwrap_err().to_string();
+        assert!(error.contains("declares"), "{error}");
+    }
+
+    #[test]
+    fn the_header_length_matches_what_encode_writes() {
+        // The constant and the writer must agree. They did not for one commit,
+        // and thirteen tests carried the old value.
+        let frame = SyncMessage::FullSyncComplete { final_sequence: 1 }.encode();
+        let declared = u32::from_be_bytes([frame[1], frame[2], frame[3], frame[4]]) as usize;
+        assert_eq!(frame.len(), SyncMessage::HEADER_LEN + declared);
     }
 }

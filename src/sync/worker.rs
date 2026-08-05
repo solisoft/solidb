@@ -1066,8 +1066,8 @@ impl SyncWorker {
                         data
                     };
 
-                    let docs: Vec<serde_json::Value> = bincode::deserialize(&docs_data)
-                        .map_err(|e| TransportError::DecodeError(e.to_string()))?;
+                    let docs = super::protocol::decode_documents(&docs_data)
+                        .map_err(TransportError::DecodeError)?;
 
                     for doc in docs {
                         if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
@@ -1473,8 +1473,19 @@ impl SyncWorker {
 
                                         if batch.len() >= 1000 {
                                             // Send batch
+                                            // Not `unwrap_or_default()`: that
+                                            // turned an encoding failure into an
+                                            // empty batch, so a sync reported
+                                            // success having sent nothing.
                                             let data =
-                                                bincode::serialize(&batch).unwrap_or_default();
+                                                match super::protocol::encode_documents(&batch) {
+                                                    Ok(data) => data,
+                                                    Err(e) => {
+                                                        return Err(TransportError::DecodeError(
+                                                            format!("full sync aborted: {e}"),
+                                                        ));
+                                                    }
+                                                };
                                             let compress = data.len() > 10 * 1024;
                                             let final_data = if compress {
                                                 lz4_flex::compress_prepend_size(&data)
@@ -1502,7 +1513,14 @@ impl SyncWorker {
 
                                     // Send remaining
                                     if !batch.is_empty() {
-                                        let data = bincode::serialize(&batch).unwrap_or_default();
+                                        let data = match super::protocol::encode_documents(&batch) {
+                                            Ok(data) => data,
+                                            Err(e) => {
+                                                return Err(TransportError::DecodeError(format!(
+                                                    "full sync aborted: {e}"
+                                                )));
+                                            }
+                                        };
                                         let compress = data.len() > 10 * 1024;
                                         let final_data = if compress {
                                             lz4_flex::compress_prepend_size(&data)
