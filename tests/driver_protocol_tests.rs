@@ -21,6 +21,7 @@ fn test_command_query() {
         database: "_system".to_string(),
         sdbql: "FOR doc IN users RETURN doc".to_string(),
         bind_vars: Some(HashMap::new()),
+        cache: true,
     };
 
     let encoded = encode_command(&cmd);
@@ -38,6 +39,7 @@ fn test_command_query_with_bind_vars() {
         database: "mydb".to_string(),
         sdbql: "FOR doc IN users FILTER doc.name == @name RETURN doc".to_string(),
         bind_vars: Some(bind_vars),
+        cache: true,
     };
 
     let encoded = encode_command(&cmd);
@@ -514,6 +516,8 @@ fn test_roundtrip_query_command() {
         database: "testdb".to_string(),
         sdbql: "RETURN 1+1".to_string(),
         bind_vars: Some(HashMap::new()),
+        // Not the serde default, so the assertion below proves it round-trips.
+        cache: false,
     };
 
     let encoded = encode_command(&original).unwrap();
@@ -526,10 +530,12 @@ fn test_roundtrip_query_command() {
             database,
             sdbql,
             bind_vars,
+            cache,
         } => {
             assert_eq!(database, "testdb");
             assert_eq!(sdbql, "RETURN 1+1");
             assert!(bind_vars.unwrap().is_empty());
+            assert!(!cache);
         }
         _ => panic!("Wrong command type"),
     }
@@ -575,6 +581,7 @@ fn test_command_with_special_characters() {
         sdbql: "FOR doc IN `collection with spaces` FILTER doc.name == 'O\\'Brien' RETURN doc"
             .to_string(),
         bind_vars: Some(HashMap::new()),
+        cache: true,
     };
 
     let encoded = encode_command(&cmd);

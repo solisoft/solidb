@@ -11,7 +11,8 @@ impl SoliDBClient {
         sdbql: &str,
         bind_vars: Option<HashMap<String, Value>>,
     ) -> Result<Vec<Value>, DriverError> {
-        self.query_with_cache(database, sdbql, bind_vars, true).await
+        self.query_with_cache(database, sdbql, bind_vars, true)
+            .await
     }
 
     /// Like [`query`](Self::query), but controls result memoization.
