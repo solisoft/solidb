@@ -1,4 +1,3 @@
-mod cron;
 mod embeddings;
 mod jobs;
 mod materialized_views;
@@ -6,7 +5,7 @@ pub(crate) mod signing;
 mod types;
 
 pub use jobs::validate_job_target;
-pub use types::{CronJob, Job, JobStatus, QueueConfig};
+pub use types::{Job, JobStatus};
 
 use crate::scripting::{ScriptEngine, ScriptStats};
 use crate::storage::StorageEngine;
@@ -14,6 +13,17 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast;
 
+/// Background worker for database-internal scheduled work.
+///
+/// SolidB no longer exposes a client-facing job or cron queue — application
+/// background jobs and cron live in the Soli framework, which runs them in its
+/// own process. What remains here is the work the database itself owns:
+///
+/// * **trigger dispatch** — a trigger fires by inserting a row into `_jobs`,
+///   which this worker claims and executes (a stored Lua script, or a signed
+///   outbound webhook). `check_jobs` is that dispatcher.
+/// * **embedding generation** for vector indexes (`check_embeddings`).
+/// * **materialized-view refresh** (`check_materialized_views`).
 pub struct QueueWorker {
     pub(crate) storage: Arc<StorageEngine>,
     pub(crate) script_engine: Arc<ScriptEngine>,
@@ -99,7 +109,6 @@ impl QueueWorker {
                     }
 
                     worker.check_jobs().await;
-                    worker.check_cron_jobs().await;
                     worker.check_embeddings().await;
                     worker.check_materialized_views().await;
                 }

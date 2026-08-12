@@ -66,7 +66,7 @@ matching the existing `v0.32.1` style — CI's `release` job triggers on
 - **sharding/** - Horizontal partitioning with automatic rebalancing. `coordinator.rs` (151KB) orchestrates shard operations.
 - **transaction/** - ACID transactions with configurable isolation levels, WAL support, and row-level locking.
 - **scripting/** - Embedded Lua 5.4 runtime for custom endpoints and database operations.
-- **queue/** - Background job processing with priorities and cron scheduling.
+- **queue/** - Internal scheduled work: trigger dispatch (script + signed webhook), embedding generation, and materialized-view refresh. SolidB exposes no client-facing job or cron queue; application background jobs live in the Soli framework.
 - **driver/** - MessagePack-based binary protocol for high-performance clients.
 
 ### Entry Points
@@ -142,7 +142,7 @@ Benchmark all clients: `./bench_all.sh`
 
 Two **Soli** framework apps live alongside the database engine, each with its own `CLAUDE.md`:
 
-- **`admin/`** — the database management / admin UI: browse collections and documents, run SDBQL, manage indexes, cluster, users, queues, and more. Soli app with `.sl` controllers and `.html.slv` views.
+- **`admin/`** — the database management / admin UI: browse collections and documents, run SDBQL, manage indexes, cluster, users, and more. Soli app with `.sl` controllers and `.html.slv` views.
 - **`doc/`** — the SoliDB documentation website and landing page. Also a Soli app.
 
 ### Development Commands

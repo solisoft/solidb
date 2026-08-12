@@ -75,7 +75,6 @@ seahash = "4.1"  # Uniform hash distribution for sharding
 
 # Storage
 rust-rocksdb = "0.46"
-cron = "0.15"
 
 # Authentication
 argon2 = "0.5"

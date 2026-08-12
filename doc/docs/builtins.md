@@ -55,6 +55,33 @@ println("Hello, " + name)
 
 ---
 
+### Debugging Functions
+
+#### debug()
+
+Triggers a debugger breakpoint: pauses execution and opens the interactive debug
+page, where you can inspect variable state and evaluate arbitrary Soli code.
+Only active in development mode — in production `debug()` calls are ignored.
+
+**Parameters:** none
+
+**Returns:** a breakpoint value
+
+**Example:**
+```soli
+def process_user(user_id: Int) -> Hash
+  user = User.find(user_id)
+  debug()   # pause here and inspect `user`
+  enrich_profile(user)
+end
+```
+
+> **Renamed:** this builtin was called `break()` before. `break` is now a loop
+> keyword, so the debugger builtin moved to `debug()`. See
+> [Debugging](/docs/development-tools/debugging).
+
+---
+
 ### Type Functions
 
 #### type(value)
@@ -211,6 +238,8 @@ len({"a": 1})     # 1
 ### Array Functions
 
 Array operations like `push()`, `pop()`, `map()`, `filter()`, and more are available as methods on the Array class. See the Array class documentation for details.
+
+The field-keyed aggregate family — `sum_by`, `avg` / `avg_by`, `group_by`, `index_by`, `count_by`, `tally`, `filter_by` / `find_by`, `uniq_by`, `max_by` / `min_by` — is documented with the other [Array methods](/docs/language/arrays#method-sum-by). Prefer them over hand-written `reduce` loops: the whole traversal stays in native code instead of re-entering the interpreter once per element.
 
 #### concat(other, ...)
 
@@ -814,6 +843,27 @@ this class-based API.
 > with a custom policy that re-runs the SSRF check on every hop. Apps that need
 > to follow a 3xx from `HTTP.get` should inspect `response["status"]` and
 > `response["headers"]["location"]` and re-issue the request manually.
+>
+> **Reaching a trusted sidecar.** An app that must call something on loopback —
+> a control plane talking to a proxy admin API, for instance — should name it in
+> `SOLI_HTTP_ALLOW_HOSTS`, a comma-separated list of `host` or `host:port`
+> entries. Only those are exempted; everything else stays blocked. Prefer this
+> over `SOLI_DEV_ALLOW_SSRF=1`, which disables the guard for **every** request
+> the app makes, including ones built from user-supplied URLs — that is how an
+> app that also handles webhooks turns into an SSRF pivot. Naming the port
+> matters: `127.0.0.1:9090` reaches the admin API without also exposing the
+> database on `127.0.0.1:6745`. Matching is on the literal host in the URL, never
+> on a resolved address, so a DNS answer cannot decide what is reachable.
+
+**Connections are pooled and reused** across calls, per host, for 15 seconds of
+idle time — a second request to an API you just called skips the TCP and TLS
+handshake. Pooling works the same for HTTP/1.1 and HTTP/2 hosts.
+
+**Failures name their cause.** A transport error reports the whole chain, not
+just the top line, so `Request failed: error sending request for url (…)` is
+followed by what actually went wrong (`dns error: …`, `connection closed before
+message completed`, `invalid peer certificate`). Worth surfacing when you handle
+the `{"error": ...}` shape the parallel helpers return.
 
 ### HTTP.get(url, options?)
 
@@ -897,6 +947,27 @@ Performs an HTTP GET request and parses JSON response.
 ```soli
 data = HTTP.get_json("https://api.example.com/users/1")
 println(data["body"]["name"])
+```
+
+### HTTP.get_jsonp(url, options?)
+
+Performs an HTTP GET against a JSONP endpoint and unwraps the `callback(...)`
+padding, returning the parsed value. Use it to consume legacy cross-origin APIs
+that only expose JSONP. The `?callback=...` name goes in the URL you pass; the
+JavaScript wrapper (and an optional leading `/**/` guard) is stripped before the
+inner JSON is parsed.
+
+**Parameters:**
+- `url` (String) - The JSONP URL (typically containing a `callback` query param)
+- `options` (Hash, optional) - Request options (e.g. `{ "timeout": 5 }`)
+
+**Returns:** Any - The parsed value (Hash, Array, …). Raises if the body is not a
+valid `callback(...)` wrapper or the inner JSON is malformed.
+
+**Example:**
+```soli
+feed = HTTP.get_jsonp("https://api.example.com/feed?callback=cb")
+println(feed["items"][0])
 ```
 
 ### HTTP.put(url, body, options?) / HTTP.patch(url, body, options?) / HTTP.delete(url, options?) / HTTP.head(url, options?)
@@ -1250,6 +1321,103 @@ end
 mail.quit()
 ```
 
+## IMAP (Email Reading)
+
+The `Imap` class reads email over IMAP4rev1. Unlike POP3, IMAP is stateful and
+server-side: you `select()` a mailbox, then `search()` and `fetch()` within it,
+leaving the messages on the server. It connects over implicit TLS by default
+(port `993`) and parses each message into the same structured hash as `Pop3`.
+
+### Imap.new(host, user, password, opts?)
+
+Connect and authenticate, returning a client instance. The optional `opts` hash
+accepts `port` (default `993`) and `tls` (default `true`).
+
+```soli
+mail = Imap.new("imap.gmail.com", "me@gmail.com", "app-password")
+
+# Plaintext on a custom port (e.g. a local test server)
+mail = Imap.new("127.0.0.1", "user", "pass", { "port": 143, "tls": false })
+```
+
+> **Gmail / 2FA accounts:** use an [App Password](https://support.google.com/accounts/answer/185833),
+> not your normal password, and enable IMAP in the account settings.
+
+### Instance methods
+
+| Method | Returns |
+|--------|---------|
+| `mail.select(mailbox = "INBOX")` | Mailbox status: `{ "mailbox", "exists", "recent", "unseen", "uidvalidity", "uidnext", "flags" }`. Selects it for subsequent calls. |
+| `mail.mailboxes()` | `[ { "name", "delimiter", "flags" }, ... ]` — all mailboxes/folders |
+| `mail.search(criteria = "ALL")` | Array of **sequence numbers** matching an IMAP search key |
+| `mail.uid_search(criteria = "ALL")` | Array of **UIDs** matching an IMAP search key |
+| `mail.fetch(seq)` | A parsed message hash for the given sequence number |
+| `mail.fetch_uid(uid)` | A parsed message hash for the given UID |
+| `mail.fetch_all()` | An array of parsed message hashes from the selected mailbox |
+| `mail.mark_seen(seq)` / `mail.mark_unseen(seq)` | Toggle the `\Seen` flag; returns `true` |
+| `mail.delete(seq)` | Marks the message `\Deleted` (removed on `expunge`); returns `true` |
+| `mail.expunge()` | Permanently removes `\Deleted` messages; returns `true` |
+| `mail.copy(seq, mailbox)` | Copies the message into another mailbox; returns `true` |
+| `mail.move(seq, mailbox)` | Moves the message (RFC 6851 `MOVE`); returns `true` |
+| `mail.logout()` | Closes the connection; returns `true` |
+
+`fetch_all()` requires a prior `select()` and is capped at 200 messages by
+default; raise it with the `SOLI_IMAP_MAX_MESSAGES` environment variable.
+`fetch`/`fetch_uid` use `BODY.PEEK[]`, so reading a message does **not** mark it
+`\Seen` — call `mark_seen()` explicitly if you want that.
+
+### Search criteria
+
+`criteria` is passed straight through as an IMAP search key, so any standard
+expression works:
+
+```soli
+mail.uid_search("UNSEEN")                       # unread
+mail.search("FROM alice@example.com")           # by sender
+mail.search("SINCE 1-Jun-2026 SUBJECT invoice") # combine keys
+mail.search("ALL")                              # everything (the default)
+```
+
+### Message hash shape
+
+Fetched messages carry the same fields as `Pop3` plus IMAP identity fields
+(`seq`, `uid`, `flags`):
+
+```soli
+{
+  "seq":          1,
+  "uid":          4821,
+  "flags":        ["\\Seen", "\\Answered"],
+  "size":         2048,
+  "subject":      "Hello from Alice",
+  "from":         { "name": "Alice", "address": "alice@example.com" },
+  "to":           [ { "name": "Bob", "address": "bob@example.com" } ],
+  "date":         "2026-06-01T10:00:00Z",
+  "text_body":    "Hi Bob, ...",
+  "html_body":    "<p>Hi Bob, ...</p>",
+  "attachments":  [ { "name": "report.pdf", "content_type": "application/pdf", "size": 51200 } ],
+  "raw":          "From: Alice ..."   # full RFC822 source
+}
+```
+
+### Example
+
+```soli
+mail = Imap.new("imap.gmail.com", "me@gmail.com", "app-password")
+
+info = mail.select("INBOX")
+print("#{info["exists"]} messages, #{info["unseen"]} unread")
+
+# Fetch and archive every unread message
+for uid in mail.uid_search("UNSEEN")
+  msg = mail.fetch_uid(uid)
+  print("#{msg["date"]} — #{msg["from"]["address"]}: #{msg["subject"]}")
+  mail.mark_seen(msg["seq"])
+end
+
+mail.logout()
+```
+
 ## JSON Functions
 
 ### json_parse(string)
@@ -1280,6 +1448,86 @@ Converts a Soli value to a JSON string.
 ```soli
 json = json_stringify({ "name": "Alice", "scores": [95, 87, 92] })
 println(json)  # {"name":"Alice","scores":[95,87,92]}
+```
+
+---
+
+## AI Functions
+
+Embedding generation and LLM text completion against OpenAI-compatible
+endpoints. Endpoints and API keys are read from the environment, so credentials
+stay out of app code and there is one place to review where text is sent (a
+single point for GDPR / data-residency review). Any OpenAI-compatible server
+works — OpenAI, or a self-hosted vLLM / Ollama / llama.cpp (which often need no
+API key).
+
+### embed(text)
+
+Generate an embedding vector for a string — the write-side counterpart to
+`Model.similar`, which embeds the *query* but not the documents you store.
+
+**Parameters:**
+- `text` (String) - text to embed
+
+**Returns:** Array<Float> - the embedding vector
+
+**Environment:** `SOLI_EMBEDDING_API_KEY` (required), `SOLI_EMBEDDING_URL`
+(default `https://api.openai.com/v1/embeddings`), `SOLI_EMBEDDING_MODEL`
+(default `text-embedding-3-small`). Raises if the key is unset or the call fails.
+
+**Example:**
+```soli
+class Article < Model
+  vector_index "embedding", dimension: 1536, metric: "cosine"
+
+  before_save fn() {
+    this.embedding = embed(this.title + "\n" + this.body)
+  }
+end
+```
+
+### embed_batch(texts)
+
+Embed many texts in a single request, returned in input order. Use it to
+back-fill embeddings over an existing collection instead of one call per row.
+
+**Parameters:**
+- `texts` (Array<String>) - texts to embed
+
+**Returns:** Array<Array<Float>> - one vector per input, in input order
+
+**Example:**
+```soli
+articles = Article.where({ "embedding": null }).all
+vectors  = embed_batch(articles.map(fn(a) a.title))
+articles.each_with_index(fn(article, i) {
+  article.embedding = vectors[i]
+  article.save()
+})
+```
+
+### llm_generate(system, user)
+
+Chat completion via an OpenAI-compatible `chat/completions` endpoint.
+
+**Parameters:**
+- `system` (String) - system prompt (role/instructions)
+- `user` (String) - user prompt
+
+**Returns:** String - the model's completion text
+
+**Environment:** `SOLI_LLM_URL` (default
+`https://api.openai.com/v1/chat/completions`), `SOLI_LLM_API_KEY` (optional —
+omitted from the request when unset, for keyless local servers), `SOLI_LLM_MODEL`
+(default `gpt-4o-mini`), `SOLI_LLM_TEMPERATURE` and `SOLI_LLM_MAX_TOKENS`
+(optional — only sent when set). Raises if the call fails.
+
+**Example:**
+```soli
+summary = llm_generate(
+  "You summarize support tickets in one sentence.",
+  ticket.body
+)
 ```
 
 ---
@@ -1370,12 +1618,134 @@ if secure_compare(expected, request_signature)
 end
 ```
 
+### Secure Random
+
+Cryptographically secure random values drawn from the operating system entropy
+source. Do **not** use `Math.random` for anything security-bearing — it is a
+general-purpose PRNG, not a CSPRNG.
+
+All three take a **byte** count, not a character count, and reject anything
+outside `1..=1024`.
+
+#### Crypto.random_hex(n)
+
+**Parameters:**
+- `n` (Int) - number of random **bytes**
+
+**Returns:** String - `2n` lowercase hex characters.
+
+`Crypto.random_hex(32)` produces a 64-character string, matching what
+`openssl rand -hex 32` gives you — the form expected for `SOLI_ENCRYPTION_KEY`
+and `JWT_SECRET`.
+
+#### Crypto.random_bytes(n)
+
+**Returns:** Array - `n` integers in `0..=255`. Compose with
+`Base64.urlsafe_encode` or `Hex.encode` for other representations.
+
+#### Crypto.random_token(n = 32)
+
+**Returns:** String - unpadded URL-safe Base64 of `n` random bytes.
+
+The default 32 bytes gives 256 bits of entropy in 43 URL-safe characters. This
+is the right primitive for OAuth `state`, PKCE verifiers, authorization codes,
+refresh tokens, and any opaque identifier that travels in a URL.
+
+```soli
+state = Crypto.random_token()
+session_set("oauth_state", state)
+```
+
+### Tamper-Evidence (Hash Chains & Merkle Trees)
+
+Two building blocks for verifiable, append-only data — audit logs, provenance
+trails, and hash-chained ledgers.
+
+#### Crypto.canonical_json(value)
+
+Serializes a value to **canonical JSON** — object keys sorted lexicographically,
+recursively — so the same logical content always produces the same bytes, and
+therefore the same hash. Ordinary JSON serialization (`.to_json`) preserves
+insertion order, which is not stable enough to hash; use this whenever you hash a
+structured value.
+
+**Parameters:**
+- `value` (Any) - A JSON-shaped value (Hash, Array, String, Int, Float, Bool, null). Opaque values (functions, class instances, …) raise.
+
+**Returns:** String - Deterministic JSON text.
+
+**Example:**
+```soli
+Crypto.canonical_json({ "b": 1, "a": 2 })   # {"a":2,"b":1}
+Crypto.canonical_json({ "a": 2, "b": 1 })   # {"a":2,"b":1}  (same bytes)
+
+# Stable content hash of a record:
+record = { "amount": 100, "to": "alice" }
+hash = Crypto.sha256(Crypto.canonical_json(record))
+```
+
+#### Crypto.merkle_root(hashes)
+
+Computes the **Merkle root** of an array of hex leaf hashes — a single hash that
+proves the entire set. Nodes are combined pairwise as `sha256(left ‖ right)`; an
+odd node is paired with itself. An empty array hashes the empty string; a single
+leaf is its own root. The root changes if any leaf changes or is reordered.
+
+**Parameters:**
+- `hashes` (Array<String>) - Hex hash strings (e.g. each record's `sha256`).
+
+**Returns:** String - 64-character hex Merkle root.
+
+**Example:**
+```soli
+leaves = records.map(fn(r) Crypto.sha256(Crypto.canonical_json(r)))
+root = Crypto.merkle_root(leaves)
+# Publish `root` to prove the set is intact; re-derive it later to detect tampering.
+```
+
+#### Crypto.ledger_hash(prev_hash, seq, data)
+
+The leaf hash of a hash-chained ledger record — a one-call shorthand for
+`Crypto.sha256(prev_hash + ":" + str(seq) + ":" + Crypto.canonical_json(data))`.
+Because it's a single definition, the code that writes records and the code that
+verifies them share the exact same formula and can't drift apart.
+
+**Parameters:**
+- `prev_hash` (String) - The previous record's `hash` (or 64 zeros for the genesis record)
+- `seq` (Int) - The record's monotonic sequence number
+- `data` (Hash) - The record's user fields (canonicalized internally)
+
+**Returns:** String - 64-character hex hash committing to the previous record, the sequence, and the content.
+
+**Example:**
+```soli
+prev = "0000000000000000000000000000000000000000000000000000000000000000"
+hash = Crypto.ledger_hash(prev, 0, { "amount": 100, "to": "alice" })
+```
+
+> **Tamper-evident ledgers.** Chain records so each commits to the one before it
+> (`Crypto.ledger_hash(prev_hash, seq, data)`) — any later edit or deletion breaks
+> the chain and is detectable by recomputing it. See the blog post
+> [Tamper-Evident Audit Logs in Soli](/docs/blog/tamper-evident-ledgers) for a
+> complete, verifiable example.
+
 ### Base64 Encoding
 
 Base64 encoding and decoding is available via the **Base64 class**:
 
 - `Base64.encode(data)` - Encodes a string to Base64
 - `Base64.decode(data)` - Decodes a Base64 string
+- `Base64.urlsafe_encode(data)` - Encodes to **unpadded** URL-safe Base64 (RFC 4648 §5)
+- `Base64.urlsafe_decode(data)` - Decodes URL-safe Base64, with or without padding
+
+The URL-safe variant uses `-` and `_` in place of `+` and `/` and never emits
+`=` padding — the form required by JWS, JWK, PKCE and JWK thumbprints. Use it
+whenever a value travels in a URL, a JWT, or a JSON Web Key:
+
+```soli
+# PKCE S256 challenge: sha256 returns hex, so decode to bytes before encoding.
+challenge = Base64.urlsafe_encode(Hex.decode(Crypto.sha256(code_verifier)))
+```
 
 See the [Base64 class documentation](/docs/utility/base64) for details.
 
@@ -1629,9 +1999,37 @@ em  = Crypto.modexp(signature, key["e"], key["n"])   # RSA verify step
 #### X509.fingerprint(cert, algorithm?)
 
 Returns the certificate fingerprint (hash of the DER bytes) as hex. `algorithm`
-is `"sha256"` (default) or `"sha1"`. Useful for pinning an IdP certificate.
+is `"sha256"` (default) or `"sha1"`. Fingerprints the whole certificate; for TLS
+pinning that survives renewal, pin the key with `X509.spki_pin` instead.
 
 **Returns:** String — hex digest.
+
+#### X509.spki_pin(cert)
+
+The public-key pin for TLS certificate pinning:
+`base64(SHA-256(SubjectPublicKeyInfo))`, returned as `"sha256/<base64>"` — the
+form an Android Network Security Config `<pin-set>` or any HPKP-style pinner
+expects.
+
+It pins the **key**, not the certificate, which is what lets a pinned client
+survive a certificate renewal: as long as the renewal reuses the key, the pin is
+unchanged. Pin the certificate (or its `fingerprint`) instead and the client
+breaks on every ~90-day rotation.
+
+```soli
+pin = X509.spki_pin(File.read("cert.pem"))
+# => "sha256/UKm/R6MKhCiukXKhnWjBQSRBSWRwGQBLCCa/8w27Dxs="
+```
+
+> **Pinning is a footgun; treat it as one.** A wrong or lost pin **bricks the
+> installed app** with no server-side fix. Always ship a **backup pin** (a
+> second, offline key). For a public web app already on HSTS + Certificate
+> Transparency, weigh whether the one threat it closes — a rogue or compromised
+> CA — is worth the operational risk; browsers removed HPKP for this reason.
+> Soli gives you the pin string but does not wire pinning into the shells by
+> default.
+
+**Returns:** String — `"sha256/<base64>"`.
 
 #### Deflate.deflate(data) / Deflate.inflate(data)
 
@@ -1657,6 +2055,25 @@ Parses an RSA private key — PKCS#8 (`-----BEGIN PRIVATE KEY-----`) or PKCS#1
 
 **Returns:** Hash — `{ "algorithm": "RSA", "n": hex, "e": hex, "d": hex, "bits": Int }`.
 Sign with the private exponent: `Crypto.modexp(padded, key["d"], key["n"])`.
+
+#### RsaKey.public_from_pem(pem)
+
+Parses a bare RSA **public** key — SPKI (`-----BEGIN PUBLIC KEY-----`) or
+PKCS#1 (`-----BEGIN RSA PUBLIC KEY-----`) PEM. Use it when you hold a public
+key rather than a certificate (`X509.public_key` covers that case): publishing
+a JWKS, or verifying tokens signed by someone else.
+
+**Returns:** Hash — `{ "algorithm": "RSA", "n": hex, "e": hex, "bits": Int }`.
+
+```soli
+# One JWKS entry
+key = RsaKey.public_from_pem(getenv("SOLI_OIDC_PUBLIC_KEY"))
+jwk = {
+  "kty": "RSA", "use": "sig", "alg": "RS256",
+  "n": Base64.urlsafe_encode(Hex.decode(key["n"])),
+  "e": Base64.urlsafe_encode(Hex.decode(key["e"]))
+}
+```
 
 #### Hex.encode(data) / Hex.decode(hex)
 
@@ -1822,9 +2239,18 @@ Creates a signed JWT token.
 - `payload` (Hash) - Claims to include in the token
 - `secret` (String) - Secret key for signing. Must be at least **32 bytes** for HMAC algorithms (SEC-054). Asymmetric algorithms (RS256, EdDSA) use PEM keys via the `key` option instead. Load a high-entropy value from `.env`, e.g. generate it once with `openssl rand -hex 32` and reference it as `getenv("JWT_SECRET")`. Never commit the secret to source.
 - `options` (Hash, optional) - Token options
-  - `expires_in` (Int) - Expiration time in seconds
+  - `expires_in` (Int) - Expiration, in seconds from now
   - `algorithm` (String) - "HS256", "HS384", "HS512", "RS256", or "EdDSA"
   - `key` (String) - PEM-encoded private key for RS256/EdDSA algorithms
+  - `kid` (String) - Key ID, written to the JWT **header**. Lets a verifier pick the right key out of a JWKS, which is what makes key rotation possible.
+  - `typ` (String) - Overrides the header `typ` (default `"JWT"`). Set `"at+jwt"` for RFC 9068 access tokens.
+  - `exp` (Int) - Expiration as an **absolute** Unix timestamp. Mutually exclusive with `expires_in` — supplying both raises, since they are different units and silently picking one would produce a token expiring at a time you never meant.
+  - `nbf` (Int) - Not-before, as an absolute Unix timestamp
+  - `aud` (String or Array) - Audience. RFC 7519 §4.1.3 allows either form.
+  - `iss` (String) - Issuer
+  - `jti` (String) - Unique token ID
+
+Registered claims come from `options`; everything else in `payload` becomes a custom claim. `sub` is the exception — it is read from `payload`. An option always wins over a same-named key in the payload.
 
 **Returns:** String - The JWT token
 
@@ -1834,6 +2260,20 @@ token = jwt_sign(
   { "sub": "user123", "role": "admin" },
   getenv("JWT_SECRET"),
   { "expires_in": 3600 }
+)
+
+# An OIDC id_token, signed with a rotatable key
+id_token = jwt_sign(
+  { "sub": user["_key"], "email": user["email"] },
+  "",
+  {
+    "algorithm": "RS256",
+    "key": getenv("SOLI_OIDC_PRIVATE_KEY"),
+    "kid": active_kid,
+    "iss": "https://op.example",
+    "aud": client["client_id"],
+    "expires_in": 600
+  }
 )
 ```
 
@@ -1847,8 +2287,16 @@ Verifies and decodes a JWT token. **The verifier — not the token — chooses w
 - `options` (Hash, optional) - Verification options
   - `algorithm` (String) - Pin verification to a specific algorithm (`HS256`, `HS384`, `HS512`, `RS256`, `EdDSA`). The token's header `alg` must match exactly or the call rejects with `"token algorithm ... does not match expected"`.
   - `key` (String) - PEM-encoded public key for RS256/EdDSA algorithms. When `key` is provided without an explicit `algorithm`, the allowed set is `RS256` / `EdDSA` only — HMAC tokens are rejected (the algorithm-confusion attack vector).
+  - `audience` (String or Array) - Expected `aud`. When set, `aud` becomes a **required** claim, so a token without one cannot slip through a check you believed was enforced.
+  - `issuer` (String or Array) - Expected `iss`, likewise required once set.
+  - `subject` (String) - Expected `sub`
+  - `leeway` (Int) - Clock-skew tolerance in seconds (default 60)
 
 When neither `algorithm` nor `key` is provided, the 2-arg form accepts only HMAC algorithms (`HS256`/`HS384`/`HS512`), matching the back-compat default.
+
+> **Audience is opt-in.** `aud` is only checked when you pass `audience`; a token carrying an audience you never asked about verifies normally. Audience is caller-supplied policy, exactly like `iss`. If you issue tokens for more than one client, pass `audience` — otherwise a token minted for client A is accepted by client B.
+>
+> Passing **several** expected audiences means the token must carry *all* of them, not any one of them. To accept one of many, verify once per candidate.
 
 **Returns:** Hash - Decoded payload, or `{ "error": true, "message": String }` on failure
 
@@ -1864,6 +2312,14 @@ end
 
 # Asymmetric verification: pin the algorithm explicitly.
 result = jwt_verify(token, "", { "algorithm": "RS256", "key": rsa_public_pem })
+
+# Verifying an OIDC id_token: check who issued it and who it was meant for.
+claims = jwt_verify(id_token, "", {
+  "algorithm": "RS256",
+  "key": provider_public_pem,
+  "issuer": "https://op.example",
+  "audience": getenv("OIDC_CLIENT_ID")
+})
 ```
 
 ### jwt_decode_unsafe(token)
@@ -1882,6 +2338,103 @@ The previous `jwt_decode(token)` returned the same shape as `jwt_verify`, which 
 let result = jwt_decode_unsafe(token)
 println(result["claims"]["sub"])  # Inspection only — DO NOT use for auth
 ```
+
+---
+
+## PASETO Functions
+
+PASETO v4 tokens, as an alternative to JWT that removes the choices JWT gets wrong.
+There is no `alg` header to confuse, no `none` algorithm, and no way to hand a
+verifier the wrong key type: a v4 token is either **local** (encrypted, symmetric)
+or **public** (signed, asymmetric), and the key tells you which.
+
+The `Paseto` class is on by default (Cargo feature `paseto`). Slim builds can omit
+it — see [Configuration → Slim binary](configuration.md#slim-binary-cargo-features).
+
+Keys and tokens are **PASERK** strings, so they are self-describing:
+`k4.local.…` (symmetric), `k4.secret.…` / `k4.public.…` (key pair),
+`k4.lid.…` / `k4.pid.…` (key identifiers).
+
+Every function **raises** on failure rather than returning an error hash — a
+tampered token, a wrong key or an expired token is an exception, so it cannot be
+mistaken for a valid result. Use postfix `rescue` for the "or nil" shape.
+
+### Paseto.generate_local_key() / Paseto.generate_key_pair()
+
+```soli
+let key  = Paseto.generate_local_key()   # "k4.local.…"  — encrypt/decrypt
+let pair = Paseto.generate_key_pair()    # {"secret": "k4.secret.…", "public": "k4.public.…"}
+```
+
+### Paseto.public_key(secret) / Paseto.key_id(key)
+
+`public_key` derives the verifying half from a secret, so a deployment can store
+only the secret. `key_id` returns a PASERK id (`k4.lid.…` / `k4.pid.…`) safe to
+log or put in a token footer.
+
+```soli
+Paseto.public_key(pair["secret"]) == pair["public"]   # true
+Paseto.key_id(key).starts_with("k4.lid.")             # true
+```
+
+### Paseto.encrypt(claims, key, options?) / Paseto.decrypt(token, key, options?)
+
+Symmetric — the holder of the key can both mint and read. `decrypt` returns the
+claims hash and raises if the token was tampered with, signed with another key, or
+has expired.
+
+```soli
+let token  = Paseto.encrypt({ "user_id": 42, "role": "admin" }, key, { "expires_in": 900 })
+let claims = Paseto.decrypt(token, key)
+print(claims["user_id"])
+```
+
+### Paseto.sign(claims, secret, options?) / Paseto.verify(token, public, options?)
+
+Asymmetric — the secret mints, the public key only verifies. Use this when the
+verifier should not be able to issue tokens.
+
+```soli
+let token  = Paseto.sign({ "sub": "bob" }, pair["secret"], { "expires_in": 600 })
+let claims = Paseto.verify(token, pair["public"])
+```
+
+### Paseto.decode_unsafe(token)
+
+Inspect a token **without** verifying it. The claims are nested under `claims` and
+the result carries `unverified: true`, so `peek["sub"]` is `nil` rather than a
+trusted-looking value — the same shape (and the same reasoning) as
+`jwt_decode_unsafe`.
+
+```soli
+let peek = Paseto.decode_unsafe(token)
+peek["unverified"]   # true
+peek["purpose"]      # "local" or "public"
+peek["version"]      # "v4"
+peek["claims"]["sub"]
+peek["footer"]       # the footer hash, if the token carries one
+```
+
+**Never authenticate on these claims** — use `decrypt` or `verify`.
+
+### Options
+
+Passed as the optional third argument.
+
+| Option | Side | Meaning |
+|---|---|---|
+| `expires_in` | mint | seconds until expiry |
+| `exp`, `nbf`, `iat` | mint | explicit timestamps |
+| `iss`, `sub`, `aud`, `jti` | mint | registered claims |
+| `non_expiring` | mint | mint a token with no `exp` (opt-in; expiry is the default) |
+| `footer` | both | unencrypted but authenticated data, e.g. `{ "kid": … }` |
+| `implicit` | both | implicit assertion — must match on the reading side |
+| `issuer`, `subject`, `audience`, `jti` | read | required claim values; a mismatch raises |
+| `allow_non_expiring` | read | accept a token with no `exp` |
+| `skip_valid_at` | read | skip the time-based checks |
+
+A footer is authenticated, not secret: it is readable by anyone holding the token,
+which is exactly why a key id belongs there.
 
 ---
 
@@ -2104,6 +2657,29 @@ println(json)  # {"name":"Alice","scores":[95,87]}
 
 arr = JSON.stringify([1, 2, 3])
 println(arr)  # [1,2,3]
+```
+
+### JSON.parse_jsonp(string)
+
+Unwraps a JSONP string — `callback({...});`, `callback([...])`, optionally with a
+leading `/**/` guard — and parses the inner JSON into a Soli value. The padding
+between the first `(` and last `)` is stripped, so parentheses inside JSON string
+values are preserved.
+
+**Parameters:**
+- `string` (String) - A JSONP response body
+
+**Returns:** Any - The parsed value. Raises if the string is not a valid
+`callback(...)` wrapper or the inner JSON is malformed.
+
+**Example:**
+```soli
+data = JSON.parse_jsonp('/**/cb({"name": "Alice", "age": 30});')
+println(data["name"])  # "Alice"
+
+# Pair it with a raw fetch when you don't want HTTP.get_jsonp:
+body = HTTP.get("https://api.example.com/feed?callback=cb")
+feed = JSON.parse_jsonp(body)
 ```
 
 ---
@@ -2674,6 +3250,46 @@ Sets the date to January 1st and time to 00:00:00.000, keeping the same year.
 Sets the date to December 31st and time to 23:59:59.999, keeping the same year.
 
 **Returns:** DateTime - A new DateTime instance
+
+#### How a DateTime prints and serialises
+
+A `DateTime` is a value, not an object. In string position it renders as local
+wall clock — the same thing `to_string()` returns — and in JSON it becomes an
+RFC 3339 string, matching `to_iso()`:
+
+```soli
+dt = DateTime.parse("2026-11-15 12:00:00")
+
+str(dt)                      # "2026-11-15 12:00:00"   (local)
+"#{dt}"                      # "2026-11-15 12:00:00"
+{"at": dt}.to_json()         # {"at":"2026-11-15T12:00:00+00:00"}
+```
+
+Because it is a value rather than an object, two DateTimes built from the same
+instant are equal (`==` compares the moment, not identity), and passing one
+around copies it rather than sharing a reference.
+
+#### Boundary methods and daylight saving
+
+The `beginning_of_*` / `end_of_*` methods work on **local** wall-clock time, so
+on the two days a year the clocks change, the boundary they ask for may not be
+a real instant. Both cases resolve to a value — these methods never fail:
+
+- **The hour repeats** (clocks go back). `2026-11-01 00:00:00` happens twice in
+  `America/Havana`. The **earliest** of the two instants is used — the first
+  time the wall clock reads that value, which is what "beginning of" means.
+- **The hour is skipped** (clocks go forward). `2023-10-01 00:00:00` never
+  happens in `America/Asuncion`. The first instant that *does* exist is used,
+  i.e. the moment the gap closes.
+
+The local zone comes from `$TZ` when set, otherwise from the system zone —
+matching the behaviour of the rest of the runtime.
+
+```soli
+# Under TZ=America/Havana
+dt = DateTime.parse("2026-11-15 12:00:00")
+dt.beginning_of_month().format("%Y-%m-%d %H:%M:%S")   # 2026-11-01 00:00:00
+```
 
 ### Comparison
 
@@ -3277,7 +3893,7 @@ token = csrf_token()
 
 ## Background Jobs and Cron
 
-Soli ships with a SolidB-backed queue and cron system. Define a handler in `app/jobs/{name}_job.sl` (`class {Name}Job` with a `static def perform(args: Hash)`), then enqueue or schedule it. Full guide: [jobs.md](jobs.md).
+Soli ships an in-process queue and cron engine. Define a handler in `app/jobs/{name}_job.sl` (`class {Name}Job` with a `static def perform(args: Hash)`), then enqueue or schedule it. Full guide: [jobs.md](jobs.md).
 
 ### Job class
 
@@ -3285,7 +3901,7 @@ Every user-defined `XJob` class also gets these static helpers injected automati
 
 #### Job.enqueue(handler, args, queue_or_opts?)
 
-Enqueues a job by handler name. Returns the SolidB job id. The trailing argument is either a queue-name string or an options hash `{ queue, priority, max_retries }` — `priority` is an Int and higher runs first.
+Enqueues a job by handler name. Returns the job id. The trailing argument is either a queue-name string or an options hash `{ queue, priority, max_retries }` — `priority` is an Int and higher runs first.
 
 ```soli
 job_id = Job.enqueue("WelcomeEmailJob", { "user_id": 42 })
@@ -3318,7 +3934,7 @@ Returns the list of jobs in a queue. Defaults to the configured default queue.
 
 #### Job.queues()
 
-Returns the list of queue names known to SolidB.
+Returns the queues that currently hold non-terminal work.
 
 ### Per-class facade methods
 
@@ -3326,9 +3942,10 @@ Each user-defined `XJob` class gets:
 
 | Method | Behavior |
 |--------|----------|
-| `XJob.perform_later(args, queue_or_opts?)` | Enqueues into SolidB. Returns the job id. |
+| `XJob.perform_later(args, queue_or_opts?)` | Enqueues for a worker to run. Returns the job id. |
 | `XJob.perform_in(duration, args, queue_or_opts?)` | Enqueues with a relative delay. |
 | `XJob.perform_at(datetime, args, queue_or_opts?)` | Enqueues to run at an ISO-8601 timestamp. |
+| `XJob.perform_now(args)` | Runs `perform` inline, right now — no queue row, no worker, no database. Returns the handler's value. |
 | `XJob.schedule_cron(name, expr, args?)` | Idempotently registers a cron entry that triggers this class. |
 
 The trailing `queue_or_opts` argument is either a queue-name string or an options hash `{ queue, priority, max_retries }` (higher `priority` runs first).
@@ -3364,17 +3981,17 @@ Deletes a cron entry by id. Returns Bool.
 
 ### Cron expression helpers
 
-Pure string builders. No SolidB writes.
+Pure string builders — six-field expressions (`sec min hour day-of-month month day-of-week`). No writes; only `Cron.schedule` stores a schedule.
 
 | Helper | Cron string |
 |--------|-------------|
-| `Cron.every("5 minutes")` | `*/5 * * * *` |
-| `Cron.every("1 hour")` | `0 * * * *` |
-| `Cron.every("2 hours")` | `0 */2 * * *` |
-| `Cron.every("1 day")` | `0 0 */1 * *` |
-| `Cron.hourly()` | `0 * * * *` |
-| `Cron.daily_at("03:00")` | `0 3 * * *` |
-| `Cron.weekly_at("monday", "09:00")` | `0 9 * * 1` |
+| `Cron.every("5 minutes")` | `0 */5 * * * *` |
+| `Cron.every("1 hour")` | `0 0 * * * *` |
+| `Cron.every("2 hours")` | `0 0 */2 * * *` |
+| `Cron.every("1 day")` | `0 0 0 */1 * *` |
+| `Cron.hourly()` | `0 0 * * * *` |
+| `Cron.daily_at("03:00")` | `0 0 3 * * *` |
+| `Cron.weekly_at("monday", "09:00")` | `0 0 9 * * Mon` |
 
 ### Declarative `static cron`
 
@@ -3382,7 +3999,7 @@ A class can declare a `static cron` field; on boot, worker 0 upserts a cron entr
 
 ```soli
 class NightlyReportJob {
-  static cron = Cron.daily_at("03:00")
+  static cron: String = Cron.daily_at("03:00")
 
   static def perform(args: Hash) {
     Report.generate()
@@ -3390,16 +4007,19 @@ class NightlyReportJob {
 }
 ```
 
-Removing the field does not auto-delete the SolidB entry — call `Cron.delete(id)` explicitly.
+Removing the field does not auto-delete the schedule — call `Cron.delete(name)` explicitly.
 
 ### Configuration env vars
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `SOLI_JOBS_DATABASE` | SolidB database for queues and cron | `SOLIDB_DATABASE` then `default` |
 | `SOLI_JOBS_DEFAULT_QUEUE` | Queue name when none is supplied | `default` |
-| `SOLI_JOBS_CALLBACK_URL` | URL SolidB POSTs to when a job fires | `http://127.0.0.1:3000/_jobs/run` |
-| `SOLI_JOBS_SECRET` | **Required.** HMAC-SHA256 key used to sign and verify job callbacks (`X-Job-Signature` header). The `/_jobs/run/:name` route is not registered if unset — see [Jobs / Signed Callbacks](jobs.md#security-signed-callbacks) | unset |
+| `SOLI_JOB_WORKERS` | Worker threads that run job code; `0` disables the engine in this process | `1` |
+| `SOLI_JOBS_POLL_MS` | How often the poller looks for due work (ms) | `1000` |
+| `SOLI_JOBS_LEASE_SECS` | Lease length; a claimed job is reclaimable this long after its last heartbeat | `60` |
+| `SOLI_JOBS_MAX_RETRIES` | Default retry budget per job | `3` |
+| `SOLI_JOBS_RETENTION_SECS` | How long completed rows are kept before pruning | `604800` |
+| `SOLI_WEBHOOK_SECRET` | Default HMAC key for **outgoing** `Webhook.*` deliveries | unset |
 
 ---
 
@@ -3554,26 +4174,53 @@ Asserts that a string is valid JSON.
 
 ---
 
+## Test Helpers
+
+### with_transaction(block)
+
+Runs a block inside a SolidB transaction and **always rolls back** when the block finishes (test-only). Unlike `Model.transaction { }`, it never commits.
+
+```soli
+with_transaction(fn() {
+  Factory.insert("user")
+  assert_eq(User.count(), 1)
+})
+assert_eq(User.count(), 0)
+```
+
+### freeze_time(timestamp) / travel_to(timestamp) / unfreeze_time()
+
+Pins `datetime_now()` to a fixed Unix timestamp (int or parseable date string). Cleared by `unfreeze_time()` and automatically before each test example.
+
+```soli
+freeze_time(1_700_000_000)
+travel_to("2024-06-15")
+unfreeze_time()
+```
+
+---
+
 ## Factory Functions
 
-Factories help create test data.
+Factories help create test data. `Factory.create` returns hashes; use `Factory.insert` to persist through a bound model.
 
-### Factory.define(name, data)
+### Factory.define(name, data_or_block)
 
-Defines a factory template.
-
-**Parameters:**
-- `name` (String) - Factory name
-- `data` (Hash) - Default data
+Defines a factory template as a static hash or a callable block.
 
 **Example:**
 ```soli
 Factory.define("user", {
-  "name": "Test User",
-  "email": "test@example.com",
-  "role": "user"
+  "email": "user#{n}@test.com",
+  "name": "Test User"
+})
+
+Factory.define("post", fn() {
+  return {"title": "Post #{Factory.sequence("post")}"}
 })
 ```
+
+String values may include `#{n}` — replaced with a per-factory auto-incrementing counter on each `create`.
 
 ### Factory.create(name)
 
@@ -3635,9 +4282,22 @@ Factory.sequence("user_id")  # 1
 Factory.sequence("user_id")  # 2
 ```
 
+### Factory.bind(name, model_class)
+
+Associates a factory name with a model class for `Factory.insert`.
+
+### Factory.insert(name, overrides?)
+
+Builds factory attributes (running callable templates and `#{n}` interpolation) then calls `Model.create`. Returns the persisted record.
+
+```soli
+Factory.bind("user", User)
+user = Factory.insert("user", {"email": "custom@example.com"})
+```
+
 ### Factory.clear
 
-Clears all factory definitions and sequences.
+Clears all factory definitions, model bindings, and sequences.
 
 ---
 
@@ -3831,17 +4491,36 @@ I18n.cached_table("ja")   # null  (nothing cached for "ja" yet)
 
 ### break
 
-Exits a loop early.
+Exits the innermost enclosing loop immediately. Works in both `while` and `for`
+loops, and supports postfix conditions (`break if cond` / `break unless cond`).
+
+`break` propagates out of nested blocks, `if` branches and `try`/`catch` — a
+`finally` block still runs before the loop exits. A `break` inside a lambda or
+function body does **not** break an outer loop; it is absorbed at the function
+boundary.
 
 **Example:**
 ```soli
 for i in range(0, 10)
-  if i == 5
-    break
-  end
+  break if i == 5
   println(i)
 end
+# prints: 0, 1, 2, 3, 4
+
+# Also valid inside `while`, and out of nested blocks
+idx = 0
+while true
+  if items[idx].nil?
+    break
+  end
+  idx = idx + 1
+end
 ```
+
+> **Note:** handlers containing `break` are not compiled by the bytecode VM —
+> they fall back to the tree-walking interpreter automatically (the same
+> precedent as safe navigation `&.`). Behavior is identical; only the JIT path
+> is skipped.
 
 ### next
 

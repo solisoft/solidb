@@ -1,5 +1,43 @@
 # Changelog
 
+## [Unreleased]
+
+### Removed
+
+* **The client-facing job and cron queue is gone.** Application background jobs
+  now live in the Soli framework, which claims and runs them in its own process
+  on whichever database it is configured for. SolidB no longer needs to schedule
+  application work, so the queue it exposed for that purpose is removed:
+
+  * **HTTP** (10 endpoints): `GET/PUT /_api/database/{db}/queues…`,
+    `GET /…/queues/{name}/jobs`, `POST /…/queues/{name}/enqueue`,
+    `DELETE /…/queues/jobs/{id}`, `POST /…/queues/jobs/{id}/run-now`, and all
+    four `/_api/database/{db}/cron` routes.
+  * **Driver protocol** (8 commands): `list_queues`, `list_jobs`, `enqueue_job`,
+    `cancel_job`, `list_cron_jobs`, `create_cron_job`, `update_cron_job`,
+    `delete_cron_job`.
+  * **Lua**: the `db:enqueue(queue, script, params, options)` global.
+  * **Rust API**: `queue::{CronJob, QueueConfig}`, `QueueWorker::check_cron_jobs`.
+  * **Clients**: the jobs and cron sub-clients in the JS, Ruby, PHP, Python, Go,
+    and Elixir SDKs, plus the queue command variants in the Rust client.
+  * **UI**: the admin Queues and Cron pages, and the CLI TUI Jobs tab. Tab `5`
+    is now Cluster.
+  * Per-queue pause and concurrency settings (`_queue_config`), which were only
+    reachable through the removed endpoint.
+
+  **Triggers keep working.** A trigger still fires by inserting a row into
+  `_jobs`, and the worker still claims that row and runs its Lua script or posts
+  its signed webhook. That dispatcher, the HMAC signing, and the `Job` /
+  `JobStatus` types all remain. Embedding generation and materialized-view
+  refresh are untouched.
+
+  **Action required.** Any caller of the endpoints, driver commands, SDK
+  sub-clients, or `db:enqueue` above must move to Soli's job engine. Let SolidB's
+  queue drain before you upgrade: a `pending` row that no trigger created will
+  never run. Stored `_cron_jobs` and `_queue_config` collections become orphan
+  data — no code reads them, and **a cron schedule you configured stops
+  firing, with no error**. Drop those collections when you are ready.
+
 ## [0.34.0](https://github.com/solisoft/solidb/compare/v0.33.0...v0.34.0) (2026-08-05)
 
 Mostly a clustering release. Multi-machine replication could not work at all, and each fault hid the next, so every fix below was found by deploying two real nodes rather than by a test.

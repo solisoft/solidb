@@ -6,7 +6,6 @@
 //! - Collection CRUD operations (update, delete, count)
 //! - Crypto utilities (uuid, random_bytes)
 //! - solidb.log and solidb.stats
-//! - db:enqueue for job queuing
 //! - Error handling and script failures
 
 use serde_json::json;
@@ -766,88 +765,6 @@ async fn test_solidb_log() {
     let db = engine.get_database("testdb").unwrap();
     let logs = db.get_collection("_logs").unwrap();
     assert!(logs.count() >= 2);
-}
-
-// ============================================================================
-// db:enqueue Tests
-// ============================================================================
-
-#[tokio::test]
-async fn test_db_enqueue_job() {
-    let (engine, script_engine, _tmp) = create_test_env();
-
-    let ctx = ScriptContext {
-        method: "POST".to_string(),
-        path: "/enqueue".to_string(),
-        query_params: HashMap::new(),
-        params: HashMap::new(),
-        headers: HashMap::new(),
-        body: None,
-        is_websocket: false,
-        user: ScriptUser::anonymous(),
-    };
-
-    let code = r#"
-        local job_id = db:enqueue("emails", "send_email", { to = "test@example.com" })
-        return {
-            job_id = job_id,
-            has_id = (job_id ~= nil and #job_id > 0)
-        }
-    "#;
-
-    let script = create_script(code);
-    let result = script_engine
-        .execute(&script, "testdb", &ctx)
-        .await
-        .unwrap();
-    let body = result.body.as_object().unwrap();
-
-    assert_eq!(body["has_id"], true);
-    assert_eq!(body["job_id"].as_str().unwrap().len(), 36); // UUID length
-
-    // Verify job was created in _jobs collection
-    let db = engine.get_database("testdb").unwrap();
-    let jobs = db.get_collection("_jobs").unwrap();
-    assert_eq!(jobs.count(), 1);
-}
-
-#[tokio::test]
-async fn test_db_enqueue_with_options() {
-    let (engine, script_engine, _tmp) = create_test_env();
-
-    let ctx = ScriptContext {
-        method: "POST".to_string(),
-        path: "/enqueue".to_string(),
-        query_params: HashMap::new(),
-        params: HashMap::new(),
-        headers: HashMap::new(),
-        body: None,
-        is_websocket: false,
-        user: ScriptUser::anonymous(),
-    };
-
-    let code = r#"
-        local job_id = db:enqueue("priority_queue", "urgent_task", { data = "test" }, {
-            priority = 100,
-            max_retries = 5
-        })
-        return { job_id = job_id }
-    "#;
-
-    let script = create_script(code);
-    let result = script_engine
-        .execute(&script, "testdb", &ctx)
-        .await
-        .unwrap();
-
-    assert!(!result.body["job_id"].as_str().unwrap().is_empty());
-
-    // Verify job properties
-    let db = engine.get_database("testdb").unwrap();
-    let jobs = db.get_collection("_jobs").unwrap();
-    let job_doc = jobs.scan(None).pop().unwrap();
-    assert_eq!(job_doc.data["priority"], 100);
-    assert_eq!(job_doc.data["max_retries"], 5);
 }
 
 // ============================================================================

@@ -1,9 +1,11 @@
-//! Queue Worker Tests
+//! Trigger-dispatch worker tests.
 //!
-//! Verifies job processing logic:
-//! - Enqueueing a job
-//! - Execution via QueueWorker
-//! - Status updates (Pending -> Running -> Completed)
+//! SolidB no longer exposes a client-facing job queue, but triggers still fire
+//! by inserting a row into `_jobs` for the worker to claim and execute. These
+//! tests cover that dispatch path:
+//! - a row appears in `_jobs`
+//! - `QueueWorker::check_jobs` claims and runs it
+//! - the status advances Pending -> Running -> Completed
 //! - Error handling and retries
 
 use serde_json::json;
@@ -27,8 +29,6 @@ fn create_test_env() -> (Arc<StorageEngine>, Arc<QueueWorker>, TempDir) {
     // Create system collections
     db.create_collection("_scripts".to_string(), None).unwrap();
     db.create_collection("_jobs".to_string(), None).unwrap();
-    db.create_collection("_cron_jobs".to_string(), None)
-        .unwrap();
     db.create_collection("logs".to_string(), None).unwrap(); // For script side effects
 
     let stats = Arc::new(ScriptStats::default());
@@ -135,67 +135,4 @@ async fn test_job_execution_success() {
     let log_doc = logs.scan(None).pop().unwrap();
     assert_eq!(log_doc.data["message"], "Job executed");
     assert_eq!(log_doc.data["params"]["foo"], "bar");
-}
-
-#[tokio::test]
-async fn test_cron_scheduling() {
-    let (engine, worker, _tmp) = create_test_env();
-    let db = engine.get_database("testdb").unwrap();
-    let cron_jobs = db.get_collection("_cron_jobs").unwrap();
-    let jobs = db.get_collection("_jobs").unwrap();
-
-    // 1. Create a Cron Job
-    // Schedule: Runs every second (* * * * * * ?) - using quartz format if supported, or standard cron
-    // The code uses `cron::Schedule`, which typically supports 6 or 7 fields.
-    // Let's use a schedule that is definitely in the past/now for immediate triggering?
-    // "0/1 * * * * * *" (Every second)
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    let cron_job = solidb::queue::CronJob {
-        id: "cron_1".to_string(),
-        revision: None,
-        name: "Test Cron".to_string(),
-        cron_expression: "0/1 * * * * * *".to_string(), // Every second
-        queue: "default".to_string(),
-        priority: 10,
-        max_retries: 3,
-        script_path: "test_worker".to_string(),
-        webhook_url: None,
-        webhook_secret: None,
-        webhook_headers: None,
-        params: json!({}),
-        last_run: None,
-        next_run: Some(now - 1), // Force it to be due
-        created_at: now,
-    };
-
-    cron_jobs
-        .insert(serde_json::to_value(&cron_job).unwrap())
-        .unwrap();
-
-    // 2. Run Cron Check
-    worker.check_cron_jobs().await;
-
-    // 3. Verify Job Spawned
-    let spawned_jobs = jobs.scan(None);
-    assert!(
-        !spawned_jobs.is_empty(),
-        "Cron job should have spawned a job"
-    );
-
-    let job_doc = &spawned_jobs[0];
-    assert_eq!(job_doc.data["cron_job_id"], "cron_1");
-    assert_eq!(job_doc.data["status"], "pending");
-
-    // 4. Verify Cron Job Updated
-    let updated_cron_doc = cron_jobs.get("cron_1").unwrap();
-    let updated_cron: solidb::queue::CronJob =
-        serde_json::from_value(updated_cron_doc.to_value()).unwrap();
-
-    assert!(updated_cron.last_run.is_some());
-    assert!(updated_cron.next_run.unwrap() > now);
 }

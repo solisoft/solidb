@@ -5,7 +5,6 @@ pub mod databases;
 pub mod documents;
 pub mod help;
 pub mod indexes;
-pub mod jobs;
 pub mod query;
 
 pub use cluster::ClusterView;
@@ -13,7 +12,6 @@ pub use databases::DatabasesView;
 pub use documents::DocumentsView;
 pub use help::HelpView;
 pub use indexes::IndexesView;
-pub use jobs::JobsView;
 pub use query::QueryView;
 
 use crate::cli::tui::app::AppContext;

@@ -2,6 +2,8 @@
 
 Models manage data and business logic in your MVC application. SoliLang provides a simple OOP-style interface for database operations.
 
+To bind a model to a named database (SoliDB, Postgres, or MySQL), use class-body `connection "name"` with `config/database.toml` — see **[Multiple Databases](multi-database.md)**.
+
 ## Defining Models
 
 Create model files in `app/models/`. The collection name is **automatically derived** from the class name:
@@ -132,6 +134,15 @@ user.save({ "name": "Alice Smith", "age": 31 });
 user.update({ "name": "Alice Smith", "age": 31 });
 ```
 
+`instance.to_h()` returns the record's user fields as a Hash, dropping the
+`_`-prefixed framework fields (`_key`, `_id`, `_rev`, `_errors`, …). Handy for
+serialization, diffing, and content hashing:
+
+```soli
+user = User.find("user123");
+user.to_h();   # { "name": "Alice Smith", "age": 31 }
+```
+
 ### Deleting Records
 
 ```soli
@@ -250,6 +261,8 @@ Class-body declarations for the multi-model and search features:
 | `fulltext_index field, ...` | Declare a fulltext index over one or more fields |
 | `geo_index field` | Declare a geospatial index (`{ "lat": ..., "lon": ... }` field) |
 | `index field_or_fields, options?` | Declare a secondary index (`unique:`, `type:` — `"persistent"` default / `"hash"` / `"fulltext"` / `"bloom"` / `"cuckoo"`, `name:`) |
+| `connection name` | Bind the model to a named connection from `config/database.toml`. See [Multiple Databases](multi-database.md#per-model-connection). |
+| `table name` | Bind the model to an **existing** SQL table and read/write its real columns instead of `_key` + `doc`. Schema (columns, types, primary key) is introspected at boot; Soli never creates or alters the table. See [Column-aware models](multi-database.md#column-aware-models-existing-databases). |
 
 Index declarations are metadata-only at load: dev ensures them at server
 boot; in production run `soli db:indexes` or create them in migrations. See
@@ -267,6 +280,19 @@ boot; in production run `soli db:indexes` or create them in migrations. See
 | `.includes(rel, filter, binds)` | Eager load with filter and optional `"fields"` key |
 | `.includes({ rel: [fields] })` | Eager load with field projection |
 | `.includes_count(rel, ...)` | Eager load count as `<rel>_count` (HasMany/HABTM only) |
+
+**These also work on an already-loaded array.** A `has_many`/`has_one` accessor returns a
+plain array rather than a query builder, so a Rails-style chain lands on one:
+
+```soli
+# org.contacts is already an array — order/all/includes still work on it
+let sorted = org.contacts.order("name").all()
+```
+
+On an array, `.order(field, dir?)` sorts in memory, and `.all()` / `.includes(...)` return it
+unchanged so the chain reads the same whether it ran in the database or not. Rows missing the
+ordered field sort first.
+
 | `.select(field, ...)` | Select specific fields on the main collection |
 | `.fields(field, ...)` | Alias for `.select()` |
 | `.join(rel, filter?, binds?)` | Filter by existence of related records |
@@ -1224,8 +1250,12 @@ n = alice.traverse(Follow).count
   document, so mixed-vertex graphs return the right class for each vertex.
 - Soft-delete models compose: the deleted-filter is applied to the vertices.
 - A traversal builder does **not** compose with `includes`, `includes_count`,
-  `join`, `group_by`, `similar`, `update_all`, or `delete_all` — combining
-  them raises a clear error.
+  `join`, `group_by`, `update_all`, or `delete_all` — combining them raises a
+  clear error. **`.similar()` does compose** — rank traversal results by
+  semantic relevance (exact client-side cosine; no HNSW pushdown on graph
+  queries).
+- `Model.graph_rag(query, options)` — graph-augmented retrieval: ANN seeds,
+  expand through an edge model, re-rank. See [Graph RAG](#graph-rag) below.
 - `traverse` and `shortest_path` require a saved record (they raise
   otherwise).
 
@@ -1266,6 +1296,77 @@ def up(db: Any)
   db.create_index("follows", "idx_follows_to", ["_to"], {})
 end
 ```
+
+### Graph RAG
+
+Combine **vector retrieval** with **graph expansion** for richer RAG context.
+Two APIs:
+
+**Composition** — rank neighbors of a seed vertex by meaning:
+
+```soli
+# Saved record required for traverse()
+related = product.traverse(CompatibleWith, depth: 1)
+  .similar("wireless accessories", "embedding", 5)
+  .all
+
+for item in related
+  print(item.name + " — " + str(item._similarity_score))
+end
+```
+
+Traversal + `.similar()` always uses exact client-side cosine over the
+reachable vertices (HNSW pushdown does not apply to graph FOR-heads).
+
+**`Model.graph_rag()`** — seed-and-expand in one eager call:
+
+```soli
+class CompatibleWith < Model
+  edge from: "products", to: "products"
+end
+
+class Product < Model
+  vector_index "embedding", dimension: 1536, metric: "cosine"
+
+  before_save fn() {
+    this.embedding = embed(this.name + ". " + this.description)
+  }
+end
+
+context = Product.graph_rag("running headphones with long battery", {
+  "via": CompatibleWith,
+  "direction": "any",
+  "depth": 1,
+  "seed_k": 3,
+  "limit": 8
+})
+
+for product in context
+  print(product.name)
+  print("  score: " + str(product._similarity_score))
+  print("  seed:  " + str(product._graph_seed))
+  print("  hops:  " + str(product._graph_hops))
+end
+
+answer = llm_generate(
+  "Recommend only from the list. Mention names and prices.",
+  build_product_context(context) + "\n\nQuestion: running headphones"
+)
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `via` | — | **Required.** Edge model class (must declare `edge from:, to:`) |
+| `direction` | `"out"` | `"out"`, `"in"`, or `"any"` |
+| `depth` | `1` | Int `n` (1..n) or `[min, max]` array |
+| `field` | `"embedding"` | Vector field covered by `vector_index` |
+| `seed_k` | `5` | ANN seeds from the collection index |
+| `limit` | `10` | Final result cap after expand + re-rank |
+| `vector` | — | Query vector literal — skips the embedding API call |
+
+Each result carries `_similarity_score` (re-rank score), `_graph_seed` (true
+for direct ANN hits), and `_graph_hops` (0 for seeds, 1 for expanded
+neighbors in v1).
 
 ## Finder Methods
 
@@ -1357,9 +1458,14 @@ Quick queries for specific data:
 names = User.where("active = @a", { "a": true }).pluck("name");
 # Returns: ["Alice", "Bob", "Charlie"]
 
-# Get multiple fields as objects
+# Get multiple fields as hashes — self-describing, and the projection runs
+# in the database: only the named fields travel over the wire
 users = User.pluck("name", "email");
 # Returns: [{ name: "Alice", email: "alice@example.com" }, ...]
+
+# Symbols work wherever a field name is expected — same query, Rails-style
+users = User.pluck(:name, :email).all
+posts = Post.order(:created_at, :desc).limit(10).all
 
 # Check if records exist (returns boolean)
 exists = User.where("role = @r", { "r": "admin" }).exists;
@@ -1890,9 +1996,17 @@ grouped(fn() {
 ```
 
 Inside the block each read returns a placeholder instead of hitting the
-database; the queries fire as one combined statement when the block ends. The
-results are then materialised, so **after** the block `@posts`, `@accounts`, and
-`@tags` are ordinary values you use exactly as before.
+database; the queries fire as one combined statement when the block ends, and the
+results are then materialised. **After** the block you use `@posts`,
+`@accounts`, and `@tags` exactly as before — iterate them, index them, read
+fields, serialise them to JSON.
+
+Strictly speaking the binding stays a thin placeholder that resolves to its value
+on use, rather than being replaced by one. That is invisible in normal code, but
+it is why a *new* way of consuming a value can occasionally need teaching to
+unwrap it — if you ever see an error naming a type that the value plainly is
+(`cannot iterate over array`), that is the shape of the bug, and it is worth
+reporting.
 
 ### What gets coalesced
 
@@ -1925,11 +2039,43 @@ results after the block.
   surfaces when the result is read or the block ends.
 - A combined query is all-or-nothing: if it fails, every read in the batch
   fails together.
-- In **`--dev`** the reads are *not* coalesced — each runs as its own query so
-  the dev query log stays readable (you see the natural statements instead of
-  one combined `LET … RETURN […]`). Coalescing is active in production, where
-  the single round-trip is what matters. To confirm the production shape, check
-  the combined query in a non-dev run.
+- In interactive **`--dev`** the reads are *not* coalesced — each runs as its own
+  query so the dev query log stays readable (you see the natural statements
+  instead of one combined `LET … RETURN […]`). Coalescing is active in
+  production, where the single round-trip is what matters.
+- **`soli test` coalesces.** The test server runs with `--dev` so the query log
+  is populated, but specs exercise the *production* shape deliberately —
+  otherwise the whole coalescing path would go untested and `assert_query_count`
+  would measure dev's un-coalesced number instead of the round-trips production
+  makes. A grouped action reports **one** query in a spec, not one per read.
+
+### Finding reads that should be grouped
+
+Because `grouped` is for reads that each run *once*, an N+1 scan can never point
+you at them: it fingerprints by query template and only fires on a *repeated*
+one. Three unrelated reads are three distinct templates with a count of one
+each — invisible to `assert_no_n_plus_one` and to the dev bar's N+1 badge.
+
+Two tools cover that blind spot:
+
+- The **dev bar** query panel shows a `N READS · N ROUND-TRIPS` advisory when a
+  request issues three or more distinct one-off reads outside any `grouped`
+  block. It is amber, not red: it is a suggestion, because reads that feed each
+  other cannot share a round-trip.
+- **`assert_no_ungrouped_reads(response)`** fails a spec on the same condition:
+
+  ```soli
+  test("the dashboard loads in one round-trip", fn() {
+    let response = get("/dashboard")
+    assert_no_ungrouped_reads(response)
+    assert_query_count(response, 1)
+  })
+  ```
+
+Neither can prove the reads are independent — `User.find(id)` followed by a query
+on `user._key` is genuinely two round-trips. When the reads must be sequential,
+that advisory is a false positive and the assertion is the wrong tool for that
+action.
 
 ## Transactions
 

@@ -3,7 +3,7 @@
 use super::client::TuiClient;
 use super::ui;
 use super::views::{
-    ClusterView, DatabasesView, DocumentsView, HelpView, IndexesView, JobsView, QueryView, View,
+    ClusterView, DatabasesView, DocumentsView, HelpView, IndexesView, QueryView, View,
 };
 use super::TuiArgs;
 use crossterm::{
@@ -23,7 +23,6 @@ pub enum CurrentView {
     Documents,
     Query,
     Indexes,
-    Jobs,
     Cluster,
 }
 
@@ -34,8 +33,7 @@ impl CurrentView {
             CurrentView::Documents => 1,
             CurrentView::Query => 2,
             CurrentView::Indexes => 3,
-            CurrentView::Jobs => 4,
-            CurrentView::Cluster => 5,
+            CurrentView::Cluster => 4,
         }
     }
 
@@ -45,8 +43,7 @@ impl CurrentView {
             1 => CurrentView::Documents,
             2 => CurrentView::Query,
             3 => CurrentView::Indexes,
-            4 => CurrentView::Jobs,
-            5 => CurrentView::Cluster,
+            4 => CurrentView::Cluster,
             _ => CurrentView::Databases,
         }
     }
@@ -57,7 +54,6 @@ impl CurrentView {
             CurrentView::Documents => "Documents",
             CurrentView::Query => "Query",
             CurrentView::Indexes => "Indexes",
-            CurrentView::Jobs => "Jobs",
             CurrentView::Cluster => "Cluster",
         }
     }
@@ -68,7 +64,6 @@ impl CurrentView {
             CurrentView::Documents,
             CurrentView::Query,
             CurrentView::Indexes,
-            CurrentView::Jobs,
             CurrentView::Cluster,
         ]
     }
@@ -110,7 +105,6 @@ pub struct App {
     pub documents_view: DocumentsView,
     pub query_view: QueryView,
     pub indexes_view: IndexesView,
-    pub jobs_view: JobsView,
     pub cluster_view: ClusterView,
     pub help_view: HelpView,
 }
@@ -140,7 +134,6 @@ impl App {
             documents_view: DocumentsView::new(),
             query_view: QueryView::new(),
             indexes_view: IndexesView::new(),
-            jobs_view: JobsView::new(),
             cluster_view: ClusterView::new(),
             help_view: HelpView::new(),
         })
@@ -182,10 +175,6 @@ impl App {
                         &coll,
                     );
                 }
-            }
-            CurrentView::Jobs => {
-                self.jobs_view
-                    .refresh(&self.ctx.client, &self.ctx.current_database);
             }
             CurrentView::Cluster => {
                 self.cluster_view.refresh(&self.ctx.client);
@@ -250,12 +239,6 @@ impl App {
                 return true;
             }
             KeyCode::Char('5') if !self.query_view.is_editing() => {
-                self.ctx.current_view = CurrentView::Jobs;
-                self.jobs_view
-                    .refresh(&self.ctx.client, &self.ctx.current_database);
-                return true;
-            }
-            KeyCode::Char('6') if !self.query_view.is_editing() => {
                 self.ctx.current_view = CurrentView::Cluster;
                 self.cluster_view.refresh(&self.ctx.client);
                 return true;
@@ -292,10 +275,6 @@ impl App {
                         collection,
                     );
                 }
-            }
-            CurrentView::Jobs => {
-                self.jobs_view
-                    .refresh(&self.ctx.client, &self.ctx.current_database);
             }
             CurrentView::Cluster => {
                 self.cluster_view.refresh(&self.ctx.client);
@@ -412,10 +391,6 @@ fn run_app(
                     }
                     CurrentView::Indexes => {
                         app.indexes_view
-                            .handle_key(&mut app.ctx, key.code, key.modifiers);
-                    }
-                    CurrentView::Jobs => {
-                        app.jobs_view
                             .handle_key(&mut app.ctx, key.code, key.modifiers);
                     }
                     CurrentView::Cluster => {

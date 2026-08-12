@@ -7,7 +7,7 @@
       <h2 class="mt-1">Lua scripts <span class="font-mono text-sm text-zinc-500">(<%= @scripts.length() %>)</span></h2>
       <p class="mt-1 max-w-2xl console-help">
         Lua 5.4 scripts stored in this database — expose them as custom HTTP endpoints or run them
-        from queues, cron jobs and triggers
+        from triggers
       </p>
     </div>
     <a href="<%= attr(db_scripts_path(@db)) %>/new" class="btn-primary">New script</a>

@@ -175,40 +175,6 @@ class SolidbEndpoints
     return "/_api/database/" + db + "/scripts/" + script_id
   end
 
-  # --- queues / jobs / cron ---
-  static def queues(db)
-    return "/_api/database/" + db + "/queues"
-  end
-
-  # PUT — create/update per-queue settings (paused, concurrency, default priority).
-  static def queue_config(db, queue_name)
-    return "/_api/database/" + db + "/queues/" + queue_name
-  end
-
-  static def queue_jobs(db, queue_name)
-    return "/_api/database/" + db + "/queues/" + queue_name + "/jobs"
-  end
-
-  static def queue_enqueue(db, queue_name)
-    return "/_api/database/" + db + "/queues/" + queue_name + "/enqueue"
-  end
-
-  static def queue_job(db, job_id)
-    return "/_api/database/" + db + "/queues/jobs/" + job_id
-  end
-
-  static def queue_job_run_now(db, job_id)
-    return "/_api/database/" + db + "/queues/jobs/" + job_id + "/run-now"
-  end
-
-  static def cron_jobs(db)
-    return "/_api/database/" + db + "/cron"
-  end
-
-  static def cron_job(db, cron_id)
-    return "/_api/database/" + db + "/cron/" + cron_id
-  end
-
   # --- triggers ---
   static def triggers(db)
     return "/_api/database/" + db + "/triggers"

@@ -745,48 +745,6 @@ pub fn create_router(
             "/_api/auth/me/permissions",
             get(super::role_handlers::get_my_permissions),
         )
-        // Queue Management
-        .route(
-            "/_api/database/{db}/queues",
-            get(super::queue_handlers::list_queues_handler),
-        )
-        .route(
-            "/_api/database/{db}/queues/{name}",
-            put(super::queue_handlers::update_queue_config_handler),
-        )
-        .route(
-            "/_api/database/{db}/queues/{name}/jobs",
-            get(super::queue_handlers::list_jobs_handler),
-        )
-        .route(
-            "/_api/database/{db}/queues/{name}/enqueue",
-            post(super::queue_handlers::enqueue_job_handler),
-        )
-        .route(
-            "/_api/database/{db}/queues/jobs/{id}",
-            delete(super::queue_handlers::cancel_job_handler),
-        )
-        .route(
-            "/_api/database/{db}/queues/jobs/{id}/run-now",
-            post(super::queue_handlers::run_now_job_handler),
-        )
-        // Cron Job Management
-        .route(
-            "/_api/database/{db}/cron",
-            get(super::queue_handlers::list_cron_jobs_handler),
-        )
-        .route(
-            "/_api/database/{db}/cron",
-            post(super::queue_handlers::create_cron_job_handler),
-        )
-        .route(
-            "/_api/database/{db}/cron/{id}",
-            put(super::queue_handlers::update_cron_job_handler),
-        )
-        .route(
-            "/_api/database/{db}/cron/{id}",
-            delete(super::queue_handlers::delete_cron_job_handler),
-        )
         // Trigger Management
         .route(
             "/_api/database/{db}/triggers",

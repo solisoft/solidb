@@ -1,8 +1,6 @@
 from .client import (
     Client,
     ScriptsClient,
-    JobsClient,
-    CronClient,
     TriggersClient,
     EnvClient,
     RolesClient,
@@ -35,8 +33,6 @@ __all__ = [
     "Client",
     # Sub-clients for management APIs
     "ScriptsClient",
-    "JobsClient",
-    "CronClient",
     "TriggersClient",
     "EnvClient",
     "RolesClient",

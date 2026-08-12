@@ -27,8 +27,6 @@ class Client:
         self._database: Optional[str] = None
 
         self._scripts: Optional['ScriptsClient'] = None
-        self._jobs: Optional['JobsClient'] = None
-        self._cron: Optional['CronClient'] = None
         self._triggers: Optional['TriggersClient'] = None
         self._env: Optional['EnvClient'] = None
         self._roles: Optional['RolesClient'] = None
@@ -339,20 +337,6 @@ class Client:
         return self._scripts
 
     @property
-    def jobs(self) -> 'JobsClient':
-        """Access jobs/queue management API."""
-        if self._jobs is None:
-            self._jobs = JobsClient(self)
-        return self._jobs
-
-    @property
-    def cron(self) -> 'CronClient':
-        """Access cron jobs management API."""
-        if self._cron is None:
-            self._cron = CronClient(self)
-        return self._cron
-
-    @property
     def triggers(self) -> 'TriggersClient':
         """Access triggers management API."""
         if self._triggers is None:
@@ -483,77 +467,6 @@ class ScriptsClient:
     def get_stats(self) -> Dict:
         """Get script execution statistics."""
         return self._client._http_get("/_api/scripts/stats")
-
-
-class JobsClient:
-    """Client for queue/jobs management API."""
-
-    def __init__(self, client: Client):
-        self._client = client
-
-    def list_queues(self) -> List[Dict]:
-        """List all queues."""
-        result = self._client._http_get(f"/_api/database/{self._client.database}/queues")
-        return result.get("queues", [])
-
-    def list_jobs(self, queue_name: str, status: str = None, limit: int = 50, offset: int = 0) -> List[Dict]:
-        """List jobs in a queue."""
-        params = {"limit": limit, "offset": offset}
-        if status:
-            params["status"] = status
-        result = self._client._http_get(f"/_api/database/{self._client.database}/queues/{queue_name}/jobs", params)
-        return result.get("jobs", [])
-
-    def enqueue(self, queue_name: str, script_path: str, params: Dict = None,
-                priority: int = 0, run_at: str = None, max_retries: int = 3) -> Dict:
-        """Enqueue a new job."""
-        payload = {
-            "script_path": script_path,
-            "params": params or {},
-            "priority": priority,
-            "max_retries": max_retries
-        }
-        if run_at:
-            payload["run_at"] = run_at
-        return self._client._http_post(f"/_api/database/{self._client.database}/queues/{queue_name}/enqueue", payload)
-
-    def cancel(self, job_id: str) -> None:
-        """Cancel a job."""
-        self._client._http_delete(f"/_api/database/{self._client.database}/queues/jobs/{job_id}")
-
-
-class CronClient:
-    """Client for cron jobs management API."""
-
-    def __init__(self, client: Client):
-        self._client = client
-
-    def list(self) -> List[Dict]:
-        """List all cron jobs."""
-        result = self._client._http_get(f"/_api/database/{self._client.database}/cron")
-        return result.get("cron_jobs", [])
-
-    def create(self, name: str, cron_expr: str, script_path: str, params: Dict = None,
-               queue: str = "default", priority: int = 0, max_retries: int = 3) -> Dict:
-        """Create a new cron job."""
-        payload = {
-            "name": name,
-            "cron_expression": cron_expr,
-            "script_path": script_path,
-            "params": params or {},
-            "queue": queue,
-            "priority": priority,
-            "max_retries": max_retries
-        }
-        return self._client._http_post(f"/_api/database/{self._client.database}/cron", payload)
-
-    def update(self, cron_id: str, **kwargs) -> Dict:
-        """Update a cron job."""
-        return self._client._http_put(f"/_api/database/{self._client.database}/cron/{cron_id}", kwargs)
-
-    def delete(self, cron_id: str) -> None:
-        """Delete a cron job."""
-        self._client._http_delete(f"/_api/database/{self._client.database}/cron/{cron_id}")
 
 
 class TriggersClient:

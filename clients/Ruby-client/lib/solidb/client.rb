@@ -31,14 +31,6 @@ module SoliDB
       @scripts ||= ScriptsClient.new(self)
     end
 
-    def jobs
-      @jobs ||= JobsClient.new(self)
-    end
-
-    def cron
-      @cron ||= CronClient.new(self)
-    end
-
     def triggers
       @triggers ||= TriggersClient.new(self)
     end

@@ -133,32 +133,13 @@ impl QueueWorker {
 
             Self::ensure_status_index(&jobs_coll);
 
-            // Per-queue settings gate which queues are claimable this pass:
-            // paused queues are skipped outright, and queues already at their
-            // concurrency cap are skipped until a running job finishes. Queues
-            // with no config row impose no restriction, so the common case
-            // (no `_queue_config` collection) adds a single cheap lookup.
-            let remaining_slots = Self::queue_remaining_slots(&self.storage, &db_name, &db);
-            let blocked_queues: Vec<&String> = remaining_slots
-                .iter()
-                .filter(|(_, slots)| **slots == 0)
-                .map(|(queue, _)| queue)
-                .collect();
-
-            // Query for a batch of candidates in this specific database,
-            // top-priority first. Excluding blocked queues keeps the batch
-            // filled with *eligible* jobs instead of paused or saturated ones.
-            let query_str = if blocked_queues.is_empty() {
-                format!(
-                    "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} SORT j.priority DESC LIMIT {} RETURN j",
-                    now, CLAIM_BATCH
-                )
-            } else {
-                format!(
-                    "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} AND j.queue NOT IN @blocked SORT j.priority DESC LIMIT {} RETURN j",
-                    now, CLAIM_BATCH
-                )
-            };
+            // Trigger dispatch claims the highest-priority due jobs. There is
+            // no per-queue pause/concurrency gating any more: it was only
+            // configurable through the client-facing queue API, which is gone.
+            let query_str = format!(
+                "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} SORT j.priority DESC LIMIT {} RETURN j",
+                now, CLAIM_BATCH
+            );
 
             tracing::debug!("Query for db {}: {}", db_name, query_str);
 
@@ -170,17 +151,8 @@ impl QueueWorker {
                 }
             };
 
-            let executor = if blocked_queues.is_empty() {
-                crate::sdbql::QueryExecutor::with_database(&self.storage, db_name.clone())
-            } else {
-                let mut bind_vars = crate::sdbql::BindVars::new();
-                bind_vars.insert("blocked".to_string(), serde_json::json!(blocked_queues));
-                crate::sdbql::QueryExecutor::with_database_and_bind_vars(
-                    &self.storage,
-                    db_name.clone(),
-                    bind_vars,
-                )
-            };
+            let executor =
+                crate::sdbql::QueryExecutor::with_database(&self.storage, db_name.clone());
             let result = match executor.execute(&query_ast) {
                 Ok(res) => res,
                 Err(e) => {
@@ -199,12 +171,6 @@ impl QueueWorker {
                 db_name
             );
 
-            // Claim the whole batch, respecting per-queue slots that remain
-            // after each claim (remaining_slots was computed before any claim
-            // in this pass).
-            let mut claimed_per_queue: std::collections::HashMap<String, usize> =
-                std::collections::HashMap::new();
-
             for job_val in result {
                 let mut job: Job = match serde_json::from_value(job_val) {
                     Ok(j) => j,
@@ -213,13 +179,6 @@ impl QueueWorker {
                         continue;
                     }
                 };
-
-                if let Some(&slots) = remaining_slots.get(&job.queue) {
-                    let claimed = claimed_per_queue.get(&job.queue).copied().unwrap_or(0);
-                    if claimed >= slots {
-                        continue; // queue would exceed its concurrency cap
-                    }
-                }
 
                 // Claim job (CAS on revision — losing a race just skips it)
                 let rev = job.revision.clone().unwrap_or_default();
@@ -234,8 +193,6 @@ impl QueueWorker {
                     tracing::warn!("Failed to claim job {}: {}", job.id, e);
                     continue;
                 }
-                *claimed_per_queue.entry(job.queue.clone()).or_insert(0) += 1;
-
                 tracing::info!("Claimed job {} in db {}", job.id, db_name);
 
                 // Execute
@@ -335,75 +292,6 @@ impl QueueWorker {
     /// to 0, capped queues to `cap - running`. Queues without a config row
     /// are absent (unlimited). An empty map means no queue imposes a
     /// restriction — the common case (no `_queue_config` collection).
-    fn queue_remaining_slots(
-        storage: &Arc<StorageEngine>,
-        db_name: &str,
-        db: &crate::storage::Database,
-    ) -> std::collections::HashMap<String, usize> {
-        let configs: Vec<super::types::QueueConfig> = match db.get_collection("_queue_config") {
-            Ok(cfg_coll) => cfg_coll
-                .scan(None)
-                .into_iter()
-                .filter_map(|doc| serde_json::from_value(doc.to_value()).ok())
-                .collect(),
-            Err(_) => return std::collections::HashMap::new(),
-        };
-        if configs.is_empty() {
-            return std::collections::HashMap::new();
-        }
-
-        // Only pay for the running-count query when a queue actually caps
-        // concurrency; a config that just sets pause/default_priority doesn't
-        // need it.
-        let needs_running_counts = configs.iter().any(|c| c.concurrency > 0);
-        let running_counts = if needs_running_counts {
-            Self::running_counts_by_queue(storage, db_name)
-        } else {
-            std::collections::HashMap::new()
-        };
-
-        configs
-            .into_iter()
-            .filter_map(|c| {
-                if c.paused {
-                    Some((c.name, 0))
-                } else if c.concurrency > 0 {
-                    let running = running_counts.get(&c.name).copied().unwrap_or(0);
-                    Some((c.name, (c.concurrency as usize).saturating_sub(running)))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    /// Count of currently-`running` jobs grouped by queue, used to enforce
-    /// per-queue concurrency caps. Any query failure degrades to an empty map
-    /// (no caps enforced) rather than stalling the worker.
-    fn running_counts_by_queue(
-        storage: &Arc<StorageEngine>,
-        db_name: &str,
-    ) -> std::collections::HashMap<String, usize> {
-        let mut counts = std::collections::HashMap::new();
-        let query_ast =
-            match crate::sdbql::parse("FOR j IN _jobs FILTER j.status == 'running' RETURN j.queue")
-            {
-                Ok(ast) => ast,
-                Err(_) => return counts,
-            };
-        let executor = crate::sdbql::QueryExecutor::with_database(storage, db_name.to_string());
-        let rows = match executor.execute(&query_ast) {
-            Ok(rows) => rows,
-            Err(_) => return counts,
-        };
-        for row in rows {
-            if let Some(queue) = row.as_str() {
-                *counts.entry(queue.to_string()).or_insert(0) += 1;
-            }
-        }
-        counts
-    }
-
     pub(crate) async fn execute_job(
         storage: &Arc<StorageEngine>,
         engine: &Arc<ScriptEngine>,

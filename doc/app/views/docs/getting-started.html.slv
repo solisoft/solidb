@@ -352,12 +352,12 @@ volumes:
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">QUEUE_WORKERS</td>
                       <td class="p-3">4</td>
-                      <td class="p-3">Background job workers per node</td>
+                      <td class="p-3">Maintenance workers per node (trigger dispatch, embeddings, materialized views)</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLI_WEBHOOK_SECRET</td>
                       <td class="p-3"><em>unset</em></td>
-                      <td class="p-3">Default HMAC-SHA256 key used to sign outbound webhook jobs &amp; triggers via <code>X-Webhook-Signature</code>. Per-target <code>webhook_secret</code> wins; if both are unset the signature header is omitted. See <a href="/docs/queues#configuration" class="text-cyan-400 hover:underline">Queues → Configuration</a>.</td>
+                      <td class="p-3">Default HMAC-SHA256 key used to sign outbound trigger webhooks via <code>X-Webhook-Signature</code>. Per-target <code>webhook_secret</code> wins; if both are unset the signature header is omitted. See <a href="/docs/triggers" class="text-cyan-400 hover:underline">Triggers</a>.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLI_JOBS_SECRET</td>
@@ -853,7 +853,7 @@ kubectl -n solidb get pods -w</pre>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">QUEUE_WORKERS</td>
                       <td class="p-3">4</td>
-                      <td class="p-3">Number of concurrent background job workers per node. Each worker polls for queued jobs and cron tasks.</td>
+                      <td class="p-3">Number of concurrent maintenance workers per node. Each worker dispatches fired triggers and refreshes embeddings and materialized views.</td>
                     </tr>
                   </tbody>
                 </table>

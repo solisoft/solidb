@@ -11,7 +11,6 @@ pub mod managed_agent_template;
 pub mod metrics;
 pub mod nl_handlers;
 pub mod permission_cache;
-pub mod queue_handlers;
 pub mod repl_session;
 pub mod role_handlers;
 pub mod routes;

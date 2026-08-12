@@ -32,7 +32,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         CurrentView::Documents => app.documents_view.draw(f, &app.ctx, content_chunks[0]),
         CurrentView::Query => app.query_view.draw(f, &app.ctx, content_chunks[0]),
         CurrentView::Indexes => app.indexes_view.draw(f, &app.ctx, content_chunks[0]),
-        CurrentView::Jobs => app.jobs_view.draw(f, &app.ctx, content_chunks[0]),
         CurrentView::Cluster => app.cluster_view.draw(f, &app.ctx, content_chunks[0]),
     }
 
