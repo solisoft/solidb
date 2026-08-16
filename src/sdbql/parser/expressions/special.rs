@@ -408,6 +408,8 @@ impl Parser {
             Token::Then => Some("then"),
             Token::Else => Some("else"),
             Token::End => Some("end"),
+            Token::As => Some("as"),
+            Token::Window => Some("window"),
             _ => None,
         };
 

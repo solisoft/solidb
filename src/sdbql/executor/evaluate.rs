@@ -25,6 +25,18 @@ impl<'a> QueryExecutor<'a> {
         args: &[Expression],
         ctx: &Context,
     ) -> DbResult<Value> {
+        let name_upper = name.to_uppercase();
+        if args.iter().any(|a| matches!(a, Expression::Lambda { .. })) {
+            let mut evaluated_args = Vec::new();
+            for arg in args {
+                if matches!(arg, Expression::Lambda { .. }) {
+                    continue;
+                }
+                evaluated_args.push(self.evaluate_expr_with_context(arg, ctx)?);
+            }
+            return self.evaluate_hof_with_lambda(&name_upper, &evaluated_args, args, ctx);
+        }
+
         // Evaluate all arguments
         let evaluated_args: Vec<Value> = args
             .iter()
@@ -216,22 +228,19 @@ impl<'a> QueryExecutor<'a> {
                         "LENGTH requires 1 argument".to_string(),
                     ));
                 }
-                let len =
-                    match &evaluated_args[0] {
-                        Value::Array(arr) => arr.len(),
-                        Value::String(s) => {
-                            // First try to treat it as a collection name
-                            match self.get_collection(s) {
-                                Ok(collection) => collection.count(),
-                                Err(_) => s.len(), // Fallback to string length if not a valid collection
-                            }
-                        }
-                        Value::Object(obj) => obj.len(),
-                        _ => return Err(DbError::ExecutionError(
-                            "LENGTH: argument must be array, string, object, or collection name"
-                                .to_string(),
-                        )),
-                    };
+                let len = match &evaluated_args[0] {
+                    Value::Array(arr) => arr.len(),
+                    Value::String(s) => s.chars().count(),
+                    Value::Object(obj) => obj.len(),
+                    Value::Null => {
+                        return Ok(Value::Null);
+                    }
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "LENGTH: argument must be array, string, or object".to_string(),
+                        ))
+                    }
+                };
                 Ok(Value::Number(serde_json::Number::from(len)))
             }
 
@@ -962,6 +971,141 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(collection.doc_history(key)))
             }
 
+            "SNAPSHOT_DIFF" => {
+                if evaluated_args.len() != 3 {
+                    return Err(DbError::ExecutionError(
+                        "SNAPSHOT_DIFF requires collection, t1, t2".to_string(),
+                    ));
+                }
+                let coll_name = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("SNAPSHOT_DIFF: collection must be a string".to_string())
+                })?;
+                let t1 = parse_as_of_micros(&evaluated_args[1])?;
+                let t2 = parse_as_of_micros(&evaluated_args[2])?;
+                let collection = self.get_collection(coll_name)?;
+                let a = collection.scan_as_of(t1)?;
+                let b = collection.scan_as_of(t2)?;
+                let key_of = |d: &Value| {
+                    d.get("_key")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string()
+                };
+                use std::collections::HashMap;
+                let mut am: HashMap<String, Value> = HashMap::new();
+                for d in a {
+                    am.insert(key_of(&d), d);
+                }
+                let mut bm: HashMap<String, Value> = HashMap::new();
+                for d in b {
+                    bm.insert(key_of(&d), d);
+                }
+                let mut inserted = Vec::new();
+                let mut updated = Vec::new();
+                let mut deleted = Vec::new();
+                for (k, vb) in &bm {
+                    match am.get(k) {
+                        None => inserted.push(vb.clone()),
+                        Some(va) if !super::values_equal(va, vb) => updated.push(vb.clone()),
+                        _ => {}
+                    }
+                }
+                for (k, va) in &am {
+                    if !bm.contains_key(k) {
+                        deleted.push(va.clone());
+                    }
+                }
+                Ok(json!({
+                    "inserted": inserted,
+                    "updated": updated,
+                    "deleted": deleted
+                }))
+            }
+            "CURRENT_USER" => Ok(self
+                .principal
+                .as_ref()
+                .map(|p| Value::String(p.user.clone()))
+                .unwrap_or(Value::Null)),
+            "CURRENT_ROLES" => Ok(Value::Array(
+                self.principal
+                    .as_ref()
+                    .map(|p| {
+                        p.roles
+                            .iter()
+                            .map(|r| Value::String(r.clone()))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            )),
+            "CAN" => self.eval_can(&evaluated_args),
+            "CREATE_GRAPH" => self.eval_create_graph(&evaluated_args),
+            "DROP_GRAPH" => self.eval_drop_graph(&evaluated_args),
+            "GRAPH_INFO" => self.eval_graph_info(&evaluated_args),
+            "CREATE_VIEW" => self.eval_create_view(&evaluated_args),
+            "DROP_VIEW" => self.eval_drop_view(&evaluated_args),
+            "SEARCH_INDEX" => self.eval_search_index(&evaluated_args),
+            "ROW_POLICY" => {
+                if evaluated_args.len() < 1 || evaluated_args.len() > 2 {
+                    return Err(DbError::ExecutionError(
+                        "ROW_POLICY requires collection [, predicate]".to_string(),
+                    ));
+                }
+                let coll_name = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("ROW_POLICY: collection must be a string".to_string())
+                })?;
+                let collection = self.get_collection(coll_name)?;
+                if evaluated_args.len() == 1 {
+                    return Ok(collection
+                        .get_row_policy()
+                        .map(Value::String)
+                        .unwrap_or(Value::Null));
+                }
+                if evaluated_args[1].is_null() {
+                    collection.set_row_policy(None)?;
+                    return Ok(Value::Null);
+                }
+                let pred = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("ROW_POLICY: predicate must be a string".to_string())
+                })?;
+                collection.set_row_policy(Some(pred))?;
+                Ok(Value::String(pred.to_string()))
+            }
+            "EMBED" => self.eval_embed(&evaluated_args),
+            "EXTRACT" => self.eval_extract(&evaluated_args),
+            "CITE" => Ok(self.eval_cite(&evaluated_args)),
+            "GROUNDED" => Ok(self.eval_grounded(&evaluated_args)),
+            "SEARCH_SCORE" => Ok(ctx
+                .get("__search_score")
+                .cloned()
+                .unwrap_or(json!(0.0))),
+            "APPLY" => {
+                if evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError(
+                        "APPLY requires function name [, args[]]".to_string(),
+                    ));
+                }
+                let fname = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("APPLY: name must be a string".to_string())
+                })?;
+                let inner = evaluated_args
+                    .get(1)
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                self.apply_dynamic(fname, &inner, ctx)
+            }
+            "CALL" => {
+                if evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError(
+                        "CALL requires function name, args...".to_string(),
+                    ));
+                }
+                let fname = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("CALL: name must be a string".to_string())
+                })?;
+                self.apply_dynamic(fname, &evaluated_args[1..], ctx)
+            }
+
             // Unknown function
             _ => Err(DbError::ExecutionError(format!(
                 "Unknown function: {}",
@@ -969,10 +1113,152 @@ impl<'a> QueryExecutor<'a> {
             ))),
         }
     }
+
+    fn apply_dynamic(&self, name: &str, args: &[Value], ctx: &Context) -> DbResult<Value> {
+        thread_local! {
+            static DEPTH: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+        }
+        let too_deep = DEPTH.with(|d| {
+            if d.get() >= 8 {
+                true
+            } else {
+                d.set(d.get() + 1);
+                false
+            }
+        });
+        if too_deep {
+            return Err(DbError::ExecutionError(
+                "APPLY/CALL recursion limit (8)".to_string(),
+            ));
+        }
+        let lits: Vec<Expression> = args.iter().cloned().map(Expression::Literal).collect();
+        let res = self.evaluate_function(name, &lits, ctx);
+        DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+        res
+    }
+
+    fn eval_embed(&self, args: &[Value]) -> DbResult<Value> {
+        let text_or_arr = args.first().ok_or_else(|| {
+            DbError::ExecutionError("EMBED requires text or [text]".to_string())
+        })?;
+        let opts = args.get(1);
+        let provider = opts.and_then(|o| o.get("provider")).and_then(Value::as_str);
+        let model = opts
+            .and_then(|o| o.get("model"))
+            .and_then(Value::as_str)
+            .map(|s| s.to_string());
+        let db = self.database.as_deref().unwrap_or("_system");
+        let client = crate::server::llm_client::LLMClient::from_storage(
+            self.storage,
+            db,
+            provider,
+            model,
+        )?;
+        if let Some(arr) = text_or_arr.as_array() {
+            let texts: Vec<&str> = arr.iter().filter_map(Value::as_str).collect();
+            let vecs = client.embed_batch_blocking(&texts)?;
+            return Ok(Value::Array(
+                vecs.into_iter()
+                    .map(|v| {
+                        Value::Array(
+                            v.into_iter()
+                                .map(|f| json!(f))
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            ));
+        }
+        let text = text_or_arr.as_str().ok_or_else(|| {
+            DbError::ExecutionError("EMBED: text must be a string or array of strings".to_string())
+        })?;
+        let v = client.embed_blocking(text)?;
+        Ok(Value::Array(v.into_iter().map(|f| json!(f)).collect()))
+    }
+
+    fn eval_extract(&self, args: &[Value]) -> DbResult<Value> {
+        if args.len() != 2 {
+            return Err(DbError::ExecutionError(
+                "EXTRACT requires text, schema".to_string(),
+            ));
+        }
+        let text = args[0].as_str().unwrap_or("");
+        let schema = &args[1];
+        let db = self.database.as_deref().unwrap_or("_system");
+        if let Ok(client) =
+            crate::server::llm_client::LLMClient::from_storage(self.storage, db, None, None)
+        {
+            let prompt = format!(
+                "Extract a JSON object matching this schema from the text. Return JSON only.\nSchema: {}\nText: {}",
+                schema, text
+            );
+            let sys = crate::server::llm_client::Message::system(
+                "You extract structured JSON. No markdown.",
+            );
+            let user = crate::server::llm_client::Message::user(&prompt);
+            if let Ok(resp) = client.chat_blocking(vec![sys, user]) {
+                let trimmed = resp.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim();
+                if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+                    return Ok(v);
+                }
+            }
+        }
+        Ok(Value::Null)
+    }
+
+    fn eval_cite(&self, args: &[Value]) -> Value {
+        let answer = args.first().and_then(Value::as_str).unwrap_or("");
+        let docs = args.get(1).and_then(Value::as_array).cloned().unwrap_or_default();
+        let mut citations = Vec::new();
+        let tokens: Vec<&str> = answer.split_whitespace().filter(|t| t.len() > 3).collect();
+        for doc in docs {
+            let text = match &doc {
+                Value::String(s) => s.clone(),
+                Value::Object(o) => o
+                    .get("content")
+                    .or_else(|| o.get("text"))
+                    .or_else(|| o.get("body"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                _ => String::new(),
+            };
+            let hits = tokens
+                .iter()
+                .filter(|t| text.to_lowercase().contains(&t.to_lowercase()))
+                .count();
+            if hits > 0 {
+                citations.push(json!({
+                    "doc": doc,
+                    "score": hits as f64 / tokens.len().max(1) as f64
+                }));
+            }
+        }
+        json!({ "citations": citations })
+    }
+
+    fn eval_grounded(&self, args: &[Value]) -> Value {
+        let cite = self.eval_cite(args);
+        let n = cite
+            .get("citations")
+            .and_then(Value::as_array)
+            .map(|a| a.len())
+            .unwrap_or(0);
+        let score = if n == 0 { 0.0 } else { (n as f64).min(5.0) / 5.0 };
+        json!({
+            "score": score,
+            "supported": cite.get("citations").cloned().unwrap_or(json!([])),
+            "contradictions": []
+        })
+    }
 }
 
 /// Parse an `AS OF` timestamp argument into epoch microseconds (inclusive of the
 /// whole millisecond). Accepts a number (epoch milliseconds) or an RFC3339 string.
+pub(crate) fn as_of_micros(v: &Value) -> DbResult<u64> {
+    parse_as_of_micros(v)
+}
+
 fn parse_as_of_micros(v: &Value) -> DbResult<u64> {
     let millis: u64 = if let Some(n) = v.as_u64() {
         n

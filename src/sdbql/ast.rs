@@ -85,6 +85,8 @@ pub enum BodyClause {
     ShortestPath(ShortestPathClause),
     Collect(CollectClause),
     Window(WindowClause),
+    /// Scored filter (`SEARCH expr`); numeric scores are stored as `__search_score`.
+    Search(FilterClause),
 }
 
 /// Edge direction for graph traversals
@@ -115,6 +117,12 @@ pub struct GraphTraversalClause {
     pub min_depth: usize,
     /// Maximum traversal depth (default 1)
     pub max_depth: usize,
+    /// Optional path variable `FOR v, e, p`
+    #[serde(default)]
+    pub path_var: Option<String>,
+    /// Stop expanding when this expression is true
+    #[serde(default)]
+    pub prune: Option<Expression>,
 }
 
 /// FOR vertex[, edge] IN SHORTEST_PATH start_vertex TO end_vertex OUTBOUND|INBOUND|ANY edge_collection
@@ -132,6 +140,30 @@ pub struct ShortestPathClause {
     pub direction: EdgeDirection,
     /// Edge collection to traverse
     pub edge_collection: String,
+    /// Optional numeric edge field used as Dijkstra weight
+    #[serde(default)]
+    pub weight: Option<String>,
+    #[serde(default)]
+    pub path_var: Option<String>,
+    #[serde(default)]
+    pub mode: PathFindMode,
+    #[serde(default)]
+    pub k: Option<usize>,
+    #[serde(default)]
+    pub min_len: Option<usize>,
+    #[serde(default)]
+    pub max_len: Option<usize>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub enum PathFindMode {
+    #[default]
+    Shortest,
+    AllShortest,
+    KShortest,
+    KPaths,
 }
 
 /// CREATE STREAM name AS ...
@@ -193,6 +225,21 @@ pub struct ForClause {
     pub source_variable: Option<String>,
     /// Optional: iterate over an expression (e.g., FOR i IN 1..5)
     pub source_expression: Option<Expression>,
+    /// `SYSTEM_TIME AS OF` timestamp expression (epoch ms or RFC3339)
+    #[serde(default)]
+    pub system_time: Option<Expression>,
+    /// Application valid-time filter (`valid_from` / `valid_to` fields)
+    #[serde(default)]
+    pub valid_time: Option<ValidTimeSpec>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ValidTimeSpec {
+    AsOf(Expression),
+    Range {
+        from: Expression,
+        to: Expression,
+    },
 }
 
 /// FILTER expression
@@ -245,6 +292,23 @@ pub enum JoinType {
     Left,
     Right,
     FullOuter,
+    Asof,
+}
+
+/// As-of join time alignment
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AsofStrategy {
+    Backward,
+    Forward,
+    Nearest,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AsofSpec {
+    pub left_time: Expression,
+    pub right_time: Expression,
+    pub strategy: AsofStrategy,
+    pub tolerance: Option<Expression>,
 }
 
 /// JOIN variable IN collection ON condition
@@ -258,6 +322,8 @@ pub struct JoinClause {
     pub collection: String,
     /// Join condition (e.g., user._key == orders.user_key)
     pub condition: Expression,
+    #[serde(default)]
+    pub asof: Option<AsofSpec>,
 }
 
 /// COLLECT var = expr [INTO group] [WITH COUNT INTO count] [AGGREGATE ...]
@@ -435,6 +501,10 @@ pub enum BinaryOperator {
     LessThanOrEqual,
     GreaterThan,
     GreaterThanOrEqual,
+    /// Vector cosine distance, or three-way compare (−1/0/1).
+    Spaceship,
+    /// Semantic / trigram match (`a ~ b`). Unary `~` stays bitwise NOT.
+    SemanticMatch,
     In,
     NotIn,
 
@@ -538,6 +608,8 @@ mod tests {
             collection: "users".to_string(),
             source_variable: None,
             source_expression: None,
+            system_time: None,
+            valid_time: None,
         };
 
         assert_eq!(clause.variable, "doc");

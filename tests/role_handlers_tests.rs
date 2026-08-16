@@ -379,7 +379,7 @@ async fn create_user_rejects_short_password_and_empty_username() {
             "POST",
             "/_api/auth/users",
             &admin,
-            json!({"username": "", "password": "valid_pw"}),
+            json!({"username": "", "password": "valid_password"}),
         ))
         .await
         .unwrap();
@@ -419,7 +419,7 @@ async fn delete_user_rejects_self_default_admin_and_missing() {
             "POST",
             "/_api/auth/users",
             &admin,
-            json!({"username": "admin_user", "password": "long_enough"}),
+            json!({"username": "admin_user", "password": "long_enough1"}),
         ))
         .await
         .unwrap();
@@ -458,7 +458,7 @@ async fn delete_user_happy_path_cleans_role_assignments() {
             &admin,
             json!({
                 "username": "to_delete",
-                "password": "long_enough",
+                "password": "long_enough1",
                 "initial_role": "viewer"
             }),
         ))
@@ -495,7 +495,7 @@ async fn assign_role_happy_path_then_duplicate_is_conflict() {
             "POST",
             "/_api/auth/users",
             &admin,
-            json!({"username": "carol", "password": "long_enough"}),
+            json!({"username": "carol", "password": "long_enough1"}),
         ))
         .await
         .unwrap();
@@ -567,7 +567,7 @@ async fn revoke_role_happy_path_and_not_assigned() {
             &admin,
             json!({
                 "username": "dave",
-                "password": "long_enough",
+                "password": "long_enough1",
                 "initial_role": "viewer"
             }),
         ))
@@ -601,7 +601,7 @@ async fn get_user_roles_lists_assignments() {
             &admin,
             json!({
                 "username": "eve",
-                "password": "long_enough",
+                "password": "long_enough1",
                 "initial_role": "editor"
             }),
         ))

@@ -33,6 +33,14 @@ impl Parser {
                 self.advance();
                 Ok(Some(BinaryOperator::LessThanOrEqual))
             }
+            Token::Spaceship => {
+                self.advance();
+                Ok(Some(BinaryOperator::Spaceship))
+            }
+            Token::Tilde => {
+                self.advance();
+                Ok(Some(BinaryOperator::SemanticMatch))
+            }
             Token::GreaterThan => {
                 self.advance();
                 Ok(Some(BinaryOperator::GreaterThan))

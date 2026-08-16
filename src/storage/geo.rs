@@ -22,6 +22,13 @@ impl GeoPoint {
     pub fn from_value(value: &Value) -> Option<Self> {
         // Try object format { lat, lon }
         if let Some(obj) = value.as_object() {
+            if obj.get("type").and_then(Value::as_str) == Some("Point") {
+                if let Some(c) = obj.get("coordinates").and_then(Value::as_array) {
+                    if c.len() >= 2 {
+                        return Some(Self::new(c[1].as_f64()?, c[0].as_f64()?));
+                    }
+                }
+            }
             let lat = obj.get("lat").or(obj.get("latitude"))?.as_f64()?;
             let lon = obj
                 .get("lon")

@@ -26,10 +26,10 @@ struct Args {
     #[arg(short, long, default_value_t = 6745)]
     port: u16,
 
-    /// Address to bind the listeners to. Defaults to 0.0.0.0 (all
-    /// interfaces); use 127.0.0.1 to restrict the node to loopback, e.g.
-    /// behind a reverse proxy. Falls back to the SOLIDB_HOST environment
-    /// variable when the flag is absent.
+    /// Address to bind the listeners to. Defaults to 127.0.0.1 (loopback).
+    /// Use 0.0.0.0 to listen on all interfaces (typically behind a reverse
+    /// proxy). Falls back to the SOLIDB_HOST environment variable when the
+    /// flag is absent.
     #[arg(long)]
     host: Option<String>,
 
@@ -219,12 +219,13 @@ fn main() -> anyhow::Result<()> {
 }
 
 /// Address the listeners bind to: `--host`, then `SOLIDB_HOST`, then
-/// 0.0.0.0 (all interfaces, the historical default).
+/// 127.0.0.1 (loopback). Use `0.0.0.0` only when the process is meant
+/// to be reachable on the network.
 fn bind_host(args: &Args) -> String {
     args.host
         .clone()
         .or_else(|| std::env::var("SOLIDB_HOST").ok())
-        .unwrap_or_else(|| "0.0.0.0".to_string())
+        .unwrap_or_else(|| "127.0.0.1".to_string())
 }
 
 async fn async_main(args: Args) -> anyhow::Result<()> {

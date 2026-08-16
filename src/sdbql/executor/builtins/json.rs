@@ -29,6 +29,23 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 .map_err(|e| DbError::ExecutionError(format!("JSON_STRINGIFY_PRETTY: {}", e)))?;
             Ok(Some(Value::String(s)))
         }
+        "JSON_POINTER" => {
+            if args.len() < 2 || args.len() > 3 {
+                return Err(DbError::ExecutionError(
+                    "JSON_POINTER requires 2-3 arguments: value, pointer, [default]".to_string(),
+                ));
+            }
+            if args[0].is_null() {
+                return Ok(Some(args.get(2).cloned().unwrap_or(Value::Null)));
+            }
+            let pointer = args[1].as_str().ok_or_else(|| {
+                DbError::ExecutionError("JSON_POINTER: pointer must be a string".to_string())
+            })?;
+            match args[0].pointer(pointer) {
+                Some(v) => Ok(Some(v.clone())),
+                None => Ok(Some(args.get(2).cloned().unwrap_or(Value::Null))),
+            }
+        }
         _ => Ok(None),
     }
 }

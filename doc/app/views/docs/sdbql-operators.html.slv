@@ -18,7 +18,7 @@
             Operators
           </h1>
           <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
-            Comparison, logical, arithmetic, and bitwise operators for building powerful query conditions.
+            Comparison, logical, arithmetic, bitwise, fuzzy, regex, and semantic operators for building query conditions.
           </p>
         </div>
       </div>
@@ -118,6 +118,31 @@
                         -- matches: john, jon, jonathan
                       </code>
                     </div>
+                  </div>
+
+                  <!-- Spaceship / semantic -->
+                  <div id="op-spaceship" class="group relative">
+                    <a href="#op-spaceship" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&lt;=&gt;</code>
+                       <span class="text-xs text-gray-400">Vector distance or −1/0/1</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      doc.embedding &lt;=&gt; @q
+                    </code>
+                    <p class="text-xs text-gray-500 mt-2">Numeric arrays (or <code>{vector: [...]}</code>) yield cosine <em>distance</em> (0 = identical). Other types compare as −1 / 0 / 1.</p>
+                  </div>
+
+                  <div id="op-tilde" class="group relative">
+                    <a href="#op-tilde" class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-pink-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">~</code>
+                       <span class="text-xs text-gray-400">Trigram semantic match (infix)</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      doc.body ~ "invoice overdue"
+                    </code>
+                    <p class="text-xs text-gray-500 mt-2">Infix only. Prefix <code>~n</code> is still bitwise NOT.</p>
                   </div>
                 </div>
               </div>

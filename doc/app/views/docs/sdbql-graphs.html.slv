@@ -121,7 +121,7 @@
                 </h3>
               </div>
               <div class="p-5 space-y-4">
-                <p class="text-sm text-gray-400">Find the shortest path between two vertices.</p>
+                <p class="text-sm text-gray-400">Hop-count BFS by default. <code>OPTIONS { weight: "cost" }</code> runs Dijkstra on that numeric edge field (missing = 1; negatives error). Also <code>ALL_SHORTEST_PATHS</code>, <code>K_SHORTEST_PATHS</code> (<code>k</code>), <code>K_PATHS</code> (<code>min</code>/<code>max</code>/<code>limit</code>). Bind <code>p</code> for <code>{vertices, edges, weight}</code>. Cap: <code>SOLIDB_MAX_PATHS</code> (256).</p>
                 <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
                   <code class="text-sm text-gray-300">FOR <span class="text-fuchsia-400">vertex</span>[, <span class="text-fuchsia-400">edge</span>] IN <span class="text-green-400">SHORTEST_PATH</span> <span class="text-yellow-300">start</span> TO <span class="text-yellow-300">end</span> <span class="text-cyan-400">DIRECTION</span> <span class="text-emerald-400">edgeCollection</span></code>
                 </div>
@@ -133,6 +133,24 @@
   follows
   RETURN { vertex: v.name, edge: e }</code></pre>
                 </div>
+              </div>
+            </div>
+
+            <div id="fn-PRUNE" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-amber-300 flex items-center">
+                  <span class="bg-amber-500/20 text-amber-400 text-xs font-mono px-2 py-1 rounded mr-3">PRUNE / path</span>
+                  Path variable and PRUNE
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">A third identifier after <code>FOR v, e, p</code> binds the walk so far as <code>{ vertices, edges }</code>. <code>PRUNE expr</code> is evaluated on the current vertex; if true, that branch is not expanded.</p>
+                <pre><code class="language-sql text-sm">FOR v, e, p IN 1..3 OUTBOUND "users/alice" GRAPH follows
+  PRUNE v.blocked == true
+  RETURN { name: v.name, hops: LENGTH(p.vertices) }
+
+MATCH (a:users {_key: "alice"})-[:follows*1..3]->(b)
+  RETURN b.name</code></pre>
               </div>
             </div>
 

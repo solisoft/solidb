@@ -191,7 +191,10 @@ impl Parser {
     /// Variable is automatically derived from collection name
     pub(crate) fn parse_join_clause(&mut self) -> DbResult<JoinClause> {
         // Check for optional join type keyword
-        let join_type = if matches!(self.current_token(), Token::Left) {
+        let join_type = if self.ident_eq("ASOF") {
+            self.advance();
+            JoinType::Asof
+        } else if matches!(self.current_token(), Token::Left) {
             self.advance(); // consume LEFT
             JoinType::Left
         } else if matches!(self.current_token(), Token::Right) {
@@ -228,12 +231,72 @@ impl Parser {
         // Parse join condition expression
         let condition = self.parse_expression()?;
 
+        let asof = if matches!(join_type, JoinType::Asof) || self.ident_eq("ASOF") {
+            Some(self.parse_asof_spec()?)
+        } else {
+            None
+        };
+
         Ok(JoinClause {
             join_type,
             variable: collection.clone(), // Variable same as collection name
             collection,
             condition,
+            asof,
         })
+    }
+
+    fn parse_asof_spec(&mut self) -> DbResult<AsofSpec> {
+        if self.ident_eq("ASOF") {
+            self.advance();
+        }
+        let left_time = self.parse_expression()?;
+        self.expect(Token::Comma)?;
+        let right_time = self.parse_expression()?;
+        let strategy = if self.ident_eq("BACKWARD") {
+            self.advance();
+            AsofStrategy::Backward
+        } else if self.ident_eq("FORWARD") {
+            self.advance();
+            AsofStrategy::Forward
+        } else if self.ident_eq("NEAREST") {
+            self.advance();
+            AsofStrategy::Nearest
+        } else {
+            AsofStrategy::Backward
+        };
+        let tolerance = if self.ident_eq("TOLERANCE") {
+            self.advance();
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+        Ok(AsofSpec {
+            left_time,
+            right_time,
+            strategy,
+            tolerance,
+        })
+    }
+
+    pub(crate) fn parse_system_time_as_of(&mut self) -> DbResult<Option<Expression>> {
+        if !self.ident_eq("SYSTEM_TIME") {
+            return Ok(None);
+        }
+        self.advance();
+        if !self.ident_eq("AS") && !matches!(self.current_token(), Token::As) {
+            return Err(DbError::ParseError(
+                "Expected AS OF after SYSTEM_TIME".to_string(),
+            ));
+        }
+        self.advance();
+        if !self.ident_eq("OF") {
+            return Err(DbError::ParseError(
+                "Expected OF after SYSTEM_TIME AS".to_string(),
+            ));
+        }
+        self.advance();
+        Ok(Some(self.parse_expression()?))
     }
 
     pub(crate) fn parse_insert_clause(&mut self) -> DbResult<InsertClause> {
@@ -646,15 +709,13 @@ impl Parser {
         // Parse start vertex (string literal or bind variable)
         let start_vertex = self.parse_expression()?;
 
-        // Parse edge collection
-        let edge_collection = if let Token::Identifier(name) = self.current_token() {
-            let coll = name.clone();
+        let edge_collection = self.parse_edge_or_graph_name()?;
+
+        let prune = if self.ident_eq("PRUNE") {
             self.advance();
-            coll
+            Some(self.parse_expression()?)
         } else {
-            return Err(DbError::ParseError(
-                "Expected edge collection name".to_string(),
-            ));
+            None
         };
 
         Ok(GraphTraversalClause {
@@ -665,6 +726,8 @@ impl Parser {
             edge_collection,
             min_depth,
             max_depth,
+            path_var: None,
+            prune,
         })
     }
 
@@ -674,8 +737,22 @@ impl Parser {
         vertex_var: String,
         edge_var: Option<String>,
     ) -> DbResult<ShortestPathClause> {
-        // Consume SHORTEST_PATH
-        self.expect(Token::ShortestPath)?;
+        let mode = if matches!(self.current_token(), Token::ShortestPath) {
+            self.advance();
+            PathFindMode::Shortest
+        } else if self.ident_eq("ALL_SHORTEST_PATHS") {
+            self.advance();
+            PathFindMode::AllShortest
+        } else if self.ident_eq("K_SHORTEST_PATHS") {
+            self.advance();
+            PathFindMode::KShortest
+        } else if self.ident_eq("K_PATHS") {
+            self.advance();
+            PathFindMode::KPaths
+        } else {
+            self.expect(Token::ShortestPath)?;
+            PathFindMode::Shortest
+        };
 
         // Parse start vertex
         let start_vertex = self.parse_expression()?;
@@ -707,16 +784,51 @@ impl Parser {
             }
         };
 
-        // Parse edge collection
-        let edge_collection = if let Token::Identifier(name) = self.current_token() {
-            let coll = name.clone();
+        let edge_collection = self.parse_edge_or_graph_name()?;
+
+        let mut weight = None;
+        let mut k = None;
+        let mut min_len = None;
+        let mut max_len = None;
+        let mut limit = None;
+        if self.ident_eq("OPTIONS") {
             self.advance();
-            coll
-        } else {
-            return Err(DbError::ParseError(
-                "Expected edge collection name".to_string(),
-            ));
-        };
+            let opts = self.parse_expression()?;
+            if let Expression::Object(pairs) = opts {
+                for (key, v) in pairs {
+                    match key.as_str() {
+                        "weight" => {
+                            weight = match v {
+                                Expression::Literal(serde_json::Value::String(s)) => Some(s),
+                                Expression::Variable(s) => Some(s),
+                                _ => None,
+                            };
+                        }
+                        "k" => {
+                            if let Expression::Literal(serde_json::Value::Number(n)) = v {
+                                k = n.as_u64().map(|x| x as usize);
+                            }
+                        }
+                        "min" => {
+                            if let Expression::Literal(serde_json::Value::Number(n)) = v {
+                                min_len = n.as_u64().map(|x| x as usize);
+                            }
+                        }
+                        "max" => {
+                            if let Expression::Literal(serde_json::Value::Number(n)) = v {
+                                max_len = n.as_u64().map(|x| x as usize);
+                            }
+                        }
+                        "limit" => {
+                            if let Expression::Literal(serde_json::Value::Number(n)) = v {
+                                limit = n.as_u64().map(|x| x as usize);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
 
         Ok(ShortestPathClause {
             vertex_var,
@@ -725,6 +837,212 @@ impl Parser {
             end_vertex,
             direction,
             edge_collection,
+            weight,
+            path_var: None,
+            mode,
+            k,
+            min_len,
+            max_len,
+            limit,
+        })
+    }
+
+    fn parse_edge_or_graph_name(&mut self) -> DbResult<String> {
+        if matches!(self.current_token(), Token::Graph) {
+            self.advance();
+        }
+        match self.current_token() {
+            Token::Identifier(name) => {
+                let c = name.clone();
+                self.advance();
+                Ok(c)
+            }
+            Token::String(s) => {
+                let c = s.clone();
+                self.advance();
+                Ok(c)
+            }
+            _ => Err(DbError::ParseError(
+                "Expected edge collection or GRAPH name".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) fn parse_valid_time(&mut self) -> DbResult<Option<ValidTimeSpec>> {
+        if !self.ident_eq("VALID_TIME") {
+            return Ok(None);
+        }
+        self.advance();
+        if self.ident_eq("AS") || matches!(self.current_token(), Token::As) {
+            self.advance();
+            if !self.ident_eq("OF") {
+                return Err(DbError::ParseError(
+                    "Expected OF after VALID_TIME AS".to_string(),
+                ));
+            }
+            self.advance();
+            return Ok(Some(ValidTimeSpec::AsOf(self.parse_expression()?)));
+        }
+        if self.ident_eq("FROM") {
+            self.advance();
+            let from = self.parse_expression()?;
+            if !self.ident_eq("TO") && !matches!(self.current_token(), Token::To) {
+                return Err(DbError::ParseError(
+                    "Expected TO after VALID_TIME FROM".to_string(),
+                ));
+            }
+            self.advance();
+            return Ok(Some(ValidTimeSpec::Range {
+                from,
+                to: self.parse_expression()?,
+            }));
+        }
+        Err(DbError::ParseError(
+            "Expected AS OF or FROM after VALID_TIME".to_string(),
+        ))
+    }
+
+    /// MATCH (a:coll {_key: expr})-[:edge*min..max]->(b)
+    pub(crate) fn parse_match_clause(&mut self) -> DbResult<GraphTraversalClause> {
+        if !self.ident_eq("MATCH") {
+            return Err(DbError::ParseError("Expected MATCH".to_string()));
+        }
+        self.advance();
+        self.expect(Token::LeftParen)?;
+        // start alias (optional ident)
+        if let Token::Identifier(_) = self.current_token() {
+            self.advance();
+        }
+        let start_coll = if matches!(self.current_token(), Token::Colon) {
+            self.advance();
+            match self.current_token() {
+                Token::Identifier(n) => {
+                    let s = n.clone();
+                    self.advance();
+                    s
+                }
+                _ => {
+                    return Err(DbError::ParseError(
+                        "Expected collection after ':' in MATCH".to_string(),
+                    ))
+                }
+            }
+        } else {
+            return Err(DbError::ParseError(
+                "MATCH start node must be (alias:collection {_key: ...})".to_string(),
+            ));
+        };
+        let start_key = if matches!(self.current_token(), Token::LeftBrace) {
+            let obj = self.parse_object_expression()?;
+            match obj {
+                Expression::Object(pairs) => pairs.into_iter().find_map(|(k, v)| {
+                    if k == "_key" {
+                        Some(v)
+                    } else {
+                        None
+                    }
+                }),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        self.expect(Token::RightParen)?;
+
+        let inbound = if matches!(self.current_token(), Token::LessThan) {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        self.expect(Token::Minus)?;
+        self.expect(Token::LeftBracket)?;
+        self.expect(Token::Colon)?;
+        let edge_collection = if let Token::Identifier(n) = self.current_token() {
+            let s = n.clone();
+            self.advance();
+            s
+        } else {
+            return Err(DbError::ParseError(
+                "Expected edge collection after [:".to_string(),
+            ));
+        };
+        let (min_depth, max_depth) = if matches!(self.current_token(), Token::Star) {
+            self.advance();
+            if let Token::Integer(n) = self.current_token() {
+                let min = *n as usize;
+                self.advance();
+                if matches!(self.current_token(), Token::DotDot) {
+                    self.advance();
+                    if let Token::Integer(m) = self.current_token() {
+                        let max = *m as usize;
+                        self.advance();
+                        (min, max)
+                    } else {
+                        (min, min)
+                    }
+                } else {
+                    (min, min)
+                }
+            } else {
+                (1, 1)
+            }
+        } else {
+            (1, 1)
+        };
+        self.expect(Token::RightBracket)?;
+        if !inbound {
+            if matches!(self.current_token(), Token::Arrow) {
+                self.advance();
+            } else {
+                self.expect(Token::Minus)?;
+                if matches!(self.current_token(), Token::GreaterThan) {
+                    self.advance();
+                }
+            }
+        } else if matches!(self.current_token(), Token::Minus) {
+            self.advance();
+        }
+        self.expect(Token::LeftParen)?;
+        let end_var = if let Token::Identifier(n) = self.current_token() {
+            let s = n.clone();
+            self.advance();
+            s
+        } else {
+            return Err(DbError::ParseError(
+                "Expected end alias in MATCH".to_string(),
+            ));
+        };
+        self.expect(Token::RightParen)?;
+
+        let start_vertex = if let Some(key_expr) = start_key {
+            Expression::BinaryOp {
+                left: Box::new(Expression::Literal(serde_json::Value::String(format!(
+                    "{start_coll}/"
+                )))),
+                op: BinaryOperator::Add,
+                right: Box::new(key_expr),
+            }
+        } else {
+            return Err(DbError::ParseError(
+                "MATCH start node requires {_key: ...}".to_string(),
+            ));
+        };
+
+        Ok(GraphTraversalClause {
+            vertex_var: end_var,
+            edge_var: Some("_e".into()),
+            direction: if inbound {
+                EdgeDirection::Inbound
+            } else {
+                EdgeDirection::Outbound
+            },
+            start_vertex,
+            edge_collection,
+            min_depth,
+            max_depth,
+            path_var: Some("_p".into()),
+            prune: None,
         })
     }
 

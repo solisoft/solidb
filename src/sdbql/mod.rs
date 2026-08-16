@@ -5,6 +5,8 @@ pub mod parser;
 pub mod prepared;
 
 pub use ast::*;
-pub use executor::{BindVars, MutationStats, QueryExecutionResult, QueryExecutor, QueryExplain};
+pub use executor::{
+    BindVars, MutationStats, QueryExecutionResult, QueryExecutor, QueryExplain, QueryPrincipal,
+};
 pub use parser::parse;
 pub use prepared::{get_prepared_statement_cache, PreparedStatementCache};

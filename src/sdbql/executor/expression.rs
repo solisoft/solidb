@@ -8,12 +8,12 @@
 use super::window::generate_window_key;
 use std::collections::HashMap;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use super::types::Context;
 use super::{
-    compare_key_rows, evaluate_binary_op, evaluate_unary_op, get_field_ref, get_field_value,
-    to_bool, values_equal, QueryExecutor,
+    compare_key_rows, compare_values, evaluate_binary_op, evaluate_unary_op, get_field_ref,
+    get_field_value, to_bool, values_equal, QueryExecutor,
 };
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
@@ -738,6 +738,118 @@ impl<'a> QueryExecutor<'a> {
                     })
                     .collect();
                 Ok(Value::Array(mapped?))
+            }
+            "FLAT_MAP" => {
+                let mut out = Vec::new();
+                for item in arr {
+                    let mut lambda_ctx = ctx.clone();
+                    if let Some(param) = params.first() {
+                        lambda_ctx.insert(param.clone(), item.clone());
+                    }
+                    match self.evaluate_expr_with_context(&body, &lambda_ctx)? {
+                        Value::Array(inner) => out.extend(inner),
+                        other => out.push(other),
+                    }
+                }
+                Ok(Value::Array(out))
+            }
+            "GROUP_BY" => {
+                let mut groups: Vec<(Value, Vec<Value>)> = Vec::new();
+                for item in arr {
+                    let mut lambda_ctx = ctx.clone();
+                    if let Some(param) = params.first() {
+                        lambda_ctx.insert(param.clone(), item.clone());
+                    }
+                    let key = self.evaluate_expr_with_context(&body, &lambda_ctx)?;
+                    if let Some((_, bucket)) = groups.iter_mut().find(|(k, _)| values_equal(k, &key))
+                    {
+                        bucket.push(item);
+                    } else {
+                        groups.push((key, vec![item]));
+                    }
+                }
+                let out: Vec<Value> = groups
+                    .into_iter()
+                    .map(|(key, items)| json!({ "key": key, "items": items }))
+                    .collect();
+                Ok(Value::Array(out))
+            }
+            "SORT_BY" => {
+                let mut keyed: Vec<(Value, Value)> = Vec::with_capacity(arr.len());
+                for item in arr {
+                    let mut lambda_ctx = ctx.clone();
+                    if let Some(param) = params.first() {
+                        lambda_ctx.insert(param.clone(), item.clone());
+                    }
+                    let key = self.evaluate_expr_with_context(&body, &lambda_ctx)?;
+                    keyed.push((key, item));
+                }
+                keyed.sort_by(|a, b| compare_values(&a.0, &b.0));
+                Ok(Value::Array(keyed.into_iter().map(|(_, v)| v).collect()))
+            }
+            "WINDOW_BY" => {
+                // WINDOW_BY(arr, order_lambda) or WINDOW_BY(arr, part_lambda, order_lambda)
+                let lambdas: Vec<_> = original_args
+                    .iter()
+                    .filter_map(|arg| match arg {
+                        Expression::Lambda { params, body } => {
+                            Some((params.clone(), body.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                let part_l = if lambdas.len() >= 2 {
+                    Some(&lambdas[0])
+                } else {
+                    None
+                };
+                let order_l = if lambdas.len() >= 2 {
+                    &lambdas[1]
+                } else {
+                    &lambdas[0]
+                };
+                let mut rows: Vec<(Value, Value, Value)> = Vec::new();
+                for item in &arr {
+                    let mut lambda_ctx = ctx.clone();
+                    if let Some(param) = order_l.0.first() {
+                        lambda_ctx.insert(param.clone(), item.clone());
+                    }
+                    let order_key = self.evaluate_expr_with_context(&order_l.1, &lambda_ctx)?;
+                    let part_key = if let Some((params, body)) = part_l {
+                        let mut pc = ctx.clone();
+                        if let Some(param) = params.first() {
+                            pc.insert(param.clone(), item.clone());
+                        }
+                        self.evaluate_expr_with_context(body, &pc)?
+                    } else {
+                        Value::Null
+                    };
+                    rows.push((part_key, order_key, item.clone()));
+                }
+                rows.sort_by(|a, b| {
+                    compare_values(&a.0, &b.0).then_with(|| compare_values(&a.1, &b.1))
+                });
+                let mut out = Vec::with_capacity(rows.len());
+                let mut last_part: Option<Value> = None;
+                let mut rn = 0u64;
+                for (part, _ord, item) in rows {
+                    if last_part.as_ref().is_none_or(|p| !values_equal(p, &part)) {
+                        rn = 0;
+                        last_part = Some(part);
+                    }
+                    rn += 1;
+                    let mut obj = match item {
+                        Value::Object(m) => m,
+                        other => {
+                            let mut m = serde_json::Map::new();
+                            m.insert("value".into(), other);
+                            m
+                        }
+                    };
+                    obj.insert("row_number".into(), json!(rn));
+                    out.push(Value::Object(obj));
+                }
+                Ok(Value::Array(out))
             }
             "FIND" | "FIND_FIRST" => {
                 for item in arr {

@@ -67,12 +67,23 @@ pub async fn cluster_status_ws(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
-    if crate::server::auth::AuthService::validate_token(&params.token).is_err() {
+    let Ok(claims) = crate::server::auth::AuthService::validate_token(&params.token) else {
         return Response::builder()
             .status(StatusCode::UNAUTHORIZED)
             .body(Body::empty())
             .expect("Valid status code should not fail")
             .into_response();
+    };
+    if crate::server::authz_middleware::enforce(
+        &claims,
+        &state,
+        crate::server::authorization::PermissionAction::Admin,
+        None,
+    )
+    .await
+    .is_err()
+    {
+        return forbidden_response();
     }
 
     if validate_ws_origin(&headers).is_err() {

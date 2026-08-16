@@ -329,6 +329,23 @@ pub fn call(name: &str, args: &[Value]) -> SdbqlResult<Option<Value>> {
             Some(Value::Array(result))
         }
 
+        "ZIP_OBJECT" => {
+            let keys = args.first().and_then(Value::as_array);
+            let vals = args.get(1).and_then(Value::as_array);
+            match (keys, vals) {
+                (Some(k), Some(v)) => {
+                    let mut obj = serde_json::Map::new();
+                    for (kk, vv) in k.iter().zip(v.iter()) {
+                        if let Some(s) = kk.as_str() {
+                            obj.insert(s.to_string(), vv.clone());
+                        }
+                    }
+                    Some(Value::Object(obj))
+                }
+                _ => Some(Value::Null),
+            }
+        }
+
         _ => None,
     };
 

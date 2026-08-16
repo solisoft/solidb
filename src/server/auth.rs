@@ -1121,6 +1121,37 @@ pub(crate) async fn hash_password_blocking(password: &str) -> Result<String, DbE
         .map_err(|e| DbError::InternalError(format!("hash task failed: {}", e)))?
 }
 
+fn livequery_path_allowed(path: &str) -> bool {
+    path.starts_with("/_api/ws/changefeed") || path.starts_with("/_api/livequery")
+}
+
+fn reject_livequery_token(claims: &Claims, path: &str) -> bool {
+    if claims.livequery == Some(true) && !livequery_path_allowed(path) {
+        tracing::warn!("livequery token used on non-whitelisted path: {}", path);
+        return true;
+    }
+    false
+}
+
+/// If `sub` is a real `_admins` user, replace embedded JWT roles with the
+/// current assignments so a revoke takes effect without waiting for expiry.
+fn refresh_jwt_roles(mut claims: Claims, storage: &StorageEngine) -> Claims {
+    if claims.livequery == Some(true) {
+        return claims;
+    }
+    let Ok(db) = storage.get_database(ADMIN_DB) else {
+        return claims;
+    };
+    let Ok(coll) = db.system_collection(ADMIN_COLL) else {
+        return claims;
+    };
+    if coll.get(&claims.sub).is_err() {
+        return claims;
+    }
+    claims.roles = AuthService::get_user_roles(storage, &claims.sub);
+    claims
+}
+
 pub async fn auth_middleware(
     State(state): State<crate::server::handlers::AppState>,
     mut req: Request<Body>,
@@ -1205,17 +1236,10 @@ pub async fn auth_middleware(
         if let Some(token) = header.strip_prefix("Bearer ") {
             match AuthService::validate_token(token) {
                 Ok(claims) => {
-                    if claims.livequery == Some(true) {
-                        let path = req.uri().path();
-                        let allowed_livequery_paths = ["/_api/ws/changefeed", "/_api/livequery"];
-                        if !allowed_livequery_paths.iter().any(|p| path.starts_with(p)) {
-                            tracing::warn!(
-                                "livequery token used on non-whitelisted path: {}",
-                                path
-                            );
-                            return Err(StatusCode::FORBIDDEN);
-                        }
+                    if reject_livequery_token(&claims, req.uri().path()) {
+                        return Err(StatusCode::FORBIDDEN);
                     }
+                    let claims = refresh_jwt_roles(claims, &state.storage);
                     req.extensions_mut().insert(claims);
                     return Ok(next.run(req).await);
                 }
@@ -1285,6 +1309,10 @@ pub async fn auth_middleware(
         if let Ok(params) = serde_urlencoded::from_str::<HashMap<String, String>>(query) {
             if let Some(token) = params.get("token") {
                 if let Ok(claims) = AuthService::validate_token(token) {
+                    if reject_livequery_token(&claims, req.uri().path()) {
+                        return Err(StatusCode::FORBIDDEN);
+                    }
+                    let claims = refresh_jwt_roles(claims, &state.storage);
                     req.extensions_mut().insert(claims);
                     return Ok(next.run(req).await);
                 }
@@ -1338,6 +1366,10 @@ pub async fn permissive_auth_middleware(
         if let Some(token) = header.strip_prefix("Bearer ") {
             match AuthService::validate_token(token) {
                 Ok(claims) => {
+                    if reject_livequery_token(&claims, req.uri().path()) {
+                        return Err(StatusCode::FORBIDDEN);
+                    }
+                    let claims = refresh_jwt_roles(claims, &state.storage);
                     req.extensions_mut().insert(claims);
                     return Ok(next.run(req).await);
                 }

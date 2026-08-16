@@ -71,6 +71,17 @@ pub fn validate_webhook_url(url: &str) -> Result<(), crate::error::DbError> {
             "Webhook URL must not embed credentials".to_string(),
         ));
     }
+    let allow_loopback = std::env::var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if let Some(host) = parsed.host_str() {
+        if allow_loopback && (host == "127.0.0.1" || host == "localhost" || host == "::1") {
+            return Ok(());
+        }
+    }
+    crate::server::ssrf::validate_public_url_host(&parsed).map_err(|e| {
+        crate::error::DbError::BadRequest(format!("Webhook URL rejected (SSRF): {}", e))
+    })?;
     Ok(())
 }
 
@@ -386,7 +397,10 @@ impl QueueWorker {
 
         // Use the permissive client only for development-reserved TLDs.
         // Everything else stays on the strict client with full TLS checks.
-        let client = if host_is_dev_tld(url) {
+        let allow_insecure_tls = std::env::var("SOLIDB_ALLOW_INSECURE_WEBHOOK_TLS")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let client = if allow_insecure_tls && host_is_dev_tld(url) {
             tracing::debug!("Using permissive TLS client for dev host {}", url);
             dev_http
         } else {
@@ -554,6 +568,15 @@ mod tests {
     }
 
     #[test]
+    fn validate_webhook_url_rejects_private_and_metadata() {
+        std::env::remove_var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK");
+        assert!(validate_webhook_url("http://127.0.0.1/hook").is_err());
+        assert!(validate_webhook_url("http://169.254.169.254/latest").is_err());
+        assert!(validate_webhook_url("http://10.0.0.5/hook").is_err());
+        assert!(validate_webhook_url("http://localhost/hook").is_err());
+    }
+
+    #[test]
     fn validate_webhook_url_rejects_credentials_in_url() {
         let err =
             validate_webhook_url("http://user:pw@example.test/hook").expect_err("creds must fail");
@@ -562,6 +585,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_webhook_posts_signed_payload() {
+        std::env::set_var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK", "1");
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let url = format!("http://127.0.0.1:{}/hook", port);
@@ -628,6 +652,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_webhook_propagates_non_2xx_as_error() {
+        std::env::set_var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK", "1");
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let url = format!("http://127.0.0.1:{}/hook", port);

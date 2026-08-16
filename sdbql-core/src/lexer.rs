@@ -100,6 +100,7 @@ pub enum Token {
     NotEqual,      // !=
     LessThan,      // <
     LessThanEq,    // <=
+    Spaceship,     // <=>
     GreaterThan,   // >
     GreaterThanEq, // >=
     Plus,          // +
@@ -527,7 +528,12 @@ impl Lexer {
                 self.advance();
                 if self.current_char == Some('=') {
                     self.advance();
-                    Token::LessThanEq
+                    if self.current_char == Some('>') {
+                        self.advance();
+                        Token::Spaceship
+                    } else {
+                        Token::LessThanEq
+                    }
                 } else if self.current_char == Some('<') {
                     self.advance();
                     Token::LeftShift
@@ -817,6 +823,7 @@ mod tests {
         assert_eq!(tokenize("!=")[0], Token::NotEqual);
         assert_eq!(tokenize("<")[0], Token::LessThan);
         assert_eq!(tokenize("<=")[0], Token::LessThanEq);
+        assert_eq!(tokenize("<=>")[0], Token::Spaceship);
         assert_eq!(tokenize(">")[0], Token::GreaterThan);
         assert_eq!(tokenize(">=")[0], Token::GreaterThanEq);
         assert_eq!(tokenize("=")[0], Token::Assign);

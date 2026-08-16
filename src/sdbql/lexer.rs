@@ -97,6 +97,7 @@ pub enum Token {
     NotEqual,      // !=
     LessThan,      // <
     LessThanEq,    // <=
+    Spaceship,     // <=>
     GreaterThan,   // >
     GreaterThanEq, // >=
     Plus,          // +
@@ -527,7 +528,12 @@ impl Lexer {
                 self.advance();
                 if self.current_char == Some('=') {
                     self.advance();
-                    Token::LessThanEq
+                    if self.current_char == Some('>') {
+                        self.advance();
+                        Token::Spaceship
+                    } else {
+                        Token::LessThanEq
+                    }
                 } else if self.current_char == Some('<') {
                     self.advance();
                     Token::LeftShift

@@ -30,13 +30,13 @@ class SolidbClient
   static def username()
     session_username = session_get("solidb_username") rescue nil
     return session_username unless session_username.blank?
-    return getenv("SOLIDB_USERNAME") ?? "admin"
+    return getenv("SOLIDB_USERNAME") ?? ""
   end
 
   static def password()
     session_password = session_get("solidb_password") rescue nil
     return session_password unless session_password.blank?
-    return getenv("SOLIDB_PASSWORD") ?? "admin"
+    return getenv("SOLIDB_PASSWORD") ?? ""
   end
 
   # True when this browser session targets a server other than the env one.

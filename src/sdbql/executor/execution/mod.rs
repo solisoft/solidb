@@ -10,6 +10,7 @@ mod clauses;
 mod entry;
 mod graph;
 mod graph_rag;
+mod paths;
 mod streaming;
 mod subquery;
 

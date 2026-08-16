@@ -59,6 +59,26 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             };
             Ok(Some(Value::Bool(is_empty)))
         }
+        "IS_DATE" => {
+            check_args(name, args, 1)?;
+            if args[0].is_null() {
+                return Ok(Some(Value::Bool(false)));
+            }
+            Ok(Some(Value::Bool(
+                crate::sdbql::executor::utils::parse_datetime(&args[0]).is_ok(),
+            )))
+        }
+        "IS_KEY" => {
+            check_args(name, args, 1)?;
+            let ok = args[0].as_str().is_some_and(|s| {
+                !s.is_empty()
+                    && s.len() <= 254
+                    && !s.contains('/')
+                    && s.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ':' | '.'))
+            });
+            Ok(Some(Value::Bool(ok)))
+        }
         "IS_SAME_COLLECTION" => {
             check_args(name, args, 2)?;
             let extract_collection = |val: &Value| -> Option<String> {

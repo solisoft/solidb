@@ -306,7 +306,8 @@ pub fn setup_request_globals_selective(
 
     if needs.solidb_env {
         if let Some(ref solidb) = solidb {
-            setup_env_table_cached(engine, lua, solidb, db_name)?;
+            let allow_secrets = context.user.authenticated && context.user.has_role("admin");
+            setup_env_table_cached(engine, lua, solidb, db_name, allow_secrets)?;
         }
     }
 
@@ -457,7 +458,17 @@ fn setup_env_table_cached(
     lua: &Lua,
     solidb: &mlua::Table,
     db_name: &str,
+    allow_secrets: bool,
 ) -> Result<(), DbError> {
+    if !allow_secrets {
+        let env_table = lua
+            .create_table()
+            .map_err(|e| DbError::InternalError(format!("Failed to create env table: {}", e)))?;
+        solidb
+            .set("env", env_table)
+            .map_err(|e| DbError::InternalError(format!("Failed to set solidb.env: {}", e)))?;
+        return Ok(());
+    }
     let env_table = lua
         .create_table()
         .map_err(|e| DbError::InternalError(format!("Failed to create env table: {}", e)))?;
@@ -1682,21 +1693,23 @@ pub fn setup_lua_globals(
         .create_table()
         .map_err(|e| DbError::InternalError(format!("Failed to create env table: {}", e)))?;
 
-    // Populate env table from _env collection
-    if let Ok(db) = engine.storage.get_database(db_name) {
-        if let Ok(collection) = db.system_collection("_env") {
-            let collection: &crate::storage::Collection = &collection;
-            let all_docs = collection.scan(None);
-            for doc in all_docs {
-                if let (Some(key), Some(value)) = (
-                    doc.get("_key")
-                        .and_then(|v| v.as_str().map(|s| s.to_string())),
-                    doc.get("value")
-                        .and_then(|v| v.as_str().map(|s| s.to_string())),
-                ) {
-                    env_table.set(key, value).map_err(|e| {
-                        DbError::InternalError(format!("Failed to set env var: {}", e))
-                    })?;
+    // Secrets stay out of anonymous / non-admin scripts.
+    if context.user.authenticated && context.user.has_role("admin") {
+        if let Ok(db) = engine.storage.get_database(db_name) {
+            if let Ok(collection) = db.system_collection("_env") {
+                let collection: &crate::storage::Collection = &collection;
+                let all_docs = collection.scan(None);
+                for doc in all_docs {
+                    if let (Some(key), Some(value)) = (
+                        doc.get("_key")
+                            .and_then(|v| v.as_str().map(|s| s.to_string())),
+                        doc.get("value")
+                            .and_then(|v| v.as_str().map(|s| s.to_string())),
+                    ) {
+                        env_table.set(key, value).map_err(|e| {
+                            DbError::InternalError(format!("Failed to set env var: {}", e))
+                        })?;
+                    }
                 }
             }
         }

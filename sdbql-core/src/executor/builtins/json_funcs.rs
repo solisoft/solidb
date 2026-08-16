@@ -7,6 +7,29 @@ use crate::error::{SdbqlError, SdbqlResult};
 /// Call a JSON function. Returns None if function not found.
 pub fn call(name: &str, args: &[Value]) -> SdbqlResult<Option<Value>> {
     let result = match name {
+        "PARSE_IDENTIFIER" => {
+            let s = args.first().and_then(Value::as_str).unwrap_or("");
+            Some(match s.split_once('/') {
+                Some((c, k)) => serde_json::json!({ "collection": c, "key": k }),
+                None => serde_json::json!({ "collection": Value::Null, "key": s }),
+            })
+        }
+        "PARSE_COLLECTION" => {
+            let s = args.first().and_then(Value::as_str).unwrap_or("");
+            Some(
+                s.split_once('/')
+                    .map(|(c, _)| Value::String(c.to_string()))
+                    .unwrap_or(Value::Null),
+            )
+        }
+        "PARSE_KEY" => {
+            let s = args.first().and_then(Value::as_str).unwrap_or("");
+            Some(
+                s.split_once('/')
+                    .map(|(_, k)| Value::String(k.to_string()))
+                    .unwrap_or(Value::String(s.to_string())),
+            )
+        }
         "JSON_PARSE" | "PARSE_JSON" => {
             check_args(name, args, 1)?;
             let s = args[0].as_str().ok_or_else(|| {

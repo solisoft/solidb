@@ -31,12 +31,23 @@ enum AuthzMode {
 fn authz_mode() -> AuthzMode {
     static MODE: std::sync::OnceLock<AuthzMode> = std::sync::OnceLock::new();
     *MODE.get_or_init(|| match std::env::var("SOLIDB_DB_AUTHZ_MODE").as_deref() {
-        Ok("warn") => {
+        Ok("warn")
+            if std::env::var("SOLIDB_DB_AUTHZ_ALLOW_WARN")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false) =>
+        {
             tracing::warn!(
                 "SOLIDB_DB_AUTHZ_MODE=warn: per-database authorization failures are \
                      logged but NOT enforced"
             );
             AuthzMode::Warn
+        }
+        Ok("warn") => {
+            tracing::error!(
+                "SOLIDB_DB_AUTHZ_MODE=warn is ignored without SOLIDB_DB_AUTHZ_ALLOW_WARN=1; \
+                 enforcing authorization"
+            );
+            AuthzMode::Enforce
         }
         _ => AuthzMode::Enforce,
     })
@@ -120,6 +131,9 @@ fn required_action(method: &Method, path: &str) -> PermissionAction {
     if path.ends_with("/repl") {
         return PermissionAction::Admin;
     }
+    if is_script_or_service_mutation(method, path) {
+        return PermissionAction::Admin;
+    }
     if *method == Method::DELETE && is_collection_drop(path) {
         return PermissionAction::Admin;
     }
@@ -155,6 +169,25 @@ fn required_action(method: &Method, path: &str) -> PermissionAction {
 /// `DELETE /_api/database/{db}/collection/{name}` and
 /// `DELETE /_api/database/{db}/columnar/{collection}` drop a whole
 /// collection; deeper paths (documents, indexes, schema, ...) do not.
+/// Creating or changing Lua services/scripts is equivalent to installing
+/// server-side code; listing them stays a Read.
+fn is_script_or_service_mutation(method: &Method, path: &str) -> bool {
+    if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
+        return false;
+    }
+    let Some(rest) = path
+        .strip_prefix("/_api/database/")
+        .and_then(|r| r.split_once('/'))
+        .map(|(_, rest)| rest)
+    else {
+        return false;
+    };
+    rest == "scripts"
+        || rest.starts_with("scripts/")
+        || rest == "services"
+        || rest.starts_with("services/")
+}
+
 fn is_collection_drop(path: &str) -> bool {
     let Some(rest) = path
         .strip_prefix("/_api/database/")
@@ -274,6 +307,18 @@ mod tests {
         );
         assert_eq!(
             required_action(&post, "/_api/database/db1/repl"),
+            PermissionAction::Admin
+        );
+        assert_eq!(
+            required_action(&post, "/_api/database/db1/scripts"),
+            PermissionAction::Admin
+        );
+        assert_eq!(
+            required_action(&put, "/_api/database/db1/services/users"),
+            PermissionAction::Admin
+        );
+        assert_eq!(
+            required_action(&delete, "/_api/database/db1/scripts/abc"),
             PermissionAction::Admin
         );
 

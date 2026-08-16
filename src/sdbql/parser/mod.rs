@@ -47,6 +47,10 @@ impl Parser {
         Ok(())
     }
 
+    pub(crate) fn ident_eq(&self, want: &str) -> bool {
+        matches!(self.current_token(), Token::Identifier(n) if n.eq_ignore_ascii_case(want))
+    }
+
     /// Decrement depth when leaving a nested parse
     fn leave_depth(&mut self) {
         self.depth = self.depth.saturating_sub(1);
@@ -161,6 +165,14 @@ impl Parser {
                 let filter_clause = self.parse_filter_clause()?;
                 filter_clauses.push(filter_clause.clone());
                 body_clauses.push(BodyClause::Filter(filter_clause));
+            } else if self.ident_eq("SEARCH") {
+                self.advance();
+                let expression = self.parse_expression()?;
+                let filter_clause = FilterClause { expression };
+                body_clauses.push(BodyClause::Search(filter_clause));
+            } else if self.ident_eq("MATCH") {
+                let gt = self.parse_match_clause()?;
+                body_clauses.push(BodyClause::GraphTraversal(gt));
             } else if matches!(self.current_token(), Token::Insert) {
                 let insert_clause = self.parse_insert_clause()?;
                 body_clauses.push(BodyClause::Insert(insert_clause));
@@ -190,6 +202,7 @@ impl Parser {
                 || (matches!(self.current_token(), Token::Full)
                     && (matches!(self.peek_token(1), Token::Join)
                         || matches!(self.peek_token(1), Token::Outer)))
+                || (self.ident_eq("ASOF") && matches!(self.peek_token(1), Token::Join))
             {
                 let join_clause = self.parse_join_clause()?;
                 body_clauses.push(BodyClause::Join(join_clause));
@@ -327,7 +340,7 @@ impl Parser {
             ));
         };
 
-        // Check for optional second variable (edge variable for graph traversals)
+        // Optional second (edge) and third (path) variables
         let second_var = if matches!(self.current_token(), Token::Comma) {
             self.advance(); // consume comma
             if let Token::Identifier(name) = self.current_token() {
@@ -342,13 +355,32 @@ impl Parser {
         } else {
             None
         };
+        let path_var = if second_var.is_some() && matches!(self.current_token(), Token::Comma) {
+            self.advance();
+            if let Token::Identifier(name) = self.current_token() {
+                let var = name.clone();
+                self.advance();
+                Some(var)
+            } else {
+                return Err(DbError::ParseError(
+                    "Expected path variable after second comma".to_string(),
+                ));
+            }
+        } else {
+            None
+        };
 
         self.expect(Token::In)?;
 
         // Now detect what type of FOR this is
         // If we see SHORTEST_PATH, it's a shortest path query
-        if matches!(self.current_token(), Token::ShortestPath) {
-            let sp_clause = self.parse_shortest_path_clause(first_var, second_var)?;
+        if matches!(self.current_token(), Token::ShortestPath)
+            || self.ident_eq("ALL_SHORTEST_PATHS")
+            || self.ident_eq("K_SHORTEST_PATHS")
+            || self.ident_eq("K_PATHS")
+        {
+            let mut sp_clause = self.parse_shortest_path_clause(first_var, second_var)?;
+            sp_clause.path_var = path_var;
             return Ok(ForOrGraph::ShortestPath(sp_clause));
         }
 
@@ -395,7 +427,8 @@ impl Parser {
         };
 
         if is_graph {
-            let gt_clause = self.parse_graph_traversal_clause(first_var, second_var)?;
+            let mut gt_clause = self.parse_graph_traversal_clause(first_var, second_var)?;
+            gt_clause.path_var = path_var;
             return Ok(ForOrGraph::GraphTraversal(gt_clause));
         }
 
@@ -412,11 +445,15 @@ impl Parser {
             let n = name.clone();
             self.advance();
 
+            let system_time = self.parse_system_time_as_of()?;
+            let valid_time = self.parse_valid_time()?;
             Ok(ForOrGraph::For(ForClause {
                 variable: first_var,
                 collection: n.clone(),
                 source_variable: Some(n),
                 source_expression: None,
+                system_time,
+                valid_time,
             }))
         } else {
             // Parse as expression (e.g., 1..5, [1, 2, 3], etc.)
@@ -426,6 +463,8 @@ impl Parser {
                 collection: String::new(),
                 source_variable: None,
                 source_expression: Some(expr),
+                system_time: None,
+                valid_time: None,
             }))
         }
     }

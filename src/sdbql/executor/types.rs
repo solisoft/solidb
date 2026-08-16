@@ -39,6 +39,16 @@ pub struct QueryExecutionResult {
 /// Bind variables for parameterized queries (prevents SDBQL injection)
 pub type BindVars = HashMap<String, Value>;
 
+/// Snapshot of the authenticated caller, used by CAN / CURRENT_USER / ROW_POLICY.
+#[derive(Debug, Clone, Default)]
+pub struct QueryPrincipal {
+    pub user: String,
+    pub roles: Vec<String>,
+    pub can_read: bool,
+    pub can_write: bool,
+    pub can_admin: bool,
+}
+
 /// Query execution plan with timing information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryExplain {

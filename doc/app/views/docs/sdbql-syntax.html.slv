@@ -736,7 +736,7 @@ FOR doc IN daily_sales
           </div>
           <div class="p-5 space-y-4">
             <p class="text-sm text-gray-400">
-              Combine data from multiple collections efficiently using <code class="text-blue-300">JOIN</code>, <code class="text-blue-300">LEFT/RIGHT JOIN</code>, and <code class="text-blue-300">FULL OUTER JOIN</code>. SDBQL uses document-oriented join semantics where matching documents are grouped into arrays.
+              Combine data from multiple collections using <code class="text-blue-300">JOIN</code>, <code class="text-blue-300">LEFT/RIGHT JOIN</code>, <code class="text-blue-300">FULL OUTER JOIN</code>, and <code class="text-blue-300">ASOF JOIN</code>. Equality joins group matches into arrays; as-of joins bind a single right document (or <code>null</code>).
             </p>
 
             <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
@@ -796,6 +796,37 @@ FOR user IN users
               </div>
             </div>
             
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-blue-300 font-bold mb-2 text-sm">ASOF JOIN</h5>
+              <p class="text-sm text-gray-400 mb-3">Align each left row to the closest right row in time (after hashing the equality keys). Strategies: <code>BACKWARD</code> (default), <code>FORWARD</code>, <code>NEAREST</code>. Optional <code>TOLERANCE</code> is milliseconds or an interval string (<code>"5s"</code>, <code>"1m"</code>).</p>
+              <pre><code class="language-sql text-xs">FOR t IN trades
+  ASOF JOIN quotes ON t.sym == quotes.sym
+    ASOF t.ts, quotes.ts BACKWARD TOLERANCE "5s"
+  RETURN { trade: t, quote: quotes }</code></pre>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-blue-300 font-bold mb-2 text-sm">VALID_TIME</h5>
+              <p class="text-sm text-gray-400 mb-3">Filter documents by application fields <code>valid_from</code> / <code>valid_to</code> (epoch ms). Missing bounds are open. Not the same as <code>SYSTEM_TIME</code> (storage versions).</p>
+              <pre><code class="language-sql text-xs">FOR o IN orders VALID_TIME AS OF @ts RETURN o
+FOR o IN orders VALID_TIME FROM @a TO @b RETURN o</code></pre>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-blue-300 font-bold mb-2 text-sm">SEARCH</h5>
+              <p class="text-sm text-gray-400 mb-3">Like <code>FILTER</code>, but a numeric expression keeps the row when the score is <code>&gt; 0</code> and stores it for <code>SEARCH_SCORE()</code>.</p>
+              <pre><code class="language-sql text-xs">FOR n IN notes
+  SEARCH PHRASE(n.body, "quick", "brown")
+  RETURN { n, score: SEARCH_SCORE() }</code></pre>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+              <h5 class="text-blue-300 font-bold mb-2 text-sm">SYSTEM_TIME AS OF</h5>
+              <p class="text-sm text-gray-400 mb-3">Scan a versioned collection as it was at a timestamp (epoch ms or RFC3339). No secondary indexes. Batch and transactional writes are not versioned yet.</p>
+              <pre><code class="language-sql text-xs">FOR o IN orders SYSTEM_TIME AS OF @ts
+  RETURN o</code></pre>
+            </div>
+
              <p class="text-xs text-gray-500 mt-4">
               <span class="text-blue-400 font-bold">Note:</span>
               The variable name for the joined collection is automatically derived from the collection name.

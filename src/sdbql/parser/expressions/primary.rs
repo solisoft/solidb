@@ -146,6 +146,22 @@ impl Parser {
                 "RIGHT",
                 "Unexpected token in expression: Right",
             ),
+            Token::Like => self.parse_keyword_as_function_no_window(
+                "LIKE",
+                "Unexpected token in expression: Like",
+            ),
+            Token::Replace => self.parse_keyword_as_function_no_window(
+                "REPLACE",
+                "Unexpected token in expression: Replace",
+            ),
+            Token::Join => self.parse_keyword_as_function_no_window(
+                "JOIN",
+                "Unexpected token in expression: Join",
+            ),
+            Token::Filter => self.parse_keyword_as_function_no_window(
+                "FILTER",
+                "Unexpected token in expression: Filter",
+            ),
             Token::Integer(n) => self.parse_integer(*n),
             Token::Float(f) => self.parse_float(*f),
             Token::String(s) => self.parse_string(s.clone()),

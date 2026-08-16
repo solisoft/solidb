@@ -240,8 +240,23 @@
                 <pre><code class="language-sdbql">RETURN DOC_HISTORY("orders", "o1")</code></pre>
               </div>
             </div>
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-4 bg-white/5 border-b border-white/5"><span class="text-amber-400 font-bold text-sm">SYSTEM_TIME AS OF — scan the past</span></div>
+              <div class="p-4">
+                <p class="text-gray-400 text-sm mb-3">Iterate every live document as of a timestamp. Full history scan, no indexes.</p>
+                <pre><code class="language-sdbql">FOR o IN orders SYSTEM_TIME AS OF "2026-07-01T00:00:00Z"
+  RETURN o</code></pre>
+              </div>
+            </div>
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-4 bg-white/5 border-b border-white/5"><span class="text-amber-400 font-bold text-sm">SNAPSHOT_DIFF — what changed</span></div>
+              <div class="p-4">
+                <p class="text-gray-400 text-sm mb-3">Compare two points in time: <code>{ inserted, updated, deleted }</code>.</p>
+                <pre><code class="language-sdbql">RETURN SNAPSHOT_DIFF("orders", t1, t2)</code></pre>
+              </div>
+            </div>
             <div class="bg-amber-900/10 border border-amber-500/20 rounded-xl p-4 text-sm text-gray-300">
-              <p><span class="text-amber-400 font-bold">Scope.</span> Versioning is opt-in per collection and retained up to <code>SOLIDB_MAX_VERSIONS</code> (default 100). <code>AS OF</code> answers primary-key reads over versioned single-document writes; bulk and transactional writes are not yet versioned, and secondary indexes are current-version only.</p>
+              <p><span class="text-amber-400 font-bold">Scope.</span> Versioning is opt-in per collection and retained up to <code>SOLIDB_MAX_VERSIONS</code> (default 100). Single-document writes, <code>insert_batch</code> / <code>upsert_batch</code>, and transactional write batches record history. Secondary indexes are current-version only. Application validity uses <code>VALID_TIME</code> on <code>valid_from</code>/<code>valid_to</code>, not this log.</p>
             </div>
           </div>
         </div>

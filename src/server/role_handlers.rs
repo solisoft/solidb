@@ -761,9 +761,9 @@ pub async fn create_user(
     }
 
     // Validate password
-    if req.password.len() < 6 {
+    if req.password.len() < 12 {
         return Err(DbError::BadRequest(
-            "Password must be at least 6 characters".to_string(),
+            "Password must be at least 12 characters".to_string(),
         ));
     }
 

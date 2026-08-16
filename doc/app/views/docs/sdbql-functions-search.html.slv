@@ -36,8 +36,14 @@
           </div>
           <div class="p-8 space-y-8">
             <p class="text-gray-300 leading-relaxed">
-              SDBQL provides powerful fulltext search capabilities using n-gram indexing for fuzzy matching and BM25 for relevance scoring.
+              SDBQL provides fulltext search with n-gram indexing and BM25 scoring. <code class="text-amber-300">SEARCH expr</code> is a scored <code>FILTER</code> (numeric <code>&gt; 0</code> keeps the row; <code>SEARCH_SCORE()</code>). <code>SEARCH_INDEX(coll, field, query [, limit])</code> walks a fulltext index. <code>CREATE_VIEW(name, {collection, fields})</code> registers a <code>type: "search"</code> alias in <code>_views</code> so <code>FOR d IN view</code> scans the backing collection — not an Arango View planner. <code>TOKENS</code>/<code>PHRASE</code>/<code>BOOST</code> use in-memory analyzers (<code>text_en</code>, <code>identity</code>). For embeddings use <code class="text-amber-300">EMBED</code> and <code class="text-amber-300">VECTOR_SEARCH</code>.
             </p>
+            <pre class="mt-4"><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">RETURN TOKENS("The Quick Brown Fox", "text_en")  -- ["quick","brown","fox"]
+RETURN PHRASE("the quick brown fox", "quick", "brown")  -- true
+
+FOR n IN notes
+  SEARCH BOOST(PHRASE(n.body, "quick", "brown"), 2)
+  RETURN { n, score: SEARCH_SCORE() }</code></pre>
 
             <!-- FULLTEXT -->
             <div id="fn-FULLTEXT" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">

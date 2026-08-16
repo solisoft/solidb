@@ -105,7 +105,7 @@
           </div>
           <div class="p-8 space-y-6">
             <p class="text-gray-300">
-              SoliDB introduces the <code>TIME_BUCKET()</code> function to easily group data into fixed intervals (e.g., 5 minutes, 1 hour) for aggregation.
+              <code>TIME_BUCKET()</code> groups timestamps into fixed intervals (e.g. 5 minutes, 1 hour). Array helpers <code>DELTA</code>, <code>RATE</code>, <code>FILL</code>, and <code>RESAMPLE</code> work on numeric series or <code>[{t|ts|time, v|value}, …]</code>. Align two collections in time with <a href="/docs/sdbql-syntax" class="text-cyan-400 hover:underline">ASOF JOIN</a>.
             </p>
 
             <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
@@ -144,6 +144,18 @@
                   <li>Negative timestamps (pre-1970)</li>
                 </ul>
               </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Series helpers</h4>
+              <pre><code class="language-sql text-sm">RETURN DELTA([{t:0,v:1},{t:10,v:4}])
+-- [{t:10,v:3}]
+
+RETURN RATE([{t:0,v:0},{t:1000,v:10}], "1s")
+-- [{t:1000,v:10}]   -- change per second
+
+RETURN FILL([{t:0,v:1},{t:1,v:null},{t:2,v:3}], "interp")
+RETURN RESAMPLE(points, "5m")   -- last value + avg per bucket</code></pre>
             </div>
           </div>
         </div>

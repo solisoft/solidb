@@ -102,6 +102,12 @@ pub async fn change_password_handler(
         ));
     }
 
+    if req.new_password.len() < 12 {
+        return Err(DbError::BadRequest(
+            "Password must be at least 12 characters".to_string(),
+        ));
+    }
+
     // 6. Hash new password
     let new_hash = crate::server::auth::hash_password_blocking(&req.new_password).await?;
 
@@ -163,12 +169,13 @@ pub async fn create_api_key_handler(
 
     let collection = db.system_collection(crate::server::auth::API_KEYS_COLL)?;
 
-    // Use provided roles, default to admin if empty
-    let roles = if req.roles.is_empty() {
-        vec!["admin".to_string()]
-    } else {
-        req.roles.clone()
-    };
+    if req.roles.is_empty() {
+        return Err(DbError::BadRequest(
+            "API keys must declare at least one role (empty roles no longer default to admin)"
+                .to_string(),
+        ));
+    }
+    let roles = req.roles.clone();
 
     let api_key = crate::server::auth::ApiKey {
         id: id.clone(),

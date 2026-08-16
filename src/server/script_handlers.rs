@@ -578,11 +578,15 @@ pub struct CreateServiceRequest {
     #[serde(default = "default_enabled")]
     pub enabled: bool,
     /// Default auth requirement for scripts in this service
-    #[serde(default)]
+    #[serde(default = "default_require_auth")]
     pub require_auth: bool,
 }
 
 fn default_enabled() -> bool {
+    true
+}
+
+fn default_require_auth() -> bool {
     true
 }
 

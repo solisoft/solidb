@@ -7,14 +7,14 @@
 //! newest version sorts first within a document's prefix and an `AS OF T` read is
 //! a single forward seek to the first version with `ts <= T`.
 //!
-//! Scope (v1): the single-document `insert`/`update`/`delete` paths are versioned.
-//! Bulk (`insert_batch`/`upsert_batch`) and transactional writes are not yet
-//! captured, and secondary indexes are current-version only — `AS OF` answers
+//! Scope: single-document `insert`/`update`/`delete`, `insert_batch` /
+//! `upsert_batch`, and transactional write batches record history.
+//! and secondary indexes are current-version only — `AS OF` answers
 //! primary-key reads (`DOC_AS_OF`) and history listing (`DOC_HISTORY`), not
 //! index-accelerated historical queries. History is capped per document
 //! (`SOLIDB_MAX_VERSIONS`, default 100).
 
-use super::{Collection, DOCV_PREFIX, VERSIONING_META_KEY};
+use super::{Collection, DOCV_PREFIX, ROW_POLICY_META_KEY, VERSIONING_META_KEY};
 use crate::error::{DbError, DbResult};
 use dashmap::DashMap;
 use rust_rocksdb::{AsColumnFamilyRef, Direction, IteratorMode, WriteBatch};
@@ -187,6 +187,50 @@ impl Collection {
         Ok(None)
     }
 
+    /// All live documents as of `as_of_micros`. Full `docv:` scan; no indexes.
+    pub fn scan_as_of(&self, as_of_micros: u64) -> DbResult<Vec<Value>> {
+        let cf = self
+            .db
+            .cf_handle(&self.name)
+            .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
+        let prefix = DOCV_PREFIX.as_bytes();
+        let mut chosen: std::collections::HashMap<String, VersionRecord> =
+            std::collections::HashMap::new();
+        for item in self.db.prefix_iterator_cf(&cf, prefix) {
+            let Ok((k, v)) = item else {
+                break;
+            };
+            if !k.starts_with(prefix) {
+                break;
+            }
+            let key_str = String::from_utf8_lossy(&k);
+            // docv:<doc_key>:<inverted_hex>
+            let rest = key_str.strip_prefix(DOCV_PREFIX).unwrap_or(&key_str);
+            let Some((doc_key, _)) = rest.rsplit_once(':') else {
+                continue;
+            };
+            let Ok(record) = serde_json::from_slice::<VersionRecord>(&v) else {
+                continue;
+            };
+            if record.ts > as_of_micros {
+                continue;
+            }
+            chosen
+                .entry(doc_key.to_string())
+                .and_modify(|cur| {
+                    if record.ts > cur.ts {
+                        *cur = record.clone();
+                    }
+                })
+                .or_insert(record);
+        }
+        Ok(chosen
+            .into_values()
+            .filter(|r| !r.deleted)
+            .filter_map(|r| r.value)
+            .collect())
+    }
+
     /// Full version history for a document, newest first. Each entry is
     /// `{ ts: <epoch millis>, ts_micros, deleted, value }`.
     pub fn doc_history(&self, key: &str) -> Vec<Value> {
@@ -240,5 +284,32 @@ impl Collection {
         for k in to_delete {
             let _ = self.db.delete_cf(&cf, k);
         }
+    }
+
+    pub fn set_row_policy(&self, expr: Option<&str>) -> DbResult<()> {
+        let cf = self
+            .db
+            .cf_handle(&self.name)
+            .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
+        match expr {
+            Some(s) => {
+                self.db
+                    .put_cf(&cf, ROW_POLICY_META_KEY.as_bytes(), s.as_bytes())
+                    .map_err(|e| DbError::InternalError(format!("set_row_policy: {e}")))?;
+            }
+            None => {
+                let _ = self.db.delete_cf(&cf, ROW_POLICY_META_KEY.as_bytes());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn get_row_policy(&self) -> Option<String> {
+        let cf = self.db.cf_handle(&self.name)?;
+        self.db
+            .get_cf(&cf, ROW_POLICY_META_KEY.as_bytes())
+            .ok()
+            .flatten()
+            .and_then(|b| String::from_utf8(b).ok())
     }
 }

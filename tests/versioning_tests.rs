@@ -102,3 +102,25 @@ fn test_version_retention_cap() {
     assert_eq!(hist.len(), 100);
     assert_eq!(hist[0]["value"]["n"], json!(120)); // newest retained
 }
+
+#[test]
+fn test_insert_and_upsert_batch_record_history() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("docs".to_string(), None).unwrap();
+    let coll = engine.get_collection("docs").unwrap();
+    coll.enable_versioning().unwrap();
+
+    coll.insert_batch(vec![
+        json!({"_key": "a", "n": 1}),
+        json!({"_key": "b", "n": 1}),
+    ])
+    .unwrap();
+    assert_eq!(coll.doc_history("a").len(), 1);
+    assert_eq!(coll.doc_history("b").len(), 1);
+
+    coll.upsert_batch(vec![("a".into(), json!({"_key": "a", "n": 2}))])
+        .unwrap();
+    let hist = coll.doc_history("a");
+    assert_eq!(hist.len(), 2);
+    assert_eq!(hist[0]["value"]["n"], json!(2));
+}

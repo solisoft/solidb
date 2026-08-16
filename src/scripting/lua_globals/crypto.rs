@@ -186,6 +186,11 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
     let random_bytes_fn = lua
         .create_function(|lua, n: usize| {
             use rand::RngCore;
+            if n > 65_536 {
+                return Err(mlua::Error::RuntimeError(
+                    "random_bytes: n must be <= 65536".to_string(),
+                ));
+            }
             let mut bytes = vec![0u8; n];
             rand::thread_rng().fill_bytes(&mut bytes);
             lua.create_string(&bytes)
@@ -201,6 +206,11 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
     let random_string_fn = lua
         .create_function(|_, n: usize| {
             use rand::Rng;
+            if n > 65_536 {
+                return Err(mlua::Error::RuntimeError(
+                    "random_string: n must be <= 65536".to_string(),
+                ));
+            }
             const CHARSET: &[u8] =
                 b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
             let mut rng = rand::thread_rng();

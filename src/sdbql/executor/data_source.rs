@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::collections::HashSet;
 
 use super::types::Context;
-use super::QueryExecutor;
+use super::{to_bool, QueryExecutor};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::ForClause;
 use crate::storage::http_client::get_blocking_http_client;
@@ -186,8 +186,17 @@ impl<'a> QueryExecutor<'a> {
             return Ok(rows);
         }
 
+        // Search views (`CREATE_VIEW`) are aliases onto a backing collection.
+        let source_coll = if let Some(backing) =
+            self.resolve_search_view_collection(&for_clause.collection)?
+        {
+            backing
+        } else {
+            for_clause.collection.clone()
+        };
+
         // Otherwise it's a collection - use scan with limit for optimization
-        let collection = self.get_collection(&for_clause.collection)?;
+        let collection = self.get_collection(&source_coll)?;
 
         // Use scatter-gather for sharded collections to get data from all nodes
         if let Some(shard_config) = collection.get_shard_config() {
@@ -198,9 +207,20 @@ impl<'a> QueryExecutor<'a> {
                         for_clause.collection,
                         shard_config.num_shards
                     );
-                    return self.scatter_gather_docs(&for_clause.collection, coordinator, limit);
+                    return self.scatter_gather_docs(&source_coll, coordinator, limit);
                 }
             }
+        }
+
+        if let Some(ts_expr) = &for_clause.system_time {
+            let ts_val = self.evaluate_expr_with_context(ts_expr, ctx)?;
+            let micros = super::evaluate::as_of_micros(&ts_val)?;
+            let mut docs = collection.scan_as_of(micros)?;
+            if let Some(n) = limit {
+                docs.truncate(n);
+            }
+            let docs = self.apply_valid_time(for_clause, docs, ctx)?;
+            return Ok(self.apply_row_policy(&for_clause.collection, docs, ctx));
         }
 
         // Local scan - for non-sharded collections or when no coordinator.
@@ -208,7 +228,80 @@ impl<'a> QueryExecutor<'a> {
         // go straight from the stored bytes to a `serde_json::Value`. This
         // is materially faster on large collections (no extra struct
         // construction or re-merging of metadata).
-        Ok(collection.scan_values(limit))
+        let docs = collection.scan_values(limit);
+        let docs = self.apply_valid_time(for_clause, docs, ctx)?;
+        Ok(self.apply_row_policy(&for_clause.collection, docs, ctx))
+    }
+
+    fn apply_valid_time(
+        &self,
+        for_clause: &ForClause,
+        docs: Vec<Value>,
+        ctx: &Context,
+    ) -> DbResult<Vec<Value>> {
+        let Some(spec) = &for_clause.valid_time else {
+            return Ok(docs);
+        };
+        let overlaps = |doc: &Value, from: i64, to: i64| -> bool {
+            let vf = doc
+                .get("valid_from")
+                .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+                .unwrap_or(i64::MIN);
+            let vt = doc
+                .get("valid_to")
+                .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+                .unwrap_or(i64::MAX);
+            vf <= to && vt >= from
+        };
+        match spec {
+            crate::sdbql::ast::ValidTimeSpec::AsOf(e) => {
+                let ts = self.evaluate_expr_with_context(e, ctx)?;
+                let t = ts.as_i64().or_else(|| ts.as_f64().map(|f| f as i64)).unwrap_or(0);
+                Ok(docs.into_iter().filter(|d| overlaps(d, t, t)).collect())
+            }
+            crate::sdbql::ast::ValidTimeSpec::Range { from, to } => {
+                let a = self.evaluate_expr_with_context(from, ctx)?;
+                let b = self.evaluate_expr_with_context(to, ctx)?;
+                let fa = a.as_i64().or_else(|| a.as_f64().map(|f| f as i64)).unwrap_or(0);
+                let tb = b.as_i64().or_else(|| b.as_f64().map(|f| f as i64)).unwrap_or(0);
+                Ok(docs.into_iter().filter(|d| overlaps(d, fa, tb)).collect())
+            }
+        }
+    }
+
+    fn apply_row_policy(&self, collection: &str, docs: Vec<Value>, ctx: &Context) -> Vec<Value> {
+        let Some(principal) = &self.principal else {
+            return docs;
+        };
+        if principal.can_admin {
+            return docs;
+        }
+        let Ok(coll) = self.get_collection(collection) else {
+            return docs;
+        };
+        let Some(expr_s) = coll.get_row_policy() else {
+            return docs;
+        };
+        let Ok(mut parser) = crate::sdbql::parser::Parser::new(&expr_s) else {
+            return Vec::new();
+        };
+        let Ok(expr) = parser.parse_expression() else {
+            return Vec::new();
+        };
+        docs.into_iter()
+            .filter(|doc| {
+                let mut row = ctx.clone();
+                row.insert(collection.to_string(), doc.clone());
+                row.insert("doc".into(), doc.clone());
+                row.insert(
+                    "CURRENT_USER".into(),
+                    Value::String(principal.user.clone()),
+                );
+                self.evaluate_expr_with_context(&expr, &row)
+                    .map(|v| to_bool(&v))
+                    .unwrap_or(false)
+            })
+            .collect()
     }
     pub(super) fn scatter_gather_docs(
         &self,

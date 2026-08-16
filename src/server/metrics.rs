@@ -4,18 +4,61 @@
 
 use axum::{
     extract::State,
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use std::sync::atomic::Ordering;
 
 use super::handlers::AppState;
 
-/// Prometheus metrics handler
+fn metrics_authorized(headers: &HeaderMap) -> bool {
+    if std::env::var("SOLIDB_METRICS_PUBLIC")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    if let Ok(expected) = std::env::var("SOLIDB_METRICS_TOKEN") {
+        if !expected.is_empty() {
+            let provided = headers
+                .get("X-Metrics-Token")
+                .and_then(|h| h.to_str().ok())
+                .or_else(|| {
+                    headers
+                        .get("Authorization")
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|v| v.strip_prefix("Bearer "))
+                })
+                .unwrap_or("");
+            return crate::server::auth::constant_time_eq(provided.as_bytes(), expected.as_bytes());
+        }
+    }
+    if let Some(token) = headers
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+    {
+        if let Ok(claims) = crate::server::auth::AuthService::validate_token(token) {
+            return claims
+                .roles
+                .as_ref()
+                .is_some_and(|r| r.iter().any(|role| role == "admin"));
+        }
+    }
+    false
+}
+
+/// Prometheus metrics handler.
 ///
-/// Returns metrics in Prometheus text exposition format.
-/// This endpoint does not require authentication.
-pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
+/// Denied unless `SOLIDB_METRICS_PUBLIC=1`, a matching `SOLIDB_METRICS_TOKEN`
+/// is presented, or a valid admin JWT is supplied.
+pub async fn metrics_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !metrics_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, "metrics require authentication").into_response();
+    }
     let mut output = String::new();
 
     // HTTP Requests Total
@@ -196,6 +239,7 @@ pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse
         )],
         output,
     )
+        .into_response()
 }
 
 #[cfg(test)]

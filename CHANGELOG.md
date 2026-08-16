@@ -2,6 +2,135 @@
 
 ## [Unreleased]
 
+### Security
+
+* **Replication TCP fails closed without a keyfile.** The HTTP cluster bus
+  already required a secret (0.34.0); the multiplexed sync socket still
+  skipped HMAC when no keyfile existed. Unauthenticated replication is now
+  refused unless `SOLIDB_ALLOW_UNAUTHENTICATED_SYNC=true` is set for local
+  tests. `SOLIDB_REQUIRE_KEYFILE=true` still wins.
+* **HTTP listeners default to loopback.** Bind address is `127.0.0.1` unless
+  `--host` or `SOLIDB_HOST` says otherwise. Use `0.0.0.0` only when something
+  in front of the process terminates TLS.
+* **Installing Lua is Admin.** Creating or changing `_scripts` / `_services`
+  required only Write, so a collection editor could publish unauthenticated
+  `/api/{db}/{service}/…` handlers. Mutating those collections now needs
+  Admin. New services default to `require_auth: true`. `solidb.env` secrets
+  are injected only for authenticated admin scripts.
+* **Cluster control-plane HTTP is Admin.** `remove-node`, `rebalance`,
+  sync-log prune/stats, cluster info/status, blob rebalance, and the cluster
+  status WebSocket accepted any authenticated principal (including `viewer`).
+  They now require Admin.
+* **Livequery JWTs are path-restricted on `?token=` as well as Bearer.** The
+  query-string branch used to accept a livequery token on any authenticated
+  route.
+* **JWT roles for real `_admins` users are reloaded on each request**, so a
+  revoke does not wait for the 24h token TTL.
+* **API keys must declare at least one role.** Empty `roles` no longer
+  default to `admin`. The admin UI rejects a blank role list the same way.
+* **`/metrics` requires authentication** unless `SOLIDB_METRICS_PUBLIC=1`.
+  Present `SOLIDB_METRICS_TOKEN` (`X-Metrics-Token` or `Bearer`) or an admin
+  JWT.
+* **Physical backups are jailed** under `SOLIDB_BACKUP_ROOT` (or
+  `{data_dir}/backups`). `..` and paths outside that root are refused.
+* **Webhook URLs are SSRF-checked** (loopback, RFC1918, link-local, metadata
+  hosts). Permissive TLS for `*.test` / `*.local` requires
+  `SOLIDB_ALLOW_INSECURE_WEBHOOK_TLS=1`.
+* **`SOLIDB_DB_AUTHZ_MODE=warn` is ignored** unless
+  `SOLIDB_DB_AUTHZ_ALLOW_WARN=1`.
+* **`SOLIDB_LUA_FAST_MODE` is ignored** unless
+  `SOLIDB_LUA_FAST_MODE_UNSAFE=1` (cross-request Lua state leak).
+* Passwords must be at least 12 characters. Lua `crypto.jwt_decode` compares
+  signatures in constant time. `crypto.random_bytes` / `random_string` cap at
+  64 KiB.
+* The admin app no longer falls back to `admin`/`admin`. `enable_trust_proxy`
+  is off unless you turn it on.
+
+### Features
+
+* **SDBQL string functions are AQL-shaped and Unicode-correct.** Offsets and
+  `LENGTH` on strings are Unicode scalar counts (`BYTE_LENGTH` is UTF-8
+  bytes). `FIND_FIRST` / `FIND_LAST` take an optional start/end. `SUBSTRING`
+  accepts a negative start. `CONTAINS` can return a character index.
+  `LIKE(text, pattern, caseInsensitive?)` is a function as well as an
+  operator. Added `REGEX_MATCHES`, `REGEX_SPLIT`, `REPEAT`, `LPAD`/`RPAD`,
+  `JOIN`, `MASK`, `WORD_COUNT`, `TRUNCATE_TEXT`, `RANDOM_TOKEN`. `ENCODE_URI`
+  percent-encodes UTF-8. Null string arguments propagate as null. Regexes
+  go through `safe_regex` and a compile cache. `REPEAT` / pad results are
+  capped at 1 MiB.
+* **SDBQL array, math, and object functions that the reference already
+  listed now exist.** `TAKE`, `DROP`, `CHUNK`, `ZIP`, `CONTAINS` on arrays;
+  `MOD`, `CLAMP`, variadic `MIN`/`MAX`; `GET(obj, "a.b", default)`,
+  `DEEP_MERGE`, `ENTRIES`, `FROM_ENTRIES`, `JSON_POINTER`. `NTH` accepts a
+  negative index. `VAR_SAMP` / `STDDEV_SAMP` divide by `n-1`. `RANGE`
+  refuses more than 1M elements. `SHIFT([])` no longer panics.
+* **SDBQL gains time-series, sketches, semantic operators, and query HOFs.**
+  `MAP`/`FILTER`/`FLAT_MAP`/`GROUP_BY`/`SORT_BY`/`WINDOW_BY` take lambdas
+  without requiring `|>`. `<=>` is vector cosine distance or a three-way
+  compare; binary `~` is trigram semantic match. Added `DELTA`, `RATE`,
+  `FILL`, `RESAMPLE`, `ASOF JOIN … ASOF left, right [BACKWARD|FORWARD|NEAREST]
+  TOLERANCE`, `APPROX_COUNT_DISTINCT`, `APPROX_PERCENTILE`, `APPROX_TOP_K`,
+  `SKETCH_MERGE`, `MATCH_SEQ`, `SEMANTIC`, `REDACT`. Graph `FOR v, e, p`
+  binds a path object; `PRUNE expr` stops expansion; `SHORTEST_PATH … OPTIONS
+  { weight: "cost" }` is parsed. `FOR coll SYSTEM_TIME AS OF ts` and
+  `SNAPSHOT_DIFF` read versioned history. `CURRENT_USER`/`CAN`/`ROW_POLICY`
+  use the request principal. `EMBED`/`EXTRACT` call the configured LLM;
+  `CITE`/`GROUNDED` have a lexical fallback.
+* **SDBQL graph, search, GeoJSON, and identity helpers.** Weighted
+  `SHORTEST_PATH OPTIONS { weight }` uses Dijkstra. Added
+  `ALL_SHORTEST_PATHS`, `K_SHORTEST_PATHS`, `K_PATHS`, `GRAPH name` as the
+  edge collection, and one-pattern `MATCH (a:coll {_key: k})-[:edge*1..n]->(b)`.
+  `SEARCH` is a scored filter; `TOKENS`/`PHRASE`/`BOOST`/`SEARCH_SCORE` are
+  in-memory analyzers (not Arango Views). GeoJSON constructors and
+  `GEO_CONTAINS`/`GEO_INTERSECTS`/`GEO_IN_RANGE`/`GEO_AREA`.
+  `PARSE_IDENTIFIER`/`PARSE_COLLECTION`/`PARSE_KEY`, `UNSET_RECURSIVE`/
+  `KEEP_RECURSIVE`, `ZIP_OBJECT`, `DATE_ROUND`, `APPLY`/`CALL`, `MINHASH*`.
+  `insert_batch`/`upsert_batch` and transactional write batches record
+  version history. `VALID_TIME AS OF` /
+  `FROM … TO` filters `valid_from`/`valid_to` fields.
+* **Named graphs, search views, document ACL, and index-backed search.**
+  `CREATE_GRAPH` / `DROP_GRAPH` / `GRAPH_INFO` store `{vertices, edges}`
+  in `_graphs`; `GRAPH name` resolves the first edge collection from that
+  catalog (bare edge-collection names still work). `CREATE_VIEW` /
+  `DROP_VIEW` register a `type: "search"` alias in `_views` so
+  `FOR d IN view` scans the backing collection. `SEARCH_INDEX(coll, field,
+  query [, limit])` walks a fulltext index. `CAN("read", doc)` honours
+  `owner` / `_owner` and `_acl.{action}` (user, role, or `*`) after the
+  collection-level grant. `ZIP(keys, values)` returns an object when the
+  first array is all strings. `K_SHORTEST_PATHS` uses Yen’s algorithm.
+
+### Performance
+
+* **SDBQL set and slice helpers no longer walk the array twice.** `UNIQUE`,
+  `UNION`, `INTERSECTION`, `MINUS`, and `COUNT_DISTINCT` hash values (seahash,
+  collision-checked) instead of `serde_json::to_string` or `Vec::contains`.
+  `APPEND` / `UNSHIFT` / `FLATTEN` reserve; `SHIFT` copies the tail instead of
+  `remove(0)`. `SORTED` uses `sort_unstable_by`. `KEEP` / `UNSET` copy only
+  surviving keys. ASCII `SUBSTRING` slices bytes.
+
+* **SDBQL date functions share one parser and no longer live in two modules.**
+  `YYYY-MM-DD` and second-resolution epochs parse. `DATE_ADD` uses calendar
+  months (31 Jan + 1 month → 28/29 Feb). Added `DATE_COMPARE`, `DATE_LEAPYEAR`,
+  `DATE_MILLISECOND`, `DATE_ISOWEEKYEAR`. `DATE_DIFF` unit is optional.
+  `DATE_TRUNC` accepts `week`. `HUMAN_TIME` says `in N minutes` for the future.
+  Null date arguments propagate.
+
+* **SDBQL function dispatch is prefix-routed.** `UPPER` no longer walks the
+  `DATE_*` / `SQRT` match arms. Phonetic math shadows of `ABS`/`ROUND`/`SQRT`
+  are gone. Added AQL-shaped `BIT_AND`/`BIT_OR`/`BIT_XOR`/`BIT_NEGATE`/
+  `BIT_SHIFT_*`, `OUTERSECTION`, `IS_DATE`, `IS_KEY`, `GEO_EQUALS`. `COUNT`
+  on an object is the key count. `TO_NUMBER(null)` is null. Crypto helpers
+  no longer clone the input string.
+
+### Fixes
+
+* **`LENGTH("users")` is no longer a collection count.** If the string
+  happened to be a collection name, `LENGTH` returned the document count
+  instead of the character length. Use `COLLECTION_COUNT("users")` or
+  `LENGTH((FOR d IN users RETURN 1))`.
+* Lua string functions no longer live in two modules with different
+  semantics (phonetic vs builtins). One evaluator, one set of rules.
+
 ### Removed
 
 * **The client-facing job and cron queue is gone.** Application background jobs

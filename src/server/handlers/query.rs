@@ -198,6 +198,21 @@ fn log_slow_query(
     });
 }
 
+fn principal_from_claims(claims: &crate::server::auth::Claims) -> crate::sdbql::QueryPrincipal {
+    let roles = claims.roles.clone().unwrap_or_default();
+    let lower: Vec<String> = roles.iter().map(|r| r.to_ascii_lowercase()).collect();
+    let can_admin = lower.iter().any(|r| r == "admin");
+    let can_write = can_admin || lower.iter().any(|r| r == "editor" || r == "write");
+    let can_read = can_write || lower.iter().any(|r| r == "viewer" || r == "read") || true;
+    crate::sdbql::QueryPrincipal {
+        user: claims.sub.clone(),
+        roles,
+        can_read,
+        can_write,
+        can_admin,
+    }
+}
+
 // ==================== Handlers ====================
 
 pub async fn execute_query(
@@ -397,7 +412,7 @@ pub async fn execute_query(
                         ctx.insert(let_clause.variable.clone(), value);
                     }
                 }
-                BodyClause::Filter(filter_clause) => {
+                BodyClause::Filter(filter_clause) | BodyClause::Search(filter_clause) => {
                     rows.retain(|ctx| {
                         executor
                             .evaluate_filter_with_context(&filter_clause.expression, ctx)
@@ -591,6 +606,7 @@ pub async fn execute_query(
         let shard_coordinator = state.shard_coordinator.clone();
         let is_scatter_gather = headers.contains_key("X-Scatter-Gather");
         let query = (*query).clone();
+        let principal = principal_from_claims(&claims);
 
         // Apply timeout to prevent DoS from long-running queries
         match tokio::time::timeout(
@@ -600,7 +616,8 @@ pub async fn execute_query(
                     QueryExecutor::with_database(&storage, db_name)
                 } else {
                     QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
-                };
+                }
+                .with_principal(principal);
 
                 // Add replication service for mutation logging
                 if let Some(ref log) = replication_log {
@@ -636,7 +653,8 @@ pub async fn execute_query(
             QueryExecutor::with_database(&state.storage, db_name)
         } else {
             QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
-        };
+        }
+        .with_principal(principal_from_claims(&claims));
 
         // Add replication service for mutation logging
         if let Some(ref log) = state.replication_log {

@@ -2,7 +2,7 @@
 //!
 //! FIRST, LAST, LENGTH, REVERSE, SORTED, UNIQUE, FLATTEN, etc.
 
-use super::super::values_equal;
+use super::super::{compare_values, values_equal, ValueSet};
 use crate::error::{DbError, DbResult};
 use serde_json::Value;
 
@@ -12,6 +12,9 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     match name {
         "FIRST" => {
             check_args(name, args, 1)?;
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
             let arr = args[0].as_array().ok_or_else(|| {
                 DbError::ExecutionError("FIRST: argument must be an array".to_string())
             })?;
@@ -37,15 +40,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 DbError::ExecutionError("SORTED: argument must be an array".to_string())
             })?;
             let mut sorted = arr.clone();
-            sorted.sort_by(|a, b| match (a, b) {
-                (Value::Number(na), Value::Number(nb)) => na
-                    .as_f64()
-                    .unwrap_or(0.0)
-                    .partial_cmp(&nb.as_f64().unwrap_or(0.0))
-                    .unwrap_or(std::cmp::Ordering::Equal),
-                (Value::String(sa), Value::String(sb)) => sa.cmp(sb),
-                _ => std::cmp::Ordering::Equal,
-            });
+            sorted.sort_unstable_by(compare_values);
             Ok(Some(Value::Array(sorted)))
         }
         "SORTED_DESC" => {
@@ -54,15 +49,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 DbError::ExecutionError("SORTED_DESC: argument must be an array".to_string())
             })?;
             let mut sorted = arr.clone();
-            sorted.sort_by(|a, b| match (a, b) {
-                (Value::Number(na), Value::Number(nb)) => nb
-                    .as_f64()
-                    .unwrap_or(0.0)
-                    .partial_cmp(&na.as_f64().unwrap_or(0.0))
-                    .unwrap_or(std::cmp::Ordering::Equal),
-                (Value::String(sa), Value::String(sb)) => sb.cmp(sa),
-                _ => std::cmp::Ordering::Equal,
-            });
+            sorted.sort_unstable_by(|a, b| compare_values(b, a));
             Ok(Some(Value::Array(sorted)))
         }
         "UNIQUE" => {
@@ -70,15 +57,13 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let arr = args[0].as_array().ok_or_else(|| {
                 DbError::ExecutionError("UNIQUE: argument must be an array".to_string())
             })?;
-            let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-            let unique: Vec<Value> = arr
-                .iter()
-                .filter(|v| {
-                    let key = serde_json::to_string(v).unwrap_or_default();
-                    seen.insert(key)
-                })
-                .cloned()
-                .collect();
+            let mut seen = ValueSet::with_capacity(arr.len());
+            let mut unique = Vec::with_capacity(arr.len());
+            for v in arr {
+                if seen.insert(v) {
+                    unique.push(v.clone());
+                }
+            }
             Ok(Some(Value::Array(unique)))
         }
         "FLATTEN" => {
@@ -166,19 +151,200 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let arr = args[0].as_array().ok_or_else(|| {
                 DbError::ExecutionError("NTH: first argument must be an array".to_string())
             })?;
-            let idx = args[1]
-                .as_u64()
-                .ok_or_else(|| DbError::ExecutionError("NTH: index must be a number".to_string()))?
-                as usize;
+            let raw = args[1]
+                .as_i64()
+                .or_else(|| args[1].as_f64().map(|f| f as i64))
+                .ok_or_else(|| {
+                    DbError::ExecutionError("NTH: index must be a number".to_string())
+                })?;
+            let idx = if raw < 0 {
+                let n = arr.len() as i64 + raw;
+                if n < 0 {
+                    return Ok(Some(Value::Null));
+                }
+                n as usize
+            } else {
+                raw as usize
+            };
             Ok(Some(arr.get(idx).cloned().unwrap_or(Value::Null)))
+        }
+        "CONTAINS" | "CONTAINS_ARRAY" => {
+            if args.len() < 2 {
+                return Err(DbError::ExecutionError(
+                    "CONTAINS requires 2 arguments: array, value".to_string(),
+                ));
+            }
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let arr = args[0].as_array().ok_or_else(|| {
+                DbError::ExecutionError("CONTAINS: first argument must be an array".to_string())
+            })?;
+            Ok(Some(Value::Bool(
+                arr.iter().any(|item| values_equal(item, &args[1])),
+            )))
+        }
+        "TAKE" => {
+            if args.len() != 2 {
+                return Err(DbError::ExecutionError(
+                    "TAKE requires 2 arguments: array, n".to_string(),
+                ));
+            }
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let arr = args[0].as_array().ok_or_else(|| {
+                DbError::ExecutionError("TAKE: first argument must be an array".to_string())
+            })?;
+            let n = args[1].as_i64().unwrap_or(0);
+            if n <= 0 {
+                return Ok(Some(Value::Array(vec![])));
+            }
+            Ok(Some(Value::Array(
+                arr.iter().take(n as usize).cloned().collect(),
+            )))
+        }
+        "DROP" => {
+            if args.len() != 2 {
+                return Err(DbError::ExecutionError(
+                    "DROP requires 2 arguments: array, n".to_string(),
+                ));
+            }
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let arr = args[0].as_array().ok_or_else(|| {
+                DbError::ExecutionError("DROP: first argument must be an array".to_string())
+            })?;
+            let n = args[1].as_i64().unwrap_or(0).max(0) as usize;
+            Ok(Some(Value::Array(arr.iter().skip(n).cloned().collect())))
+        }
+        "CHUNK" => {
+            if args.len() != 2 {
+                return Err(DbError::ExecutionError(
+                    "CHUNK requires 2 arguments: array, size".to_string(),
+                ));
+            }
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let arr = args[0].as_array().ok_or_else(|| {
+                DbError::ExecutionError("CHUNK: first argument must be an array".to_string())
+            })?;
+            let size = args[1].as_i64().unwrap_or(0);
+            if size <= 0 {
+                return Err(DbError::ExecutionError(
+                    "CHUNK: size must be a positive integer".to_string(),
+                ));
+            }
+            let size = size as usize;
+            let chunks: Vec<Value> = arr.chunks(size).map(|c| Value::Array(c.to_vec())).collect();
+            Ok(Some(Value::Array(chunks)))
+        }
+        "ZIP" => {
+            if args.len() < 2 {
+                return Err(DbError::ExecutionError(
+                    "ZIP requires at least 2 array arguments".to_string(),
+                ));
+            }
+            if args.iter().any(Value::is_null) {
+                return Ok(Some(Value::Null));
+            }
+            let arrays: Result<Vec<&Vec<Value>>, DbError> = args
+                .iter()
+                .map(|a| {
+                    a.as_array().ok_or_else(|| {
+                        DbError::ExecutionError("ZIP: all arguments must be arrays".to_string())
+                    })
+                })
+                .collect();
+            let arrays = arrays?;
+            let len = arrays.iter().map(|a| a.len()).min().unwrap_or(0);
+            // AQL: ZIP(keys, values) → object when there are exactly two
+            // arrays and every key is a string.
+            if arrays.len() == 2 && arrays[0].iter().all(|k| k.is_string()) {
+                let mut obj = serde_json::Map::new();
+                for i in 0..len {
+                    if let Some(s) = arrays[0][i].as_str() {
+                        obj.insert(s.to_string(), arrays[1][i].clone());
+                    }
+                }
+                return Ok(Some(Value::Object(obj)));
+            }
+            let zipped: Vec<Value> = (0..len)
+                .map(|i| Value::Array(arrays.iter().map(|a| a[i].clone()).collect()))
+                .collect();
+            Ok(Some(Value::Array(zipped)))
+        }
+        "ZIP_OBJECT" => {
+            if args.len() != 2 {
+                return Err(DbError::ExecutionError(
+                    "ZIP_OBJECT requires keys[], values[]".to_string(),
+                ));
+            }
+            let keys = args[0].as_array().ok_or_else(|| {
+                DbError::ExecutionError("ZIP_OBJECT: keys must be an array".to_string())
+            })?;
+            let vals = args[1].as_array().ok_or_else(|| {
+                DbError::ExecutionError("ZIP_OBJECT: values must be an array".to_string())
+            })?;
+            let mut obj = serde_json::Map::new();
+            for (k, v) in keys.iter().zip(vals.iter()) {
+                if let Some(s) = k.as_str() {
+                    obj.insert(s.to_string(), v.clone());
+                }
+            }
+            Ok(Some(Value::Object(obj)))
         }
         "COUNT" => {
             check_args(name, args, 1)?;
             match &args[0] {
                 Value::Array(arr) => Ok(Some(Value::Number(serde_json::Number::from(arr.len())))),
+                Value::Object(obj) => Ok(Some(Value::Number(serde_json::Number::from(obj.len())))),
+                Value::String(s) => Ok(Some(Value::Number(serde_json::Number::from(
+                    s.chars().count(),
+                )))),
                 Value::Null => Ok(Some(Value::Number(serde_json::Number::from(0)))),
                 _ => Ok(Some(Value::Number(serde_json::Number::from(1)))),
             }
+        }
+        "OUTERSECTION" | "SYMDIFF" => {
+            if args.len() != 2 {
+                return Err(DbError::ExecutionError(
+                    "OUTERSECTION requires 2 array arguments".to_string(),
+                ));
+            }
+            if args[0].is_null() || args[1].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let a = args[0].as_array().ok_or_else(|| {
+                DbError::ExecutionError("OUTERSECTION: first argument must be an array".to_string())
+            })?;
+            let b = args[1].as_array().ok_or_else(|| {
+                DbError::ExecutionError(
+                    "OUTERSECTION: second argument must be an array".to_string(),
+                )
+            })?;
+            let mut in_a = ValueSet::with_capacity(a.len());
+            let mut in_b = ValueSet::with_capacity(b.len());
+            for v in a {
+                in_a.insert(v);
+            }
+            for v in b {
+                in_b.insert(v);
+            }
+            let mut out = Vec::with_capacity(a.len() + b.len());
+            for v in a {
+                if !in_b.contains(v) {
+                    out.push(v.clone());
+                }
+            }
+            for v in b {
+                if !in_a.contains(v) {
+                    out.push(v.clone());
+                }
+            }
+            Ok(Some(Value::Array(out)))
         }
         "LENGTH" => {
             check_args(name, args, 1)?;
@@ -198,19 +364,26 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     "APPEND requires at least 2 arguments".to_string(),
                 ));
             }
-            let mut arr = match &args[0] {
-                Value::Array(a) => a.clone(),
+            let first = match &args[0] {
+                Value::Array(a) => a,
                 _ => {
                     return Err(DbError::ExecutionError(
                         "APPEND: first argument must be an array".to_string(),
                     ));
                 }
             };
+            let extra: usize = args[1..]
+                .iter()
+                .map(|a| match a {
+                    Value::Array(items) => items.len(),
+                    _ => 1,
+                })
+                .sum();
+            let mut arr = Vec::with_capacity(first.len() + extra);
+            arr.extend_from_slice(first);
             for arg in &args[1..] {
                 if let Value::Array(items) = arg {
-                    for item in items {
-                        arr.push(item.clone());
-                    }
+                    arr.extend_from_slice(items);
                 } else {
                     arr.push(arg.clone());
                 }
@@ -219,16 +392,21 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         }
         "SHIFT" => {
             check_args(name, args, 1)?;
-            let mut arr = match &args[0] {
-                Value::Array(a) => a.clone(),
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let arr = match &args[0] {
+                Value::Array(a) => a,
                 _ => {
                     return Err(DbError::ExecutionError(
                         "SHIFT: argument must be an array".to_string(),
                     ));
                 }
             };
-            arr.remove(0);
-            Ok(Some(Value::Array(arr)))
+            if arr.is_empty() {
+                return Ok(Some(Value::Array(vec![])));
+            }
+            Ok(Some(Value::Array(arr[1..].to_vec())))
         }
         "UNSHIFT" => {
             if args.len() < 2 {
@@ -236,25 +414,31 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     "UNSHIFT requires at least 2 arguments".to_string(),
                 ));
             }
-            let mut arr = match &args[0] {
-                Value::Array(a) => a.clone(),
+            let base = match &args[0] {
+                Value::Array(a) => a,
                 _ => {
                     return Err(DbError::ExecutionError(
                         "UNSHIFT: first argument must be an array".to_string(),
                     ));
                 }
             };
-            let mut items = args[1..].to_vec();
-            items.append(&mut arr);
+            let mut items = Vec::with_capacity(base.len() + args.len() - 1);
+            items.extend_from_slice(&args[1..]);
+            items.extend_from_slice(base);
             Ok(Some(Value::Array(items)))
         }
         "UNION" => {
-            let mut result = Vec::new();
+            let cap: usize = args
+                .iter()
+                .map(|a| a.as_array().map(|x| x.len()).unwrap_or(0))
+                .sum();
+            let mut seen = ValueSet::with_capacity(cap);
+            let mut result = Vec::with_capacity(cap);
             for arg in args {
                 match arg {
                     Value::Array(arr) => {
                         for item in arr {
-                            if !result.contains(item) {
+                            if seen.insert(item) {
                                 result.push(item.clone());
                             }
                         }
@@ -274,14 +458,15 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     "INTERSECTION requires at least 2 arguments".to_string(),
                 ));
             }
-            let mut result = match &args[0] {
-                Value::Array(a) => a.clone(),
+            let first = match &args[0] {
+                Value::Array(a) => a,
                 _ => {
                     return Err(DbError::ExecutionError(
                         "INTERSECTION: first argument must be an array".to_string(),
                     ));
                 }
             };
+            let mut others: Vec<ValueSet> = Vec::with_capacity(args.len() - 1);
             for arg in &args[1..] {
                 let arr = match arg {
                     Value::Array(a) => a,
@@ -291,8 +476,17 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                         ));
                     }
                 };
-                result.retain(|item| arr.contains(item));
+                let mut set = ValueSet::with_capacity(arr.len());
+                for item in arr {
+                    set.insert(item);
+                }
+                others.push(set);
             }
+            let result: Vec<Value> = first
+                .iter()
+                .filter(|item| others.iter().all(|s| s.contains(item)))
+                .cloned()
+                .collect();
             Ok(Some(Value::Array(result)))
         }
         "MINUS" | "DIFFERENCE" => {
@@ -302,7 +496,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 ));
             }
             let arr1 = match &args[0] {
-                Value::Array(a) => a.clone(),
+                Value::Array(a) => a,
                 _ => {
                     return Err(DbError::ExecutionError(
                         "MINUS: first argument must be an array".to_string(),
@@ -317,9 +511,14 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     ));
                 }
             };
+            let mut minus = ValueSet::with_capacity(arr2.len());
+            for item in arr2 {
+                minus.insert(item);
+            }
             let result: Vec<Value> = arr1
-                .into_iter()
-                .filter(|item| !arr2.contains(item))
+                .iter()
+                .filter(|item| !minus.contains(item))
+                .cloned()
                 .collect();
             Ok(Some(Value::Array(result)))
         }
@@ -331,15 +530,23 @@ fn flatten_array(arr: &[Value], depth: usize) -> Vec<Value> {
     if depth == 0 {
         return arr.to_vec();
     }
-    let mut result = Vec::new();
+    let mut result = Vec::with_capacity(arr.len());
+    flatten_into(arr, depth, &mut result);
+    result
+}
+
+fn flatten_into(arr: &[Value], depth: usize, out: &mut Vec<Value>) {
+    if depth == 0 {
+        out.extend_from_slice(arr);
+        return;
+    }
     for item in arr {
         if let Value::Array(inner) = item {
-            result.extend(flatten_array(inner, depth - 1));
+            flatten_into(inner, depth - 1, out);
         } else {
-            result.push(item.clone());
+            out.push(item.clone());
         }
     }
-    result
 }
 
 fn check_args(name: &str, args: &[Value], expected: usize) -> DbResult<()> {
