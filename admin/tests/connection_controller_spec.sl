@@ -16,6 +16,9 @@ describe("ConnectionController") do
       assert_contains(body, "name=\"host\"")
       assert_contains(body, "name=\"username\"")
       assert_contains(body, "name=\"password\"")
+      # Test env ships SOLIDB_USERNAME, so this is not the first-run page.
+      assert_not(body.includes?("First connection"))
+      assert_not(body.includes?("no SoliDB credentials are configured yet"))
     end
 
     test("ships the saved-connections component (localStorage)") do
@@ -72,6 +75,17 @@ describe("ConnectionController") do
       assert(res_redirect?(response))
       response = get("/connection")
       assert_contains(res_body(response), "env defaults")
+    end
+
+    test("rewrites localhost to 127.0.0.1 so IPv4 SoliDB is reachable") do
+      env_host = SolidbClient.host()
+      local_url = env_host.replace("127.0.0.1", "localhost")
+      response = post("/connection", { "host": local_url, "username": "admin", "password": "admin" })
+      assert(res_redirect?(response))
+      response = get("/connection")
+      assert_contains(res_body(response), env_host)
+      assert_not(res_body(response).includes?("://localhost"))
+      post("/connection/reset", {})
     end
 
     test("a bare host:port is normalized to http://") do

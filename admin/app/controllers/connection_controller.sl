@@ -60,12 +60,13 @@ class ConnectionController < Controller
       candidate = "http://" + candidate
     end
     candidate = candidate.substring(0, candidate.length() - 1) if candidate.ends_with("/")
-    return candidate
+    return SolidbClient.prefer_ipv4_loopback(candidate)
   end
 
   def _ctx
-    @title = "Connection"
-    @databases = AdminContext.database_names()
+    @setup_required = !SolidbClient.credentials_configured()
+    @title = @setup_required ? "First connection" : "Connection"
+    @databases = @setup_required ? [] : AdminContext.database_names()
     @db = ""
     @flash_error = ""
     @flash_notice = ""
@@ -77,6 +78,7 @@ class ConnectionController < Controller
     @current_host = SolidbClient.host()
     @current_username = SolidbClient.username()
     @overridden = SolidbClient.session_override()
-    @env_host = getenv("SOLIDB_HOST") ?? "http://localhost:6745"
+    @env_host = SolidbClient.prefer_ipv4_loopback(getenv("SOLIDB_HOST") ?? "http://127.0.0.1:6745")
+    @form_host = @env_host if @form_host.blank?
   end
 end

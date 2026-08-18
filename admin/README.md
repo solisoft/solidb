@@ -9,10 +9,13 @@ A Soli MVC application.
 Start the development server with hot reload:
 
 ```bash
+cp .env.example .env   # allows HTTP to localhost SoliDB
 soli serve . --dev
 ```
 
-Your app will be available at [http://localhost:5011](http://localhost:5011)
+Your app will be available at [http://localhost:5011](http://localhost:5011).
+First connection talks to SoliDB (often `http://localhost:6745`); Soli
+blocks loopback HTTP unless `.env` sets `SOLI_DEV_ALLOW_SSRF=1`.
 
 ### Production Server
 

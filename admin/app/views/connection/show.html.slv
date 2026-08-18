@@ -4,13 +4,22 @@
 <div class="mx-auto max-w-2xl space-y-5 animate-fade-up" x-data="connectionPage()">
   <div>
     <p class="console-label">server</p>
-    <h2 class="mt-1">Connection</h2>
-    <p class="mt-1 max-w-2xl console-help">
-      point this browser session at any SoliDB server — credentials are checked with a real login
-      before being stored (server-side session)
-    </p>
+    <% if @setup_required %>
+      <h2 class="mt-1">First connection</h2>
+      <p class="mt-1 max-w-2xl console-help">
+        no SoliDB credentials are configured yet — enter the server URL and an admin login
+        so this browser session can reach the database
+      </p>
+    <% else %>
+      <h2 class="mt-1">Connection</h2>
+      <p class="mt-1 max-w-2xl console-help">
+        point this browser session at any SoliDB server — credentials are checked with a real login
+        before being stored (server-side session)
+      </p>
+    <% end %>
   </div>
 
+  <% if !@setup_required %>
   <div class="console-card px-4 py-3">
     <p class="console-label">currently connected to</p>
     <div class="mt-1.5 flex flex-wrap items-center gap-3">
@@ -28,6 +37,7 @@
       </form>
     <% end %>
   </div>
+  <% end %>
 
   <% if !@connection_error.blank? %>
     <div class="console-card border-red-900 px-4 py-3">
@@ -93,7 +103,7 @@
     </div>
     <div class="flex items-center justify-between gap-2">
       <p class="font-mono text-xs text-zinc-600">the override lasts for this browser session</p>
-      <button type="submit" class="btn-primary">Connect</button>
+      <button type="submit" class="btn-primary"><%= @setup_required ? "Save and connect" : "Connect" %></button>
     </div>
   </form>
 </div>

@@ -51,7 +51,7 @@ end
 def connection_host_label
   full_host = session_get("solidb_host") rescue nil
   full_host = (getenv("SOLIDB_HOST") rescue nil) if full_host.blank?
-  full_host = full_host ?? "http://localhost:6745"
+  full_host = full_host ?? "http://127.0.0.1:6745"
   return full_host.substring(8, full_host.length()) if full_host.starts_with("https://")
   return full_host.substring(7, full_host.length()) if full_host.starts_with("http://")
   return full_host
