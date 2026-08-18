@@ -466,6 +466,22 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
+    /// `SOLIDB_ALLOW_WEBHOOK_LOOPBACK` is process-global while tests run in
+    /// parallel threads. Without this lock, the test that clears the flag can
+    /// land between another test's `set_var` and its delivery: the delivery
+    /// then fails SSRF validation, never connects, and the mock server waits
+    /// on `accept()` forever. Every test that touches the flag takes it.
+    static WEBHOOK_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    /// Wait for the mock server, but fail the test rather than hang if the
+    /// webhook never arrived.
+    async fn mock_result(server: tokio::task::JoinHandle<String>) -> String {
+        tokio::time::timeout(std::time::Duration::from_secs(10), server)
+            .await
+            .expect("mock server never received the webhook request")
+            .expect("mock server task panicked")
+    }
+
     fn make_job(url: Option<&str>, script: &str) -> Job {
         Job {
             id: "job-1".to_string(),
@@ -575,8 +591,9 @@ mod tests {
         assert!(format!("{}", err).contains("http or https"));
     }
 
-    #[test]
-    fn validate_webhook_url_rejects_private_and_metadata() {
+    #[tokio::test]
+    async fn validate_webhook_url_rejects_private_and_metadata() {
+        let _guard = WEBHOOK_ENV_LOCK.lock().await;
         std::env::remove_var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK");
         assert!(validate_webhook_url("http://127.0.0.1/hook").is_err());
         assert!(validate_webhook_url("http://169.254.169.254/latest").is_err());
@@ -593,6 +610,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_webhook_posts_signed_payload() {
+        let _guard = WEBHOOK_ENV_LOCK.lock().await;
         std::env::set_var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK", "1");
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -616,7 +634,7 @@ mod tests {
             .await
             .expect("webhook should succeed");
 
-        let raw = server.await.unwrap();
+        let raw = mock_result(server).await;
         assert!(raw.contains("POST /hook"), "request line, got:\n{}", raw);
         assert!(
             raw.to_ascii_lowercase()
@@ -660,6 +678,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_webhook_propagates_non_2xx_as_error() {
+        let _guard = WEBHOOK_ENV_LOCK.lock().await;
         std::env::set_var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK", "1");
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -680,7 +699,7 @@ mod tests {
         let err = super::super::QueueWorker::execute_webhook(&http, &dev_http, &job)
             .await
             .expect_err("500 should be an error");
-        let _ = server.await;
+        let _ = mock_result(server).await;
         assert!(
             format!("{}", err).contains("500"),
             "expected error to mention 500, got: {}",
