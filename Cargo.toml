@@ -149,7 +149,7 @@ cookie = "0.18"
 time = "0.3.47"
 
 # Caching
-lru = "0.16"
+lru = "0.18"
 fastbloom = { version = "0.17.0", features = ["serde"] }
 cuckoofilter = { version = "0.5", features = ["serde_support"] }
 parking_lot = "0.12"
