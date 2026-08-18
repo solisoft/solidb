@@ -48,6 +48,12 @@
 
 ### Features
 
+* **`--no-lua` / `SOLIDB_NO_LUA=1` skips the Lua VM pool.** Custom scripts,
+  `/api/{db}/{service}/…`, and the REPL return 501; a trigger whose action is
+  a Lua script fails its job immediately, without retries. Script documents
+  can still be stored. Use this on nodes that never run Lua to drop the idle
+  RSS of the pre-warmed VMs (at least four states).
+
 * **SDBQL string functions are AQL-shaped and Unicode-correct.** Offsets and
   `LENGTH` on strings are Unicode scalar counts (`BYTE_LENGTH` is UTF-8
   bytes). `FIND_FIRST` / `FIND_LAST` take an optional start/end. `SUBSTRING`

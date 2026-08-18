@@ -94,6 +94,12 @@ struct Args {
     /// idle collections; trades some throughput for much lower RAM.
     #[arg(long)]
     dev: bool,
+
+    /// Do not start Lua VMs. Custom scripts, `/api/{db}/{service}/…`, and the
+    /// Lua REPL return 501. Saves the idle RSS of the VM pool (at least four
+    /// states). Same as `SOLIDB_NO_LUA=1`.
+    #[arg(long)]
+    no_lua: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -114,6 +120,11 @@ fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
 
     let args = Args::parse();
+
+    if args.no_lua {
+        // create_router and ScriptEngine read SOLIDB_NO_LUA.
+        std::env::set_var("SOLIDB_NO_LUA", "1");
+    }
 
     // Handle subcommands first (before daemonization)
     if let Some(command) = args.command {

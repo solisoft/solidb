@@ -39,7 +39,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 
 ### Real-time & Scripting
 - ⚡ **Live Queries** — Real-time subscriptions via WebSocket
-- 🖥️ **Lua Scripting** — Server-side scripts for custom API endpoints
+- 🖥️ **Lua Scripting** — Server-side scripts for custom API endpoints (`--no-lua` / `SOLIDB_NO_LUA=1` skips the VM pool)
 
 ### Distributed Architecture
 - 🔄 **Multi-Node Replication** — Peer-to-peer replication with automatic sync

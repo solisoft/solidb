@@ -84,8 +84,8 @@ pub struct AppState {
     pub channel_manager: Arc<crate::scripting::ChannelManager>,
     // Sync session manager for offline-first client sync
     pub sync_session_manager: Option<Arc<crate::sync::SyncSessionManager>>,
-    // Lua VM pool for efficient script execution
-    pub lua_pool: Arc<LuaPool>,
+    // Lua VM pool. `None` when `--no-lua` / `SOLIDB_NO_LUA` is set.
+    pub lua_pool: Option<Arc<LuaPool>>,
     // Script bytecode cache
     pub script_cache: Arc<ScriptCache>,
     // Script index for fast route lookup

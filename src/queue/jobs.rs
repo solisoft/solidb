@@ -248,10 +248,18 @@ impl QueueWorker {
                                     .unwrap()
                                     .subsec_millis() as u64);
                             tracing::error!("Job {} failed in db {}: {}", job_id, db_name_task, e);
+                            // A permanently unsupported operation (a Lua script
+                            // action on a node started with --no-lua) fails the
+                            // same way on every attempt, so retrying only burns
+                            // the backoff schedule.
+                            let permanent =
+                                matches!(e, crate::error::DbError::OperationNotSupported(_));
                             job_to_update.retry_count += 1;
                             job_to_update.last_error = Some(e.to_string());
 
-                            if job_to_update.retry_count < job_to_update.max_retries as u32 {
+                            if !permanent
+                                && job_to_update.retry_count < job_to_update.max_retries as u32
+                            {
                                 job_to_update.status = JobStatus::Pending;
                                 job_to_update.started_at = None;
                                 let delay = 10 * (2u64.pow(job_to_update.retry_count));

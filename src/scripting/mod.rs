@@ -21,6 +21,6 @@ mod validation;
 pub use auth::ScriptUser;
 pub use channel_manager::ChannelManager;
 pub use conversion::{json_to_lua, lua_to_json_value, lua_value_to_json, matches_filter};
-pub use engine::ScriptEngine;
+pub use engine::{lua_disabled_error, lua_runtime_enabled, ScriptEngine};
 
 pub use types::{Script, ScriptContext, ScriptResult, ScriptStats, Service};

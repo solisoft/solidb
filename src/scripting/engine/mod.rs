@@ -25,6 +25,30 @@ pub use cache::ScriptCache;
 pub use pool::LuaPool;
 pub use script_index::ScriptIndex;
 
+/// `SOLIDB_NO_LUA=1` / `true` / `yes` skips the VM pool and refuses script
+/// execution. `--no-lua` sets the same variable at process start.
+///
+/// Resolved once: `main` writes the variable before the Tokio runtime starts,
+/// and every script execution asks this, so re-reading the environment (and
+/// allocating a `String`) per call buys nothing.
+pub fn lua_runtime_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| !env_flag_is_set(std::env::var("SOLIDB_NO_LUA").ok().as_deref()))
+}
+
+pub(crate) fn env_flag_is_set(value: Option<&str>) -> bool {
+    matches!(
+        value,
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
+    )
+}
+
+pub fn lua_disabled_error() -> DbError {
+    DbError::OperationNotSupported(
+        "Lua is disabled (--no-lua / SOLIDB_NO_LUA). Custom scripts, services, and the Lua REPL are not available.".to_string(),
+    )
+}
+
 /// Abort a script that runs past its wall-clock deadline (default 30s,
 /// override with `SOLIDB_LUA_TIMEOUT_SECS`, 0 disables). Checked every 50k
 /// VM instructions, so a `while true do end` cannot pin a pooled state (and
@@ -123,6 +147,9 @@ impl ScriptEngine {
         db_name: &str,
         context: &ScriptContext,
     ) -> Result<ScriptResult, DbError> {
+        if !lua_runtime_enabled() {
+            return Err(lua_disabled_error());
+        }
         // Use Relaxed ordering for stats - exact counts not critical for performance
         self.stats.active_scripts.fetch_add(1, Ordering::Relaxed);
         self.stats
@@ -319,6 +346,9 @@ impl ScriptEngine {
         context: &ScriptContext,
         ws: axum::extract::ws::WebSocket,
     ) -> Result<(), DbError> {
+        if !lua_runtime_enabled() {
+            return Err(lua_disabled_error());
+        }
         websocket::execute_ws(self, script, db_name, context, ws).await
     }
 
@@ -331,6 +361,9 @@ impl ScriptEngine {
         history: &[String],
         output_capture: &mut Vec<String>,
     ) -> Result<(JsonValue, HashMap<String, JsonValue>), DbError> {
+        if !lua_runtime_enabled() {
+            return Err(lua_disabled_error());
+        }
         repl::execute_repl(self, code, db_name, variables, history, output_capture).await
     }
 
@@ -349,5 +382,21 @@ impl ScriptEngine {
     pub(crate) fn lua_to_json(&self, lua: &Lua, value: LuaValue) -> Result<JsonValue, DbError> {
         lua_to_json_value(lua, value)
             .map_err(|e| DbError::InternalError(format!("Failed to convert Lua to JSON: {}", e)))
+    }
+}
+
+#[cfg(test)]
+mod lua_off_tests {
+    use super::*;
+
+    #[test]
+    fn env_flag_accepts_common_truthy_values() {
+        assert!(env_flag_is_set(Some("1")));
+        assert!(env_flag_is_set(Some("true")));
+        assert!(env_flag_is_set(Some("YES")));
+        assert!(!env_flag_is_set(Some("0")));
+        assert!(!env_flag_is_set(Some("false")));
+        assert!(!env_flag_is_set(None));
+        assert!(!env_flag_is_set(Some("")));
     }
 }
