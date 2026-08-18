@@ -203,7 +203,7 @@ fn principal_from_claims(claims: &crate::server::auth::Claims) -> crate::sdbql::
     let lower: Vec<String> = roles.iter().map(|r| r.to_ascii_lowercase()).collect();
     let can_admin = lower.iter().any(|r| r == "admin");
     let can_write = can_admin || lower.iter().any(|r| r == "editor" || r == "write");
-    let can_read = can_write || lower.iter().any(|r| r == "viewer" || r == "read") || true;
+    let can_read = can_write || lower.iter().any(|r| r == "viewer" || r == "read");
     crate::sdbql::QueryPrincipal {
         user: claims.sub.clone(),
         roles,
