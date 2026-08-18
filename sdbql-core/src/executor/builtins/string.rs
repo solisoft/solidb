@@ -22,7 +22,12 @@ pub fn call(name: &str, args: &[Value]) -> SdbqlResult<Option<Value>> {
                     .split(|c: char| !c.is_alphanumeric())
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_lowercase())
-                    .filter(|s| !matches!(s.as_str(), "a" | "an" | "the" | "and" | "or" | "of" | "to" | "in"))
+                    .filter(|s| {
+                        !matches!(
+                            s.as_str(),
+                            "a" | "an" | "the" | "and" | "or" | "of" | "to" | "in"
+                        )
+                    })
                     .collect(),
             };
             Some(Value::Array(toks.into_iter().map(Value::String).collect()))

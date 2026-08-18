@@ -526,10 +526,7 @@ pub fn trigram_similarity(a: &str, b: &str) -> f64 {
     fn grams(s: &str) -> std::collections::HashSet<String> {
         let padded = format!("  {s} ");
         let chars: Vec<char> = padded.chars().collect();
-        chars
-            .windows(3)
-            .map(|w| w.iter().collect())
-            .collect()
+        chars.windows(3).map(|w| w.iter().collect()).collect()
     }
     let ga = grams(a);
     let gb = grams(b);

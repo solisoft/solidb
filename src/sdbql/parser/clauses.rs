@@ -935,13 +935,11 @@ impl Parser {
         let start_key = if matches!(self.current_token(), Token::LeftBrace) {
             let obj = self.parse_object_expression()?;
             match obj {
-                Expression::Object(pairs) => pairs.into_iter().find_map(|(k, v)| {
-                    if k == "_key" {
-                        Some(v)
-                    } else {
-                        None
-                    }
-                }),
+                Expression::Object(pairs) => {
+                    pairs
+                        .into_iter()
+                        .find_map(|(k, v)| if k == "_key" { Some(v) } else { None })
+                }
                 _ => None,
             }
         } else {

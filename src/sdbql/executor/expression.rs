@@ -761,7 +761,8 @@ impl<'a> QueryExecutor<'a> {
                         lambda_ctx.insert(param.clone(), item.clone());
                     }
                     let key = self.evaluate_expr_with_context(&body, &lambda_ctx)?;
-                    if let Some((_, bucket)) = groups.iter_mut().find(|(k, _)| values_equal(k, &key))
+                    if let Some((_, bucket)) =
+                        groups.iter_mut().find(|(k, _)| values_equal(k, &key))
                     {
                         bucket.push(item);
                     } else {
@@ -792,9 +793,7 @@ impl<'a> QueryExecutor<'a> {
                 let lambdas: Vec<_> = original_args
                     .iter()
                     .filter_map(|arg| match arg {
-                        Expression::Lambda { params, body } => {
-                            Some((params.clone(), body.clone()))
-                        }
+                        Expression::Lambda { params, body } => Some((params.clone(), body.clone())),
                         _ => None,
                     })
                     .collect();

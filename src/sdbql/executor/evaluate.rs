@@ -978,7 +978,9 @@ impl<'a> QueryExecutor<'a> {
                     ));
                 }
                 let coll_name = evaluated_args[0].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("SNAPSHOT_DIFF: collection must be a string".to_string())
+                    DbError::ExecutionError(
+                        "SNAPSHOT_DIFF: collection must be a string".to_string(),
+                    )
                 })?;
                 let t1 = parse_as_of_micros(&evaluated_args[1])?;
                 let t2 = parse_as_of_micros(&evaluated_args[2])?;
@@ -1029,12 +1031,7 @@ impl<'a> QueryExecutor<'a> {
             "CURRENT_ROLES" => Ok(Value::Array(
                 self.principal
                     .as_ref()
-                    .map(|p| {
-                        p.roles
-                            .iter()
-                            .map(|r| Value::String(r.clone()))
-                            .collect()
-                    })
+                    .map(|p| p.roles.iter().map(|r| Value::String(r.clone())).collect())
                     .unwrap_or_default(),
             )),
             "CAN" => self.eval_can(&evaluated_args),
@@ -1074,10 +1071,7 @@ impl<'a> QueryExecutor<'a> {
             "EXTRACT" => self.eval_extract(&evaluated_args),
             "CITE" => Ok(self.eval_cite(&evaluated_args)),
             "GROUNDED" => Ok(self.eval_grounded(&evaluated_args)),
-            "SEARCH_SCORE" => Ok(ctx
-                .get("__search_score")
-                .cloned()
-                .unwrap_or(json!(0.0))),
+            "SEARCH_SCORE" => Ok(ctx.get("__search_score").cloned().unwrap_or(json!(0.0))),
             "APPLY" => {
                 if evaluated_args.is_empty() {
                     return Err(DbError::ExecutionError(
@@ -1138,9 +1132,9 @@ impl<'a> QueryExecutor<'a> {
     }
 
     fn eval_embed(&self, args: &[Value]) -> DbResult<Value> {
-        let text_or_arr = args.first().ok_or_else(|| {
-            DbError::ExecutionError("EMBED requires text or [text]".to_string())
-        })?;
+        let text_or_arr = args
+            .first()
+            .ok_or_else(|| DbError::ExecutionError("EMBED requires text or [text]".to_string()))?;
         let opts = args.get(1);
         let provider = opts.and_then(|o| o.get("provider")).and_then(Value::as_str);
         let model = opts
@@ -1148,24 +1142,14 @@ impl<'a> QueryExecutor<'a> {
             .and_then(Value::as_str)
             .map(|s| s.to_string());
         let db = self.database.as_deref().unwrap_or("_system");
-        let client = crate::server::llm_client::LLMClient::from_storage(
-            self.storage,
-            db,
-            provider,
-            model,
-        )?;
+        let client =
+            crate::server::llm_client::LLMClient::from_storage(self.storage, db, provider, model)?;
         if let Some(arr) = text_or_arr.as_array() {
             let texts: Vec<&str> = arr.iter().filter_map(Value::as_str).collect();
             let vecs = client.embed_batch_blocking(&texts)?;
             return Ok(Value::Array(
                 vecs.into_iter()
-                    .map(|v| {
-                        Value::Array(
-                            v.into_iter()
-                                .map(|f| json!(f))
-                                .collect(),
-                        )
-                    })
+                    .map(|v| Value::Array(v.into_iter().map(|f| json!(f)).collect()))
                     .collect(),
             ));
         }
@@ -1197,7 +1181,12 @@ impl<'a> QueryExecutor<'a> {
             );
             let user = crate::server::llm_client::Message::user(&prompt);
             if let Ok(resp) = client.chat_blocking(vec![sys, user]) {
-                let trimmed = resp.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim();
+                let trimmed = resp
+                    .trim()
+                    .trim_start_matches("```json")
+                    .trim_start_matches("```")
+                    .trim_end_matches("```")
+                    .trim();
                 if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
                     return Ok(v);
                 }
@@ -1208,7 +1197,11 @@ impl<'a> QueryExecutor<'a> {
 
     fn eval_cite(&self, args: &[Value]) -> Value {
         let answer = args.first().and_then(Value::as_str).unwrap_or("");
-        let docs = args.get(1).and_then(Value::as_array).cloned().unwrap_or_default();
+        let docs = args
+            .get(1)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         let mut citations = Vec::new();
         let tokens: Vec<&str> = answer.split_whitespace().filter(|t| t.len() > 3).collect();
         for doc in docs {
@@ -1244,7 +1237,11 @@ impl<'a> QueryExecutor<'a> {
             .and_then(Value::as_array)
             .map(|a| a.len())
             .unwrap_or(0);
-        let score = if n == 0 { 0.0 } else { (n as f64).min(5.0) / 5.0 };
+        let score = if n == 0 {
+            0.0
+        } else {
+            (n as f64).min(5.0) / 5.0
+        };
         json!({
             "score": score,
             "supported": cite.get("citations").cloned().unwrap_or(json!([])),

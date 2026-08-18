@@ -69,9 +69,9 @@ impl<'a> QueryExecutor<'a> {
                 "CREATE_GRAPH(name, {vertices, edges}) required".into(),
             ));
         }
-        let name = args[0].as_str().ok_or_else(|| {
-            DbError::ExecutionError("CREATE_GRAPH: name must be a string".into())
-        })?;
+        let name = args[0]
+            .as_str()
+            .ok_or_else(|| DbError::ExecutionError("CREATE_GRAPH: name must be a string".into()))?;
         let spec = args[1].as_object().ok_or_else(|| {
             DbError::ExecutionError("CREATE_GRAPH: spec must be an object".into())
         })?;
@@ -97,24 +97,26 @@ impl<'a> QueryExecutor<'a> {
     }
 
     pub(super) fn eval_drop_graph(&self, args: &[Value]) -> DbResult<Value> {
-        let name = args.first().and_then(Value::as_str).ok_or_else(|| {
-            DbError::ExecutionError("DROP_GRAPH(name) required".into())
-        })?;
+        let name = args
+            .first()
+            .and_then(Value::as_str)
+            .ok_or_else(|| DbError::ExecutionError("DROP_GRAPH(name) required".into()))?;
         let coll = self.ensure_meta_collection(GRAPHS)?;
         coll.delete(name)?;
         Ok(json!(true))
     }
 
     pub(super) fn eval_graph_info(&self, args: &[Value]) -> DbResult<Value> {
-        let name = args.first().and_then(Value::as_str).ok_or_else(|| {
-            DbError::ExecutionError("GRAPH_INFO(name) required".into())
-        })?;
-        let coll = self.get_collection(GRAPHS).map_err(|_| {
-            DbError::ExecutionError(format!("unknown graph '{name}'"))
-        })?;
-        let doc = coll.get(name).map_err(|_| {
-            DbError::ExecutionError(format!("unknown graph '{name}'"))
-        })?;
+        let name = args
+            .first()
+            .and_then(Value::as_str)
+            .ok_or_else(|| DbError::ExecutionError("GRAPH_INFO(name) required".into()))?;
+        let coll = self
+            .get_collection(GRAPHS)
+            .map_err(|_| DbError::ExecutionError(format!("unknown graph '{name}'")))?;
+        let doc = coll
+            .get(name)
+            .map_err(|_| DbError::ExecutionError(format!("unknown graph '{name}'")))?;
         Ok(doc.to_value())
     }
 
@@ -124,18 +126,16 @@ impl<'a> QueryExecutor<'a> {
                 "CREATE_VIEW(name, {collection, fields, analyzer?}) required".into(),
             ));
         }
-        let name = args[0].as_str().ok_or_else(|| {
-            DbError::ExecutionError("CREATE_VIEW: name must be a string".into())
-        })?;
-        let spec = args[1].as_object().ok_or_else(|| {
-            DbError::ExecutionError("CREATE_VIEW: spec must be an object".into())
-        })?;
+        let name = args[0]
+            .as_str()
+            .ok_or_else(|| DbError::ExecutionError("CREATE_VIEW: name must be a string".into()))?;
+        let spec = args[1]
+            .as_object()
+            .ok_or_else(|| DbError::ExecutionError("CREATE_VIEW: spec must be an object".into()))?;
         let collection = spec
             .get("collection")
             .and_then(Value::as_str)
-            .ok_or_else(|| {
-                DbError::ExecutionError("CREATE_VIEW: collection is required".into())
-            })?;
+            .ok_or_else(|| DbError::ExecutionError("CREATE_VIEW: collection is required".into()))?;
         let fields = spec.get("fields").cloned().unwrap_or(json!([]));
         let analyzer = spec
             .get("analyzer")
@@ -163,9 +163,10 @@ impl<'a> QueryExecutor<'a> {
     }
 
     pub(super) fn eval_drop_view(&self, args: &[Value]) -> DbResult<Value> {
-        let name = args.first().and_then(Value::as_str).ok_or_else(|| {
-            DbError::ExecutionError("DROP_VIEW(name) required".into())
-        })?;
+        let name = args
+            .first()
+            .and_then(Value::as_str)
+            .ok_or_else(|| DbError::ExecutionError("DROP_VIEW(name) required".into()))?;
         let coll = self.ensure_meta_collection(VIEWS)?;
         let doc = coll.get(name)?;
         if doc.to_value().get("type").and_then(Value::as_str) != Some("search") {
@@ -192,11 +193,7 @@ impl<'a> QueryExecutor<'a> {
         let query = args[2].as_str().ok_or_else(|| {
             DbError::ExecutionError("SEARCH_INDEX: query must be a string".into())
         })?;
-        let limit = args
-            .get(3)
-            .and_then(Value::as_u64)
-            .unwrap_or(20)
-            .min(1000) as usize;
+        let limit = args.get(3).and_then(Value::as_u64).unwrap_or(20).min(1000) as usize;
         let collection = self.get_collection(cname)?;
         let hits = collection.fulltext_search(query, Some(vec![field.to_string()]), limit)?;
         let mut out = Vec::with_capacity(hits.len());

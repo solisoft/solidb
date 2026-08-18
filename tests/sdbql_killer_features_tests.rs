@@ -74,10 +74,7 @@ fn hof_map_filter_flat_group_sort() {
         exec(&e, r#"RETURN FLAT_MAP([[1,2],[3]], x -> x)"#),
         json!([1, 2, 3])
     );
-    assert_eq!(
-        exec(&e, r#"RETURN FLAT_MAP([1,2], x -> x)"#),
-        json!([1, 2])
-    );
+    assert_eq!(exec(&e, r#"RETURN FLAT_MAP([1,2], x -> x)"#), json!([1, 2]));
     let grouped = exec(
         &e,
         r#"RETURN GROUP_BY([{k:"a",v:1},{k:"a",v:2},{k:"b",v:3}], x -> x.k)"#,
@@ -286,7 +283,10 @@ fn cite_grounded_and_semantic() {
     let g0 = exec(&e, r#"RETURN GROUNDED("hello", [])"#);
     assert_eq!(g0["score"].as_f64().unwrap(), 0.0);
 
-    let sem = exec(&e, r#"RETURN SEMANTIC({body:"invoice overdue"}, "invoice")"#);
+    let sem = exec(
+        &e,
+        r#"RETURN SEMANTIC({body:"invoice overdue"}, "invoice")"#,
+    );
     assert!(sem["match"].as_bool().unwrap() || sem["score"].as_f64().unwrap() > 0.0);
 }
 
@@ -439,9 +439,17 @@ fn system_time_and_snapshot_diff() {
     coll.insert(json!({"_key": "c", "v": 1})).unwrap();
 
     let past = QueryExecutor::new(&e)
-        .execute(&parse(&format!("FOR d IN hist SYSTEM_TIME AS OF {t1_ms} RETURN d._key")).unwrap())
+        .execute(
+            &parse(&format!(
+                "FOR d IN hist SYSTEM_TIME AS OF {t1_ms} RETURN d._key"
+            ))
+            .unwrap(),
+        )
         .unwrap();
-    let keys: Vec<_> = past.iter().map(|v| v.as_str().unwrap().to_string()).collect();
+    let keys: Vec<_> = past
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
     assert!(keys.contains(&"a".into()), "{keys:?}");
     assert!(!keys.contains(&"c".into()), "{keys:?}");
 
@@ -512,9 +520,7 @@ fn graph_path_and_prune() {
         .unwrap();
 
     let unpruned = QueryExecutor::new(&e)
-        .execute(
-            &parse(r#"FOR v IN 1..3 OUTBOUND "people/alice" follows RETURN v.name"#).unwrap(),
-        )
+        .execute(&parse(r#"FOR v IN 1..3 OUTBOUND "people/alice" follows RETURN v.name"#).unwrap())
         .unwrap();
     assert!(unpruned.iter().any(|n| n == "Bob"));
     assert!(unpruned.iter().any(|n| n == "Carol"));
@@ -600,19 +606,16 @@ fn parse_helpers_zip_apply_minhash_date_round() {
         exec(&e, r#"RETURN PARSE_IDENTIFIER("users/ada")"#),
         json!({"collection":"users","key":"ada"})
     );
-    assert_eq!(exec(&e, r#"RETURN PARSE_COLLECTION("users/ada")"#), json!("users"));
-    assert_eq!(exec(&e, r#"RETURN PARSE_KEY("users/ada")"#), json!("ada"));
-    let rec = exec(
-        &e,
-        r#"RETURN UNSET_RECURSIVE({a:1, nest:{a:2, b:3}}, "a")"#,
+    assert_eq!(
+        exec(&e, r#"RETURN PARSE_COLLECTION("users/ada")"#),
+        json!("users")
     );
+    assert_eq!(exec(&e, r#"RETURN PARSE_KEY("users/ada")"#), json!("ada"));
+    let rec = exec(&e, r#"RETURN UNSET_RECURSIVE({a:1, nest:{a:2, b:3}}, "a")"#);
     assert!(rec.get("a").is_none());
     assert!(rec["nest"].get("a").is_none());
     assert_eq!(rec["nest"]["b"], json!(3));
-    let keep = exec(
-        &e,
-        r#"RETURN KEEP_RECURSIVE({a:1, nest:{a:2, b:3}}, "a")"#,
-    );
+    let keep = exec(&e, r#"RETURN KEEP_RECURSIVE({a:1, nest:{a:2, b:3}}, "a")"#);
     assert_eq!(keep["a"], json!(1));
     assert_eq!(keep["nest"]["a"], json!(2));
     assert!(keep["nest"].get("b").is_none());
@@ -621,12 +624,11 @@ fn parse_helpers_zip_apply_minhash_date_round() {
         json!({"x":1,"y":2})
     );
     assert_eq!(exec(&e, r#"RETURN CALL("ABS", -3)"#), json!(3.0));
-    assert_eq!(
-        exec(&e, r#"RETURN APPLY("UPPER", ["hi"])"#),
-        json!("HI")
+    assert_eq!(exec(&e, r#"RETURN APPLY("UPPER", ["hi"])"#), json!("HI"));
+    assert!(
+        exec_ok(&e, r#"RETURN APPLY("APPLY", ["APPLY", ["ABS"]])"#).is_err()
+            || exec(&e, r#"RETURN 1"#) == json!(1)
     );
-    assert!(exec_ok(&e, r#"RETURN APPLY("APPLY", ["APPLY", ["ABS"]])"#).is_err()
-        || exec(&e, r#"RETURN 1"#) == json!(1));
     let mh = exec(&e, r#"RETURN MINHASH(["a","b","c"], 4)"#);
     assert_eq!(mh.as_array().unwrap().len(), 4);
     assert_eq!(exec(&e, "RETURN MINHASH_COUNT(0.05)"), json!(400));
@@ -641,11 +643,17 @@ fn tokens_phrase_search_boost() {
     assert!(t.as_array().unwrap().iter().any(|x| x == "quick"));
     assert!(!t.as_array().unwrap().iter().any(|x| x == "the"));
     assert_eq!(
-        exec(&e, r#"RETURN PHRASE("the quick brown fox", "quick", "brown")"#),
+        exec(
+            &e,
+            r#"RETURN PHRASE("the quick brown fox", "quick", "brown")"#
+        ),
         json!(true)
     );
     assert_eq!(
-        exec(&e, r#"RETURN PHRASE("the quick brown fox", "brown", "quick")"#),
+        exec(
+            &e,
+            r#"RETURN PHRASE("the quick brown fox", "brown", "quick")"#
+        ),
         json!(false)
     );
     assert_eq!(exec(&e, r#"RETURN BOOST(true, 2)"#), json!(2.0));
@@ -674,7 +682,13 @@ fn geo_construct_contains_range() {
     let pt = exec(&e, "RETURN GEO_POINT(1.0, 2.0)");
     assert_eq!(pt["type"], json!("Point"));
     assert_eq!(pt["coordinates"], json!([2.0, 1.0]));
-    let poly = json!([[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [10.0, 0.0], [0.0, 0.0]]);
+    let poly = json!([
+        [0.0, 0.0],
+        [0.0, 10.0],
+        [10.0, 10.0],
+        [10.0, 0.0],
+        [0.0, 0.0]
+    ]);
     let q = format!(
         r#"RETURN GEO_CONTAINS({{"type":"Polygon","coordinates":[{}]}}, GEO_POINT(5,5))"#,
         serde_json::to_string(&poly).unwrap()
@@ -695,7 +709,10 @@ fn geo_construct_contains_range() {
         json!(false)
     );
     assert_eq!(
-        exec(&e, r#"RETURN GEO_IN_RANGE(GEO_POINT(0,0), GEO_POINT(0,0), 0, 10)"#),
+        exec(
+            &e,
+            r#"RETURN GEO_IN_RANGE(GEO_POINT(0,0), GEO_POINT(0,0), 0, 10)"#
+        ),
         json!(true)
     );
     let area = exec(
@@ -717,8 +734,7 @@ fn valid_time_filters_docs() {
         .unwrap();
     c.insert(json!({"_key": "cur", "valid_from": 20, "valid_to": 100}))
         .unwrap();
-    c.insert(json!({"_key": "open", "valid_from": 5}))
-        .unwrap();
+    c.insert(json!({"_key": "open", "valid_from": 5})).unwrap();
     let at = QueryExecutor::new(&e)
         .execute(&parse("FOR d IN vt VALID_TIME AS OF 25 RETURN d._key").unwrap())
         .unwrap();
@@ -754,9 +770,7 @@ fn weighted_and_k_paths() {
         .unwrap();
     let cities = e.get_collection("cities").unwrap();
     for k in ["a", "b", "c"] {
-        cities
-            .insert(json!({"_key": k, "name": k}))
-            .unwrap();
+        cities.insert(json!({"_key": k, "name": k})).unwrap();
     }
     let roads = e.get_collection("roads").unwrap();
     roads
@@ -811,16 +825,15 @@ fn weighted_and_k_paths() {
     assert_eq!(all, vec![json!("b")]);
 
     let via_graph = QueryExecutor::new(&e)
-        .execute(
-            &parse(r#"FOR v IN 1..1 OUTBOUND "cities/a" GRAPH roads RETURN v._key"#).unwrap(),
-        )
+        .execute(&parse(r#"FOR v IN 1..1 OUTBOUND "cities/a" GRAPH roads RETURN v._key"#).unwrap())
         .unwrap();
-    assert!(via_graph.iter().any(|k| k == "b" || k == "c"), "{via_graph:?}");
+    assert!(
+        via_graph.iter().any(|k| k == "b" || k == "c"),
+        "{via_graph:?}"
+    );
 
-    parse(
-        r#"FOR v IN SHORTEST_PATH "cities/a" TO "cities/c" OUTBOUND GRAPH roads RETURN v"#,
-    )
-    .unwrap();
+    parse(r#"FOR v IN SHORTEST_PATH "cities/a" TO "cities/c" OUTBOUND GRAPH roads RETURN v"#)
+        .unwrap();
 }
 
 #[test]
@@ -829,8 +842,14 @@ fn dijkstra_rejects_negative_weight() {
     e.create_collection("n".to_string(), None).unwrap();
     e.create_collection("e".to_string(), Some("edge".to_string()))
         .unwrap();
-    e.get_collection("n").unwrap().insert(json!({"_key": "a"})).unwrap();
-    e.get_collection("n").unwrap().insert(json!({"_key": "b"})).unwrap();
+    e.get_collection("n")
+        .unwrap()
+        .insert(json!({"_key": "a"}))
+        .unwrap();
+    e.get_collection("n")
+        .unwrap()
+        .insert(json!({"_key": "b"}))
+        .unwrap();
     e.get_collection("e")
         .unwrap()
         .insert(json!({"_from": "n/a", "_to": "n/b", "cost": -1}))
@@ -1006,9 +1025,11 @@ fn search_index_uses_fulltext() {
         .unwrap();
     c.insert(json!({"_key": "a", "body": "quick brown fox"}))
         .unwrap();
-    c.insert(json!({"_key": "b", "body": "lazy dog"}))
-        .unwrap();
-    let hits = exec(&e, r#"RETURN SEARCH_INDEX("articles", "body", "quick", 10)"#);
+    c.insert(json!({"_key": "b", "body": "lazy dog"})).unwrap();
+    let hits = exec(
+        &e,
+        r#"RETURN SEARCH_INDEX("articles", "body", "quick", 10)"#,
+    );
     let arr = hits.as_array().expect("array");
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0]["doc"]["_key"], json!("a"));
@@ -1033,4 +1054,3 @@ fn can_honors_document_acl() {
     assert_eq!(v["acl"], json!(true));
     assert_eq!(v["deny"], json!(false));
 }
-

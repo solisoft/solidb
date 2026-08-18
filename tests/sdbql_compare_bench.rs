@@ -13,9 +13,7 @@ fn call(name: &str, args: &[serde_json::Value]) {
         let _ = v;
         return;
     }
-    let _ = builtins::evaluate(name, args)
-        .unwrap()
-        .expect(name);
+    let _ = builtins::evaluate(name, args).unwrap().expect(name);
 }
 
 fn bench(name: &str, iters: u32, mut f: impl FnMut()) {
@@ -73,7 +71,10 @@ fn bench_sdbql_compare() {
         call("SPLIT", &[json!("a,b,c,d,e"), json!(",")])
     });
     bench("SUBSTITUTE", n, || {
-        call("SUBSTITUTE", &[hello.clone(), json!("World"), json!("Rust")])
+        call(
+            "SUBSTITUTE",
+            &[hello.clone(), json!("World"), json!("Rust")],
+        )
     });
     bench("FIND_FIRST", n, || {
         call("FIND_FIRST", &[hello.clone(), json!("World")])
@@ -85,7 +86,9 @@ fn bench_sdbql_compare() {
     println!("\n-- array / object --");
     bench("FIRST", n, || call("FIRST", &[arr.clone()]));
     bench("NTH", n, || call("NTH", &[arr.clone(), json!(3)]));
-    bench("SLICE", n, || call("SLICE", &[arr.clone(), json!(2), json!(4)]));
+    bench("SLICE", n, || {
+        call("SLICE", &[arr.clone(), json!(2), json!(4)])
+    });
     bench("UNIQUE_small", n, || {
         call("UNIQUE", &[json!([1, 2, 2, 3, 3, 3])])
     });
@@ -110,7 +113,9 @@ fn bench_sdbql_compare() {
     bench("DATE_YEAR_iso", n, || call("DATE_YEAR", &[iso.clone()]));
     bench("DATE_YEAR_ts", n, || call("DATE_YEAR", &[ts.clone()]));
     bench("DATE_ISO8601", n, || call("DATE_ISO8601", &[ts.clone()]));
-    bench("DATE_TIMESTAMP", n, || call("DATE_TIMESTAMP", &[iso.clone()]));
+    bench("DATE_TIMESTAMP", n, || {
+        call("DATE_TIMESTAMP", &[iso.clone()])
+    });
     bench("DATE_TRUNC_day", n, || {
         call("DATE_TRUNC", &[iso.clone(), json!("day")])
     });

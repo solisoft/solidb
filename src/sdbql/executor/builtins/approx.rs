@@ -72,9 +72,7 @@ fn approx_percentile(args: &[Value]) -> DbResult<Value> {
     }
     let mut xs: Vec<f64> = args[0]
         .as_array()
-        .ok_or_else(|| {
-            DbError::ExecutionError("APPROX_PERCENTILE expects an array".to_string())
-        })?
+        .ok_or_else(|| DbError::ExecutionError("APPROX_PERCENTILE expects an array".to_string()))?
         .iter()
         .filter_map(Value::as_f64)
         .collect();
@@ -96,9 +94,9 @@ fn approx_top_k(args: &[Value]) -> DbResult<Value> {
     if k == 0 {
         return Ok(json!([]));
     }
-    let arr = args[0].as_array().ok_or_else(|| {
-        DbError::ExecutionError("APPROX_TOP_K expects an array".to_string())
-    })?;
+    let arr = args[0]
+        .as_array()
+        .ok_or_else(|| DbError::ExecutionError("APPROX_TOP_K expects an array".to_string()))?;
     let mut counts: Vec<(Value, u64)> = Vec::new();
     for v in arr {
         if let Some((_, c)) = counts
@@ -142,12 +140,10 @@ fn sketch_merge(args: &[Value]) -> DbResult<Value> {
     }
     match ta {
         Some("hll") => {
-            let mut a = hll_regs(&args[0]).ok_or_else(|| {
-                DbError::ExecutionError("SKETCH_MERGE: invalid HLL".to_string())
-            })?;
-            let b = hll_regs(&args[1]).ok_or_else(|| {
-                DbError::ExecutionError("SKETCH_MERGE: invalid HLL".to_string())
-            })?;
+            let mut a = hll_regs(&args[0])
+                .ok_or_else(|| DbError::ExecutionError("SKETCH_MERGE: invalid HLL".to_string()))?;
+            let b = hll_regs(&args[1])
+                .ok_or_else(|| DbError::ExecutionError("SKETCH_MERGE: invalid HLL".to_string()))?;
             if a.len() != b.len() {
                 return Err(DbError::ExecutionError(
                     "SKETCH_MERGE: HLL precision mismatch".to_string(),
@@ -183,7 +179,9 @@ fn minhash(args: &[Value]) -> DbResult<Value> {
     for v in arr {
         let h0 = hash_value(v);
         for i in 0..n {
-            let hi = h0.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(i as u64);
+            let hi = h0
+                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                .wrapping_add(i as u64);
             if hi < sig[i] {
                 sig[i] = hi;
             }
@@ -224,11 +222,7 @@ fn hll_estimate(regs: &[u8]) -> f64 {
 }
 
 fn encode_regs(regs: &[u8]) -> Value {
-    Value::Array(
-        regs.iter()
-            .map(|&r| Value::Number(r.into()))
-            .collect(),
-    )
+    Value::Array(regs.iter().map(|&r| Value::Number(r.into())).collect())
 }
 
 fn hll_regs(v: &Value) -> Option<Vec<u8>> {
@@ -236,11 +230,7 @@ fn hll_regs(v: &Value) -> Option<Vec<u8>> {
         return None;
     }
     let regs = v.get("registers")?.as_array()?;
-    Some(
-        regs.iter()
-            .map(|x| x.as_u64().unwrap_or(0) as u8)
-            .collect(),
-    )
+    Some(regs.iter().map(|x| x.as_u64().unwrap_or(0) as u8).collect())
 }
 
 #[allow(dead_code)]

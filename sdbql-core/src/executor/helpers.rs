@@ -621,10 +621,14 @@ mod tests {
             json!(-1)
         );
         assert_eq!(
-            evaluate_binary_op(&json!([1.0, 0.0]), &BinaryOperator::Spaceship, &json!([1.0, 0.0]))
-                .unwrap()
-                .as_f64()
-                .unwrap(),
+            evaluate_binary_op(
+                &json!([1.0, 0.0]),
+                &BinaryOperator::Spaceship,
+                &json!([1.0, 0.0])
+            )
+            .unwrap()
+            .as_f64()
+            .unwrap(),
             0.0
         );
         assert_eq!(

@@ -10,8 +10,8 @@
 //! - Graph traversal and shortest path
 //! - Stream clauses
 
-use serde_json::{json, Value};
 use super::super::to_bool;
+use serde_json::{json, Value};
 
 use super::super::types::{Context, MutationStats};
 use super::super::QueryExecutor;
@@ -170,7 +170,8 @@ impl<'a> QueryExecutor<'a> {
         );
         let mut new_rows = Vec::new();
         for (ctx, indices) in rows.iter().zip(match_indices) {
-            let left_ts = Self::value_as_ts(&self.evaluate_expr_with_context(&spec.left_time, ctx)?);
+            let left_ts =
+                Self::value_as_ts(&self.evaluate_expr_with_context(&spec.left_time, ctx)?);
             let tol = match &spec.tolerance {
                 Some(e) => {
                     let v = self.evaluate_expr_with_context(e, ctx)?;
@@ -189,9 +190,8 @@ impl<'a> QueryExecutor<'a> {
                 let doc = &all_docs[idx];
                 let mut tctx = ctx.clone();
                 tctx.insert(join_clause.variable.clone(), doc.clone());
-                let rts = Self::value_as_ts(
-                    &self.evaluate_expr_with_context(&spec.right_time, &tctx)?,
-                );
+                let rts =
+                    Self::value_as_ts(&self.evaluate_expr_with_context(&spec.right_time, &tctx)?);
                 let (Some(lt), Some(rt)) = (left_ts, rts) else {
                     continue;
                 };
@@ -1029,13 +1029,7 @@ impl<'a> QueryExecutor<'a> {
                                         }
                                         let mut ne = edges_path.clone();
                                         ne.push(edge_val.clone());
-                                        queue.push_back((
-                                            next,
-                                            depth + 1,
-                                            Some(edge_val),
-                                            nv,
-                                            ne,
-                                        ));
+                                        queue.push_back((next, depth + 1, Some(edge_val), nv, ne));
                                     }
                                 }
                             }
@@ -1083,10 +1077,8 @@ impl<'a> QueryExecutor<'a> {
                                 if let Ok(vertex_coll) = self.get_collection(coll_name) {
                                     if let Ok(vertex_doc) = vertex_coll.get(key) {
                                         let mut new_ctx = ctx.clone();
-                                        new_ctx.insert(
-                                            sp.vertex_var.clone(),
-                                            vertex_doc.to_value(),
-                                        );
+                                        new_ctx
+                                            .insert(sp.vertex_var.clone(), vertex_doc.to_value());
                                         if let Some(ref edge_var) = sp.edge_var {
                                             new_ctx.insert(edge_var.clone(), last_edge);
                                         }

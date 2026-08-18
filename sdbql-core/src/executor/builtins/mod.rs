@@ -129,12 +129,15 @@ mod tests {
 
     #[test]
     fn test_new_helpers() {
-        let toks = BuiltinFunctions::call("TOKENS", &[json!("The Quick Fox"), json!("text_en")])
-            .unwrap();
+        let toks =
+            BuiltinFunctions::call("TOKENS", &[json!("The Quick Fox"), json!("text_en")]).unwrap();
         assert!(toks.as_array().unwrap().iter().any(|t| t == "quick"));
         assert_eq!(
-            BuiltinFunctions::call("PHRASE", &[json!("the quick brown"), json!("quick"), json!("brown")])
-                .unwrap(),
+            BuiltinFunctions::call(
+                "PHRASE",
+                &[json!("the quick brown"), json!("quick"), json!("brown")]
+            )
+            .unwrap(),
             json!(true)
         );
         assert_eq!(

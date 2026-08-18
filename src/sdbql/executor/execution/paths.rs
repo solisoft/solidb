@@ -73,9 +73,7 @@ fn edge_weight(e: &Value, field: Option<&str>) -> Result<f64, String> {
                 format!("SHORTEST_PATH: weight field '{f}' must be a non-negative number")
             })?;
             if n < 0.0 {
-                return Err(format!(
-                    "SHORTEST_PATH: negative weight {n} on field '{f}'"
-                ));
+                return Err(format!("SHORTEST_PATH: negative weight {n} on field '{f}'"));
             }
             Ok(n)
         }
@@ -90,11 +88,18 @@ fn max_paths() -> usize {
         .unwrap_or(256)
 }
 
-pub fn find_paths(sp: &ShortestPathClause, edges: &[Value], start: &str, end: &str) -> Result<Vec<FoundPath>, String> {
+pub fn find_paths(
+    sp: &ShortestPathClause,
+    edges: &[Value],
+    start: &str,
+    end: &str,
+) -> Result<Vec<FoundPath>, String> {
     let wfield = sp.weight.as_deref();
     match sp.mode {
         PathFindMode::Shortest if wfield.is_some() => {
-            Ok(dijkstra(edges, start, end, &sp.direction, wfield)?.into_iter().collect())
+            Ok(dijkstra(edges, start, end, &sp.direction, wfield)?
+                .into_iter()
+                .collect())
         }
         PathFindMode::Shortest => Ok(bfs_one(edges, start, end, &sp.direction)
             .into_iter()
@@ -232,7 +237,14 @@ fn all_shortest(edges: &[Value], start: &str, end: &str, dir: &EdgeDirection) ->
         }
         verts.pop();
     }
-    rec(end, start, &preds, &mut Vec::new(), &mut Vec::new(), &mut out);
+    rec(
+        end,
+        start,
+        &preds,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut out,
+    );
     out.truncate(max_paths());
     out
 }
@@ -283,11 +295,14 @@ fn yen(
                     let from = e.get("_from").and_then(Value::as_str).unwrap_or("");
                     let to = e.get("_to").and_then(Value::as_str).unwrap_or("");
                     let pair_ok = match dir {
-                        EdgeDirection::Inbound => !forbidden.contains(&(to.to_string(), from.to_string())),
+                        EdgeDirection::Inbound => {
+                            !forbidden.contains(&(to.to_string(), from.to_string()))
+                        }
                         _ => !forbidden.contains(&(from.to_string(), to.to_string())),
                     };
                     let node_ok = !blocked_nodes.contains(from) && !blocked_nodes.contains(to)
-                        || from == spur || to == spur;
+                        || from == spur
+                        || to == spur;
                     pair_ok && node_ok
                 })
                 .cloned()

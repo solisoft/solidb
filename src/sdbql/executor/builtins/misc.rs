@@ -280,7 +280,10 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 ));
             }
             let keys: Vec<String> = match &args[1] {
-                Value::Array(a) => a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+                Value::Array(a) => a
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect(),
                 Value::String(s) => vec![s.clone()],
                 _ => {
                     return Err(DbError::ExecutionError(
@@ -298,12 +301,19 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "PARSE_COLLECTION" => {
             check_args(name, args, 1)?;
             let s = args[0].as_str().unwrap_or("");
-            Ok(Some(parse_ident(s).get("collection").cloned().unwrap_or(Value::Null)))
+            Ok(Some(
+                parse_ident(s)
+                    .get("collection")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+            ))
         }
         "PARSE_KEY" => {
             check_args(name, args, 1)?;
             let s = args[0].as_str().unwrap_or("");
-            Ok(Some(parse_ident(s).get("key").cloned().unwrap_or(Value::Null)))
+            Ok(Some(
+                parse_ident(s).get("key").cloned().unwrap_or(Value::Null),
+            ))
         }
         "UNSET_RECURSIVE" => {
             if args.len() < 2 {

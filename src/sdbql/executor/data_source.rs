@@ -187,13 +187,12 @@ impl<'a> QueryExecutor<'a> {
         }
 
         // Search views (`CREATE_VIEW`) are aliases onto a backing collection.
-        let source_coll = if let Some(backing) =
-            self.resolve_search_view_collection(&for_clause.collection)?
-        {
-            backing
-        } else {
-            for_clause.collection.clone()
-        };
+        let source_coll =
+            if let Some(backing) = self.resolve_search_view_collection(&for_clause.collection)? {
+                backing
+            } else {
+                for_clause.collection.clone()
+            };
 
         // Otherwise it's a collection - use scan with limit for optimization
         let collection = self.get_collection(&source_coll)?;
@@ -256,14 +255,23 @@ impl<'a> QueryExecutor<'a> {
         match spec {
             crate::sdbql::ast::ValidTimeSpec::AsOf(e) => {
                 let ts = self.evaluate_expr_with_context(e, ctx)?;
-                let t = ts.as_i64().or_else(|| ts.as_f64().map(|f| f as i64)).unwrap_or(0);
+                let t = ts
+                    .as_i64()
+                    .or_else(|| ts.as_f64().map(|f| f as i64))
+                    .unwrap_or(0);
                 Ok(docs.into_iter().filter(|d| overlaps(d, t, t)).collect())
             }
             crate::sdbql::ast::ValidTimeSpec::Range { from, to } => {
                 let a = self.evaluate_expr_with_context(from, ctx)?;
                 let b = self.evaluate_expr_with_context(to, ctx)?;
-                let fa = a.as_i64().or_else(|| a.as_f64().map(|f| f as i64)).unwrap_or(0);
-                let tb = b.as_i64().or_else(|| b.as_f64().map(|f| f as i64)).unwrap_or(0);
+                let fa = a
+                    .as_i64()
+                    .or_else(|| a.as_f64().map(|f| f as i64))
+                    .unwrap_or(0);
+                let tb = b
+                    .as_i64()
+                    .or_else(|| b.as_f64().map(|f| f as i64))
+                    .unwrap_or(0);
                 Ok(docs.into_iter().filter(|d| overlaps(d, fa, tb)).collect())
             }
         }
@@ -293,10 +301,7 @@ impl<'a> QueryExecutor<'a> {
                 let mut row = ctx.clone();
                 row.insert(collection.to_string(), doc.clone());
                 row.insert("doc".into(), doc.clone());
-                row.insert(
-                    "CURRENT_USER".into(),
-                    Value::String(principal.user.clone()),
-                );
+                row.insert("CURRENT_USER".into(), Value::String(principal.user.clone()));
                 self.evaluate_expr_with_context(&expr, &row)
                     .map(|v| to_bool(&v))
                     .unwrap_or(false)

@@ -246,7 +246,10 @@ fn geo_contains(outer: &Value, inner: &Value) -> bool {
         return point_in_polygon(lat, lon, &poly);
     }
     let inner_ring = ring_of(inner);
-    !inner_ring.is_empty() && inner_ring.iter().all(|(lon, lat)| point_in_polygon(*lat, *lon, &poly))
+    !inner_ring.is_empty()
+        && inner_ring
+            .iter()
+            .all(|(lon, lat)| point_in_polygon(*lat, *lon, &poly))
 }
 
 fn segs_intersect(a: (f64, f64), b: (f64, f64), c: (f64, f64), d: (f64, f64)) -> bool {

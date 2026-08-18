@@ -236,10 +236,7 @@ pub struct ForClause {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ValidTimeSpec {
     AsOf(Expression),
-    Range {
-        from: Expression,
-        to: Expression,
-    },
+    Range { from: Expression, to: Expression },
 }
 
 /// FILTER expression

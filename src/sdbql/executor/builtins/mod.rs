@@ -59,10 +59,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         }
         return timeseries::evaluate(name, args);
     }
-    if name.starts_with("APPROX_")
-        || name == "SKETCH_MERGE"
-        || name.starts_with("MINHASH")
-    {
+    if name.starts_with("APPROX_") || name == "SKETCH_MERGE" || name.starts_with("MINHASH") {
         return approx::evaluate(name, args);
     }
     if name.starts_with("GEO_") || name == "DISTANCE" {

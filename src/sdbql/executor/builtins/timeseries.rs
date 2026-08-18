@@ -107,9 +107,10 @@ fn rate(args: &[Value]) -> DbResult<Value> {
             "RATE requires 2 arguments: series, interval".to_string(),
         ));
     }
-    let unit_ms = parse_interval_ms(args[1].as_str().ok_or_else(|| {
-        DbError::ExecutionError("RATE: interval must be a string".to_string())
-    })?)? as f64;
+    let unit_ms =
+        parse_interval_ms(args[1].as_str().ok_or_else(|| {
+            DbError::ExecutionError("RATE: interval must be a string".to_string())
+        })?)? as f64;
     let pts = series_points(&args[0])?;
     if pts.len() < 2 {
         return Ok(json!([]));
@@ -133,9 +134,9 @@ fn fill(args: &[Value]) -> DbResult<Value> {
             "FILL requires 2 arguments: series, mode|value".to_string(),
         ));
     }
-    let arr = args[0].as_array().ok_or_else(|| {
-        DbError::ExecutionError("FILL: series must be an array".to_string())
-    })?;
+    let arr = args[0]
+        .as_array()
+        .ok_or_else(|| DbError::ExecutionError("FILL: series must be an array".to_string()))?;
     let mode = args[1].as_str().unwrap_or("");
     let const_fill = args[1].as_f64();
     let mut last: Option<f64> = None;
@@ -150,7 +151,10 @@ fn fill(args: &[Value]) -> DbResult<Value> {
                     .or_else(|| o.get("ts"))
                     .and_then(|x| x.as_i64())
                     .unwrap_or(i as i64);
-                let v = o.get("v").or_else(|| o.get("value")).and_then(Value::as_f64);
+                let v = o
+                    .get("v")
+                    .or_else(|| o.get("value"))
+                    .and_then(Value::as_f64);
                 (t, v)
             }
             _ => (i as i64, None),
@@ -165,7 +169,10 @@ fn fill(args: &[Value]) -> DbResult<Value> {
                 "interp" => {
                     let next = arr.iter().skip(i + 1).find_map(|it| match it {
                         Value::Number(n) => n.as_f64(),
-                        Value::Object(o) => o.get("v").or_else(|| o.get("value")).and_then(Value::as_f64),
+                        Value::Object(o) => o
+                            .get("v")
+                            .or_else(|| o.get("value"))
+                            .and_then(Value::as_f64),
                         _ => None,
                     });
                     match (last, next) {
