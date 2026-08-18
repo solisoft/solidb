@@ -55,8 +55,8 @@ fn bench_sdbql_compare() {
     let obj = json!({"a": 1, "b": 2, "c": 3, "d": 4});
 
     println!("-- string --");
-    bench("UPPER", n, || call("UPPER", &[hello.clone()]));
-    bench("LOWER", n, || call("LOWER", &[hello.clone()]));
+    bench("UPPER", n, || call("UPPER", std::slice::from_ref(&hello)));
+    bench("LOWER", n, || call("LOWER", std::slice::from_ref(&hello)));
     bench("TRIM", n, || call("TRIM", &[json!("  padded  ")]));
     bench("CONCAT", n, || {
         call("CONCAT", &[json!("a"), json!("b"), json!("c")])
@@ -84,7 +84,7 @@ fn bench_sdbql_compare() {
     });
 
     println!("\n-- array / object --");
-    bench("FIRST", n, || call("FIRST", &[arr.clone()]));
+    bench("FIRST", n, || call("FIRST", std::slice::from_ref(&arr)));
     bench("NTH", n, || call("NTH", &[arr.clone(), json!(3)]));
     bench("SLICE", n, || {
         call("SLICE", &[arr.clone(), json!(2), json!(4)])
@@ -92,7 +92,9 @@ fn bench_sdbql_compare() {
     bench("UNIQUE_small", n, || {
         call("UNIQUE", &[json!([1, 2, 2, 3, 3, 3])])
     });
-    bench("UNIQUE_256", n / 5, || call("UNIQUE", &[big.clone()]));
+    bench("UNIQUE_256", n / 5, || {
+        call("UNIQUE", std::slice::from_ref(&big))
+    });
     bench("UNION_256", n / 5, || {
         call("UNION", &[big.clone(), big.clone()])
     });
@@ -102,7 +104,7 @@ fn bench_sdbql_compare() {
     bench("INTERSECTION", n, || {
         call("INTERSECTION", &[arr.clone(), json!([2, 4, 6, 8, 10])])
     });
-    bench("SUM", n, || call("SUM", &[arr.clone()]));
+    bench("SUM", n, || call("SUM", std::slice::from_ref(&arr)));
     bench("KEEP", n, || {
         call("KEEP", &[obj.clone(), json!("a"), json!("c")])
     });
@@ -110,11 +112,17 @@ fn bench_sdbql_compare() {
 
     println!("\n-- date --");
     bench("DATE_NOW", n, || call("DATE_NOW", &[]));
-    bench("DATE_YEAR_iso", n, || call("DATE_YEAR", &[iso.clone()]));
-    bench("DATE_YEAR_ts", n, || call("DATE_YEAR", &[ts.clone()]));
-    bench("DATE_ISO8601", n, || call("DATE_ISO8601", &[ts.clone()]));
+    bench("DATE_YEAR_iso", n, || {
+        call("DATE_YEAR", std::slice::from_ref(&iso))
+    });
+    bench("DATE_YEAR_ts", n, || {
+        call("DATE_YEAR", std::slice::from_ref(&ts))
+    });
+    bench("DATE_ISO8601", n, || {
+        call("DATE_ISO8601", std::slice::from_ref(&ts))
+    });
     bench("DATE_TIMESTAMP", n, || {
-        call("DATE_TIMESTAMP", &[iso.clone()])
+        call("DATE_TIMESTAMP", std::slice::from_ref(&iso))
     });
     bench("DATE_TRUNC_day", n, || {
         call("DATE_TRUNC", &[iso.clone(), json!("day")])
@@ -140,9 +148,11 @@ fn bench_sdbql_compare() {
     bench("TIME_BUCKET", n, || {
         call("TIME_BUCKET", &[json!(90_000), json!("1m")])
     });
-    bench("HUMAN_TIME", n, || call("HUMAN_TIME", &[ts.clone()]));
+    bench("HUMAN_TIME", n, || {
+        call("HUMAN_TIME", std::slice::from_ref(&ts))
+    });
 
     println!("\n-- crypto --");
-    bench("MD5", n, || call("MD5", &[hello.clone()]));
-    bench("SHA256", n, || call("SHA256", &[hello.clone()]));
+    bench("MD5", n, || call("MD5", std::slice::from_ref(&hello)));
+    bench("SHA256", n, || call("SHA256", std::slice::from_ref(&hello)));
 }

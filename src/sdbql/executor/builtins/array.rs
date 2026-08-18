@@ -264,9 +264,9 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             // arrays and every key is a string.
             if arrays.len() == 2 && arrays[0].iter().all(|k| k.is_string()) {
                 let mut obj = serde_json::Map::new();
-                for i in 0..len {
-                    if let Some(s) = arrays[0][i].as_str() {
-                        obj.insert(s.to_string(), arrays[1][i].clone());
+                for (key, value) in arrays[0].iter().zip(arrays[1].iter()) {
+                    if let Some(s) = key.as_str() {
+                        obj.insert(s.to_string(), value.clone());
                     }
                 }
                 return Ok(Some(Value::Object(obj)));

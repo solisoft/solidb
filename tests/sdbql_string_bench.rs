@@ -38,8 +38,10 @@ fn bench_sdbql_string_functions() {
 
     println!("\nSDBQL string builtins (release, {} iters)\n", n);
 
-    bench("UPPER", n, || call("UPPER", &[hello.clone()]));
-    bench("LOWER_unicode", n, || call("LOWER", &[cafe.clone()]));
+    bench("UPPER", n, || call("UPPER", std::slice::from_ref(&hello)));
+    bench("LOWER_unicode", n, || {
+        call("LOWER", std::slice::from_ref(&cafe))
+    });
     bench("TRIM", n, || call("TRIM", &[json!("  padded  ")]));
     bench("CONCAT", n, || {
         call("CONCAT", &[json!("a"), json!("b"), json!("c")])
@@ -84,11 +86,15 @@ fn bench_sdbql_string_functions() {
     bench("PAD_LEFT", n, || {
         call("PAD_LEFT", &[json!("1"), json!(8), json!("0")])
     });
-    bench("ENCODE_URI", n, || call("ENCODE_URI", &[cafe.clone()]));
-    bench("CHAR_LENGTH_long", n, || {
-        call("CHAR_LENGTH", &[long.clone()])
+    bench("ENCODE_URI", n, || {
+        call("ENCODE_URI", std::slice::from_ref(&cafe))
     });
-    bench("UPPER_long", n, || call("UPPER", &[long.clone()]));
+    bench("CHAR_LENGTH_long", n, || {
+        call("CHAR_LENGTH", std::slice::from_ref(&long))
+    });
+    bench("UPPER_long", n, || {
+        call("UPPER", std::slice::from_ref(&long))
+    });
     bench("CONTAINS_long", n, || {
         call("CONTAINS", &[long.clone(), json!("ipsum")])
     });
@@ -96,7 +102,7 @@ fn bench_sdbql_string_functions() {
     println!("\nArray / math / object\n");
 
     let arr = json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    bench("FIRST", n, || call("FIRST", &[arr.clone()]));
+    bench("FIRST", n, || call("FIRST", std::slice::from_ref(&arr)));
     bench("NTH", n, || call("NTH", &[arr.clone(), json!(3)]));
     bench("SLICE", n, || {
         call("SLICE", &[arr.clone(), json!(2), json!(4)])
@@ -106,7 +112,9 @@ fn bench_sdbql_string_functions() {
     bench("UNIQUE", n, || call("UNIQUE", &[json!([1, 2, 2, 3, 3, 3])]));
     let big: Vec<serde_json::Value> = (0..256).map(|i| json!(i % 64)).collect();
     let big_arr = serde_json::Value::Array(big);
-    bench("UNIQUE_256", n / 5, || call("UNIQUE", &[big_arr.clone()]));
+    bench("UNIQUE_256", n / 5, || {
+        call("UNIQUE", std::slice::from_ref(&big_arr))
+    });
     bench("UNION_256", n / 5, || {
         call("UNION", &[big_arr.clone(), big_arr.clone()])
     });
@@ -123,7 +131,7 @@ fn bench_sdbql_string_functions() {
     bench("MIN_variadic", n, || {
         call("MIN", &[json!(3), json!(1), json!(2)])
     });
-    bench("SUM", n, || call("SUM", &[arr.clone()]));
+    bench("SUM", n, || call("SUM", std::slice::from_ref(&arr)));
     bench("GET", n, || {
         call("GET", &[json!({"a": {"b": 2}}), json!("a.b")])
     });

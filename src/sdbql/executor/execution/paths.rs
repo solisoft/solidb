@@ -347,6 +347,10 @@ fn k_paths(
     limit: usize,
 ) -> Vec<FoundPath> {
     let mut out = Vec::new();
+    // Recursive walker: every argument is either search input or mutable
+    // accumulator, so bundling them into a struct renames the problem rather
+    // than removing it.
+    #[allow(clippy::too_many_arguments)]
     fn dfs(
         edges: &[Value],
         dir: &EdgeDirection,

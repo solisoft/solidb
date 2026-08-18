@@ -48,22 +48,38 @@ fn bench_sdbql_datetime_functions() {
     );
 
     bench("DATE_NOW", n, || call("DATE_NOW", &[]));
-    bench("DATE_YEAR_iso", n, || call("DATE_YEAR", &[iso.clone()]));
-    bench("DATE_YEAR_ts", n, || call("DATE_YEAR", &[ts.clone()]));
-    bench("DATE_MONTH", n, || call("DATE_MONTH", &[iso.clone()]));
-    bench("DATE_DAY", n, || call("DATE_DAY", &[iso.clone()]));
-    bench("DATE_HOUR", n, || call("DATE_HOUR", &[iso.clone()]));
-    bench("DATE_QUARTER", n, || call("DATE_QUARTER", &[iso.clone()]));
+    bench("DATE_YEAR_iso", n, || {
+        call("DATE_YEAR", std::slice::from_ref(&iso))
+    });
+    bench("DATE_YEAR_ts", n, || {
+        call("DATE_YEAR", std::slice::from_ref(&ts))
+    });
+    bench("DATE_MONTH", n, || {
+        call("DATE_MONTH", std::slice::from_ref(&iso))
+    });
+    bench("DATE_DAY", n, || {
+        call("DATE_DAY", std::slice::from_ref(&iso))
+    });
+    bench("DATE_HOUR", n, || {
+        call("DATE_HOUR", std::slice::from_ref(&iso))
+    });
+    bench("DATE_QUARTER", n, || {
+        call("DATE_QUARTER", std::slice::from_ref(&iso))
+    });
     bench("DATE_DAYOFWEEK", n, || {
-        call("DATE_DAYOFWEEK", &[iso.clone()])
+        call("DATE_DAYOFWEEK", std::slice::from_ref(&iso))
     });
     bench("DATE_DAYOFYEAR", n, || {
-        call("DATE_DAYOFYEAR", &[iso.clone()])
+        call("DATE_DAYOFYEAR", std::slice::from_ref(&iso))
     });
-    bench("DATE_ISOWEEK", n, || call("DATE_ISOWEEK", &[iso.clone()]));
-    bench("DATE_ISO8601", n, || call("DATE_ISO8601", &[ts.clone()]));
+    bench("DATE_ISOWEEK", n, || {
+        call("DATE_ISOWEEK", std::slice::from_ref(&iso))
+    });
+    bench("DATE_ISO8601", n, || {
+        call("DATE_ISO8601", std::slice::from_ref(&ts))
+    });
     bench("DATE_TIMESTAMP", n, || {
-        call("DATE_TIMESTAMP", &[iso.clone()])
+        call("DATE_TIMESTAMP", std::slice::from_ref(&iso))
     });
     bench("DATE_TRUNC_day", n, || {
         call("DATE_TRUNC", &[iso.clone(), json!("day")])
@@ -87,10 +103,12 @@ fn bench_sdbql_datetime_functions() {
         call("DATE_FORMAT", &[iso.clone(), json!("%Y-%m-%d")])
     });
     bench("DATE_DAYS_IN_MONTH", n, || {
-        call("DATE_DAYS_IN_MONTH", &[iso.clone()])
+        call("DATE_DAYS_IN_MONTH", std::slice::from_ref(&iso))
     });
     bench("TIME_BUCKET", n, || {
         call("TIME_BUCKET", &[json!(90_000), json!("1m")])
     });
-    bench("HUMAN_TIME", n, || call("HUMAN_TIME", &[ts.clone()]));
+    bench("HUMAN_TIME", n, || {
+        call("HUMAN_TIME", std::slice::from_ref(&ts))
+    });
 }

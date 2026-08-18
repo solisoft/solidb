@@ -962,15 +962,13 @@ fn replace_limited(text: &str, search: &str, replace: &str, limit: Option<usize>
             }
             let mut new_text = String::new();
             let mut last_end = 0;
-            let mut count = 0;
-            for (start, part) in text.match_indices(search) {
+            for (count, (start, part)) in text.match_indices(search).enumerate() {
                 if count >= limit_val {
                     break;
                 }
                 new_text.push_str(&text[last_end..start]);
                 new_text.push_str(replace);
                 last_end = start + part.len();
-                count += 1;
             }
             new_text.push_str(&text[last_end..]);
             new_text

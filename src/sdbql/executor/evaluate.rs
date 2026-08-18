@@ -1042,7 +1042,7 @@ impl<'a> QueryExecutor<'a> {
             "DROP_VIEW" => self.eval_drop_view(&evaluated_args),
             "SEARCH_INDEX" => self.eval_search_index(&evaluated_args),
             "ROW_POLICY" => {
-                if evaluated_args.len() < 1 || evaluated_args.len() > 2 {
+                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
                     return Err(DbError::ExecutionError(
                         "ROW_POLICY requires collection [, predicate]".to_string(),
                     ));

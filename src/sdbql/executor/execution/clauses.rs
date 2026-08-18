@@ -19,6 +19,11 @@ use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
 use crate::sync::protocol::Operation;
 
+/// One BFS frontier entry during graph traversal: the vertex id, its depth
+/// from the start, the edge that reached it, and the vertex and edge paths
+/// walked to get there.
+type TraversalFrame = (String, usize, Option<Value>, Vec<Value>, Vec<Value>);
+
 /// Block on the result of a sharded mutation that was spawned onto the tokio
 /// runtime, bounding the wait. The executor thread is synchronous and uses a
 /// `sync_channel` to hand the async coordinator call its result; an unbounded
@@ -954,13 +959,8 @@ impl<'a> QueryExecutor<'a> {
                         // BFS traversal
                         let mut visited: std::collections::HashSet<String> =
                             std::collections::HashSet::new();
-                        let mut queue: std::collections::VecDeque<(
-                            String,
-                            usize,
-                            Option<Value>,
-                            Vec<Value>,
-                            Vec<Value>,
-                        )> = std::collections::VecDeque::new();
+                        let mut queue: std::collections::VecDeque<TraversalFrame> =
+                            std::collections::VecDeque::new();
                         visited.insert(start_id.clone());
                         queue.push_back((start_id.clone(), 0, None, vec![], vec![]));
 

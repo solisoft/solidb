@@ -174,16 +174,16 @@ fn minhash(args: &[Value]) -> DbResult<Value> {
     let arr = args[0].as_array().ok_or_else(|| {
         DbError::ExecutionError("MINHASH: first argument must be an array".to_string())
     })?;
-    let n = args[1].as_u64().unwrap_or(1).max(1).min(1024) as usize;
+    let n = args[1].as_u64().unwrap_or(1).clamp(1, 1024) as usize;
     let mut sig = vec![u64::MAX; n];
     for v in arr {
         let h0 = hash_value(v);
-        for i in 0..n {
+        for (i, slot) in sig.iter_mut().enumerate() {
             let hi = h0
                 .wrapping_mul(0x9E37_79B9_7F4A_7C15)
                 .wrapping_add(i as u64);
-            if hi < sig[i] {
-                sig[i] = hi;
+            if hi < *slot {
+                *slot = hi;
             }
         }
     }
