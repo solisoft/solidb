@@ -115,7 +115,7 @@ fn approx_top_k(args: &[Value]) -> DbResult<Value> {
             counts.push((v.clone(), 1));
         }
     }
-    counts.sort_by(|a, b| b.1.cmp(&a.1));
+    counts.sort_by_key(|&(_, c)| std::cmp::Reverse(c));
     counts.truncate(k);
     Ok(Value::Array(
         counts
