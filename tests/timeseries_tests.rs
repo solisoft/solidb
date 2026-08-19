@@ -285,6 +285,8 @@ async fn test_sdbql_time_bucket() {
     let json = response_json(response).await;
     eprintln!("Query 2 result: {:?}", json);
     let result = &json["result"][0];
-    // Existing implementation returns ISO8601 string if input is string
-    assert_eq!(result.as_str().unwrap(), "1970-01-01T00:00:02+00:00");
+    // A string input returns a string bucket, formatted by the shared
+    // `rfc3339_ms` helper every date builtin uses: millisecond precision,
+    // `Z` rather than `+00:00`.
+    assert_eq!(result.as_str().unwrap(), "1970-01-01T00:00:02.000Z");
 }
