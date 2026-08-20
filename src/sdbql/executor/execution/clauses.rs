@@ -271,6 +271,42 @@ impl<'a> QueryExecutor<'a> {
                             let mut all_rows_indexable = true;
 
                             if let Ok(collection) = self.get_collection(&for_clause.collection) {
+                                // Auto-index: only when the collection opted in
+                                // and no index covers this FILTER yet. The
+                                // existence probe is capped at one document and
+                                // runs *after* `would_auto_index`, so a query on
+                                // a collection that never opted in pays nothing
+                                // beyond reading the flag, and one that did pays
+                                // a single-row lookup rather than materialising
+                                // every match twice.
+                                if let Some(ctx0) = rows.first() {
+                                    if let Some(cond) = self.extract_indexable_condition(
+                                        &filter_clause.expression,
+                                        &for_clause.variable,
+                                        ctx0,
+                                    ) {
+                                        if self.would_auto_index(
+                                            &collection,
+                                            &cond.field,
+                                            Some(&cond.value),
+                                        ) && self
+                                            .lookup_index_for_filter_limited(
+                                                &collection,
+                                                &filter_clause.expression,
+                                                &for_clause.variable,
+                                                ctx0,
+                                                Some(1),
+                                            )
+                                            .is_none()
+                                        {
+                                            let _ = self.maybe_auto_index(
+                                                &collection,
+                                                &cond.field,
+                                                Some(&cond.value),
+                                            );
+                                        }
+                                    }
+                                }
                                 for ctx in &rows {
                                     // Cap the lookup at LIMIT only when the
                                     // whole FILTER is the index condition — a

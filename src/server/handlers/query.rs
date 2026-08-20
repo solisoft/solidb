@@ -198,7 +198,9 @@ fn log_slow_query(
     });
 }
 
-fn principal_from_claims(claims: &crate::server::auth::Claims) -> crate::sdbql::QueryPrincipal {
+pub(crate) fn principal_from_claims(
+    claims: &crate::server::auth::Claims,
+) -> crate::sdbql::QueryPrincipal {
     let roles = claims.roles.clone().unwrap_or_default();
     let lower: Vec<String> = roles.iter().map(|r| r.to_ascii_lowercase()).collect();
     let can_admin = lower.iter().any(|r| r == "admin");
@@ -744,6 +746,7 @@ pub async fn explain_query(
     State(state): State<AppState>,
     Path(db_name): Path<String>,
     headers: HeaderMap,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<Json<crate::sdbql::QueryExplain>, DbError> {
     let prepared = crate::sdbql::get_prepared_statement_cache().parse_if_needed(&req.query)?;
@@ -752,6 +755,9 @@ pub async fn explain_query(
     let storage = state.storage.clone();
     let shard_coordinator = state.shard_coordinator.clone();
     let is_scatter_gather = headers.contains_key("X-Scatter-Gather");
+    // EXPLAIN reports whether *this* caller's run would auto-index, so it needs
+    // the same principal the run would get.
+    let principal = principal_from_claims(&claims);
 
     let explain = {
         let storage = storage.clone();
@@ -762,7 +768,8 @@ pub async fn explain_query(
                     QueryExecutor::with_database(&storage, db_name)
                 } else {
                     QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
-                };
+                }
+                .with_principal(principal);
 
                 if !is_scatter_gather {
                     if let Some(coordinator) = shard_coordinator {

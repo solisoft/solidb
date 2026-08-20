@@ -67,11 +67,17 @@ pub fn handle_query(
         }
     }
 
+    // The executor gets the session's principal, same as the HTTP handler: the
+    // dispatch check above only demands Read for a non-mutating query, so the
+    // principal is what keeps a read-only session off the write-side query
+    // paths (auto-index creation) and applies row policies here too.
+    let principal = handler.query_principal(&database);
     let mut executor = if bind_vars.is_empty() {
         QueryExecutor::with_database(&handler.storage, database)
     } else {
         QueryExecutor::with_database_and_bind_vars(&handler.storage, database, bind_vars)
-    };
+    }
+    .with_principal(principal);
     // Mutating queries must reach the replication log, same as the HTTP handler.
     if let Some(ref log) = handler.replication {
         executor = executor.with_replication(log);
@@ -114,11 +120,15 @@ pub fn handle_explain(
         }
     };
 
+    // EXPLAIN reports what this caller's run would do, so it needs the same
+    // principal that run would get.
+    let principal = handler.query_principal(&database);
     let executor = if bind_vars.is_empty() {
         QueryExecutor::with_database(&handler.storage, database)
     } else {
         QueryExecutor::with_database_and_bind_vars(&handler.storage, database, bind_vars)
-    };
+    }
+    .with_principal(principal);
 
     match executor.explain(prepared.query.as_ref()) {
         Ok(explanation) => Response::ok(serde_json::to_value(explanation).unwrap_or_default()),

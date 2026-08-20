@@ -27,6 +27,23 @@
           Versioning: off
         </button>
       <% end %>
+      <% if auto_index %>
+        <button class="btn-ghost text-teal-400"
+                hx-put="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/auto_index"
+                hx-vals='{"auto_index": "false"}'
+                hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML"
+                hx-confirm="Disable query-driven auto-index on '<%= attr(collection_name) %>'? Existing _auto_* indexes are kept; new FILTER queries will not create more. This collection stays off even if SOLIDB_AUTO_INDEX is set.">
+          Auto-index: on
+        </button>
+      <% else %>
+        <button class="btn-ghost"
+                hx-put="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/auto_index"
+                hx-vals='{"auto_index": "true"}'
+                hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML"
+                hx-confirm="Enable query-driven auto-index on '<%= attr(collection_name) %>'? FILTER (not SORT) on unindexed fields will create persistent _auto_* indexes (up to 16). Requires Write.">
+          Auto-index: off
+        </button>
+      <% end %>
       <button class="btn-ghost"
               hx-put="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/indexes/rebuild"
               hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML"

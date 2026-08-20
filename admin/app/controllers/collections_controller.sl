@@ -51,6 +51,7 @@ class CollectionsController < Controller
     replication_factor = (params["replication_factor"] ?? "").trim()
     payload["replicationFactor"] = replication_factor.to_int() unless replication_factor.blank?
     payload["versioning"] = true if params["versioning"] == "true"
+    payload["autoIndex"] = true if params["auto_index"] == "true"
     return payload
   end
 
@@ -115,6 +116,16 @@ class CollectionsController < Controller
     return this._render_indexes(result, notice)
   end
 
+  # PUT /databases/:db/collections/:name/auto_index
+  def set_auto_index
+    this._ctx_indexes()
+    enabled = params["auto_index"] == "true"
+    result = SolidbClient.put_api(SolidbEndpoints.collection_properties(@db, @collection_name),
+                                  { "autoIndex": enabled })
+    notice = enabled ? "auto-index enabled" : "auto-index disabled"
+    return this._render_indexes(result, notice)
+  end
+
   # DELETE /databases/:db/collections/:name/indexes/:index_name
   # The unified API drops standard / fulltext / geo / ttl indexes by name.
   def delete_index
@@ -168,11 +179,13 @@ class CollectionsController < Controller
     @indexes = []
     # Current versioning (time-travel) state comes from the collection summary.
     @versioning = false
+    @auto_index = false
     coll_list = SolidbClient.get_api(SolidbEndpoints.collections(@db))
     for entry in ((coll_list["data"] ?? {})["collections"] ?? [])
       entry_name = entry["name"] ?? ""
       if entry_name == @collection_name
         @versioning = entry["versioning"] ?? false
+        @auto_index = entry["autoIndex"] ?? false
       end
     end
     result = SolidbClient.get_api(SolidbEndpoints.collection_indexes(@db, @collection_name))

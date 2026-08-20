@@ -26,6 +26,9 @@ pub struct CollectionSummary {
     /// Whether document versioning (time-travel) is enabled on the collection.
     #[serde(default)]
     pub versioning: bool,
+    /// Whether query-driven auto-indexes are enabled.
+    #[serde(default, rename = "autoIndex")]
+    pub auto_index: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -248,6 +251,7 @@ pub async fn list_collections(
             };
 
             let versioning = coll.is_versioned();
+            let auto_index = coll.auto_index_enabled();
             collections.push(CollectionSummary {
                 name,
                 count,
@@ -256,6 +260,7 @@ pub async fn list_collections(
                 shard_config,
                 stats: Some(stats),
                 versioning,
+                auto_index,
             });
         }
     }

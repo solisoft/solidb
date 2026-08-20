@@ -58,6 +58,7 @@ post("/databases/:db/collections/:name/indexes", "collections#create_index")
 put("/databases/:db/collections/:name/indexes/rebuild", "collections#rebuild_indexes")
 delete("/databases/:db/collections/:name/indexes/:index_name", "collections#delete_index")
 put("/databases/:db/collections/:name/versioning", "collections#set_versioning")
+put("/databases/:db/collections/:name/auto_index", "collections#set_auto_index")
 
 # --- Documents browser (collection-scoped) ---
 # Static segments (truncate / schema / upload / ...) are declared before the

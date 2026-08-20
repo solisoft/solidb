@@ -80,6 +80,9 @@ pub struct CollectionAccess {
     pub index_used: Option<String>,
     pub index_type: Option<String>,
     pub documents_count: usize,
+    /// FILTER field that would get `_auto_{field}` on this run (flag on, Write).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_index_candidate: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

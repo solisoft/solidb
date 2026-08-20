@@ -37,11 +37,41 @@ pub struct DriverHandler {
     /// Permissions resolved from the principal's roles at auth time.
     /// Connection-lifetime snapshot: a revoked role applies on reconnect.
     pub(crate) session_permissions: std::collections::HashSet<crate::server::Permission>,
+    /// The role names those permissions came from. Kept so the binary protocol
+    /// can hand the query executor the same principal the HTTP handlers do —
+    /// `CURRENT_USER` / `CURRENT_ROLES`, row policies, and the write-side query
+    /// paths must not depend on which protocol the query arrived over.
+    pub(crate) session_roles: Vec<String>,
     /// Database restriction for scoped API keys
     pub(crate) session_scoped_databases: Option<Vec<String>>,
 }
 
 impl DriverHandler {
+    /// The session's identity as the query executor sees it.
+    ///
+    /// Resolved with the same check the command dispatch uses, against the
+    /// database the query actually names, so a Read-only session cannot reach
+    /// the write-side query paths (auto-index creation) and a row policy
+    /// applies here exactly as it does over HTTP.
+    pub(crate) fn query_principal(&self, database: &str) -> crate::sdbql::QueryPrincipal {
+        let allows = |action| {
+            crate::server::AuthorizationService::check_permission_raw(
+                &self.session_permissions,
+                action,
+                Some(database),
+                self.session_scoped_databases.as_deref(),
+            )
+            .is_ok()
+        };
+        crate::sdbql::QueryPrincipal {
+            user: self.session_subject.clone(),
+            roles: self.session_roles.clone(),
+            can_read: allows(crate::server::PermissionAction::Read),
+            can_write: allows(crate::server::PermissionAction::Write),
+            can_admin: allows(crate::server::PermissionAction::Admin),
+        }
+    }
+
     /// Create a new handler
     pub fn new(
         storage: Arc<StorageEngine>,
@@ -54,6 +84,7 @@ impl DriverHandler {
             authenticated_db: None,
             session_subject: String::new(),
             session_permissions: std::collections::HashSet::new(),
+            session_roles: Vec::new(),
             session_scoped_databases: None,
         }
     }

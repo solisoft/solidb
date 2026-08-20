@@ -48,6 +48,23 @@
 
 ### Features
 
+* **Query-driven auto-indexes (opt-in).** Collections with `autoIndex: true`
+  (or unset + `SOLIDB_AUTO_INDEX=1`) create a persistent `_auto_{field}`
+  index the first time a `FOR` + `FILTER` equality/range miss would have used
+  one. Requires Write or Admin on every query route, and a query with no
+  principal at all (internal view refreshes, queue jobs, stream tasks) never
+  creates one. Cap 16. Explicit `autoIndex: false` overrides the env var.
+  Nested field names keep dots. Null comparisons, `_key`/`_id`/`_rev`,
+  sharded collections, SORT, filters a composite index already covers,
+  collections above `SOLIDB_AUTO_INDEX_MAX_DOCS` (default 1,000,000, `0`
+  disables) and fields no document carries are not auto-indexed.
+  `EXPLAIN` reports `auto_index_candidate` without creating.
+
+* **Driver queries carry the session principal.** The binary protocol built
+  its query executor without one, so `CURRENT_USER`, `CURRENT_ROLES` and row
+  policies were inert over the driver while they applied over HTTP. A row
+  policy now filters driver reads too.
+
 * **`--no-lua` / `SOLIDB_NO_LUA=1` skips the Lua VM pool.** Custom scripts,
   `/api/{db}/{service}/…`, and the REPL return 501; a trigger whose action is
   a Lua script fails its job immediately, without retries. Script documents
@@ -130,6 +147,14 @@
 
 ### Fixes
 
+* **A failed index backfill no longer leaves a half-built index behind.**
+  `create_index` persisted the index metadata before writing the entries, so
+  an interrupted build (disk full, shutdown) left an index that `get_index`
+  reported as ready and that later lookups silently under-returned from. The
+  metadata is now rolled back on failure. The backfill also streams the
+  column family instead of collecting every decoded document first, and
+  `IndexStats.indexed_documents` now counts the documents actually indexed
+  rather than the documents scanned.
 * **`LENGTH("users")` is no longer a collection count.** If the string
   happened to be a collection name, `LENGTH` returned the document count
   instead of the character length. Use `COLLECTION_COUNT("users")` or

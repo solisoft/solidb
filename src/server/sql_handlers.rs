@@ -108,7 +108,12 @@ pub async fn execute_sql_handler(
         &state.storage,
         db.clone(),
         request.bind_vars,
-    );
+    )
+    // `/sql` is a Read route: the principal is what stops a viewer from
+    // reaching the write-side query paths (auto-index creation).
+    .with_principal(crate::server::handlers::query::principal_from_claims(
+        &claims,
+    ));
     // Mutating SQL must reach the replication log like every other write path.
     if let Some(ref log) = state.replication_log {
         executor = executor.with_replication(log);

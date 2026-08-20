@@ -114,6 +114,7 @@ impl<'a> QueryExecutor<'a> {
                     let mut used_index = false;
                     let mut index_name: Option<String> = None;
                     let mut index_type: Option<String> = None;
+                    let mut auto_index_candidate: Option<String> = None;
 
                     // Check if next clause is a FILTER that can use an index
                     if i + 1 < clauses.len() {
@@ -156,6 +157,18 @@ impl<'a> QueryExecutor<'a> {
                                         rows = new_rows;
                                         total_docs_scanned += docs.len();
                                         i += 2; // Skip FOR and FILTER
+                                    } else if let Some(cond) = self.extract_indexable_condition(
+                                        &filter_clause.expression,
+                                        &for_clause.variable,
+                                        &probe_ctx,
+                                    ) {
+                                        if self.would_auto_index(
+                                            &collection,
+                                            &cond.field,
+                                            Some(&cond.value),
+                                        ) {
+                                            auto_index_candidate = Some(cond.field);
+                                        }
                                     }
                                 }
                             }
@@ -198,6 +211,7 @@ impl<'a> QueryExecutor<'a> {
                         index_used: index_name,
                         index_type,
                         documents_count: 0, // Simplified
+                        auto_index_candidate,
                     });
                 }
                 BodyClause::Filter(filter_clause) => {

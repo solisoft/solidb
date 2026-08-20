@@ -17,6 +17,7 @@ pub use super::vector::{VectorIndex, VectorSearchResult};
 use cuckoofilter::CuckooFilter;
 use fastbloom::BloomFilter;
 
+pub mod auto_index;
 pub mod blobs;
 pub mod core;
 pub mod crud;
@@ -59,6 +60,7 @@ pub const VEC_DATA_PREFIX: &str = "vec_data:"; // Vector index data (serialized 
 pub const EMBED_PENDING_PREFIX: &str = "embed_pending:"; // Pending auto-embedding markers (index:doc_key -> empty)
 pub const DOCV_PREFIX: &str = "docv:"; // Document version history (docv:<key>:<inverted_ts> -> VersionRecord)
 pub const VERSIONING_META_KEY: &str = "versioning_enabled"; // Per-collection versioning flag
+pub const AUTO_INDEX_META_KEY: &str = "auto_index_enabled"; // Query-driven auto-index opt-in
 pub const ROW_POLICY_META_KEY: &str = "row_policy"; // SDBQL predicate injected on FOR scans
 pub const NGRAM_SIZE: usize = 3;
 

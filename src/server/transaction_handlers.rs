@@ -309,7 +309,10 @@ pub async fn execute_transactional_sdbql(
             &state.storage,
             db_name.clone(),
             req.bind_vars.clone(),
-        );
+        )
+        .with_principal(crate::server::handlers::query::principal_from_claims(
+            &claims,
+        ));
         let results = executor.execute(&query)?;
         return Ok(Json(serde_json::json!({"result": results})));
     }
@@ -320,7 +323,10 @@ pub async fn execute_transactional_sdbql(
         &state.storage,
         db_name.clone(),
         req.bind_vars.clone(),
-    );
+    )
+    .with_principal(crate::server::handlers::query::principal_from_claims(
+        &claims,
+    ));
 
     // Execute body clauses manually to intercept mutations
     let mut initial_bindings = std::collections::HashMap::new();

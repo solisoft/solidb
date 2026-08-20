@@ -87,6 +87,7 @@ pub async fn handle_auth(
 
     handler.session_subject = username;
     handler.session_permissions = permissions;
+    handler.session_roles = role_names;
     handler.session_scoped_databases = None;
     handler.authenticated_db = Some(database);
     Response::ok_empty()
@@ -146,6 +147,7 @@ async fn handle_api_key_auth(
     // Set authenticated state with API key name as identifier
     handler.session_subject = format!("apikey:{}", api_key_data.id);
     handler.session_permissions = permissions;
+    handler.session_roles = api_key_data.roles.clone();
     handler.session_scoped_databases = scoped;
     handler.authenticated_db = Some(database.to_string());
     Response::ok_empty()
