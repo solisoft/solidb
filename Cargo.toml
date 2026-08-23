@@ -37,9 +37,10 @@ tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 url = "2.4"
 
 # TLS termination for the API listener (--tls-cert/--tls-key). rustls keeps
-# the build free of OpenSSL, same rationale as the outbound clients.
+# the build free of OpenSSL, same rationale as the outbound clients. PEM
+# parsing uses rustls-pki-types' PemObject API — the `rustls-pemfile` crate
+# is unmaintained (RUSTSEC-2025-0134) and fails cargo-deny.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
-rustls-pemfile = "2"
 
 # JSON serialization
 serde = { version = "1.0", features = ["derive"] }

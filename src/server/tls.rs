@@ -17,19 +17,22 @@
 //! safe on a single node with no native-protocol clients).
 
 use crate::error::{DbError, DbResult};
-use std::fs::File;
-use std::io::BufReader;
 use std::sync::Arc;
+use tokio_rustls::rustls::pki_types::pem::PemObject;
 use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio_rustls::TlsAcceptor;
 
 /// Load a certificate chain and private key from PEM files and return a
 /// ready-to-use TLS acceptor.
+///
+/// PEM parsing goes through `rustls-pki-types`' `PemObject` API directly:
+/// the `rustls-pemfile` crate that used to do this is unmaintained
+/// (RUSTSEC-2025-0134) and fails `cargo deny`.
 pub fn load_tls_acceptor(cert_path: &str, key_path: &str) -> DbResult<TlsAcceptor> {
-    let cert_file = File::open(cert_path).map_err(|e| {
-        DbError::InternalError(format!("Cannot open TLS cert file {}: {}", cert_path, e))
-    })?;
-    let certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut BufReader::new(cert_file))
+    let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_file_iter(cert_path)
+        .map_err(|e| {
+            DbError::InternalError(format!("Cannot open TLS cert file {}: {}", cert_path, e))
+        })?
         .collect::<Result<_, _>>()
         .map_err(|e| {
             DbError::InternalError(format!(
@@ -45,12 +48,9 @@ pub fn load_tls_acceptor(cert_path: &str, key_path: &str) -> DbResult<TlsAccepto
         )));
     }
 
-    let key: PrivateKeyDer<'static> =
-        rustls_pemfile::private_key(&mut BufReader::new(File::open(key_path).map_err(|e| {
-            DbError::InternalError(format!("Cannot open TLS key file {}: {}", key_path, e))
-        })?))
-        .map_err(|e| DbError::InternalError(format!("Invalid TLS key in {}: {}", key_path, e)))?
-        .ok_or_else(|| DbError::InternalError(format!("No private key found in {}", key_path)))?;
+    let key: PrivateKeyDer<'static> = PrivateKeyDer::from_pem_file(key_path).map_err(|e| {
+        DbError::InternalError(format!("Cannot load TLS key from {}: {}", key_path, e))
+    })?;
 
     // Name the provider explicitly. `ServerConfig::builder()` panics when it
     // cannot pick a default from the crate features, and this build enables
