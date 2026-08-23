@@ -220,8 +220,7 @@ impl Lexer {
         }
     }
 
-    fn read_string(&mut self) -> SdbqlResult<Token> {
-        let quote = self.current_char.unwrap();
+    fn read_string(&mut self, quote: char) -> SdbqlResult<Token> {
         self.advance(); // Skip opening quote
 
         let mut string = String::new();
@@ -254,9 +253,8 @@ impl Lexer {
     }
 
     /// Read a template string: $"..." or $'...' with ${expression} interpolation
-    fn read_template_string(&mut self) -> SdbqlResult<Token> {
+    fn read_template_string(&mut self, quote: char) -> SdbqlResult<Token> {
         self.advance(); // skip $
-        let quote = self.current_char.unwrap(); // " or '
         self.advance(); // skip opening quote
 
         let mut parts = Vec::new();
@@ -479,11 +477,11 @@ impl Lexer {
             }
 
             Some('$') if matches!(self.peek_char(), Some('"') | Some('\'')) => {
-                return self.read_template_string();
+                return self.read_template_string(self.peek_char().unwrap_or('"'));
             }
 
-            Some('"') | Some('\'') => {
-                return self.read_string();
+            Some(q @ ('"' | '\'')) => {
+                return self.read_string(q);
             }
 
             Some('`') => {

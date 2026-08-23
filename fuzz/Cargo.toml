@@ -1,0 +1,43 @@
+[package]
+name = "solidb-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+
+[dependencies.solidb]
+path = ".."
+
+[[bin]]
+name = "sdbql_parse"
+path = "fuzz_targets/sdbql_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sdbql_lex"
+path = "fuzz_targets/sdbql_lex.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "driver_command_decode"
+path = "fuzz_targets/driver_command_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "restore_jsonl_line"
+path = "fuzz_targets/restore_jsonl_line.rs"
+test = false
+doc = false
+bench = false

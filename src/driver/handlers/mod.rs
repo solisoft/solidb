@@ -10,7 +10,6 @@ use crate::transaction::TransactionId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 
 pub mod admin;
 pub mod auth;
@@ -89,8 +88,14 @@ impl DriverHandler {
         }
     }
 
-    /// Handle a driver connection
-    pub async fn handle_connection(&mut self, mut stream: TcpStream, addr: String) {
+    /// Handle a driver connection.
+    ///
+    /// Generic over the stream so the protocol runs identically over plain
+    /// TCP and over a TLS-terminated connection.
+    pub async fn handle_connection<S>(&mut self, mut stream: S, addr: String)
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
         tracing::info!("Driver connection from {}", addr);
 
         // The magic header has already been consumed by the multiplexer
@@ -159,11 +164,10 @@ impl DriverHandler {
     }
 
     /// Send a response to the client
-    async fn send_response(
-        &self,
-        stream: &mut TcpStream,
-        response: &Response,
-    ) -> Result<(), DriverError> {
+    async fn send_response<S>(&self, stream: &mut S, response: &Response) -> Result<(), DriverError>
+    where
+        S: tokio::io::AsyncWrite + Unpin,
+    {
         let data = encode_response(response)?;
         stream
             .write_all(&data)
@@ -294,13 +298,13 @@ impl DriverHandler {
                 sdbql,
                 bind_vars,
                 cache,
-            } => query::handle_query(self, database, sdbql, bind_vars, cache),
+            } => query::handle_query(self, database, sdbql, bind_vars, cache).await,
 
             Command::Explain {
                 database,
                 sdbql,
                 bind_vars,
-            } => query::handle_explain(self, database, sdbql, bind_vars),
+            } => query::handle_explain(self, database, sdbql, bind_vars).await,
 
             // ==================== Index Operations ====================
             Command::CreateIndex {
@@ -982,20 +986,31 @@ impl DriverHandler {
     }
 }
 
+/// Object-safe stream bound for driver connections.
+pub trait DriverConnTrait: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + ?Sized> DriverConnTrait
+    for T
+{
+}
+
+/// A driver connection stream, boxed so the multiplexer can dispatch either
+/// a plain TCP connection or a TLS-terminated one to the same handler.
+pub type DriverConn = Box<dyn DriverConnTrait>;
+
 /// Spawn a handler for incoming driver connections
 pub fn spawn_driver_handler(
     storage: Arc<StorageEngine>,
     replication: Option<Arc<crate::sync::log::SyncLog>>,
-) -> tokio::sync::mpsc::Sender<(TcpStream, String)> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<(TcpStream, String)>(100);
+) -> tokio::sync::mpsc::Sender<(DriverConn, String)> {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<(DriverConn, String)>(100);
 
     tokio::spawn(async move {
-        while let Some((stream, addr)) = rx.recv().await {
+        while let Some((mut stream, addr)) = rx.recv().await {
             let storage = storage.clone();
             let replication = replication.clone();
             tokio::spawn(async move {
                 let mut handler = DriverHandler::new(storage, replication);
-                handler.handle_connection(stream, addr).await;
+                handler.handle_connection(&mut *stream, addr).await;
             });
         }
     });

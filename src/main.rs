@@ -100,6 +100,15 @@ struct Args {
     /// states). Same as `SOLIDB_NO_LUA=1`.
     #[arg(long)]
     no_lua: bool,
+
+    /// PEM certificate chain for native HTTPS termination. Requires --tls-key.
+    /// Without these, serve plain HTTP and terminate TLS at a reverse proxy.
+    #[arg(long)]
+    tls_cert: Option<String>,
+
+    /// PEM private key for native HTTPS termination. Requires --tls-cert.
+    #[arg(long)]
+    tls_key: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -699,6 +708,15 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
 
     let shutdown_storage = storage_for_shutdown.clone(); // prepare for signal
 
+    // Native TLS termination (--tls-cert/--tls-key). When configured, the
+    // listener handshakes TLS before protocol sniffing, so HTTP, the native
+    // driver protocol, sync, and cluster traffic all run inside TLS.
+    let tls_acceptor = match (&args.tls_cert, &args.tls_key) {
+        (Some(cert), Some(key)) => Some(solidb::server::tls::load_tls_acceptor(cert, key)?),
+        (None, None) => None,
+        _ => anyhow::bail!("--tls-cert and --tls-key must be provided together to enable HTTPS"),
+    };
+
     // Determine launch mode
     // Determine launch mode
     if args.port == replication_port {
@@ -796,6 +814,22 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         let driver_tx =
             solidb::driver::spawn_driver_handler(driver_storage, Some(replication_log.clone()));
         tracing::info!("Native driver protocol enabled on port {}", args.port);
+        if tls_acceptor.is_some() {
+            if solidb::server::tls::tls_required() {
+                tracing::warn!(
+                    "SOLIDB_TLS_REQUIRE=1: plaintext refused on port {} — native driver clients, \
+                     sync and cluster peers cannot connect",
+                    args.port
+                );
+            } else {
+                tracing::info!(
+                    "TLS enabled on port {} in mixed mode: HTTPS clients are served over TLS, \
+                     plaintext driver/sync/cluster connections are still accepted \
+                     (set SOLIDB_TLS_REQUIRE=1 to refuse them)",
+                    args.port
+                );
+            }
+        }
 
         // 3. Dispatch Loop (Main Task) with shutdown handling
         let shutdown_signal_future = async {
@@ -833,7 +867,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                     std::process::exit(0);
                 }
                 accept_result = listener.accept() => {
-                    let (mut stream, addr) = match accept_result {
+                    let (stream, addr) = match accept_result {
                         Ok(conn) => conn,
                         Err(e) => {
                             tracing::error!("Accept error: {}", e);
@@ -846,8 +880,66 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                     let driver_tx = driver_tx.clone();
                     let connection_mgr = cluster_manager.clone();
                     let cluster_secret = cluster_config.keyfile.clone();
+                    let tls = tls_acceptor.clone();
 
                     tokio::spawn(async move {
+                        // Terminate TLS when the client offers it, so HTTP
+                        // and the driver protocol both run inside the tunnel.
+                        // The handshake is *sniffed*, not assumed: the native
+                        // driver SDKs and the sync/cluster transports are
+                        // plaintext-only, and unconditionally handshaking
+                        // would cut every one of them off this port.
+                        let mut stream: MuxConn = match tls {
+                            Some(tls) => {
+                                // `peek` leaves the bytes in the socket, so a
+                                // plaintext connection is handed on untouched.
+                                let mut first = [0u8; 1];
+                                let offered_tls = match tokio::time::timeout(
+                                    std::time::Duration::from_secs(10),
+                                    stream.peek(&mut first),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(1)) => first[0] == solidb::server::tls::TLS_HANDSHAKE_CONTENT_TYPE,
+                                    Ok(Ok(_)) => return, // peer closed before sending
+                                    Ok(Err(e)) => {
+                                        tracing::debug!(peer = %addr, "TLS sniff read failed: {}", e);
+                                        return;
+                                    }
+                                    Err(_) => {
+                                        tracing::warn!(peer = %addr, "TLS sniff timed out; dropping connection");
+                                        return;
+                                    }
+                                };
+
+                                if !offered_tls {
+                                    if solidb::server::tls::tls_required() {
+                                        tracing::warn!(peer = %addr, "plaintext connection refused (SOLIDB_TLS_REQUIRE=1)");
+                                        return;
+                                    }
+                                    Box::new(stream)
+                                } else {
+                                    match tokio::time::timeout(
+                                        std::time::Duration::from_secs(10),
+                                        tls.accept(stream),
+                                    )
+                                    .await
+                                    {
+                                        Ok(Ok(tls_stream)) => Box::new(tls_stream),
+                                        Ok(Err(e)) => {
+                                            tracing::debug!(peer = %addr, "TLS handshake failed: {}", e);
+                                            return;
+                                        }
+                                        Err(_) => {
+                                            tracing::warn!(peer = %addr, "TLS handshake timed out; dropping connection");
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                            None => Box::new(stream),
+                        };
+
                         // Read initial bytes to determine protocol.
                         //
                         // Bound this read: a connection that is accepted but
@@ -972,18 +1064,117 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         tracing::info!("Server listening on {}", addr);
 
-        axum::serve(
-            listener,
-            // Provide `ConnectInfo<SocketAddr>` (login rate limiting keys on
-            // the real peer address).
-            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-        )
-        .with_graceful_shutdown(shutdown_signal(shutdown_storage))
-        .await?;
+        match tls_acceptor {
+            Some(tls) => {
+                // Native HTTPS: accept, TLS-handshake, then drive each
+                // connection with the same hyper-util builder the multiplexed
+                // mode uses (header-read timeout + graceful shutdown).
+                use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
+                use hyper_util::server::conn::auto::Builder as HttpConnBuilder;
+                use hyper_util::server::graceful::GracefulShutdown;
+                use hyper_util::service::TowerToHyperService;
+
+                tracing::info!("HTTPS enabled on port {}", args.port);
+                let shutdown = shutdown_signal(shutdown_storage);
+                tokio::pin!(shutdown);
+                let graceful = GracefulShutdown::new();
+                let mut make_service =
+                    app.into_make_service_with_connect_info::<std::net::SocketAddr>();
+
+                loop {
+                    tokio::select! {
+                        _ = &mut shutdown => {
+                            tracing::info!("Shutdown signal received, draining connections");
+                            break;
+                        }
+                        accepted = listener.accept() => {
+                            let (tcp, peer) = match accepted {
+                                Ok(conn) => conn,
+                                Err(e) => {
+                                    tracing::error!("Accept error: {}", e);
+                                    continue;
+                                }
+                            };
+                            let tls = tls.clone();
+                            let service = {
+                                use tower::Service;
+                                match make_service.call(peer).await {
+                                    Ok(svc) => TowerToHyperService::new(svc),
+                                    Err(never) => match never {},
+                                }
+                            };
+                            // Take the shutdown watcher here, on the accept
+                            // loop, so the connection is registered before
+                            // `shutdown()` can fire; without it `shutdown()`
+                            // returns instantly and kills in-flight responses
+                            // instead of draining them. The handshake itself
+                            // stays in the spawned task so one stalling
+                            // client cannot block the accept loop.
+                            let watcher = graceful.watcher();
+                            tokio::spawn(async move {
+                                // Bound the handshake: a client that connects
+                                // and then stalls (or sends a partial
+                                // ClientHello) would otherwise hold this task
+                                // and its fd open forever — the same
+                                // slowloris the multiplexed path guards
+                                // against.
+                                let tls_stream = match tokio::time::timeout(
+                                    Duration::from_secs(10),
+                                    tls.accept(tcp),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(tls_stream)) => tls_stream,
+                                    Ok(Err(e)) => {
+                                        tracing::debug!(peer = %peer, "TLS handshake failed: {}", e);
+                                        return;
+                                    }
+                                    Err(_) => {
+                                        tracing::warn!(peer = %peer, "TLS handshake timed out; dropping connection");
+                                        return;
+                                    }
+                                };
+                                let mut builder = HttpConnBuilder::new(TokioExecutor::new());
+                                builder
+                                    .http1()
+                                    .timer(TokioTimer::new())
+                                    .header_read_timeout(Duration::from_secs(30));
+                                let conn = builder
+                                    .serve_connection_with_upgrades(
+                                        TokioIo::new(tls_stream),
+                                        service,
+                                    )
+                                    .into_owned();
+                                if let Err(e) = watcher.watch(conn).await {
+                                    tracing::debug!("HTTPS connection error: {}", e);
+                                }
+                            });
+                        }
+                    }
+                }
+                graceful.shutdown().await;
+            }
+            None => {
+                axum::serve(
+                    listener,
+                    // Provide `ConnectInfo<SocketAddr>` (login rate limiting keys on
+                    // the real peer address).
+                    app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
+                .with_graceful_shutdown(shutdown_signal(shutdown_storage))
+                .await?;
+            }
+        }
     }
 
     Ok(())
 }
+
+/// A connection on the multiplexed port after optional TLS termination,
+/// boxed so HTTP, driver, sync, and cluster traffic share one dispatch path.
+/// Same shape as the driver handler's `DriverConn`, so a sniffed driver
+/// connection is forwarded without re-boxing.
+type MuxConn = Box<dyn solidb::driver::handlers::DriverConnTrait>;
 
 /// Hand a freshly accepted connection to a protocol worker without awaiting:
 /// if the dispatch channel is full we drop the connection (the client will

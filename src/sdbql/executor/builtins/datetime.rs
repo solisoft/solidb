@@ -321,21 +321,33 @@ fn date_trunc(args: &[Value]) -> DbResult<Option<Value>> {
     };
     let local = dt.with_timezone(&tz);
     let naive = match unit {
-        Unit::Year => NaiveDate::from_ymd_opt(local.year(), 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap(),
-        Unit::Month => NaiveDate::from_ymd_opt(local.year(), local.month(), 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap(),
+        Unit::Year => {
+            let date = NaiveDate::from_ymd_opt(local.year(), 1, 1)
+                .ok_or_else(|| DbError::ExecutionError("DATE_TRUNC: invalid year".to_string()))?;
+            date.and_hms_opt(0, 0, 0)
+                .expect("midnight is always a valid time")
+        }
+        Unit::Month => {
+            let date = NaiveDate::from_ymd_opt(local.year(), local.month(), 1)
+                .ok_or_else(|| DbError::ExecutionError("DATE_TRUNC: invalid month".to_string()))?;
+            date.and_hms_opt(0, 0, 0)
+                .expect("midnight is always a valid time")
+        }
         Unit::Week => {
             let wd = local.weekday().num_days_from_monday();
-            (local.date_naive() - Duration::days(i64::from(wd)))
-                .and_hms_opt(0, 0, 0)
-                .unwrap()
+            let date = local
+                .date_naive()
+                .checked_sub_signed(Duration::days(i64::from(wd)))
+                .ok_or_else(|| {
+                    DbError::ExecutionError("DATE_TRUNC: week start out of range".to_string())
+                })?;
+            date.and_hms_opt(0, 0, 0)
+                .expect("midnight is always a valid time")
         }
-        Unit::Day => local.date_naive().and_hms_opt(0, 0, 0).unwrap(),
+        Unit::Day => local
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is always a valid time"),
         Unit::Hour => local.date_naive().and_hms_opt(local.hour(), 0, 0).unwrap(),
         Unit::Minute => local
             .date_naive()

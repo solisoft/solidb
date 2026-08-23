@@ -341,6 +341,10 @@ pub fn create_router(
         upload_session_store,
     };
 
+    // The rate limiter is applied after `.with_state(state)` (it must sit
+    // outside compression and tracing), by which point `state` is moved.
+    let rate_limit_state = state.clone();
+
     // Protected API routes
     let api_routes = Router::new()
         // Database routes
@@ -1155,6 +1159,15 @@ pub fn create_router(
                     )
                 }),
         )
+        // Per-client-IP request throttle. Sits just inside CORS so a 429 still
+        // carries `Access-Control-Allow-Origin` — a browser that gets an
+        // opaque CORS failure instead cannot read `Retry-After` and back off —
+        // but outside tracing, compression and every handler, so a flood is
+        // rejected before any real work.
+        .layer(axum::middleware::from_fn_with_state(
+            rate_limit_state,
+            crate::server::rate_limit::api_rate_limit_middleware,
+        ))
         .layer({
             use axum::http::header;
             use tower_http::cors::AllowOrigin;

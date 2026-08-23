@@ -4,6 +4,66 @@
 
 ### Security
 
+* **Native HTTPS termination** with `--tls-cert` / `--tls-key`. Previously
+  the only way to serve TLS was a reverse proxy in front; the server now
+  terminates TLS itself via rustls (no OpenSSL). In dual-port mode the API
+  port serves HTTPS while replication stays as configured. On the
+  multiplexed port the listener *sniffs* for a TLS ClientHello and only
+  handshakes when one is offered, so HTTPS clients get the tunnel (HTTP and
+  the native driver protocol both work inside it) while plaintext peers keep
+  connecting — the shipped SDKs' driver protocol and the sync/cluster
+  transports do not speak TLS yet, and handshaking unconditionally would cut
+  every driver client and every inter-node connection off that port. Set
+  `SOLIDB_TLS_REQUIRE=1` to refuse plaintext there anyway (safe only on a
+  single node with no native-protocol clients). Both flags are required
+  together — one without the other refuses to start rather than silently
+  listening in plaintext.
+* **Per-client API rate limiting.** Only `/auth/login` was throttled; every
+  other endpoint could be hammered without bound. The whole router now has a
+  per-client-IP sliding-window limiter (default 600 requests / 60s,
+  ~10 req/s sustained — generous enough that normal traffic never trips it)
+  answering `429 Too Many Requests` with `Retry-After` before any handler
+  work runs. Internal cluster traffic (a valid `X-Cluster-Secret`) and CORS
+  preflights are exempt — shard forwarding sends one request per document,
+  well above any budget meant for external callers. Client identity follows
+  the login limiter's rule: socket peer, unless
+  `SOLIDB_TRUST_PROXY_HEADERS=1`; a caller that cannot be identified at all
+  is not throttled rather than sharing one bucket with everyone else.
+  Configure with `SOLIDB_API_RATE_LIMIT` (0 disables) and
+  `SOLIDB_API_RATE_WINDOW_SECS`.
+* **Driver queries now have a timeout.** HTTP query execution was capped at
+  30s but the binary protocol ran `executor.execute` unbounded on a runtime
+  thread — a long query over the driver port could pin it forever. Driver
+  `Query` and `Explain` now run on the blocking pool under the same 30s cap,
+  gated on the same "is this long-running?" predicate the HTTP handler uses
+  so point reads keep running inline. A blocking task cannot be cancelled,
+  so a mutation that overruns the timeout still commits: its cached
+  collections are dropped both at the timeout and again when the write
+  actually lands.
+* **Tokens in `?token=` are restricted to WebSocket endpoints.** A JWT in
+  the query string leaks into access logs, proxy logs and browser history,
+  but browser WebSocket clients cannot send an `Authorization` header, so
+  the parameter is still accepted for exactly `/_api/ws/changefeed`,
+  `/_api/cluster/status/ws` and `/_api/monitoring/ws`, and refused
+  everywhere else (`401`, logged) — including `/_api/livequery/token`, the
+  REST endpoint that issues those tokens.
+* **Panic-surface cleanup in SDBQL.** The lexer's string/template readers
+  took the opening quote from `current_char.unwrap()` — unreachable today,
+  but an invariant rather than a check — and now receive the quote char
+  explicitly (both copies: `solidb` and `sdbql-core`). `DATE_TRUNC`'s year/
+  month/week arms return `ExecutionError` instead of panicking when chrono
+  arithmetic hits date bounds.
+
+### Hardening
+
+* **cargo-fuzz targets** for the adversarial-input surfaces:
+  `sdbql_parse` (full lexer+parser pipeline), `sdbql_lex` (lexer alone),
+  `driver_command_decode` (MessagePack command decoding off the TCP port),
+  and `restore_jsonl_line` (the JSONL document parsing `solidb-restore`
+  performs). See `fuzz/`; run with `cargo +nightly fuzz run <target>`.
+
+### Features
+
 * **Replication TCP fails closed without a keyfile.** The HTTP cluster bus
   already required a secret (0.34.0); the multiplexed sync socket still
   skipped HMAC when no keyfile existed. Unauthenticated replication is now

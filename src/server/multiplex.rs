@@ -3,20 +3,31 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
+/// Object-safe stream bound so `PeekedStream` can wrap either a plain
+/// `TcpStream` or a TLS-terminated connection.
+pub trait MultiplexStream: AsyncRead + AsyncWrite + Send + Unpin {}
+impl<T: AsyncRead + AsyncWrite + Send + Unpin + ?Sized> MultiplexStream for T {}
+
 /// A stream that has had some bytes peeked from it.
+///
+/// The inner stream is boxed so the same type carries either a plain
+/// `TcpStream` or a TLS-terminated one (the HTTP server does not care
+/// which — it only sees `AsyncRead`/`AsyncWrite`).
 pub struct PeekedStream {
-    stream: TcpStream,
+    stream: Box<dyn MultiplexStream>,
     peeked: Option<Vec<u8>>,
     peek_cursor: usize,
 }
 
 impl PeekedStream {
-    pub fn new(stream: TcpStream, peeked_bytes: Vec<u8>) -> Self {
+    pub fn new(
+        stream: impl AsyncRead + AsyncWrite + Unpin + Send + 'static,
+        peeked_bytes: Vec<u8>,
+    ) -> Self {
         Self {
-            stream,
+            stream: Box::new(stream),
             peeked: Some(peeked_bytes),
             peek_cursor: 0,
         }

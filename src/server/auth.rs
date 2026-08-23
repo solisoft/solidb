@@ -1304,12 +1304,26 @@ pub async fn auth_middleware(
         }
     }
 
-    // Check for "token" query parameter
+    // Check for "token" query parameter.
+    //
+    // Tokens in query strings leak into access logs, proxy logs and browser
+    // history, so this is only accepted for the WebSocket upgrade endpoints,
+    // where the browser WebSocket API cannot send an Authorization header and
+    // a short-lived token in the URL is the only practical option. Regular
+    // API calls must use `Authorization: Bearer` or `X-API-Key`.
     if let Some(query) = req.uri().query() {
         if let Ok(params) = serde_urlencoded::from_str::<HashMap<String, String>>(query) {
             if let Some(token) = params.get("token") {
+                let path = req.uri().path();
+                if !query_token_path_allowed(path) {
+                    tracing::warn!(
+                        "auth token in query string rejected on non-WebSocket path: {}",
+                        path
+                    );
+                    return Err(StatusCode::UNAUTHORIZED);
+                }
                 if let Ok(claims) = AuthService::validate_token(token) {
-                    if reject_livequery_token(&claims, req.uri().path()) {
+                    if reject_livequery_token(&claims, path) {
                         return Err(StatusCode::FORBIDDEN);
                     }
                     let claims = refresh_jwt_roles(claims, &state.storage);
@@ -1321,6 +1335,22 @@ pub async fn auth_middleware(
     }
 
     Err(StatusCode::UNAUTHORIZED)
+}
+
+/// Paths where an auth token may arrive via the `?token=` query parameter.
+/// Browser WebSocket clients cannot set request headers, so the short-lived
+/// tokens issued for these endpoints travel in the URL; everywhere else the
+/// query string is refused to keep credentials out of logs.
+///
+/// These are exact matches, not prefixes: `/_api/livequery/token` is a plain
+/// REST endpoint that issues these tokens, and a `/_api/livequery` prefix
+/// would keep accepting a JWT in *its* query string — the exact leak this
+/// list exists to close.
+fn query_token_path_allowed(path: &str) -> bool {
+    matches!(
+        path,
+        "/_api/ws/changefeed" | "/_api/cluster/status/ws" | "/_api/monitoring/ws"
+    )
 }
 
 /// Permissive auth middleware for custom scripts
@@ -1482,6 +1512,18 @@ mod tests {
     fn test_validate_invalid_token() {
         let result = AuthService::validate_token("invalid.token.here");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn query_token_only_on_websocket_upgrade_paths() {
+        assert!(query_token_path_allowed("/_api/ws/changefeed"));
+        assert!(query_token_path_allowed("/_api/cluster/status/ws"));
+        assert!(query_token_path_allowed("/_api/monitoring/ws"));
+        // A REST endpoint that merely shares the livequery prefix must not
+        // accept credentials in the query string.
+        assert!(!query_token_path_allowed("/_api/livequery/token"));
+        assert!(!query_token_path_allowed("/_api/livequery"));
+        assert!(!query_token_path_allowed("/_api/databases"));
     }
 
     #[test]
