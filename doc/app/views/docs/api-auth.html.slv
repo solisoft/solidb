@@ -19,6 +19,17 @@
                Authentication
             </h2>
             <p class="text-sm text-gray-400 mt-2">On first startup, an <code class="text-fuchsia-400">admin</code> user is created with a <strong class="text-yellow-400">randomly generated password</strong> shown in the server logs. Save this password!</p>
+            <div class="mt-4 bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">How to send credentials</h4>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><code class="text-cyan-400">Authorization: Bearer &lt;jwt&gt;</code> &mdash; the default for API calls.</li>
+                <li><code class="text-cyan-400">X-API-Key: &lt;key&gt;</code> &mdash; long-lived programmatic access.</li>
+                <li><code class="text-cyan-400">?token=&lt;jwt&gt;</code> &mdash; <strong class="text-white">WebSocket upgrades only</strong>.</li>
+              </ul>
+              <p class="text-xs text-gray-500 mt-3">
+                A token in a query string ends up in access logs, proxy logs and browser history, so it is accepted on exactly three paths &mdash; <code>/_api/ws/changefeed</code>, <code>/_api/cluster/status/ws</code> and <code>/_api/monitoring/ws</code> &mdash; where the browser WebSocket API cannot send a header. Every other endpoint answers <code>401</code> and logs the attempt, including <code>/_api/livequery/token</code>, the REST endpoint that issues these short-lived tokens.
+              </p>
+            </div>
           </div>
            <div class="divide-y divide-white/5">
              <div class="p-6 hover:bg-white/5 transition-colors">
@@ -235,6 +246,9 @@
                </div>
                <div class="mt-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
                  <p class="text-xs text-yellow-400"><strong>Usage:</strong> Call this endpoint, then connect to ws://host:6745/_api/ws/changefeed?token=TOKEN</p>
+               </div>
+               <div class="mt-2 p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg">
+                 <p class="text-xs text-rose-300"><strong>Note:</strong> this endpoint itself is a normal REST call &mdash; authenticate it with an <code>Authorization: Bearer</code> header or <code>X-API-Key</code>. A token passed as <code>?token=</code> is rejected here with <code>401</code>; the query parameter is only accepted on the WebSocket upgrade paths listed below.</p>
                </div>
             </div>
 

@@ -228,6 +228,22 @@
                 <p class="text-xs text-gray-500">Apply the same keyfile to all nodes.</p>
               </div>
             </div>
+
+            <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <h3 class="text-white font-bold mb-3">The keyfile also exempts internal traffic</h3>
+                <p class="text-sm text-gray-400">
+                  Every endpoint is rate limited per client IP (see <a href="/docs/security#protections" class="text-cyan-400 hover:underline">Built-in Protections</a>), and a sharded write forwards one HTTP request <em>per document</em> &mdash; from a single peer address. Requests carrying a valid <code class="text-cyan-400">X-Cluster-Secret</code> bypass the limiter, so shard forwarding, healing and rebalancing are never throttled. A node started <strong>without</strong> a keyfile has no way to prove a request is internal: its peers get throttled like any external client.
+                </p>
+              </div>
+
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <h3 class="text-white font-bold mb-3">Inter-node traffic is plaintext</h3>
+                <p class="text-sm text-gray-400">
+                  The sync and cluster transports do not speak TLS. Run them on a private network or a tunnel. Native TLS (<code>--tls-cert</code>) is safe to enable on a clustered node &mdash; the multiplexed listener only handshakes with clients that offer TLS &mdash; but never set <code class="text-cyan-400">SOLIDB_TLS_REQUIRE=1</code> on one: it drops every peer connection. See <a href="/docs/security#tls" class="text-cyan-400 hover:underline">Transport Security</a>.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>

@@ -60,8 +60,16 @@
                   <td class="p-4 text-gray-400">Long-lived keys for programmatic access, alternative to ephemeral JWT tokens.</td>
                 </tr>
                 <tr class="hover:bg-white/5 transition-colors">
-                  <td class="p-4 text-gray-300 font-medium">Rate Limiting</td>
+                  <td class="p-4 text-gray-300 font-medium">Login Rate Limiting</td>
                   <td class="p-4 text-gray-400">Failed login attempts are limited to <strong>20 per 60 seconds</strong> per (IP address, username) pair — successful logins are never counted. Over the limit, the server responds <code class="text-cyan-400">429 Too Many Requests</code> with a <code class="text-cyan-400">Retry-After</code> header. Tune via <code class="text-cyan-400">SOLIDB_MAX_LOGIN_ATTEMPTS</code> and <code class="text-cyan-400">SOLIDB_LOGIN_RATE_WINDOW_SECS</code>.</td>
+                </tr>
+                <tr class="hover:bg-white/5 transition-colors">
+                  <td class="p-4 text-gray-300 font-medium">API Rate Limiting</td>
+                  <td class="p-4 text-gray-400">Every endpoint — not just login — is throttled per client IP, defaulting to <strong>600 requests per 60 seconds</strong> (a sustained ~10 req/s) and answering <code class="text-cyan-400">429</code> with <code class="text-cyan-400">Retry-After</code> before any handler runs. Internal cluster traffic and CORS preflights are exempt. Tune via <code class="text-cyan-400">SOLIDB_API_RATE_LIMIT</code> (<code>0</code> disables) and <code class="text-cyan-400">SOLIDB_API_RATE_WINDOW_SECS</code>.</td>
+                </tr>
+                <tr class="hover:bg-white/5 transition-colors">
+                  <td class="p-4 text-gray-300 font-medium">Native TLS</td>
+                  <td class="p-4 text-gray-400"><code class="text-cyan-400">--tls-cert</code> / <code class="text-cyan-400">--tls-key</code> terminate TLS 1.2/1.3 in the server itself (rustls, no OpenSSL), for deployments that cannot put a reverse proxy in front. Both flags are required together.</td>
                 </tr>
               </tbody>
             </table>
@@ -192,7 +200,17 @@ export SOLIDB_CORS_ALLOWED_ORIGINS="https://app.example.com,https://admin.exampl
 
 # OPTIONAL: Allowlist for solidb.redirect() destinations from Lua scripts.
 # Comma-separated list of scheme://host[:port]. When unset, all redirects are allowed.
-export SOLIDB_ALLOWED_REDIRECT_ORIGINS="https://app.example.com"</code></pre>
+export SOLIDB_ALLOWED_REDIRECT_ORIGINS="https://app.example.com"
+
+# Per-client API rate limit: requests per window, and window length.
+# 0 disables the limiter entirely.
+export SOLIDB_API_RATE_LIMIT=600
+export SOLIDB_API_RATE_WINDOW_SECS=60
+
+# Behind a proxy that overwrites X-Forwarded-For: key rate limits on the
+# forwarded address instead of the socket peer. Only set this when the
+# proxy is trusted — otherwise clients can spoof their own identity.
+export SOLIDB_TRUST_PROXY_HEADERS=1</code></pre>
           </div>
         </div>
 
@@ -207,6 +225,65 @@ export SOLIDB_ALLOWED_REDIRECT_ORIGINS="https://app.example.com"</code></pre>
             </p>
           </div>
         </div>
+      </section>
+
+      <!-- Transport Security / TLS -->
+      <section id="tls" class="scroll-mt-32">
+        <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
+          <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center mr-3 border border-emerald-500/30">
+            <i class="fas fa-lock text-emerald-400 text-sm"></i>
+          </span>
+          Transport Security (TLS)
+        </h2>
+
+        <p class="text-gray-300 mb-6 text-lg">
+          SoliDB speaks plain HTTP by default and expects a reverse proxy to terminate TLS. When that is not an option — a single-binary deployment, an appliance, an edge node — the server can terminate TLS itself. The implementation uses <strong>rustls</strong>, so the build stays free of OpenSSL.
+        </p>
+
+        <div class="bg-gray-900 rounded-xl border border-white/10 overflow-hidden mb-6">
+          <div class="p-6 overflow-x-auto">
+<pre><code class="language-bash text-sm text-gray-300 font-mono"># PEM certificate chain and private key. Both flags are required together;
+# passing one without the other refuses to start rather than silently
+# listening in plaintext.
+solidb --port 6745 --data-dir ./data \
+       --tls-cert /etc/solidb/fullchain.pem \
+       --tls-key  /etc/solidb/privkey.pem</code></pre>
+          </div>
+        </div>
+
+        <h3 class="text-xl font-bold text-white mb-4">What runs inside the tunnel</h3>
+        <p class="text-gray-300 mb-4">
+          It depends on which port mode you run. In <strong>dual-port mode</strong> (<code>--port</code> and <code>--replication-port</code> differ), the API port serves HTTPS and replication stays on its own port, configured separately.
+        </p>
+        <p class="text-gray-300 mb-6">
+          In <strong>multiplexed mode</strong> (one port for everything), the listener <em>sniffs</em> the first byte of each connection and only performs a handshake when the client actually offers a TLS <code>ClientHello</code>. An HTTPS client gets the tunnel — and because the multiplexer then sniffs the decrypted stream exactly as it does plaintext, both HTTP <em>and</em> the binary driver protocol work inside it. A plaintext peer is passed through untouched.
+        </p>
+
+        <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex items-start space-x-4 mb-6">
+          <div class="flex-shrink-0 mt-1">
+            <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+          </div>
+          <div>
+            <h4 class="text-white font-semibold mb-1">Why plaintext is still accepted</h4>
+            <p class="text-gray-300 text-sm">
+              None of the shipped client SDKs speak TLS over the native driver protocol yet, and neither do the inter-node sync and cluster transports. Handshaking unconditionally on the multiplexed port would cut off every driver client and every peer connection. Mixed mode is what keeps <code>--tls-cert</code> usable on a clustered node.
+            </p>
+          </div>
+        </div>
+
+        <h3 class="text-xl font-bold text-white mb-4">Refusing plaintext</h3>
+        <p class="text-gray-300 mb-4">
+          If nothing on the port needs plaintext — a single node with no native-protocol clients and no peers — you can close it off:
+        </p>
+        <div class="bg-gray-900 rounded-xl border border-white/10 overflow-hidden mb-6">
+          <div class="p-6 overflow-x-auto">
+<pre><code class="language-bash text-sm text-gray-300 font-mono"># Drop any connection on the multiplexed port that does not offer TLS.
+export SOLIDB_TLS_REQUIRE=1</code></pre>
+          </div>
+        </div>
+        <p class="text-gray-400 text-sm">
+          Handshakes are bounded at <strong>10 seconds</strong> in both port modes, so a client that connects and stalls cannot hold a file descriptor open indefinitely.
+        </p>
       </section>
 
       <!-- Cluster Security -->
@@ -263,7 +340,14 @@ export SOLIDB_REQUIRE_KEYFILE=true</code></pre>
           <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
             <h3 class="text-lg font-bold text-white mb-2">Query Timeout</h3>
             <p class="text-gray-400 text-sm">
-              SDBQL queries have a strict <strong>30-second timeout</strong>. Long-running queries (e.g., infinite loops) are automatically terminated to free up server resources.
+              SDBQL queries have a strict <strong>30-second timeout</strong> on both the HTTP API and the native driver protocol. Long-running queries (e.g., infinite loops) are terminated to free up server resources; a mutation that overruns the cap still commits, and its cached results are invalidated when it lands.
+            </p>
+          </div>
+
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
+            <h3 class="text-lg font-bold text-white mb-2">Per-Client Request Throttle</h3>
+            <p class="text-gray-400 text-sm">
+              The whole router is rate limited per client IP (<strong>600 requests / 60s</strong> by default), rejecting a flood with <code>429</code> before it reaches a handler. A caller whose address cannot be determined is not throttled rather than sharing a bucket with unrelated callers. Set <code class="text-cyan-400">SOLIDB_API_RATE_LIMIT=0</code> to disable — useful in test environments that drive thousands of requests from one address.
             </p>
           </div>
 
@@ -296,6 +380,13 @@ export SOLIDB_REQUIRE_KEYFILE=true</code></pre>
           </div>
 
           <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
+            <h3 class="text-lg font-bold text-white mb-2">Fuzzed Input Surfaces</h3>
+            <p class="text-gray-400 text-sm">
+              The parsers that accept untrusted bytes have <code>cargo-fuzz</code> harnesses in the repository: the SDBQL lexer and parser, MessagePack command decoding on the driver port, and the JSONL parsing <code>solidb-restore</code> performs. Run them with <code>cargo +nightly fuzz run &lt;target&gt;</code>.
+            </p>
+          </div>
+
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
             <h3 class="text-lg font-bold text-white mb-2">Range &amp; Pagination Bounds</h3>
             <p class="text-gray-400 text-sm">
               SDBQL <code>a..b</code> ranges are capped at <strong>10M</strong> elements and overflow-safe. <code>LIMIT offset + count</code> is computed with checked arithmetic so 64-bit overflow yields an empty result instead of a panic.
@@ -317,7 +408,7 @@ export SOLIDB_REQUIRE_KEYFILE=true</code></pre>
           <ol class="space-y-4">
             <li class="flex items-start">
               <span class="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 text-xs font-bold mt-0.5 border border-green-500/30">1</span>
-              <span class="ml-4 text-gray-300"><strong>Use HTTPS in production.</strong> Either terminate TLS at a reverse proxy (Nginx, Caddy, Apache) or let SoliDB do it natively with <code class="text-cyan-400">--tls-cert cert.pem --tls-key key.pem</code>. On the multiplexed port SoliDB sniffs for a TLS handshake and only terminates when the client offers one, so HTTP <em>and</em> the binary driver protocol run inside the tunnel for clients that speak TLS, while the driver SDKs and inter-node sync/cluster connections &mdash; which are still plaintext-only &mdash; keep working. Set <code class="text-cyan-400">SOLIDB_TLS_REQUIRE=1</code> to refuse plaintext on that port (single node, no native-protocol clients).</span>
+              <span class="ml-4 text-gray-300"><strong>Use HTTPS in production.</strong> Either terminate TLS at a reverse proxy (Nginx, Caddy, Apache) or let SoliDB do it natively with <code class="text-cyan-400">--tls-cert cert.pem --tls-key key.pem</code> &mdash; see <a href="#tls" class="text-cyan-400 hover:underline">Transport Security</a> for what runs inside the tunnel on a multiplexed port.</span>
             </li>
             <li class="flex items-start">
               <span class="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 text-xs font-bold mt-0.5 border border-green-500/30">2</span>
