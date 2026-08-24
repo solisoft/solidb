@@ -135,7 +135,19 @@ impl Parser {
     /// Parse primary expression (highest precedence)
     pub(super) fn parse_primary_expression(&mut self) -> DbResult<Expression> {
         match self.current_token() {
-            Token::Identifier(name) => self.parse_identifier_expression(name.clone()),
+            Token::Identifier(ref name) => {
+                // Quantifier: NONE x IN array SATISFIES condition
+                // (also accepts the parenthesized form NONE(x IN ... SATISFIES ...))
+                if name.eq_ignore_ascii_case("NONE") && self.is_none_quantifier() {
+                    let parenthesized = matches!(self.peek_token(1), Token::LeftParen);
+                    self.advance(); // consume NONE
+                    if parenthesized {
+                        self.advance(); // consume (
+                    }
+                    return self.parse_quantifier_expression_after_keyword("NONE", parenthesized);
+                }
+                self.parse_identifier_expression(name.clone())
+            }
             Token::Any => self.parse_quantifier_expression("ANY"),
             Token::Count => self.parse_keyword_as_function("COUNT"),
             Token::Left => self.parse_keyword_as_function_no_window(
@@ -184,6 +196,22 @@ impl Parser {
                 self.current_token()
             ))),
         }
+    }
+
+    /// Detect the NONE quantifier form: `NONE x IN ...` or `NONE(x IN ...)`.
+    /// A plain function call like `NONE(arr)` or `NONE(arr, x -> cond)` does
+    /// not match (the token after the variable must be IN).
+    fn is_none_quantifier(&self) -> bool {
+        // NONE x IN ...
+        if matches!(self.peek_token(1), Token::Identifier(_))
+            && matches!(self.peek_token(2), Token::In)
+        {
+            return true;
+        }
+        // NONE(x IN ...)
+        matches!(self.peek_token(1), Token::LeftParen)
+            && matches!(self.peek_token(2), Token::Identifier(_))
+            && matches!(self.peek_token(3), Token::In)
     }
 
     /// Parse identifier: variable or function call

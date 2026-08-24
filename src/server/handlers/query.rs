@@ -68,9 +68,11 @@ pub struct ExecuteQueryResponse {
 // ==================== Helper Functions ====================
 
 /// Check if a query is potentially long-running (contains mutations or range iterations)
-#[inline]
+///
+/// Looks into set-operation operands and CTE bodies too: an operand's `FOR`
+/// scan is just as blocking as a top-level one.
 pub(crate) fn is_long_running_query(query: &Query) -> bool {
-    query.body_clauses.iter().any(|clause| match clause {
+    let own = query.body_clauses.iter().any(|clause| match clause {
         BodyClause::Insert(_)
         | BodyClause::Update(_)
         | BodyClause::Remove(_)
@@ -80,7 +82,17 @@ pub(crate) fn is_long_running_query(query: &Query) -> bool {
         // 2. Collection scans might trigger scatter-gather with blocking HTTP calls
         BodyClause::For(_) => true,
         _ => false,
-    })
+    });
+
+    own || query
+        .set_operations
+        .iter()
+        .any(|op| is_long_running_query(&op.query))
+        || query.with_clause.as_ref().is_some_and(|with| {
+            with.ctes
+                .iter()
+                .any(|cte| is_long_running_query(&cte.query))
+        })
 }
 
 /// Get collection names affected by mutation clauses for targeted cache invalidation.
@@ -102,7 +114,7 @@ pub(crate) fn invalidate_collections(collections: &[String]) {
 }
 
 pub(crate) fn mutated_collections(query: &Query) -> std::collections::HashSet<&str> {
-    query
+    let mut collections: std::collections::HashSet<&str> = query
         .body_clauses
         .iter()
         .filter_map(|clause| match clause {
@@ -112,7 +124,19 @@ pub(crate) fn mutated_collections(query: &Query) -> std::collections::HashSet<&s
             BodyClause::Upsert(c) => Some(c.collection.as_str()),
             _ => None,
         })
-        .collect()
+        .collect();
+
+    // Set-operation operands and CTE bodies can carry their own mutations
+    for operand in query.set_operations.iter().map(|op| op.query.as_ref()) {
+        collections.extend(mutated_collections(operand));
+    }
+    if let Some(with) = &query.with_clause {
+        for cte in &with.ctes {
+            collections.extend(mutated_collections(&cte.query));
+        }
+    }
+
+    collections
 }
 
 /// Log slow query to _slow_queries collection (async, non-blocking)
@@ -274,13 +298,11 @@ pub async fn execute_query(
         let wal = tx_manager.wal().clone();
         let lock_manager = tx_manager.lock_manager().clone();
 
-        // Check if query contains mutation operations
-        let has_mutations = query.body_clauses.iter().any(|clause| {
-            matches!(
-                clause,
-                BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_)
-            )
-        });
+        // Check if query contains mutation operations. `has_mutations()` also
+        // sees UPSERT and mutations nested in set-operation operands or CTE
+        // bodies — those must not take the read-only path, which bypasses the
+        // transaction's WAL and locks.
+        let has_mutations = query.has_mutations();
 
         if !has_mutations {
             // No mutations - just execute normally (read operations)
@@ -523,16 +545,11 @@ pub async fn execute_query(
     let prepared = crate::sdbql::get_prepared_statement_cache().parse_if_needed(&req.query)?;
     let query = prepared.query.as_ref();
 
-    // Check if query is cacheable (read-only with no mutations)
-    let is_read_only = !query.body_clauses.iter().any(|clause| {
-        matches!(
-            clause,
-            BodyClause::Insert(_)
-                | BodyClause::Update(_)
-                | BodyClause::Remove(_)
-                | BodyClause::Upsert(_)
-        )
-    });
+    // Check if query is cacheable (read-only with no mutations). This has to be
+    // the deep check: caching a query whose mutation hides in a set-operation
+    // operand or a CTE body would serve the cached rows on the next identical
+    // request and never run the mutation at all.
+    let is_read_only = !query.has_mutations();
 
     // Try to get cached result for read-only queries (unless cache is disabled).
     // Include db_name so queries on different databases don't share cache entries.

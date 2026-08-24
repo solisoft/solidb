@@ -97,8 +97,13 @@
           </span>
         <% end %>
         <% if !limit_info.nil? %>
+          <%# A standalone OFFSET reports no count %>
+          <% limit_offset = limit_info["offset"] ?? 0 %>
+          <% limit_count = limit_info["count"] %>
+          <% limit_text = limit_count.nil? ? "offset " + str(limit_offset) : "limit " + str(limit_count) %>
+          <% limit_text = limit_text + " offset " + str(limit_offset) if !limit_count.nil? && limit_offset > 0 %>
           <span class="console-label border border-rose-800 px-1.5 py-0.5 text-rose-400">
-            limit <%= limit_info["count"] ?? 0 %><% if (limit_info["offset"] ?? 0) > 0 %> offset <%= limit_info["offset"] %><% end %>
+            <%= limit_text %>
           </span>
         <% end %>
       </div>

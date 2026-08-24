@@ -117,6 +117,27 @@ fn limit_with_offset_works() {
     assert_eq!(rows.len(), 2, "offset+count should skip the first row");
 }
 
+/// A standalone OFFSET has no count; the scan must stay bounded by the data,
+/// not by a sentinel maximum.
+#[test]
+fn offset_without_limit_works() {
+    let (storage, _d) = fixture();
+    let rows = run(&storage, "FOR m IN metrics OFFSET 1 RETURN m");
+    assert_eq!(rows.len(), 2);
+
+    let rows = run(&storage, "FOR m IN metrics OFFSET 1 RETURN m.value");
+    assert_eq!(rows.len(), 2);
+}
+
+/// The columnar scan is its own fast path in the executor and used to return
+/// before DISTINCT was applied.
+#[test]
+fn return_distinct_applies_to_columnar_rows() {
+    let (storage, _d) = fixture();
+    let rows = run(&storage, "FOR m IN metrics RETURN DISTINCT m.host");
+    assert_eq!(rows.len(), 2, "hosts a and b, once each: {rows:?}");
+}
+
 /// The point of making columnar a real data source: it composes with the rest
 /// of the language instead of living behind a separate API.
 #[test]

@@ -1172,12 +1172,36 @@ impl<'a> QueryExecutor<'a> {
                     for (_key, (mut group_ctx, group_docs, count)) in groups {
                         // Add INTO variable if present
                         if let Some(ref into_var) = collect.into_var {
+                            // A KEEP naming a variable that is not in scope
+                            // would silently store `{}` for every group item —
+                            // say so instead.
+                            if let Some(sample) = group_docs.first() {
+                                for keep in &collect.keep_vars {
+                                    if !sample.contains_key(keep) {
+                                        return Err(DbError::ExecutionError(format!(
+                                            "KEEP variable '{}' is not in scope at COLLECT",
+                                            keep
+                                        )));
+                                    }
+                                }
+                            }
+
                             let group_array: Vec<Value> = group_docs
                                 .iter()
                                 .map(|ctx| {
-                                    // Create an object with all variables in the context
-                                    let obj: serde_json::Map<String, Value> =
-                                        ctx.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                    // Create an object with the variables in the
+                                    // context, restricted to KEEP when provided
+                                    let obj: serde_json::Map<String, Value> = if collect
+                                        .keep_vars
+                                        .is_empty()
+                                    {
+                                        ctx.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                                    } else {
+                                        ctx.iter()
+                                            .filter(|(k, _)| collect.keep_vars.contains(k))
+                                            .map(|(k, v)| (k.clone(), v.clone()))
+                                            .collect()
+                                    };
                                     Value::Object(obj)
                                 })
                                 .collect();

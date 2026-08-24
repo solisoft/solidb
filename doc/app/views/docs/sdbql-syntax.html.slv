@@ -44,8 +44,8 @@
 FOR variable IN collection
   FILTER expression
   SORT field [ASC|DESC]
-  LIMIT [offset,] count
-  RETURN expression</code></pre>
+  LIMIT [offset,] count | OFFSET n [LIMIT m]
+  RETURN [DISTINCT] expression</code></pre>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -75,9 +75,90 @@ FOR variable IN collection
                   <span class="bg-indigo-500/20 p-1.5 rounded mr-2 text-xs">RETURN</span>
                   Projection
                 </h3>
-                <p class="text-sm text-gray-400">Constructs the result documents.</p>
+                <p class="text-sm text-gray-400">Constructs the result documents. Add <code class="text-indigo-300">DISTINCT</code> to remove duplicate rows.</p>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Set Operations -->
+      <section id="set-operations" class="scroll-mt-24">
+        <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+          <div class="p-5 border-b border-white/5 bg-white/5">
+            <h3 class="text-lg font-bold text-emerald-300 flex items-center">
+              <span class="bg-emerald-500/20 text-emerald-400 text-xs font-mono px-2 py-1 rounded mr-3">UNION / INTERSECT / EXCEPT</span>
+              Set Operations
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              Combine query blocks with <code class="text-emerald-300">UNION [ALL]</code>,
+              <code class="text-emerald-300">INTERSECT</code>, or
+              <code class="text-emerald-300">EXCEPT</code>. Either side may be parenthesized,
+              and rows are compared by value — <code>1</code> and <code>1.0</code> are the
+              same row, like in <code>UNION()</code> and <code>INTERSECTION()</code>.
+            </p>
+            <p class="text-sm text-gray-400">
+              Chains follow SQL precedence: <code class="text-emerald-300">INTERSECT</code>
+              binds tighter than <code class="text-emerald-300">UNION</code> and
+              <code class="text-emerald-300">EXCEPT</code>, which chain left to right. So
+              <code>a UNION b INTERSECT c</code> is <code>a UNION (b INTERSECT c)</code>, and
+              <code>a EXCEPT b EXCEPT c</code> is <code>(a EXCEPT b) EXCEPT c</code>.
+              Parenthesize to group differently.
+            </p>
+            <div class="grid grid-cols-1 gap-4">
+              <div>
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">UNION — both sides, duplicates removed (UNION ALL keeps them)</h4>
+                <pre><code class="language-sql text-sm">FOR u IN users FILTER u.age < 26 RETURN u._key
+UNION
+FOR u IN users FILTER u.city == 'London' RETURN u._key
+
+FOR i IN 1..3 RETURN i UNION ALL FOR i IN 1..3 RETURN i   -- [1, 2, 3, 1, 2, 3]</code></pre>
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">INTERSECT — rows present in both sides; EXCEPT — left rows absent from the right side</h4>
+                <pre><code class="language-sql text-sm">FOR u IN paris_users RETURN u._key
+INTERSECT
+FOR o IN newsletter RETURN o.user_key
+
+FOR u IN users RETURN u._key
+EXCEPT
+FOR b IN banned RETURN b.user_key
+
+-- Explicit grouping on either side
+(FOR u IN eu_users RETURN u._key UNION FOR u IN us_users RETURN u._key)
+EXCEPT
+FOR b IN banned RETURN b.user_key</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DISTINCT and OFFSET -->
+      <section id="distinct-offset" class="scroll-mt-24">
+        <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+          <div class="p-5 border-b border-white/5 bg-white/5">
+            <h3 class="text-lg font-bold text-cyan-300 flex items-center">
+              <span class="bg-cyan-500/20 text-cyan-400 text-xs font-mono px-2 py-1 rounded mr-3">DISTINCT / OFFSET</span>
+              Result Shaping
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              <code class="text-cyan-300">RETURN DISTINCT expr</code> removes duplicate result rows
+              (first occurrence wins, order preserved). <code class="text-cyan-300">OFFSET n</code> skips rows —
+              standalone or after a limit as <code class="text-cyan-300">LIMIT count OFFSET n</code>.
+            </p>
+            <pre><code class="language-sql text-sm">-- Unique cities, no COLLECT needed
+FOR u IN users SORT u.city RETURN DISTINCT u.city
+
+-- Second page of 10, SQL style
+FOR d IN docs SORT d.created_at DESC LIMIT 10 OFFSET 10 RETURN d
+
+-- Skip without limiting
+FOR u IN users SORT u.age OFFSET 5 RETURN u._key</code></pre>
           </div>
         </div>
       </section>

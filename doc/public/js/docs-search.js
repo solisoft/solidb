@@ -248,6 +248,10 @@ var SDBQL_KEYWORDS = [
 ["RETURN","RETURN expression","Shape and return the result of the query.","/docs/sdbql-syntax#syntax"],
 ["SORT","SORT expr ASC | DESC","Order results by one or more expressions.","/docs/sdbql-syntax#syntax"],
 ["LIMIT","LIMIT offset?, count","Restrict the number of results, with an optional offset.","/docs/sdbql-syntax#syntax"],
+["OFFSET","OFFSET n [LIMIT count]","Skip rows before returning — standalone or after a limit (LIMIT 10 OFFSET 20).","/docs/sdbql-syntax#distinct-offset"],
+["UNION","query1 UNION [ALL] query2","Combine two query blocks; duplicates removed unless UNION ALL.","/docs/sdbql-syntax#set-operations"],
+["INTERSECT","query1 INTERSECT query2","Rows present in both sides of a set operation, deduplicated.","/docs/sdbql-syntax#set-operations"],
+["EXCEPT","query1 EXCEPT query2","Rows of the left side not present in the right side.","/docs/sdbql-syntax#set-operations"],
 ["LET","LET name = expression","Bind a variable or a subquery for reuse.","/docs/sdbql-syntax#let-subqueries"],
 ["COLLECT","COLLECT key = expr AGGREGATE …","Group rows and aggregate — SDBQL's GROUP BY.","/docs/sdbql-aggregations"],
 ["AGGREGATE","AGGREGATE total = SUM(x)","Compute aggregates within a COLLECT group.","/docs/sdbql-aggregations"],
@@ -272,7 +276,10 @@ var SDBQL_KEYWORDS = [
 ["WITH","WITH name AS ( subquery )","Define a named CTE (common table expression).","/docs/sdbql-cte"],
 ["OUTBOUND","FOR v IN OUTBOUND start edges","Traverse graph edges in the outbound direction.","/docs/sdbql-graphs"],
 ["INBOUND","FOR v IN INBOUND start edges","Traverse graph edges in the inbound direction.","/docs/sdbql-graphs"],
-["DISTINCT","RETURN DISTINCT expr","Return only unique results.","/docs/sdbql-syntax#syntax"],
+["DISTINCT","RETURN DISTINCT expr","Return only unique results.","/docs/sdbql-syntax#distinct-offset"],
+["RECURSIVE","WITH RECURSIVE t AS (anchor UNION ALL step)","Walk hierarchies: the step re-runs on the previous iteration's rows until empty.","/docs/sdbql-cte"],
+["NONE","NONE x IN arr SATISFIES cond","True when no element satisfies. Function form: NONE(arr, x -> cond).","/docs/sdbql-operators#op-none"],
+["KEEP","COLLECT … INTO g KEEP v1, v2","Restrict which variables are stored in COLLECT group arrays.","/docs/sdbql-aggregations"],
 ["LIKE","FILTER str LIKE \"%foo%\"","Pattern-match a string with % / _ wildcards.","/docs/sdbql-operators"]
 ];
 

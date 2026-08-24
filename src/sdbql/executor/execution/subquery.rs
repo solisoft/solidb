@@ -12,11 +12,11 @@ use crate::sdbql::ast::*;
 impl<'a> QueryExecutor<'a> {
     /// Execute query with parent context for correlated subqueries.
     ///
-    /// Builds an initial binding set seeded by the parent context (for correlation),
-    /// adds bind variables, evaluates pre-FOR LET clauses, then dispatches to the
-    /// shared `execute_with_initial_bindings` pipeline so the subquery benefits from
-    /// the same optimizations as a top-level query (index-sorted SORT+LIMIT,
-    /// LIMIT pushdown, direct-scan, etc.).
+    /// Seeds the bindings with the parent context (for correlation) and the bind
+    /// variables, then dispatches to `execute_query_with_bindings` so a subquery
+    /// is executed exactly like a top-level query: its `WITH` prelude, pre-FOR
+    /// `LET`s and set operations all apply, and it gets the same optimizations
+    /// (index-sorted SORT+LIMIT, LIMIT pushdown, direct-scan, ...).
     pub(in crate::sdbql::executor) fn execute_with_parent_context(
         &self,
         query: &Query,
@@ -30,15 +30,8 @@ impl<'a> QueryExecutor<'a> {
             initial_bindings.insert(format!("@{}", key), value.clone());
         }
 
-        // Evaluate initial LET clauses (before FOR)
-        for let_clause in &query.let_clauses {
-            let value =
-                self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
-            initial_bindings.insert(let_clause.variable.clone(), value);
-        }
-
         Ok(self
-            .execute_with_initial_bindings(query, initial_bindings)?
+            .execute_query_with_bindings(query, initial_bindings)?
             .results)
     }
 }

@@ -108,6 +108,27 @@
 
 ### Features
 
+* **SDBQL gains set operations, recursive CTEs, `RETURN DISTINCT`, `COLLECT
+  … KEEP`, the `NONE` quantifier, and standalone `OFFSET`.** Query blocks can
+  be combined with `UNION [ALL]`, `INTERSECT`, and `EXCEPT` (`FOR … RETURN …
+  UNION ALL FOR … RETURN …`; either side may be parenthesized; duplicates are
+  removed except for `UNION ALL`). Chains follow SQL precedence — `INTERSECT`
+  binds tighter than `UNION`/`EXCEPT`, which chain left to right — and rows
+  are compared by value, the same equality `UNION()`/`INTERSECTION()` use.
+  `WITH RECURSIVE name AS (<anchor> UNION ALL <step>)` iterates the step until
+  it stops producing rows — inside the step the CTE name is bound to the rows
+  of the *previous* iteration (hierarchies, org charts, transitive closures),
+  with safety caps at 1,000 iterations / 1M rows. `RETURN DISTINCT expr`
+  deduplicates result rows (first occurrence wins). `COLLECT … INTO g KEEP v1,
+  v2` restricts which in-scope variables are stored in the group arrays (an
+  unknown name is an error). `NONE(x IN arr SATISFIES cond)` — and the
+  function form `NONE(arr, x -> cond)` — is true when no element satisfies.
+  `OFFSET n` works alone or as `LIMIT n OFFSET m`. A CTE declared before a set
+  operation binds in every operand, and operands, CTE bodies and subqueries
+  are all executed as full query blocks — their own `WITH`, pre-`FOR` `LET`s,
+  `SORT`/`LIMIT` and nested set operations all apply. Permission checks, query
+  caching, cache invalidation, the long-running-query gate and
+  `has_mutations()` all see through set-operation operands and CTE bodies.
 * **Query-driven auto-indexes (opt-in).** Collections with `autoIndex: true`
   (or unset + `SOLIDB_AUTO_INDEX=1`) create a persistent `_auto_{field}`
   index the first time a `FOR` + `FILTER` equality/range miss would have used
