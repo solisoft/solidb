@@ -98,7 +98,7 @@
         <% end %>
         <% if !limit_info.nil? %>
           <span class="console-label border border-rose-800 px-1.5 py-0.5 text-rose-400">
-            limit <%= limit_info["count"] ?? 0 %><% if (limit_info["offset"] ?? 0) > 0 %> offset <%= limit_info["offset"] %><% end %>
+            <% if limit_info["count"].nil? %>offset <%= limit_info["offset"] ?? 0 %><% else %>limit <%= limit_info["count"] %><% if (limit_info["offset"] ?? 0) > 0 %> offset <%= limit_info["offset"] %><% end %><% end %>
           </span>
         <% end %>
       </div>

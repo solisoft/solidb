@@ -234,6 +234,163 @@ fn test_no_cte() {
 }
 
 #[test]
+fn test_recursive_cte() {
+    let query = parse(
+        "WITH RECURSIVE tree AS (FOR d IN nodes FILTER d._key == @root RETURN d._key \
+         UNION ALL FOR n IN nodes FILTER n.parent IN tree RETURN n._key) \
+         FOR x IN tree RETURN x",
+    );
+    assert!(
+        query.is_ok(),
+        "Failed to parse recursive CTE: {:?}",
+        query.err()
+    );
+    let query = query.unwrap();
+    let with = query.with_clause.unwrap();
+    assert_eq!(with.ctes.len(), 1);
+    assert!(with.ctes[0].recursive);
+    // Body must be anchor UNION ALL step
+    assert_eq!(with.ctes[0].query.set_operations.len(), 1);
+}
+
+#[test]
+fn test_return_distinct() {
+    let query = parse("FOR doc IN coll RETURN DISTINCT doc.city").unwrap();
+    let rc = query.return_clause.unwrap();
+    assert!(rc.distinct);
+
+    // Plain RETURN must not set the flag
+    let query = parse("FOR doc IN coll RETURN doc.city").unwrap();
+    assert!(!query.return_clause.unwrap().distinct);
+}
+
+#[test]
+fn test_set_operations() {
+    for (sql, expected) in [
+        (
+            "FOR a IN c1 RETURN a.x UNION FOR b IN c2 RETURN b.y",
+            "Union",
+        ),
+        (
+            "FOR a IN c1 RETURN a.x UNION ALL FOR b IN c2 RETURN b.y",
+            "UnionAll",
+        ),
+        (
+            "FOR a IN c1 RETURN a.x INTERSECT FOR b IN c2 RETURN b.y",
+            "Intersect",
+        ),
+        (
+            "FOR a IN c1 RETURN a.x EXCEPT FOR b IN c2 RETURN b.y",
+            "Except",
+        ),
+    ] {
+        let query = parse(sql).unwrap_or_else(|e| panic!("Failed to parse {sql}: {e:?}"));
+        assert_eq!(query.set_operations.len(), 1, "{sql}");
+        let op_name = format!("{:?}", query.set_operations[0].op);
+        assert_eq!(op_name, expected, "{sql}");
+    }
+}
+
+#[test]
+fn test_set_operation_chain_is_flat_and_left_to_right() {
+    // `a EXCEPT b EXCEPT c` must be one flat chain — nesting it to the right
+    // would mean `a EXCEPT (b EXCEPT c)`.
+    let query =
+        parse("FOR a IN c1 RETURN a.x EXCEPT FOR b IN c2 RETURN b.x EXCEPT FOR c IN c3 RETURN c.x")
+            .unwrap();
+    assert_eq!(query.set_operations.len(), 2);
+    assert!(query.set_operations[0].query.set_operations.is_empty());
+}
+
+#[test]
+fn test_intersect_binds_tighter_than_union() {
+    // `a UNION b INTERSECT c` groups as `a UNION (b INTERSECT c)`
+    let query = parse(
+        "FOR a IN c1 RETURN a.x UNION FOR b IN c2 RETURN b.x INTERSECT FOR c IN c3 RETURN c.x",
+    )
+    .unwrap();
+    assert_eq!(query.set_operations.len(), 1);
+    assert!(matches!(query.set_operations[0].op, SetOperator::Union));
+    let nested = &query.set_operations[0].query.set_operations;
+    assert_eq!(nested.len(), 1);
+    assert!(matches!(nested[0].op, SetOperator::Intersect));
+}
+
+#[test]
+fn test_parenthesized_left_operand() {
+    // Explicit grouping on the left: `(a UNION b) INTERSECT c` intersects the
+    // union, so the chain stays flat instead of nesting under `b`.
+    let query = parse(
+        "(FOR a IN c1 RETURN a.x UNION FOR b IN c2 RETURN b.x)          INTERSECT FOR c IN c3 RETURN c.x",
+    )
+    .unwrap();
+    assert_eq!(query.set_operations.len(), 2);
+    assert!(matches!(query.set_operations[0].op, SetOperator::Union));
+    assert!(matches!(query.set_operations[1].op, SetOperator::Intersect));
+    assert!(query.set_operations[0].query.set_operations.is_empty());
+}
+
+#[test]
+fn test_offset_without_limit_has_no_count() {
+    // A standalone OFFSET must not invent a count: the count is pushed into
+    // storage scans as an allocation size.
+    let query = parse("FOR d IN coll OFFSET 5 RETURN d").unwrap();
+    let limit = query.limit_clause.expect("OFFSET produces a limit clause");
+    assert!(limit.count.is_none());
+
+    let query = parse("FOR d IN coll LIMIT 10 OFFSET 5 RETURN d").unwrap();
+    let limit = query.limit_clause.expect("limit clause");
+    assert_eq!(
+        limit.count,
+        Some(Expression::Literal(serde_json::json!(10)))
+    );
+    assert_eq!(limit.offset, Expression::Literal(serde_json::json!(5)));
+}
+
+#[test]
+fn test_has_mutations_sees_nested_blocks() {
+    // The HTTP handler decides caching, transaction handling and write
+    // permission from this: a mutation hidden in an operand or a CTE body must
+    // not read as a read-only query.
+    let query =
+        parse("FOR a IN c1 RETURN a.x UNION FOR d IN c2 REMOVE d IN c2 RETURN d._key").unwrap();
+    assert!(query.has_mutations());
+
+    let query =
+        parse("WITH gone AS (FOR d IN c2 REMOVE d IN c2 RETURN d._key) FOR x IN gone RETURN x")
+            .unwrap();
+    assert!(query.has_mutations());
+
+    let query = parse("FOR a IN c1 RETURN a.x UNION FOR b IN c2 RETURN b.x").unwrap();
+    assert!(!query.has_mutations());
+}
+
+#[test]
+fn test_set_operations_parenthesized_operand() {
+    let query =
+        parse("FOR a IN c1 RETURN a.x UNION (FOR b IN c2 FILTER b.z > 1 RETURN b.y)").unwrap();
+    assert_eq!(query.set_operations.len(), 1);
+    assert!(matches!(query.set_operations[0].op, SetOperator::Union));
+}
+
+#[test]
+fn test_collect_keep() {
+    let query = parse(
+        "FOR u IN users COLLECT city = u.city INTO groups KEEP name, age SORT city RETURN city",
+    )
+    .unwrap();
+    let collect = query
+        .body_clauses
+        .iter()
+        .find_map(|c| match c {
+            BodyClause::Collect(cc) => Some(cc.clone()),
+            _ => None,
+        })
+        .expect("COLLECT clause");
+    assert_eq!(collect.keep_vars, vec!["name", "age"]);
+}
+
+#[test]
 fn test_parse_collect_with_aggregate_count() {
     let query =
         parse("FOR u IN users COLLECT city = u.city AGGREGATE count = COUNT() RETURN count");

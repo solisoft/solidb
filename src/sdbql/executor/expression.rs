@@ -898,6 +898,22 @@ impl<'a> QueryExecutor<'a> {
                 }
                 Ok(Value::Bool(false))
             }
+            "NONE" => {
+                for item in arr {
+                    let mut lambda_ctx = ctx.clone();
+                    if let Some(param) = params.first() {
+                        lambda_ctx.insert(param.clone(), item.clone());
+                    }
+                    if self
+                        .evaluate_expr_with_context(&body, &lambda_ctx)
+                        .map(|v| to_bool(&v))
+                        .unwrap_or(false)
+                    {
+                        return Ok(Value::Bool(false));
+                    }
+                }
+                Ok(Value::Bool(true))
+            }
             "REDUCE" => {
                 // REDUCE needs initial value - find non-lambda arg in original_args
                 let initial = original_args

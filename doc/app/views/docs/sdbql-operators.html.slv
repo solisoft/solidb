@@ -354,7 +354,10 @@ SATISFIES tag != "deprecated"</code></pre>
                   <span class="text-xs text-gray-400">No matches</span>
                 </div>
                 <pre><code class="language-sql text-xs">FILTER NONE user IN doc.admins
-SATISFIES user.status == "inactive"</code></pre>
+SATISFIES user.status == "inactive"
+
+-- Function form
+RETURN NONE(doc.admins, u -> u.status == "inactive")</code></pre>
                 <div class="mt-3 text-xs text-gray-400">
                   True if <strong>zero</strong> elements satisfy the condition.
                 </div>

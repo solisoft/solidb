@@ -20,6 +20,33 @@ pub struct WithClause {
     pub ctes: Vec<CteClause>,
 }
 
+/// Set operation combining two query blocks: `a UNION b`, `a INTERSECT c`, ...
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SetOperator {
+    /// UNION - concatenates and removes duplicates
+    Union,
+    /// UNION ALL - concatenates keeping duplicates
+    UnionAll,
+    /// INTERSECT - rows present in both sides, duplicates removed
+    Intersect,
+    /// EXCEPT - rows of the left side not present in the right side, duplicates removed
+    Except,
+}
+
+/// One operand on the right-hand side of a set operation
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetOperationClause {
+    pub op: SetOperator,
+    pub query: Box<Query>,
+}
+
+impl SetOperator {
+    /// True for the `ALL` variants, which keep duplicate rows
+    pub fn is_all(&self) -> bool {
+        matches!(self, SetOperator::UnionAll)
+    }
+}
+
 /// AST node for a complete SDBQL query
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Query {
@@ -49,6 +76,11 @@ pub struct Query {
     /// Ordered body clauses (FOR, LET, FILTER) preserving declaration order
     /// This enables correlated subqueries where LET can reference outer FOR variables
     pub body_clauses: Vec<BodyClause>,
+
+    /// Set operations applied after this query block: `q1 UNION q2 INTERSECT q3`
+    /// is parsed as `q1` with `set_operations = [UNION q2, INTERSECT q3]`.
+    #[serde(default)]
+    pub set_operations: Vec<SetOperationClause>,
 }
 
 impl Query {
@@ -67,6 +99,14 @@ impl Query {
         }) || self.create_stream_clause.is_some()
             || self.create_materialized_view_clause.is_some()
             || self.refresh_materialized_view_clause.is_some()
+            || self
+                .set_operations
+                .iter()
+                .any(|op| op.query.has_mutations())
+            || self
+                .with_clause
+                .as_ref()
+                .is_some_and(|with| with.ctes.iter().any(|cte| cte.query.has_mutations()))
     }
 }
 
@@ -323,13 +363,17 @@ pub struct JoinClause {
     pub asof: Option<AsofSpec>,
 }
 
-/// COLLECT var = expr [INTO group] [WITH COUNT INTO count] [AGGREGATE ...]
+/// COLLECT var = expr [INTO group [KEEP var1, var2]] [WITH COUNT INTO count] [AGGREGATE ...]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CollectClause {
     /// Group variables: (variable_name, expression) pairs
     pub group_vars: Vec<(String, Expression)>,
     /// INTO variable (collects grouped documents into an array)
     pub into_var: Option<String>,
+    /// Optional KEEP restriction on the variables stored in the INTO array.
+    /// Empty = keep every variable currently in scope (default).
+    #[serde(default)]
+    pub keep_vars: Vec<String>,
     /// WITH COUNT INTO variable
     pub count_var: Option<String>,
     /// AGGREGATE expressions
@@ -354,17 +398,23 @@ pub struct SortClause {
     pub fields: Vec<(Expression, bool)>, // (expression, ascending)
 }
 
-/// LIMIT [offset,] count
+/// LIMIT [offset,] count -- or a standalone OFFSET, which has no count
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LimitClause {
     pub offset: Expression,
-    pub count: Expression,
+    /// Row count. `None` means "no upper bound" (`OFFSET n` without `LIMIT`):
+    /// callers must not substitute a sentinel maximum, because the count is
+    /// pushed down into storage scans and index lookups as an allocation hint.
+    pub count: Option<Expression>,
 }
 
-/// RETURN expression
+/// RETURN [DISTINCT] expression
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReturnClause {
     pub expression: Expression,
+    /// RETURN DISTINCT - remove duplicate result rows (first occurrence wins)
+    #[serde(default)]
+    pub distinct: bool,
 }
 
 /// Part of a template string (used in AST after parsing)
@@ -626,11 +676,18 @@ mod tests {
     fn test_limit_clause() {
         let clause = LimitClause {
             offset: Expression::Literal(json!(0)),
-            count: Expression::Literal(json!(10)),
+            count: Some(Expression::Literal(json!(10))),
         };
 
         assert_eq!(clause.offset, Expression::Literal(json!(0)));
-        assert_eq!(clause.count, Expression::Literal(json!(10)));
+        assert_eq!(clause.count, Some(Expression::Literal(json!(10))));
+
+        // A standalone OFFSET has no count at all
+        let unbounded = LimitClause {
+            offset: Expression::Literal(json!(5)),
+            count: None,
+        };
+        assert!(unbounded.count.is_none());
     }
 
     #[test]
@@ -711,6 +768,7 @@ mod tests {
             refresh_materialized_view_clause: None,
             window_clause: None,
             body_clauses: vec![],
+            set_operations: vec![],
         };
 
         assert!(query.for_clauses.is_empty());
@@ -728,6 +786,7 @@ mod tests {
                 ),
             )],
             into_var: Some("items".to_string()),
+            keep_vars: vec![],
             count_var: Some("cnt".to_string()),
             aggregates: vec![],
         };

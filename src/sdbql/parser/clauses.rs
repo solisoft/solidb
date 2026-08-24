@@ -442,6 +442,7 @@ impl Parser {
 
         let mut group_vars = Vec::new();
         let mut into_var = None;
+        let mut keep_vars = Vec::new();
         let mut count_var = None;
         let mut aggregates = Vec::new();
 
@@ -481,7 +482,7 @@ impl Parser {
             }
         }
 
-        // Parse optional INTO var
+        // Parse optional INTO var [KEEP var1, var2, ...]
         if matches!(self.current_token(), Token::Into) {
             self.advance(); // consume INTO
             if let Token::Identifier(var_name) = self.current_token() {
@@ -491,6 +492,27 @@ impl Parser {
                 return Err(DbError::ParseError(
                     "Expected variable name after INTO".to_string(),
                 ));
+            }
+
+            // Optional KEEP restriction: only listed variables are stored in
+            // the group arrays. Must come before WITH COUNT / AGGREGATE.
+            if self.ident_eq("KEEP") {
+                self.advance();
+                loop {
+                    if let Token::Identifier(var_name) = self.current_token() {
+                        keep_vars.push(var_name.clone());
+                        self.advance();
+                    } else {
+                        return Err(DbError::ParseError(
+                            "Expected variable name after KEEP".to_string(),
+                        ));
+                    }
+                    if matches!(self.current_token(), Token::Comma) {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
             }
         }
 
@@ -582,15 +604,28 @@ impl Parser {
         Ok(CollectClause {
             group_vars,
             into_var,
+            keep_vars,
             count_var,
             aggregates,
         })
     }
 
-    /// Parse WITH clause for CTEs: WITH cte_name [(col1, col2, ...)] AS (query) [, cte_name AS (query)]*
-    /// Example: WITH temp AS (SELECT 1), temp2 AS (SELECT 2) SELECT * FROM temp
+    /// Parse WITH clause for CTEs:
+    /// `WITH [RECURSIVE] cte_name [(col1, col2, ...)] AS (query) [, cte_name AS (query)]*`
+    ///
+    /// When RECURSIVE is present it applies to every CTE in the list (standard SQL
+    /// semantics). A recursive CTE body must be `anchor UNION ALL step` where the
+    /// step query references the CTE name to see the rows produced by the previous
+    /// iteration.
     pub(crate) fn parse_with_clause(&mut self) -> DbResult<WithClause> {
         self.expect(Token::With)?;
+
+        let recursive = if matches!(self.current_token(), Token::Recursive) {
+            self.advance();
+            true
+        } else {
+            false
+        };
 
         let mut ctes = Vec::new();
 
@@ -638,7 +673,7 @@ impl Parser {
             ctes.push(CteClause {
                 name: cte_name,
                 columns,
-                recursive: false, // RECURSIVE is parsed at the WITH level, not per-CTE
+                recursive,
                 query: Box::new(cte_query),
             });
 
@@ -1090,19 +1125,31 @@ impl Parser {
 
             Ok(LimitClause {
                 offset: first,
-                count,
+                count: Some(count),
             })
         } else {
             Ok(LimitClause {
                 offset: Expression::Literal(Value::Number(serde_json::Number::from(0))),
-                count: first,
+                count: Some(first),
             })
         }
     }
 
     pub(crate) fn parse_return_clause(&mut self) -> DbResult<ReturnClause> {
         self.expect(Token::Return)?;
+
+        // Optional DISTINCT: RETURN DISTINCT expr
+        let distinct = if self.ident_eq("DISTINCT") {
+            self.advance();
+            true
+        } else {
+            false
+        };
+
         let expression = self.parse_expression()?;
-        Ok(ReturnClause { expression })
+        Ok(ReturnClause {
+            expression,
+            distinct,
+        })
     }
 }

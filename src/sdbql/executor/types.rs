@@ -112,7 +112,8 @@ pub struct SortInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LimitInfo {
     pub offset: usize,
-    pub count: usize,
+    /// Row count, or `null` for a standalone `OFFSET` (no upper bound)
+    pub count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
