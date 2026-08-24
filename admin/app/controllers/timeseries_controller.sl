@@ -544,9 +544,9 @@ class TimeseriesController < Controller
     end
     custom = (params["older_than"] ?? "").trim()
     return "" if custom.blank?
-    parsed = DateTime.parse(custom) rescue nil
-    return "" if parsed.nil?
-    return parsed.to_iso()
+    # Convert inside the rescue: a parsed DateTime has no `nil?` property, so
+    # inspecting the result that way blows up on every valid cutoff.
+    return DateTime.parse(custom).to_iso() rescue ""
   end
 
   # JSON error with a real HTTP status (render_json always answers 200).

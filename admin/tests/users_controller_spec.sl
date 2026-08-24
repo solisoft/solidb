@@ -17,7 +17,9 @@ describe("UsersController") do
 
   describe("user lifecycle") do
     test("create, grant role, revoke role, delete") do
-      response = post("/users", { "username": "admin_spec_user", "password": "secret123", "initial_role": "viewer" })
+      # 12 chars minimum, enforced by the server since the security hardening
+      response = post("/users", { "username": "admin_spec_user",
+                                  "password": "spec-secret-123", "initial_role": "viewer" })
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "user admin_spec_user created")
 
