@@ -1,0 +1,130 @@
+name: Fuzz
+
+# The cargo-fuzz targets in fuzz/ cover the surfaces that take
+# attacker-controlled bytes: the SDBQL lexer and parser, the driver's
+# MessagePack command decoder, and the JSONL lines solidb-restore reads.
+# They are not part of `ci.yml` for two reasons: cargo-fuzz needs a nightly
+# toolchain (CI otherwise pins stable plus an MSRV job), and `fuzz` is
+# `exclude`d from the workspace in Cargo.toml, so neither `cargo test` nor
+# `cargo clippy` at the root ever compiles it. Without this workflow the
+# targets only ever ran when someone typed the command by hand.
+on:
+  schedule:
+    # Nightly, off the hour so it does not queue behind the top-of-hour rush.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: Seconds to fuzz each target
+        default: '300'
+        required: false
+  pull_request:
+    # Only when the fuzz crate itself changes. A cold sanitizer build of the
+    # solidb lib is far too slow to put in front of every PR, but a PR that
+    # edits a target is exactly when one is most likely to stop compiling.
+    paths:
+      - 'fuzz/**'
+      - '.github/workflows/fuzz.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # A PR run is a smoke test: does the target still build and execute. The
+  # real budget belongs to the nightly cron. `inputs.duration` is null on
+  # anything but workflow_dispatch, so it falls through to the default.
+  FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '30' || github.event.inputs.duration || '300' }}
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    # A cold ASan build of the lib dominates; the fuzzing itself is bounded by
+    # FUZZ_SECONDS. Generous enough that a raised duration still fits.
+    timeout-minutes: 90
+    strategy:
+      # One target crashing must not cancel the others — each covers a
+      # different parser, and we want every crash in the same run.
+      fail-fast: false
+      matrix:
+        target:
+          - sdbql_lex
+          - sdbql_parse
+          - driver_command_decode
+          - restore_jsonl_line
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config
+
+      # cargo-fuzz builds with -Zsanitizer=address, which is nightly-only.
+      - name: Install Rust (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+
+      # Registry and git checkouts only — deliberately not fuzz/target/. A
+      # sanitizer build of the lib is multiple GB, and four matrix jobs saving
+      # one each would churn through the repo's 10 GB cache budget and evict
+      # the `test` job's cache from ci.yml. This job is a nightly with no
+      # wall-clock pressure, so it pays for a cold build instead.
+      - name: Cargo registry cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/
+            ~/.cargo/git/
+          key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('fuzz/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-fuzz-
+
+      # Corpus persistence is what makes a nightly run cumulative rather than
+      # 300 seconds of rediscovering the same shallow inputs. The run id in the
+      # key forces a fresh entry every night; restore-keys pick up the newest
+      # previous one, so the corpus grows across runs.
+      - name: Corpus cache
+        uses: actions/cache@v5
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
+      # Not cached: ~/.cargo/bin also holds the rustup shims, and restoring it
+      # wholesale shadows the toolchain the step above just installed. Two
+      # minutes of compile on a nightly job is not worth that failure mode.
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Fuzz ${{ matrix.target }}
+        # -timeout: report a single slow input as a hang instead of letting it
+        #   silently eat the whole budget.
+        # -rss_limit_mb: above libFuzzer's 2048 default, which ASan's shadow
+        #   memory overhead can trip on legitimate inputs.
+        # $FUZZ_SECONDS is quoted so a dispatch input stays one argv token.
+        run: |
+          cargo fuzz run ${{ matrix.target }} -- \
+            "-max_total_time=$FUZZ_SECONDS" \
+            -timeout=30 \
+            -rss_limit_mb=4096 \
+            -print_final_stats=1
+
+      # The reproducer is the whole point of a red run: without the input bytes
+      # the log only says which target died.
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore

@@ -27,6 +27,26 @@ cargo fmt -- --check           # Check formatting
 cargo clippy -- -D warnings    # Lint checks
 ```
 
+## Fuzzing
+
+`fuzz/` holds four cargo-fuzz targets covering the surfaces that parse
+attacker-controlled bytes: `sdbql_lex`, `sdbql_parse`, `driver_command_decode`,
+`restore_jsonl_line`.
+
+```bash
+cargo +nightly fuzz run sdbql_parse -- -max_total_time=60
+cargo +nightly fuzz run sdbql_parse fuzz/artifacts/sdbql_parse/crash-<hash>   # reproduce
+```
+
+The crate is `exclude`d from the workspace in `Cargo.toml`, so `cargo test` and
+`cargo clippy` at the root never build it — a renamed `pub fn` in `src/sdbql/`
+or `src/driver/protocol/` breaks the targets silently. The `Fuzz` workflow
+(`.github/workflows/fuzz.yml`) is what catches that: nightly cron on a nightly
+toolchain, one matrix job per target, corpus cached between runs, crash
+reproducers uploaded as artifacts. It also runs on PRs that touch `fuzz/**`,
+and on manual dispatch with a duration input. It is a separate workflow from
+`ci.yml` and does not gate releases.
+
 ## Releasing
 
 When bumping the version, update all three of these in the same commit:
