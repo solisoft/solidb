@@ -5,6 +5,60 @@
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
+/// jemalloc tuning, read by the allocator during its own initialization —
+/// before `main`, which is why this is a link-time symbol and not a runtime
+/// mallctl call. tikv-jemalloc-sys exports `malloc_conf` under its `_rjem_`
+/// prefix and leaves it weak, so this strong definition wins at link time.
+///
+/// `background_thread` is off by default, and without it an arena only purges
+/// its dirty pages while some thread keeps allocating *in that arena*. Under a
+/// burst of concurrent queries every Tokio worker grows its own arena; when the
+/// burst ends those threads go idle and their freed pages stay resident
+/// forever. Measured on a dev box with 89 databases: a 3200-query burst at 32×
+/// concurrency took RSS from 662 MB to 1296 MB and was still at 954 MB five
+/// minutes later. With a background purger and a 2s decay the same burst came
+/// back to 625 MB, and the idle baseline dropped ~18%.
+#[cfg(not(target_env = "msvc"))]
+#[allow(non_upper_case_globals)]
+#[export_name = "_rjem_malloc_conf"]
+pub static malloc_conf: &[u8; 63] =
+    b"background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000\0";
+
+/// Report the allocator options jemalloc actually started with.
+///
+/// The tuning above is applied through a link-time symbol, so a rename in
+/// tikv-jemalloc-sys (or a build that drops the prefix) would make it a no-op
+/// with nothing to show for it. Reading the values back turns that from
+/// invisible into a warning in the log.
+#[cfg(not(target_env = "msvc"))]
+fn log_allocator_tuning() {
+    use tikv_jemalloc_ctl::{opt, raw};
+
+    let background = opt::background_thread::read().unwrap_or(false);
+    // Decay intervals have no typed accessor in tikv-jemalloc-ctl; read the
+    // mallctl directly. Both are `ssize_t` (-1 means "never decay").
+    let dirty_ms = unsafe { raw::read::<isize>(b"opt.dirty_decay_ms\0") }.unwrap_or(-1);
+    let muzzy_ms = unsafe { raw::read::<isize>(b"opt.muzzy_decay_ms\0") }.unwrap_or(-1);
+
+    if background {
+        tracing::info!(
+            "jemalloc: background_thread=true, dirty_decay_ms={}, muzzy_decay_ms={}",
+            dirty_ms,
+            muzzy_ms
+        );
+    } else {
+        tracing::warn!(
+            "jemalloc: background_thread is OFF (dirty_decay_ms={}) — pages freed by \
+             threads that then go idle will stay resident. The `_rjem_malloc_conf` \
+             symbol in main.rs is not reaching the allocator.",
+            dirty_ms
+        );
+    }
+}
+
+#[cfg(target_env = "msvc")]
+fn log_allocator_tuning() {}
+
 use clap::{Parser, Subcommand};
 use solidb::server::multiplex::{ChannelListener, PeekedStream};
 use solidb::{cluster::ClusterConfig, create_router, scripting::ScriptStats, StorageEngine};
@@ -328,6 +382,8 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
              unauthenticated connections. Set --keyfile before adding peers."
         );
     }
+
+    log_allocator_tuning();
 
     // Select the RocksDB memory/tuning profile BEFORE constructing the engine
     // (the shared block cache and CF options are built lazily on first use).
