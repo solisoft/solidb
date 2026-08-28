@@ -1120,6 +1120,14 @@ impl Collection {
         self.doc_count.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Count blob chunks in the collection (0 for non-blob collections).
+    ///
+    /// Like [`Self::count`] this is a cached atomic, not a scan — cheap enough
+    /// for background sweeps to poll on every pass.
+    pub fn chunk_count(&self) -> usize {
+        self.chunk_count.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Recount documents from actual RocksDB data (slow but accurate)
     pub fn recount_documents(&self) -> usize {
         if let Some(cf) = self.db.cf_handle(&self.name) {

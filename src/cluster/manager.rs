@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::{error, info};
 
@@ -5,7 +6,22 @@ use super::health::HealthMonitor;
 use super::node::Node;
 use super::state::{ClusterState, NodeStatus};
 use super::stats::NodeBasicStats;
+use super::stats_gate::StatsGate;
 use super::transport::{ClusterMessage, Transport};
+
+/// How long a collection whose counters never move may go without a fresh
+/// RocksDB reading in the heartbeat totals.
+const HEARTBEAT_FULL_REFRESH: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// The per-collection figures the heartbeat totals, cached between sweeps.
+#[derive(Clone, Copy, Default)]
+struct CollectionUsage {
+    chunk_count: u64,
+    file_count: u64,
+    sst_size: u64,
+    memtable_size: u64,
+    live_size: u64,
+}
 
 pub struct ClusterManager {
     local_node: Node,
@@ -149,32 +165,86 @@ impl ClusterManager {
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+            // Per-collection gate so a heartbeat only re-reads RocksDB for
+            // collections that actually moved. See `stats_gate`.
+            let gate: StatsGate<CollectionUsage> = StatsGate::new(HEARTBEAT_FULL_REFRESH);
+
             loop {
                 interval.tick().await;
 
-                // 1. Collect Local Stats
+                // 1. Peers first. These stats exist only to be sent to peers,
+                //    and gathering them walks every collection in the
+                //    instance. A standalone node has nobody to tell, so it
+                //    must not pay for them.
+                let peers: Vec<_> = state
+                    .active_nodes()
+                    .into_iter()
+                    .filter(|peer| peer.id != local_node_id)
+                    .collect();
+                if peers.is_empty() {
+                    continue;
+                }
+
+                // 2. Collect Local Stats
                 let stats = if let Some(storage) = &storage_opt {
-                    let databases = storage.list_databases();
                     let mut total_chunk_count = 0;
                     let mut total_file_count = 0;
                     let mut storage_bytes = 0;
                     let mut total_memtable_size = 0;
                     let mut total_live_size = 0;
+                    let mut live: HashSet<String> = HashSet::new();
 
-                    for db_name in databases {
-                        if let Ok(db) = storage.get_database(&db_name) {
-                            for coll_name in db.list_collections() {
-                                if let Ok(coll) = db.system_collection(&coll_name) {
-                                    let s = coll.stats();
-                                    total_chunk_count += s.chunk_count as u64;
-                                    total_file_count += s.disk_usage.num_sst_files;
-                                    storage_bytes += s.disk_usage.sst_files_size;
-                                    total_memtable_size += s.disk_usage.memtable_size;
-                                    total_live_size += s.disk_usage.live_data_size;
-                                }
-                            }
+                    // One pass over the CF list, not one per database. Driven
+                    // from the registry so column families left behind by an
+                    // interrupted database drop are not read as databases.
+                    let grouped = storage.collections_grouped();
+                    for db_name in storage.list_databases() {
+                        let Ok(db) = storage.get_database(&db_name) else {
+                            continue;
+                        };
+                        let Some(coll_names) = grouped.get(&db_name) else {
+                            continue;
+                        };
+                        for coll_name in coll_names {
+                            let Ok(coll) = db.system_collection(coll_name) else {
+                                continue;
+                            };
+
+                            let key = format!("{}:{}", db_name, coll_name);
+                            let counts = (coll.count(), coll.chunk_count());
+                            live.insert(key.clone());
+
+                            // `stats()` is 10 RocksDB property lookups; across
+                            // a few thousand collections every 5s that is the
+                            // bulk of an idle node's CPU. Reuse the last
+                            // reading while the collection is unchanged —
+                            // sizes that drift without a count change (a
+                            // compaction, a memtable flush) are picked up by
+                            // the periodic refresh.
+                            let usage = if gate.needs_refresh(&key, counts) {
+                                let s = coll.stats();
+                                let usage = CollectionUsage {
+                                    chunk_count: s.chunk_count as u64,
+                                    file_count: s.disk_usage.num_sst_files,
+                                    sst_size: s.disk_usage.sst_files_size,
+                                    memtable_size: s.disk_usage.memtable_size,
+                                    live_size: s.disk_usage.live_data_size,
+                                };
+                                gate.record(&key, counts, usage);
+                                usage
+                            } else {
+                                gate.cached(&key).unwrap_or_default()
+                            };
+
+                            total_chunk_count += usage.chunk_count;
+                            total_file_count += usage.file_count;
+                            storage_bytes += usage.sst_size;
+                            total_memtable_size += usage.memtable_size;
+                            total_live_size += usage.live_size;
                         }
                     }
+
+                    gate.retain(&live);
 
                     Some(NodeBasicStats {
                         total_chunk_count,
@@ -189,8 +259,6 @@ impl ClusterManager {
                     None
                 };
 
-                // 2. Get peers to send to
-                let peers = state.active_nodes();
                 let current_seq = if let Some(log) = &replication_log {
                     log.current_sequence()
                 } else {
@@ -199,10 +267,6 @@ impl ClusterManager {
 
                 // 3. Send Heartbeat
                 for peer in peers {
-                    if peer.id == local_node_id {
-                        continue;
-                    }
-
                     let msg = ClusterMessage::Heartbeat {
                         from: local_node_id.clone(),
                         sequence: current_seq,

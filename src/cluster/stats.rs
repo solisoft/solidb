@@ -1,7 +1,11 @@
 use crate::cluster::manager::ClusterManager;
+use crate::cluster::stats_gate::StatsGate;
 use crate::sharding::ShardCoordinator;
 use crate::storage::engine::StorageEngine;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
 use tracing::error;
@@ -39,10 +43,19 @@ pub struct CollectionStats {
     pub actions: Vec<String>, // "Rebalancing", etc.
 }
 
+/// How long a collection whose counters never move may go without having its
+/// `_cluster_informations` document recomputed. Bounds the staleness of the
+/// figures the gate cannot see changing (on-disk size after a compaction,
+/// in-place document updates).
+const FULL_REFRESH: Duration = Duration::from_secs(300);
+
 pub struct ClusterStatsCollector {
     storage: Arc<StorageEngine>,
     coordinator: Arc<ShardCoordinator>,
     // manager: Arc<ClusterManager>, // Unused for now but might need node status
+    /// Per-collection gate holding a hash of the last document written, so an
+    /// unchanged collection costs neither the stats gathering nor the write.
+    gate: StatsGate<u64>,
 }
 
 impl ClusterStatsCollector {
@@ -54,6 +67,7 @@ impl ClusterStatsCollector {
         Self {
             storage,
             coordinator,
+            gate: StatsGate::new(FULL_REFRESH),
         }
     }
 
@@ -68,31 +82,67 @@ impl ClusterStatsCollector {
     }
 
     async fn collect_and_store(&self) -> anyhow::Result<()> {
-        // 1. List all databases
-        let databases = self.storage.list_databases();
+        // One pass over the column families instead of one per database: with
+        // 89 databases over 1718 collections, per-database listing walked the
+        // full CF list 89 times and cloned every name each time.
+        let grouped = self.storage.collections_grouped();
 
-        for db_name in databases {
-            // databases is Vec<String> so db_name is String
-            let db = self.storage.get_database(&db_name)?;
-            // list_collections returns Vec<String> (names) or Vec<Collection>?
-            // Checking storage interface. list_collections returns Vec<String> usually or Structs?
-            // "the ? operator cannot be applied to type Vec<String>" -> implies it returns Vec<String> directly
-            let collections = db.list_collections();
+        // Resolve the destination once per cycle rather than once per
+        // collection.
+        let sys_db = self.storage.get_database("_system")?;
+        if sys_db.get_collection("_cluster_informations").is_err() {
+            sys_db.create_collection("_cluster_informations".to_string(), None)?;
+        }
+        let sys_coll = sys_db.get_collection("_cluster_informations")?;
 
-            for coll_name in collections {
+        let mut live: HashSet<String> = HashSet::new();
+
+        // Drive from the database registry, not from the grouped column
+        // families: a CF can outlive its database entry (an interrupted drop
+        // leaves `<db>:<coll>` behind with no `db:` key), and such a name must
+        // not be mistaken for a live database.
+        for db_name in self.storage.list_databases() {
+            let Ok(db) = self.storage.get_database(&db_name) else {
+                continue;
+            };
+            let Some(coll_names) = grouped.get(&db_name) else {
+                continue;
+            };
+
+            for coll_name in coll_names {
                 // Hide physical shard collections (they end with _sN where N is a number)
                 // These are summarized within their logical collection
-                if is_physical_shard_collection(&coll_name) {
+                if is_physical_shard_collection(coll_name) {
+                    continue;
+                }
+
+                // Deterministic ID: "db_coll"
+                let doc_id = format!("{}_{}", db_name, coll_name);
+                live.insert(doc_id.clone());
+
+                let Ok(coll) = db.system_collection(coll_name) else {
+                    continue;
+                };
+
+                // A sharded collection keeps its documents in the physical
+                // shard CFs (skipped above) or on other nodes, so the logical
+                // collection's local counters never move and cannot gate it.
+                let sharded = coll
+                    .get_shard_config()
+                    .map(|c| c.num_shards > 0)
+                    .unwrap_or(false);
+                let counts = (coll.count(), coll.chunk_count());
+                if !sharded && !self.gate.needs_refresh(&doc_id, counts) {
                     continue;
                 }
 
                 // Get Sharding Info from Coordinator
-                let shard_table = self.coordinator.get_shard_table(&db_name, &coll_name);
+                let shard_table = self.coordinator.get_shard_table(&db_name, coll_name);
 
                 // Get Cluster-wide stats
                 let (document_count, chunk_count, storage_bytes) = self
                     .coordinator
-                    .get_total_stats(&db_name, &coll_name, None)
+                    .get_total_stats(&db_name, coll_name, None)
                     .await
                     .unwrap_or((0, 0, 0));
 
@@ -142,45 +192,44 @@ impl ClusterStatsCollector {
                     actions: vec![],
                 };
 
-                // Store in _system/_cluster_informations
-                // We use a generated ID or deterministic ID?
-                // Deterministic ID: "db_coll"
-                let doc_id = format!("{}_{}", db_name, coll_name);
                 let json = serde_json::to_value(&stats)?;
 
-                // We need to write to _system database
-                let sys_db = self.storage.get_database("_system")?;
-                // Ensure collection exists
-                if sys_db.get_collection("_cluster_informations").is_err() {
-                    sys_db.create_collection("_cluster_informations".to_string(), None)?;
+                // Recomputing is cheap; the write is not. A periodic refresh
+                // that lands on identical figures must not touch RocksDB.
+                let digest = digest_of(&json);
+                if self.gate.cached(&doc_id) != Some(digest) {
+                    // Store in _system/_cluster_informations. There is no
+                    // replace, so delete first when the document exists.
+                    if sys_coll.get(&doc_id).is_ok() {
+                        sys_coll.delete(&doc_id)?;
+                    }
+
+                    // Add _key to json
+                    let mut doc = json.as_object().unwrap().clone();
+                    doc.insert(
+                        "_key".to_string(),
+                        serde_json::Value::String(doc_id.clone()),
+                    );
+
+                    sys_coll.insert(serde_json::Value::Object(doc))?;
                 }
-                let sys_coll = sys_db.get_collection("_cluster_informations")?;
 
-                // We need an upsert.
-                // Insert with overwrite? Or Delete then Insert?
-                // StorageEngine usually supports update or we check existence.
-                // Assuming `upsert` or `insert` handles it.
-                // If we use `insert`, it might fail if exists.
-                // Let's rely on `insert` (if it overwrites?) or `replace`?
-                // `solidb` storage might not have `replace`.
-                // We'll delete and insert for now.
-                if sys_coll.get(&doc_id).is_ok() {
-                    sys_coll.delete(&doc_id)?;
-                }
-
-                // Add _key to json
-                let mut doc = json.as_object().unwrap().clone();
-                doc.insert(
-                    "_key".to_string(),
-                    serde_json::Value::String(doc_id.clone()),
-                );
-
-                sys_coll.insert(serde_json::Value::Object(doc))?;
+                self.gate.record(&doc_id, counts, digest);
             }
         }
 
+        // Drop gate entries for collections that no longer exist.
+        self.gate.retain(&live);
+
         Ok(())
     }
+}
+
+/// Hash of a stats document, used to skip writes that would not change it.
+fn digest_of(value: &serde_json::Value) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    value.to_string().hash(&mut hasher);
+    hasher.finish()
 }
 
 fn is_physical_shard_collection(name: &str) -> bool {

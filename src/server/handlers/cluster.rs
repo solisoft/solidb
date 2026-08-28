@@ -256,12 +256,18 @@ pub fn generate_cluster_status(state: &AppState, sysinfo: &SysInfo) -> ClusterSt
     let mut total_memtable_size: u64 = 0;
     let mut total_live_size: u64 = 0;
 
+    // Grouped in one pass: per-database listing rescans the whole column-family
+    // list for each database, which is O(dbs x cfs) on an endpoint the admin UI
+    // polls.
+    let grouped = state.storage.collections_grouped();
     for db_name in &databases {
         if let Ok(db) = state.storage.get_database(db_name) {
-            let coll_names = db.list_collections();
+            let Some(coll_names) = grouped.get(db_name) else {
+                continue;
+            };
             collection_count += coll_names.len();
             for coll_name in coll_names {
-                if let Ok(coll) = db.system_collection(&coll_name) {
+                if let Ok(coll) = db.system_collection(coll_name) {
                     let coll_stats = coll.stats();
                     document_count += coll_stats.document_count as u64;
                     total_file_count += coll_stats.disk_usage.num_sst_files;
