@@ -751,6 +751,47 @@ impl StorageEngine {
             .collect()
     }
 
+    /// Every database's collections, grouped, from a single pass over the
+    /// column-family list.
+    ///
+    /// [`Database::list_collections`] scans *all* column families to find the
+    /// ones carrying its prefix, so calling it once per database is O(dbs ×
+    /// cfs) — and `cf_names()` clones every name on each call. A sweep over 89
+    /// databases holding 1718 collections allocated ~153k strings per pass;
+    /// this does 1718. Callers that walk the whole instance (the cluster stats
+    /// collector, the heartbeat, the status endpoint) should use this instead.
+    ///
+    /// Column families awaiting a background drop are omitted, matching
+    /// [`Database::list_collections`].
+    ///
+    /// Keys come from the column-family names, *not* from the database
+    /// registry: a CF can outlive its `db:` entry when a drop is interrupted.
+    /// Callers enumerating databases should drive from [`Self::list_databases`]
+    /// and look the group up here.
+    pub fn collections_grouped(&self) -> HashMap<String, Vec<String>> {
+        let mut grouped: HashMap<String, Vec<String>> = HashMap::new();
+
+        for cf_name in self.db.cf_names() {
+            if cf_name == "default" || cf_name == META_CF {
+                continue;
+            }
+            if self.pending_cf_drops.contains(&cf_name) {
+                continue;
+            }
+            // Collection CFs are named "<database>:<collection>"; anything
+            // without the separator is not one.
+            let Some((db_name, coll_name)) = cf_name.split_once(':') else {
+                continue;
+            };
+            grouped
+                .entry(db_name.to_string())
+                .or_default()
+                .push(coll_name.to_string());
+        }
+
+        grouped
+    }
+
     /// Save a collection - no-op with RocksDB (auto-persisted)
     pub fn save_collection(&self, _name: &str) -> DbResult<()> {
         // RocksDB automatically persists data, nothing to do

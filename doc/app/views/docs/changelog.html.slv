@@ -13,7 +13,13 @@
   <section id="unreleased" class="mb-16 scroll-mt-24">
     <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
-      <p class="text-gray-400 text-sm leading-relaxed">No unreleased changes yet.</p>
+      <p class="text-gray-300 text-sm leading-relaxed mb-4">
+        Memory and idle CPU on instances holding many collections. A dev box with 89 databases over 1718 collections sat at 2.7&ndash;3.8&nbsp;GB of RSS and burned 40% of a core writing 175&nbsp;KB/s of WAL <em>with no client traffic at all</em>. RocksDB was never the cause &mdash; it accounted for ~135&nbsp;MB of that. The two changes below take the same instance, on the same data, to 576&nbsp;MB and 1.8% of a core.
+      </p>
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Freed memory goes back to the OS</strong> &mdash; jemalloc was linked but never configured, and its <code class="text-cyan-400">background_thread</code> defaults to off. Without it an arena only purges its dirty pages while some thread keeps allocating <em>in that arena</em>, so every Tokio worker that handled a burst of concurrent queries grew an arena and then went idle holding it. Measured: 3200 queries at 32&times; concurrency took RSS from 662&nbsp;MB to 1296&nbsp;MB and it was still 954&nbsp;MB five minutes later. With a background purger and a 2s decay the same burst comes back to 625&nbsp;MB, and the idle baseline drops ~18%. The settings are applied through a link-time symbol, which fails silently if it ever stops matching what the allocator looks for &mdash; so the effective values are read back and logged at startup, as a warning when the tuning did not take.</li>
+        <li><strong class="text-white">Idle collections cost nothing to monitor</strong> &mdash; the cluster stats collector and the heartbeat each walked <em>every</em> collection in <em>every</em> database every 5 seconds. The collector deleted and reinserted a document per collection (~3400 writes a cycle, ~690/s) and the heartbeat read ten RocksDB properties per collection (~17k lookups a cycle), producing results identical to the previous cycle nearly every time; together they accounted for 14&nbsp;MB/s of allocator churn on an otherwise idle server. Both now gate on the collection's cached document and blob-chunk counters &mdash; plain atomics, no I/O &mdash; and recompute only what moved, with a five-minute forced refresh so size drift from a compaction still lands. The collector additionally skips writing a document identical to the one already stored, and the heartbeat skips the walk outright on a node with no peers, since those figures are only ever sent to peers. Listing collections for a sweep is also one pass over the column families rather than one per database, which on the instance above was 153k string clones a sweep.</li>
+      </ul>
     </div>
   </section>
 

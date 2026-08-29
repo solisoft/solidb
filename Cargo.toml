@@ -204,6 +204,11 @@ solidb-client = { path = "clients/rust-client" }
 # RSS tracking the actual working set. Not used under MSVC (Windows).
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"
+# Read back the allocator's effective options at startup. The tuning in
+# `main.rs` is a link-time symbol: if the symbol name ever stops matching what
+# jemalloc looks for, it silently does nothing. Logging the values it actually
+# runs with turns that into something visible.
+tikv-jemalloc-ctl = "0.6"
 
 # aws-lc-sys (pulled in by jsonwebtoken and by reqwest's rustls provider) assembles its
 # x86_64 asm with NASM on windows-msvc, which is not on the GitHub runner image. The

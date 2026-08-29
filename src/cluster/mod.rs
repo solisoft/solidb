@@ -8,6 +8,7 @@ pub mod manager;
 pub mod node;
 pub mod state;
 pub mod stats;
+pub mod stats_gate;
 pub mod transport;
 
 pub use config::ClusterConfig;
