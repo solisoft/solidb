@@ -481,6 +481,10 @@ pub async fn repl_eval_handler(
         ));
     }
 
+    if !crate::scripting::lua_runtime_enabled() {
+        return Err(crate::scripting::lua_disabled_error());
+    }
+
     // Require admin permission on the target database
     crate::server::authorization::AuthorizationService::check_permission(
         &claims,
@@ -578,11 +582,15 @@ pub struct CreateServiceRequest {
     #[serde(default = "default_enabled")]
     pub enabled: bool,
     /// Default auth requirement for scripts in this service
-    #[serde(default)]
+    #[serde(default = "default_require_auth")]
     pub require_auth: bool,
 }
 
 fn default_enabled() -> bool {
+    true
+}
+
+fn default_require_auth() -> bool {
     true
 }
 
@@ -1012,6 +1020,10 @@ pub async fn execute_service_script_handler(
     headers: axum::http::HeaderMap,
     body: Option<Json<Value>>,
 ) -> Result<Response, DbError> {
+    if !crate::scripting::lua_runtime_enabled() {
+        return Err(crate::scripting::lua_disabled_error());
+    }
+
     // Parse /api/{db}/{service}/{path}
     let uri_path = uri.path().to_string();
     let prefix = "/api/";
@@ -1162,8 +1174,10 @@ pub async fn execute_service_script_handler(
 
     // Execute script with pooled Lua VM and bytecode cache
     let mut engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone())
-        .with_lua_pool(state.lua_pool.clone())
         .with_script_cache(state.script_cache.clone());
+    if let Some(pool) = &state.lua_pool {
+        engine = engine.with_lua_pool(pool.clone());
+    }
 
     if let Some(sm) = &state.stream_manager {
         engine = engine.with_stream_manager(sm.clone());

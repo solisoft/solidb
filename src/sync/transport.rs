@@ -21,6 +21,14 @@ const MAX_MESSAGE_SIZE: u32 = 10 * 1024 * 1024;
 /// Compression threshold (64 KB)
 const COMPRESSION_THRESHOLD: usize = 64 * 1024;
 
+/// Unauthenticated replication is off unless an operator explicitly opts in.
+/// `SOLIDB_REQUIRE_KEYFILE=true` still wins (always required).
+fn allow_unauthenticated_sync() -> bool {
+    std::env::var("SOLIDB_ALLOW_UNAUTHENTICATED_SYNC")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
 /// Trait alias for sync streams
 pub trait SyncStreamTrait: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> SyncStreamTrait for T {}
@@ -163,8 +171,12 @@ impl ConnectionPool {
         &self,
         mut stream: TcpStream,
     ) -> Result<TcpStream, TransportError> {
-        // If no keyfile, skip authentication
         if self.keyfile_path.is_empty() || !std::path::Path::new(&self.keyfile_path).exists() {
+            if !allow_unauthenticated_sync() {
+                return Err(TransportError::AuthFailed(
+                    "Cluster keyfile required for replication (set SOLIDB_ALLOW_UNAUTHENTICATED_SYNC=true only for local tests)".to_string(),
+                ));
+            }
             warn!("authenticate_client: no keyfile, skipping authentication — inter-node replication is unauthenticated");
             return Ok(stream);
         }
@@ -498,17 +510,14 @@ impl SyncServer {
             skip_magic, keyfile_path
         );
 
-        // If no keyfile provided or it doesn't exist, skip authentication (for dev/test)
         if keyfile_path.is_empty() || !std::path::Path::new(keyfile_path).exists() {
-            // Security: Check if keyfile is required via environment variable
             let require_keyfile = std::env::var("SOLIDB_REQUIRE_KEYFILE")
                 .map(|v| v.to_lowercase() == "true")
                 .unwrap_or(false);
-
-            if require_keyfile {
-                warn!("authenticate_standalone: SOLIDB_REQUIRE_KEYFILE=true but no keyfile found");
+            if require_keyfile || !allow_unauthenticated_sync() {
+                warn!("authenticate_standalone: cluster keyfile missing; refusing unauthenticated sync");
                 return Err(TransportError::AuthFailed(
-                    "Cluster keyfile required but not found (set SOLIDB_REQUIRE_KEYFILE=false to disable)".to_string(),
+                    "Cluster keyfile required (set SOLIDB_ALLOW_UNAUTHENTICATED_SYNC=true only for local tests)".to_string(),
                 ));
             }
 

@@ -103,7 +103,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 password_hash::{PasswordHash, PasswordVerifier},
                 Argon2,
             };
-            let parsed_hash = PasswordHash::new(&hash).map_err(|_| {
+            let parsed_hash = PasswordHash::new(hash).map_err(|_| {
                 DbError::ExecutionError("ARGON2_VERIFY: invalid hash format".to_string())
             })?;
             let is_valid = Argon2::default()
@@ -132,9 +132,8 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     }
 }
 
-fn get_string(v: &Value, func_name: &str) -> DbResult<String> {
+fn get_string<'a>(v: &'a Value, func_name: &str) -> DbResult<&'a str> {
     v.as_str()
-        .map(|s| s.to_string())
         .ok_or_else(|| DbError::ExecutionError(format!("{}: argument must be a string", func_name)))
 }
 

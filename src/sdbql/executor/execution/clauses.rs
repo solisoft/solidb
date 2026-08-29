@@ -10,13 +10,19 @@
 //! - Graph traversal and shortest path
 //! - Stream clauses
 
-use serde_json::Value;
+use super::super::to_bool;
+use serde_json::{json, Value};
 
 use super::super::types::{Context, MutationStats};
 use super::super::QueryExecutor;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
 use crate::sync::protocol::Operation;
+
+/// One BFS frontier entry during graph traversal: the vertex id, its depth
+/// from the start, the edge that reached it, and the vertex and edge paths
+/// walked to get there.
+type TraversalFrame = (String, usize, Option<Value>, Vec<Value>, Vec<Value>);
 
 /// Block on the result of a sharded mutation that was spawned onto the tokio
 /// runtime, bounding the wait. The executor thread is synchronous and uses a
@@ -137,6 +143,92 @@ impl<'a> QueryExecutor<'a> {
             .unwrap_or(false)
     }
 
+    fn value_as_ts(v: &Value) -> Option<i64> {
+        match v {
+            Value::Number(n) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)),
+            Value::String(s) => chrono::DateTime::parse_from_rfc3339(s)
+                .ok()
+                .map(|d| d.timestamp_millis()),
+            _ => None,
+        }
+    }
+
+    fn execute_asof_join(
+        &self,
+        rows: Vec<Context>,
+        collection: &crate::storage::collection::Collection,
+        join_clause: &JoinClause,
+    ) -> DbResult<Vec<Context>> {
+        let spec = join_clause.asof.as_ref().ok_or_else(|| {
+            DbError::ExecutionError("ASOF JOIN requires ASOF left, right".to_string())
+        })?;
+        let all_docs: Vec<Value> = collection
+            .scan(None)
+            .into_iter()
+            .map(|doc| doc.to_value())
+            .collect();
+        let match_indices = self.join_match_indices(
+            &rows,
+            &all_docs,
+            &join_clause.condition,
+            &join_clause.variable,
+        );
+        let mut new_rows = Vec::new();
+        for (ctx, indices) in rows.iter().zip(match_indices) {
+            let left_ts =
+                Self::value_as_ts(&self.evaluate_expr_with_context(&spec.left_time, ctx)?);
+            let tol = match &spec.tolerance {
+                Some(e) => {
+                    let v = self.evaluate_expr_with_context(e, ctx)?;
+                    if let Some(n) = v.as_i64() {
+                        Some(n)
+                    } else if let Some(s) = v.as_str() {
+                        crate::sdbql::executor::builtins::timeseries::parse_interval_ms(s).ok()
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            };
+            let mut best: Option<(i64, Value)> = None;
+            for idx in indices {
+                let doc = &all_docs[idx];
+                let mut tctx = ctx.clone();
+                tctx.insert(join_clause.variable.clone(), doc.clone());
+                let rts =
+                    Self::value_as_ts(&self.evaluate_expr_with_context(&spec.right_time, &tctx)?);
+                let (Some(lt), Some(rt)) = (left_ts, rts) else {
+                    continue;
+                };
+                let delta = rt - lt;
+                let ok = match spec.strategy {
+                    AsofStrategy::Backward => delta <= 0,
+                    AsofStrategy::Forward => delta >= 0,
+                    AsofStrategy::Nearest => true,
+                };
+                if !ok {
+                    continue;
+                }
+                if let Some(t) = tol {
+                    if delta.abs() > t {
+                        continue;
+                    }
+                }
+                let score = delta.abs();
+                if best.as_ref().is_none_or(|(s, _)| score < *s) {
+                    best = Some((score, doc.clone()));
+                }
+            }
+            let mut new_ctx = ctx.clone();
+            new_ctx.insert(
+                join_clause.variable.clone(),
+                best.map(|(_, d)| d).unwrap_or(Value::Null),
+            );
+            new_rows.push(new_ctx);
+        }
+        Ok(new_rows)
+    }
+
     /// Execute body clauses and return row contexts with mutation stats
     pub(super) fn execute_body_clauses(
         &self,
@@ -179,6 +271,42 @@ impl<'a> QueryExecutor<'a> {
                             let mut all_rows_indexable = true;
 
                             if let Ok(collection) = self.get_collection(&for_clause.collection) {
+                                // Auto-index: only when the collection opted in
+                                // and no index covers this FILTER yet. The
+                                // existence probe is capped at one document and
+                                // runs *after* `would_auto_index`, so a query on
+                                // a collection that never opted in pays nothing
+                                // beyond reading the flag, and one that did pays
+                                // a single-row lookup rather than materialising
+                                // every match twice.
+                                if let Some(ctx0) = rows.first() {
+                                    if let Some(cond) = self.extract_indexable_condition(
+                                        &filter_clause.expression,
+                                        &for_clause.variable,
+                                        ctx0,
+                                    ) {
+                                        if self.would_auto_index(
+                                            &collection,
+                                            &cond.field,
+                                            Some(&cond.value),
+                                        ) && self
+                                            .lookup_index_for_filter_limited(
+                                                &collection,
+                                                &filter_clause.expression,
+                                                &for_clause.variable,
+                                                ctx0,
+                                                Some(1),
+                                            )
+                                            .is_none()
+                                        {
+                                            let _ = self.maybe_auto_index(
+                                                &collection,
+                                                &cond.field,
+                                                Some(&cond.value),
+                                            );
+                                        }
+                                    }
+                                }
                                 for ctx in &rows {
                                     // Cap the lookup at LIMIT only when the
                                     // whole FILTER is the index condition — a
@@ -266,6 +394,28 @@ impl<'a> QueryExecutor<'a> {
                         self.evaluate_filter_with_context(&filter_clause.expression, ctx)
                             .unwrap_or(false)
                     });
+                }
+                BodyClause::Search(filter_clause) => {
+                    let mut kept = Vec::new();
+                    for ctx in rows {
+                        let val =
+                            self.evaluate_expr_with_context(&filter_clause.expression, &ctx)?;
+                        let (keep, score) = match &val {
+                            Value::Bool(b) => (*b, if *b { 1.0 } else { 0.0 }),
+                            Value::Number(n) => {
+                                let s = n.as_f64().unwrap_or(0.0);
+                                (s > 0.0, s)
+                            }
+                            Value::Null => (false, 0.0),
+                            other => (to_bool(other), if to_bool(other) { 1.0 } else { 0.0 }),
+                        };
+                        if keep {
+                            let mut c = ctx;
+                            c.insert("__search_score".into(), json!(score));
+                            kept.push(c);
+                        }
+                    }
+                    rows = kept;
                 }
                 BodyClause::Insert(insert_clause) => {
                     // Get collection once, outside the loop
@@ -816,7 +966,8 @@ impl<'a> QueryExecutor<'a> {
                     let mut new_rows = Vec::new();
 
                     // Get edge collection (shared by every start vertex)
-                    let edge_collection = self.get_collection(&gt.edge_collection)?;
+                    let edge_name = self.resolve_edge_collection_name(&gt.edge_collection)?;
+                    let edge_collection = self.get_collection(&edge_name)?;
 
                     // Neighbor expansion — index probe, single-scan adjacency
                     // fallback, and lazy auto-indexing of _from/_to — is
@@ -844,49 +995,77 @@ impl<'a> QueryExecutor<'a> {
                         // BFS traversal
                         let mut visited: std::collections::HashSet<String> =
                             std::collections::HashSet::new();
-                        let mut queue: std::collections::VecDeque<(String, usize, Option<Value>)> =
+                        let mut queue: std::collections::VecDeque<TraversalFrame> =
                             std::collections::VecDeque::new();
                         visited.insert(start_id.clone());
-                        queue.push_back((start_id.clone(), 0, None));
+                        queue.push_back((start_id.clone(), 0, None, vec![], vec![]));
 
-                        while let Some((current_id, depth, edge)) = queue.pop_front() {
-                            // Add result if within depth range
-                            if depth >= gt.min_depth && depth <= gt.max_depth {
-                                // Get vertex document
-                                if let Some((coll_name, key)) = current_id.split_once('/') {
-                                    if let Ok(vertex_coll) = self.get_collection(coll_name) {
-                                        if let Ok(vertex_doc) = vertex_coll.get(key) {
-                                            let mut new_ctx = ctx.clone();
-                                            new_ctx.insert(
-                                                gt.vertex_var.clone(),
-                                                vertex_doc.to_value(),
-                                            );
-                                            if let Some(ref edge_var) = gt.edge_var {
-                                                new_ctx.insert(
-                                                    edge_var.clone(),
-                                                    edge.clone().unwrap_or(Value::Null),
-                                                );
-                                            }
-                                            new_rows.push(new_ctx);
-                                        }
+                        while let Some((current_id, depth, edge, verts, edges_path)) =
+                            queue.pop_front()
+                        {
+                            let mut vertex_val: Option<Value> = None;
+                            if let Some((coll_name, key)) = current_id.split_once('/') {
+                                if let Ok(vertex_coll) = self.get_collection(coll_name) {
+                                    if let Ok(vertex_doc) = vertex_coll.get(key) {
+                                        vertex_val = Some(vertex_doc.to_value());
                                     }
                                 }
                             }
 
-                            // Continue traversal if not at max depth
-                            if depth >= gt.max_depth {
+                            let prune_here = if let (Some(ref vdoc), Some(ref prune)) =
+                                (&vertex_val, &gt.prune)
+                            {
+                                let mut pctx = ctx.clone();
+                                pctx.insert(gt.vertex_var.clone(), vdoc.clone());
+                                to_bool(&self.evaluate_expr_with_context(prune, &pctx)?)
+                            } else {
+                                false
+                            };
+
+                            // Include this vertex, then stop expanding if PRUNE is true
+                            // (Arango-style: visit, then do not walk children).
+                            if depth >= gt.min_depth && depth <= gt.max_depth {
+                                if let Some(vdoc) = vertex_val.clone() {
+                                    let mut new_ctx = ctx.clone();
+                                    new_ctx.insert(gt.vertex_var.clone(), vdoc.clone());
+                                    if let Some(ref edge_var) = gt.edge_var {
+                                        new_ctx.insert(
+                                            edge_var.clone(),
+                                            edge.clone().unwrap_or(Value::Null),
+                                        );
+                                    }
+                                    if let Some(ref path_var) = gt.path_var {
+                                        let mut pverts = verts.clone();
+                                        pverts.push(vdoc);
+                                        new_ctx.insert(
+                                            path_var.clone(),
+                                            json!({
+                                                "vertices": pverts,
+                                                "edges": edges_path,
+                                            }),
+                                        );
+                                    }
+                                    new_rows.push(new_ctx);
+                                }
+                            }
+
+                            if prune_here || depth >= gt.max_depth {
                                 continue;
                             }
 
-                            // Find connected vertices via the shared EdgeExpander
-                            // (indexed lookup, or the prebuilt adjacency map).
                             let current_id_str = current_id.clone();
                             for edge_doc in expander.edges_for(&current_id_str) {
                                 let edge_val = edge_doc.to_value();
                                 if let Some(next) = expander.next_id(&edge_val, &current_id_str) {
                                     if !visited.contains(&next) {
                                         visited.insert(next.clone());
-                                        queue.push_back((next, depth + 1, Some(edge_val.clone())));
+                                        let mut nv = verts.clone();
+                                        if let Some(v) = vertex_val.clone() {
+                                            nv.push(v);
+                                        }
+                                        let mut ne = edges_path.clone();
+                                        ne.push(edge_val.clone());
+                                        queue.push_back((next, depth + 1, Some(edge_val), nv, ne));
                                     }
                                 }
                             }
@@ -895,7 +1074,6 @@ impl<'a> QueryExecutor<'a> {
                     rows = new_rows;
                 }
                 BodyClause::ShortestPath(sp) => {
-                    // Execute shortest path using BFS
                     let mut new_rows = Vec::new();
 
                     for ctx in &rows {
@@ -919,106 +1097,34 @@ impl<'a> QueryExecutor<'a> {
                             }
                         };
 
-                        let edge_collection = self.get_collection(&sp.edge_collection)?;
-
-                        // Scan edges ONCE per path search: the edge set doesn't
-                        // change mid-BFS, and rescanning it for every dequeued
-                        // vertex made shortest-path O(V × E) disk reads.
-                        let all_edges = edge_collection.scan(None);
-
-                        // BFS with parent tracking
-                        let mut visited: std::collections::HashMap<
-                            String,
-                            (Option<String>, Option<Value>),
-                        > = std::collections::HashMap::new();
-                        let mut queue: std::collections::VecDeque<String> =
-                            std::collections::VecDeque::new();
-
-                        visited.insert(start_id.clone(), (None, None));
-                        queue.push_back(start_id.clone());
-                        let mut found = false;
-
-                        while let Some(current_id) = queue.pop_front() {
-                            if current_id == end_id {
-                                found = true;
-                                break;
-                            }
-
-                            for edge_doc in &all_edges {
-                                let edge_val = edge_doc.to_value();
-                                let from = edge_val.get("_from").and_then(|v| v.as_str());
-                                let to = edge_val.get("_to").and_then(|v| v.as_str());
-
-                                let next_id = match sp.direction {
-                                    EdgeDirection::Outbound => {
-                                        if from == Some(current_id.as_str()) {
-                                            to.map(|s| s.to_string())
-                                        } else {
-                                            None
+                        let edge_name = self.resolve_edge_collection_name(&sp.edge_collection)?;
+                        let edge_collection = self.get_collection(&edge_name)?;
+                        let all_edges: Vec<Value> = edge_collection
+                            .scan(None)
+                            .into_iter()
+                            .map(|d| d.to_value())
+                            .collect();
+                        let found = super::paths::find_paths(sp, &all_edges, &start_id, &end_id)
+                            .map_err(DbError::ExecutionError)?;
+                        for path in found {
+                            let last_id = path.vertices.last().cloned().unwrap_or_default();
+                            let last_edge = path.edges.last().cloned().unwrap_or(Value::Null);
+                            if let Some((coll_name, key)) = last_id.split_once('/') {
+                                if let Ok(vertex_coll) = self.get_collection(coll_name) {
+                                    if let Ok(vertex_doc) = vertex_coll.get(key) {
+                                        let mut new_ctx = ctx.clone();
+                                        new_ctx
+                                            .insert(sp.vertex_var.clone(), vertex_doc.to_value());
+                                        if let Some(ref edge_var) = sp.edge_var {
+                                            new_ctx.insert(edge_var.clone(), last_edge);
                                         }
-                                    }
-                                    EdgeDirection::Inbound => {
-                                        if to == Some(current_id.as_str()) {
-                                            from.map(|s| s.to_string())
-                                        } else {
-                                            None
-                                        }
-                                    }
-                                    EdgeDirection::Any => {
-                                        if from == Some(current_id.as_str()) {
-                                            to.map(|s| s.to_string())
-                                        } else if to == Some(current_id.as_str()) {
-                                            from.map(|s| s.to_string())
-                                        } else {
-                                            None
-                                        }
-                                    }
-                                };
-
-                                if let Some(next) = next_id {
-                                    if !visited.contains_key(&next) {
-                                        visited.insert(
-                                            next.clone(),
-                                            (Some(current_id.clone()), Some(edge_val.clone())),
-                                        );
-                                        queue.push_back(next);
-                                    }
-                                }
-                            }
-                        }
-
-                        // Reconstruct path
-                        if found {
-                            let mut path: Vec<(String, Option<Value>)> = Vec::new();
-                            let mut current = end_id.clone();
-
-                            while let Some((parent, edge)) = visited.get(&current) {
-                                path.push((current.clone(), edge.clone()));
-                                if let Some(p) = parent {
-                                    current = p.clone();
-                                } else {
-                                    break;
-                                }
-                            }
-                            path.reverse();
-
-                            for (vertex_id, edge) in path {
-                                if let Some((coll_name, key)) = vertex_id.split_once('/') {
-                                    if let Ok(vertex_coll) = self.get_collection(coll_name) {
-                                        if let Ok(vertex_doc) = vertex_coll.get(key) {
-                                            let mut new_ctx = ctx.clone();
+                                        if let Some(ref pv) = sp.path_var {
                                             new_ctx.insert(
-                                                sp.vertex_var.clone(),
-                                                vertex_doc.to_value(),
+                                                pv.clone(),
+                                                super::paths::path_to_json(&path),
                                             );
-                                            if let Some(ref edge_var) = sp.edge_var {
-                                                new_ctx.insert(
-                                                    edge_var.clone(),
-                                                    edge.unwrap_or(Value::Null),
-                                                );
-                                            }
-                                            new_rows.push(new_ctx);
                                         }
+                                        new_rows.push(new_ctx);
                                     }
                                 }
                             }
@@ -1026,7 +1132,6 @@ impl<'a> QueryExecutor<'a> {
                     }
                     rows = new_rows;
                 }
-
                 BodyClause::Window(_) => {
                     return Err(DbError::ExecutionError(
                         "Window operations are only supported in STREAM definitions".to_string(),
@@ -1067,12 +1172,36 @@ impl<'a> QueryExecutor<'a> {
                     for (_key, (mut group_ctx, group_docs, count)) in groups {
                         // Add INTO variable if present
                         if let Some(ref into_var) = collect.into_var {
+                            // A KEEP naming a variable that is not in scope
+                            // would silently store `{}` for every group item —
+                            // say so instead.
+                            if let Some(sample) = group_docs.first() {
+                                for keep in &collect.keep_vars {
+                                    if !sample.contains_key(keep) {
+                                        return Err(DbError::ExecutionError(format!(
+                                            "KEEP variable '{}' is not in scope at COLLECT",
+                                            keep
+                                        )));
+                                    }
+                                }
+                            }
+
                             let group_array: Vec<Value> = group_docs
                                 .iter()
                                 .map(|ctx| {
-                                    // Create an object with all variables in the context
-                                    let obj: serde_json::Map<String, Value> =
-                                        ctx.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                    // Create an object with the variables in the
+                                    // context, restricted to KEEP when provided
+                                    let obj: serde_json::Map<String, Value> = if collect
+                                        .keep_vars
+                                        .is_empty()
+                                    {
+                                        ctx.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                                    } else {
+                                        ctx.iter()
+                                            .filter(|(k, _)| collect.keep_vars.contains(k))
+                                            .map(|(k, v)| (k.clone(), v.clone()))
+                                            .collect()
+                                    };
                                     Value::Object(obj)
                                 })
                                 .collect();
@@ -1102,6 +1231,9 @@ impl<'a> QueryExecutor<'a> {
                     let collection = self.get_collection(&join_clause.collection)?;
 
                     match join_clause.join_type {
+                        JoinType::Asof => {
+                            rows = self.execute_asof_join(rows, &collection, join_clause)?;
+                        }
                         JoinType::Inner | JoinType::Left => {
                             // Standard LEFT/INNER JOIN: iterate left side, find matches on right.
                             // Scan the joined collection ONCE: it doesn't depend on the

@@ -10,8 +10,8 @@ use serde_json::Value;
 
 use super::super::types::{Context, MutationStats, QueryExecutionResult};
 use super::super::window::contains_window_functions;
-use super::super::QueryExecutor;
-use crate::error::DbResult;
+use super::super::{QueryExecutor, ValueSet};
+use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
 
 impl<'a> QueryExecutor<'a> {
@@ -33,40 +33,113 @@ impl<'a> QueryExecutor<'a> {
             return self.execute_refresh_materialized_view(clause);
         }
 
-        // First, evaluate initial LET clauses (before any FOR) to create initial binding
-        let mut initial_bindings: Context = HashMap::new();
-
-        // Merge bind variables into initial context
+        // Bind variables are the only bindings a top-level query starts with;
+        // everything else (CTEs, pre-FOR LETs) is part of the query prelude.
+        let mut bindings: Context = HashMap::new();
         for (key, value) in &self.bind_vars {
-            initial_bindings.insert(format!("@{}", key), value.clone());
+            bindings.insert(format!("@{}", key), value.clone());
         }
 
-        // Evaluate CTEs (Common Table Expressions) and store results in initial_bindings
-        // CTEs are evaluated sequentially so later CTEs can reference earlier ones
-        if let Some(ref with_clause) = query.with_clause {
-            for cte in &with_clause.ctes {
-                // Execute CTE query with access to previously computed CTEs
-                let cte_results = self.execute_cte_with_context(&cte.query, &initial_bindings)?;
-                tracing::debug!("CTE '{}' returned {} results", cte.name, cte_results.len());
-                // Store CTE results as an array in the context so FOR ... IN cte_name can iterate
-                initial_bindings.insert(cte.name.clone(), Value::Array(cte_results));
-            }
+        self.execute_query_with_bindings(query, bindings)
+    }
+
+    /// Execute a query block against a set of outer bindings.
+    ///
+    /// This is the single entry point that understands a *whole* query: set
+    /// operations, the `WITH` prelude, pre-FOR `LET`s, and then the execution
+    /// pipeline. Anything that runs a nested query block (CTE bodies, set
+    /// operation operands, recursive steps, correlated subqueries) goes through
+    /// here, so none of them can silently lose a clause.
+    pub(in crate::sdbql::executor) fn execute_query_with_bindings(
+        &self,
+        query: &Query,
+        bindings: Context,
+    ) -> DbResult<QueryExecutionResult> {
+        // Set operations: this query block is combined with further blocks
+        // (`q1 UNION q2`, `q1 INTERSECT q2`, `q1 EXCEPT q2`, ...). Each operand
+        // is executed independently, then combined in list order.
+        if !query.set_operations.is_empty() {
+            return self.execute_set_operations(query, bindings);
         }
 
+        let mut bindings = bindings;
+        self.bind_ctes(query, &mut bindings)?;
+        self.bind_pre_for_lets(query, &mut bindings)?;
+        self.execute_with_initial_bindings(query, bindings)
+    }
+
+    /// Evaluate this block's `WITH` clause into `bindings`.
+    ///
+    /// CTEs are evaluated sequentially so later ones can reference earlier ones.
+    fn bind_ctes(&self, query: &Query, bindings: &mut Context) -> DbResult<()> {
+        let Some(ref with_clause) = query.with_clause else {
+            return Ok(());
+        };
+
+        for cte in &with_clause.ctes {
+            let rows = if cte.recursive {
+                self.execute_recursive_cte(cte, bindings)?
+            } else {
+                self.execute_query_with_bindings(&cte.query, bindings.clone())?
+                    .results
+            };
+            tracing::debug!("CTE '{}' returned {} results", cte.name, rows.len());
+            // Stored as an array so `FOR x IN cte_name` can iterate it
+            bindings.insert(cte.name.clone(), Value::Array(rows));
+        }
+
+        Ok(())
+    }
+
+    /// Evaluate the `LET`s that precede the first `FOR` (evaluated once).
+    fn bind_pre_for_lets(&self, query: &Query, bindings: &mut Context) -> DbResult<()> {
         for let_clause in &query.let_clauses {
-            let value =
-                self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
-            initial_bindings.insert(let_clause.variable.clone(), value);
+            let value = self.evaluate_expr_with_context(&let_clause.expression, bindings)?;
+            bindings.insert(let_clause.variable.clone(), value);
         }
+        Ok(())
+    }
 
-        self.execute_with_initial_bindings(query, initial_bindings)
+    /// Evaluate a LIMIT clause to `(offset, count)`. A `None` count means the
+    /// query has no upper bound (`OFFSET n` without `LIMIT`) — callers must not
+    /// stand in a maximum, because the count reaches storage as a scan size.
+    pub(in crate::sdbql::executor) fn eval_limit(
+        &self,
+        limit: &LimitClause,
+        ctx: &Context,
+    ) -> (usize, Option<usize>) {
+        let eval = |expr| {
+            self.evaluate_expr_with_context(expr, ctx)
+                .ok()
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(0)
+        };
+        (eval(&limit.offset), limit.count.as_ref().map(eval))
     }
 
     /// Execute the optimization + body-clause + sort/limit/return pipeline against a
-    /// fully-built initial binding set. Shared by top-level `execute_with_stats` and
-    /// the subquery executor so that subqueries get the same fast paths
-    /// (e.g. the `_key` index-sorted shortcut for SORT+LIMIT).
+    /// fully-built initial binding set, then apply `RETURN DISTINCT`.
+    ///
+    /// Deduplication lives here rather than in the pipeline because the pipeline
+    /// returns from a dozen fast paths, and every one of them must honour
+    /// `DISTINCT` (a columnar collection used to ignore it).
     pub(super) fn execute_with_initial_bindings(
+        &self,
+        query: &Query,
+        initial_bindings: Context,
+    ) -> DbResult<QueryExecutionResult> {
+        let mut result = self.execute_pipeline(query, initial_bindings)?;
+        if query.return_clause.as_ref().is_some_and(|rc| rc.distinct) {
+            result.results = dedupe_values(result.results);
+        }
+        Ok(result)
+    }
+
+    /// The execution pipeline itself. Shared by top-level queries and the
+    /// subquery executor so subqueries get the same fast paths (e.g. the
+    /// `_key` index-sorted shortcut for SORT+LIMIT).
+    fn execute_pipeline(
         &self,
         query: &Query,
         initial_bindings: Context,
@@ -120,29 +193,23 @@ impl<'a> QueryExecutor<'a> {
 
                         let (sort_expr, sort_asc) = &sort.fields[0];
                         if iterates_collection {
-                            // Evaluate limit expressions
-                            let limit_offset = self
-                                .evaluate_expr_with_context(&limit.offset, &initial_bindings)
-                                .ok()
-                                .and_then(|v| v.as_u64())
-                                .map(|n| n as usize)
-                                .unwrap_or(0);
-                            let limit_count = self
-                                .evaluate_expr_with_context(&limit.count, &initial_bindings)
-                                .ok()
-                                .and_then(|v| v.as_u64())
-                                .map(|n| n as usize)
-                                .unwrap_or(0);
+                            // Evaluate limit expressions. An unbounded count
+                            // (`OFFSET n` with no `LIMIT`) fetches everything.
+                            let (limit_offset, limit_count) =
+                                self.eval_limit(limit, &initial_bindings);
 
                             // Check for overflow in limit_offset + limit_count
-                            let max_fetch = match limit_offset.checked_add(limit_count) {
-                                Some(sum) => sum,
-                                None => {
-                                    return Ok(QueryExecutionResult {
-                                        results: vec![],
-                                        mutations: MutationStats::new(),
-                                    });
-                                }
+                            let max_fetch = match limit_count {
+                                Some(count) => match limit_offset.checked_add(count) {
+                                    Some(sum) => Some(sum),
+                                    None => {
+                                        return Ok(QueryExecutionResult {
+                                            results: vec![],
+                                            mutations: MutationStats::new(),
+                                        });
+                                    }
+                                },
+                                None => None,
                             };
 
                             // Check if sort expression is a simple field access on the loop variable
@@ -152,14 +219,14 @@ impl<'a> QueryExecutor<'a> {
                                         if let Ok(collection) =
                                             self.get_collection(&for_clause.collection)
                                         {
-                                            if let Some(docs) = collection.index_sorted(
-                                                field,
-                                                *sort_asc,
-                                                Some(max_fetch),
-                                            ) {
+                                            if let Some(docs) =
+                                                collection.index_sorted(field, *sort_asc, max_fetch)
+                                            {
                                                 let start = limit_offset.min(docs.len());
-                                                let end = match start.checked_add(limit_count) {
-                                                    Some(sum) => sum.min(docs.len()),
+                                                let end = match limit_count {
+                                                    Some(count) => {
+                                                        start.saturating_add(count).min(docs.len())
+                                                    }
                                                     None => docs.len(),
                                                 };
                                                 let docs = &docs[start..end];
@@ -293,24 +360,10 @@ impl<'a> QueryExecutor<'a> {
                                     .unwrap_or(&for_clause.collection);
 
                                 if !initial_bindings.contains_key(source_name) {
-                                    let scan_limit = query.limit_clause.as_ref().map(|l| {
-                                        let offset = self
-                                            .evaluate_expr_with_context(
-                                                &l.offset,
-                                                &initial_bindings,
-                                            )
-                                            .ok()
-                                            .and_then(|v| v.as_u64())
-                                            .map(|n| n as usize)
-                                            .unwrap_or(0);
-                                        let count = self
-                                            .evaluate_expr_with_context(&l.count, &initial_bindings)
-                                            .ok()
-                                            .and_then(|v| v.as_u64())
-                                            .map(|n| n as usize)
-                                            .unwrap_or(0);
-                                        (offset, count)
-                                    });
+                                    let scan_limit = query
+                                        .limit_clause
+                                        .as_ref()
+                                        .map(|l| self.eval_limit(l, &initial_bindings));
 
                                     // This fast path bypasses `get_for_source_docs`,
                                     // so it needs its own columnar check —
@@ -319,7 +372,9 @@ impl<'a> QueryExecutor<'a> {
                                     // that still reports CollectionNotFound.
                                     if let Some(rows) = self.columnar_source_rows(
                                         &for_clause.collection,
-                                        scan_limit.map(|(offset, count)| offset + count),
+                                        scan_limit.and_then(|(offset, count)| {
+                                            count.map(|count| offset.saturating_add(count))
+                                        }),
                                     )? {
                                         let results = match scan_limit {
                                             Some((offset, _)) => {
@@ -334,10 +389,11 @@ impl<'a> QueryExecutor<'a> {
                                     }
 
                                     let collection = self.get_collection(&for_clause.collection)?;
-                                    let results = if let Some((offset, count)) = scan_limit {
-                                        collection.scan_values_range(offset, Some(count))
-                                    } else {
-                                        collection.scan_values(None)
+                                    let results = match scan_limit {
+                                        Some((offset, count)) => {
+                                            collection.scan_values_range(offset, count)
+                                        }
+                                        None => collection.scan_values(None),
                                     };
 
                                     return Ok(QueryExecutionResult {
@@ -367,19 +423,9 @@ impl<'a> QueryExecutor<'a> {
 
             if for_count == 1 && filter_count == 0 {
                 query.limit_clause.as_ref().and_then(|l| {
-                    let offset = self
-                        .evaluate_expr_with_context(&l.offset, &initial_bindings)
-                        .ok()
-                        .and_then(|v| v.as_u64())
-                        .map(|n| n as usize)
-                        .unwrap_or(0);
-                    let count = self
-                        .evaluate_expr_with_context(&l.count, &initial_bindings)
-                        .ok()
-                        .and_then(|v| v.as_u64())
-                        .map(|n| n as usize)
-                        .unwrap_or(0);
-                    offset.checked_add(count)
+                    let (offset, count) = self.eval_limit(l, &initial_bindings);
+                    // No count means no upper bound: nothing to push down.
+                    offset.checked_add(count?)
                 })
             } else {
                 None
@@ -403,20 +449,9 @@ impl<'a> QueryExecutor<'a> {
                 .is_none_or(|rc| !contains_window_functions(&rc.expression))
         {
             query.limit_clause.as_ref().and_then(|l| {
-                let offset = self
-                    .evaluate_expr_with_context(&l.offset, &initial_bindings)
-                    .ok()
-                    .and_then(|v| v.as_u64())
-                    .map(|n| n as usize)
-                    .unwrap_or(0);
-                let count = self
-                    .evaluate_expr_with_context(&l.count, &initial_bindings)
-                    .ok()
-                    .and_then(|v| v.as_u64())
-                    .map(|n| n as usize)
-                    .unwrap_or(0);
+                let (offset, count) = self.eval_limit(l, &initial_bindings);
                 // Fetch offset+count — the LIMIT below still applies the offset
-                offset.checked_add(count)
+                offset.checked_add(count?)
             })
         } else {
             None
@@ -459,19 +494,9 @@ impl<'a> QueryExecutor<'a> {
                 if !no_windows {
                     return None;
                 }
-                let offset = self
-                    .evaluate_expr_with_context(&limit.offset, &initial_bindings)
-                    .ok()
-                    .and_then(|v| v.as_u64())
-                    .map(|n| n as usize)
-                    .unwrap_or(0);
-                let count = self
-                    .evaluate_expr_with_context(&limit.count, &initial_bindings)
-                    .ok()
-                    .and_then(|v| v.as_u64())
-                    .map(|n| n as usize)
-                    .unwrap_or(0);
-                let k = offset.checked_add(count)?;
+                let (offset, count) = self.eval_limit(limit, &initial_bindings);
+                // Unbounded: every row survives, so top-k buys nothing.
+                let k = offset.checked_add(count?)?;
                 (k.saturating_mul(4) < rows.len()).then_some(k)
             });
             rows = match top_k {
@@ -487,27 +512,17 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        // Apply LIMIT
+        // Apply LIMIT (and/or a standalone OFFSET, which has no count)
         if let Some(limit) = &query.limit_clause {
-            let offset = self
-                .evaluate_expr_with_context(&limit.offset, &initial_bindings)
-                .ok()
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize)
-                .unwrap_or(0);
-            let count = self
-                .evaluate_expr_with_context(&limit.count, &initial_bindings)
-                .ok()
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize)
-                .unwrap_or(0);
+            let (offset, count) = self.eval_limit(limit, &initial_bindings);
 
             let start = offset.min(rows.len());
-            let end = (start + count).min(rows.len());
             if start > 0 {
                 rows.drain(0..start);
             }
-            rows.truncate(end - start);
+            if let Some(count) = count {
+                rows.truncate(count);
+            }
         }
 
         // Apply RETURN projection (if present)
@@ -528,34 +543,154 @@ impl<'a> QueryExecutor<'a> {
         })
     }
 
-    /// Execute a CTE query with access to a provided context (for CTE chaining)
-    fn execute_cte_with_context(
+    /// Combine this query block with its set-operation operands
+    /// (`UNION [ALL]` / `INTERSECT` / `EXCEPT`).
+    ///
+    /// The operand list is applied left to right; SQL's tighter binding for
+    /// `INTERSECT` is already expressed by the parser, which nests such an
+    /// operand inside the one before it.
+    fn execute_set_operations(
         &self,
         query: &Query,
-        initial_bindings: &Context,
-    ) -> DbResult<Vec<Value>> {
-        // CTEs don't support nested CTEs, so we just use the provided context
-        // Evaluate LET clauses first
-        let mut ctx = initial_bindings.clone();
-        for let_clause in &query.let_clauses {
-            let value = self.evaluate_expr_with_context(&let_clause.expression, &ctx)?;
-            ctx.insert(let_clause.variable.clone(), value);
+        bindings: Context,
+    ) -> DbResult<QueryExecutionResult> {
+        let mut left = query.clone();
+        let ops = std::mem::take(&mut left.set_operations);
+
+        // The `WITH` clause sits on the left block syntactically but binds for
+        // the whole combined query, so evaluate it once here and share it with
+        // every operand (evaluating it per operand would re-run a CTE body,
+        // and re-apply its mutations).
+        let mut shared = bindings;
+        self.bind_ctes(&left, &mut shared)?;
+
+        let mut left_bindings = shared.clone();
+        self.bind_pre_for_lets(&left, &mut left_bindings)?;
+        let mut acc = self.execute_with_initial_bindings(&left, left_bindings)?;
+
+        for op in &ops {
+            let rhs = self.execute_query_with_bindings(&op.query, shared.clone())?;
+            acc.mutations.documents_inserted += rhs.mutations.documents_inserted;
+            acc.mutations.documents_updated += rhs.mutations.documents_updated;
+            acc.mutations.documents_removed += rhs.mutations.documents_removed;
+
+            match op.op {
+                SetOperator::UnionAll => acc.results.extend(rhs.results),
+                SetOperator::Union => {
+                    // Duplicates go, wherever they came from: the left side is
+                    // deduplicated too, not just the incoming rows.
+                    let mut seen = ValueSet::with_capacity(acc.results.len() + rhs.results.len());
+                    acc.results.retain(|value| seen.insert(value));
+                    for value in rhs.results {
+                        if seen.insert(&value) {
+                            acc.results.push(value);
+                        }
+                    }
+                }
+                SetOperator::Intersect | SetOperator::Except => {
+                    let keep_when_present = op.op == SetOperator::Intersect;
+                    let mut right = ValueSet::with_capacity(rhs.results.len());
+                    for value in &rhs.results {
+                        right.insert(value);
+                    }
+                    let mut seen = ValueSet::with_capacity(acc.results.len());
+                    acc.results.retain(|value| {
+                        right.contains(value) == keep_when_present && seen.insert(value)
+                    });
+                }
+            }
         }
 
-        // Execute body clauses
-        let (rows, _) = self.execute_body_clauses(&query.body_clauses, &ctx, None, None)?;
-
-        // Apply RETURN projection
-        let results = if let Some(ref return_clause) = query.return_clause {
-            let results: DbResult<Vec<Value>> = rows
-                .iter()
-                .map(|r| self.evaluate_expr_with_context(&return_clause.expression, r))
-                .collect();
-            results?
-        } else {
-            vec![]
-        };
-
-        Ok(results)
+        Ok(acc)
     }
+
+    /// Execute a recursive CTE: `WITH RECURSIVE t AS (<anchor> UNION ALL <step>)`.
+    ///
+    /// The anchor runs once. Then the step queries run repeatedly; inside them
+    /// the CTE name is bound to the rows produced by the *previous* iteration
+    /// (`FOR x IN t ...` sees the last batch). Iteration stops when a batch is
+    /// empty or the safety limits are hit.
+    pub(super) fn execute_recursive_cte(
+        &self,
+        cte: &CteClause,
+        initial_bindings: &Context,
+    ) -> DbResult<Vec<Value>> {
+        const MAX_ITERATIONS: usize = 1000;
+        const MAX_ROWS: usize = 1_000_000;
+
+        if cte.query.set_operations.is_empty() {
+            return Err(DbError::ExecutionError(format!(
+                "Recursive CTE '{}' requires a body of the form \
+                 `<anchor query> UNION ALL <recursive step>`",
+                cte.name
+            )));
+        }
+
+        // Split into the anchor (the CTE body without set operations) and the
+        // iterative steps (every UNION ALL operand).
+        let mut anchor = (*cte.query).clone();
+        let steps = std::mem::take(&mut anchor.set_operations);
+        for op in &steps {
+            if op.op != SetOperator::UnionAll {
+                return Err(DbError::ExecutionError(format!(
+                    "Recursive CTE '{}' only supports UNION ALL between anchor and recursive steps",
+                    cte.name
+                )));
+            }
+        }
+
+        // The anchor and the steps are full query blocks: they may carry their
+        // own `WITH`, pre-FOR `LET`s and nested set operations.
+        let mut accumulated = self
+            .execute_query_with_bindings(&anchor, initial_bindings.clone())?
+            .results;
+
+        let mut batch = accumulated.clone();
+        let mut iterations = 0usize;
+        while !batch.is_empty() {
+            iterations += 1;
+            if iterations > MAX_ITERATIONS {
+                return Err(DbError::ExecutionError(format!(
+                    "Recursive CTE '{}' exceeded {} iterations (possible infinite recursion)",
+                    cte.name, MAX_ITERATIONS
+                )));
+            }
+
+            // Bind the CTE name to the previous batch for this iteration. The
+            // batch is moved in, not cloned — it is not needed again.
+            let mut ctx = initial_bindings.clone();
+            ctx.insert(cte.name.clone(), Value::Array(std::mem::take(&mut batch)));
+
+            let mut next = Vec::new();
+            for step in &steps {
+                let result = self.execute_query_with_bindings(&step.query, ctx.clone())?;
+                next.extend(result.results);
+            }
+
+            if next.is_empty() {
+                break;
+            }
+            if accumulated.len().saturating_add(next.len()) > MAX_ROWS {
+                return Err(DbError::ExecutionError(format!(
+                    "Recursive CTE '{}' produced more than {} rows",
+                    cte.name, MAX_ROWS
+                )));
+            }
+
+            // Continue iterating with the newly produced rows
+            accumulated.extend(next.iter().cloned());
+            batch = next;
+        }
+
+        Ok(accumulated)
+    }
+}
+
+/// Remove duplicate values preserving first-occurrence order.
+///
+/// Row identity is `ValueSet`'s — the same value equality the `UNION()` and
+/// `INTERSECTION()` array builtins use, so `1` and `1.0` are one row here too.
+pub(super) fn dedupe_values(values: Vec<Value>) -> Vec<Value> {
+    let mut seen = ValueSet::with_capacity(values.len());
+    values.into_iter().filter(|v| seen.insert(v)).collect()
 }

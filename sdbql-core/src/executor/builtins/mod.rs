@@ -126,4 +126,31 @@ mod tests {
             json!(true)
         );
     }
+
+    #[test]
+    fn test_new_helpers() {
+        let toks =
+            BuiltinFunctions::call("TOKENS", &[json!("The Quick Fox"), json!("text_en")]).unwrap();
+        assert!(toks.as_array().unwrap().iter().any(|t| t == "quick"));
+        assert_eq!(
+            BuiltinFunctions::call(
+                "PHRASE",
+                &[json!("the quick brown"), json!("quick"), json!("brown")]
+            )
+            .unwrap(),
+            json!(true)
+        );
+        assert_eq!(
+            BuiltinFunctions::call("ZIP_OBJECT", &[json!(["a", "b"]), json!([1, 2])]).unwrap(),
+            json!({"a": 1, "b": 2})
+        );
+        assert_eq!(
+            BuiltinFunctions::call("PARSE_IDENTIFIER", &[json!("users/ada")]).unwrap(),
+            json!({"collection": "users", "key": "ada"})
+        );
+        assert_eq!(
+            BuiltinFunctions::call("BOOST", &[json!(true), json!(3)]).unwrap(),
+            json!(3.0)
+        );
+    }
 }

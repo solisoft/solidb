@@ -136,9 +136,49 @@ FOR s IN summary
             </div>
 
             <div class="p-6">
+              <h3 class="text-lg font-bold text-white mb-4">Recursive CTE</h3>
+              <p class="text-gray-400 mb-4">
+                <code class="text-orange-400">WITH RECURSIVE</code> walks hierarchical data
+                (org charts, category trees, bill of materials, transitive closures) in pure
+                SDBQL. The body must have the shape
+                <code class="text-orange-400">&lt;anchor query&gt; UNION ALL &lt;recursive step&gt;</code>.
+                The anchor runs once; then the step runs repeatedly until it stops producing rows.
+              </p>
+              <p class="text-gray-400 mb-4">
+                Inside the step, the CTE name is bound to the rows produced by the
+                <strong>previous iteration</strong> — use it to expand one level at a time.
+                Recursion is capped at 1,000 iterations and 1M rows.
+              </p>
+              <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 mb-4">
+                <div class="bg-black/20 px-4 py-2 border-b border-white/5">
+                  <span class="text-xs text-gray-400">Example: everyone reporting to alice, any depth</span>
+                </div>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">WITH RECURSIVE reports AS (
+  -- Anchor: the root of the hierarchy
+  FOR e IN employees
+    FILTER e._key == 'alice'
+    RETURN e._key
+  UNION ALL
+  -- Step: find direct reports of the previous level
+  FOR m IN employees
+    FILTER m.manager IN reports
+    RETURN m._key
+)
+FOR x IN reports
+  RETURN x</code></pre>
+              </div>
+              <ul class="text-gray-400 space-y-1 text-sm">
+                <li><code class="text-orange-400">RECURSIVE</code> applies to every CTE in the WITH list (standard SQL semantics)</li>
+                <li>Steps must be joined with <code class="text-orange-400">UNION ALL</code>; other set operators are rejected on a recursive CTE body</li>
+                <li>The anchor and each step are full query blocks: they may have their own <code>LET</code>s, <code>SORT</code>/<code>LIMIT</code>, and nested <code>WITH</code></li>
+                <li>A step that never stops producing new rows ends with an iteration-limit error rather than hanging. Cyclic data (a → b → a) is exactly that case: filter out rows you have already visited in the step, or carry a depth and stop at it</li>
+              </ul>
+            </div>
+
+            <div class="p-6">
               <h3 class="text-lg font-bold text-white mb-4">Syntax</h3>
               <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
-                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">WITH
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">WITH [RECURSIVE]
   cte_name [(col1, col2, ...)] AS ( query ),
   cte_name2 [(col1, col2, ...)] AS ( query )
 query_body</code></pre>

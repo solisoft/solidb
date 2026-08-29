@@ -58,6 +58,7 @@ post("/databases/:db/collections/:name/indexes", "collections#create_index")
 put("/databases/:db/collections/:name/indexes/rebuild", "collections#rebuild_indexes")
 delete("/databases/:db/collections/:name/indexes/:index_name", "collections#delete_index")
 put("/databases/:db/collections/:name/versioning", "collections#set_versioning")
+put("/databases/:db/collections/:name/auto_index", "collections#set_auto_index")
 
 # --- Documents browser (collection-scoped) ---
 # Static segments (truncate / schema / upload / ...) are declared before the
@@ -116,19 +117,6 @@ delete("/databases/:db/scripts/:id", "scripts#delete")
 get("/databases/:db/repl", "repl#show", name: "db_repl")
 post("/databases/:db/repl/eval", "repl#eval")
 
-# --- Queues & jobs (db-scoped) ---
-get("/databases/:db/queues", "queues#index", name: "db_queues")
-get("/databases/:db/queues/:name/jobs", "queues#jobs")
-post("/databases/:db/queues/enqueue", "queues#enqueue")
-post("/databases/:db/queues/:name/settings", "queues#update_settings")
-delete("/databases/:db/queues/jobs/:id", "queues#cancel_job")
-post("/databases/:db/queues/jobs/:id/run-now", "queues#run_now")
-
-# --- Cron jobs (db-scoped) ---
-get("/databases/:db/cron", "cron#index", name: "db_cron")
-post("/databases/:db/cron", "cron#create")
-put("/databases/:db/cron/:id", "cron#update")
-delete("/databases/:db/cron/:id", "cron#delete")
 
 # --- Triggers (db-scoped) ---
 get("/databases/:db/triggers", "triggers#index", name: "db_triggers")

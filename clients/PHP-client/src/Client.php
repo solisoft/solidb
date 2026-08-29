@@ -23,8 +23,6 @@ class Client
 
     // Sub-clients
     private ?ScriptsClient $scriptsClient = null;
-    private ?JobsClient $jobsClient = null;
-    private ?CronClient $cronClient = null;
     private ?TriggersClient $triggersClient = null;
     private ?EnvClient $envClient = null;
     private ?RolesClient $rolesClient = null;
@@ -73,22 +71,6 @@ class Client
             $this->scriptsClient = new ScriptsClient($this);
         }
         return $this->scriptsClient;
-    }
-
-    public function jobs(): JobsClient
-    {
-        if (!$this->jobsClient) {
-            $this->jobsClient = new JobsClient($this);
-        }
-        return $this->jobsClient;
-    }
-
-    public function cron(): CronClient
-    {
-        if (!$this->cronClient) {
-            $this->cronClient = new CronClient($this);
-        }
-        return $this->cronClient;
     }
 
     public function triggers(): TriggersClient

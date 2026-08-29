@@ -407,10 +407,16 @@ pub async fn handle_create_api_key(
             // Generate a random API key
             let key = format!("sdb_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
 
+            if permissions.is_empty() {
+                return Response::error(DriverError::InvalidCommand(
+                    "API keys must declare at least one role".to_string(),
+                ));
+            }
             let api_key_doc = serde_json::json!({
                 "name": name,
                 "key": key,
                 "permissions": permissions,
+                "roles": permissions,
                 "expires_at": expires_at, // Use i64 directly, serialization will handle it
                 "created_at": chrono::Utc::now().to_rfc3339(),
             });

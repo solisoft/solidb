@@ -10,7 +10,6 @@ use crate::transaction::TransactionId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 
 pub mod admin;
 pub mod auth;
@@ -37,11 +36,41 @@ pub struct DriverHandler {
     /// Permissions resolved from the principal's roles at auth time.
     /// Connection-lifetime snapshot: a revoked role applies on reconnect.
     pub(crate) session_permissions: std::collections::HashSet<crate::server::Permission>,
+    /// The role names those permissions came from. Kept so the binary protocol
+    /// can hand the query executor the same principal the HTTP handlers do —
+    /// `CURRENT_USER` / `CURRENT_ROLES`, row policies, and the write-side query
+    /// paths must not depend on which protocol the query arrived over.
+    pub(crate) session_roles: Vec<String>,
     /// Database restriction for scoped API keys
     pub(crate) session_scoped_databases: Option<Vec<String>>,
 }
 
 impl DriverHandler {
+    /// The session's identity as the query executor sees it.
+    ///
+    /// Resolved with the same check the command dispatch uses, against the
+    /// database the query actually names, so a Read-only session cannot reach
+    /// the write-side query paths (auto-index creation) and a row policy
+    /// applies here exactly as it does over HTTP.
+    pub(crate) fn query_principal(&self, database: &str) -> crate::sdbql::QueryPrincipal {
+        let allows = |action| {
+            crate::server::AuthorizationService::check_permission_raw(
+                &self.session_permissions,
+                action,
+                Some(database),
+                self.session_scoped_databases.as_deref(),
+            )
+            .is_ok()
+        };
+        crate::sdbql::QueryPrincipal {
+            user: self.session_subject.clone(),
+            roles: self.session_roles.clone(),
+            can_read: allows(crate::server::PermissionAction::Read),
+            can_write: allows(crate::server::PermissionAction::Write),
+            can_admin: allows(crate::server::PermissionAction::Admin),
+        }
+    }
+
     /// Create a new handler
     pub fn new(
         storage: Arc<StorageEngine>,
@@ -54,12 +83,19 @@ impl DriverHandler {
             authenticated_db: None,
             session_subject: String::new(),
             session_permissions: std::collections::HashSet::new(),
+            session_roles: Vec::new(),
             session_scoped_databases: None,
         }
     }
 
-    /// Handle a driver connection
-    pub async fn handle_connection(&mut self, mut stream: TcpStream, addr: String) {
+    /// Handle a driver connection.
+    ///
+    /// Generic over the stream so the protocol runs identically over plain
+    /// TCP and over a TLS-terminated connection.
+    pub async fn handle_connection<S>(&mut self, mut stream: S, addr: String)
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
         tracing::info!("Driver connection from {}", addr);
 
         // The magic header has already been consumed by the multiplexer
@@ -128,11 +164,10 @@ impl DriverHandler {
     }
 
     /// Send a response to the client
-    async fn send_response(
-        &self,
-        stream: &mut TcpStream,
-        response: &Response,
-    ) -> Result<(), DriverError> {
+    async fn send_response<S>(&self, stream: &mut S, response: &Response) -> Result<(), DriverError>
+    where
+        S: tokio::io::AsyncWrite + Unpin,
+    {
         let data = encode_response(response)?;
         stream
             .write_all(&data)
@@ -263,13 +298,13 @@ impl DriverHandler {
                 sdbql,
                 bind_vars,
                 cache,
-            } => query::handle_query(self, database, sdbql, bind_vars, cache),
+            } => query::handle_query(self, database, sdbql, bind_vars, cache).await,
 
             Command::Explain {
                 database,
                 sdbql,
                 bind_vars,
-            } => query::handle_explain(self, database, sdbql, bind_vars),
+            } => query::handle_explain(self, database, sdbql, bind_vars).await,
 
             // ==================== Index Operations ====================
             Command::CreateIndex {
@@ -391,120 +426,6 @@ impl DriverHandler {
 
             Command::GetScriptStats => {
                 Response::ok(serde_json::json!({"message": "Script stats available via HTTP API"}))
-            }
-
-            // ==================== Job/Queue Management ====================
-            Command::ListQueues { database } => scheduler::handle_list_queues(self, database).await,
-
-            Command::ListJobs {
-                database,
-                queue_name,
-                status,
-                limit,
-                offset,
-            } => {
-                scheduler::handle_list_jobs(
-                    self,
-                    database,
-                    scheduler::ListJobsConfig {
-                        queue_name,
-                        status,
-                        limit,
-                        offset,
-                    },
-                )
-                .await
-            }
-
-            Command::EnqueueJob {
-                database,
-                queue_name,
-                script_path,
-                params,
-                priority,
-                run_at,
-                max_retries,
-            } => {
-                scheduler::handle_enqueue_job(
-                    self,
-                    database,
-                    scheduler::EnqueueJobConfig {
-                        queue_name,
-                        script_path,
-                        params,
-                        priority,
-                        run_at,
-                        max_retries,
-                    },
-                )
-                .await
-            }
-
-            Command::CancelJob { database, job_id } => {
-                scheduler::handle_cancel_job(self, database, job_id).await
-            }
-
-            // ==================== Cron Job Management ====================
-            Command::ListCronJobs { database } => {
-                scheduler::handle_list_cron_jobs(self, database).await
-            }
-
-            Command::CreateCronJob {
-                database,
-                name,
-                cron_expression,
-                script_path,
-                params,
-                queue,
-                priority,
-                max_retries,
-            } => {
-                scheduler::handle_create_cron_job(
-                    self,
-                    database,
-                    scheduler::CronJobCreateConfig {
-                        name,
-                        cron_expression,
-                        script_path,
-                        params,
-                        queue,
-                        priority,
-                        max_retries,
-                    },
-                )
-                .await
-            }
-
-            Command::UpdateCronJob {
-                database,
-                cron_id,
-                name,
-                cron_expression,
-                script_path,
-                params,
-                queue,
-                priority,
-                max_retries,
-            } => {
-                scheduler::handle_update_cron_job(
-                    self,
-                    database,
-                    cron_id,
-                    scheduler::CronJobUpdateConfig {
-                        name,
-                        cron_expression,
-                        script_path,
-                        params,
-                        queue,
-                        priority,
-                        max_retries,
-                    },
-                )
-                .await
-            }
-
-            Command::DeleteCronJob { database, cron_id } => {
-                scheduler::handle_delete_cron_job(self, database, cron_id).await
             }
 
             // ==================== Trigger Management ====================
@@ -1065,20 +986,31 @@ impl DriverHandler {
     }
 }
 
+/// Object-safe stream bound for driver connections.
+pub trait DriverConnTrait: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + ?Sized> DriverConnTrait
+    for T
+{
+}
+
+/// A driver connection stream, boxed so the multiplexer can dispatch either
+/// a plain TCP connection or a TLS-terminated one to the same handler.
+pub type DriverConn = Box<dyn DriverConnTrait>;
+
 /// Spawn a handler for incoming driver connections
 pub fn spawn_driver_handler(
     storage: Arc<StorageEngine>,
     replication: Option<Arc<crate::sync::log::SyncLog>>,
-) -> tokio::sync::mpsc::Sender<(TcpStream, String)> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<(TcpStream, String)>(100);
+) -> tokio::sync::mpsc::Sender<(DriverConn, String)> {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<(DriverConn, String)>(100);
 
     tokio::spawn(async move {
-        while let Some((stream, addr)) = rx.recv().await {
+        while let Some((mut stream, addr)) = rx.recv().await {
             let storage = storage.clone();
             let replication = replication.clone();
             tokio::spawn(async move {
                 let mut handler = DriverHandler::new(storage, replication);
-                handler.handle_connection(stream, addr).await;
+                handler.handle_connection(&mut *stream, addr).await;
             });
         }
     });

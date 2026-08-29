@@ -99,7 +99,7 @@ FOR user IN users
               <h3 class="text-xl font-bold text-white group-hover:text-purple-400 transition-colors">Operators</h3>
             </div>
             <p class="text-gray-400 text-sm leading-relaxed">
-              Comparison (==, !=, &lt;, &gt;), logical (AND, OR, NOT), arithmetic (+, -, *, /), bitwise operations, pattern matching (LIKE, =~), and fuzzy matching (~=).
+              Comparison (==, !=, &lt;, &gt;, &lt;=&gt;), logical (AND, OR, NOT), arithmetic, bitwise, pattern matching (LIKE, =~), fuzzy (~=), and semantic infix (~).
             </p>
             <div class="mt-4 text-purple-400 text-sm font-medium flex items-center">
               Learn more <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
@@ -131,7 +131,7 @@ FOR user IN users
               <h3 class="text-xl font-bold text-white group-hover:text-cyan-400 transition-colors">Graph Queries</h3>
             </div>
             <p class="text-gray-400 text-sm leading-relaxed">
-              Graph traversal with OUTBOUND, INBOUND, ANY directions. Variable depth traversal, shortest path algorithms, and edge filtering.
+              Graph traversal with OUTBOUND, INBOUND, ANY. Path variable <code>p</code>, PRUNE, shortest path, and edge filtering.
             </p>
             <div class="mt-4 text-cyan-400 text-sm font-medium flex items-center">
               Learn more <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
@@ -160,7 +160,7 @@ FOR user IN users
               <span class="bg-pink-500/20 text-pink-400 p-3 rounded-xl mr-4">
                 <i class="fas fa-function text-xl"></i>
               </span>
-              <h3 class="text-xl font-bold text-white group-hover:text-pink-400 transition-colors">Functions (60+)</h3>
+              <h3 class="text-xl font-bold text-white group-hover:text-pink-400 transition-colors">Functions</h3>
             </div>
             <p class="text-gray-400 text-sm leading-relaxed">
               String, Date/Time, Numeric, Array, Object, Geospatial, Fulltext search, Type checking, and more. Browse by category.

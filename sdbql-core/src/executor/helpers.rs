@@ -206,6 +206,18 @@ pub fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> S
             let distance = levenshtein_distance(left_str, right_str);
             Ok(Value::Bool(distance <= 2)) // Default max distance of 2
         }
+        BinaryOperator::Spaceship => Ok(spaceship_value(left, right)),
+        BinaryOperator::SemanticMatch => {
+            let ls = match left {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            let rs = match right {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            Ok(Value::Bool(trigram_sim(&ls, &rs) >= 0.45))
+        }
 
         BinaryOperator::And => Ok(Value::Bool(to_bool(left) && to_bool(right))),
         BinaryOperator::Or => Ok(Value::Bool(to_bool(left) || to_bool(right))),
@@ -466,6 +478,72 @@ pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     prev_row[b_len]
 }
 
+fn as_f64_vec(v: &Value) -> Option<Vec<f64>> {
+    match v {
+        Value::Array(a) => {
+            let mut out = Vec::with_capacity(a.len());
+            for x in a {
+                out.push(x.as_f64()?);
+            }
+            Some(out)
+        }
+        Value::Object(o) => o.get("vector").and_then(as_f64_vec),
+        _ => None,
+    }
+}
+
+fn trigram_sim(a: &str, b: &str) -> f64 {
+    if a == b {
+        return 1.0;
+    }
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    fn grams(s: &str) -> std::collections::HashSet<String> {
+        let padded = format!("  {s} ");
+        let chars: Vec<char> = padded.chars().collect();
+        chars.windows(3).map(|w| w.iter().collect()).collect()
+    }
+    let ga = grams(a);
+    let gb = grams(b);
+    let inter = ga.intersection(&gb).count() as f64;
+    let union = ga.union(&gb).count() as f64;
+    if union == 0.0 {
+        0.0
+    } else {
+        inter / union
+    }
+}
+
+fn spaceship_value(left: &Value, right: &Value) -> Value {
+    if let (Some(a), Some(b)) = (as_f64_vec(left), as_f64_vec(right)) {
+        if a.is_empty() || b.is_empty() || a.len() != b.len() {
+            return Value::Number(number_from_f64(1.0));
+        }
+        let mut dot = 0.0;
+        let mut na = 0.0;
+        let mut nb = 0.0;
+        for (x, y) in a.iter().zip(b.iter()) {
+            dot += x * y;
+            na += x * x;
+            nb += y * y;
+        }
+        let denom = na.sqrt() * nb.sqrt();
+        let d = if denom == 0.0 {
+            1.0
+        } else {
+            (1.0 - dot / denom).clamp(0.0, 2.0)
+        };
+        return Value::Number(number_from_f64(d));
+    }
+    let n = match compare_values(left, right) {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
+    };
+    Value::Number(n.into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -536,6 +614,25 @@ mod tests {
         );
         assert_eq!(
             evaluate_binary_op(&json!(1), &BinaryOperator::LessThan, &json!(2)).unwrap(),
+            json!(true)
+        );
+        assert_eq!(
+            evaluate_binary_op(&json!(1), &BinaryOperator::Spaceship, &json!(2)).unwrap(),
+            json!(-1)
+        );
+        assert_eq!(
+            evaluate_binary_op(
+                &json!([1.0, 0.0]),
+                &BinaryOperator::Spaceship,
+                &json!([1.0, 0.0])
+            )
+            .unwrap()
+            .as_f64()
+            .unwrap(),
+            0.0
+        );
+        assert_eq!(
+            evaluate_binary_op(&json!("aa"), &BinaryOperator::SemanticMatch, &json!("aa")).unwrap(),
             json!(true)
         );
 

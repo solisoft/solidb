@@ -103,10 +103,33 @@
               </div>
             </div>
 
+            <!-- KEEP restriction -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-orange-300 flex items-center">Restricting Group Items with KEEP</h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  With <code>INTO groups</code>, each group array normally stores every variable in
+                  scope. Add <code class="text-orange-300">KEEP v1, v2</code> to store only those
+                  variables — smaller results, no leaked document bodies.
+                </p>
+                <pre><code class="language-sql text-sm">FOR u IN users
+  LET n = u.name
+  COLLECT city = u.city INTO g KEEP n
+  RETURN { city, names: g[*].n }</code></pre>
+                <p class="text-xs text-gray-500">
+                  Without <code>KEEP</code>, each item of <code>g</code> would also carry <code>u</code>.
+                  Every name listed must be a variable in scope at the <code>COLLECT</code> — an
+                  unknown name is an error, not an empty group item.
+                </p>
+              </div>
+            </div>
+
             <!-- Syntax Reference -->
             <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4 mt-8">
               <code class="text-sm text-gray-300 font-mono block whitespace-pre overflow-x-auto">COLLECT <span class="text-orange-400">variable</span> = <span class="text-purple-400">expression</span> [, ...]
-[INTO <span class="text-orange-400">groupVariable</span>]
+[INTO <span class="text-orange-400">groupVariable</span> [KEEP <span class="text-orange-400">var1</span>, <span class="text-orange-400">var2</span>, ...]]
 [WITH COUNT INTO <span class="text-orange-400">countVariable</span>]
 [AGGREGATE <span class="text-orange-400">variable</span> = <span class="text-blue-400">FUNC</span>(<span class="text-purple-400">expression</span>) [, ...]]</code>
             </div>

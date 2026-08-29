@@ -245,8 +245,14 @@ RETURN RANGE(1, 5, 2) --[1, 3, 5]</code></pre>
                 <div id="fn-ZIP" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-ZIP" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">ZIP(arr1, arr2)</code>
+                  <p class="text-sm text-gray-400 mb-3">Pairs by default. When there are exactly two arrays and every value in the first is a string, returns an object (AQL form).</p>
                   <p class="text-sm text-gray-400 mb-3">Zips two arrays into an array of pairs.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ZIP([1, 2], ["a", "b"]) --[[1, "a"], [2, "b"]]</code></pre>
+                </div>
+                <div id="fn-ZIP_OBJECT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">ZIP_OBJECT(keys, values)</code>
+                  <p class="text-sm text-gray-400 mb-3">Build an object from parallel key and value arrays (AQL-style ZIP of string keys).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ZIP_OBJECT(["a", "b"], [1, 2]) --{a:1,b:2}</code></pre>
                 </div>
                 <div id="fn-REMOVE_VALUE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-REMOVE_VALUE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -277,6 +283,46 @@ RETURN POSITION([10, 20], 30) ---1</code></pre>
                   <p class="text-sm text-gray-400 mb-3">Returns true if array contains element, false otherwise.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONTAINS_ARRAY([1, 2], 3) --false
 RETURN CONTAINS_ARRAY([1, 2], 1) --true</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-lg font-bold text-orange-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-orange-500 rounded-full mr-3"></span>
+                Higher-order functions
+              </h3>
+              <p class="text-sm text-gray-400 mb-4">Lambdas are <code class="text-orange-300">x -&gt; expr</code> or <code class="text-orange-300">(a, b) -&gt; expr</code>. They work as <code>MAP(arr, x -&gt; …)</code> or piped: <code>arr |&gt; MAP(x -&gt; …)</code>.</p>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div id="fn-MAP" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">MAP(arr, x -&gt; expr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Transform each element.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MAP([1, 2, 3], x -&gt; x * 2)</code></pre>
+                </div>
+                <div id="fn-FILTER-arr" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">FILTER(arr, x -&gt; pred)</code>
+                  <p class="text-sm text-gray-400 mb-3">Keep elements where the predicate is true. Distinct from the <code>FILTER</code> clause.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FILTER([1, 2, 3, 4], x -&gt; x &gt; 2)</code></pre>
+                </div>
+                <div id="fn-FLAT_MAP" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">FLAT_MAP(arr, x -&gt; expr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Map, then flatten one level of nested arrays.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FLAT_MAP([[1, 2], [3]], x -&gt; x)</code></pre>
+                </div>
+                <div id="fn-GROUP_BY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">GROUP_BY(arr, x -&gt; key)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns <code>[{key, items}, …]</code>. Query-level grouping stays <code>COLLECT</code>.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN GROUP_BY(docs, x -&gt; x.city)</code></pre>
+                </div>
+                <div id="fn-SORT_BY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">SORT_BY(arr, x -&gt; key)</code>
+                  <p class="text-sm text-gray-400 mb-3">Sort an array by a computed key.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SORT_BY(docs, x -&gt; x.score)</code></pre>
+                </div>
+                <div id="fn-WINDOW_BY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">WINDOW_BY(arr, part?, order)</code>
+                  <p class="text-sm text-gray-400 mb-3">Adds <code>row_number</code> per partition. Query analytics stay <code>RANK() OVER (…)</code>.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN WINDOW_BY(rows, x -&gt; x.k, x -&gt; x.ts)</code></pre>
                 </div>
               </div>
             </div>

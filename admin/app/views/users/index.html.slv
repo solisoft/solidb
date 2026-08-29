@@ -40,8 +40,8 @@
         </div>
         <div>
           <label class="console-label" for="user-pass">password</label>
-          <input id="user-pass" name="password" type="password" placeholder="min 6 chars"
-                 class="console-input mt-1 font-mono" autocomplete="new-password">
+          <input id="user-pass" name="password" type="password" placeholder="min 12 chars"
+                 minlength="12" class="console-input mt-1 font-mono" autocomplete="new-password">
         </div>
         <div>
           <label class="console-label" for="user-role">initial role <span class="text-zinc-700">— optional</span></label>

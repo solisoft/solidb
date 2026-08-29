@@ -20,29 +20,146 @@
 class SolidbClient
   # Process-wide JWT cache, keyed by "host|username".
   static cached_tokens: Hash = {}
-
   static def host()
     session_host = session_get("solidb_host") rescue nil
-    return session_host unless session_host.blank?
-    return getenv("SOLIDB_HOST") ?? "http://localhost:6745"
+    return SolidbClient.prefer_ipv4_loopback(session_host) unless session_host.blank?
+    return SolidbClient.prefer_ipv4_loopback(getenv("SOLIDB_HOST") ?? "http://127.0.0.1:6745")
   end
 
   static def username()
     session_username = session_get("solidb_username") rescue nil
     return session_username unless session_username.blank?
-    return getenv("SOLIDB_USERNAME") ?? "admin"
+    return getenv("SOLIDB_USERNAME") ?? ""
   end
 
   static def password()
     session_password = session_get("solidb_password") rescue nil
     return session_password unless session_password.blank?
-    return getenv("SOLIDB_PASSWORD") ?? "admin"
+    return getenv("SOLIDB_PASSWORD") ?? ""
   end
 
   # True when this browser session targets a server other than the env one.
   static def session_override()
     session_host = session_get("solidb_host") rescue nil
     return !session_host.blank?
+  end
+
+  # Session override or SOLIDB_USERNAME. An empty username cannot log in,
+  # so the admin treats that as "ask for a first connection".
+  static def credentials_configured()
+    return !SolidbClient.username().blank?
+  end
+
+  # Soli's HTTP client blocks loopback and private IPs unless the process
+  # allowlists them. This admin exists to talk to a SoliDB the operator
+  # names (often localhost:6745 or a LAN box), so we treat a missing
+  # allow-list as the cause when such a probe never leaves the process.
+  static def loopback_host?(http_url)
+    host = SolidbClient.host_of(http_url)
+    return true if host == "localhost"
+    return true if host == "127.0.0.1"
+    return true if host == "[::1]"
+    return false
+  end
+
+  # RFC1918 and link-local, blocked by the same guard as loopback.
+  static def private_host?(http_url)
+    host = SolidbClient.host_of(http_url)
+    return true if host.starts_with("10.")
+    return true if host.starts_with("192.168.")
+    return true if host.starts_with("169.254.")
+    if host.starts_with("172.")
+      octet = host.split(".")[1] ?? ""
+      if !octet.blank? && octet.gsub("^[0-9]+$", "") == ""
+        value = octet.to_int()
+        return true if value >= 16 && value <= 31
+      end
+    end
+    return false
+  end
+
+  static def host_of(http_url)
+    rest = http_url
+    rest = rest.substring(8, rest.length()) if rest.starts_with("https://")
+    rest = rest.substring(7, rest.length()) if rest.starts_with("http://")
+    rest = rest.substring(0, rest.index_of("/")) if rest.includes?("/")
+    if rest.starts_with("[")
+      close = rest.index_of("]")
+      return rest.substring(0, close + 1) if close >= 0
+      return rest
+    end
+    rest = rest.substring(0, rest.index_of(":")) if rest.includes?(":")
+    return rest
+  end
+
+  # macOS/Linux resolve `localhost` to ::1 first while SoliDB usually listens
+  # on IPv4 only, so the probe fails where 127.0.0.1 works. An explicit
+  # `[::1]` is the operator's own choice and is left alone.
+  static def prefer_ipv4_loopback(http_url)
+    host = SolidbClient.host_of(http_url)
+    return http_url unless host == "localhost"
+    return http_url.replace("://" + host, "://127.0.0.1")
+  end
+
+  # True when this specific host may already leave the process: the dev
+  # escape hatch, or its own entry in SOLI_HTTP_ALLOW_HOSTS. A non-empty
+  # allow-list that does not name this host still blocks it.
+  static def http_allowed?(probe_host)
+    flag = getenv("SOLI_DEV_ALLOW_SSRF") ?? ""
+    return true if flag == "1" || flag == "true"
+    return SolidbClient.host_in_allow_list?(SolidbClient.host_of(probe_host),
+                                            getenv("SOLI_HTTP_ALLOW_HOSTS") ?? "")
+  end
+
+  # Exact membership, not "the list is non-empty" — an allow-list naming
+  # other hosts still blocks this one.
+  static def host_in_allow_list?(host, allow_list)
+    return false if allow_list.blank?
+    for entry in allow_list.split(",")
+      return true if entry.trim() == host
+    end
+    return false
+  end
+
+  static def unreachable_reason(probe_host)
+    blocked_by_default = SolidbClient.loopback_host?(probe_host) ||
+      SolidbClient.private_host?(probe_host)
+    if blocked_by_default && !SolidbClient.http_allowed?(probe_host)
+      return "Soli's HTTP client blocked this address — " +
+        "set SOLI_DEV_ALLOW_SSRF=1 in admin/.env and restart"
+    end
+    return "server unreachable (connection refused or blocked)"
+  end
+
+  # The first-connection gate, as a pure decision so specs can exercise both
+  # branches without a process-wide flag (E2E `get()` runs in a worker).
+  static def connection_gate(req, credentials_configured)
+    request_path = req["path"] ?? ""
+    if credentials_configured || SolidbClient.setup_bypass_path?(request_path)
+      return { "continue": true, "request": req }
+    end
+    return {
+      "continue": false,
+      "response": {
+        "status": 302,
+        "headers": { "Location": "/connection" },
+        "body": ""
+      }
+    }
+  end
+
+  static def setup_bypass_path?(request_path)
+    return true if request_path == "/health"
+    return true if request_path == "/connection"
+    return true if request_path == "/connection/reset"
+    return true if request_path == "/manifest.json"
+    return true if request_path == "/sw.js"
+    return true if request_path == "/offline.html"
+    return true if request_path.starts_with("/css/")
+    return true if request_path.starts_with("/js/")
+    return true if request_path.starts_with("/icons/")
+    return true if request_path.starts_with("/screenshots/")
+    return false
   end
 
   # Browser-reachable WebSocket base for the changefeed page. A session
@@ -115,6 +232,7 @@ class SolidbClient
   # connection - the /connection page validates credentials with this before
   # storing them in the session. Returns { "ok", "error", "token" }.
   static def probe_login(probe_host, probe_username, probe_password)
+    probe_host = SolidbClient.prefer_ipv4_loopback(probe_host)
     headers = { "Content-Type": "application/json", "Accept": "application/json" }
     body = { "username": probe_username, "password": probe_password }
     resp = HTTP.request("POST", probe_host + "/auth/login", headers, body) rescue nil
@@ -122,7 +240,7 @@ class SolidbClient
     if !result["ok"]
       reason = result["error"] ?? "login failed"
       status = result["status"] ?? 0
-      reason = "server unreachable (connection refused or blocked)" if status == 0
+      reason = SolidbClient.unreachable_reason(probe_host) if status == 0
       return { "ok": false, "error": reason, "token": "" }
     end
     token = (result["data"] ?? {})["token"] ?? ""

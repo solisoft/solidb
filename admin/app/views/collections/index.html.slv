@@ -111,6 +111,12 @@
               an immutable version, readable via <span class="text-zinc-300">DOC_AS_OF</span> /
               <span class="text-zinc-300">DOC_HISTORY</span>. can be toggled later from the collection page.</span>
           </label>
+          <p class="console-label mb-2 mt-3">auto-index <span class="text-zinc-700">— optional</span></p>
+          <label class="flex cursor-pointer items-start gap-2 font-mono text-xs leading-relaxed text-zinc-500">
+            <input type="checkbox" name="auto_index" value="true" class="mt-0.5 accent-teal-500">
+            <span>create persistent <span class="text-zinc-300">_auto_*</span> indexes when a FILTER
+              hits an unindexed field (capped at 16, Write required). can be toggled later from the collection page.</span>
+          </label>
         </div>
 
         <p x-show="collType != 'columnar'" class="border-t border-zinc-800 pt-3 font-mono text-xs text-zinc-600">

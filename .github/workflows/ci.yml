@@ -16,6 +16,10 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A cold release build plus the suite runs ~1h45m. This is a backstop, not
+    # a budget: a hung test used to sit on the job until GitHub's 6-hour limit
+    # killed it (see the webhook env-flag race fixed in src/queue/jobs.rs).
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v5
 

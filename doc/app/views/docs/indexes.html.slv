@@ -61,6 +61,38 @@
         </div>
       </section>
 
+      <!-- Query-driven auto-index -->
+      <section id="auto-index" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Automatic query indexes</h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-4 leading-relaxed">
+              Off by default. Enable per collection with <code>autoIndex: true</code>, or leave it unset and set <code>SOLIDB_AUTO_INDEX=1</code>. An explicit <code>autoIndex: false</code> opts the collection out even when the env var is set.
+            </p>
+            <p class="text-gray-300 mb-4 leading-relaxed">
+              When a <code>FOR … FILTER var.field == …</code> (or range, not null) would use an index and none exists, SoliDB creates a persistent, non-unique <code>_auto_{field}</code> index, backfills it, and uses it for that query. Nested fields keep dots (<code>_auto_address.city</code>). SORT is not auto-indexed: persistent indexes omit missing fields, so an auto-created sort index would drop documents.
+            </p>
+            <p class="text-gray-300 mb-4 leading-relaxed">
+              Creating an index is a write, so the caller must hold Write or Admin — a
+              <code>viewer</code> token never persists one, on <code>/cursor</code>,
+              <code>/sql</code>, <code>/explain</code>, a transactional query or the binary
+              protocol alike. A query that carries no principal at all (an internal
+              materialised-view refresh, a queue job, a stream task) does not auto-index either.
+            </p>
+            <ul class="space-y-2 text-gray-400 mb-4">
+              <li>At most 16 <code>_auto_*</code> indexes per collection.</li>
+              <li>Existing user (or edge) indexes on the same field are never duplicated, and neither is a composite index that already covers the FILTER.</li>
+              <li><code>_key</code>, <code>_id</code>, <code>_rev</code>, sharded collections, and collections whose names start with <code>_</code> are skipped.</li>
+              <li>Collections above <code class="text-cyan-400">SOLIDB_AUTO_INDEX_MAX_DOCS</code> documents (default 1,000,000; <code>0</code> disables the ceiling) are skipped — the backfill runs inside the query that triggered it.</li>
+              <li>If no document carries the field, the index is dropped again instead of sitting empty and consuming a slot.</li>
+              <li><code>EXPLAIN</code> does not create indexes; it may set <code>auto_index_candidate</code> when this query would actually create one.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
       <!-- Hash Index -->
       <section id="hash" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">

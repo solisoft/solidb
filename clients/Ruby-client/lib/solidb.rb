@@ -5,8 +5,6 @@ require "solidb/ai_client"
 
 # Sub-clients
 require "solidb/scripts_client"
-require "solidb/jobs_client"
-require "solidb/cron_client"
 require "solidb/triggers_client"
 require "solidb/env_client"
 require "solidb/roles_client"

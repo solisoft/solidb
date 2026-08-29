@@ -153,6 +153,9 @@ impl Collection {
                     let document = Document::with_key(&self.name, key.clone(), data.clone());
                     let doc_bytes = serialize_doc(&document)?;
                     batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
+                    if self.is_versioned() {
+                        self.append_version_to_batch(&mut batch, &cf, key, Some(data));
+                    }
 
                     // Compute and add index entries to batch
                     let (regular_entries, geo_entries) =
@@ -194,6 +197,9 @@ impl Collection {
                     let document = Document::with_key(&self.name, key.clone(), new_data.clone());
                     let doc_bytes = serialize_doc(&document)?;
                     batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
+                    if self.is_versioned() {
+                        self.append_version_to_batch(&mut batch, &cf, key, Some(new_data));
+                    }
 
                     // Compute and apply index updates atomically
                     let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
@@ -249,6 +255,9 @@ impl Collection {
                 Operation::Delete { key, old_data, .. } => {
                     // Delete document from batch
                     batch.delete_cf(&cf, Self::doc_key(key));
+                    if self.is_versioned() {
+                        self.append_version_to_batch(&mut batch, &cf, key, None);
+                    }
 
                     // Compute and remove index entries
                     let (regular_keys, geo_keys) =

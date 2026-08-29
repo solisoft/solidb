@@ -1,4 +1,4 @@
-use mlua::{FromLua, Lua, Value as LuaValue};
+use mlua::{Lua, Value as LuaValue};
 use serde_json::Value as JsonValue;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -306,7 +306,8 @@ pub fn setup_request_globals_selective(
 
     if needs.solidb_env {
         if let Some(ref solidb) = solidb {
-            setup_env_table_cached(engine, lua, solidb, db_name)?;
+            let allow_secrets = context.user.authenticated && context.user.has_role("admin");
+            setup_env_table_cached(engine, lua, solidb, db_name, allow_secrets)?;
         }
     }
 
@@ -457,7 +458,17 @@ fn setup_env_table_cached(
     lua: &Lua,
     solidb: &mlua::Table,
     db_name: &str,
+    allow_secrets: bool,
 ) -> Result<(), DbError> {
+    if !allow_secrets {
+        let env_table = lua
+            .create_table()
+            .map_err(|e| DbError::InternalError(format!("Failed to create env table: {}", e)))?;
+        solidb
+            .set("env", env_table)
+            .map_err(|e| DbError::InternalError(format!("Failed to set solidb.env: {}", e)))?;
+        return Ok(());
+    }
     let env_table = lua
         .create_table()
         .map_err(|e| DbError::InternalError(format!("Failed to create env table: {}", e)))?;
@@ -631,17 +642,10 @@ fn setup_db_object(engine: &ScriptEngine, lua: &Lua, db_name: &str) -> Result<()
         .set("_name", db_name.to_string())
         .map_err(|e| DbError::InternalError(format!("Failed to set db name: {}", e)))?;
 
-    // Setup all db methods (collection, query, transaction, enqueue)
+    // Setup all db methods (collection, query, transaction)
     setup_db_collection_method(lua, &db_handle, &engine.storage, db_name)?;
     setup_db_query_method(lua, &db_handle, &engine.storage, db_name)?;
     setup_db_transaction_method(lua, &db_handle, &engine.storage, db_name)?;
-    setup_db_enqueue_method(
-        lua,
-        &db_handle,
-        &engine.storage,
-        &engine.queue_notifier,
-        db_name,
-    )?;
 
     globals
         .set("db", db_handle)
@@ -1316,103 +1320,6 @@ fn setup_db_transaction_method(
     Ok(())
 }
 
-fn setup_db_enqueue_method(
-    lua: &Lua,
-    db_handle: &mlua::Table,
-    storage: &Arc<StorageEngine>,
-    queue_notifier: &Option<tokio::sync::broadcast::Sender<()>>,
-    db_name: &str,
-) -> Result<(), DbError> {
-    let storage_enqueue = storage.clone();
-    let notifier_enqueue = queue_notifier.clone();
-    let current_db_name = db_name.to_string();
-
-    #[allow(clippy::get_first)]
-    let enqueue_fn = lua
-        .create_function(move |lua, args: mlua::MultiValue| {
-            let (queue, script_path, params, options) =
-                if args.len() >= 4 && matches!(args[0], LuaValue::Table(_)) {
-                    let q = String::from_lua(args.get(1).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                    let s = String::from_lua(args.get(2).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                    let p = args.get(3).cloned().unwrap_or(LuaValue::Nil);
-                    let o = args.get(4).cloned();
-                    (q, s, p, o)
-                } else {
-                    let q = String::from_lua(args.get(0).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                    let s = String::from_lua(args.get(1).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                    let p = args.get(2).cloned().unwrap_or(LuaValue::Nil);
-                    let o = args.get(3).cloned();
-                    (q, s, p, o)
-                };
-
-            let json_params = lua_to_json_value(lua, params)?;
-
-            let mut priority = 0;
-            let mut max_retries = 20;
-            let mut run_at = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-
-            if let Some(LuaValue::Table(t)) = options {
-                priority = t.get("priority").unwrap_or(0);
-                max_retries = t.get("max_retries").unwrap_or(20);
-                if let Ok(delay) = t.get::<u64>("run_at") {
-                    run_at = delay;
-                }
-            }
-
-            let job_id = uuid::Uuid::new_v4().to_string();
-            let job = crate::queue::Job {
-                id: job_id.clone(),
-                revision: None,
-                queue,
-                priority,
-                script_path,
-                webhook_url: None,
-                webhook_secret: None,
-                webhook_headers: None,
-                params: json_params,
-                status: crate::queue::JobStatus::Pending,
-                retry_count: 0,
-                max_retries,
-                last_error: None,
-                cron_job_id: None,
-                run_at,
-                created_at: run_at,
-                started_at: None,
-                completed_at: None,
-            };
-
-            let db = storage_enqueue
-                .get_database(&current_db_name)
-                .map_err(mlua::Error::external)?;
-
-            if db.get_collection("_jobs").is_err() {
-                db.create_collection("_jobs".to_string(), None)
-                    .map_err(mlua::Error::external)?;
-            }
-
-            let jobs_coll = db.get_collection("_jobs").map_err(mlua::Error::external)?;
-
-            let doc_val = serde_json::to_value(&job).unwrap();
-            jobs_coll.insert(doc_val).map_err(mlua::Error::external)?;
-
-            if let Some(ref notifier) = notifier_enqueue {
-                let _ = notifier.send(());
-            }
-
-            Ok(job_id)
-        })
-        .map_err(|e| DbError::InternalError(format!("Failed to create enqueue function: {}", e)))?;
-
-    db_handle
-        .set("enqueue", enqueue_fn)
-        .map_err(|e| DbError::InternalError(format!("Failed to set enqueue function: {}", e)))?;
-
-    Ok(())
-}
-
 pub fn setup_lua_globals(
     engine: &ScriptEngine,
     lua: &Lua,
@@ -1786,21 +1693,23 @@ pub fn setup_lua_globals(
         .create_table()
         .map_err(|e| DbError::InternalError(format!("Failed to create env table: {}", e)))?;
 
-    // Populate env table from _env collection
-    if let Ok(db) = engine.storage.get_database(db_name) {
-        if let Ok(collection) = db.system_collection("_env") {
-            let collection: &crate::storage::Collection = &collection;
-            let all_docs = collection.scan(None);
-            for doc in all_docs {
-                if let (Some(key), Some(value)) = (
-                    doc.get("_key")
-                        .and_then(|v| v.as_str().map(|s| s.to_string())),
-                    doc.get("value")
-                        .and_then(|v| v.as_str().map(|s| s.to_string())),
-                ) {
-                    env_table.set(key, value).map_err(|e| {
-                        DbError::InternalError(format!("Failed to set env var: {}", e))
-                    })?;
+    // Secrets stay out of anonymous / non-admin scripts.
+    if context.user.authenticated && context.user.has_role("admin") {
+        if let Ok(db) = engine.storage.get_database(db_name) {
+            if let Ok(collection) = db.system_collection("_env") {
+                let collection: &crate::storage::Collection = &collection;
+                let all_docs = collection.scan(None);
+                for doc in all_docs {
+                    if let (Some(key), Some(value)) = (
+                        doc.get("_key")
+                            .and_then(|v| v.as_str().map(|s| s.to_string())),
+                        doc.get("value")
+                            .and_then(|v| v.as_str().map(|s| s.to_string())),
+                    ) {
+                        env_table.set(key, value).map_err(|e| {
+                            DbError::InternalError(format!("Failed to set env var: {}", e))
+                        })?;
+                    }
                 }
             }
         }
@@ -2434,98 +2343,6 @@ pub fn setup_lua_globals(
     db_handle.set("transaction", transaction_fn).map_err(|e| {
         DbError::InternalError(format!("Failed to set transaction function: {}", e))
     })?;
-
-    // db:enqueue(queue, script, params, options)
-    let storage_enqueue = engine.storage.clone();
-    let notifier_enqueue = engine.queue_notifier.clone();
-    let current_db_name = db_name.to_string();
-    #[allow(clippy::get_first)]
-    let enqueue_fn = lua
-        .create_function(move |lua, args: mlua::MultiValue| {
-            // Detect if called with colon (db:enqueue) or dot (db.enqueue)
-            let (queue, script_path, params, options) =
-                if args.len() >= 4 && matches!(args[0], LuaValue::Table(_)) {
-                    // Colon call: (self, queue, script, params, options)
-                    let q = String::from_lua(args.get(1).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                    let s = String::from_lua(args.get(2).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                    let p = args.get(3).cloned().unwrap_or(LuaValue::Nil);
-                    let o = args.get(4).cloned();
-                    (q, s, p, o)
-                } else {
-                    // Dot call: (queue, script, params, options)
-                    let q = String::from_lua(args.get(0).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                    let s = String::from_lua(args.get(1).cloned().unwrap_or(LuaValue::Nil), lua)?;
-                    let p = args.get(2).cloned().unwrap_or(LuaValue::Nil);
-                    let o = args.get(3).cloned();
-                    (q, s, p, o)
-                };
-
-            let json_params = lua_to_json_value(lua, params)?;
-
-            let mut priority = 0;
-            let mut max_retries = 20;
-            let mut run_at = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-
-            if let Some(LuaValue::Table(t)) = options {
-                priority = t.get("priority").unwrap_or(0);
-                max_retries = t.get("max_retries").unwrap_or(20);
-                if let Ok(delay) = t.get::<u64>("run_at") {
-                    run_at = delay;
-                }
-            }
-
-            let job_id = uuid::Uuid::new_v4().to_string();
-            let job = crate::queue::Job {
-                id: job_id.clone(),
-                revision: None,
-                queue,
-                priority,
-                script_path,
-                webhook_url: None,
-                webhook_secret: None,
-                webhook_headers: None,
-                params: json_params,
-                status: crate::queue::JobStatus::Pending,
-                retry_count: 0,
-                max_retries,
-                last_error: None,
-                cron_job_id: None,
-                run_at,
-                created_at: run_at,
-                started_at: None,
-                completed_at: None,
-            };
-
-            let db = storage_enqueue
-                .get_database(&current_db_name)
-                .map_err(mlua::Error::external)?;
-
-            // Ensure _jobs collection exists
-            if db.get_collection("_jobs").is_err() {
-                db.create_collection("_jobs".to_string(), None)
-                    .map_err(mlua::Error::external)?;
-            }
-
-            let jobs_coll = db.get_collection("_jobs").map_err(mlua::Error::external)?;
-
-            let doc_val = serde_json::to_value(&job).unwrap();
-            jobs_coll.insert(doc_val).map_err(mlua::Error::external)?;
-
-            // Notify worker
-            if let Some(ref notifier) = notifier_enqueue {
-                let _ = notifier.send(());
-            }
-
-            Ok(job_id)
-        })
-        .map_err(|e| DbError::InternalError(format!("Failed to create enqueue function: {}", e)))?;
-
-    db_handle
-        .set("enqueue", enqueue_fn)
-        .map_err(|e| DbError::InternalError(format!("Failed to set enqueue function: {}", e)))?;
 
     globals
         .set("db", db_handle)

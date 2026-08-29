@@ -21,7 +21,10 @@ class ApiKeysController < Controller
     end
     payload = { "name": name }
     roles = this._split_csv(params["roles"] ?? "")
-    payload["roles"] = roles if roles.length() > 0
+    if roles.length() == 0
+      return this._respond({ "ok": false, "status": 422, "error": "at least one role is required" }, "")
+    end
+    payload["roles"] = roles
     scoped = this._split_csv(params["scoped_databases"] ?? "")
     payload["scoped_databases"] = scoped if scoped.length() > 0
     result = SolidbClient.post_api(SolidbEndpoints.api_keys(), payload)

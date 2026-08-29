@@ -284,6 +284,11 @@ RETURN NULLIF(10, 5) --10</code></pre>
                 <p class="text-sm text-gray-400 mb-3">Removes specified attributes.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UNSET(doc, "password")</code></pre>
               </div>
+              <div id="fn-REDACT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">REDACT(doc, keys)</code>
+                <p class="text-sm text-gray-400 mb-3">Deep-remove keys from objects and nested objects/arrays.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REDACT(doc, ["ssn", "email"])</code></pre>
+              </div>
               <div id="fn-ATTRIBUTES" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-ATTRIBUTES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">ATTRIBUTES(doc, removeInternal?, sort?)</code>
@@ -349,6 +354,74 @@ RETURN NULLIF(10, 5) --10</code></pre>
   orders: COLLECTION_COUNT("orders"),
   products: COLLECTION_COUNT("products")
 }</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="auth-sketches" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Auth, sketches, events, RAG</h2>
+          </div>
+          <div class="p-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div id="fn-CURRENT_USER" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">CURRENT_USER() / CURRENT_ROLES() / CAN(action [, doc])</code>
+              <p class="text-sm text-gray-400 mb-3">Request principal. HTTP queries get the JWT user. Without a principal, <code>CAN</code> is false and <code>CURRENT_USER</code> is null. Actions: <code>read</code>, <code>write</code>, <code>admin</code>. Optional <code>doc</code> also checks <code>owner</code>/<code>_owner</code> and <code>_acl.{action}</code> (user, role, or <code>*</code>).</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">FILTER CAN("write")
+RETURN CURRENT_USER()</code></pre>
+            </div>
+            <div id="fn-ROW_POLICY" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">ROW_POLICY(coll [, pred])</code>
+              <p class="text-sm text-gray-400 mb-3">Store a filter expression on the collection. Non-admin <code>FOR</code> scans evaluate it with the doc bound as the collection name and as <code>doc</code>. Pass <code>null</code> to clear.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN ROW_POLICY("orders", "orders.tenant == @tenant")</code></pre>
+            </div>
+            <div id="fn-PARSE" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">PARSE_IDENTIFIER / PARSE_COLLECTION / PARSE_KEY</code>
+              <p class="text-sm text-gray-400 mb-3">Split a document id <code>collection/key</code>. Extra slashes stay in the key.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN PARSE_IDENTIFIER("users/ada")
+-- { collection: "users", key: "ada" }</code></pre>
+            </div>
+            <div id="fn-RECURSIVE" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">UNSET_RECURSIVE / KEEP_RECURSIVE / ZIP_OBJECT</code>
+              <p class="text-sm text-gray-400 mb-3">Deep drop or keep named keys. <code>ZIP_OBJECT(keys, values)</code> builds an object (pair-wise <code>ZIP</code> is unchanged for numeric arrays).</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN UNSET_RECURSIVE(doc, "ssn")
+RETURN ZIP_OBJECT(["a","b"], [1,2])</code></pre>
+            </div>
+            <div id="fn-APPLY" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">APPLY(name, args) / CALL(name, …)</code>
+              <p class="text-sm text-gray-400 mb-3">Call another builtin by name. Recursion is capped at 8.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN CALL("UPPER", "hi")
+RETURN APPLY("ABS", [-3])</code></pre>
+            </div>
+            <div id="fn-MINHASH" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">MINHASH / MINHASH_COUNT / MINHASH_ERROR</code>
+              <p class="text-sm text-gray-400 mb-3">MinHash signatures for Jaccard-style set comparison. <code>MINHASH_COUNT(0.05)</code> is 400 hashes.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN MINHASH(["a","b","c"], 16)</code></pre>
+            </div>
+            <div id="fn-APPROX" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">APPROX_COUNT_DISTINCT / APPROX_PERCENTILE / APPROX_TOP_K / SKETCH_MERGE</code>
+              <p class="text-sm text-gray-400 mb-3">HyperLogLog (p=14), percentile, Space-Saving top-k. HLL results are objects with <code>_type: "hll"</code> and <code>estimate</code>; merge two sketches with <code>SKETCH_MERGE</code>.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN APPROX_PERCENTILE(amounts, 95)</code></pre>
+            </div>
+            <div id="fn-MATCH_SEQ" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">MATCH_SEQ(events, key, steps)</code>
+              <p class="text-sm text-gray-400 mb-3">Find ordered event sequences per key. Steps: <code>{as, type, field, equals, within}</code>. Times use <code>ts</code> / <code>t</code> / <code>time</code>.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN MATCH_SEQ(events, "user", [
+  {as: "a", type: "signup"},
+  {as: "b", type: "pay", within: "7d"}
+])</code></pre>
+            </div>
+            <div id="fn-SNAPSHOT_DIFF" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">SNAPSHOT_DIFF(coll, t1, t2)</code>
+              <p class="text-sm text-gray-400 mb-3">On a versioned collection, classify documents inserted, updated, or deleted between two timestamps.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN SNAPSHOT_DIFF("orders", t1, t2)</code></pre>
+            </div>
+            <div id="fn-EMBED" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">EMBED / EXTRACT / CITE / GROUNDED / SEMANTIC</code>
+              <p class="text-sm text-gray-400 mb-3"><code>EMBED</code> and <code>EXTRACT</code> call the configured LLM (same providers as auto-embed). <code>CITE</code> / <code>GROUNDED</code> fall back to lexical overlap. <code>SEMANTIC(doc, q)</code> is a trigram score.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN CITE(@answer, results)
+RETURN EMBED(doc.body, { provider: "openai" })</code></pre>
             </div>
           </div>
         </div>

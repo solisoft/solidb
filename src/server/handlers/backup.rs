@@ -18,8 +18,59 @@ use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateBackupRequest {
-    /// Destination directory, on the server. Must not already exist.
+    /// Destination directory. Relative paths are resolved under
+    /// `SOLIDB_BACKUP_ROOT` (or `{data_dir}/backups`). Absolute paths must
+    /// stay inside that root.
     pub path: String,
+}
+
+fn resolve_backup_path(data_dir: &str, requested: &str) -> Result<std::path::PathBuf, DbError> {
+    let root = std::env::var("SOLIDB_BACKUP_ROOT")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(data_dir).join("backups"));
+    std::fs::create_dir_all(&root).map_err(|e| {
+        DbError::InternalError(format!(
+            "Failed to create backup root '{}': {}",
+            root.display(),
+            e
+        ))
+    })?;
+    let root = root
+        .canonicalize()
+        .map_err(|e| DbError::InternalError(format!("Failed to resolve backup root: {}", e)))?;
+
+    let requested = std::path::Path::new(requested);
+    if requested
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(DbError::BadRequest(
+            "backup path must not contain '..'".to_string(),
+        ));
+    }
+    let candidate = if requested.is_absolute() {
+        requested.to_path_buf()
+    } else {
+        root.join(requested)
+    };
+    let parent = candidate.parent().unwrap_or(&root);
+    if parent.exists() {
+        let parent_canon = parent
+            .canonicalize()
+            .map_err(|e| DbError::BadRequest(format!("invalid backup path: {}", e)))?;
+        if !parent_canon.starts_with(&root) {
+            return Err(DbError::BadRequest(
+                "backup path must be inside the configured backup root".to_string(),
+            ));
+        }
+    } else if !candidate.starts_with(&root) {
+        return Err(DbError::BadRequest(
+            "backup path must be inside the configured backup root".to_string(),
+        ));
+    }
+    Ok(candidate)
 }
 
 /// POST /_api/backup
@@ -47,7 +98,7 @@ pub async fn create_backup(
         return Err(DbError::BadRequest("path is required".to_string()));
     }
 
-    let target = std::path::PathBuf::from(&req.path);
+    let target = resolve_backup_path(state.storage.data_dir(), &req.path)?;
 
     // Checkpointing blocks on a flush and then on hard-linking every SST file,
     // which scales with the column-family count — keep it off the async

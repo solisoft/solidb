@@ -78,7 +78,20 @@
 +------------------+-------------------------+</code></pre>
           
           <h3 class="text-xl font-bold text-white mb-4">Maximum Message Size</h3>
-          <p class="text-gray-300">The maximum message size is <code>16 MB</code> (16,777,216 bytes).</p>
+          <p class="text-gray-300 mb-6">The maximum message size is <code>16 MB</code> (16,777,216 bytes).</p>
+
+          <h3 class="text-xl font-bold text-white mb-4">Query Timeout</h3>
+          <p class="text-gray-300 mb-6">
+            <code>Query</code> and <code>Explain</code> are capped at <strong>30 seconds</strong>, the same limit the HTTP <code>/cursor</code> endpoint applies. Point reads run inline; anything that scans, loops, or mutates runs on the blocking pool under the cap. Overrunning it returns a <code>DatabaseError</code> reading <code>Query execution timeout: exceeded 30 seconds</code>. Note that a <em>mutation</em> which overruns still commits &mdash; the executor cannot be cancelled mid-write &mdash; so treat the timeout as "the result is unavailable", not "the write did not happen".
+          </p>
+
+          <h3 class="text-xl font-bold text-white mb-4">TLS</h3>
+          <p class="text-gray-300 mb-4">
+            The driver protocol is <strong>plaintext</strong>. None of the shipped SDKs negotiate TLS before sending the magic header, so run the driver port on a trusted network or tunnel it yourself.
+          </p>
+          <p class="text-gray-300">
+            Starting the server with <code>--tls-cert</code> / <code>--tls-key</code> does not break this: on a multiplexed port the listener sniffs for a TLS <code>ClientHello</code> and only handshakes when a client offers one, so plaintext driver connections are passed through untouched. Setting <code class="text-cyan-400">SOLIDB_TLS_REQUIRE=1</code> <em>does</em> refuse them &mdash; do not set it on a node that serves driver clients. See <a href="/docs/security#tls" class="text-cyan-400 hover:underline">Transport Security</a>.
+          </p>
         </div>
       </section>
 

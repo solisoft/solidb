@@ -68,9 +68,11 @@ pub struct ExecuteQueryResponse {
 // ==================== Helper Functions ====================
 
 /// Check if a query is potentially long-running (contains mutations or range iterations)
-#[inline]
-fn is_long_running_query(query: &Query) -> bool {
-    query.body_clauses.iter().any(|clause| match clause {
+///
+/// Looks into set-operation operands and CTE bodies too: an operand's `FOR`
+/// scan is just as blocking as a top-level one.
+pub(crate) fn is_long_running_query(query: &Query) -> bool {
+    let own = query.body_clauses.iter().any(|clause| match clause {
         BodyClause::Insert(_)
         | BodyClause::Update(_)
         | BodyClause::Remove(_)
@@ -80,7 +82,17 @@ fn is_long_running_query(query: &Query) -> bool {
         // 2. Collection scans might trigger scatter-gather with blocking HTTP calls
         BodyClause::For(_) => true,
         _ => false,
-    })
+    });
+
+    own || query
+        .set_operations
+        .iter()
+        .any(|op| is_long_running_query(&op.query))
+        || query.with_clause.as_ref().is_some_and(|with| {
+            with.ctes
+                .iter()
+                .any(|cte| is_long_running_query(&cte.query))
+        })
 }
 
 /// Get collection names affected by mutation clauses for targeted cache invalidation.
@@ -89,8 +101,20 @@ fn is_long_running_query(query: &Query) -> bool {
 /// `pub(crate)` so the native-driver query handler can invalidate on the same
 /// terms as this one — it used to skip invalidation entirely because it had no
 /// access to this.
+/// Drop cached results for the collections a mutation touched, or the whole
+/// cache when the set could not be determined.
+pub(crate) fn invalidate_collections(collections: &[String]) {
+    if collections.is_empty() {
+        query_cache::get_query_cache().invalidate_all();
+    } else {
+        for collection in collections {
+            query_cache::get_query_cache().invalidate_collection(collection);
+        }
+    }
+}
+
 pub(crate) fn mutated_collections(query: &Query) -> std::collections::HashSet<&str> {
-    query
+    let mut collections: std::collections::HashSet<&str> = query
         .body_clauses
         .iter()
         .filter_map(|clause| match clause {
@@ -100,7 +124,19 @@ pub(crate) fn mutated_collections(query: &Query) -> std::collections::HashSet<&s
             BodyClause::Upsert(c) => Some(c.collection.as_str()),
             _ => None,
         })
-        .collect()
+        .collect();
+
+    // Set-operation operands and CTE bodies can carry their own mutations
+    for operand in query.set_operations.iter().map(|op| op.query.as_ref()) {
+        collections.extend(mutated_collections(operand));
+    }
+    if let Some(with) = &query.with_clause {
+        for cte in &with.ctes {
+            collections.extend(mutated_collections(&cte.query));
+        }
+    }
+
+    collections
 }
 
 /// Log slow query to _slow_queries collection (async, non-blocking)
@@ -198,6 +234,23 @@ fn log_slow_query(
     });
 }
 
+pub(crate) fn principal_from_claims(
+    claims: &crate::server::auth::Claims,
+) -> crate::sdbql::QueryPrincipal {
+    let roles = claims.roles.clone().unwrap_or_default();
+    let lower: Vec<String> = roles.iter().map(|r| r.to_ascii_lowercase()).collect();
+    let can_admin = lower.iter().any(|r| r == "admin");
+    let can_write = can_admin || lower.iter().any(|r| r == "editor" || r == "write");
+    let can_read = can_write || lower.iter().any(|r| r == "viewer" || r == "read");
+    crate::sdbql::QueryPrincipal {
+        user: claims.sub.clone(),
+        roles,
+        can_read,
+        can_write,
+        can_admin,
+    }
+}
+
 // ==================== Handlers ====================
 
 pub async fn execute_query(
@@ -245,13 +298,11 @@ pub async fn execute_query(
         let wal = tx_manager.wal().clone();
         let lock_manager = tx_manager.lock_manager().clone();
 
-        // Check if query contains mutation operations
-        let has_mutations = query.body_clauses.iter().any(|clause| {
-            matches!(
-                clause,
-                BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_)
-            )
-        });
+        // Check if query contains mutation operations. `has_mutations()` also
+        // sees UPSERT and mutations nested in set-operation operands or CTE
+        // bodies — those must not take the read-only path, which bypasses the
+        // transaction's WAL and locks.
+        let has_mutations = query.has_mutations();
 
         if !has_mutations {
             // No mutations - just execute normally (read operations)
@@ -397,7 +448,7 @@ pub async fn execute_query(
                         ctx.insert(let_clause.variable.clone(), value);
                     }
                 }
-                BodyClause::Filter(filter_clause) => {
+                BodyClause::Filter(filter_clause) | BodyClause::Search(filter_clause) => {
                     rows.retain(|ctx| {
                         executor
                             .evaluate_filter_with_context(&filter_clause.expression, ctx)
@@ -494,16 +545,11 @@ pub async fn execute_query(
     let prepared = crate::sdbql::get_prepared_statement_cache().parse_if_needed(&req.query)?;
     let query = prepared.query.as_ref();
 
-    // Check if query is cacheable (read-only with no mutations)
-    let is_read_only = !query.body_clauses.iter().any(|clause| {
-        matches!(
-            clause,
-            BodyClause::Insert(_)
-                | BodyClause::Update(_)
-                | BodyClause::Remove(_)
-                | BodyClause::Upsert(_)
-        )
-    });
+    // Check if query is cacheable (read-only with no mutations). This has to be
+    // the deep check: caching a query whose mutation hides in a set-operation
+    // operand or a CTE body would serve the cached rows on the next identical
+    // request and never run the mutation at all.
+    let is_read_only = !query.has_mutations();
 
     // Try to get cached result for read-only queries (unless cache is disabled).
     // Include db_name so queries on different databases don't share cache entries.
@@ -584,6 +630,7 @@ pub async fn execute_query(
 
     // Only use spawn_blocking for potentially long-running queries
     // (mutations or range iterations). Simple reads run directly.
+    let mutates = query.has_mutations();
     let (query_result, execution_time_ms) = if is_long_running_query(query) {
         let storage = state.storage.clone();
         let bind_vars = req.bind_vars.clone();
@@ -591,44 +638,72 @@ pub async fn execute_query(
         let shard_coordinator = state.shard_coordinator.clone();
         let is_scatter_gather = headers.contains_key("X-Scatter-Gather");
         let query = (*query).clone();
+        let principal = principal_from_claims(&claims);
+
+        // Collections this query invalidates, resolved before the executor
+        // moves out of reach, so the timeout arm below can still drop them.
+        let invalidated: Vec<String> = if mutates {
+            mutated_collections(&query)
+                .into_iter()
+                .map(|c| c.to_string())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // Apply timeout to prevent DoS from long-running queries
+        let mut task = tokio::task::spawn_blocking(move || {
+            let mut executor = if bind_vars.is_empty() {
+                QueryExecutor::with_database(&storage, db_name)
+            } else {
+                QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
+            }
+            .with_principal(principal);
+
+            // Add replication service for mutation logging
+            if let Some(ref log) = replication_log {
+                executor = executor.with_replication(log);
+            }
+
+            // Inject shard coordinator for scatter-gather (if not already a sub-query)
+            if !is_scatter_gather {
+                if let Some(coord) = shard_coordinator {
+                    executor = executor.with_shard_coordinator(coord);
+                }
+            }
+
+            let start = std::time::Instant::now();
+            let result = executor.execute_with_stats(&query)?;
+            let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
+            Ok::<_, DbError>((result, execution_time_ms))
+        });
+
+        // `&mut task` so the handle survives a timeout and can still be awaited.
         match tokio::time::timeout(
             std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
-            tokio::task::spawn_blocking(move || {
-                let mut executor = if bind_vars.is_empty() {
-                    QueryExecutor::with_database(&storage, db_name)
-                } else {
-                    QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
-                };
-
-                // Add replication service for mutation logging
-                if let Some(ref log) = replication_log {
-                    executor = executor.with_replication(log);
-                }
-
-                // Inject shard coordinator for scatter-gather (if not already a sub-query)
-                if !is_scatter_gather {
-                    if let Some(coord) = shard_coordinator {
-                        executor = executor.with_shard_coordinator(coord);
-                    }
-                }
-
-                let start = std::time::Instant::now();
-                let result = executor.execute_with_stats(&query)?;
-                let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
-                Ok::<_, DbError>((result, execution_time_ms))
-            }),
+            &mut task,
         )
         .await
         {
             Ok(join_result) => join_result
                 .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??,
             Err(_) => {
+                // A blocking task is not cancellable: dropping the handle does
+                // not stop the executor, so a mutation that overruns still
+                // commits (and still reaches the replication log). Drop the
+                // cached rows now, and again once the write really lands, or
+                // readers keep being served the pre-mutation result.
+                if mutates {
+                    invalidate_collections(&invalidated);
+                    tokio::spawn(async move {
+                        let _ = task.await;
+                        invalidate_collections(&invalidated);
+                    });
+                }
                 return Err(DbError::BadRequest(format!(
                     "Query execution timeout: exceeded {} seconds",
                     QUERY_TIMEOUT_SECS
-                )))
+                )));
             }
         }
     } else {
@@ -636,7 +711,8 @@ pub async fn execute_query(
             QueryExecutor::with_database(&state.storage, db_name)
         } else {
             QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
-        };
+        }
+        .with_principal(principal_from_claims(&claims));
 
         // Add replication service for mutation logging
         if let Some(ref log) = state.replication_log {
@@ -674,14 +750,11 @@ pub async fn execute_query(
 
     // Invalidate query cache when mutations occurred
     if mutations.has_mutations() {
-        let collections = mutated_collections(query);
-        if collections.is_empty() {
-            query_cache::get_query_cache().invalidate_all();
-        } else {
-            for collection in collections {
-                query_cache::get_query_cache().invalidate_collection(collection);
-            }
-        }
+        let collections: Vec<String> = mutated_collections(query)
+            .into_iter()
+            .map(|c| c.to_string())
+            .collect();
+        invalidate_collections(&collections);
     }
 
     // Log slow query if it exceeds threshold (async, non-blocking)
@@ -726,6 +799,7 @@ pub async fn explain_query(
     State(state): State<AppState>,
     Path(db_name): Path<String>,
     headers: HeaderMap,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<Json<crate::sdbql::QueryExplain>, DbError> {
     let prepared = crate::sdbql::get_prepared_statement_cache().parse_if_needed(&req.query)?;
@@ -734,6 +808,9 @@ pub async fn explain_query(
     let storage = state.storage.clone();
     let shard_coordinator = state.shard_coordinator.clone();
     let is_scatter_gather = headers.contains_key("X-Scatter-Gather");
+    // EXPLAIN reports whether *this* caller's run would auto-index, so it needs
+    // the same principal the run would get.
+    let principal = principal_from_claims(&claims);
 
     let explain = {
         let storage = storage.clone();
@@ -744,7 +821,8 @@ pub async fn explain_query(
                     QueryExecutor::with_database(&storage, db_name)
                 } else {
                     QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
-                };
+                }
+                .with_principal(principal);
 
                 if !is_scatter_gather {
                     if let Some(coordinator) = shard_coordinator {

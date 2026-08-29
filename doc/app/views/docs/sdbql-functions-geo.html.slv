@@ -77,12 +77,25 @@ RETURN GEO_DISTANCE(paris, london)</code></pre>
                 <div id="fn-GEO_WITHIN" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
                   <a href="#fn-GEO_WITHIN" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-green-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">GEO_WITHIN(point, polygon)</code>
-                  <p class="text-sm text-gray-400 mb-3">Returns true if the point is inside the specified polygon (ray casting). Polygon is an array of points (LinearRing).</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Check if point is inside a zone
-LET point = {lat: 48.8566, lon: 2.3522}
--- Polygon defined as array of [lon, lat] or objects
-LET zone = [[2.3, 48.8], [2.4, 48.8], [2.4, 48.9], [2.3, 48.9]] 
-RETURN GEO_WITHIN(point, zone)</code></pre>
+                  <p class="text-sm text-gray-400 mb-3">True if the point is inside a ring (ray casting). Points: <code>{lat,lon}</code> or <code>[lon,lat]</code>.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN GEO_WITHIN({lat: 48.85, lon: 2.35}, [[2.3,48.8],[2.4,48.8],[2.4,48.9],[2.3,48.9]])</code></pre>
+                </div>
+                <div id="fn-GEO_POINT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">GEO_POINT / GEO_POLYGON / GEO_LINESTRING / GEO_MULTI*</code>
+                  <p class="text-sm text-gray-400 mb-3">GeoJSON constructors. <code>GEO_POINT(lat, lon)</code> stores <code>[lon, lat]</code>.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN GEO_POINT(48.85, 2.35)
+RETURN GEO_POLYGON([[[0,0],[0,1],[1,1],[1,0],[0,0]]])</code></pre>
+                </div>
+                <div id="fn-GEO_CONTAINS" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">GEO_CONTAINS(a, b) / GEO_INTERSECTS(a, b)</code>
+                  <p class="text-sm text-gray-400 mb-3">Containment and overlap on GeoJSON or ring arrays.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN GEO_CONTAINS(GEO_POLYGON([[[0,0],[0,10],[10,10],[10,0],[0,0]]]), GEO_POINT(5,5))</code></pre>
+                </div>
+                <div id="fn-GEO_IN_RANGE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">GEO_IN_RANGE(p, origin, lo, hi) / GEO_AREA(poly)</code>
+                  <p class="text-sm text-gray-400 mb-3">Distance band in meters (Haversine). Area is an approximate m² from degrees.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN GEO_IN_RANGE(doc.loc, GEO_POINT(48.85, 2.35), 0, 1000)
+RETURN GEO_AREA(zone)</code></pre>
                 </div>
               </div>
             </div>

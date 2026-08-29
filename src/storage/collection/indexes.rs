@@ -161,57 +161,25 @@ impl Collection {
         }
         self.invalidate_index_meta();
 
-        // Build index from existing documents using WriteBatch for better performance
-        let docs = self.all();
-        let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
-
-        // Use WriteBatch for atomic, high-performance index creation
-        let mut batch = WriteBatch::default();
-        let mut indexed_count = 0;
-        const BATCH_SIZE_LIMIT: usize = 10000; // Flush every 10k entries to avoid excessive memory usage
-
-        for doc in &docs {
-            let doc_value = doc.to_value();
-            let field_values: Vec<Value> = fields
-                .iter()
-                .map(|f| extract_field_value(&doc_value, f))
-                .collect();
-
-            if !field_values.iter().all(|v| v.is_null()) {
-                let entry_key = Self::idx_entry_key(&name, &field_values, &doc.key);
-                batch.put_cf(&cf, entry_key, doc.key.as_bytes());
-                indexed_count += 1;
-
-                // If bloom/cuckoo filter, also update in-memory filter
-                if index_type == IndexType::Bloom {
-                    for value in &field_values {
-                        self.bloom_insert(&name, &value.to_string());
-                    }
-                } else if index_type == IndexType::Cuckoo {
-                    for value in &field_values {
-                        self.cuckoo_insert(&name, &value.to_string());
-                    }
+        // The metadata above is already visible to readers, so a backfill that
+        // fails must not leave it behind: the index would be half-built,
+        // `get_index` would report it as ready, and every later lookup would
+        // silently return fewer documents than the collection holds.
+        let indexed_count = match self.backfill_index(&name, &fields, &index_type) {
+            Ok(count) => count,
+            Err(e) => {
+                if let Err(cleanup) = self.drop_index(&name) {
+                    tracing::error!(
+                        collection = %self.name,
+                        index = %name,
+                        error = %cleanup,
+                        "index backfill failed and the partial index could not be dropped; \
+                         drop it by hand before querying the field"
+                    );
                 }
-
-                // Flush batch periodically to avoid excessive memory usage
-                if indexed_count % BATCH_SIZE_LIMIT == 0 {
-                    db.write(&batch).map_err(|e| {
-                        DbError::InternalError(format!("Failed to write index batch: {}", e))
-                    })?;
-                    batch = WriteBatch::default();
-                }
+                return Err(e);
             }
-        }
-
-        // Write any remaining entries in the batch
-        if indexed_count > 0 && indexed_count % BATCH_SIZE_LIMIT != 0 {
-            db.write(&batch).map_err(|e| {
-                DbError::InternalError(format!("Failed to write final index batch: {}", e))
-            })?;
-        }
+        };
 
         // Save bloom/cuckoo filter if applicable
         if index_type == IndexType::Bloom {
@@ -230,9 +198,90 @@ impl Collection {
             fields,
             index_type,
             unique,
-            unique_values: docs.len(), // Approximation
-            indexed_documents: docs.len(),
+            unique_values: indexed_count, // Approximation
+            indexed_documents: indexed_count,
         })
+    }
+
+    /// Write the index entries for the documents already in the collection.
+    ///
+    /// Streams the column family rather than collecting `self.all()` first: a
+    /// backfill on a large collection would otherwise hold every decoded
+    /// document in memory at once, inside whatever request triggered it.
+    ///
+    /// Returns the number of documents that had a non-null value for `fields`
+    /// — 0 means no document carries the field, so the index cannot match
+    /// anything as it stands.
+    fn backfill_index(
+        &self,
+        name: &str,
+        fields: &[String],
+        index_type: &IndexType,
+    ) -> DbResult<usize> {
+        let db = &self.db;
+        let cf = db
+            .cf_handle(&self.name)
+            .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
+        let prefix = DOC_PREFIX.as_bytes();
+
+        // Use WriteBatch for atomic, high-performance index creation
+        let mut batch = WriteBatch::default();
+        let mut indexed_count = 0;
+        const BATCH_SIZE_LIMIT: usize = 10000; // Flush every 10k entries to avoid excessive memory usage
+
+        for item in db.prefix_iterator_cf(&cf, prefix) {
+            let (key, value) = item.map_err(|e| {
+                DbError::InternalError(format!("Failed to read documents for index: {}", e))
+            })?;
+            if !key.starts_with(prefix) {
+                break;
+            }
+            let Ok(doc) = deserialize_doc(&value) else {
+                continue;
+            };
+
+            let doc_value = doc.to_value();
+            let field_values: Vec<Value> = fields
+                .iter()
+                .map(|f| extract_field_value(&doc_value, f))
+                .collect();
+
+            if field_values.iter().all(|v| v.is_null()) {
+                continue;
+            }
+
+            let entry_key = Self::idx_entry_key(name, &field_values, &doc.key);
+            batch.put_cf(&cf, entry_key, doc.key.as_bytes());
+            indexed_count += 1;
+
+            // If bloom/cuckoo filter, also update in-memory filter
+            if *index_type == IndexType::Bloom {
+                for value in &field_values {
+                    self.bloom_insert(name, &value.to_string());
+                }
+            } else if *index_type == IndexType::Cuckoo {
+                for value in &field_values {
+                    self.cuckoo_insert(name, &value.to_string());
+                }
+            }
+
+            // Flush batch periodically to avoid excessive memory usage
+            if indexed_count % BATCH_SIZE_LIMIT == 0 {
+                db.write(&batch).map_err(|e| {
+                    DbError::InternalError(format!("Failed to write index batch: {}", e))
+                })?;
+                batch = WriteBatch::default();
+            }
+        }
+
+        // Write any remaining entries in the batch
+        if !batch.is_empty() {
+            db.write(&batch).map_err(|e| {
+                DbError::InternalError(format!("Failed to write final index batch: {}", e))
+            })?;
+        }
+
+        Ok(indexed_count)
     }
 
     /// Drop an index

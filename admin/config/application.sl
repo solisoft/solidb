@@ -20,10 +20,11 @@
 # and producing phishing-shaped redirects from `*_url` helpers.
 #
 # If you're exposing the app DIRECTLY to the internet with no proxy in
-# front, comment the next line out (or set `SOLI_TRUST_PROXY=0` in the
-# env) so spoofed `X-Forwarded-*` headers can't be trusted.
+# front, leave this off (or set `SOLI_TRUST_PROXY=0`) so spoofed
+# `X-Forwarded-*` headers can't be trusted. Enable only behind a proxy
+# that overwrites those headers.
 
-enable_trust_proxy
+# enable_trust_proxy
 
 # ---------------------------------------------------------------------
 # CSRF / same-origin policy.

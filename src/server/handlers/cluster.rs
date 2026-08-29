@@ -1,10 +1,17 @@
 use super::system::{get_dir_size, AppState};
+use crate::server::auth::Claims;
+use crate::server::authorization::PermissionAction;
 use crate::{error::DbError, sync::NodeStats};
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
+    Extension,
 };
 use serde::{Deserialize, Serialize};
+
+async fn require_cluster_admin(claims: &Claims, state: &AppState) -> Result<(), DbError> {
+    crate::server::authz_middleware::enforce(claims, state, PermissionAction::Admin, None).await
+}
 
 // ==================== Sync Log Admin ====================
 
@@ -22,7 +29,9 @@ pub struct SyncLogStatsResponse {
 /// endpoint. `entry_count` walks the keyspace and is therefore O(N).
 pub async fn sync_log_stats(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<SyncLogStatsResponse>, DbError> {
+    require_cluster_admin(&claims, &state).await?;
     let log = state
         .replication_log
         .as_ref()
@@ -57,8 +66,10 @@ pub struct SyncLogPruneResponse {
 /// periodically by the SyncWorker when peer high-watermarks are known.
 pub async fn sync_log_prune(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Json(req): Json<SyncLogPruneRequest>,
 ) -> Result<Json<SyncLogPruneResponse>, DbError> {
+    require_cluster_admin(&claims, &state).await?;
     let log = state
         .replication_log
         .as_ref()
@@ -100,7 +111,11 @@ pub struct ClusterConfigInfo {
     pub replication_port: u16,
 }
 
-pub async fn cluster_info(State(state): State<AppState>) -> Json<ClusterInfoResponse> {
+pub async fn cluster_info(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<ClusterInfoResponse>, DbError> {
+    require_cluster_admin(&claims, &state).await?;
     let node_id = state.storage.node_id().to_string();
     let is_cluster_mode = state.storage.is_cluster_mode();
 
@@ -130,7 +145,7 @@ pub async fn cluster_info(State(state): State<AppState>) -> Json<ClusterInfoResp
         (cpu, mem_used, mem_total, up, name, version, host, cores)
     };
 
-    Json(ClusterInfoResponse {
+    Ok(Json(ClusterInfoResponse {
         node_id,
         is_cluster_mode,
         cluster_config,
@@ -142,7 +157,7 @@ pub async fn cluster_info(State(state): State<AppState>) -> Json<ClusterInfoResp
         os_version,
         hostname,
         num_cpus,
-    })
+    }))
 }
 
 // ==================== Cluster Status ====================
@@ -386,12 +401,16 @@ pub fn generate_cluster_status(state: &AppState, sysinfo: &SysInfo) -> ClusterSt
     }
 }
 
-pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatusResponse> {
+pub async fn cluster_status(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<ClusterStatusResponse>, DbError> {
+    require_cluster_admin(&claims, &state).await?;
     let sysinfo = {
         let mut sys = state.system_monitor.lock().unwrap();
         collect_sysinfo(&mut sys)
     };
-    Json(generate_cluster_status(&state, &sysinfo))
+    Ok(Json(generate_cluster_status(&state, &sysinfo)))
 }
 
 // ==================== Cluster Remove Node ====================
@@ -413,8 +432,10 @@ pub struct RemoveNodeResponse {
 /// Remove a node from the cluster and trigger rebalancing
 pub async fn cluster_remove_node(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Json(req): Json<RemoveNodeRequest>,
 ) -> Result<Json<RemoveNodeResponse>, DbError> {
+    require_cluster_admin(&claims, &state).await?;
     let node_addr = req.node_address;
 
     // Get the shard coordinator
@@ -447,7 +468,9 @@ pub struct RebalanceResponse {
 /// Trigger cluster rebalancing
 pub async fn cluster_rebalance(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<RebalanceResponse>, DbError> {
+    require_cluster_admin(&claims, &state).await?;
     let coordinator = state.shard_coordinator.as_ref().ok_or_else(|| {
         DbError::InternalError("Shard coordinator not available - not in cluster mode".to_string())
     })?;
@@ -699,7 +722,9 @@ pub struct BlobRebalanceConfigInfo {
 
 pub async fn blob_distribution(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<BlobDistributionResponse>, DbError> {
+    require_cluster_admin(&claims, &state).await?;
     let worker = state.blob_rebalance_worker.as_ref().ok_or_else(|| {
         DbError::InternalError(
             "Blob rebalance worker not available - not in cluster mode".to_string(),
@@ -780,8 +805,10 @@ fn default_force() -> bool {
 
 pub async fn blob_rebalance(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Json(request): Json<BlobRebalanceRequest>,
 ) -> Result<Json<serde_json::Value>, DbError> {
+    require_cluster_admin(&claims, &state).await?;
     let worker = state.blob_rebalance_worker.as_ref().ok_or_else(|| {
         DbError::InternalError(
             "Blob rebalance worker not available - not in cluster mode".to_string(),

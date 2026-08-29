@@ -294,14 +294,6 @@ metadata:
 
       <!-- Navigation -->
       <div class="flex justify-between items-center pt-8 border-t border-white/10">
-        <a href="/docs/api-jobs" class="text-gray-400 hover:text-white transition-colors">
-          <span class="flex items-center">
-            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-            </svg>
-            Jobs
-          </span>
-        </a>
         <a href="/docs/api" class="text-indigo-400 hover:text-indigo-300 transition-colors">
           <span class="flex items-center">
             API Overview

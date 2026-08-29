@@ -298,6 +298,7 @@ pub async fn execute_transactional_sdbql(
             BodyClause::Remove(_) => has_remove = true,
             BodyClause::Join(_) => {}   // JOIN is read-only
             BodyClause::Window(_) => {} // Window does not mutate
+            BodyClause::Search(_) => {} // SEARCH is a filter
             _ => {}
         }
     }
@@ -308,7 +309,10 @@ pub async fn execute_transactional_sdbql(
             &state.storage,
             db_name.clone(),
             req.bind_vars.clone(),
-        );
+        )
+        .with_principal(crate::server::handlers::query::principal_from_claims(
+            &claims,
+        ));
         let results = executor.execute(&query)?;
         return Ok(Json(serde_json::json!({"result": results})));
     }
@@ -319,7 +323,10 @@ pub async fn execute_transactional_sdbql(
         &state.storage,
         db_name.clone(),
         req.bind_vars.clone(),
-    );
+    )
+    .with_principal(crate::server::handlers::query::principal_from_claims(
+        &claims,
+    ));
 
     // Execute body clauses manually to intercept mutations
     let mut initial_bindings = std::collections::HashMap::new();
@@ -398,7 +405,7 @@ pub async fn execute_transactional_sdbql(
                     ctx.insert(let_clause.variable.clone(), value);
                 }
             }
-            BodyClause::Filter(filter_clause) => {
+            BodyClause::Filter(filter_clause) | BodyClause::Search(filter_clause) => {
                 // Filter rows based on condition
                 rows.retain(|ctx| {
                     executor

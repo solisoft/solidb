@@ -2,6 +2,8 @@
 
 Models manage data and business logic in your MVC application. SoliLang provides a simple OOP-style interface for database operations.
 
+To bind a model to a named database (SoliDB, Postgres, or MySQL), use class-body `connection "name"` with `config/database.toml` — see **[Multiple Databases](multi-database.md)**.
+
 ## Defining Models
 
 Create model files in `app/models/`. The collection name is **automatically derived** from the class name:
@@ -10,7 +12,7 @@ Create model files in `app/models/`. The collection name is **automatically deri
 - `BlogPost` → `"blog_posts"`
 - `UserProfile` → `"user_profiles"`
 
-**Automatic Collection Creation**: When you call a Model method (like `create()`, `all()`, `find()`, etc.) on a collection that doesn't exist yet, SoliLang will automatically create the collection for you. This means you can start using your models immediately without running migrations first.
+**Automatic Collection Creation**: When you call a Model method (like `create()`, `all()`, `find()`, etc.) on a collection that doesn't exist yet, SoliLang will automatically create the collection for you. If the configured **database** doesn't exist yet either, it is created on that same first call before the collection. This means you can start using your models immediately without running migrations first.
 
 - `User` → `"users"`
 - `BlogPost` → `"blog_posts"`
@@ -37,17 +39,26 @@ Every `.sl` file under `app/models/` is loaded automatically at startup — by `
 ```soli
 # app/controllers/users_controller.sl — no import needed
 class UsersController < Controller
-  fn index
+  def index
     render("users/index", { "users": User.all })
   end
 end
 ```
 
-If you run a model or controller file directly with `soli run path/to/file.sl`, the auto-loader does **not** run — in that case you still need explicit imports.
+Loading is **recursive** — subdirectories are walked too, so `app/models/billing/invoice.sl` is auto-loaded just like a top-level file. The same recursive auto-loader also covers two sibling directories, loaded before controllers so they can be referenced freely:
+
+- **`app/services/`** — integration / domain-service classes (Stripe, mailers, etc.)
+- **`app/policies/`** — authorization policies (see [Authorization](authorization.md))
+
+Within a directory, files load in alphabetical order and *before* their subdirectories (top-down). Soli executes files eagerly, so if one class extends another defined in a different file, keep the base class at an equal-or-shallower depth (e.g. `app/models/application_record.sl`) so it loads first.
+
+In `--dev`, edits to nested files under these directories hot-reload without a restart.
+
+If you run a model, service, or controller file directly with `soli run path/to/file.sl`, the auto-loader does **not** run — in that case you still need explicit imports.
 
 ## CRUD Operations
 
-> **Auto-creation**: All Model operations automatically create the collection if it doesn't exist. This only happens on the first call that encounters a missing collection.
+> **Auto-creation**: All Model operations automatically create the collection — and the database itself, if it's missing too — when it doesn't exist. This only happens on the first call that encounters a missing collection or database.
 
 ### Creating Records
 
@@ -123,6 +134,15 @@ user.save({ "name": "Alice Smith", "age": 31 });
 user.update({ "name": "Alice Smith", "age": 31 });
 ```
 
+`instance.to_h()` returns the record's user fields as a Hash, dropping the
+`_`-prefixed framework fields (`_key`, `_id`, `_rev`, `_errors`, …). Handy for
+serialization, diffing, and content hashing:
+
+```soli
+user = User.find("user123");
+user.to_h();   # { "name": "Alice Smith", "age": 31 }
+```
+
 ### Deleting Records
 
 ```soli
@@ -173,8 +193,9 @@ count = User.where("doc.role == @role", { "role": "admin" }).count;
 | `Model.delete(id)` | Delete a document |
 | `Model.delete_all` | Wipe every document in the collection (primarily for test setup/teardown). Use `Model.where(...).delete_all` for filtered bulk deletes. |
 | `Model.count` | Count all documents |
-| `Model.transaction { }` | Execute block in a database transaction |
-| `Model.transaction("aql")` | Execute AQL in a database transaction |
+| `Model.reset_counters(id, relation)` | Recount a `has_many` relation's children (minus soft-deleted) and write the [counter cache](#counter-caches) column; returns the fresh count |
+| `Model.transaction do … end` | Run a block in a transaction — commit on success, roll back on throw |
+| `Model.transaction("aql")` | Execute a single AQL statement transactionally |
 | `Model.transaction()` | Get transaction handle for manual control |
 | `Model.<scope_name>` | Invoke a named scope declared with `scope(name, fn)` (returns QueryBuilder) |
 | `Model.with_deleted()` | Include soft-deleted records (QueryBuilder) |
@@ -190,6 +211,20 @@ count = User.where("doc.role == @role", { "role": "admin" }).count;
 | `Model.limit(n)` | Limit results (returns QueryBuilder) |
 | `Model.offset(n)` | Offset results (returns QueryBuilder) |
 | `Model.paginate(hash)` | Terminal: fetch paginated results + metadata. See [Pagination](#pagination) below. |
+| `Model.time_bucket(interval, aggs?)` | Timeseries models only: bucketed aggregation (returns QueryBuilder, chain `.all`). See [Timeseries Models](#timeseries-models). |
+| `Model.prune(cutoff?)` | Timeseries models only: delete rows older than a duration (`"30d"`) or RFC3339 cutoff; without an argument uses the declared `retention:`. Returns the number deleted. |
+| `Model.group_by(fields)` | Grouped aggregation — field name or array; without `aggregate` yields a count per group (`n`). Returns QueryBuilder, chain `.all`. See [Analytics](analytics.md#rich-aggregation-document-models). |
+| `Model.aggregate(spec)` | Multi-aggregate spec `{ alias: [func, field] }` (or `["count"]`); with `group_by` one row per group, without it one row (chain `.first`). See [Analytics](analytics.md#rich-aggregation-document-models). |
+| `Model.median(field) / stddev / variance / count_distinct` | Statistical aggregation terminals (returns QueryBuilder, chain `.first`) |
+| `Model.similar(query, field?, k?, opts?)` | Vector similarity search; with a declared `vector_index` pushes down to the HNSW ANN index. `opts`: `{ "exact": true }`. See [Search](search.md#vector-search-similar). |
+| `Model.search(query, opts?)` | Fulltext search (requires `fulltext_index`); eager, ranked, results carry `_search_score`. See [Search](search.md#fulltext-search-search). |
+| `Model.near(lat, lon, opts?)` | Geo search sorted by distance (requires `geo_index`); results carry `_distance` in meters. See [Search](search.md#geo-search-near--within). |
+| `Model.within(lat, lon, radius)` | Geo search inside a radius in meters (requires `geo_index`). See [Search](search.md#geo-search-near--within). |
+| `Model.insert_rows(rows)` | Columnar models only: batch append, returns `{ "inserted": n, "ids": [...] }`. See [Analytics](analytics.md#columnar-models). |
+| `Model.aggregate(field, op, opts?)` | Columnar models only: scalar aggregate, or per-group rows with `{ "group_by": [...] }` |
+| `Model.query(spec)` | Columnar models only: fetch rows (`columns` / one `filter` / `limit`) |
+| `Model.add_column_index(field, kind?)` / `column_indexes` / `drop_column_index(field)` | Columnar models only: manage column indexes (`sorted` default, `hash`, `bitmap`, `minmax`, `bloom`) |
+| `Model.columnar_stats` | Columnar models only: store-level statistics |
 
 ## Relationship DSL
 
@@ -198,6 +233,40 @@ count = User.where("doc.role == @role", { "role": "admin" }).count;
 | `has_many(name)` | Declare a one-to-many relationship |
 | `has_one(name)` | Declare a one-to-one relationship |
 | `belongs_to(name)` | Declare an inverse relationship |
+| `edge from:, to:` | Declare an edge model over a SolidB edge collection. See [Graph Models](#graph-models-edges-and-traversal). |
+
+Options accepted by `has_many`/`has_one`/`belongs_to` (a bad option raises at
+class load with an actionable message):
+
+| Option | On | Description |
+|--------|----|-------------|
+| `class_name:` | all | Override the related class (`has_many "posts", class_name: "Article"`) |
+| `foreign_key:` | all | Override the FK field name |
+| `dependent:` | has_many, has_one | Cascade strategy on hard owner delete: `"delete"` (per-row, callbacks + nested cascades; `"destroy"` is an alias), `"delete_all"` (one bulk REMOVE, no callbacks), `"nullify"` (bulk FK → null). See [Cascade Deletes](#cascade-deletes). |
+| `through:` | has_many | Traverse an intermediate relation (`has_many "teams", through: "memberships"`). See [Through Associations](#through-associations). |
+| `source:` | has_many + through | Relation name on the through model when it differs from the singularized name |
+| `counter_cache:` | belongs_to | Maintain a `<children>_count` column on the parent (`true` or a custom column name). See [Counter Caches](#counter-caches). |
+| `polymorphic:` | belongs_to | The record belongs to any of several models: stores `{name}_id` + `{name}_type`, resolved at runtime. See [Polymorphic Relations](#polymorphic-relations). |
+| `as:` | has_many, has_one | Declare the inverse of a polymorphic belongs_to (`has_many "comments", as: "commentable"`) — queries are type-guarded to this class. |
+
+## Storage & Index DSL
+
+Class-body declarations for the multi-model and search features:
+
+| Declaration | Description |
+|-------------|-------------|
+| `columnar options?` | Declare a columnar-store model (`compression: "lz4"` default, or `"none"`). See [Analytics & Columnar Stores](analytics.md#columnar-models). |
+| `column name, type, options?` | Declare a typed column on a columnar model (`nullable:`, `indexed:`) |
+| `vector_index field, dimension:, metric:` | Declare an HNSW vector index (optional `m:`, `ef_construction:`, `quantization:`, `name:`). See [Search](search.md#index-dsl). |
+| `fulltext_index field, ...` | Declare a fulltext index over one or more fields |
+| `geo_index field` | Declare a geospatial index (`{ "lat": ..., "lon": ... }` field) |
+| `index field_or_fields, options?` | Declare a secondary index (`unique:`, `type:` — `"persistent"` default / `"hash"` / `"fulltext"` / `"bloom"` / `"cuckoo"`, `name:`) |
+| `connection name` | Bind the model to a named connection from `config/database.toml`. See [Multiple Databases](multi-database.md#per-model-connection). |
+| `table name` | Bind the model to an **existing** SQL table and read/write its real columns instead of `_key` + `doc`. Schema (columns, types, primary key) is introspected at boot; Soli never creates or alters the table. See [Column-aware models](multi-database.md#column-aware-models-existing-databases). |
+
+Index declarations are metadata-only at load: dev ensures them at server
+boot; in production run `soli db:indexes` or create them in migrations. See
+[Search — sync strategy](search.md#how-indexes-get-created-sync-strategy).
 
 ## QueryBuilder Methods
 
@@ -211,6 +280,19 @@ count = User.where("doc.role == @role", { "role": "admin" }).count;
 | `.includes(rel, filter, binds)` | Eager load with filter and optional `"fields"` key |
 | `.includes({ rel: [fields] })` | Eager load with field projection |
 | `.includes_count(rel, ...)` | Eager load count as `<rel>_count` (HasMany/HABTM only) |
+
+**These also work on an already-loaded array.** A `has_many`/`has_one` accessor returns a
+plain array rather than a query builder, so a Rails-style chain lands on one:
+
+```soli
+# org.contacts is already an array — order/all/includes still work on it
+let sorted = org.contacts.order("name").all()
+```
+
+On an array, `.order(field, dir?)` sorts in memory, and `.all()` / `.includes(...)` return it
+unchanged so the chain reads the same whether it ran in the database or not. Rows missing the
+ordered field sort first.
+
 | `.select(field, ...)` | Select specific fields on the main collection |
 | `.fields(field, ...)` | Alias for `.select()` |
 | `.join(rel, filter?, binds?)` | Filter by existence of related records |
@@ -220,13 +302,22 @@ count = User.where("doc.role == @role", { "role": "admin" }).count;
 | `.count` | Execute query, return count |
 | `.exists` | Execute query, return boolean (true if records exist) |
 | `.delete_all` | Execute as a bulk REMOVE — every matching row is deleted in a single statement. Hard delete (ignores soft-delete mode); order/limit/offset/select/group_by are ignored since they don't compose with REMOVE. Returns `null`. |
+| `.update_all(hash)` | Execute as a bulk UPDATE — every matching row is patched with `hash` in a single statement. Skips validations and lifecycle callbacks; order/limit/offset/select/group_by are ignored since they don't compose with UPDATE. Returns `null`. |
 | `.sum(field)` | Execute aggregation, return sum of field |
 | `.avg(field)` | Execute aggregation, return average of field |
 | `.min(field)` | Execute aggregation, return minimum of field |
 | `.max(field)` | Execute aggregation, return maximum of field |
-| `.group_by(field, func, agg_field)` | Execute grouping aggregation |
+| `.group_by(field, func, agg_field)` | Legacy grouping aggregation — returns `[{group, result}]` (chain `.all`) |
+| `.group_by(fields)` | Grouped mode — field name or array of names; combine with `.aggregate` (alone: implicit count per group as `n`). Chain `.all`. See [Analytics](analytics.md#rich-aggregation-document-models). |
+| `.aggregate(spec)` | Multi-aggregate spec `{ alias: [func, field] }` or `{ alias: ["count"] }` — funcs: sum, avg, min, max, count, count_distinct, median, stddev, variance |
+| `.having(expr, binds?)` | Post-COLLECT filter over bare group fields / aggregate aliases. **Developer-trusted string** — never build from user input. |
+| `.median(field)` / `.stddev(field)` / `.variance(field)` / `.count_distinct(field)` | Statistical aggregation (chain `.first`) |
+| `.similar(query, field?, k?, opts?)` | Vector similarity search — pushes down to the HNSW index when a `vector_index` is declared; `opts: { "exact": true }` forces exact client-side cosine. See [Search](search.md#vector-search-similar). |
+| `.time_bucket(interval, aggs?)` | Timeseries models only: group into fixed time buckets with per-bucket aggregates (chain `.all`). See [Timeseries Models](#timeseries-models). |
 | `.paginate(hash)` | Terminal: fetch paginated results + metadata. See [Pagination](#pagination) below. |
 | `.to_query` | Return the generated SDBQL string (for debugging) |
+| `record.traverse(EdgeModel, opts?)` | Instance method: start a graph-traversal QueryBuilder from a saved record. See [Graph Models](#graph-models-edges-and-traversal). |
+| `record.shortest_path(other, via:, direction?)` | Instance method, executes immediately: vertices along the shortest path (`[]` when unconnected). |
 
 ## Pagination
 
@@ -310,10 +401,12 @@ Filtering applies to every mass-assign path: `Model.create(hash)`, `Model.update
 
 **Models without a declaration keep the legacy "all keys accepted" behaviour** for backwards compatibility. New models that take request data should always declare `attr_accessible`. The CLAUDE.md security guidance recommends auditing every `Model.create`/`Model.update` call site against an explicit whitelist.
 
+**How this relates to `permit()`.** [`permit(params, shape)`](/docs/core-concepts/request-params#permit) is the *primary* mass-assignment filter — it lives in the controller, where assignability is actually decided (an admin form and a public form permit different fields against the same model), and it understands nested shapes. `attr_accessible` is optional defense-in-depth for high-stakes models (`User` blocking `role`/`is_admin` even if a controller forgets to filter) and covers paths that bypass controllers — jobs, websocket handlers, a raw `Model.create(params)`. Both are whitelists, so the effective result is their **intersection**: if you use both on a model, `attr_accessible` must list every top-level key any controller permits, or the value is dropped at the model layer. `attr_accessible` is flat — for nested assignable fields, list the top-level key and let `permit` control the sub-shape. In `--dev`, a mass-assign that hits the whitelist logs `[WARN] attr_accessible on User dropped mass-assign key(s): …` so the drift is visible.
+
 For controller-side filtering (when you'd rather hand-pick keys at the boundary), the existing `hash.slice(["a", "b"])` returns a new hash with only the listed keys — handy when you need different whitelists per action:
 
 ```soli
-fn update
+def update
   let user = User.find(req["params"]["id"]);
   let safe = req["json"].slice(["name", "bio"]);
   user.update(safe);
@@ -347,6 +440,39 @@ end
 | `min: n` | Number must be >= n |
 | `max: n` | Number must be <= n |
 | `custom: "method_name"` | Call custom validation method |
+| `on: "create"` / `on: "update"` | Only run the rule for that operation |
+| `if: fn(record) { ... }` | Only run the rule when the closure is truthy |
+| `unless: fn(record) { ... }` | Skip the rule when the closure is truthy |
+
+### Conditional and Per-Operation Rules
+
+Every rule in a `validates(...)` call can be restricted to one persistence
+operation with `on:`, or gated on the record's data with an `if:` / `unless:`
+closure. The closure receives the attribute hash being validated (declare
+zero parameters if you don't need it) and its truthiness decides.
+
+```soli
+class User < Model
+  # Only enforced when the record is first created
+  validates("password", { "presence": true, "min_length": 8, "on": "create" })
+
+  # Only enforced on updates (e.g. a moderation field set later)
+  validates("reviewer", { "presence": true, "on": "update" })
+
+  # Enforced only for a subset of records
+  validates("company_name", { "presence": true, "if": fn(record) { record["kind"] == "business" } })
+
+  # Skipped for privileged records
+  validates("bio", { "presence": true, "unless": fn(record) { record["role"] == "admin" } })
+end
+```
+
+`Model.create` counts as `create`; `instance.update()` and `instance.save()`
+on a record that already has a `_key` count as `update`. `if:` and `unless:`
+can be combined on one call — the rule runs only when `if:` is truthy **and**
+`unless:` is falsy. Passing anything other than `"create"`/`"update"` to
+`on:`, or a non-function to `if:`/`unless:`, raises at class-load time
+rather than silently running the rule unconditionally.
 
 ### Validation Results
 
@@ -399,10 +525,10 @@ class User < Model
   before_update("log_changes")
   after_delete("cleanup_related")
 
-  fn normalize_email()        this.email = this.email.downcase;
+  def normalize_email()        this.email = this.email.downcase;
   end
 
-  fn send_welcome_email()        # Send email logic
+  def send_welcome_email()        # Send email logic
   end
 end
 ```
@@ -438,6 +564,10 @@ Both class-level methods (`Model.create`, `Model.update`) and instance-level mut
 | `instance.delete()` (soft + hard) | `before_delete` | UPDATE / DELETE | `after_delete` |
 
 After-callbacks only fire when the persist call succeeds. If the native method returns `false` (validation or DB error) the after-callbacks are skipped and the instance carries `_errors`.
+
+On hard deletes, [`dependent:` cascades](#cascade-deletes) run between
+`before_delete` and the owner row's removal — a `before_delete` veto skips
+them, and a failing cascade aborts the owner delete before `after_delete`.
 
 ### Vetoing persistence from a `before_*` callback
 
@@ -514,6 +644,48 @@ def detach_document
   redirect("/contacts/#{contact._key}")
 end
 ```
+
+### Uploader options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `multiple` | `false` | `true` keeps an array of blob ids (`<field>_blob_ids`); `false` keeps one (`<field>_blob_id`). |
+| `content_types` | — (required) | Allow-list of MIME types. Anything else is rejected before storage. |
+| `max_size` | — (required) | Hard cap in bytes. Above this → `_errors` populated, no blob stored. |
+| `collection` | `<snake>_<field>s` | SoliDB collection that holds the blobs. |
+| `format` | — | Convert image uploads to `"jpeg"`, `"png"`, or `"webp"` **before storage**. Non-image uploads (PDF, csv, …) are never converted. |
+| `quality` | `82` | Encoder quality (1–100) for lossy formats (`jpeg`, `webp`). |
+| `max_width` / `max_height` | — | Downscale the original to fit within these pixel bounds before storage, preserving aspect ratio. Never upscales. |
+
+#### Transform the original before storage
+
+To avoid storing large originals (e.g. heavy PNG photos), declare a `format`
+and/or size caps. The framework decodes the upload, optionally downscales it,
+re-encodes it to the target format, and stores the result — updating the blob's
+content-type and filename extension to match. WebP is encoded **lossy** (via
+libwebp) so photos shrink dramatically; JPEG quality is honoured too.
+
+```soli
+class Listing < Model
+  uploader("photo", {
+    "content_types": ["image/jpeg", "image/png", "image/webp"],
+    "max_size":      10_000_000,   # accept up to 10 MB on the way in
+    "format":        "webp",       # …but store a lossy WebP
+    "quality":       80,
+    "max_width":     1600,         # downscale huge originals
+    "max_height":    1600
+  })
+end
+```
+
+A 4 MB PNG uploaded here lands in storage as a downscaled ~200 KB WebP. The
+transform only runs for image content-types — a PDF in a multi-file uploader is
+stored byte-for-byte. If the bytes can't be decoded as an image, the original is
+stored unchanged so an upload is never blocked by a transform failure.
+
+> The same lossy WebP/quality encoding powers the read-time URL transform
+> pipeline (`photo_url(...)` with `?fmt=webp&w=...`), so you can also keep a
+> larger original and convert per-request instead.
 
 For drag-and-drop / AJAX flows that prefer JSON 204/422 over redirects, use `uploads("contacts", "document")` in `config/routes.sl` instead — that auto-mounts a generic `AttachmentsController` for upload, download, and per-blob delete.
 
@@ -777,17 +949,424 @@ class Article < Model
 end
 ```
 
+### Cascade Deletes
+
+Declare what happens to associated records when their owner is **hard-deleted**
+with `dependent:` on `has_many`/`has_one`:
+
+```soli
+class User < Model
+  has_many "posts", dependent: "delete"       # per-row: callbacks, nested cascades
+  has_many "events", dependent: "delete_all"  # one bulk REMOVE: no callbacks
+  has_many "drafts", dependent: "nullify"     # one bulk UPDATE: fk → null
+  has_one  "profile", dependent: "delete"
+end
+```
+
+Semantics:
+
+- **Ordering** mirrors Rails: `before_delete` runs first (a `false` veto aborts
+  the cascades too), then each `dependent:` relation in declaration order, then
+  the owner row is removed, then `after_delete`.
+- **`"delete"`** (alias `"destroy"`) loads each child and deletes it through
+  the interpreter — child callbacks, nested cascades, the child's own
+  soft-delete semantics, and counter-cache decrements all apply. A child veto
+  or error aborts the remaining cascade *and* the owner delete.
+- **`"delete_all"`** issues one bulk `REMOVE`: no callbacks, hard delete even
+  for soft-delete child models, no nesting.
+- **`"nullify"`** issues one bulk `UPDATE` setting the FK to `null`.
+- **Soft-delete owners never cascade** — a soft `delete()` keeps children, so
+  `restore()` has nothing to un-do.
+- `Model.delete(id)` on a class that declares `dependent:` routes through the
+  full instance flow (cascades — and, as a side effect, delete callbacks —
+  fire). Bulk writes (`Model.delete_all`, `Model.where(...).delete_all`,
+  `update_all`, `prune`) **never** cascade, matching Rails.
+- Cycles terminate: a document already being deleted higher up the chain is
+  skipped, and recursion is capped at 32 levels.
+- There is no per-operation rollback; wrap the delete in `Model.transaction`
+  when the cascade must be atomic (every document write inside participates).
+
+### Through Associations
+
+`has_many through:` traverses an intermediate relation — the document-DB
+equivalent of Rails' join-model association:
+
+```soli
+class User < Model
+  has_many "memberships"
+  has_many "teams", through: "memberships"
+  # source: when the relation name doesn't match the through model's relation
+  has_many("employers", {"through": "memberships", "source": "company"})
+end
+
+class Membership < Model
+  belongs_to "user"
+  belongs_to "team"
+end
+
+user.teams                                  # chainable QueryBuilder
+user.teams.where("active == @a", {"a": true}).order("name").count()
+```
+
+How it works and what to know:
+
+- The accessor returns a **chainable QueryBuilder** over the target
+  collection, filtered by a single-query membership subquery
+  (`doc._key IN (FOR jt IN memberships FILTER jt.user_id == @k RETURN jt.team_id)`)
+  — no N+1, and chained `.where`/`.order`/`.count`/`.sum` all compose.
+- The **source** relation on the through model is inferred by singularizing
+  the relation name (`"teams"` → `"team"`); override with `source:`. Both
+  `belongs_to` sources (join-model shape above) and `has_many` sources
+  (distant children: `has_many "comments", through: "posts"`) work.
+- A **soft-deleting through model** automatically excludes soft-deleted join
+  rows.
+- Resolution happens lazily at first access (the through model may be defined
+  later); a missing through or source relation raises naming exactly what was
+  searched and suggesting `source:`.
+- **Pushing creates the join record**: `user.teams << team` (or `<< key`)
+  inserts a row in the through collection, HABTM-style — a raw join-row write
+  (the through model's validations and callbacks are skipped; its counter
+  caches are bumped). Only `belongs_to` sources are writable; a
+  `has_many`-source push raises with a pointer at creating the child
+  directly, and an unpersisted owner raises.
+- **Bulk writes and eager-loading stay off**: `delete_all`/`update_all` on a
+  through association raise (they would hit *target* rows, not join rows —
+  operate on the through relation's records instead), and eager-loading
+  (`includes`, `join`, `includes_count`) of a through relation raises.
+
+### Counter Caches
+
+`belongs_to ..., counter_cache:` keeps a children count on the parent row up
+to date, so lists render without a COUNT query per row:
+
+```soli
+class Comment < Model
+  belongs_to "post", counter_cache: true            # maintains posts.comments_count
+  belongs_to("author", {"class_name": "User", "counter_cache": "authored_count"})
+end
+
+post.comments_count                    # plain field read (0/missing until first bump)
+Post.reset_counters(post._key, "comments")  # recount → write → returns Int
+```
+
+Semantics:
+
+- `counter_cache: true` derives the column from the child collection
+  (`comments` → `comments_count`); a string picks a custom column. The parent
+  needs no schema preparation — a missing column reads as 0.
+- Bumps ride the same If-Match CAS loop as `increment`/`decrement` and fire on
+  child `create`/`save`, hard `delete` (instance and class form),
+  FK reassignment on `update`/`save`/`Model.update(id, ...)` (−1 old parent,
+  +1 new), and — for soft-deleting children — soft `delete` (−1) and
+  `restore` (+1), so counters track default-scope-visible children.
+- **Bulk writes never bump** (`delete_all`, `update_all`, `upsert`, `import`,
+  `prune`) and bumps are **best-effort**: a failing bump never fails the
+  already-committed primary write. Counters are eventually consistent under
+  failures — `Model.reset_counters(id, relation)` is the repair tool (it
+  recounts minus soft-deleted children and returns the fresh count).
+
+### Polymorphic Relations
+
+A polymorphic `belongs_to` lets one model belong to any of several others on
+a single association — comments on posts *and* photos, images on anything:
+
+```soli
+class Comment < Model
+  belongs_to "commentable", polymorphic: true
+end
+
+class Post < Model
+  has_many "comments", as: "commentable"
+end
+
+class Photo < Model
+  has_many "comments", as: "commentable"
+end
+
+# The child stores both halves of the reference:
+Comment.create({
+  "body": "Nice shot!",
+  "commentable_id": photo._key,
+  "commentable_type": "Photo"
+})
+
+comment.commentable    # → the Photo instance (class resolved from commentable_type)
+post.comments          # → chainable QB, type-guarded: commentable_type == "Post"
+```
+
+Semantics:
+
+- The child stores `{name}_id` **and** `{name}_type` (the model class name).
+  The accessor reads both at runtime, resolves the class and collection from
+  the type string, and returns the correctly-typed instance — `null` when
+  either field is missing, an error naming the type when it doesn't match a
+  known model class.
+- The `as:` inverse is a normal `has_many`/`has_one` whose every query —
+  accessor, `includes`, `includes_count`, `join`, cascades — carries the
+  `{as}_type == "<OwnerClass>"` guard, so two parents with colliding keys
+  never see each other's children.
+- **Association writers auto-set both fields**: `customer.comments <<
+  Comment.create({...})` and `customer.comments.create({...})` stamp
+  `commentable_id` *and* `commentable_type` — see
+  [Writing through associations](#writing-through-associations).
+- **`counter_cache:` works** on a polymorphic belongs_to: the parent
+  collection is resolved from the type at bump time, so each parent type
+  maintains its own count, and a reassignment across *types* moves the count
+  between collections. `reset_counters` recounts with the type guard.
+- **`dependent:` works** on `as:` relations — only the owner's typed
+  children cascade; `"nullify"` clears both the FK **and** the type field.
+- **Eager-loading a polymorphic belongs_to raises** (`includes`/`join` — the
+  target collection varies per row, which doesn't fit one query; Rails has
+  the same restriction). Access `record.commentable` directly. The `as:`
+  inverse eager-loads normally.
+- `polymorphic: true` combined with `class_name:` raises at class load (the
+  target type comes from the record, not the declaration).
+
+### Single-Collection Inheritance (STI)
+
+A model inheriting from another model shares its base's collection, with a
+`type` discriminator — Rails single-table inheritance, per-collection:
+
+```soli
+class User < Model
+  validates("email", {"presence": true})
+  has_many "posts"
+  scope("recent", fn() { this.order("_created_at", "desc") })
+end
+
+class Admin < User
+  def badge
+    "admin"
+  end
+end
+
+Admin.create({"email": "a@x.co"})   # stored in `users` with type: "Admin"
+User.all()                           # every row — admins hydrate AS Admin
+Admin.all()                          # only Admin rows (and Admin's descendants)
+User.find(admin._key).badge()        # "admin" — hydration follows the type
+```
+
+Semantics:
+
+- **Subclass writes stamp `type`** (`create`, `save`, `find_or_create_by`);
+  rows **hydrate as their stored type** everywhere (`find`, `where`, `all`,
+  relation accessors) — a guard ignores a `type` value that doesn't name a
+  model class belonging to the row's collection, so unrelated data fields
+  called `type` can't hijack hydration.
+- **Subclass queries are type-scoped** — `Admin.where/all/count/find_by/
+  first_by/delete_all` and every chained QueryBuilder filter
+  `type IN ["Admin", ...descendants]`. The **base class matches every row**
+  (no filter), Rails-style. `Admin.find(user_key)` on a base-class row raises
+  `RecordNotFound`, and class-form `update(id)`/`delete(id)` refuse rows
+  outside the hierarchy.
+- **Metadata copies down at class definition**: validations, callbacks (named
+  and closure), relations (with the base's foreign key, e.g. `user_id`),
+  scopes, soft-delete, `attr_accessible`, `encrypts`, enums, and state
+  machines all apply to subclasses; the subclass's own declarations run after
+  the copy and append/override. Declare the parent before its subclasses
+  (file order already guarantees this) — parent DSL added *after* a subclass
+  is defined does not propagate.
+- The discriminator column is always `type`; avoid a user field of that name
+  on STI hierarchies.
+
 ### Manual Relationships
 
 You can also implement relationships as custom methods for more control:
 
 ```soli
 class Post < Model
-  fn author()
+  def author()
     User.find(this.author_id)
   end
 end
 ```
+
+## Graph Models (Edges and Traversal)
+
+SoliDB is multi-model: alongside document collections it supports native
+**edge collections**. Declare an edge model with the `edge` DSL and the Model
+API gains graph creation, traversal, and shortest-path queries:
+
+```soli
+class Follow < Model
+  edge from: "users", to: "users"
+end
+```
+
+`from:` and `to:` accept collection names (`"users"`) or model class names
+(`"User"`). The declaration marks the collection as the SolidB `edge` type —
+in dev it is auto-created with that type plus hash indexes on `_from` and
+`_to`.
+
+### Creating Edges
+
+Endpoints can be model instances, full `"collection/key"` ids, or bare keys:
+
+```soli
+f = Follow.create(from: alice, to: bob)
+f = Follow.create({ "from": alice, "to": "users/bob-key", "since": 2024 })
+
+f._from   # => "users/alice-key"
+f._to     # => "users/bob-key"
+```
+
+Edges are ordinary model records — validations, callbacks, and extra
+attributes (`since` above) work as usual. A missing or invalid endpoint
+behaves like a failed validation: `f._errors` is set (e.g.
+`[{ "field": "from", "message": "..." }]`) and the edge is not persisted.
+
+### Traversal
+
+Call `.traverse(EdgeModel, options?)` on a **saved** record to get a chainable
+QueryBuilder over the reachable vertices:
+
+```soli
+friends   = alice.traverse(Follow).all                    # OUTBOUND, depth 1..1
+followers = alice.traverse(Follow, direction: "in").all   # INBOUND
+network   = alice.traverse(Follow, depth: 3).all          # depth 1..3
+
+# Full chain — vertex filters use the usual `doc` variable; prefix a filter
+# with `edge.` to match edge attributes instead:
+ring = alice.traverse(Follow, depth: [2, 3], direction: "any")
+  .where({ "active": true })
+  .where("edge.since >= @y", { "y": 2024 })
+  .order("name")
+  .limit(10)
+  .all
+
+n = alice.traverse(Follow).count
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `direction` | `"out"` | `"out"` (OUTBOUND), `"in"` (INBOUND), or `"any"` |
+| `depth` | `1` | Int `n` traverses depth `1..n`; a `[min, max]` array sets an explicit range |
+
+> **Depth gotcha:** Soli's `1..3` range literal materializes to the
+> exclusive-end array `[1, 2]`. Prefer an explicit `[1, 3]` array for depth
+> ranges.
+
+- Results are instances of the target model — the class is resolved per
+  document, so mixed-vertex graphs return the right class for each vertex.
+- Soft-delete models compose: the deleted-filter is applied to the vertices.
+- A traversal builder does **not** compose with `includes`, `includes_count`,
+  `join`, `group_by`, `update_all`, or `delete_all` — combining them raises a
+  clear error. **`.similar()` does compose** — rank traversal results by
+  semantic relevance (exact client-side cosine; no HNSW pushdown on graph
+  queries).
+- `Model.graph_rag(query, options)` — graph-augmented retrieval: ANN seeds,
+  expand through an edge model, re-rank. See [Graph RAG](#graph-rag) below.
+- `traverse` and `shortest_path` require a saved record (they raise
+  otherwise).
+
+### Shortest Path
+
+`shortest_path` executes immediately (no `.all`) and returns the vertices
+along the shortest path between two records — `[]` when they are not
+connected. Direction defaults to `"any"`:
+
+```soli
+path = alice.shortest_path(bob, via: Follow)
+path = alice.shortest_path("users/bob-key", via: Follow, direction: "out")
+```
+
+### Relation Sugar
+
+An idiomatic named relation over a traversal is just a plain method:
+
+```soli
+class User < Model
+  def followers()
+    return this.traverse(Follow, { "direction": "in" })
+  end
+end
+
+User.find(key).followers().where({ "active": true }).count
+```
+
+### Migrations
+
+Dev auto-create already provisions the edge type and the `_from`/`_to` hash
+indexes. For explicit production migrations:
+
+```soli
+def up(db: Any)
+  db.create_collection("follows", "edge")
+  db.create_index("follows", "idx_follows_from", ["_from"], {})
+  db.create_index("follows", "idx_follows_to", ["_to"], {})
+end
+```
+
+### Graph RAG
+
+Combine **vector retrieval** with **graph expansion** for richer RAG context.
+Two APIs:
+
+**Composition** — rank neighbors of a seed vertex by meaning:
+
+```soli
+# Saved record required for traverse()
+related = product.traverse(CompatibleWith, depth: 1)
+  .similar("wireless accessories", "embedding", 5)
+  .all
+
+for item in related
+  print(item.name + " — " + str(item._similarity_score))
+end
+```
+
+Traversal + `.similar()` always uses exact client-side cosine over the
+reachable vertices (HNSW pushdown does not apply to graph FOR-heads).
+
+**`Model.graph_rag()`** — seed-and-expand in one eager call:
+
+```soli
+class CompatibleWith < Model
+  edge from: "products", to: "products"
+end
+
+class Product < Model
+  vector_index "embedding", dimension: 1536, metric: "cosine"
+
+  before_save fn() {
+    this.embedding = embed(this.name + ". " + this.description)
+  }
+end
+
+context = Product.graph_rag("running headphones with long battery", {
+  "via": CompatibleWith,
+  "direction": "any",
+  "depth": 1,
+  "seed_k": 3,
+  "limit": 8
+})
+
+for product in context
+  print(product.name)
+  print("  score: " + str(product._similarity_score))
+  print("  seed:  " + str(product._graph_seed))
+  print("  hops:  " + str(product._graph_hops))
+end
+
+answer = llm_generate(
+  "Recommend only from the list. Mention names and prices.",
+  build_product_context(context) + "\n\nQuestion: running headphones"
+)
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `via` | — | **Required.** Edge model class (must declare `edge from:, to:`) |
+| `direction` | `"out"` | `"out"`, `"in"`, or `"any"` |
+| `depth` | `1` | Int `n` (1..n) or `[min, max]` array |
+| `field` | `"embedding"` | Vector field covered by `vector_index` |
+| `seed_k` | `5` | ANN seeds from the collection index |
+| `limit` | `10` | Final result cap after expand + re-rank |
+| `vector` | — | Query vector literal — skips the embedding API call |
+
+Each result carries `_similarity_score` (re-rank score), `_graph_seed` (true
+for direct ANN hits), and `_graph_hops` (0 for seeds, 1 for expanded
+neighbors in v1).
 
 ## Finder Methods
 
@@ -839,10 +1418,36 @@ min_score = User.min("score");
 # Maximum
 max_score = User.max("views");
 
-# Group by aggregation
+# Group by aggregation (legacy 3-arg form, unchanged)
 by_country = User.group_by("country", "sum", "balance");
 # Returns: [{ group: "US", result: 1000 }, { group: "FR", result: 500 }, ...]
 ```
+
+### Rich grouped aggregation
+
+The newer form groups on one or more fields and computes several named
+aggregates at once, with `having` for post-group filtering:
+
+```soli
+rows = Order
+  .where({ "status": "paid" })
+  .group_by(["country", "plan"])
+  .aggregate({ "total": ["sum", "amount"], "n": ["count"] })
+  .having("total > @min", { "min": 1000 })
+  .order("total", "desc")
+  .all
+# => [{ "country": "FR", "plan": "pro", "total": 5300, "n": 12 }, ...]
+
+User.group_by("role").all           # 1-arg form: implicit count per group ("n")
+Order.aggregate({ "n": ["count"] }).first   # ungrouped: one row
+Order.median("amount").first        # also: stddev / variance / count_distinct
+```
+
+Aggregate functions: `sum`, `avg`, `min`, `max`, `count`, `count_distinct`,
+`median`, `stddev`, `variance` (no `PERCENTILE` — SolidB has no such
+function). The full treatment — `having` security notes, soft-delete
+behavior, the window-function escape hatch — lives in
+[Analytics & Columnar Stores](analytics.md).
 
 ## Pluck and Exists
 
@@ -853,9 +1458,14 @@ Quick queries for specific data:
 names = User.where("active = @a", { "a": true }).pluck("name");
 # Returns: ["Alice", "Bob", "Charlie"]
 
-# Get multiple fields as objects
+# Get multiple fields as hashes — self-describing, and the projection runs
+# in the database: only the named fields travel over the wire
 users = User.pluck("name", "email");
 # Returns: [{ name: "Alice", email: "alice@example.com" }, ...]
+
+# Symbols work wherever a field name is expected — same query, Rails-style
+users = User.pluck(:name, :email).all
+posts = Post.order(:created_at, :desc).limit(10).all
 
 # Check if records exist (returns boolean)
 exists = User.where("role = @r", { "r": "admin" }).exists;
@@ -887,7 +1497,29 @@ end
 
 Requires `SOLI_EMBEDDING_API_KEY` environment variable. See [database docs](/docs/database/finders#similar-simple) for configuration.
 
-SolidDB also supports native vector search with HNSW indexes, `VECTOR_SIMILARITY()` in SDBQL, hybrid search, and scalar quantization. Create a vector index on your embedding field for production workloads. See the [SolidDB Vector Search docs](https://solidb.solisoft.net/docs/vector-search) for details.
+### Index pushdown (`vector_index`)
+
+Declare a `vector_index` on the embedding field and `.similar()` pushes the
+search down to the database's HNSW index (approximate nearest neighbor)
+instead of computing cosine similarity client-side:
+
+```soli
+class Article < Model
+  vector_index "embedding", dimension: 1536, metric: "cosine"
+end
+
+Article.similar("query text", "embedding", 5)          # ANN via the HNSW index
+Article.similar([0.1, 0.2, ...], "embedding", 5)       # vector literal — no embedding call
+Article.similar("q", "embedding", 5, { "exact": true })  # force exact client-side cosine
+```
+
+ANN results are approximate, and chained `where` filters are applied *after*
+candidate selection (4×k candidates, capped at 400) — so fewer than `k` rows
+may return. Without a `vector_index` declaration, `.similar()` keeps the
+historical client-side path, unchanged. Full details, plus **fulltext**
+(`Model.search`, `_search_score`) and **geo** (`near` / `within`,
+`_distance`) search and the index DSL, live in
+[Search: Vector, Fulltext & Geo](search.md).
 
 ## Instance Methods
 
@@ -911,6 +1543,45 @@ user.touch();  # Updates _updated_at
 # Refresh from database
 user.reload();
 ```
+
+### Dirty tracking
+
+Model instances track which attributes changed since they were loaded from
+(or last persisted to) the database:
+
+```soli
+user = User.find(id)
+user.changed?                 # false — freshly loaded
+user.name = "New Name"
+
+user.changed?                 # true
+user.changed                  # ["name"]  (sorted attribute names)
+user.changes                  # { "name": ["Old Name", "New Name"] }
+user.attribute_was("name")    # "Old Name"
+
+user.save()
+user.changed?                 # false — baseline reset
+user.previous_changes         # { "name": ["Old Name", "New Name"] }
+```
+
+Semantics worth knowing:
+
+- **New records report every attribute as changed** — `User.new({"name": "A"})`
+  has `changes == { "name": [null, "A"] }`, and after `create` the record's
+  `previous_changes` covers all inserted attributes (including `id`), matching
+  Rails.
+- **Failed persists keep the record dirty.** A validation or DB error on
+  `save`/`update` leaves `changed?` true and `previous_changes` untouched.
+- `reload()` resets the baseline and clears `previous_changes`; atomic
+  `increment`/`decrement`, soft `delete()`, and `restore()` keep their written
+  field clean.
+- **Tracking is value-based.** Reassigning an attribute to an equal value is
+  not a change. Conversely, mutating a nested Hash/Array *in place*
+  (`user.tags.push("x")`) is invisible to tracking — reassign the attribute
+  (`user.tags = updated_tags`) to record it.
+- There are no dynamic per-attribute methods (`name_was`); use
+  `attribute_was("name")`. A database column literally named `changed`
+  shadows the method (field reads win), like any other field/method collision.
 
 ### How `increment` / `decrement` stay atomic under concurrency
 
@@ -1022,6 +1693,147 @@ all = Post.with_deleted.all;
 deleted = Post.only_deleted.all;
 ```
 
+Interactions with other features: a soft `delete()` **does not run
+[`dependent:` cascades](#cascade-deletes)** (children survive, so `restore()`
+has nothing to un-do), and it keeps dirty tracking clean for `deleted_at`. A
+soft-deleting child with a [`counter_cache:`](#counter-caches) decrements its
+parent's counter, and `restore()` increments it back.
+
+## Timeseries Models
+
+Declare a model as timeseries with the `timeseries` DSL. The collection is
+created with the SolidB `timeseries` type — optimized for append-only,
+time-indexed data (metrics, logs, telemetry):
+
+```soli
+class Metric < Model
+  timeseries retention: "30d"     # bare `timeseries` (no options) also works
+end
+
+class Reading < Model
+  timeseries retention: "90d", timestamp: "recorded_at"
+end
+```
+
+- `retention:` — optional retention window; used by `prune` when called
+  without an argument.
+- `timestamp:` — the field `time_bucket` buckets on. Defaults to the
+  server-set `_created_at`.
+
+### Insert-Only
+
+Timeseries records are insert-only, mirroring the database's own rules.
+Documents get UUIDv7 keys, so `_key` order is insertion-time order:
+
+```soli
+Metric.create({ "device": "srv1", "value": 0.42 })
+
+m.update({ "value": 1 })
+# => raises: "Metric is a timeseries model: records are insert-only.
+#    update is not supported — use prune() for retention."
+```
+
+Blocked: static `update` / `upsert`, instance `update` / `save` on an
+existing record / `increment` / `decrement`, and `update_all`. Allowed:
+`delete` and `delete_all`.
+
+> Don't set `_key` yourself on a timeseries model. `prune` relies on the
+> UUIDv7 key ordering — documents inserted with a caller-supplied `_key` are
+> never pruned.
+
+### Bucketed Aggregation (`time_bucket`)
+
+`time_bucket(interval, aggregates?)` groups rows into fixed time buckets and
+computes per-bucket aggregates. Chain it after `where(...)` filters and
+finish with `.all`:
+
+```soli
+rows = Metric.where("device = @d", { "d": "srv1" })
+  .time_bucket("5m", { "avg": "value", "max": "value" })
+  .all
+# => [{ "bucket": "2026-07-05T10:00:00+00:00", "avg": 0.41, "max": 0.9 }, ...]
+
+rows = Metric.time_bucket("1d").all                  # bare form: count per bucket
+# => [{ "bucket": "...", "count": 42 }, ...]
+
+rows = Metric.time_bucket("1h", avg: "value").all    # keyword style works too
+```
+
+- Interval units: `s`, `m`, `h`, `d` (the database's `TIME_BUCKET` contract).
+- Aggregates: `sum` / `avg` / `min` / `max` take a field name; `count` takes
+  `true` (`{ "count": true }`). With no aggregates you get a `count` per
+  bucket.
+- Buckets fall on the declared `timestamp:` field (default `_created_at`).
+- Rows come back as plain hashes — `bucket` (an RFC3339 string) plus your
+  aggregate aliases — sorted by bucket.
+
+### Retention (`prune`)
+
+`prune` deletes rows older than a cutoff and returns the number deleted:
+
+```soli
+deleted = Metric.prune("30d")                    # duration cutoff (units: s/m/h/d/w)
+deleted = Metric.prune("2026-06-01T00:00:00Z")   # explicit RFC3339 cutoff
+deleted = Metric.prune                           # uses the declared retention:
+```
+
+There is no auto-prune scheduler. Register a recurring [cron job](jobs.md)
+whose handler calls `prune`:
+
+```soli
+Cron.schedule("prune_metrics", Cron.daily_at("03:00"), "PruneMetricsJob", {})
+# ...and PruneMetricsJob.perform is a one-liner: Metric.prune
+```
+
+### Migrations and Continuous Aggregates
+
+Dev auto-create provisions the `timeseries` type for you; the explicit
+migration form is:
+
+```soli
+def up(db: Any)
+  db.create_collection("metrics", "timeseries")
+end
+```
+
+`db.prune_collection("metrics", "2026-01-01T00:00:00Z")` is also available on
+the migration `db` handle for one-off cleanups. For continuous aggregates
+(downsampling on write), SolidB streams are the raw-SDBQL escape hatch —
+`db.query("CREATE STREAM ...")` in a migration. See
+[Migrations](migrations.md).
+
+## Encrypted Attributes
+
+Encrypt sensitive fields at rest with `encrypts`. Values are encrypted on
+create/save/update and decrypted transparently on load, using AES-256-GCM:
+
+```soli
+class User < Model
+  encrypts(:ssn, :api_token)
+end
+
+u = User.create({ "ssn": "123-45-6789", "email": "a@b.com" });
+# stored ciphertext in the DB; in memory it's plaintext:
+User.find(u._key).ssn  # => "123-45-6789"
+```
+
+The encryption key comes from the `SOLI_ENCRYPTION_KEY` environment variable —
+set it to a long, high-entropy secret (e.g. `Crypto.random_hex(32)`) and keep
+it out of source control.
+
+> **Encrypted columns can't be queried by value.** AES-GCM uses a random nonce,
+> so the same plaintext encrypts to different ciphertext every time —
+> `User.where("ssn = @s", { "s": "123-45-6789" })` will never match. Encrypt
+> only fields you store and read, not ones you filter on.
+
+A field written before `encrypts` was added (legacy plaintext) is returned
+as-is on load rather than erroring. Low-level/transaction writes that bypass
+`create`/`save` aren't auto-encrypted — use `Crypto.encrypt` directly there.
+
+`encrypts` builds on the standalone `Crypto.encrypt(plaintext, key?)` /
+`Crypto.decrypt(ciphertext, key?)` builtins, which you can also use on their
+own (key defaults to `SOLI_ENCRYPTION_KEY`).
+
 ## Relationship Accessors
 
 Access related records directly from instances:
@@ -1040,6 +1852,43 @@ profile = user.profile;
 # Access belongs_to relation
 author = post.user;
 ```
+
+### Writing through associations
+
+`has_many` accessors (including polymorphic `as:` inverses) accept writes —
+the foreign key, and the polymorphic type when applicable, are stamped
+automatically:
+
+```soli
+# Create a child through the relation — FK (and type) auto-set:
+post = author.posts.create({"title": "seeded"})
+post._errors                # null on success, error array on validation failure
+
+# Adopt an existing (or unpersisted) record — sets the FK and saves:
+author.posts << loose_post
+author.posts << [draft_a, draft_b]
+
+# Polymorphic inverses stamp both halves of the reference:
+customer.comments << Comment.create({"message": "bla"})
+comment = customer.comments.create({"message": "bla"})
+comment.commentable_id      # customer._key
+comment.commentable_type    # "Customer"
+```
+
+Semantics:
+
+- Both writers persist through the **regular save path** — validations,
+  `before_/after_save`/`create`/`update` callbacks, counter caches, and dirty
+  tracking all apply. `.create` returns the instance (`_errors` carries
+  validation failures, like `Model.create`); a failing `<<` raises so the
+  push can't silently no-op.
+- The association seed **wins over caller-supplied values** — passing a
+  different `commentable_id` to `customer.comments.create` is overridden.
+- The owner must be persisted (`<<`/`.create` on an unpersisted owner
+  raises); `<<` expects model instances (or an array of them), not raw keys.
+- On HABTM relations `<<` inserts a join row, and on `through:` relations it
+  creates the join record — both documented in their sections. `.create` on
+  a `through:` relation raises (create the record and push it instead).
 
 ### has_many is Enumerable AND chainable
 
@@ -1075,6 +1924,9 @@ n_pub = user.posts.where("published = @p", { "p": true }).count;
 user.posts.delete_all;
 user.posts.where("draft = @d", { "d": true }).delete_all;
 
+# Bulk update — one UPDATE statement, no N+1
+user.posts.where("draft = @d", { "d": true }).update_all({ "draft": false });
+
 # Sort / paginate before materializing
 recent = user.posts.order("created_at", "desc").limit(10).all;
 ```
@@ -1082,8 +1934,8 @@ recent = user.posts.order("created_at", "desc").limit(10).all;
 Notes:
 
 - An owner that has not been saved yet (no `_key`) returns a QueryBuilder
-  whose filter never matches — `count` is `0`, `delete_all` is a no-op, and
-  iteration yields nothing.
+  whose filter never matches — `count` is `0`, `delete_all` / `update_all`
+  are no-ops, and iteration yields nothing.
 - If the related model uses `soft_delete`, soft-deleted children are filtered
   out of the relation (consistent with `Related.where(...)`). Use the static
   `Related.with_deleted` / `Related.only_deleted` to query them explicitly.
@@ -1112,7 +1964,118 @@ User.upsert("user123", { "name": "Updated Name" });
 User.where("doc.active == false").delete_all;
 post.comments.delete_all;          # via has_many relation
 Model.delete_all;                  # static — wipe the whole collection
+
+# Batch update via QueryBuilder — one AQL UPDATE for the whole match.
+# Patches every matching row; skips validations and callbacks:
+User.where("doc.active == false").update_all({ "archived": true });
+post.comments.where("draft = @d", { "d": true }).update_all({ "draft": false });
 ```
+
+## Coalescing Reads (`grouped`)
+
+A controller action that reads several unrelated things pays one network
+round-trip per read:
+
+```soli
+@posts    = Post.all                          # round-trip 1
+@accounts = Account.where({ active: true }).count   # round-trip 2
+@tags     = Tag.all                           # round-trip 3
+```
+
+Wrap the reads in `grouped(fn() { ... })` and they are deferred and combined
+into a **single** request — one `LET … RETURN […]` statement that computes every
+subquery server-side and returns them together:
+
+```soli
+grouped(fn() {
+  @posts    = Post.all
+  @accounts = Account.where({ active: true }).count
+  @tags     = Tag.all
+})
+# one round-trip for all three
+```
+
+Inside the block each read returns a placeholder instead of hitting the
+database; the queries fire as one combined statement when the block ends, and the
+results are then materialised. **After** the block you use `@posts`,
+`@accounts`, and `@tags` exactly as before — iterate them, index them, read
+fields, serialise them to JSON.
+
+Strictly speaking the binding stays a thin placeholder that resolves to its value
+on use, rather than being replaced by one. That is invisible in normal code, but
+it is why a *new* way of consuming a value can occasionally need teaching to
+unwrap it — if you ever see an error naming a type that the value plainly is
+(`cannot iterate over array`), that is the shape of the bug, and it is worth
+reporting.
+
+### What gets coalesced
+
+Read queries are batched: `all`, `where(...).all` / `.first` / `.count` /
+`.exists`, the aggregates (`sum` / `avg` / `min` / `max`), `find`, `find_by`, and
+`first_by`. **Writes are not** — `create`, `save`, `update`, `delete` run
+immediately even inside the block (use `transaction` for atomic writes).
+
+### Reading a result inside the block (auto-flush)
+
+If you read one of the deferred results *before* the block ends, the queries
+collected so far fire immediately (an "auto-flush"), then collection resumes for
+the rest:
+
+```soli
+grouped(fn() {
+  @posts = Post.all
+  log("loaded #{@posts.length} posts") if @posts.present?  # forces a flush here
+  @tags = Tag.all                                          # batched separately
+})
+```
+
+This always returns correct data; it just means you get more than one round-trip
+when you interleave reads. For maximum coalescing, do the reads first and use the
+results after the block.
+
+### Notes
+
+- `find` on a missing id still raises `RecordNotFound` (→ 404) — the error
+  surfaces when the result is read or the block ends.
+- A combined query is all-or-nothing: if it fails, every read in the batch
+  fails together.
+- In interactive **`--dev`** the reads are *not* coalesced — each runs as its own
+  query so the dev query log stays readable (you see the natural statements
+  instead of one combined `LET … RETURN […]`). Coalescing is active in
+  production, where the single round-trip is what matters.
+- **`soli test` coalesces.** The test server runs with `--dev` so the query log
+  is populated, but specs exercise the *production* shape deliberately —
+  otherwise the whole coalescing path would go untested and `assert_query_count`
+  would measure dev's un-coalesced number instead of the round-trips production
+  makes. A grouped action reports **one** query in a spec, not one per read.
+
+### Finding reads that should be grouped
+
+Because `grouped` is for reads that each run *once*, an N+1 scan can never point
+you at them: it fingerprints by query template and only fires on a *repeated*
+one. Three unrelated reads are three distinct templates with a count of one
+each — invisible to `assert_no_n_plus_one` and to the dev bar's N+1 badge.
+
+Two tools cover that blind spot:
+
+- The **dev bar** query panel shows a `N READS · N ROUND-TRIPS` advisory when a
+  request issues three or more distinct one-off reads outside any `grouped`
+  block. It is amber, not red: it is a suggestion, because reads that feed each
+  other cannot share a round-trip.
+- **`assert_no_ungrouped_reads(response)`** fails a spec on the same condition:
+
+  ```soli
+  test("the dashboard loads in one round-trip", fn() {
+    let response = get("/dashboard")
+    assert_no_ungrouped_reads(response)
+    assert_query_count(response, 1)
+  })
+  ```
+
+Neither can prove the reads are independent — `User.find(id)` followed by a query
+on `user._key` is genuinely two round-trips. When the reads must be sequential,
+that advisory is a false positive and the assertion is the wrong tool for that
+action.
 
 ## Transactions
 
@@ -1120,14 +2083,39 @@ Execute multiple operations atomically within a database transaction:
 
 ### Using a Block (Recommended)
 
+`Model.transaction` runs a block inside a single database transaction. Every
+document write inside the block — `create`, `save`, `update`, `delete`, and key
+lookups via `find` — participates automatically. The block **commits** when it
+returns normally and **rolls back** (re-raising the error) if it throws:
+
 ```soli
-# Execute block in a transaction
-User.transaction {
-  User.create({ name: "Alice", age: 30 });
-  User.create({ name: "Bob", age: 25 });
-}
-# All operations commit together, or rollback on error
+User.transaction do
+  User.create({ "name": "Alice", "age": 30 })
+  User.create({ "name": "Bob", "age": 25 })
+end
+# Both rows commit together. If either operation — or your own `throw` —
+# raises, neither row is persisted.
 ```
+
+The block's value is returned, so you can hand back what you computed:
+
+```soli
+order = Order.transaction do
+  account = Account.find(account_id)   # `find` (key lookup) sees in-transaction state
+  account.balance -= amount
+  account.save()
+  Order.create({ "account_id": account_id, "total": amount })["record"]
+end
+```
+
+Nested `transaction` calls **join** the outer transaction — only the outermost
+begins and commits/rolls back (SolidB has no savepoints), so a `throw` anywhere
+inside undoes every write in the whole nest.
+
+> **Cursor reads see committed state.** Queries inside the block
+> (`.where(...).all()`, `find_by`, aggregations) read *committed* data — they do
+> not observe the transaction's own uncommitted writes. To read a row you wrote
+> earlier in the same transaction, use `find` (a key lookup).
 
 ### Using AQL String
 
@@ -1137,10 +2125,8 @@ User.transaction {
 # query parameter is never interpolated into server-side JavaScript.
 result = User.transaction("
   FOR u IN users FILTER u.active == true UPDATE u WITH { last_seen: DATE_NOW() } IN users
-");
+")
 ```
-
-For multiple operations in one transaction, use the block form or transaction handle below — the string form runs a single AQL statement.
 
 ### Using Transaction Object (Manual Control)
 
@@ -1156,7 +2142,7 @@ tx.commit();
 All operations within the transaction either all succeed or all fail together.
 
 class User < Model
-    fn posts()
+    def posts()
         Post.where("doc.author_id == @id", { "id": this.id })
     end
 end
@@ -1168,11 +2154,11 @@ Add custom methods to your models:
 
 ```soli
 class User < Model
-  fn is_admin() -> Bool
+  def is_admin() -> Bool
     this.role == "admin"
   end
 
-  fn full_name() -> String
+  def full_name() -> String
     this.first_name + " " + this.last_name
   end
 end
@@ -1223,11 +2209,11 @@ class User < Model
   before_save("normalize_email")   # strings and symbols both work
   before_save(:normalize_email)    # Ruby-style symbol shorthand
 
-  fn normalize_email()
+  def normalize_email()
     this.email = this.email.downcase;
   end
 
-  fn is_adult() -> Bool
+  def is_adult() -> Bool
     this.age >= 18
   end
 end
@@ -1247,19 +2233,19 @@ end
 
 # Usage in controller
 class UsersController < Controller
-  fn index
+  def index
     # Eager load posts and profiles to avoid N+1 queries
     users = User.includes("posts", "profile").all;
     render("users/index", { "users": users })
   end
 
-  fn show
+  def show
     id = req["params"]["id"];
     user = User.includes("posts").find(id);
     render("users/show", { "user": user })
   end
 
-  fn active
+  def active
     # Find active users who have at least one post
     users = User.join("posts")
       .where("active = @a", { "a": true })
@@ -1269,7 +2255,7 @@ class UsersController < Controller
     render("users/active", { "users": users })
   end
 
-  fn create
+  def create
     user = User.create({
       "name": req["params"]["name"],
       "email": req["params"]["email"],
@@ -1408,7 +2394,7 @@ In production (without `--dev`), `dev_queries()` always returns an empty array �
 ### Example: Controller
 
 ```soli
-fn index
+def index
   users = User.where("doc.active == true").all;
   posts = Post.includes("author").all;
 

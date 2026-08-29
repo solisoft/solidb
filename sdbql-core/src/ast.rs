@@ -412,6 +412,8 @@ pub enum BinaryOperator {
     LessThanOrEqual,
     GreaterThan,
     GreaterThanOrEqual,
+    Spaceship,
+    SemanticMatch,
     In,
     NotIn,
 

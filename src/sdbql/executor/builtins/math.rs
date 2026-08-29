@@ -152,6 +152,83 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         }
         "PI" => Ok(Some(Value::Number(num_from_f64(std::f64::consts::PI)))),
         "E" => Ok(Some(Value::Number(num_from_f64(std::f64::consts::E)))),
+        "MOD" => {
+            if args.len() != 2 {
+                return Err(DbError::ExecutionError(
+                    "MOD requires 2 arguments: a, b".to_string(),
+                ));
+            }
+            if args[0].is_null() || args[1].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let a = get_number(&args[0], name)?;
+            let b = get_number(&args[1], name)?;
+            if b == 0.0 {
+                return Err(DbError::ExecutionError(
+                    "MOD: divisor cannot be 0".to_string(),
+                ));
+            }
+            Ok(Some(Value::Number(num_from_f64(a % b))))
+        }
+        "BIT_AND" => bit_binop(args, "BIT_AND", |a, b| a & b),
+        "BIT_OR" => bit_binop(args, "BIT_OR", |a, b| a | b),
+        "BIT_XOR" => bit_binop(args, "BIT_XOR", |a, b| a ^ b),
+        "BIT_NEGATE" | "BIT_NOT" => {
+            if args.len() != 1 {
+                return Err(DbError::ExecutionError(
+                    "BIT_NEGATE requires 1 argument".to_string(),
+                ));
+            }
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let a = args[0].as_i64().ok_or_else(|| {
+                DbError::ExecutionError("BIT_NEGATE: argument must be an integer".to_string())
+            })?;
+            Ok(Some(Value::Number(serde_json::Number::from(!a))))
+        }
+        "BIT_SHIFT_LEFT" => bit_binop(args, "BIT_SHIFT_LEFT", |a, b| {
+            a.checked_shl(b.clamp(0, 63) as u32).unwrap_or(0)
+        }),
+        "BIT_SHIFT_RIGHT" => bit_binop(args, "BIT_SHIFT_RIGHT", |a, b| {
+            a.checked_shr(b.clamp(0, 63) as u32).unwrap_or(0)
+        }),
+        "CLAMP" => {
+            if args.len() != 3 {
+                return Err(DbError::ExecutionError(
+                    "CLAMP requires 3 arguments: value, min, max".to_string(),
+                ));
+            }
+            if args.iter().any(Value::is_null) {
+                return Ok(Some(Value::Null));
+            }
+            let v = get_number(&args[0], name)?;
+            let lo = get_number(&args[1], name)?;
+            let hi = get_number(&args[2], name)?;
+            Ok(Some(Value::Number(num_from_f64(
+                v.clamp(lo.min(hi), lo.max(hi)),
+            ))))
+        }
+        "MIN" if args.len() >= 2 && args.iter().all(|v| v.is_number() || v.is_null()) => {
+            if args.iter().any(Value::is_null) {
+                return Ok(Some(Value::Null));
+            }
+            let min = args
+                .iter()
+                .filter_map(|v| v.as_f64())
+                .fold(f64::INFINITY, f64::min);
+            Ok(Some(Value::Number(num_from_f64(min))))
+        }
+        "MAX" if args.len() >= 2 && args.iter().all(|v| v.is_number() || v.is_null()) => {
+            if args.iter().any(Value::is_null) {
+                return Ok(Some(Value::Null));
+            }
+            let max = args
+                .iter()
+                .filter_map(|v| v.as_f64())
+                .fold(f64::NEG_INFINITY, f64::max);
+            Ok(Some(Value::Number(num_from_f64(max))))
+        }
         "MIN" if args.len() == 1 && args[0].is_array() => {
             let arr = args[0].as_array().unwrap();
             let min = arr
@@ -268,7 +345,12 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 return Ok(Some(Value::Null));
             }
             let mean = nums.iter().sum::<f64>() / nums.len() as f64;
-            let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+            let denom = if name == "VAR_SAMP" {
+                (nums.len() - 1) as f64
+            } else {
+                nums.len() as f64
+            };
+            let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / denom;
             Ok(Some(Value::Number(num_from_f64(variance))))
         }
         "STDDEV" | "STDDEV_POP" | "STDDEV_SAMP" | "STDDEV_POPULATION"
@@ -280,7 +362,12 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 return Ok(Some(Value::Null));
             }
             let mean = nums.iter().sum::<f64>() / nums.len() as f64;
-            let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+            let denom = if name == "STDDEV_SAMP" {
+                (nums.len() - 1) as f64
+            } else {
+                nums.len() as f64
+            };
+            let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / denom;
             let stddev = variance.sqrt();
             Ok(Some(Value::Number(num_from_f64(stddev))))
         }
@@ -288,12 +375,35 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             if args.len() == 1 && args[0].is_array() =>
         {
             let arr = args[0].as_array().unwrap();
-            let mut seen = std::collections::HashSet::new();
-            let count = arr.iter().filter(|v| seen.insert(v.to_string())).count();
+            let mut seen = crate::sdbql::executor::ValueSet::with_capacity(arr.len());
+            let count = arr.iter().filter(|v| seen.insert(v)).count();
             Ok(Some(Value::Number(serde_json::Number::from(count))))
         }
         _ => Ok(None),
     }
+}
+
+fn bit_binop(
+    args: &[Value],
+    name: &str,
+    op: impl FnOnce(i64, i64) -> i64,
+) -> DbResult<Option<Value>> {
+    if args.len() != 2 {
+        return Err(DbError::ExecutionError(format!(
+            "{} requires 2 arguments",
+            name
+        )));
+    }
+    if args[0].is_null() || args[1].is_null() {
+        return Ok(Some(Value::Null));
+    }
+    let a = args[0]
+        .as_i64()
+        .ok_or_else(|| DbError::ExecutionError(format!("{}: arguments must be integers", name)))?;
+    let b = args[1]
+        .as_i64()
+        .ok_or_else(|| DbError::ExecutionError(format!("{}: arguments must be integers", name)))?;
+    Ok(Some(Value::Number(serde_json::Number::from(op(a, b)))))
 }
 
 fn get_number(v: &Value, func_name: &str) -> DbResult<f64> {

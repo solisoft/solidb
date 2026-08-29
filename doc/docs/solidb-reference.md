@@ -430,7 +430,7 @@ db.query(
 
 | Clause | Purpose |
 |--------|---------|
-| `FOR var IN collection` | Iterate documents. Also `FOR x IN [array]` and `FOR i IN 1..10` (ranges). |
+| `FOR var IN collection` | Iterate documents. Also `FOR x IN [array]` and `FOR i IN 1..10` (ranges). Optional `SYSTEM_TIME AS OF ts` on a versioned collection. |
 | `FILTER expr` | Keep matching rows. |
 | `SORT expr [ASC\|DESC], …` | Order (multiple keys allowed). |
 | `LIMIT [offset,] count` | Window the result. |
@@ -470,13 +470,26 @@ FOR u IN users
   RETURN MERGE(u, { posts: post_count })
 
 # Graph traversal over an edge collection (OUTBOUND / INBOUND / ANY, depth min..max)
-FOR v, e IN 1..3 OUTBOUND @start follows
+FOR v, e, p IN 1..3 OUTBOUND @start follows
+  PRUNE v.blocked == true
+  RETURN { v, hops: LENGTH(p.vertices) }
+
+# As-of join (one right row, not an array)
+FOR t IN trades
+  ASOF JOIN quotes ON t.sym == quotes.sym
+    ASOF t.ts, quotes.ts BACKWARD TOLERANCE "5s"
+  RETURN { t, q: quotes }
+
+# Weighted shortest path / MATCH sugar
+FOR v, e, p IN SHORTEST_PATH @a TO @b OUTBOUND GRAPH roads OPTIONS { weight: "cost" }
+  RETURN p
+MATCH (u:people {_key: "ada"})-[:follows*1..3]->(v)
   RETURN v
 ```
 
 ### Operators
 
-- Comparison: `==` `!=` `<` `<=` `>` `>=`, `IN`, `NOT IN`
+- Comparison: `==` `!=` `<` `<=` `>` `>=` `<=>`, `IN`, `NOT IN`, `~=` (fuzzy), `=~` / `!~` (regex), infix `~` (trigram)
 - Logical: `AND` `OR` `NOT` (`&&` `||` `!`)
 - Arithmetic: `+` `-` `*` `/` `%`; ternary `cond ? a : b`; ranges `min..max`
 
@@ -488,11 +501,13 @@ authoritative, exhaustive list.
 
 | Area | Functions |
 |------|-----------|
-| Array / aggregate | `LENGTH` · `COUNT` · `SUM` · `AVG` · `MIN` · `MAX` · `FIRST` · `LAST` · `UNIQUE` · `FLATTEN` · `APPEND` · `CONTAINS` |
-| Document | `MERGE` · `KEEP` · `UNSET` · `ATTRIBUTES` · `VALUES` |
+| Array / aggregate | `LENGTH` · `COUNT` · `SUM` · `AVG` · `MIN` · `MAX` · `FIRST` · `LAST` · `UNIQUE` · `FLATTEN` · `APPEND` · `CONTAINS` · `MAP` · `FILTER` · `FLAT_MAP` · `GROUP_BY` · `SORT_BY` · `WINDOW_BY` |
+| Document | `MERGE` · `KEEP` · `UNSET` · `REDACT` · `ATTRIBUTES` · `VALUES` |
 | String | `CONCAT` · `LOWER` · `UPPER` · `TRIM` · `SUBSTRING` · `SUBSTITUTE` · `SPLIT` · `LIKE` |
-| Date | `DATE_NOW` · `NOW` · `DATE_ISO8601` · `DATE_FORMAT` |
-| Search / analytics | `VECTOR_SIMILARITY` · `TIME_BUCKET` · `COLLECTION_COUNT` · window `ROW_NUMBER() OVER (PARTITION BY … ORDER BY …)` |
+| Date / series | `DATE_NOW` · `NOW` · `DATE_ISO8601` · `DATE_FORMAT` · `TIME_BUCKET` · `DELTA` · `RATE` · `FILL` · `RESAMPLE` |
+| Search / analytics | `VECTOR_SIMILARITY` · `EMBED` · `SEMANTIC` · `TOKENS` · `PHRASE` · `SEARCH` · `CITE` · `GROUNDED` · `APPROX_COUNT_DISTINCT` · `APPROX_PERCENTILE` · `MATCH_SEQ` · `COLLECTION_COUNT` · window `ROW_NUMBER() OVER (PARTITION BY … ORDER BY …)` |
+| Geo | `GEO_POINT` · `GEO_POLYGON` · `GEO_CONTAINS` · `GEO_INTERSECTS` · `GEO_IN_RANGE` · `GEO_AREA` |
+| Auth / time-travel | `CURRENT_USER` · `CAN` · `ROW_POLICY` · `DOC_AS_OF` · `DOC_HISTORY` · `SNAPSHOT_DIFF` · `VALID_TIME` · `SYSTEM_TIME` |
 
 > **Safety:** every value that came from outside must travel through a bind
 > parameter (`@name` / `#{expr}`), never string concatenation. Collection names

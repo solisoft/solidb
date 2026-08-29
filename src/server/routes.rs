@@ -204,77 +204,88 @@ pub fn create_router(
     // Initialize sync session manager for offline-first client sync
     let sync_session_manager = Arc::new(crate::sync::SyncSessionManager::new());
 
-    // Initialize Lua VM pool for efficient script execution
-    let lua_pool = Arc::new(LuaPool::with_default_size());
-    tracing::info!(
-        "Lua VM pool initialized with {} states",
-        lua_pool.stats().size
-    );
-
-    // Initialize script bytecode cache
-    let script_cache = Arc::new(ScriptCache::with_default_size());
-
-    // Initialize script index for fast route lookup
-    let script_index = Arc::new(ScriptIndex::new());
+    let lua_enabled = crate::scripting::lua_runtime_enabled();
 
     // Wrap storage in Arc before building the index
     let storage = Arc::new(storage);
 
-    // Build script index from storage
-    script_index.rebuild(&storage);
-    let index_stats = script_index.stats();
-    tracing::info!(
-        "Script index built: {} exact paths, {} pattern paths",
-        index_stats.exact_entries,
-        index_stats.pattern_entries
-    );
+    let (lua_pool, script_cache, script_index, service_cache) = if lua_enabled {
+        let lua_pool = Arc::new(LuaPool::with_default_size());
+        tracing::info!(
+            "Lua VM pool initialized with {} states",
+            lua_pool.stats().size
+        );
 
-    // Pre-warm caches at startup: analyze script needs + compile bytecode + cache services
-    let service_cache = Arc::new(crate::server::service_cache::ServiceCache::new(5));
-    {
-        let mut scripts_warmed = 0u32;
-        let mut services_warmed = 0u32;
-        let temp_lua = mlua::Lua::new();
+        let script_cache = Arc::new(ScriptCache::with_default_size());
+        let script_index = Arc::new(ScriptIndex::new());
+        script_index.rebuild(&storage);
+        let index_stats = script_index.stats();
+        tracing::info!(
+            "Script index built: {} exact paths, {} pattern paths",
+            index_stats.exact_entries,
+            index_stats.pattern_entries
+        );
 
-        for db_name in storage.list_databases() {
-            if let Ok(db) = storage.get_database(&db_name) {
-                // Pre-warm script needs + bytecode
-                if let Ok(collection) = db.get_collection("_scripts") {
-                    for doc in collection.scan(None) {
-                        if let Ok(script) =
-                            serde_json::from_value::<crate::scripting::Script>(doc.to_value())
-                        {
-                            script_cache.get_or_analyze_needs(&script.key, &script.code);
-                            let _ =
-                                script_cache.get_or_compile(&script.key, &script.code, |code| {
-                                    let chunk = temp_lua.load(code);
-                                    let func = chunk.into_function()?;
-                                    Ok(func.dump(false))
-                                });
-                            scripts_warmed += 1;
+        let service_cache = Arc::new(crate::server::service_cache::ServiceCache::new(5));
+        {
+            let mut scripts_warmed = 0u32;
+            let mut services_warmed = 0u32;
+            let temp_lua = mlua::Lua::new();
+
+            for db_name in storage.list_databases() {
+                if let Ok(db) = storage.get_database(&db_name) {
+                    if let Ok(collection) = db.get_collection("_scripts") {
+                        for doc in collection.scan(None) {
+                            if let Ok(script) =
+                                serde_json::from_value::<crate::scripting::Script>(doc.to_value())
+                            {
+                                script_cache.get_or_analyze_needs(&script.key, &script.code);
+                                let _ = script_cache.get_or_compile(
+                                    &script.key,
+                                    &script.code,
+                                    |code| {
+                                        let chunk = temp_lua.load(code);
+                                        let func = chunk.into_function()?;
+                                        Ok(func.dump(false))
+                                    },
+                                );
+                                scripts_warmed += 1;
+                            }
                         }
                     }
-                }
-                // Pre-warm service cache
-                if let Ok(collection) = db.get_collection("_services") {
-                    for doc in collection.scan(None) {
-                        if let Ok(service) =
-                            serde_json::from_value::<crate::scripting::Service>(doc.to_value())
-                        {
-                            let key = service.key.clone();
-                            service_cache.insert(&db_name, &key, service);
-                            services_warmed += 1;
+                    if let Ok(collection) = db.get_collection("_services") {
+                        for doc in collection.scan(None) {
+                            if let Ok(service) =
+                                serde_json::from_value::<crate::scripting::Service>(doc.to_value())
+                            {
+                                let key = service.key.clone();
+                                service_cache.insert(&db_name, &key, service);
+                                services_warmed += 1;
+                            }
                         }
                     }
                 }
             }
+            tracing::info!(
+                "Caches pre-warmed: {} scripts (needs + bytecode), {} services",
+                scripts_warmed,
+                services_warmed
+            );
         }
-        tracing::info!(
-            "Caches pre-warmed: {} scripts (needs + bytecode), {} services",
-            scripts_warmed,
-            services_warmed
+
+        (Some(lua_pool), script_cache, script_index, service_cache)
+    } else {
+        tracing::warn!(
+            "Lua is disabled (--no-lua / SOLIDB_NO_LUA). Script execution, \
+             the Lua REPL, and service endpoints are off; the VM pool was not created."
         );
-    }
+        (
+            None,
+            Arc::new(ScriptCache::new(0)),
+            Arc::new(ScriptIndex::new()),
+            Arc::new(crate::server::service_cache::ServiceCache::new(0)),
+        )
+    };
 
     let cursor_store = CursorStore::new(Duration::from_secs(300));
     cursor_store.spawn_cleanup_task();
@@ -329,6 +340,10 @@ pub fn create_router(
         blob_rebalance_worker,
         upload_session_store,
     };
+
+    // The rate limiter is applied after `.with_state(state)` (it must sit
+    // outside compression and tracing), by which point `state` is moved.
+    let rate_limit_state = state.clone();
 
     // Protected API routes
     let api_routes = Router::new()
@@ -745,48 +760,6 @@ pub fn create_router(
             "/_api/auth/me/permissions",
             get(super::role_handlers::get_my_permissions),
         )
-        // Queue Management
-        .route(
-            "/_api/database/{db}/queues",
-            get(super::queue_handlers::list_queues_handler),
-        )
-        .route(
-            "/_api/database/{db}/queues/{name}",
-            put(super::queue_handlers::update_queue_config_handler),
-        )
-        .route(
-            "/_api/database/{db}/queues/{name}/jobs",
-            get(super::queue_handlers::list_jobs_handler),
-        )
-        .route(
-            "/_api/database/{db}/queues/{name}/enqueue",
-            post(super::queue_handlers::enqueue_job_handler),
-        )
-        .route(
-            "/_api/database/{db}/queues/jobs/{id}",
-            delete(super::queue_handlers::cancel_job_handler),
-        )
-        .route(
-            "/_api/database/{db}/queues/jobs/{id}/run-now",
-            post(super::queue_handlers::run_now_job_handler),
-        )
-        // Cron Job Management
-        .route(
-            "/_api/database/{db}/cron",
-            get(super::queue_handlers::list_cron_jobs_handler),
-        )
-        .route(
-            "/_api/database/{db}/cron",
-            post(super::queue_handlers::create_cron_job_handler),
-        )
-        .route(
-            "/_api/database/{db}/cron/{id}",
-            put(super::queue_handlers::update_cron_job_handler),
-        )
-        .route(
-            "/_api/database/{db}/cron/{id}",
-            delete(super::queue_handlers::delete_cron_job_handler),
-        )
         // Trigger Management
         .route(
             "/_api/database/{db}/triggers",
@@ -1186,6 +1159,15 @@ pub fn create_router(
                     )
                 }),
         )
+        // Per-client-IP request throttle. Sits just inside CORS so a 429 still
+        // carries `Access-Control-Allow-Origin` — a browser that gets an
+        // opaque CORS failure instead cannot read `Retry-After` and back off —
+        // but outside tracing, compression and every handler, so a flood is
+        // rejected before any real work.
+        .layer(axum::middleware::from_fn_with_state(
+            rate_limit_state,
+            crate::server::rate_limit::api_rate_limit_middleware,
+        ))
         .layer({
             use axum::http::header;
             use tower_http::cors::AllowOrigin;

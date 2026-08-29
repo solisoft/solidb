@@ -70,6 +70,24 @@ fn test_expression_binary_op() {
 }
 
 #[test]
+fn test_spaceship_and_semantic_tilde() {
+    let query = parse("RETURN 1 <=> 2").unwrap();
+    let ret = query.return_clause.unwrap();
+    if let Expression::BinaryOp { op, .. } = ret.expression {
+        assert_eq!(op, BinaryOperator::Spaceship);
+    } else {
+        panic!("Expected Spaceship");
+    }
+    let query = parse(r#"RETURN "abc" ~ "abc""#).unwrap();
+    let ret = query.return_clause.unwrap();
+    if let Expression::BinaryOp { op, .. } = ret.expression {
+        assert_eq!(op, BinaryOperator::SemanticMatch);
+    } else {
+        panic!("Expected SemanticMatch");
+    }
+}
+
+#[test]
 fn test_expression_comparison() {
     let query = parse("FOR doc IN users FILTER doc.age > 18 RETURN doc").unwrap();
     let filter = &query.filter_clauses[0];

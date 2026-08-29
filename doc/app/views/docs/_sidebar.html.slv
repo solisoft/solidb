@@ -19,7 +19,6 @@ sections = [
       { "slug": "api-transactions", "label": "Transactions" },
       { "slug": "api-cluster", "label": "Cluster" },
       { "slug": "api-auth", "label": "Auth & RBAC" },
-      { "slug": "api-jobs", "label": "Jobs & Queues" },
       { "slug": "api-triggers", "label": "Triggers" },
       { "slug": "api-monitoring", "label": "Monitoring" }
     ] },
@@ -68,7 +67,6 @@ sections = [
       { "slug": "scripting-tutorial-crud", "label": "Tutorial: CRUD API" },
       { "slug": "scripting-tutorial-testing", "label": "Tutorial: Testing" }
     ] },
-    { "slug": "queues", "label": "Queues & Jobs", "icon": "fa-tasks" },
     { "slug": "triggers", "label": "Triggers", "icon": "fa-bolt" },
     { "slug": "streams", "label": "Stream Processing", "icon": "fa-stream" }
   ] },

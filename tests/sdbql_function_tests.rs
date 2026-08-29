@@ -220,6 +220,250 @@ fn test_function_contains() {
         execute_query(&engine, "RETURN CONTAINS('Hello World', 'xyz')"),
         json!(false)
     );
+    assert_eq!(
+        execute_query(&engine, "RETURN CONTAINS('éx', 'x', true)"),
+        json!(1)
+    );
+}
+
+#[test]
+fn test_function_like_and_find_unicode() {
+    let (engine, _tmp) = create_test_engine();
+
+    assert_eq!(
+        execute_query(&engine, "RETURN LIKE('hello', 'h%llo')"),
+        json!(true)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN LIKE('Hello', 'hello', true)"),
+        json!(true)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN FIND_FIRST('éx', 'x')"),
+        json!(1)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN SUBSTRING('café', 3, 1)"),
+        json!("é")
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN SUBSTRING('hello', -2)"),
+        json!("lo")
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN CHAR_LENGTH('café')"),
+        json!(4)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN BYTE_LENGTH('café')"),
+        json!(5)
+    );
+    assert_eq!(execute_query(&engine, "RETURN LENGTH('café')"), json!(4));
+}
+
+#[test]
+fn test_function_repeat_pad_regex_join() {
+    let (engine, _tmp) = create_test_engine();
+
+    assert_eq!(
+        execute_query(&engine, "RETURN REPEAT('ab', 3)"),
+        json!("ababab")
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN PAD_LEFT('1', 3, '0')"),
+        json!("001")
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN PAD_RIGHT('1', 3, '0')"),
+        json!("100")
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN REGEX_MATCHES('a1b2', '\\\\d')"),
+        json!(["1", "2"])
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN REGEX_SPLIT('a,b,c', ',')"),
+        json!(["a", "b", "c"])
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN JOIN(['a', 'b'], '-')"),
+        json!("a-b")
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN ENCODE_URI('é')"),
+        json!("%C3%A9")
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN DECODE_URI('%C3%A9')"),
+        json!("é")
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN WORD_COUNT('a b c')"),
+        json!(3)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN TRUNCATE_TEXT('Hello World', 5)"),
+        json!("Hello...")
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN MASK('12345', 1, -1)"),
+        json!("1***5")
+    );
+    let token = execute_query(&engine, "RETURN RANDOM_TOKEN(8)");
+    assert_eq!(token.as_str().unwrap().len(), 8);
+}
+
+#[test]
+fn test_array_take_drop_chunk_zip_contains() {
+    let (engine, _tmp) = create_test_engine();
+
+    assert_eq!(
+        execute_query(&engine, "RETURN TAKE([1, 2, 3, 4], 2)"),
+        json!([1, 2])
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN DROP([1, 2, 3, 4], 1)"),
+        json!([2, 3, 4])
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN CHUNK([1, 2, 3, 4], 2)"),
+        json!([[1, 2], [3, 4]])
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN ZIP([1, 2], ['a', 'b'])"),
+        json!([[1, "a"], [2, "b"]])
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN CONTAINS([1, 2, 3], 2)"),
+        json!(true)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN CONTAINS([1, 2, 3], 9)"),
+        json!(false)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN NTH([1, 2, 3], -1)"),
+        json!(3)
+    );
+    assert_eq!(execute_query(&engine, "RETURN SHIFT([])"), json!([]));
+}
+
+#[test]
+fn test_math_mod_clamp_minmax() {
+    let (engine, _tmp) = create_test_engine();
+
+    assert_eq!(execute_query(&engine, "RETURN MOD(7, 3)"), json!(1.0));
+    assert_eq!(execute_query(&engine, "RETURN CLAMP(10, 0, 5)"), json!(5.0));
+    assert_eq!(execute_query(&engine, "RETURN CLAMP(-1, 0, 5)"), json!(0.0));
+    assert_eq!(execute_query(&engine, "RETURN MIN(3, 1, 2)"), json!(1.0));
+    assert_eq!(execute_query(&engine, "RETURN MAX(3, 1, 2)"), json!(3.0));
+}
+
+#[test]
+fn test_object_get_merge_entries() {
+    let (engine, _tmp) = create_test_engine();
+
+    assert_eq!(
+        execute_query(&engine, "RETURN GET({a: {b: 2}}, 'a.b')"),
+        json!(2)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN GET({a: 1}, 'missing', 0)"),
+        json!(0)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN DEEP_MERGE({a: {x: 1}}, {a: {y: 2}})"),
+        json!({"a": {"x": 1, "y": 2}})
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN FROM_ENTRIES([['a', 1], ['b', 2]])"),
+        json!({"a": 1, "b": 2})
+    );
+    let entries = execute_query(&engine, "RETURN ENTRIES({a: 1})");
+    assert_eq!(entries, json!([["a", 1]]));
+    assert_eq!(
+        execute_query(&engine, "RETURN JSON_POINTER({a: {b: 3}}, '/a/b')"),
+        json!(3)
+    );
+}
+
+#[test]
+fn test_date_improvements() {
+    let (engine, _tmp) = create_test_engine();
+
+    assert_eq!(
+        execute_query(&engine, "RETURN DATE_YEAR('2024-06-15')"),
+        json!(2024)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN DATE_YEAR(1609459200)"),
+        json!(2021)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN DATE_LEAPYEAR('2024-01-01T00:00:00Z')"),
+        json!(true)
+    );
+    assert_eq!(
+        execute_query(
+            &engine,
+            "RETURN DATE_COMPARE('2020-01-01T00:00:00Z', '2020-01-02T00:00:00Z')"
+        ),
+        json!(-1)
+    );
+    let feb = execute_query(
+        &engine,
+        "RETURN DATE_ADD('2024-01-31T00:00:00Z', 1, 'month')",
+    );
+    assert!(feb.as_str().unwrap().starts_with("2024-02-29"));
+    assert_eq!(
+        execute_query(
+            &engine,
+            "RETURN DATE_DIFF('2020-01-01T00:00:00Z', '2020-01-11T00:00:00Z', 'days')"
+        ),
+        json!(10.0)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN DATE_YEAR(null)"),
+        json!(null)
+    );
+}
+
+#[test]
+fn test_bit_geo_type_outersection() {
+    let (engine, _tmp) = create_test_engine();
+
+    assert_eq!(execute_query(&engine, "RETURN BIT_AND(12, 10)"), json!(8));
+    assert_eq!(execute_query(&engine, "RETURN BIT_OR(12, 10)"), json!(14));
+    assert_eq!(execute_query(&engine, "RETURN BIT_XOR(12, 10)"), json!(6));
+    assert_eq!(
+        execute_query(&engine, "RETURN BIT_SHIFT_LEFT(1, 3)"),
+        json!(8)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN OUTERSECTION([1, 2], [2, 3])"),
+        json!([1, 3])
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN IS_DATE('2024-01-01')"),
+        json!(true)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN IS_DATE('nope')"),
+        json!(false)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN IS_KEY('user-1')"),
+        json!(true)
+    );
+    assert_eq!(execute_query(&engine, "RETURN IS_KEY('a/b')"), json!(false));
+    assert_eq!(
+        execute_query(&engine, "RETURN COUNT({a: 1, b: 2})"),
+        json!(2)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN TO_NUMBER(null)"),
+        json!(null)
+    );
 }
 
 #[test]

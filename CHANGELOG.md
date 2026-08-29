@@ -1,5 +1,284 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+* **Native HTTPS termination** with `--tls-cert` / `--tls-key`. Previously
+  the only way to serve TLS was a reverse proxy in front; the server now
+  terminates TLS itself via rustls (no OpenSSL). In dual-port mode the API
+  port serves HTTPS while replication stays as configured. On the
+  multiplexed port the listener *sniffs* for a TLS ClientHello and only
+  handshakes when one is offered, so HTTPS clients get the tunnel (HTTP and
+  the native driver protocol both work inside it) while plaintext peers keep
+  connecting — the shipped SDKs' driver protocol and the sync/cluster
+  transports do not speak TLS yet, and handshaking unconditionally would cut
+  every driver client and every inter-node connection off that port. Set
+  `SOLIDB_TLS_REQUIRE=1` to refuse plaintext there anyway (safe only on a
+  single node with no native-protocol clients). Both flags are required
+  together — one without the other refuses to start rather than silently
+  listening in plaintext.
+* **Per-client API rate limiting.** Only `/auth/login` was throttled; every
+  other endpoint could be hammered without bound. The whole router now has a
+  per-client-IP sliding-window limiter (default 600 requests / 60s,
+  ~10 req/s sustained — generous enough that normal traffic never trips it)
+  answering `429 Too Many Requests` with `Retry-After` before any handler
+  work runs. Internal cluster traffic (a valid `X-Cluster-Secret`) and CORS
+  preflights are exempt — shard forwarding sends one request per document,
+  well above any budget meant for external callers. Client identity follows
+  the login limiter's rule: socket peer, unless
+  `SOLIDB_TRUST_PROXY_HEADERS=1`; a caller that cannot be identified at all
+  is not throttled rather than sharing one bucket with everyone else.
+  Configure with `SOLIDB_API_RATE_LIMIT` (0 disables) and
+  `SOLIDB_API_RATE_WINDOW_SECS`.
+* **Driver queries now have a timeout.** HTTP query execution was capped at
+  30s but the binary protocol ran `executor.execute` unbounded on a runtime
+  thread — a long query over the driver port could pin it forever. Driver
+  `Query` and `Explain` now run on the blocking pool under the same 30s cap,
+  gated on the same "is this long-running?" predicate the HTTP handler uses
+  so point reads keep running inline. A blocking task cannot be cancelled,
+  so a mutation that overruns the timeout still commits: its cached
+  collections are dropped both at the timeout and again when the write
+  actually lands.
+* **Tokens in `?token=` are restricted to WebSocket endpoints.** A JWT in
+  the query string leaks into access logs, proxy logs and browser history,
+  but browser WebSocket clients cannot send an `Authorization` header, so
+  the parameter is still accepted for exactly `/_api/ws/changefeed`,
+  `/_api/cluster/status/ws` and `/_api/monitoring/ws`, and refused
+  everywhere else (`401`, logged) — including `/_api/livequery/token`, the
+  REST endpoint that issues those tokens.
+* **Panic-surface cleanup in SDBQL.** The lexer's string/template readers
+  took the opening quote from `current_char.unwrap()` — unreachable today,
+  but an invariant rather than a check — and now receive the quote char
+  explicitly (both copies: `solidb` and `sdbql-core`). `DATE_TRUNC`'s year/
+  month/week arms return `ExecutionError` instead of panicking when chrono
+  arithmetic hits date bounds.
+
+### Hardening
+
+* **cargo-fuzz targets** for the adversarial-input surfaces:
+  `sdbql_parse` (full lexer+parser pipeline), `sdbql_lex` (lexer alone),
+  `driver_command_decode` (MessagePack command decoding off the TCP port),
+  and `restore_jsonl_line` (the JSONL document parsing `solidb-restore`
+  performs). See `fuzz/`; run with `cargo +nightly fuzz run <target>`.
+
+### Features
+
+* **Replication TCP fails closed without a keyfile.** The HTTP cluster bus
+  already required a secret (0.34.0); the multiplexed sync socket still
+  skipped HMAC when no keyfile existed. Unauthenticated replication is now
+  refused unless `SOLIDB_ALLOW_UNAUTHENTICATED_SYNC=true` is set for local
+  tests. `SOLIDB_REQUIRE_KEYFILE=true` still wins.
+* **HTTP listeners default to loopback.** Bind address is `127.0.0.1` unless
+  `--host` or `SOLIDB_HOST` says otherwise. Use `0.0.0.0` only when something
+  in front of the process terminates TLS.
+* **Installing Lua is Admin.** Creating or changing `_scripts` / `_services`
+  required only Write, so a collection editor could publish unauthenticated
+  `/api/{db}/{service}/…` handlers. Mutating those collections now needs
+  Admin. New services default to `require_auth: true`. `solidb.env` secrets
+  are injected only for authenticated admin scripts.
+* **Cluster control-plane HTTP is Admin.** `remove-node`, `rebalance`,
+  sync-log prune/stats, cluster info/status, blob rebalance, and the cluster
+  status WebSocket accepted any authenticated principal (including `viewer`).
+  They now require Admin.
+* **Livequery JWTs are path-restricted on `?token=` as well as Bearer.** The
+  query-string branch used to accept a livequery token on any authenticated
+  route.
+* **JWT roles for real `_admins` users are reloaded on each request**, so a
+  revoke does not wait for the 24h token TTL.
+* **API keys must declare at least one role.** Empty `roles` no longer
+  default to `admin`. The admin UI rejects a blank role list the same way.
+* **`/metrics` requires authentication** unless `SOLIDB_METRICS_PUBLIC=1`.
+  Present `SOLIDB_METRICS_TOKEN` (`X-Metrics-Token` or `Bearer`) or an admin
+  JWT.
+* **Physical backups are jailed** under `SOLIDB_BACKUP_ROOT` (or
+  `{data_dir}/backups`). `..` and paths outside that root are refused.
+* **Webhook URLs are SSRF-checked** (loopback, RFC1918, link-local, metadata
+  hosts). Permissive TLS for `*.test` / `*.local` requires
+  `SOLIDB_ALLOW_INSECURE_WEBHOOK_TLS=1`.
+* **`SOLIDB_DB_AUTHZ_MODE=warn` is ignored** unless
+  `SOLIDB_DB_AUTHZ_ALLOW_WARN=1`.
+* **`SOLIDB_LUA_FAST_MODE` is ignored** unless
+  `SOLIDB_LUA_FAST_MODE_UNSAFE=1` (cross-request Lua state leak).
+* Passwords must be at least 12 characters. Lua `crypto.jwt_decode` compares
+  signatures in constant time. `crypto.random_bytes` / `random_string` cap at
+  64 KiB.
+* The admin app no longer falls back to `admin`/`admin`. `enable_trust_proxy`
+  is off unless you turn it on.
+
+### Features
+
+* **SDBQL gains set operations, recursive CTEs, `RETURN DISTINCT`, `COLLECT
+  … KEEP`, the `NONE` quantifier, and standalone `OFFSET`.** Query blocks can
+  be combined with `UNION [ALL]`, `INTERSECT`, and `EXCEPT` (`FOR … RETURN …
+  UNION ALL FOR … RETURN …`; either side may be parenthesized; duplicates are
+  removed except for `UNION ALL`). Chains follow SQL precedence — `INTERSECT`
+  binds tighter than `UNION`/`EXCEPT`, which chain left to right — and rows
+  are compared by value, the same equality `UNION()`/`INTERSECTION()` use.
+  `WITH RECURSIVE name AS (<anchor> UNION ALL <step>)` iterates the step until
+  it stops producing rows — inside the step the CTE name is bound to the rows
+  of the *previous* iteration (hierarchies, org charts, transitive closures),
+  with safety caps at 1,000 iterations / 1M rows. `RETURN DISTINCT expr`
+  deduplicates result rows (first occurrence wins). `COLLECT … INTO g KEEP v1,
+  v2` restricts which in-scope variables are stored in the group arrays (an
+  unknown name is an error). `NONE(x IN arr SATISFIES cond)` — and the
+  function form `NONE(arr, x -> cond)` — is true when no element satisfies.
+  `OFFSET n` works alone or as `LIMIT n OFFSET m`. A CTE declared before a set
+  operation binds in every operand, and operands, CTE bodies and subqueries
+  are all executed as full query blocks — their own `WITH`, pre-`FOR` `LET`s,
+  `SORT`/`LIMIT` and nested set operations all apply. Permission checks, query
+  caching, cache invalidation, the long-running-query gate and
+  `has_mutations()` all see through set-operation operands and CTE bodies.
+* **Query-driven auto-indexes (opt-in).** Collections with `autoIndex: true`
+  (or unset + `SOLIDB_AUTO_INDEX=1`) create a persistent `_auto_{field}`
+  index the first time a `FOR` + `FILTER` equality/range miss would have used
+  one. Requires Write or Admin on every query route, and a query with no
+  principal at all (internal view refreshes, queue jobs, stream tasks) never
+  creates one. Cap 16. Explicit `autoIndex: false` overrides the env var.
+  Nested field names keep dots. Null comparisons, `_key`/`_id`/`_rev`,
+  sharded collections, SORT, filters a composite index already covers,
+  collections above `SOLIDB_AUTO_INDEX_MAX_DOCS` (default 1,000,000, `0`
+  disables) and fields no document carries are not auto-indexed.
+  `EXPLAIN` reports `auto_index_candidate` without creating.
+
+* **Driver queries carry the session principal.** The binary protocol built
+  its query executor without one, so `CURRENT_USER`, `CURRENT_ROLES` and row
+  policies were inert over the driver while they applied over HTTP. A row
+  policy now filters driver reads too.
+
+* **`--no-lua` / `SOLIDB_NO_LUA=1` skips the Lua VM pool.** Custom scripts,
+  `/api/{db}/{service}/…`, and the REPL return 501; a trigger whose action is
+  a Lua script fails its job immediately, without retries. Script documents
+  can still be stored. Use this on nodes that never run Lua to drop the idle
+  RSS of the pre-warmed VMs (at least four states).
+
+* **SDBQL string functions are AQL-shaped and Unicode-correct.** Offsets and
+  `LENGTH` on strings are Unicode scalar counts (`BYTE_LENGTH` is UTF-8
+  bytes). `FIND_FIRST` / `FIND_LAST` take an optional start/end. `SUBSTRING`
+  accepts a negative start. `CONTAINS` can return a character index.
+  `LIKE(text, pattern, caseInsensitive?)` is a function as well as an
+  operator. Added `REGEX_MATCHES`, `REGEX_SPLIT`, `REPEAT`, `LPAD`/`RPAD`,
+  `JOIN`, `MASK`, `WORD_COUNT`, `TRUNCATE_TEXT`, `RANDOM_TOKEN`. `ENCODE_URI`
+  percent-encodes UTF-8. Null string arguments propagate as null. Regexes
+  go through `safe_regex` and a compile cache. `REPEAT` / pad results are
+  capped at 1 MiB.
+* **SDBQL array, math, and object functions that the reference already
+  listed now exist.** `TAKE`, `DROP`, `CHUNK`, `ZIP`, `CONTAINS` on arrays;
+  `MOD`, `CLAMP`, variadic `MIN`/`MAX`; `GET(obj, "a.b", default)`,
+  `DEEP_MERGE`, `ENTRIES`, `FROM_ENTRIES`, `JSON_POINTER`. `NTH` accepts a
+  negative index. `VAR_SAMP` / `STDDEV_SAMP` divide by `n-1`. `RANGE`
+  refuses more than 1M elements. `SHIFT([])` no longer panics.
+* **SDBQL gains time-series, sketches, semantic operators, and query HOFs.**
+  `MAP`/`FILTER`/`FLAT_MAP`/`GROUP_BY`/`SORT_BY`/`WINDOW_BY` take lambdas
+  without requiring `|>`. `<=>` is vector cosine distance or a three-way
+  compare; binary `~` is trigram semantic match. Added `DELTA`, `RATE`,
+  `FILL`, `RESAMPLE`, `ASOF JOIN … ASOF left, right [BACKWARD|FORWARD|NEAREST]
+  TOLERANCE`, `APPROX_COUNT_DISTINCT`, `APPROX_PERCENTILE`, `APPROX_TOP_K`,
+  `SKETCH_MERGE`, `MATCH_SEQ`, `SEMANTIC`, `REDACT`. Graph `FOR v, e, p`
+  binds a path object; `PRUNE expr` stops expansion; `SHORTEST_PATH … OPTIONS
+  { weight: "cost" }` is parsed. `FOR coll SYSTEM_TIME AS OF ts` and
+  `SNAPSHOT_DIFF` read versioned history. `CURRENT_USER`/`CAN`/`ROW_POLICY`
+  use the request principal. `EMBED`/`EXTRACT` call the configured LLM;
+  `CITE`/`GROUNDED` have a lexical fallback.
+* **SDBQL graph, search, GeoJSON, and identity helpers.** Weighted
+  `SHORTEST_PATH OPTIONS { weight }` uses Dijkstra. Added
+  `ALL_SHORTEST_PATHS`, `K_SHORTEST_PATHS`, `K_PATHS`, `GRAPH name` as the
+  edge collection, and one-pattern `MATCH (a:coll {_key: k})-[:edge*1..n]->(b)`.
+  `SEARCH` is a scored filter; `TOKENS`/`PHRASE`/`BOOST`/`SEARCH_SCORE` are
+  in-memory analyzers (not Arango Views). GeoJSON constructors and
+  `GEO_CONTAINS`/`GEO_INTERSECTS`/`GEO_IN_RANGE`/`GEO_AREA`.
+  `PARSE_IDENTIFIER`/`PARSE_COLLECTION`/`PARSE_KEY`, `UNSET_RECURSIVE`/
+  `KEEP_RECURSIVE`, `ZIP_OBJECT`, `DATE_ROUND`, `APPLY`/`CALL`, `MINHASH*`.
+  `insert_batch`/`upsert_batch` and transactional write batches record
+  version history. `VALID_TIME AS OF` /
+  `FROM … TO` filters `valid_from`/`valid_to` fields.
+* **Named graphs, search views, document ACL, and index-backed search.**
+  `CREATE_GRAPH` / `DROP_GRAPH` / `GRAPH_INFO` store `{vertices, edges}`
+  in `_graphs`; `GRAPH name` resolves the first edge collection from that
+  catalog (bare edge-collection names still work). `CREATE_VIEW` /
+  `DROP_VIEW` register a `type: "search"` alias in `_views` so
+  `FOR d IN view` scans the backing collection. `SEARCH_INDEX(coll, field,
+  query [, limit])` walks a fulltext index. `CAN("read", doc)` honours
+  `owner` / `_owner` and `_acl.{action}` (user, role, or `*`) after the
+  collection-level grant. `ZIP(keys, values)` returns an object when the
+  first array is all strings. `K_SHORTEST_PATHS` uses Yen’s algorithm.
+
+### Performance
+
+* **SDBQL set and slice helpers no longer walk the array twice.** `UNIQUE`,
+  `UNION`, `INTERSECTION`, `MINUS`, and `COUNT_DISTINCT` hash values (seahash,
+  collision-checked) instead of `serde_json::to_string` or `Vec::contains`.
+  `APPEND` / `UNSHIFT` / `FLATTEN` reserve; `SHIFT` copies the tail instead of
+  `remove(0)`. `SORTED` uses `sort_unstable_by`. `KEEP` / `UNSET` copy only
+  surviving keys. ASCII `SUBSTRING` slices bytes.
+
+* **SDBQL date functions share one parser and no longer live in two modules.**
+  `YYYY-MM-DD` and second-resolution epochs parse. `DATE_ADD` uses calendar
+  months (31 Jan + 1 month → 28/29 Feb). Added `DATE_COMPARE`, `DATE_LEAPYEAR`,
+  `DATE_MILLISECOND`, `DATE_ISOWEEKYEAR`. `DATE_DIFF` unit is optional.
+  `DATE_TRUNC` accepts `week`. `HUMAN_TIME` says `in N minutes` for the future.
+  Null date arguments propagate.
+
+* **SDBQL function dispatch is prefix-routed.** `UPPER` no longer walks the
+  `DATE_*` / `SQRT` match arms. Phonetic math shadows of `ABS`/`ROUND`/`SQRT`
+  are gone. Added AQL-shaped `BIT_AND`/`BIT_OR`/`BIT_XOR`/`BIT_NEGATE`/
+  `BIT_SHIFT_*`, `OUTERSECTION`, `IS_DATE`, `IS_KEY`, `GEO_EQUALS`. `COUNT`
+  on an object is the key count. `TO_NUMBER(null)` is null. Crypto helpers
+  no longer clone the input string.
+
+### Fixes
+
+* **A failed index backfill no longer leaves a half-built index behind.**
+  `create_index` persisted the index metadata before writing the entries, so
+  an interrupted build (disk full, shutdown) left an index that `get_index`
+  reported as ready and that later lookups silently under-returned from. The
+  metadata is now rolled back on failure. The backfill also streams the
+  column family instead of collecting every decoded document first, and
+  `IndexStats.indexed_documents` now counts the documents actually indexed
+  rather than the documents scanned.
+* **`LENGTH("users")` is no longer a collection count.** If the string
+  happened to be a collection name, `LENGTH` returned the document count
+  instead of the character length. Use `COLLECTION_COUNT("users")` or
+  `LENGTH((FOR d IN users RETURN 1))`.
+* Lua string functions no longer live in two modules with different
+  semantics (phonetic vs builtins). One evaluator, one set of rules.
+
+### Removed
+
+* **The client-facing job and cron queue is gone.** Application background jobs
+  now live in the Soli framework, which claims and runs them in its own process
+  on whichever database it is configured for. SolidB no longer needs to schedule
+  application work, so the queue it exposed for that purpose is removed:
+
+  * **HTTP** (10 endpoints): `GET/PUT /_api/database/{db}/queues…`,
+    `GET /…/queues/{name}/jobs`, `POST /…/queues/{name}/enqueue`,
+    `DELETE /…/queues/jobs/{id}`, `POST /…/queues/jobs/{id}/run-now`, and all
+    four `/_api/database/{db}/cron` routes.
+  * **Driver protocol** (8 commands): `list_queues`, `list_jobs`, `enqueue_job`,
+    `cancel_job`, `list_cron_jobs`, `create_cron_job`, `update_cron_job`,
+    `delete_cron_job`.
+  * **Lua**: the `db:enqueue(queue, script, params, options)` global.
+  * **Rust API**: `queue::{CronJob, QueueConfig}`, `QueueWorker::check_cron_jobs`.
+  * **Clients**: the jobs and cron sub-clients in the JS, Ruby, PHP, Python, Go,
+    and Elixir SDKs, plus the queue command variants in the Rust client.
+  * **UI**: the admin Queues and Cron pages, and the CLI TUI Jobs tab. Tab `5`
+    is now Cluster.
+  * Per-queue pause and concurrency settings (`_queue_config`), which were only
+    reachable through the removed endpoint.
+
+  **Triggers keep working.** A trigger still fires by inserting a row into
+  `_jobs`, and the worker still claims that row and runs its Lua script or posts
+  its signed webhook. That dispatcher, the HMAC signing, and the `Job` /
+  `JobStatus` types all remain. Embedding generation and materialized-view
+  refresh are untouched.
+
+  **Action required.** Any caller of the endpoints, driver commands, SDK
+  sub-clients, or `db:enqueue` above must move to Soli's job engine. Let SolidB's
+  queue drain before you upgrade: a `pending` row that no trigger created will
+  never run. Stored `_cron_jobs` and `_queue_config` collections become orphan
+  data — no code reads them, and **a cron schedule you configured stops
+  firing, with no error**. Drop those collections when you are ready.
+
 ## [0.34.0](https://github.com/solisoft/solidb/compare/v0.33.0...v0.34.0) (2026-08-05)
 
 Mostly a clustering release. Multi-machine replication could not work at all, and each fault hid the next, so every fix below was found by deploying two real nodes rather than by a test.

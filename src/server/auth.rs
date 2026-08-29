@@ -1121,6 +1121,37 @@ pub(crate) async fn hash_password_blocking(password: &str) -> Result<String, DbE
         .map_err(|e| DbError::InternalError(format!("hash task failed: {}", e)))?
 }
 
+fn livequery_path_allowed(path: &str) -> bool {
+    path.starts_with("/_api/ws/changefeed") || path.starts_with("/_api/livequery")
+}
+
+fn reject_livequery_token(claims: &Claims, path: &str) -> bool {
+    if claims.livequery == Some(true) && !livequery_path_allowed(path) {
+        tracing::warn!("livequery token used on non-whitelisted path: {}", path);
+        return true;
+    }
+    false
+}
+
+/// If `sub` is a real `_admins` user, replace embedded JWT roles with the
+/// current assignments so a revoke takes effect without waiting for expiry.
+fn refresh_jwt_roles(mut claims: Claims, storage: &StorageEngine) -> Claims {
+    if claims.livequery == Some(true) {
+        return claims;
+    }
+    let Ok(db) = storage.get_database(ADMIN_DB) else {
+        return claims;
+    };
+    let Ok(coll) = db.system_collection(ADMIN_COLL) else {
+        return claims;
+    };
+    if coll.get(&claims.sub).is_err() {
+        return claims;
+    }
+    claims.roles = AuthService::get_user_roles(storage, &claims.sub);
+    claims
+}
+
 pub async fn auth_middleware(
     State(state): State<crate::server::handlers::AppState>,
     mut req: Request<Body>,
@@ -1205,17 +1236,10 @@ pub async fn auth_middleware(
         if let Some(token) = header.strip_prefix("Bearer ") {
             match AuthService::validate_token(token) {
                 Ok(claims) => {
-                    if claims.livequery == Some(true) {
-                        let path = req.uri().path();
-                        let allowed_livequery_paths = ["/_api/ws/changefeed", "/_api/livequery"];
-                        if !allowed_livequery_paths.iter().any(|p| path.starts_with(p)) {
-                            tracing::warn!(
-                                "livequery token used on non-whitelisted path: {}",
-                                path
-                            );
-                            return Err(StatusCode::FORBIDDEN);
-                        }
+                    if reject_livequery_token(&claims, req.uri().path()) {
+                        return Err(StatusCode::FORBIDDEN);
                     }
+                    let claims = refresh_jwt_roles(claims, &state.storage);
                     req.extensions_mut().insert(claims);
                     return Ok(next.run(req).await);
                 }
@@ -1280,11 +1304,29 @@ pub async fn auth_middleware(
         }
     }
 
-    // Check for "token" query parameter
+    // Check for "token" query parameter.
+    //
+    // Tokens in query strings leak into access logs, proxy logs and browser
+    // history, so this is only accepted for the WebSocket upgrade endpoints,
+    // where the browser WebSocket API cannot send an Authorization header and
+    // a short-lived token in the URL is the only practical option. Regular
+    // API calls must use `Authorization: Bearer` or `X-API-Key`.
     if let Some(query) = req.uri().query() {
         if let Ok(params) = serde_urlencoded::from_str::<HashMap<String, String>>(query) {
             if let Some(token) = params.get("token") {
+                let path = req.uri().path();
+                if !query_token_path_allowed(path) {
+                    tracing::warn!(
+                        "auth token in query string rejected on non-WebSocket path: {}",
+                        path
+                    );
+                    return Err(StatusCode::UNAUTHORIZED);
+                }
                 if let Ok(claims) = AuthService::validate_token(token) {
+                    if reject_livequery_token(&claims, path) {
+                        return Err(StatusCode::FORBIDDEN);
+                    }
+                    let claims = refresh_jwt_roles(claims, &state.storage);
                     req.extensions_mut().insert(claims);
                     return Ok(next.run(req).await);
                 }
@@ -1293,6 +1335,22 @@ pub async fn auth_middleware(
     }
 
     Err(StatusCode::UNAUTHORIZED)
+}
+
+/// Paths where an auth token may arrive via the `?token=` query parameter.
+/// Browser WebSocket clients cannot set request headers, so the short-lived
+/// tokens issued for these endpoints travel in the URL; everywhere else the
+/// query string is refused to keep credentials out of logs.
+///
+/// These are exact matches, not prefixes: `/_api/livequery/token` is a plain
+/// REST endpoint that issues these tokens, and a `/_api/livequery` prefix
+/// would keep accepting a JWT in *its* query string — the exact leak this
+/// list exists to close.
+fn query_token_path_allowed(path: &str) -> bool {
+    matches!(
+        path,
+        "/_api/ws/changefeed" | "/_api/cluster/status/ws" | "/_api/monitoring/ws"
+    )
 }
 
 /// Permissive auth middleware for custom scripts
@@ -1338,6 +1396,10 @@ pub async fn permissive_auth_middleware(
         if let Some(token) = header.strip_prefix("Bearer ") {
             match AuthService::validate_token(token) {
                 Ok(claims) => {
+                    if reject_livequery_token(&claims, req.uri().path()) {
+                        return Err(StatusCode::FORBIDDEN);
+                    }
+                    let claims = refresh_jwt_roles(claims, &state.storage);
                     req.extensions_mut().insert(claims);
                     return Ok(next.run(req).await);
                 }
@@ -1450,6 +1512,18 @@ mod tests {
     fn test_validate_invalid_token() {
         let result = AuthService::validate_token("invalid.token.here");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn query_token_only_on_websocket_upgrade_paths() {
+        assert!(query_token_path_allowed("/_api/ws/changefeed"));
+        assert!(query_token_path_allowed("/_api/cluster/status/ws"));
+        assert!(query_token_path_allowed("/_api/monitoring/ws"));
+        // A REST endpoint that merely shares the livequery prefix must not
+        // accept credentials in the query string.
+        assert!(!query_token_path_allowed("/_api/livequery/token"));
+        assert!(!query_token_path_allowed("/_api/livequery"));
+        assert!(!query_token_path_allowed("/_api/databases"));
     }
 
     #[test]

@@ -352,12 +352,12 @@ volumes:
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">QUEUE_WORKERS</td>
                       <td class="p-3">4</td>
-                      <td class="p-3">Background job workers per node</td>
+                      <td class="p-3">Maintenance workers per node (trigger dispatch, embeddings, materialized views)</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLI_WEBHOOK_SECRET</td>
                       <td class="p-3"><em>unset</em></td>
-                      <td class="p-3">Default HMAC-SHA256 key used to sign outbound webhook jobs &amp; triggers via <code>X-Webhook-Signature</code>. Per-target <code>webhook_secret</code> wins; if both are unset the signature header is omitted. See <a href="/docs/queues#configuration" class="text-cyan-400 hover:underline">Queues → Configuration</a>.</td>
+                      <td class="p-3">Default HMAC-SHA256 key used to sign outbound trigger webhooks via <code>X-Webhook-Signature</code>. Per-target <code>webhook_secret</code> wins; if both are unset the signature header is omitted. See <a href="/docs/triggers" class="text-cyan-400 hover:underline">Triggers</a>.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLI_JOBS_SECRET</td>
@@ -820,6 +820,26 @@ kubectl -n solidb get pods -w</pre>
                       <td class="p-3"><em>auto-generated</em></td>
                       <td class="p-3">Secret key for signing JSON Web Tokens. 32+ characters recommended. If not set, a random secret is generated (warning logged).</td>
                     </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_API_RATE_LIMIT</td>
+                      <td class="p-3">600</td>
+                      <td class="p-3">Requests allowed per client IP per window across the whole API. Over the limit the server answers <code class="text-amber-400">429</code> with <code class="text-amber-400">Retry-After</code>. Set to <code class="text-amber-400">0</code> to disable &mdash; useful for load tests and CI, which drive far more than 10 req/s from one address. Internal cluster traffic and CORS preflights are always exempt.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_API_RATE_WINDOW_SECS</td>
+                      <td class="p-3">60</td>
+                      <td class="p-3">Length of the rate-limit window in seconds.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_TRUST_PROXY_HEADERS</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Key rate limits on <code class="text-amber-400">X-Forwarded-For</code> / <code class="text-amber-400">X-Real-IP</code> instead of the socket peer. Set this only behind a proxy that <em>overwrites</em> those headers &mdash; otherwise any client can spoof its own identity and evade the limiter.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_TLS_REQUIRE</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">With <code class="text-amber-400">--tls-cert</code> set, drop any connection on the multiplexed port that does not offer TLS. Leave it off on a node that serves native driver clients or has cluster peers &mdash; neither speaks TLS. See <a href="/docs/security#tls" class="text-cyan-400 hover:underline">Transport Security</a>.</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -853,7 +873,7 @@ kubectl -n solidb get pods -w</pre>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">QUEUE_WORKERS</td>
                       <td class="p-3">4</td>
-                      <td class="p-3">Number of concurrent background job workers per node. Each worker polls for queued jobs and cron tasks.</td>
+                      <td class="p-3">Number of concurrent maintenance workers per node. Each worker dispatches fired triggers and refreshes embeddings and materialized views.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -939,7 +959,27 @@ JWT_SECRET=your-secure-jwt-secret-32-chars-min
 QUEUE_WORKERS=8
 SOLIDB_LUA_POOL_SIZE=32
 SOLIDB_LUA_FAST_MODE=1
-SOLIDB_CLUSTER_SCHEME=https</div>
+SOLIDB_CLUSTER_SCHEME=https
+SOLIDB_API_RATE_LIMIT=600
+SOLIDB_API_RATE_WINDOW_SECS=60</div>
+            </div>
+
+            <div class="bg-emerald-900/10 border border-emerald-500/20 rounded-xl p-6 mt-6">
+              <h3 class="text-emerald-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                HTTPS (TLS certificates)
+              </h3>
+              <p class="text-gray-300 text-sm mb-4">
+                TLS is configured with command-line flags rather than environment variables, and both are required together &mdash; one without the other refuses to start rather than silently listening in plaintext.
+              </p>
+              <div class="space-y-3">
+                <div class="bg-gray-950 p-3 rounded-lg font-mono text-sm text-gray-300 border border-white/10">
+                  <span class="text-gray-500"># Terminate TLS in the server (rustls, no OpenSSL)</span><br/>
+                  ./solidb --port 6745 --data-dir ./data --tls-cert fullchain.pem --tls-key privkey.pem
+                </div>
+              </div>
+              <p class="text-gray-400 text-xs mt-3">
+                On a multiplexed port the listener only handshakes with clients that offer TLS, so plaintext driver and cluster peers keep working alongside HTTPS clients. See <a href="/docs/security#tls" class="text-cyan-400 hover:underline">Transport Security</a>.
+              </p>
             </div>
 
             <div class="bg-blue-900/10 border border-blue-500/20 rounded-xl p-6 mt-6">

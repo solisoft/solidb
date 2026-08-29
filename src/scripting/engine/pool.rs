@@ -141,7 +141,16 @@ impl LuaPool {
         // Check environment variable for fast mode
         let fast_mode = std::env::var("SOLIDB_LUA_FAST_MODE")
             .map(|v| v == "1" || v.to_lowercase() == "true")
-            .unwrap_or(false);
+            .unwrap_or(false)
+            && std::env::var("SOLIDB_LUA_FAST_MODE_UNSAFE")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+        if std::env::var("SOLIDB_LUA_FAST_MODE").is_ok() && !fast_mode {
+            tracing::warn!(
+                "SOLIDB_LUA_FAST_MODE ignored without SOLIDB_LUA_FAST_MODE_UNSAFE=1 \
+                 (cross-request Lua state leak)"
+            );
+        }
 
         Self::new_with_options(size, fast_mode)
     }

@@ -278,9 +278,15 @@ impl Parser {
     // ========================================================================
 
     /// Parse quantifier expression: ANY x IN array SATISFIES condition
-    pub(super) fn parse_quantifier_expression(&mut self, name: &str) -> DbResult<Expression> {
-        self.advance(); // consume ANY/SOME/ALL
-
+    ///
+    /// The caller must have consumed the quantifier keyword (and the opening
+    /// parenthesis for the optional parenthesized form); `parenthesized`
+    /// selects whether a trailing ')' is consumed.
+    pub(super) fn parse_quantifier_expression_after_keyword(
+        &mut self,
+        name: &str,
+        parenthesized: bool,
+    ) -> DbResult<Expression> {
         let variable = if let Token::Identifier(v) = self.current_token() {
             v.clone()
         } else {
@@ -301,6 +307,10 @@ impl Parser {
             Expression::Literal(Value::Bool(true))
         };
 
+        if parenthesized {
+            self.expect(Token::RightParen)?;
+        }
+
         // Construct desugared ANY(array, x -> condition)
         let lambda = Expression::Lambda {
             params: vec![variable],
@@ -311,6 +321,12 @@ impl Parser {
             name: name.to_string(),
             args: vec![array_expr, lambda],
         })
+    }
+
+    /// Parse quantifier expression: ANY x IN array SATISFIES condition
+    pub(super) fn parse_quantifier_expression(&mut self, name: &str) -> DbResult<Expression> {
+        self.advance(); // consume ANY/SOME/ALL/NONE
+        self.parse_quantifier_expression_after_keyword(name, false)
     }
 
     // ========================================================================
@@ -408,6 +424,8 @@ impl Parser {
             Token::Then => Some("then"),
             Token::Else => Some("else"),
             Token::End => Some("end"),
+            Token::As => Some("as"),
+            Token::Window => Some("window"),
             _ => None,
         };
 

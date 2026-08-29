@@ -370,14 +370,6 @@ func (c *Client) Scripts() *ScriptsClient {
 	return &ScriptsClient{client: c}
 }
 
-func (c *Client) Jobs() *JobsClient {
-	return &JobsClient{client: c}
-}
-
-func (c *Client) Cron() *CronClient {
-	return &CronClient{client: c}
-}
-
 func (c *Client) Triggers() *TriggersClient {
 	return &TriggersClient{client: c}
 }

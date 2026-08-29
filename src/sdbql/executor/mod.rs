@@ -9,7 +9,8 @@ use crate::storage::StorageEngine;
 use crate::sync::log::SyncLog;
 
 mod aggregation;
-mod builtins;
+pub mod builtins;
+mod catalog;
 mod data_source;
 mod evaluate;
 mod execution;
@@ -25,7 +26,7 @@ mod window;
 
 pub use helpers::{
     compare_key_rows, compare_values, evaluate_binary_op, evaluate_unary_op, get_field_ref,
-    get_field_value, to_bool, values_equal,
+    get_field_value, hash_value, to_bool, values_equal, ValueSet,
 };
 pub use types::*;
 pub use utils::*;
@@ -38,6 +39,7 @@ pub struct QueryExecutor<'a> {
     pub(super) database: Option<String>,
     pub(super) replication: Option<&'a SyncLog>,
     pub(super) shard_coordinator: Option<std::sync::Arc<ShardCoordinator>>,
+    pub(super) principal: Option<QueryPrincipal>,
 }
 
 impl<'a> QueryExecutor<'a> {
@@ -49,6 +51,7 @@ impl<'a> QueryExecutor<'a> {
             database: None,
             replication: None,
             shard_coordinator: None,
+            principal: None,
         }
     }
 
@@ -60,6 +63,7 @@ impl<'a> QueryExecutor<'a> {
             database: None,
             replication: None,
             shard_coordinator: None,
+            principal: None,
         }
     }
 
@@ -71,6 +75,7 @@ impl<'a> QueryExecutor<'a> {
             database: Some(database),
             replication: None,
             shard_coordinator: None,
+            principal: None,
         }
     }
 
@@ -86,6 +91,7 @@ impl<'a> QueryExecutor<'a> {
             database: Some(database),
             replication: None,
             shard_coordinator: None,
+            principal: None,
         }
     }
 
@@ -98,6 +104,11 @@ impl<'a> QueryExecutor<'a> {
     /// Set shard coordinator for scatter-gather queries on sharded collections
     pub fn with_shard_coordinator(mut self, coordinator: std::sync::Arc<ShardCoordinator>) -> Self {
         self.shard_coordinator = Some(coordinator);
+        self
+    }
+
+    pub fn with_principal(mut self, principal: QueryPrincipal) -> Self {
+        self.principal = Some(principal);
         self
     }
 }

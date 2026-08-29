@@ -153,9 +153,12 @@ async fn test_human_time() {
     let rows = result.get("result").unwrap().as_array().unwrap();
     assert_eq!(rows[0], json!("3 days ago"));
 
-    // Test future
-    let query_future = "RETURN HUMAN_TIME(DATE_ADD(DATE_NOW(), 1, 'hour'))";
+    // Test future. 90 minutes, not 60: DATE_NOW() is read before HUMAN_TIME
+    // takes its own clock reading, so the gap has already shrunk by the time
+    // it is measured and an exact unit boundary truncates down ("in 59
+    // minutes"). Any offset inside a unit is stable.
+    let query_future = "RETURN HUMAN_TIME(DATE_ADD(DATE_NOW(), 90, 'minutes'))";
     let result = run_query(app.clone(), &token, "testdb", query_future).await;
     let rows = result.get("result").unwrap().as_array().unwrap();
-    assert_eq!(rows[0], json!("in the future"));
+    assert_eq!(rows[0], json!("in 1 hour"));
 }

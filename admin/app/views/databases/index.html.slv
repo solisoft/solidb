@@ -6,7 +6,7 @@
       <p class="console-label">Server</p>
       <h2 class="mt-1">Databases <span class="font-mono text-sm text-zinc-500">(<%= @database_names.length() %>)</span></h2>
       <p class="mt-1 max-w-2xl console-help">
-        each database is an isolated namespace of collections, scripts, queues, triggers and env vars —
+        each database is an isolated namespace of collections, scripts, triggers and env vars —
         dropping one deletes all of it, there is no undo
       </p>
     </div>
@@ -62,7 +62,7 @@
                   <button type="button" class="btn-danger"
                           hx-delete="<%= databases_path() %>/<%= url(db_name) %>"
                           hx-target="#content" hx-swap="innerHTML show:top"
-                          hx-confirm="This permanently deletes database '<%= attr(db_name) %>' and ALL its collections, documents, scripts, queues and triggers. There is no undo."
+                          hx-confirm="This permanently deletes database '<%= attr(db_name) %>' and ALL its collections, documents, scripts and triggers. There is no undo."
                           data-confirm-name="<%= attr(db_name) %>">
                     Drop
                   </button>

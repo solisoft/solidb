@@ -561,8 +561,12 @@ impl Collection {
             };
 
             if let Ok(doc_bytes) = serialize_doc(&doc) {
+                let val = doc.to_value();
                 batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
-                upserted_docs.push((key.clone(), doc.to_value()));
+                if self.is_versioned() {
+                    self.append_version_to_batch(&mut batch, &cf, &key, Some(&val));
+                }
+                upserted_docs.push((key.clone(), val));
                 if !exists {
                     insert_count += 1;
                 }
@@ -932,6 +936,9 @@ impl Collection {
 
             // Add document to batch
             batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
+            if self.is_versioned() {
+                self.append_version_to_batch(&mut batch, &cf, &key, Some(&doc_value));
+            }
 
             // Compute and add regular + geo index entries
             let (regular_entries, geo_entries) =

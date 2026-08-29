@@ -9,6 +9,8 @@
 //! - compare_values: Compare two JSON values for ordering
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use serde_json::Value;
 
@@ -179,6 +181,13 @@ pub fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> D
             let right_str = right.as_str().unwrap_or("");
             let distance = crate::storage::levenshtein_distance(left_str, right_str);
             Ok(Value::Bool(distance <= 2)) // Default max distance of 2
+        }
+
+        BinaryOperator::Spaceship => Ok(spaceship_value(left, right)),
+        BinaryOperator::SemanticMatch => {
+            let ls = value_as_text(left);
+            let rs = value_as_text(right);
+            Ok(Value::Bool(trigram_similarity(&ls, &rs) >= 0.45))
         }
 
         BinaryOperator::And => Ok(Value::Bool(to_bool(left) && to_bool(right))),
@@ -388,4 +397,156 @@ pub fn compare_values(a: &Value, b: &Value) -> Ordering {
         (Value::String(a), Value::String(b)) => a.cmp(b),
         _ => Ordering::Equal,
     }
+}
+
+/// Stable 64-bit fingerprint of a JSON value (objects hashed in key order).
+#[inline]
+pub fn hash_value(v: &Value) -> u64 {
+    let mut h = seahash::SeaHasher::new();
+    write_value_hash(v, &mut h);
+    h.finish()
+}
+
+fn write_value_hash(v: &Value, h: &mut impl Hasher) {
+    match v {
+        Value::Null => 0u8.hash(h),
+        Value::Bool(b) => {
+            1u8.hash(h);
+            b.hash(h);
+        }
+        Value::Number(n) => {
+            2u8.hash(h);
+            n.as_f64().unwrap_or(0.0).to_bits().hash(h);
+        }
+        Value::String(s) => {
+            3u8.hash(h);
+            s.hash(h);
+        }
+        Value::Array(a) => {
+            4u8.hash(h);
+            a.len().hash(h);
+            for x in a {
+                write_value_hash(x, h);
+            }
+        }
+        Value::Object(o) => {
+            5u8.hash(h);
+            o.len().hash(h);
+            for (k, val) in o {
+                k.hash(h);
+                write_value_hash(val, h);
+            }
+        }
+    }
+}
+
+/// Hash-set of JSON values. Expected O(1) insert/lookup; collisions fall
+/// back to `values_equal`.
+pub struct ValueSet {
+    buckets: HashMap<u64, Vec<Value>>,
+}
+
+impl ValueSet {
+    #[inline]
+    pub fn with_capacity(n: usize) -> Self {
+        Self {
+            buckets: HashMap::with_capacity(n),
+        }
+    }
+
+    /// Returns true if `v` was not already present.
+    pub fn insert(&mut self, v: &Value) -> bool {
+        let h = hash_value(v);
+        let bucket = self.buckets.entry(h).or_default();
+        if bucket.iter().any(|x| values_equal(x, v)) {
+            false
+        } else {
+            bucket.push(v.clone());
+            true
+        }
+    }
+
+    #[inline]
+    pub fn contains(&self, v: &Value) -> bool {
+        self.buckets
+            .get(&hash_value(v))
+            .is_some_and(|b| b.iter().any(|x| values_equal(x, v)))
+    }
+}
+
+fn value_as_text(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+fn as_f64_vec(v: &Value) -> Option<Vec<f64>> {
+    match v {
+        Value::Array(a) => {
+            let mut out = Vec::with_capacity(a.len());
+            for x in a {
+                out.push(x.as_f64()?);
+            }
+            Some(out)
+        }
+        Value::Object(o) => o.get("vector").and_then(as_f64_vec),
+        _ => None,
+    }
+}
+
+fn cosine_distance(a: &[f64], b: &[f64]) -> f64 {
+    if a.is_empty() || b.is_empty() || a.len() != b.len() {
+        return 1.0;
+    }
+    let mut dot = 0.0;
+    let mut na = 0.0;
+    let mut nb = 0.0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        na += x * x;
+        nb += y * y;
+    }
+    let denom = na.sqrt() * nb.sqrt();
+    if denom == 0.0 {
+        1.0
+    } else {
+        (1.0 - dot / denom).clamp(0.0, 2.0)
+    }
+}
+
+pub fn trigram_similarity(a: &str, b: &str) -> f64 {
+    if a == b {
+        return 1.0;
+    }
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    fn grams(s: &str) -> std::collections::HashSet<String> {
+        let padded = format!("  {s} ");
+        let chars: Vec<char> = padded.chars().collect();
+        chars.windows(3).map(|w| w.iter().collect()).collect()
+    }
+    let ga = grams(a);
+    let gb = grams(b);
+    let inter = ga.intersection(&gb).count() as f64;
+    let union = ga.union(&gb).count() as f64;
+    if union == 0.0 {
+        0.0
+    } else {
+        inter / union
+    }
+}
+
+fn spaceship_value(left: &Value, right: &Value) -> Value {
+    if let (Some(a), Some(b)) = (as_f64_vec(left), as_f64_vec(right)) {
+        return Value::Number(number_from_f64(cosine_distance(&a, &b)));
+    }
+    let n = match compare_values(left, right) {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
+    };
+    Value::Number(n.into())
 }

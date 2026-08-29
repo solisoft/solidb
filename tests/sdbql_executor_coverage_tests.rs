@@ -462,7 +462,13 @@ fn test_explain_with_limit() {
 
     assert!(explain.limit.is_some());
     let limit_info = explain.limit.unwrap();
-    assert_eq!(limit_info.count, 3);
+    assert_eq!(limit_info.count, Some(3));
+
+    // A standalone OFFSET has no count to report
+    let explain = explain_query(&engine, "FOR u IN users OFFSET 1 RETURN u.name");
+    let limit_info = explain.limit.expect("OFFSET is reported as a limit clause");
+    assert_eq!(limit_info.offset, 1);
+    assert_eq!(limit_info.count, None);
 }
 
 #[test]

@@ -470,8 +470,8 @@ fn test_remove_document() {
 fn test_aggregate_count() {
     let (engine, _tmp) = create_seeded_engine();
 
-    // Use LENGTH with collection name as string
-    let results = execute_query(&engine, "RETURN LENGTH('users')");
+    // Collection cardinality via a subquery (LENGTH on a string is char count).
+    let results = execute_query(&engine, "RETURN LENGTH((FOR doc IN users RETURN 1))");
     assert_eq!(results[0], json!(5));
 }
 

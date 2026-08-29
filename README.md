@@ -20,7 +20,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 - 💾 **RocksDB Storage** — Production-grade persistence with automatic crash recovery
 
 ### Query Language
-- 🔍 **SDBQL Query Language** — Familiar query syntax inspired by ArangoDB
+- 🔍 **SDBQL Query Language** — Familiar query syntax inspired by ArangoDB, plus as-of joins, lambdas, sketches, and time-travel scans
 - 📊 **Indexing** — Hash, persistent, geo, and fulltext indexes
 - 🌍 **Geo Queries** — Spatial indexes and distance functions
 - 📝 **Graph Traversals** — Native graph queries and shortest path algorithms
@@ -29,7 +29,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 - ⚡ **Prepared Statement Cache** — Parse once, execute many with automatic LRU eviction
 
 ### Time Series & Streaming
-- ⏱️ **Time Series** — TIME_BUCKET function for grouping temporal data into intervals (seconds, minutes, hours, days)
+- ⏱️ **Time Series** — TIME_BUCKET, DELTA, RATE, FILL, RESAMPLE, and ASOF JOIN
 - 🌊 **Stream Processing** — CREATE STREAM with tumbling/sliding WINDOW clauses for continuous aggregations
 
 ### Vector Search
@@ -39,8 +39,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 
 ### Real-time & Scripting
 - ⚡ **Live Queries** — Real-time subscriptions via WebSocket
-- 🖥️ **Lua Scripting** — Server-side scripts for custom API endpoints
-- ⏰ **Background Jobs** — Cron jobs and job queues with priorities and retries
+- 🖥️ **Lua Scripting** — Server-side scripts for custom API endpoints (`--no-lua` / `SOLIDB_NO_LUA=1` skips the VM pool)
 
 ### Distributed Architecture
 - 🔄 **Multi-Node Replication** — Peer-to-peer replication with automatic sync

@@ -100,7 +100,11 @@ pub(crate) fn decode<T: serde::de::DeserializeOwned>(
     let header_str =
         String::from_utf8(header_bytes).map_err(|_| "Invalid JWT header encoding".to_string())?;
 
-    if !header_str.contains(r#""alg":"HS256""#) || !header_str.contains(r#""typ":"JWT""#) {
+    let header_json: serde_json::Value =
+        serde_json::from_str(&header_str).map_err(|_| "Invalid JWT header encoding".to_string())?;
+    if header_json.get("alg").and_then(|v| v.as_str()) != Some("HS256")
+        || header_json.get("typ").and_then(|v| v.as_str()) != Some("JWT")
+    {
         return Err("Unsupported JWT algorithm or type".to_string());
     }
 
@@ -108,7 +112,13 @@ pub(crate) fn decode<T: serde::de::DeserializeOwned>(
     let signing_input = format!("{}.{}", header_b64, claims_b64);
     let expected_signature = sign_hmac_sha256(&signing_input, &key.0)?;
 
-    if expected_signature != signature_b64 {
+    use subtle::ConstantTimeEq;
+    if expected_signature
+        .as_bytes()
+        .ct_eq(signature_b64.as_bytes())
+        .unwrap_u8()
+        != 1
+    {
         return Err("Invalid JWT signature".to_string());
     }
 

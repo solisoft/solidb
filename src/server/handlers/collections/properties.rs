@@ -32,6 +32,9 @@ pub struct UpdateCollectionPropertiesRequest {
     /// Enable/disable document versioning (time-travel history) on the collection.
     #[serde(default)]
     pub versioning: Option<bool>,
+    /// Enable query-driven auto-indexes (FILTER/SORT create `_auto_*` indexes).
+    #[serde(default, rename = "autoIndex", alias = "auto_index")]
+    pub auto_index: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -42,6 +45,9 @@ pub struct CollectionPropertiesResponse {
     pub shard_config: crate::sharding::coordinator::CollectionShardConfig,
     /// Whether document versioning (time-travel) is enabled on the collection.
     pub versioning: bool,
+    /// Whether query-driven auto-indexes are enabled on the collection.
+    #[serde(rename = "autoIndex")]
+    pub auto_index: bool,
 }
 
 // ==================== Handlers ====================
@@ -84,6 +90,20 @@ pub async fn update_collection_properties(
             db_name,
             coll_name,
             versioning
+        );
+    }
+
+    if let Some(auto_index) = payload.auto_index {
+        if auto_index {
+            collection.enable_auto_index()?;
+        } else {
+            collection.disable_auto_index()?;
+        }
+        tracing::info!(
+            "Set auto-index for {}/{} to {}",
+            db_name,
+            coll_name,
+            auto_index
         );
     }
 
@@ -265,6 +285,7 @@ pub async fn update_collection_properties(
     }
 
     let versioning = collection.is_versioned();
+    let auto_index = collection.auto_index_enabled();
 
     Ok(Json(CollectionPropertiesResponse {
         name: coll_name,
@@ -275,5 +296,6 @@ pub async fn update_collection_properties(
         },
         shard_config: config,
         versioning,
+        auto_index,
     }))
 }

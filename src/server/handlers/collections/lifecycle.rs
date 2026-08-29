@@ -37,6 +37,9 @@ pub struct CreateCollectionRequest {
     /// Enable document versioning (time-travel history) on creation.
     #[serde(default)]
     pub versioning: Option<bool>,
+    /// Enable query-driven auto-indexes on creation.
+    #[serde(default, rename = "autoIndex", alias = "auto_index")]
+    pub auto_index: Option<bool>,
 }
 
 fn default_validation_mode() -> String {
@@ -89,6 +92,10 @@ pub async fn create_collection(
     // Enable document versioning if requested at creation time
     if req.versioning == Some(true) {
         collection.enable_versioning()?;
+    }
+
+    if req.auto_index == Some(true) {
+        collection.enable_auto_index()?;
     }
 
     // Store sharding configuration if specified

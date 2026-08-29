@@ -149,6 +149,22 @@ describe("CollectionsController") do
       assert_contains(body, "Versioning: off")
     end
 
+    test("enable then disable query-driven auto-index") do
+      response = put("/databases/admin_spec_colls/collections/idx_specs/auto_index",
+                     { "auto_index": "true" })
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "auto-index enabled")
+      assert_contains(body, "Auto-index: on")
+
+      response = put("/databases/admin_spec_colls/collections/idx_specs/auto_index",
+                     { "auto_index": "false" })
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "auto-index disabled")
+      assert_contains(body, "Auto-index: off")
+    end
+
     test("creates a multi-field hash index") do
       response = post("/databases/admin_spec_colls/collections/idx_specs/indexes",
                       { "index_name": "by_pair", "fields": "first, last", "index_type": "hash" })

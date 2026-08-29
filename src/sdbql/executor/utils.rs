@@ -33,34 +33,55 @@ pub fn number_from_f64(f: f64) -> serde_json::Number {
     serde_json::Number::from_f64(f).unwrap_or_else(|| serde_json::Number::from(0))
 }
 
-/// Parse a date value (timestamp or ISO string) into DateTime<Utc>
+/// Parse a date value into `DateTime<Utc>`.
+///
+/// Numbers are milliseconds since epoch, unless `|n| < 10_000_000_000`
+/// (then seconds — so `DATE_YEAR(1609459200)` is 2021). Strings accept
+/// RFC3339, `YYYY-MM-DD`, and `YYYY-MM-DD HH:MM:SS`.
 pub fn parse_datetime(value: &Value) -> DbResult<chrono::DateTime<Utc>> {
-    use chrono::{DateTime, TimeZone};
+    use chrono::{DateTime, NaiveDate, NaiveDateTime};
 
     match value {
         Value::Number(n) => {
-            let timestamp_ms = if let Some(i) = n.as_i64() {
-                i
-            } else if let Some(f) = n.as_f64() {
-                f as i64
+            let raw = n
+                .as_i64()
+                .or_else(|| n.as_f64().map(|f| f as i64))
+                .ok_or_else(|| DbError::ExecutionError("Invalid timestamp".to_string()))?;
+            let timestamp_ms = if raw.abs() < 10_000_000_000 {
+                raw.saturating_mul(1000)
             } else {
-                return Err(DbError::ExecutionError("Invalid timestamp".to_string()));
+                raw
             };
-            let secs = timestamp_ms / 1000;
-            let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
-            match Utc.timestamp_opt(secs, nanos) {
-                chrono::LocalResult::Single(dt) => Ok(dt),
-                _ => Err(DbError::ExecutionError(format!(
-                    "Invalid timestamp: {}",
-                    timestamp_ms
-                ))),
-            }
+            DateTime::from_timestamp_millis(timestamp_ms).ok_or_else(|| {
+                DbError::ExecutionError(format!("Invalid timestamp: {}", timestamp_ms))
+            })
         }
-        Value::String(s) => DateTime::parse_from_rfc3339(s)
-            .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| DbError::ExecutionError(format!("Invalid ISO 8601 date '{}': {}", s, e))),
+        Value::String(s) => {
+            if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+                return Ok(dt.with_timezone(&Utc));
+            }
+            if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+                return Ok(d
+                    .and_hms_opt(0, 0, 0)
+                    .ok_or_else(|| DbError::ExecutionError("Invalid date".to_string()))?
+                    .and_utc());
+            }
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
+                return Ok(dt.and_utc());
+            }
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+                return Ok(dt.and_utc());
+            }
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f") {
+                return Ok(dt.and_utc());
+            }
+            Err(DbError::ExecutionError(format!(
+                "Invalid date string '{}'",
+                s
+            )))
+        }
         _ => Err(DbError::ExecutionError(
-            "Date must be a timestamp or ISO 8601 string".to_string(),
+            "Date must be a timestamp or date string".to_string(),
         )),
     }
 }

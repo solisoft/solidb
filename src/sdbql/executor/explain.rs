@@ -74,20 +74,10 @@ impl<'a> QueryExecutor<'a> {
                 .count();
 
             if for_count == 1 && filter_count == 0 {
-                query.limit_clause.as_ref().map(|l| {
-                    let offset = self
-                        .evaluate_expr_with_context(&l.offset, &initial_bindings)
-                        .ok()
-                        .and_then(|v| v.as_u64())
-                        .map(|n| n as usize)
-                        .unwrap_or(0);
-                    let count = self
-                        .evaluate_expr_with_context(&l.count, &initial_bindings)
-                        .ok()
-                        .and_then(|v| v.as_u64())
-                        .map(|n| n as usize)
-                        .unwrap_or(0);
-                    offset + count
+                query.limit_clause.as_ref().and_then(|l| {
+                    let (offset, count) = self.eval_limit(l, &initial_bindings);
+                    // No count means no upper bound: nothing to push down.
+                    offset.checked_add(count?)
                 })
             } else {
                 None
@@ -114,6 +104,7 @@ impl<'a> QueryExecutor<'a> {
                     let mut used_index = false;
                     let mut index_name: Option<String> = None;
                     let mut index_type: Option<String> = None;
+                    let mut auto_index_candidate: Option<String> = None;
 
                     // Check if next clause is a FILTER that can use an index
                     if i + 1 < clauses.len() {
@@ -156,6 +147,18 @@ impl<'a> QueryExecutor<'a> {
                                         rows = new_rows;
                                         total_docs_scanned += docs.len();
                                         i += 2; // Skip FOR and FILTER
+                                    } else if let Some(cond) = self.extract_indexable_condition(
+                                        &filter_clause.expression,
+                                        &for_clause.variable,
+                                        &probe_ctx,
+                                    ) {
+                                        if self.would_auto_index(
+                                            &collection,
+                                            &cond.field,
+                                            Some(&cond.value),
+                                        ) {
+                                            auto_index_candidate = Some(cond.field);
+                                        }
                                     }
                                 }
                             }
@@ -198,6 +201,7 @@ impl<'a> QueryExecutor<'a> {
                         index_used: index_name,
                         index_type,
                         documents_count: 0, // Simplified
+                        auto_index_candidate,
                     });
                 }
                 BodyClause::Filter(filter_clause) => {
@@ -249,24 +253,18 @@ impl<'a> QueryExecutor<'a> {
         // Apply LIMIT
         let mut documents_returned = rows.len();
         let mut limit_offset_val: usize = 0;
-        let mut limit_count_val: usize = 0;
+        let mut limit_count_val: Option<usize> = None;
         if let Some(limit) = &query.limit_clause {
             let limit_start = Instant::now();
-            limit_offset_val = self
-                .evaluate_expr_with_context(&limit.offset, &initial_bindings)
-                .ok()
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize)
-                .unwrap_or(0);
-            limit_count_val = self
-                .evaluate_expr_with_context(&limit.count, &initial_bindings)
-                .ok()
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize)
-                .unwrap_or(0);
+            let (offset, count) = self.eval_limit(limit, &initial_bindings);
+            limit_offset_val = offset;
+            limit_count_val = count;
 
             let start = limit_offset_val.min(rows.len());
-            let end = (start + limit_count_val).min(rows.len());
+            let end = match limit_count_val {
+                Some(count) => start.saturating_add(count).min(rows.len()),
+                None => rows.len(),
+            };
             rows = rows[start..end].to_vec();
             documents_returned = rows.len();
             limit_us = limit_start.elapsed().as_micros() as u64;

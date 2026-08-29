@@ -39,6 +39,16 @@ pub struct QueryExecutionResult {
 /// Bind variables for parameterized queries (prevents SDBQL injection)
 pub type BindVars = HashMap<String, Value>;
 
+/// Snapshot of the authenticated caller, used by CAN / CURRENT_USER / ROW_POLICY.
+#[derive(Debug, Clone, Default)]
+pub struct QueryPrincipal {
+    pub user: String,
+    pub roles: Vec<String>,
+    pub can_read: bool,
+    pub can_write: bool,
+    pub can_admin: bool,
+}
+
 /// Query execution plan with timing information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryExplain {
@@ -70,6 +80,9 @@ pub struct CollectionAccess {
     pub index_used: Option<String>,
     pub index_type: Option<String>,
     pub documents_count: usize,
+    /// FILTER field that would get `_auto_{field}` on this run (flag on, Write).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_index_candidate: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,7 +112,8 @@ pub struct SortInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LimitInfo {
     pub offset: usize,
-    pub count: usize,
+    /// Row count, or `null` for a standalone `OFFSET` (no upper bound)
+    pub count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

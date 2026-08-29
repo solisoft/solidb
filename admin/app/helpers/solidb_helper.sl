@@ -51,7 +51,7 @@ end
 def connection_host_label
   full_host = session_get("solidb_host") rescue nil
   full_host = (getenv("SOLIDB_HOST") rescue nil) if full_host.blank?
-  full_host = full_host ?? "http://localhost:6745"
+  full_host = full_host ?? "http://127.0.0.1:6745"
   return full_host.substring(8, full_host.length()) if full_host.starts_with("https://")
   return full_host.substring(7, full_host.length()) if full_host.starts_with("http://")
   return full_host
@@ -153,10 +153,13 @@ end
 def explain_expr(raw)
   return "" if raw.nil?
   text = raw
+  # ASCII classes, not \w: the AST is ASCII, and a unicode \w unioned into a
+  # character class compiles past the 100 KB regex size limit.
+  word = "[A-Za-z0-9_]"
   # Leaves. BindVariable must run before Variable (it contains it).
-  text = text.gsub("BindVariable\\(\"([\\w]+)\"\\)", "@$1")
-  text = text.gsub("Variable\\(\"([\\w]+)\"\\)", "$1")
-  text = text.gsub("Literal\\(Bool\\((\\w+)\\)\\)", "$1")
+  text = text.gsub("BindVariable\\(\"(" + word + "+)\"\\)", "@$1")
+  text = text.gsub("Variable\\(\"(" + word + "+)\"\\)", "$1")
+  text = text.gsub("Literal\\(Bool\\((" + word + "+)\\)\\)", "$1")
   text = text.gsub("Literal\\(Int\\((-?\\d+)\\)\\)", "$1")
   text = text.gsub("Literal\\(Float\\((-?[\\d.]+)\\)\\)", "$1")
   text = text.gsub("Literal\\(String\\((\"[^\"]*\")\\)\\)", "$1")
@@ -165,11 +168,11 @@ def explain_expr(raw)
   prev = ""
   while prev != text
     prev = text
-    text = text.gsub("FieldAccess\\(([\\w.@\"\\[\\]]+), \"([\\w]+)\"\\)", "$1.$2")
-    text = text.gsub("FunctionCall\\(\"([\\w]+)\", \\[([^\\[\\]{}]*)\\]\\)", "$1($2)")
+    text = text.gsub("FieldAccess\\(([A-Za-z0-9_.@\"\\[\\]]+), \"(" + word + "+)\"\\)", "$1.$2")
+    text = text.gsub("FunctionCall\\(\"(" + word + "+)\", \\[([^\\[\\]{}]*)\\]\\)", "$1($2)")
     text = text.gsub("UnaryOp \\{ op: Not, operand: ([^{}]*?) \\}", "(NOT $1)")
     text = text.gsub("UnaryOp \\{ op: Negate, operand: ([^{}]*?) \\}", "(-$1)")
-    text = text.gsub("BinaryOp \\{ left: ([^{}]*?), op: ([\\w]+), right: ([^{}]*?) \\}", "($1 $2 $3)")
+    text = text.gsub("BinaryOp \\{ left: ([^{}]*?), op: (" + word + "+), right: ([^{}]*?) \\}", "($1 $2 $3)")
   end
   operator_symbols = {
     " Equal ": " == ", " NotEqual ": " != ", " LessThan ": " < ",

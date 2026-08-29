@@ -59,16 +59,6 @@ describe("SolidbEndpoints") do
     assert_eq(SolidbEndpoints.script("app", "s1"), "/_api/database/app/scripts/s1")
   end
 
-  test("queue and cron paths") do
-    assert_eq(SolidbEndpoints.queues("app"), "/_api/database/app/queues")
-    assert_eq(SolidbEndpoints.queue_jobs("app", "mail"), "/_api/database/app/queues/mail/jobs")
-    assert_eq(SolidbEndpoints.queue_enqueue("app", "mail"), "/_api/database/app/queues/mail/enqueue")
-    assert_eq(SolidbEndpoints.queue_job("app", "j1"), "/_api/database/app/queues/jobs/j1")
-    assert_eq(SolidbEndpoints.queue_job_run_now("app", "j1"), "/_api/database/app/queues/jobs/j1/run-now")
-    assert_eq(SolidbEndpoints.cron_jobs("app"), "/_api/database/app/cron")
-    assert_eq(SolidbEndpoints.cron_job("app", "c1"), "/_api/database/app/cron/c1")
-  end
-
   test("trigger paths") do
     assert_eq(SolidbEndpoints.triggers("app"), "/_api/database/app/triggers")
     assert_eq(SolidbEndpoints.trigger("app", "t1"), "/_api/database/app/triggers/t1")

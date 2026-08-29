@@ -11,7 +11,56 @@ use super::types::{Context, IndexableCondition};
 use super::QueryExecutor;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
+use crate::storage::index::{IndexSpec, IndexType};
 use crate::storage::Collection;
+
+pub(super) const AUTO_INDEX_CAP: usize = 16;
+
+/// Documents above which a collection is never auto-indexed: the backfill runs
+/// inside the query that triggered it, so an unbounded one stalls that request
+/// for as long as the scan takes. Override with `SOLIDB_AUTO_INDEX_MAX_DOCS`
+/// (`0` disables the ceiling).
+const AUTO_INDEX_MAX_DOCS_DEFAULT: usize = 1_000_000;
+
+fn auto_index_max_docs() -> usize {
+    match std::env::var("SOLIDB_AUTO_INDEX_MAX_DOCS") {
+        Ok(v) => v.trim().parse().unwrap_or(AUTO_INDEX_MAX_DOCS_DEFAULT),
+        Err(_) => AUTO_INDEX_MAX_DOCS_DEFAULT,
+    }
+}
+
+fn auto_index_name(field: &str) -> String {
+    format!("_auto_{field}")
+}
+
+/// An index this feature created (or would create): `_auto_{field}` over that
+/// one field. A hand-made index that merely starts with `_auto_` is not one,
+/// so it cannot silently consume a slot of [`AUTO_INDEX_CAP`].
+fn is_auto_index(index: &crate::storage::index::Index) -> bool {
+    index.fields.len() == 1 && index.name == auto_index_name(&index.fields[0])
+}
+
+pub(super) fn field_is_auto_indexable(field: &str) -> bool {
+    if matches!(field, "_key" | "_id" | "_rev" | "") {
+        return false;
+    }
+    let mut parts = field.split('.');
+    parts.all(|p| {
+        let mut chars = p.chars();
+        match chars.next() {
+            Some(c) if c.is_ascii_alphabetic() || c == '_' => {
+                chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+            }
+            _ => false,
+        }
+    }) && !field.contains("..")
+        && !field.starts_with('.')
+        && !field.ends_with('.')
+}
+
+fn collection_bare_name(cf_name: &str) -> &str {
+    cf_name.rsplit(':').next().unwrap_or(cf_name)
+}
 
 impl<'a> QueryExecutor<'a> {
     pub(super) fn extract_indexable_condition(
@@ -390,6 +439,134 @@ impl<'a> QueryExecutor<'a> {
             Ok(doc) => Some(vec![doc]),
             Err(DbError::DocumentNotFound(_)) => Some(Vec::new()),
             Err(_) => None,
+        }
+    }
+
+    /// Whether this FILTER miss is allowed to create `_auto_{field}`.
+    /// Does not create. EXPLAIN uses the same predicate.
+    ///
+    /// Cheap checks first: this runs on the FILTER path of every query against
+    /// a collection, so the storage reads (`auto_index_enabled`, the index
+    /// list, the shard config) must sit behind the in-memory ones.
+    pub(super) fn would_auto_index(
+        &self,
+        collection: &Collection,
+        field: &str,
+        value: Option<&Value>,
+    ) -> bool {
+        if value.is_some_and(Value::is_null) {
+            return false;
+        }
+        if !field_is_auto_indexable(field) {
+            return false;
+        }
+        // Creating an index is a write, and the query routes that reach here
+        // are classified Read (`/cursor`, `/sql`, `/nl`, `/explain`, the
+        // driver's Query op, ...). Absence of a principal is *not* permission:
+        // an executor built without one — internal refreshes, jobs, stream
+        // tasks — does not auto-index either.
+        match &self.principal {
+            Some(p) if p.can_write || p.can_admin => {}
+            _ => return false,
+        }
+        if crate::storage::is_protected_collection(&collection.name)
+            || collection_bare_name(&collection.name).starts_with('_')
+        {
+            return false;
+        }
+        if !collection.auto_index_enabled() {
+            return false;
+        }
+        if collection
+            .get_shard_config()
+            .is_some_and(|c| c.num_shards > 0)
+        {
+            return false;
+        }
+        let max_docs = auto_index_max_docs();
+        if max_docs > 0 && collection.count() > max_docs {
+            return false;
+        }
+        let indexes = collection.get_all_indexes();
+        if indexes
+            .iter()
+            .any(|i| i.fields.len() == 1 && i.fields[0] == field)
+        {
+            return false;
+        }
+        indexes.iter().filter(|i| is_auto_index(i)).count() < AUTO_INDEX_CAP
+    }
+
+    /// Create a persistent `_auto_{field}` index when allowed. `true` only if
+    /// `create_index` succeeded and the index can actually serve a lookup — a
+    /// failed backfill must not look ready.
+    pub(super) fn maybe_auto_index(
+        &self,
+        collection: &Collection,
+        field: &str,
+        value: Option<&Value>,
+    ) -> bool {
+        if !self.would_auto_index(collection, field, value) {
+            return false;
+        }
+        let name = auto_index_name(field);
+        let spec = IndexSpec::Regular {
+            name: name.clone(),
+            fields: vec![field.to_string()],
+            index_type: IndexType::Persistent,
+            unique: false,
+        };
+        match collection.create_index(
+            name.clone(),
+            vec![field.to_string()],
+            IndexType::Persistent,
+            false,
+        ) {
+            Ok(stats) if stats.indexed_documents == 0 => {
+                // No document carries the field — a misspelled or absent name.
+                // Keeping the index would burn one of the 16 slots and add
+                // write amplification to every later insert for a lookup that
+                // can never match.
+                if let Err(e) = collection.drop_index(&name) {
+                    tracing::warn!(
+                        collection = %collection.name,
+                        field,
+                        error = %e,
+                        "could not drop the empty auto-index"
+                    );
+                }
+                false
+            }
+            Ok(_) => {
+                self.propagate_auto_index(collection, &spec);
+                true
+            }
+            Err(e) => {
+                tracing::warn!(
+                    collection = %collection.name,
+                    field,
+                    error = %e,
+                    "auto-index create failed; falling back to scan"
+                );
+                false
+            }
+        }
+    }
+
+    fn propagate_auto_index(&self, collection: &Collection, spec: &IndexSpec) {
+        let Some(db) = self.database.as_deref() else {
+            return;
+        };
+        if let Some(repl) = self.replication {
+            let payload = serde_json::to_vec(spec).ok();
+            let target = collection_bare_name(&collection.name).to_string();
+            repl.append(crate::sync::log::LogEntry::new_op(
+                db,
+                target,
+                crate::sync::protocol::Operation::CreateIndex,
+                spec.name().to_string(),
+                payload,
+            ));
         }
     }
 }

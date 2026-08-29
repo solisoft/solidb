@@ -19,8 +19,6 @@ interface PooledConnection {
 }
 
 import { ScriptsClient } from './sub-clients/ScriptsClient';
-import { JobsClient } from './sub-clients/JobsClient';
-import { CronClient } from './sub-clients/CronClient';
 import { TriggersClient } from './sub-clients/TriggersClient';
 import { EnvClient } from './sub-clients/EnvClient';
 import { RolesClient } from './sub-clients/RolesClient';
@@ -43,8 +41,6 @@ export class Client {
 
     // Sub-clients
     public readonly scripts: ScriptsClient;
-    public readonly jobs: JobsClient;
-    public readonly cron: CronClient;
     public readonly triggers: TriggersClient;
     public readonly env: EnvClient;
     public readonly roles: RolesClient;
@@ -65,8 +61,6 @@ export class Client {
     ) {
         this.poolSize = poolSize;
         this.scripts = new ScriptsClient(this);
-        this.jobs = new JobsClient(this);
-        this.cron = new CronClient(this);
         this.triggers = new TriggersClient(this);
         this.env = new EnvClient(this);
         this.roles = new RolesClient(this);

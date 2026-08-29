@@ -1,12 +1,66 @@
 //! String builtin functions.
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::error::SdbqlResult;
 
 /// Call a string function. Returns None if function not found.
 pub fn call(name: &str, args: &[Value]) -> SdbqlResult<Option<Value>> {
     let result = match name {
+        "TOKENS" => {
+            let text = args.first().and_then(Value::as_str).unwrap_or("");
+            let analyzer = args.get(1).and_then(Value::as_str).unwrap_or("text_en");
+            let toks = match analyzer {
+                "identity" => {
+                    if text.is_empty() {
+                        vec![]
+                    } else {
+                        vec![text.to_string()]
+                    }
+                }
+                _ => text
+                    .split(|c: char| !c.is_alphanumeric())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_lowercase())
+                    .filter(|s| {
+                        !matches!(
+                            s.as_str(),
+                            "a" | "an" | "the" | "and" | "or" | "of" | "to" | "in"
+                        )
+                    })
+                    .collect(),
+            };
+            Some(Value::Array(toks.into_iter().map(Value::String).collect()))
+        }
+        "BOOST" => {
+            let base = match args.first() {
+                Some(Value::Bool(true)) => 1.0,
+                Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
+                _ => 0.0,
+            };
+            let f = args.get(1).and_then(Value::as_f64).unwrap_or(1.0);
+            Some(json!(base * f))
+        }
+        "PHRASE" => {
+            let text = args.first().and_then(Value::as_str).unwrap_or("");
+            let hay: Vec<String> = text
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_lowercase())
+                .collect();
+            let needle: Vec<String> = args[1..]
+                .iter()
+                .filter_map(Value::as_str)
+                .flat_map(|s| {
+                    s.split(|c: char| !c.is_alphanumeric())
+                        .filter(|t| !t.is_empty())
+                        .map(|t| t.to_lowercase())
+                })
+                .collect();
+            Some(Value::Bool(
+                !needle.is_empty() && hay.windows(needle.len()).any(|w| w == needle),
+            ))
+        }
         "UPPER" => {
             let s = args.first().and_then(|v| v.as_str()).unwrap_or("");
             Some(Value::String(s.to_uppercase()))

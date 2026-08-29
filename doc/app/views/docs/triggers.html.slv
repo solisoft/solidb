@@ -265,7 +265,7 @@
                 <code class="text-amber-300">X-Webhook-Delivery: &lt;job-id&gt;</code>, and (when a secret is available)
                 <code class="text-amber-300">X-Webhook-Signature</code> = lowercase hex HMAC-SHA256 of the body. The signing key is resolved in order:
                 per-trigger <code class="text-amber-300">webhook_secret</code> → <code class="text-amber-300">SOLI_WEBHOOK_SECRET</code> env var → <code class="text-amber-300">SOLI_JOBS_SECRET</code> env var → unsigned.
-                See <a href="/docs/queues#configuration" class="underline hover:text-amber-100">Queues → Configuration</a> for the full env-var reference.
+                See <a href="/docs/getting-started#environment" class="underline hover:text-amber-100">Getting Started → Environment</a> for the full env-var reference.
                 Any non-2xx response counts as failure and is retried per <code class="text-amber-300">max_retries</code>.
               </p>
             </div>

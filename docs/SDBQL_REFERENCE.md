@@ -17,6 +17,7 @@ SoliDB Query Language (SDBQL) is a powerful, declarative query language designed
     *   [Fulltext Search](#fulltext-search)
     *   [Crypto & Security](#crypto--security)
     *   [Type Checking & Casting](#type-checking--casting)
+    *   [Sketches, auth & RAG](#sketches-auth--rag)
     *   [Control Flow & Misc](#control-flow--misc)
 
 ---
@@ -36,14 +37,26 @@ SDBQL queries are composed of high-level clauses that can be chained together.
 | `COLLECT` | Groups results (Aggregation) | `COLLECT city = user.city WITH COUNT INTO n` |
 | `WINDOW` | Performs window functions | `WINDOW w AS (PARTITION BY city ORDER BY age)` |
 | `JOIN` / `LEFT` / `RIGHT` / `FULL` | Joins collections | `JOIN orders ON user._key == orders.user_key` |
+| `ASOF JOIN` | Time-aligned join (one right row) | `ASOF JOIN quotes ON t.sym == quotes.sym ASOF t.ts, quotes.ts` |
+| `SYSTEM_TIME AS OF` | Historical `FOR` scan | `FOR o IN orders SYSTEM_TIME AS OF @ts` |
 | `INSERT` | Inserts new documents | `INSERT {name: "Alice"} INTO users` |
 | `UPDATE` | Updates existing documents | `UPDATE user WITH {active: true} IN users` |
 | `DELETE` | Removes documents | `DELETE user IN users` |
 | `UPSERT` | Updates or Inserts | `UPSERT {id: 1} INSERT {id: 1, val: 0} UPDATE {val: OLD.val + 1} IN counts` |
 
+### Time travel on `FOR`
+
+```sdbql
+FOR o IN orders SYSTEM_TIME AS OF @ts
+  FILTER o.status == "open"
+  RETURN o
+```
+
+Requires versioning on the collection. Reconstructs each key as of `ts` (epoch ms or RFC3339). Deleted-as-of-`ts` keys are omitted. Secondary indexes are not used.
+
 ### JOIN Operations
 
-JOIN operations allow you to combine data from multiple collections based on a condition. SDBQL supports `INNER JOIN` (default), `LEFT JOIN`, `RIGHT JOIN`, and `FULL OUTER JOIN`.
+JOIN operations allow you to combine data from multiple collections based on a condition. SDBQL supports `INNER JOIN` (default), `LEFT JOIN`, `RIGHT JOIN`, `FULL OUTER JOIN`, and `ASOF JOIN`.
 
 **Syntax:**
 ```sql
@@ -195,8 +208,12 @@ REFRESH MATERIALIZED VIEW view_name
 ## Operators
 
 ### Comparison
-`==`, `!=`, `<`, `<=`, `>`, `>=`
+`==`, `!=`, `<`, `<=`, `>`, `>=`, `<=>`
 `IN` (value in array), `NOT IN`
+`~=` (fuzzy, edit distance ≤ 2), `=~` / `!~` (regex)
+`a ~ b` (trigram semantic match; unary `~` is still bitwise NOT)
+
+`<=>` is cosine **distance** when both sides are numeric arrays (or `{vector: [...]}`): `0` means identical. Otherwise it is a three-way compare (`-1` / `0` / `1`).
 
 ### Logical
 `AND` (`&&`), `OR` (`||`), `NOT` (`!`)
@@ -252,10 +269,15 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `LTRIM(str)` / `RTRIM(str)` | Trim from left/right | `LTRIM("  hi")` → `"hi"` |
 | `SUBSTRING(str, start, len?)` | Extracts substring | `SUBSTRING("Hello", 0, 2)` → `"He"` |
 | `LEFT(str, n)` / `RIGHT(str, n)` | Chars from start/end | `LEFT("Hello", 2)` → `"He"` |
-| `LENGTH(str)` | String length | `LENGTH("Hello")` → `5` |
-| `SPLIT(str, sep)` | Splits string into array | `SPLIT("a,b", ",")` → `["a","b"]` |
-| `SUBSTITUTE(str, search, replace)` | Replaces occurrences | `SUBSTITUTE("aba", "a", "c")` → `"cbc"` |
-| `CONTAINS(str, needle)` | Checks if string contains substring | `CONTAINS("Hello", "ell")` → `true` |
+| `LENGTH(str)` | Unicode scalar count (not bytes; not a collection count) | `LENGTH("café")` → `4` |
+| `CHAR_LENGTH(str)` | Same as string `LENGTH` | `CHAR_LENGTH("café")` → `4` |
+| `BYTE_LENGTH(str)` | UTF-8 byte length | `BYTE_LENGTH("café")` → `5` |
+| `SPLIT(str, sep, limit?)` | Splits string into array | `SPLIT("a,b", ",")` → `["a","b"]` |
+| `SUBSTITUTE(str, search, replace, limit?)` | Replaces occurrences | `SUBSTITUTE("aba", "a", "c")` → `"cbc"` |
+| `CONTAINS(str, needle, returnIndex?)` | Contains, or character index if `returnIndex` | `CONTAINS("Hello", "ell")` → `true` |
+| `FIND_FIRST(str, needle, start?)` | Character index or `-1` | `FIND_FIRST("éx", "x")` → `1` |
+| `FIND_LAST(str, needle, end?)` | Last character index or `-1` | `FIND_LAST("aba", "a")` → `2` |
+| `LIKE(str, pattern, caseInsensitive?)` | SQL `LIKE` (`%` / `_`) | `LIKE("Hi", "H%")` → `true` |
 | `STARTS_WITH(str, prefix)` | Checks prefix | `STARTS_WITH("Hi", "H")` → `true` |
 | `ENDS_WITH(str, suffix)` | Checks suffix | `ENDS_WITH("Hi", "i")` → `true` |
 | `PAD_LEFT(str, len, char)` | Pads string left | `PAD_LEFT("1", 3, "0")` → `"001"` |
@@ -266,8 +288,12 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `WORD_COUNT(str)` | Counts words | `WORD_COUNT("a b")` → `2` |
 | `TRUNCATE_TEXT(str, len)` | Truncates with ellipsis | `TRUNCATE_TEXT("Hello World", 5)` → `"Hello..."` |
 | `MASK(str, start, end)` | Masks characters | `MASK("12345", 1, -1)` → `"1***5"` |
-| `REGEX_TEST(str, pattern)` | Tests regex match | `REGEX_TEST("abc", "^a")` → `true` |
-| `REGEX_REPLACE(str, pat, repl)` | Replaces with regex | `REGEX_REPLACE("abc", "b", "d")` → `"adc"` |
+| `REGEX_TEST(str, pattern, ci?)` | Tests regex match | `REGEX_TEST("abc", "^a")` → `true` |
+| `REGEX_REPLACE(str, pat, repl, ci?)` | Replaces with regex | `REGEX_REPLACE("abc", "b", "d")` → `"adc"` |
+| `REGEX_MATCHES(str, pattern)` | All non-overlapping matches | `REGEX_MATCHES("a1b2", "\\d")` → `["1","2"]` |
+| `REGEX_SPLIT(str, pattern, limit?)` | Split on regex | `REGEX_SPLIT("a,b", ",")` → `["a","b"]` |
+| `RANDOM_TOKEN(n)` | Random alphanumeric | `RANDOM_TOKEN(8)` |
+| `JOIN(arr, sep)` | Join array with separator | `JOIN(["a","b"], ",")` → `"a,b"` |
 | `ENCODE_URI(str)` | URL encodes string | `ENCODE_URI("a b")` → `"a%20b"` |
 | `DECODE_URI(str)` | URL decodes string | `DECODE_URI("a%20b")` → `"a b"` |
 | `JSON_PARSE(str)` | Parses JSON string | `JSON_PARSE("{\"a\":1}")` → `{a:1}` |
@@ -304,6 +330,9 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `VARIANCE(arr)` | Population variance | |
 | `STDDEV(arr)` | Standard deviation | |
 | `PERCENTILE(arr, p [, method])` | p-th percentile (0-100); `method` = `"rank"` (default) or `"interpolation"` | `PERCENTILE([1..100], 95)` → `95` |
+| `BIT_AND` / `BIT_OR` / `BIT_XOR` | Integer bitwise ops | `BIT_AND(12, 10)` → `8` |
+| `BIT_NEGATE(n)` | Bitwise not | |
+| `BIT_SHIFT_LEFT` / `BIT_SHIFT_RIGHT` | Shifts | `BIT_SHIFT_LEFT(1, 3)` → `8` |
 
 ### Date & Time Functions
 
@@ -318,17 +347,25 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `DATE_HOUR(d)` | Extract hour (0-23) | |
 | `DATE_MINUTE(d)` | Extract minute | |
 | `DATE_SECOND(d)` | Extract second | |
+| `DATE_MILLISECOND(d)` | Extract milliseconds | |
 | `DATE_DAYOFWEEK(d)` | Day of week (0=Sun) | |
 | `DATE_QUARTER(d)` | Quarter (1-4) | |
-| `DATE_ISOWEEK(d)` | ISO Week number | |
+| `DATE_ISOWEEK(d)` | ISO week number | |
+| `DATE_ISOWEEKYEAR(d)` | ISO week-year | |
 | `DATE_DAYOFYEAR(d)` | Day of year (1-366) | |
-| `DATE_ADD(d, n, unit)` | Add time | `DATE_ADD(DATE_NOW(), 1, "day")` |
+| `DATE_LEAPYEAR(d)` | Whether the year is a leap year | `DATE_LEAPYEAR("2024-01-01")` → `true` |
+| `DATE_COMPARE(d1, d2)` | `-1` / `0` / `1` | `DATE_COMPARE(a, b)` |
+| `DATE_ADD(d, n, unit)` | Add time (calendar months/years) | `DATE_ADD(DATE_NOW(), 1, "day")` |
 | `DATE_SUBTRACT(d, n, unit)` | Subtract time | `DATE_SUBTRACT(DATE_NOW(), 1, "day")` |
-| `DATE_DIFF(d1, d2, unit)` | Difference | `DATE_DIFF(end, start, "days")` |
-| `DATE_TRUNC(d, unit)` | Truncate date | `DATE_TRUNC(now, "day")` |
+| `DATE_DIFF(d1, d2, unit?)` | Units from `d1` to `d2` | `DATE_DIFF(start, end, "days")` |
+| `DATE_TRUNC(d, unit)` | Truncate (includes `week`) | `DATE_TRUNC(now, "day")` |
 | `DATE_FORMAT(d, fmt)` | Format date string | `DATE_FORMAT(now, "%Y-%m-%d")` |
 | `TIME_BUCKET(time, interval)` | Bucket for time series | `TIME_BUCKET(ts, "5m")` |
 | `HUMAN_TIME(d)` | Relative time string | `HUMAN_TIME(d)` → `"5 mins ago"` |
+| `DELTA(series)` | Consecutive differences | `DELTA([{t:0,v:1},{t:10,v:4}])` |
+| `RATE(series, interval)` | Δvalue / Δt in the given unit | `RATE(pts, "1s")` |
+| `FILL(series, mode\|value)` | Fill nulls: `"prev"`, `"interp"`, or a constant | `FILL(pts, "prev")` |
+| `RESAMPLE(series, interval)` | Re-bucket (last value + avg) | `RESAMPLE(pts, "5m")` |
 
 ### Array Functions
 
@@ -349,12 +386,19 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `REVERSE(arr)` | Reverse array | `REVERSE([1,2])` → `[2,1]` |
 | `FLATTEN(arr, depth)` | Flatten nested | `FLATTEN([[1],2])` → `[1,2]` |
 | `RANGE(start, end, step)` | Generate range | `RANGE(1,3)` → `[1,2,3]` |
-| `ZIP(arr1, arr2)` | Zip into pairs | `ZIP([1],[a])` → `[[1,a]]` |
+| `ZIP(arr1, arr2)` | Zip into pairs; two arrays whose first is all strings → object | `ZIP(["a"],[1])` → `{a:1}` |
 | `INDEX_OF(arr, val)` | Find index | `INDEX_OF([a], a)` → `0` (or -1) |
 | `CONTAINS_ARRAY(arr, val)` | Check existence | `CONTAINS_ARRAY([1], 1)` → `true` |
+| `MAP(arr, x -> expr)` | Transform each element (lambda; `|>` optional) | `MAP([1,2], x -> x * 2)` |
+| `FILTER(arr, x -> pred)` | Keep matching elements | `FILTER(xs, x -> x > 2)` |
+| `FLAT_MAP(arr, x -> expr)` | Map then flatten one level | `FLAT_MAP([[1],[2]], x -> x)` |
+| `GROUP_BY(arr, x -> key)` | Group into `{key, items}` | `GROUP_BY(docs, x -> x.city)` |
+| `SORT_BY(arr, x -> key)` | Sort by computed key | `SORT_BY(docs, x -> x.score)` |
+| `WINDOW_BY(arr, part?, order)` | Partition + `row_number` | `WINDOW_BY(rows, x -> x.k, x -> x.ts)` |
 | `TAKE(arr, n)` | Take first n | `TAKE([1,2,3], 2)` → `[1,2]` |
 | `DROP(arr, n)` | Drop first n | `DROP([1,2,3], 1)` → `[2,3]` |
 | `CHUNK(arr, size)` | Split into chunks | `CHUNK([1,2,3,4], 2)` → `[[1,2],[3,4]]` |
+| `OUTERSECTION(a, b)` | Symmetric difference | `OUTERSECTION([1,2],[2,3])` → `[1,3]` |
 
 **Spread Operator `[*]`**: Projects a field from an array of objects.
 ```sql
@@ -383,6 +427,13 @@ RETURN users[*].name -- Returns array of names
 | `DISTANCE(lat1, lon1, lat2, lon2)` | Haversine distance (m) | `DISTANCE(48.8, 2.3, 51.5, -0.1)` |
 | `GEO_DISTANCE(p1, p2)` | Distance between points | `GEO_DISTANCE(doc.loc, @userLoc)` |
 | `GEO_WITHIN(point, polygon)` | Point in Polygon check | `GEO_WITHIN(doc.loc, @zone)` |
+| `GEO_EQUALS(p1, p2)` | Same coordinates (1e-9) | `GEO_EQUALS(a, b)` |
+| `GEO_POINT(lat, lon)` | GeoJSON Point | `GEO_POINT(48.8, 2.3)` |
+| `GEO_LINESTRING` / `GEO_POLYGON` / `GEO_MULTI*` | GeoJSON constructors | `GEO_POLYGON([[[0,0],[0,1],[1,1],[1,0],[0,0]]])` |
+| `GEO_CONTAINS(a, b)` | Polygon contains point/ring | `GEO_CONTAINS(zone, doc.loc)` |
+| `GEO_INTERSECTS(a, b)` | Rings overlap or contain | `GEO_INTERSECTS(a, b)` |
+| `GEO_IN_RANGE(p, origin, lo, hi)` | Distance in meters | `GEO_IN_RANGE(p, o, 0, 1000)` |
+| `GEO_AREA(poly)` | Approx. area m² | `GEO_AREA(zone)` |
 
 ### Vector Functions
 
@@ -392,6 +443,10 @@ RETURN users[*].name -- Returns array of names
 | `VECTOR_DISTANCE(v1, v2, metric)` | Distance (cosine/euclidean/dot) | `VECTOR_DISTANCE(v1, v2, "euclidean")` |
 | `VECTOR_NORMALIZE(v)` | Normalize vector | `VECTOR_NORMALIZE([1,2,3])` |
 | `VECTOR_INDEX_STATS(coll, idx)` | Get index stats | |
+| `TOKENS(text, analyzer?)` | Split text (`text_en` default, or `identity`) | `TOKENS("The Fox", "text_en")` |
+| `PHRASE(text, …parts)` | Consecutive `text_en` tokens | `PHRASE(doc.body, "quick", "brown")` |
+| `BOOST(score, factor)` | Scale a bool/number score | `BOOST(PHRASE(t, "x"), 2)` |
+| `SEARCH_SCORE()` | Score from the last `SEARCH` clause | `SEARCH_SCORE()` |
 | `VECTOR_SEARCH(coll, idx, vec, k, opts?)` | k-NN search with optional metadata filter | `VECTOR_SEARCH("docs", "emb", @q, 10, { filter: { tenant: "acme" }, overfetch: 4 })` |
 
 `VECTOR_SEARCH` returns `[{ doc, score }, ...]` best-first. Options: `filter` (equality map on dotted field paths, applied after retrieval), `overfetch` (candidate multiplier so a selective filter still yields ~`k`; defaults to 4 when a filter is present), and `ef` (HNSW search breadth).
@@ -507,6 +562,63 @@ Opt-in via `SEMANTIC_CACHE_ENABLED=1`. The `/ai/generate` endpoint embeds each p
 | `TO_STRING(v)`, `TO_NUMBER(v)`, `TO_BOOL(v)`, `TO_ARRAY(v)` | Casting | `TO_NUMBER("1")` → `1` |
 | `COALESCE(v1, v2)` | First non-null | `COALESCE(null, 1)` → `1` |
 | `NULLIF(v1, v2)` | Return null if v1==v2 | `NULLIF(1, 1)` → `null` |
+
+### Sketches, auth & RAG
+
+| Function | Description | Example |
+| :--- | :--- | :--- |
+| `APPROX_COUNT_DISTINCT(arr)` | HyperLogLog; returns a sketch object with `estimate` | `APPROX_COUNT_DISTINCT(ids)` |
+| `APPROX_PERCENTILE(arr, p)` | Approximate p-th percentile (0–100) | `APPROX_PERCENTILE(xs, 95)` |
+| `APPROX_TOP_K(arr, k)` | Space-Saving frequent items | `APPROX_TOP_K(tags, 10)` |
+| `SKETCH_MERGE(s1, s2)` | Merge two HLL sketches | `SKETCH_MERGE(a, b)` |
+| `MATCH_SEQ(events, key, steps)` | Ordered event pattern per key | `MATCH_SEQ(ev, "user", [{type:"pay"}])` |
+| `SEMANTIC(doc, q, opts?)` | Trigram score (`field` option, default `body`) | `SEMANTIC(doc, "invoice")` |
+| `REDACT(doc, keys)` | Deep-drop keys from objects | `REDACT(doc, ["ssn"])` |
+| `CURRENT_USER()` / `CURRENT_ROLES()` | Request principal (null if none) | `CURRENT_USER()` |
+| `CAN(action [, doc])` | Collection RBAC, plus `owner`/`_acl` on `doc` | `CAN("read", doc)` |
+| `CREATE_GRAPH(name, spec)` | Store `{vertices, edges}` in `_graphs` | `CREATE_GRAPH("g", {edges:["e"]})` |
+| `DROP_GRAPH(name)` / `GRAPH_INFO(name)` | Remove or read a named graph | `GRAPH_INFO("g")` |
+| `CREATE_VIEW(name, spec)` | Search-view alias (`type: "search"` in `_views`) | `CREATE_VIEW("v", {collection:"docs"})` |
+| `DROP_VIEW(name)` | Drop a search view | `DROP_VIEW("v")` |
+| `SEARCH_INDEX(coll, field, q [, n])` | Fulltext index hits `{doc, score, terms}` | `SEARCH_INDEX("n","body","fox")` |
+| `ROW_POLICY(coll [, pred])` | Get/set collection row predicate | `ROW_POLICY("orders", "orders.tenant == @t")` |
+| `PARSE_IDENTIFIER(id)` | `{collection, key}` | `PARSE_IDENTIFIER("users/ada")` |
+| `PARSE_COLLECTION` / `PARSE_KEY` | Split `_id` | `PARSE_KEY("users/ada")` |
+| `UNSET_RECURSIVE` / `KEEP_RECURSIVE` | Nested key drop / keep | `UNSET_RECURSIVE(doc, "ssn")` |
+| `ZIP_OBJECT(keys, values)` | Arrays → object | `ZIP_OBJECT(["a"], [1])` |
+| `DATE_ROUND(d, unit)` | Alias of `DATE_TRUNC` | `DATE_ROUND(now, "day")` |
+| `APPLY(name, args)` / `CALL(name, …)` | Dynamic builtin (depth 8) | `CALL("UPPER", "hi")` |
+| `MINHASH(arr, n)` / `MINHASH_COUNT` / `MINHASH_ERROR` | MinHash signatures | `MINHASH(tags, 16)` |
+| `SNAPSHOT_DIFF(coll, t1, t2)` | `{inserted, updated, deleted}` between two times | `SNAPSHOT_DIFF("orders", t1, t2)` |
+| `EMBED(text [, opts])` | Embedding vector via configured LLM | `EMBED(doc.body)` |
+| `EXTRACT(text, schema)` | LLM JSON extract; `null` if unavailable | `EXTRACT(txt, {total: 0})` |
+| `CITE(answer, docs)` / `GROUNDED(answer, docs)` | Lexical citation / support score | `CITE(ans, chunks)` |
+
+**Graph extras:** `FOR v, e, p IN 1..3 OUTBOUND start edges` binds `p = {vertices, edges}`. `PRUNE expr` visits then does not expand. `GRAPH name` looks up `_graphs` then falls back to an edge collection. Weighted `SHORTEST_PATH … OPTIONS { weight: "cost" }` is Dijkstra. `K_SHORTEST_PATHS` is Yen. Also `ALL_SHORTEST_PATHS`, `K_PATHS` (`min`/`max`/`limit`). Cap: `SOLIDB_MAX_PATHS` (default 256).
+
+**Search views:** `CREATE_VIEW` does not build a planner index. `FOR d IN view` scans the backing `collection`. Use `SEARCH_INDEX` when a fulltext index exists.
+
+```sdbql
+MATCH (a:people {_key: "alice"})-[:follows*1..3]->(b)
+  RETURN b
+```
+
+**`SEARCH expr`:** like `FILTER`, but a numeric result keeps the row when `> 0` and stores `__search_score` (`SEARCH_SCORE()`). Not an Arango View.
+
+**`VALID_TIME`:** `FOR o IN orders VALID_TIME AS OF @ts` / `FROM @a TO @b` keeps docs whose `valid_from`/`valid_to` (ms) overlap. Missing bounds are open. Distinct from `SYSTEM_TIME` (storage versions). `insert_batch` / `upsert_batch` now write version history.
+
+**As-of join:**
+
+```sdbql
+FOR t IN trades
+  ASOF JOIN quotes ON t.sym == quotes.sym
+    ASOF t.ts, quotes.ts BACKWARD TOLERANCE "5s"
+  RETURN { t, q: quotes }
+```
+
+Binds a single right document (or `null`), not an array. Strategy: `BACKWARD` (default), `FORWARD`, `NEAREST`.
+
+**Historical scan:** `FOR o IN orders SYSTEM_TIME AS OF @ts` walks `docv:` history (opt-in versioning; no index; batch/txn writes are not versioned).
 
 ### Control Flow & Misc
 

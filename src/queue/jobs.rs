@@ -71,6 +71,17 @@ pub fn validate_webhook_url(url: &str) -> Result<(), crate::error::DbError> {
             "Webhook URL must not embed credentials".to_string(),
         ));
     }
+    let allow_loopback = std::env::var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if let Some(host) = parsed.host_str() {
+        if allow_loopback && (host == "127.0.0.1" || host == "localhost" || host == "::1") {
+            return Ok(());
+        }
+    }
+    crate::server::ssrf::validate_public_url_host(&parsed).map_err(|e| {
+        crate::error::DbError::BadRequest(format!("Webhook URL rejected (SSRF): {}", e))
+    })?;
     Ok(())
 }
 
@@ -133,32 +144,13 @@ impl QueueWorker {
 
             Self::ensure_status_index(&jobs_coll);
 
-            // Per-queue settings gate which queues are claimable this pass:
-            // paused queues are skipped outright, and queues already at their
-            // concurrency cap are skipped until a running job finishes. Queues
-            // with no config row impose no restriction, so the common case
-            // (no `_queue_config` collection) adds a single cheap lookup.
-            let remaining_slots = Self::queue_remaining_slots(&self.storage, &db_name, &db);
-            let blocked_queues: Vec<&String> = remaining_slots
-                .iter()
-                .filter(|(_, slots)| **slots == 0)
-                .map(|(queue, _)| queue)
-                .collect();
-
-            // Query for a batch of candidates in this specific database,
-            // top-priority first. Excluding blocked queues keeps the batch
-            // filled with *eligible* jobs instead of paused or saturated ones.
-            let query_str = if blocked_queues.is_empty() {
-                format!(
-                    "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} SORT j.priority DESC LIMIT {} RETURN j",
-                    now, CLAIM_BATCH
-                )
-            } else {
-                format!(
-                    "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} AND j.queue NOT IN @blocked SORT j.priority DESC LIMIT {} RETURN j",
-                    now, CLAIM_BATCH
-                )
-            };
+            // Trigger dispatch claims the highest-priority due jobs. There is
+            // no per-queue pause/concurrency gating any more: it was only
+            // configurable through the client-facing queue API, which is gone.
+            let query_str = format!(
+                "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} SORT j.priority DESC LIMIT {} RETURN j",
+                now, CLAIM_BATCH
+            );
 
             tracing::debug!("Query for db {}: {}", db_name, query_str);
 
@@ -170,17 +162,8 @@ impl QueueWorker {
                 }
             };
 
-            let executor = if blocked_queues.is_empty() {
-                crate::sdbql::QueryExecutor::with_database(&self.storage, db_name.clone())
-            } else {
-                let mut bind_vars = crate::sdbql::BindVars::new();
-                bind_vars.insert("blocked".to_string(), serde_json::json!(blocked_queues));
-                crate::sdbql::QueryExecutor::with_database_and_bind_vars(
-                    &self.storage,
-                    db_name.clone(),
-                    bind_vars,
-                )
-            };
+            let executor =
+                crate::sdbql::QueryExecutor::with_database(&self.storage, db_name.clone());
             let result = match executor.execute(&query_ast) {
                 Ok(res) => res,
                 Err(e) => {
@@ -199,12 +182,6 @@ impl QueueWorker {
                 db_name
             );
 
-            // Claim the whole batch, respecting per-queue slots that remain
-            // after each claim (remaining_slots was computed before any claim
-            // in this pass).
-            let mut claimed_per_queue: std::collections::HashMap<String, usize> =
-                std::collections::HashMap::new();
-
             for job_val in result {
                 let mut job: Job = match serde_json::from_value(job_val) {
                     Ok(j) => j,
@@ -213,13 +190,6 @@ impl QueueWorker {
                         continue;
                     }
                 };
-
-                if let Some(&slots) = remaining_slots.get(&job.queue) {
-                    let claimed = claimed_per_queue.get(&job.queue).copied().unwrap_or(0);
-                    if claimed >= slots {
-                        continue; // queue would exceed its concurrency cap
-                    }
-                }
 
                 // Claim job (CAS on revision — losing a race just skips it)
                 let rev = job.revision.clone().unwrap_or_default();
@@ -234,8 +204,6 @@ impl QueueWorker {
                     tracing::warn!("Failed to claim job {}: {}", job.id, e);
                     continue;
                 }
-                *claimed_per_queue.entry(job.queue.clone()).or_insert(0) += 1;
-
                 tracing::info!("Claimed job {} in db {}", job.id, db_name);
 
                 // Execute
@@ -280,10 +248,18 @@ impl QueueWorker {
                                     .unwrap()
                                     .subsec_millis() as u64);
                             tracing::error!("Job {} failed in db {}: {}", job_id, db_name_task, e);
+                            // A permanently unsupported operation (a Lua script
+                            // action on a node started with --no-lua) fails the
+                            // same way on every attempt, so retrying only burns
+                            // the backoff schedule.
+                            let permanent =
+                                matches!(e, crate::error::DbError::OperationNotSupported(_));
                             job_to_update.retry_count += 1;
                             job_to_update.last_error = Some(e.to_string());
 
-                            if job_to_update.retry_count < job_to_update.max_retries as u32 {
+                            if !permanent
+                                && job_to_update.retry_count < job_to_update.max_retries as u32
+                            {
                                 job_to_update.status = JobStatus::Pending;
                                 job_to_update.started_at = None;
                                 let delay = 10 * (2u64.pow(job_to_update.retry_count));
@@ -335,75 +311,6 @@ impl QueueWorker {
     /// to 0, capped queues to `cap - running`. Queues without a config row
     /// are absent (unlimited). An empty map means no queue imposes a
     /// restriction — the common case (no `_queue_config` collection).
-    fn queue_remaining_slots(
-        storage: &Arc<StorageEngine>,
-        db_name: &str,
-        db: &crate::storage::Database,
-    ) -> std::collections::HashMap<String, usize> {
-        let configs: Vec<super::types::QueueConfig> = match db.get_collection("_queue_config") {
-            Ok(cfg_coll) => cfg_coll
-                .scan(None)
-                .into_iter()
-                .filter_map(|doc| serde_json::from_value(doc.to_value()).ok())
-                .collect(),
-            Err(_) => return std::collections::HashMap::new(),
-        };
-        if configs.is_empty() {
-            return std::collections::HashMap::new();
-        }
-
-        // Only pay for the running-count query when a queue actually caps
-        // concurrency; a config that just sets pause/default_priority doesn't
-        // need it.
-        let needs_running_counts = configs.iter().any(|c| c.concurrency > 0);
-        let running_counts = if needs_running_counts {
-            Self::running_counts_by_queue(storage, db_name)
-        } else {
-            std::collections::HashMap::new()
-        };
-
-        configs
-            .into_iter()
-            .filter_map(|c| {
-                if c.paused {
-                    Some((c.name, 0))
-                } else if c.concurrency > 0 {
-                    let running = running_counts.get(&c.name).copied().unwrap_or(0);
-                    Some((c.name, (c.concurrency as usize).saturating_sub(running)))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    /// Count of currently-`running` jobs grouped by queue, used to enforce
-    /// per-queue concurrency caps. Any query failure degrades to an empty map
-    /// (no caps enforced) rather than stalling the worker.
-    fn running_counts_by_queue(
-        storage: &Arc<StorageEngine>,
-        db_name: &str,
-    ) -> std::collections::HashMap<String, usize> {
-        let mut counts = std::collections::HashMap::new();
-        let query_ast =
-            match crate::sdbql::parse("FOR j IN _jobs FILTER j.status == 'running' RETURN j.queue")
-            {
-                Ok(ast) => ast,
-                Err(_) => return counts,
-            };
-        let executor = crate::sdbql::QueryExecutor::with_database(storage, db_name.to_string());
-        let rows = match executor.execute(&query_ast) {
-            Ok(rows) => rows,
-            Err(_) => return counts,
-        };
-        for row in rows {
-            if let Some(queue) = row.as_str() {
-                *counts.entry(queue.to_string()).or_insert(0) += 1;
-            }
-        }
-        counts
-    }
-
     pub(crate) async fn execute_job(
         storage: &Arc<StorageEngine>,
         engine: &Arc<ScriptEngine>,
@@ -498,7 +405,10 @@ impl QueueWorker {
 
         // Use the permissive client only for development-reserved TLDs.
         // Everything else stays on the strict client with full TLS checks.
-        let client = if host_is_dev_tld(url) {
+        let allow_insecure_tls = std::env::var("SOLIDB_ALLOW_INSECURE_WEBHOOK_TLS")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let client = if allow_insecure_tls && host_is_dev_tld(url) {
             tracing::debug!("Using permissive TLS client for dev host {}", url);
             dev_http
         } else {
@@ -555,6 +465,22 @@ mod tests {
     use std::collections::HashMap;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+
+    /// `SOLIDB_ALLOW_WEBHOOK_LOOPBACK` is process-global while tests run in
+    /// parallel threads. Without this lock, the test that clears the flag can
+    /// land between another test's `set_var` and its delivery: the delivery
+    /// then fails SSRF validation, never connects, and the mock server waits
+    /// on `accept()` forever. Every test that touches the flag takes it.
+    static WEBHOOK_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    /// Wait for the mock server, but fail the test rather than hang if the
+    /// webhook never arrived.
+    async fn mock_result(server: tokio::task::JoinHandle<String>) -> String {
+        tokio::time::timeout(std::time::Duration::from_secs(10), server)
+            .await
+            .expect("mock server never received the webhook request")
+            .expect("mock server task panicked")
+    }
 
     fn make_job(url: Option<&str>, script: &str) -> Job {
         Job {
@@ -665,6 +591,16 @@ mod tests {
         assert!(format!("{}", err).contains("http or https"));
     }
 
+    #[tokio::test]
+    async fn validate_webhook_url_rejects_private_and_metadata() {
+        let _guard = WEBHOOK_ENV_LOCK.lock().await;
+        std::env::remove_var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK");
+        assert!(validate_webhook_url("http://127.0.0.1/hook").is_err());
+        assert!(validate_webhook_url("http://169.254.169.254/latest").is_err());
+        assert!(validate_webhook_url("http://10.0.0.5/hook").is_err());
+        assert!(validate_webhook_url("http://localhost/hook").is_err());
+    }
+
     #[test]
     fn validate_webhook_url_rejects_credentials_in_url() {
         let err =
@@ -674,6 +610,8 @@ mod tests {
 
     #[tokio::test]
     async fn execute_webhook_posts_signed_payload() {
+        let _guard = WEBHOOK_ENV_LOCK.lock().await;
+        std::env::set_var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK", "1");
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let url = format!("http://127.0.0.1:{}/hook", port);
@@ -696,7 +634,7 @@ mod tests {
             .await
             .expect("webhook should succeed");
 
-        let raw = server.await.unwrap();
+        let raw = mock_result(server).await;
         assert!(raw.contains("POST /hook"), "request line, got:\n{}", raw);
         assert!(
             raw.to_ascii_lowercase()
@@ -740,6 +678,8 @@ mod tests {
 
     #[tokio::test]
     async fn execute_webhook_propagates_non_2xx_as_error() {
+        let _guard = WEBHOOK_ENV_LOCK.lock().await;
+        std::env::set_var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK", "1");
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let url = format!("http://127.0.0.1:{}/hook", port);
@@ -759,7 +699,7 @@ mod tests {
         let err = super::super::QueueWorker::execute_webhook(&http, &dev_http, &job)
             .await
             .expect_err("500 should be an error");
-        let _ = server.await;
+        let _ = mock_result(server).await;
         assert!(
             format!("{}", err).contains("500"),
             "expected error to mention 500, got: {}",
