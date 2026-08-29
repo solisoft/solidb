@@ -59,6 +59,97 @@ fn log_allocator_tuning() {
 #[cfg(target_env = "msvc")]
 fn log_allocator_tuning() {}
 
+/// Parse a memory size: a plain byte count, or a number with a `K`/`M`/`G`
+/// suffix (optionally `KB`/`MB`/`GB`). Multiples are binary, matching how the
+/// RocksDB options in `storage::engine` are written — `512MB` is 512 * 1024^2.
+fn parse_size(s: &str) -> Result<usize, String> {
+    let t = s.trim();
+    let upper = t.to_ascii_uppercase();
+    // `to_ascii_uppercase` preserves length, so a suffix stripped from `upper`
+    // leaves a prefix of the same length in `t`.
+    let (digits, mult): (&str, usize) = if let Some(v) = upper.strip_suffix("GB") {
+        (&t[..v.len()], 1 << 30)
+    } else if let Some(v) = upper.strip_suffix("MB") {
+        (&t[..v.len()], 1 << 20)
+    } else if let Some(v) = upper.strip_suffix("KB") {
+        (&t[..v.len()], 1 << 10)
+    } else if let Some(v) = upper.strip_suffix('G') {
+        (&t[..v.len()], 1 << 30)
+    } else if let Some(v) = upper.strip_suffix('M') {
+        (&t[..v.len()], 1 << 20)
+    } else if let Some(v) = upper.strip_suffix('K') {
+        (&t[..v.len()], 1 << 10)
+    } else {
+        (t, 1)
+    };
+
+    let n: usize = digits.trim().parse().map_err(|_| {
+        format!("invalid size '{s}' (expected a byte count or a value like 512MB / 2GB)")
+    })?;
+    n.checked_mul(mult)
+        .ok_or_else(|| format!("size '{s}' overflows a usize"))
+}
+
+/// Render a byte count the way the flags accept it, for the startup log.
+fn human_size(bytes: usize) -> String {
+    const G: usize = 1 << 30;
+    const M: usize = 1 << 20;
+    const K: usize = 1 << 10;
+    match bytes {
+        b if b >= G && b % G == 0 => format!("{}GB", b / G),
+        b if b >= M && b % M == 0 => format!("{}MB", b / M),
+        b if b >= K && b % K == 0 => format!("{}KB", b / K),
+        b => format!("{b}B"),
+    }
+}
+
+/// Log the storage knobs the engine actually started with, and warn about the
+/// two configurations whose memory has no ceiling.
+///
+/// Both are RocksDB defaults that the prod profile keeps for throughput, and
+/// both are silent until the instance is large enough to hurt: memtable RAM
+/// scales with the number of write-active collections, and pinned index/filter
+/// blocks scale with the dataset. Printing them at startup is what makes the
+/// choice visible to whoever sized the box.
+fn log_storage_profile(base: &str, p: &solidb::storage::engine::EngineProfile) {
+    let budget = p
+        .db_write_buffer_size
+        .map(human_size)
+        .unwrap_or_else(|| "unlimited".to_string());
+    let open_files = if p.max_open_files < 0 {
+        "unlimited".to_string()
+    } else {
+        p.max_open_files.to_string()
+    };
+
+    tracing::info!(
+        "Storage profile: {base} — block_cache={}, write_buffer={}/collection, \
+         memtable_budget={budget}, max_open_files={open_files}, \
+         bounded_index_cache={}, background_jobs={}",
+        human_size(p.block_cache_bytes),
+        human_size(p.write_buffer_size),
+        p.cache_index_and_filter_blocks,
+        p.max_background_jobs,
+    );
+
+    if p.db_write_buffer_size.is_none() {
+        tracing::warn!(
+            "Storage: no global memtable budget — total memtable RAM scales with the \
+             number of write-active collections ({} each) and nothing forces an early \
+             flush. Set --memtable-budget on instances with many collections.",
+            human_size(p.write_buffer_size),
+        );
+    }
+
+    if !p.cache_index_and_filter_blocks && p.max_open_files < 0 {
+        tracing::warn!(
+            "Storage: index/filter blocks are pinned per SST and the table cache is \
+             unlimited, so that memory grows with the dataset and is never evicted. \
+             Set --bounded-index-cache or --max-open-files on large datasets."
+        );
+    }
+}
+
 use clap::{Parser, Subcommand};
 use solidb::server::multiplex::{ChannelListener, PeekedStream};
 use solidb::{cluster::ClusterConfig, create_router, scripting::ScriptStats, StorageEngine};
@@ -146,8 +237,56 @@ struct Args {
     /// global memtable budget, caps open files, and stores index/filter
     /// blocks in the bounded block cache. Intended for dev boxes with many
     /// idle collections; trades some throughput for much lower RAM.
+    ///
+    /// This is a preset, not the only way in: every knob it sets is also
+    /// available on its own below, so a production node can bound its memory
+    /// without also taking the dev cache and background-job cuts.
     #[arg(long)]
     dev: bool,
+
+    /// Shared RocksDB block cache size (`512MB`, `2GB`, or a byte count).
+    /// Defaults to 512MB (prod) or 128MB (--dev).
+    #[arg(long, value_parser = parse_size, env = "SOLIDB_BLOCK_CACHE")]
+    block_cache: Option<usize>,
+
+    /// Global cap on total memtable memory across ALL collections; `0` means
+    /// unlimited.
+    ///
+    /// Unset by default in the prod profile, which lets memtable RAM scale
+    /// with the number of collections being written — one collection is one
+    /// column family, each holding up to --write-buffer-size before it
+    /// flushes, with nothing forcing a flush earlier. Set this on any
+    /// instance with more than a handful of write-active collections.
+    #[arg(long, value_parser = parse_size, env = "SOLIDB_MEMTABLE_BUDGET")]
+    memtable_budget: Option<usize>,
+
+    /// Per-collection memtable size (`64MB`, or a byte count). This times the
+    /// number of write-active collections is what --memtable-budget caps.
+    #[arg(long, value_parser = parse_size, env = "SOLIDB_WRITE_BUFFER_SIZE")]
+    write_buffer_size: Option<usize>,
+
+    /// Open-file (table cache) limit; `-1` is unlimited (the prod default).
+    ///
+    /// Each open SST pins its index and filter blocks outside the block cache
+    /// unless --bounded-index-cache is set, so on a large dataset this is what
+    /// puts a ceiling on that memory.
+    #[arg(long, env = "SOLIDB_MAX_OPEN_FILES")]
+    max_open_files: Option<i32>,
+
+    /// Keep index/filter blocks in the bounded block cache instead of pinning
+    /// them per SST. Caps index/filter RAM on large datasets at the price of
+    /// some read latency. Off in prod, on under --dev.
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "true",
+        env = "SOLIDB_BOUNDED_INDEX_CACHE"
+    )]
+    bounded_index_cache: Option<bool>,
+
+    /// Background compaction/flush threads. Defaults to 6 (prod) or 2 (--dev).
+    #[arg(long, env = "SOLIDB_MAX_BACKGROUND_JOBS")]
+    max_background_jobs: Option<i32>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -387,13 +526,38 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
 
     // Select the RocksDB memory/tuning profile BEFORE constructing the engine
     // (the shared block cache and CF options are built lazily on first use).
+    // A preset picks the baseline; the individual flags then override single
+    // knobs on top of it, so bounding memory on a production node does not
+    // require taking the dev profile's smaller cache and fewer background
+    // jobs along with it.
     use solidb::storage::engine::{set_engine_profile, EngineProfile};
-    if args.dev {
-        set_engine_profile(EngineProfile::dev());
-        tracing::info!("Storage profile: dev (low-memory)");
+    let (base, mut storage_profile) = if args.dev {
+        ("dev", EngineProfile::dev())
     } else {
-        set_engine_profile(EngineProfile::prod());
+        ("prod", EngineProfile::prod())
+    };
+    if let Some(bytes) = args.block_cache {
+        storage_profile.block_cache_bytes = bytes;
     }
+    if let Some(bytes) = args.write_buffer_size {
+        storage_profile.write_buffer_size = bytes;
+    }
+    if let Some(bytes) = args.memtable_budget {
+        // `0` is the explicit way to ask for RocksDB's unlimited default,
+        // which is otherwise unreachable once a preset has set a budget.
+        storage_profile.db_write_buffer_size = (bytes > 0).then_some(bytes);
+    }
+    if let Some(n) = args.max_open_files {
+        storage_profile.max_open_files = n;
+    }
+    if let Some(on) = args.bounded_index_cache {
+        storage_profile.cache_index_and_filter_blocks = on;
+    }
+    if let Some(n) = args.max_background_jobs {
+        storage_profile.max_background_jobs = n;
+    }
+    set_engine_profile(storage_profile);
+    log_storage_profile(base, &storage_profile);
 
     let storage = StorageEngine::with_cluster_config(&args.data_dir, cluster_config.clone())?;
     storage.initialize()?;
@@ -1203,6 +1367,56 @@ fn advertised_host(address: &str) -> String {
         }
     }
     value.to_string()
+}
+
+#[cfg(test)]
+mod storage_size_tests {
+    use super::{human_size, parse_size};
+
+    #[test]
+    fn suffixes_are_binary_multiples() {
+        // These values end up in RocksDB options that are written as powers
+        // of two elsewhere in the engine, so `512MB` has to mean the same
+        // thing on the command line as it does in `EngineProfile`.
+        assert_eq!(parse_size("512MB"), Ok(512 * 1024 * 1024));
+        assert_eq!(parse_size("2GB"), Ok(2 * 1024 * 1024 * 1024));
+        assert_eq!(parse_size("64KB"), Ok(64 * 1024));
+        // The short forms and lowercase are the ones people actually type.
+        assert_eq!(parse_size("2g"), parse_size("2GB"));
+        assert_eq!(parse_size("512m"), parse_size("512MB"));
+        assert_eq!(parse_size(" 128mb "), parse_size("128MB"));
+    }
+
+    #[test]
+    fn a_bare_number_is_a_byte_count() {
+        assert_eq!(parse_size("1048576"), Ok(1048576));
+        // Zero is meaningful: it is how --memtable-budget asks for RocksDB's
+        // unlimited default once a preset has already set a budget.
+        assert_eq!(parse_size("0"), Ok(0));
+    }
+
+    #[test]
+    fn nonsense_is_rejected_rather_than_silently_misread() {
+        // A typo in a size must stop the node, not quietly configure a
+        // different amount of memory than the operator wrote.
+        assert!(parse_size("512QB").is_err());
+        assert!(parse_size("MB").is_err());
+        assert!(parse_size("-1").is_err());
+        assert!(parse_size("1.5GB").is_err());
+        assert!(parse_size("").is_err());
+    }
+
+    #[test]
+    fn the_startup_log_renders_what_the_flags_accept() {
+        // The logged profile is the only place an operator can confirm what
+        // the engine took, so it has to round-trip through the parser.
+        for s in ["512MB", "2GB", "128KB", "8MB"] {
+            assert_eq!(human_size(parse_size(s).unwrap()), s);
+        }
+        // Sizes that are not whole units fall back to bytes rather than
+        // rounding to a number that was never configured.
+        assert_eq!(human_size(1_500_000), "1500000B");
+    }
 }
 
 #[cfg(test)]
