@@ -17,15 +17,44 @@ cargo build --release          # Release build
 ./target/release/solidb --port 6745 --data-dir ./data
 
 # Testing
-cargo test --release                          # All tests (592 tests across 54 test files)
 cargo test --release --test <name>            # Specific test file (e.g., cargo test --release --test http_api_test)
 cargo test --release <pattern>                # Tests matching pattern (e.g., cargo test --release sdbql)
 cargo test --release -- --nocapture           # Show test output
+cargo test --release                          # FULL suite — CI's job, not yours. See below.
 
 # Code quality (required before commits)
 cargo fmt -- --check           # Check formatting
 cargo clippy -- -D warnings    # Lint checks
 ```
+
+### Do not run the full suite locally
+
+`cargo test --release` with no filter builds and runs ~50 test binaries in
+release mode. Compiling them alone takes over ten minutes on a warm cache, and
+each integration test opens its own RocksDB instance, so a dev box that is also
+running the server and a fleet of app dev servers goes to swap. Runs get killed
+part-way and tell you nothing.
+
+Run the targeted forms above — the specific `--test <name>`, or a pattern — and
+let the `test` job in CI run the whole thing. The other six CI jobs (`fmt`,
+`clippy`, `docs-sync`, `audit`, `msrv`, `windows-check`) are all cheap enough to
+reproduce locally and are the ones worth checking before a push.
+
+### Two failures that are not your change
+
+Both reproduce on a clean checkout; do not go hunting for them in a diff.
+
+- **`queue::jobs::tests::validate_target_accepts_webhook_only`** fails only on a
+  machine whose resolver wildcards `.test` to `127.0.0.1` (a common local dev
+  setup). The SSRF guard resolves `example.test`, sees loopback, and rejects it.
+  Passes in CI, where the name does not resolve.
+- **`rbac_admin_endpoints_tests`** aborts at process *exit*, after all of its
+  tests report ok — `SIGSEGV` or `std::bad_alloc`/`SIGABRT`, non-deterministic.
+  `PendingCfDrops::spawn_dropper` (`src/storage/pending_drops.rs`) detaches its
+  thread with a bare `std::thread::spawn` and nothing joins it, so a
+  column-family drop can still be inside RocksDB's `PersistRocksDBOptions` while
+  the main thread's static destructors free the global option-type registry.
+  The same race exists in the server's shutdown path.
 
 ## Releasing
 
