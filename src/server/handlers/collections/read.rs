@@ -61,6 +61,22 @@ pub async fn list_collections(
         .unwrap_or_else(|| "local".to_string());
 
     for name in names {
+        // Credential collections never appear in a listing. `database`
+        // enumerates the column families, so `_env` shows up here in any
+        // database that has ever had an env var set — and the storage guard
+        // (SEC-176) then refuses `get_collection` below, whose `?` turned one
+        // unlistable collection into a 403 for the whole request. Visiting the
+        // Env page once was enough to break the collection list for the
+        // database.
+        //
+        // Keyed off `storage::PROTECTED_COLLECTIONS` rather than a second list
+        // here, so a name added there is filtered automatically instead of
+        // reintroducing the 403. `_admins` and `_api_keys` were already
+        // excluded by the check below, but only inside `_system`.
+        if crate::storage::is_protected_collection(&name) {
+            continue;
+        }
+
         // Skip internal physical shards (ending with _s{id})
         let has_shard_suffix = name
             .rfind("_s")

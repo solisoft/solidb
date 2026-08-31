@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixes
+
+* **A database with an `_env` collection could not list its collections.**
+  `GET /_api/database/{db}/collection` enumerates column families, so `_env`
+  appeared in the listing for any database that had ever had an env var set.
+  The credential guard added in 1.0.0 then refused to open it, and the `?` in
+  the listing handler turned one unlistable collection into a `403` for the
+  whole request — for every principal, admin included. Setting a single env
+  var (or opening the admin Env page, which creates the collection) was
+  enough to make the database's collection list unreachable. Credential
+  collections are now skipped in the listing, keyed off the same
+  `PROTECTED_COLLECTIONS` list the guard uses so the two cannot drift.
+  `_env` is no longer listed at all — it was never readable through this API,
+  and the listing publishes a document count and storage stats per entry —
+  and the admin-only `/_api/database/{db}/env` endpoints are unaffected.
+
 ## [1.0.0](https://github.com/solisoft/solidb/compare/v0.34.0...v1.0.0) (2026-08-31)
 
 ### Security

@@ -13,9 +13,9 @@
   <section id="unreleased" class="mb-16 scroll-mt-24">
     <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
-      <p class="text-gray-300 text-sm leading-relaxed">
-        No unreleased changes yet.
-      </p>
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Fixed: a database with an <code>_env</code> collection could not list its collections</strong> &mdash; <code class="text-cyan-400">GET /_api/database/&#123;db&#125;/collection</code> enumerates column families, so <code>_env</code> appeared in the listing for any database that had ever had an env var set. The credential guard added in 1.0.0 then refused to open it, and the listing handler propagated that as a <code>403</code> for the <em>whole</em> request &mdash; for every principal, admin included. Setting one env var, or opening the admin Env page (which creates the collection), was enough to make the database's collection list unreachable. Credential collections are now skipped in the listing, keyed off the same protected-collection list the guard uses so the two cannot drift. <code>_env</code> is no longer listed at all: it was never readable through this API, and the listing publishes a document count and storage stats per entry. The admin-only <code class="text-cyan-400">/_api/database/&#123;db&#125;/env</code> endpoints are unaffected.</li>
+      </ul>
     </div>
   </section>
 

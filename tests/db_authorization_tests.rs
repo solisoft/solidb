@@ -980,3 +980,78 @@ async fn credential_collections_are_unreachable_via_transactions() {
         body
     );
 }
+
+#[tokio::test]
+async fn credential_collections_do_not_break_the_collection_listing() {
+    let app = create_app();
+    setup_db(&app, "envlist").await;
+
+    // Before the env var exists the listing works, so the assertion below is
+    // about `_env` specifically and not about the endpoint being broken.
+    let (status, body) = send(
+        &app.router,
+        "GET",
+        "/_api/database/envlist/collection",
+        &app.viewer,
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "listing before any env var: {}",
+        body
+    );
+
+    seed_env_secret(&app, "envlist", "OPENAI_API_KEY", "sk-secret").await;
+
+    // Setting one env var creates the `_env` column family, which
+    // `Database::list_collections` enumerates like any other. The guard then
+    // refused `get_collection`, and the `?` in the listing handler turned that
+    // into a 403 for the *whole* request: one unlistable collection made the
+    // database's collection list unreachable, for every principal including
+    // admin. Visiting the Env page once was enough to trigger it.
+    for (label, token) in [
+        ("viewer", &app.viewer),
+        ("editor", &app.editor),
+        ("admin", &app.admin),
+    ] {
+        let (status, body) = send(
+            &app.router,
+            "GET",
+            "/_api/database/envlist/collection",
+            token,
+            None,
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "listing 403'd for {} because _env exists: {}",
+            label,
+            body
+        );
+
+        // Hidden, not merely non-fatal: the listing carries a document count
+        // and storage stats per collection, and `_env` is not readable through
+        // this API at all.
+        let names: Vec<&str> = body["collections"]
+            .as_array()
+            .expect("collections array")
+            .iter()
+            .filter_map(|c| c["name"].as_str())
+            .collect();
+        assert!(
+            !names.contains(&"_env"),
+            "_env listed for {}: {:?}",
+            label,
+            names
+        );
+        assert!(
+            !body.to_string().contains("sk-secret"),
+            "secret present for {}: {}",
+            label,
+            body
+        );
+    }
+}
