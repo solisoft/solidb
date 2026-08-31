@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.0](https://github.com/solisoft/solidb/compare/v0.34.0...v1.0.0) (2026-08-31)
+
 ### Security
 
 * **Native HTTPS termination** with `--tls-cert` / `--tls-key`. Previously
@@ -61,8 +63,6 @@
   `driver_command_decode` (MessagePack command decoding off the TCP port),
   and `restore_jsonl_line` (the JSONL document parsing `solidb-restore`
   performs). See `fuzz/`; run with `cargo +nightly fuzz run <target>`.
-
-### Features
 
 * **Replication TCP fails closed without a keyfile.** The HTTP cluster bus
   already required a secret (0.34.0); the multiplexed sync socket still

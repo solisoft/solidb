@@ -13,6 +13,19 @@
   <section id="unreleased" class="mb-16 scroll-mt-24">
     <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <p class="text-gray-300 text-sm leading-relaxed">
+        No unreleased changes yet.
+      </p>
+    </div>
+  </section>
+
+  <!-- 1.0.0 -->
+  <section id="v1-0-0" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v1.0.0</h2>
+      <span class="text-sm font-medium text-gray-400">August 31, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <p class="text-gray-300 text-sm leading-relaxed mb-4">
         Security hardening, SDBQL function completeness, and <strong class="text-white">one product breaking change:</strong> the client-facing job and cron queue is removed. Application background jobs now live in the Soli framework. Also in this release, the memory and idle-CPU work described in the last three entries below. <strong class="text-white">Triggers keep working</strong>, on the same machinery as before. Also breaking if you relied on them: default bind is loopback, replication TCP requires a keyfile, <code>LENGTH</code> on a string is character count (not a collection count), installing Lua requires Admin, and API keys must declare a role.
       </p>

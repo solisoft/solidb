@@ -4109,7 +4109,7 @@ dependencies = [
 
 [[package]]
 name = "sdbql-core"
-version = "0.10.1"
+version = "1.0.0"
 dependencies = [
  "base64",
  "chrono",
@@ -4410,7 +4410,7 @@ dependencies = [
 
 [[package]]
 name = "solidb"
-version = "0.34.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -4503,7 +4503,7 @@ dependencies = [
 
 [[package]]
 name = "solidb-benchmarks"
-version = "0.9.1"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "rayon",
@@ -4517,7 +4517,7 @@ dependencies = [
 
 [[package]]
 name = "solidb-client"
-version = "0.9.1"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "dirs",
