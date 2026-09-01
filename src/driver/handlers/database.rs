@@ -47,7 +47,16 @@ pub fn handle_delete_database(handler: &DriverHandler, name: String) -> Response
 pub fn handle_list_collections(handler: &DriverHandler, database: String) -> Response {
     match handler.storage.get_database(&database) {
         Ok(db) => {
-            let collections = db.list_collections();
+            // Credential collections are hidden here for the same reason the
+            // HTTP listing hides them (SEC-176): a driver client cannot read
+            // `_env`, `_admins` or `_api_keys` — every read path refuses the
+            // name — so listing them only discloses that a database holds
+            // provider keys. The two listings would otherwise disagree.
+            let collections: Vec<String> = db
+                .list_collections()
+                .into_iter()
+                .filter(|name| !crate::storage::is_protected_collection(name))
+                .collect();
             Response::ok(serde_json::json!(collections))
         }
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
