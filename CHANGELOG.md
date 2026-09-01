@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.2](https://github.com/solisoft/solidb/compare/v1.0.1...v1.0.2) (2026-09-01)
+
 ### Features
 
 * **`&&` now works as `AND` in SDBQL.** It used to be a syntax error: the lexer

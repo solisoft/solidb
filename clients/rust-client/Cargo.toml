@@ -1,6 +1,6 @@
 [package]
 name = "solidb-client"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 description = "Official Rust client for SoliDB database with HTTP and TCP transport"
 license = "MIT"
@@ -39,7 +39,7 @@ uuid = { version = "1.7", features = ["v4", "serde"] }
 dirs = "5.0"
 tracing = "0.1"
 # Local query execution
-sdbql-core = { path = "../../sdbql-core", version = "1.0.1" }
+sdbql-core = { path = "../../sdbql-core", version = "1.0.2" }
 # UniFFI for mobile bindings (optional)
 uniffi = { version = "0.28", features = ["cli", "tokio"], optional = true }
 
