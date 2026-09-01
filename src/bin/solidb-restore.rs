@@ -1,10 +1,11 @@
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
 
 /// Records that named no target database/collection and could not be routed.
 static SKIPPED_UNROUTABLE: AtomicU64 = AtomicU64::new(0);
@@ -117,6 +118,97 @@ fn sanitize_columnar_columns(columns: &Value) -> Value {
     }
 }
 
+/// Records dropped because their collection matched `--exclude-collection`.
+static EXCLUDED_RECORDS: AtomicU64 = AtomicU64::new(0);
+
+/// Excluded collection names already announced, so the note prints once each
+/// rather than once per record.
+static ANNOUNCED_EXCLUSIONS: LazyLock<Mutex<BTreeSet<String>>> =
+    LazyLock::new(|| Mutex::new(BTreeSet::new()));
+
+/// Match a collection name against one `--exclude-collection` pattern.
+///
+/// Exact by default; `*` matches any run of characters, so `events_*` covers a
+/// family of collections and `*` excludes everything. Deliberately not a full
+/// glob — no `?`, no character classes — because a collection name is a plain
+/// identifier and anything richer invites a pattern that quietly matches more
+/// than the operator meant.
+fn glob_match(pattern: &str, name: &str) -> bool {
+    if !pattern.contains('*') {
+        return pattern == name;
+    }
+    let parts: Vec<&str> = pattern.split('*').collect();
+    let Some(mut rest) = name.strip_prefix(parts[0]) else {
+        return false;
+    };
+    let last = parts.len() - 1;
+    for (i, part) in parts.iter().enumerate().skip(1) {
+        // Empty part: a trailing `*`, or two in a row. Both match anything left.
+        if part.is_empty() {
+            continue;
+        }
+        if i == last {
+            return rest.ends_with(part);
+        }
+        match rest.find(part) {
+            Some(idx) => rest = &rest[idx + part.len()..],
+            None => return false,
+        }
+    }
+    true
+}
+
+/// Resolve a record's target, dropping it if `--exclude-collection` matches.
+///
+/// The name matched is the one the *dump* carries, falling back to the
+/// resolved target when the record names no collection of its own. That way
+/// `--exclude-collection events` filters the dump's `events` records even when
+/// `-c` is rewriting everything into one collection — the operator is
+/// reasoning about what is in the file, not about what it will be renamed to.
+///
+/// Exclusion is not a failure: unlike an unroutable record it does not warn
+/// per record and does not affect the exit status, because dropping these is
+/// exactly what was asked for.
+fn route(record: &Value, args: &Args) -> Option<(String, String)> {
+    let (db, coll) = match resolve_target(record, args) {
+        Some(t) => t,
+        None => {
+            note_unroutable();
+            return None;
+        }
+    };
+
+    if args.exclude_collection.is_empty() {
+        return Some((db, coll));
+    }
+
+    let matched_against = record
+        .get("_collection")
+        .and_then(|v| v.as_str())
+        .unwrap_or(coll.as_str());
+
+    let Some(pattern) = args
+        .exclude_collection
+        .iter()
+        .find(|p| glob_match(p, matched_against))
+    else {
+        return Some((db, coll));
+    };
+
+    EXCLUDED_RECORDS.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut announced) = ANNOUNCED_EXCLUSIONS.lock() {
+        if announced.insert(matched_against.to_string()) {
+            eprintln!(
+                "  {} excluding {} (matched --exclude-collection {})",
+                "Note:".yellow().bold(),
+                matched_against.cyan(),
+                pattern
+            );
+        }
+    }
+    None
+}
+
 /// Report a record that carries no routing metadata.
 fn note_unroutable() {
     let seen = SKIPPED_UNROUTABLE.fetch_add(1, Ordering::Relaxed);
@@ -160,6 +252,17 @@ struct Args {
     /// Override collection name (routes every record into this collection)
     #[arg(short = 'c', long)]
     collection: Option<String>,
+
+    /// Skip these collections. Repeatable, and comma-separated values are
+    /// accepted: `--exclude-collection a,b --exclude-collection c`.
+    ///
+    /// `*` matches any run of characters, so `--exclude-collection 'events_*'`
+    /// drops a whole family (quote it so the shell does not expand it first).
+    /// Matched against the collection name in the dump, so it still selects
+    /// the right records when -c is rewriting the target. Excluded records are
+    /// counted and reported, and do not affect the exit status.
+    #[arg(long = "exclude-collection", value_delimiter = ',')]
+    exclude_collection: Vec<String>,
 
     /// Create database if it doesn't exist
     #[arg(long)]
@@ -413,8 +516,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         }
                         Some("columnar_row") => {
-                            let Some(target) = resolve_target(&doc, &args) else {
-                                note_unroutable();
+                            let Some(target) = route(&doc, &args) else {
                                 buffer.clear();
                                 continue;
                             };
@@ -449,8 +551,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // Envelope: routing on the outer record, payload in `doc`.
                             // Do not merge routing into the payload — user documents
                             // may legitimately store fields named `_database` etc.
-                            let Some((db, coll)) = resolve_target(&doc, &args) else {
-                                note_unroutable();
+                            let Some((db, coll)) = route(&doc, &args) else {
                                 buffer.clear();
                                 continue;
                             };
@@ -674,6 +775,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             skipped.to_string().yellow()
         );
     }
+    let excluded = EXCLUDED_RECORDS.load(Ordering::Relaxed);
+    if excluded > 0 {
+        let names = ANNOUNCED_EXCLUSIONS
+            .lock()
+            .map(|n| n.iter().cloned().collect::<Vec<_>>().join(", "))
+            .unwrap_or_default();
+        eprintln!(
+            "  → {} items excluded ({})",
+            excluded.to_string().yellow(),
+            names
+        );
+    } else if !args.exclude_collection.is_empty() {
+        // A typo'd pattern silently restores everything, which is the opposite
+        // of what was asked for. Say so rather than reporting a clean run.
+        eprintln!(
+            "  {} --exclude-collection {:?} matched nothing in this dump",
+            "Warning:".yellow().bold(),
+            args.exclude_collection
+        );
+    }
 
     if total_failed > 0 {
         return Err(format!("Restore finished with {} failed item(s)", total_failed).into());
@@ -706,8 +827,7 @@ async fn process_columnar_record(
     initialized_cols: &mut HashMap<String, bool>,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let Some((db, coll)) = resolve_target(&record, args) else {
-        note_unroutable();
+    let Some((db, coll)) = route(&record, args) else {
         return Ok(());
     };
 
@@ -765,8 +885,7 @@ async fn process_columnar_index_record(
     total_imported: &mut u64,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let Some((db, coll)) = resolve_target(&record, args) else {
-        note_unroutable();
+    let Some((db, coll)) = route(&record, args) else {
         return Ok(());
     };
 
@@ -862,8 +981,7 @@ async fn process_collection_record(
     base_url: &str,
     initialized_cols: &mut HashMap<String, bool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let Some((db, coll)) = resolve_target(&record, args) else {
-        note_unroutable();
+    let Some((db, coll)) = route(&record, args) else {
         return Ok(());
     };
 
@@ -937,8 +1055,7 @@ async fn process_index_record(
     total_imported: &mut u64,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let Some((db, coll)) = resolve_target(&record, args) else {
-        note_unroutable();
+    let Some((db, coll)) = route(&record, args) else {
         return Ok(());
     };
 
@@ -1076,8 +1193,9 @@ async fn process_blob_chunk(
     total_imported: &mut u64,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let Some((db, coll)) = resolve_target(&header_doc, args) else {
-        note_unroutable();
+    // The chunk's payload bytes were already consumed by the caller, so the
+    // stream stays framed whether or not this record is imported.
+    let Some((db, coll)) = route(&header_doc, args) else {
         return Ok(());
     };
 
@@ -1166,8 +1284,7 @@ async fn process_doc(
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Legacy flat records: routing fields live on the same object as user data.
-    let Some((db, coll)) = resolve_target(&doc, args) else {
-        note_unroutable();
+    let Some((db, coll)) = route(&doc, args) else {
         return Ok(());
     };
     let collection_type = doc
@@ -1462,6 +1579,7 @@ mod tests {
             input: "dump.jsonl".to_string(),
             database: database.map(String::from),
             collection: collection.map(String::from),
+            exclude_collection: Vec::new(),
             create_database: false,
             drop: false,
             overwrite,
@@ -1469,6 +1587,12 @@ mod tests {
             user: None,
             password: None,
         }
+    }
+
+    fn args_excluding(patterns: &[&str]) -> Args {
+        let mut a = args(None, None, false, false);
+        a.exclude_collection = patterns.iter().map(|s| s.to_string()).collect();
+        a
     }
 
     #[test]
@@ -1542,6 +1666,87 @@ mod tests {
         // data_type promoted to type for create endpoint
         assert_eq!(arr[1]["type"], "timestamp");
         assert!(arr[1].get("data_type").is_none());
+    }
+
+    #[test]
+    fn glob_match_is_exact_without_a_star() {
+        assert!(glob_match("users", "users"));
+        assert!(!glob_match("users", "users2"));
+        assert!(!glob_match("users", "Users"));
+        assert!(!glob_match("user", "users"));
+    }
+
+    #[test]
+    fn glob_match_handles_stars() {
+        assert!(glob_match("events_*", "events_2024"));
+        assert!(glob_match("events_*", "events_"));
+        assert!(!glob_match("events_*", "events"));
+        assert!(glob_match("*_2024", "events_2024"));
+        assert!(!glob_match("*_2024", "events_2025"));
+        assert!(glob_match("*", "anything"));
+        assert!(glob_match("*", ""));
+        assert!(glob_match("a*c", "abc"));
+        // `*` may match nothing at all.
+        assert!(glob_match("a*b", "ab"));
+        assert!(glob_match("a*b*c", "axbyc"));
+        assert!(!glob_match("a*b*c", "axbyd"));
+        assert!(!glob_match("a*b", "xab"));
+    }
+
+    #[test]
+    fn excluded_collections_are_dropped_without_being_unroutable() {
+        let before = SKIPPED_UNROUTABLE.load(Ordering::Relaxed);
+
+        let rec = json!({"_database": "prod", "_collection": "events"});
+        assert_eq!(route(&rec, &args_excluding(&["events"])), None);
+
+        // Dropping an excluded record must not count as unroutable — that
+        // counter fails the process unless --allow-skipped is passed.
+        assert_eq!(SKIPPED_UNROUTABLE.load(Ordering::Relaxed), before);
+
+        // Anything not matched still routes.
+        let rec = json!({"_database": "prod", "_collection": "users"});
+        assert_eq!(
+            route(&rec, &args_excluding(&["events"])),
+            Some(("prod".to_string(), "users".to_string()))
+        );
+    }
+
+    #[test]
+    fn exclusion_matches_the_dump_name_not_the_c_override() {
+        let rec = json!({"_database": "prod", "_collection": "events"});
+
+        // -c rewrites every record into `merged`, but the operator excluded
+        // `events` — the name in the file — so this record still goes.
+        let mut a = args(None, Some("merged"), false, false);
+        a.exclude_collection = vec!["events".to_string()];
+        assert_eq!(route(&rec, &a), None);
+
+        // And a record from another collection survives the same run.
+        let other = json!({"_database": "prod", "_collection": "users"});
+        assert_eq!(
+            route(&other, &a),
+            Some(("prod".to_string(), "merged".to_string()))
+        );
+    }
+
+    #[test]
+    fn exclusion_falls_back_to_the_resolved_name() {
+        // A record with no `_collection` of its own is matched on the target
+        // the flags gave it, otherwise -c records could never be excluded.
+        let rec = json!({"_key": "1"});
+        let mut a = args(Some("db"), Some("scratch"), false, false);
+        a.exclude_collection = vec!["scratch".to_string()];
+        assert_eq!(route(&rec, &a), None);
+    }
+
+    #[test]
+    fn no_exclusions_configured_routes_everything() {
+        let rec = json!({"_database": "prod", "_collection": "events"});
+        assert_eq!(
+            route(&rec, &args(None, None, false, false)),
+            Some(("prod".to_string(), "events".to_string()))
+        );
     }
 
     #[test]

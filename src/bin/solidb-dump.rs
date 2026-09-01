@@ -86,9 +86,20 @@ struct Args {
     #[arg(long, default_value = "http")]
     scheme: String,
 
-    /// Database name
-    #[arg(short, long)]
-    database: String,
+    /// Database name. Required unless --all-databases.
+    #[arg(short, long, required_unless_present = "all_databases")]
+    database: Option<String>,
+
+    /// Dump every database the credentials can read into one stream.
+    ///
+    /// Every record carries its own `_database`, so the combined dump restores
+    /// to the right place without -d. The server only lists databases the
+    /// caller can read, so this dumps exactly those — including `_system`,
+    /// whose credential collections are skipped like anywhere else. Restore
+    /// with `solidb-restore --exclude-collection` if you do not want all of it
+    /// back.
+    #[arg(long, conflicts_with_all = ["database", "collection"])]
+    all_databases: bool,
 
     /// Collection name (if not specified, dumps all collections)
     #[arg(short, long)]
@@ -181,10 +192,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(io::stdout())
     };
 
+    // `--all-databases` conflicts with both -d and -c (enforced by clap), so
+    // exactly one of these three shapes applies.
+    if args.all_databases {
+        let databases = fetch_databases(&client, &base_url).await?;
+        if databases.is_empty() {
+            return Err("--all-databases: the server listed no readable databases".into());
+        }
+        eprintln!(
+            "{} {} {}",
+            "Found".green(),
+            databases.len().to_string().yellow(),
+            "database(s):".green()
+        );
+        for name in &databases {
+            eprintln!("  {}", name.cyan());
+        }
+
+        for database in &databases {
+            // Abort rather than warn-and-continue: a dump missing a whole
+            // database is not something a DR pipeline should mistake for a
+            // successful run, and the exit code alone cannot say which.
+            let collections = fetch_collections(&client, &base_url, database)
+                .await
+                .map_err(|e| format!("database '{}': {}", database, e))?;
+            dump_database_jsonl(&client, &base_url, database, &mut output, &collections).await?;
+        }
+
+        if let Some(output) = &args.output {
+            eprintln!("✓ Dump written to {}", output);
+        }
+        return finish();
+    }
+
+    // Present whenever --all-databases is not: clap enforces
+    // `required_unless_present`.
+    let database = args
+        .database
+        .clone()
+        .ok_or("-d/--database is required unless --all-databases is given")?;
+
     // The collection list is the single source of truth for per-collection
     // metadata (type, count, shard config). Fetch it once: the previous code
     // re-fetched it for every collection, which is O(n²) requests.
-    let collections = fetch_collections(&client, &base_url, &args.database).await?;
+    let collections = fetch_collections(&client, &base_url, &database).await?;
 
     if let Some(collection_name) = &args.collection {
         // Asked for a credential collection by name: say why rather than
@@ -208,7 +259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 dump_collection_jsonl(
                     &client,
                     &base_url,
-                    &args.database,
+                    &database,
                     collection_name,
                     &mut output,
                     info,
@@ -219,7 +270,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 dump_columnar_collection(
                     &client,
                     &base_url,
-                    &args.database,
+                    &database,
                     collection_name,
                     &mut output,
                 )
@@ -228,20 +279,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     } else {
-        dump_database_jsonl(
-            &client,
-            &base_url,
-            &args.database,
-            &mut output,
-            &collections,
-        )
-        .await?;
+        dump_database_jsonl(&client, &base_url, &database, &mut output, &collections).await?;
     }
 
     if let Some(output) = &args.output {
         eprintln!("✓ Dump written to {}", output);
     }
 
+    finish()
+}
+
+/// Exit status for a completed dump.
+///
+/// Warnings (a failed index GET, a count mismatch) do not stop the dump, but
+/// they mean the output may be incomplete, so they must not exit 0 — a DR
+/// pipeline reads the status, not the log.
+fn finish() -> Result<(), Box<dyn std::error::Error>> {
     let warnings = DUMP_WARNINGS.load(Ordering::Relaxed);
     if warnings > 0 {
         return Err(format!(
@@ -250,7 +303,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
-
     Ok(())
 }
 
@@ -297,6 +349,31 @@ async fn get_json_or_warn(client: &reqwest::Client, url: &str, what: &str) -> Op
             None
         }
     }
+}
+
+/// List the databases the credentials can read.
+///
+/// `GET /_api/databases` already filters by permission, so `--all-databases`
+/// dumps exactly what this principal is allowed to see rather than failing
+/// part-way through a database it cannot read.
+async fn fetch_databases(
+    client: &reqwest::Client,
+    base_url: &str,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let url = format!("{}/_api/databases", base_url);
+    let response = client.get(&url).send().await?;
+
+    if !response.status().is_success() {
+        return Err(format!("Failed to list databases: {}", response.status()).into());
+    }
+
+    let body: Value = response.json().await?;
+    Ok(body["databases"]
+        .as_array()
+        .ok_or("Invalid databases response: no `databases` array")?
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect())
 }
 
 async fn fetch_collections(

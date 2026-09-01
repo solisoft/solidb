@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Features
+
+* **`solidb-dump --all-databases`** dumps every database the credentials can
+  read into one stream. Every record already carried its own `_database`, so
+  the combined dump restores to the right place with no `-d`; what was missing
+  was a way to ask for all of them without scripting a loop over
+  `GET /_api/databases`. That endpoint filters by permission, so this captures
+  exactly the databases the principal may read — `_system` included, with its
+  credential collections skipped as everywhere else. Conflicts with `-d` and
+  `-c`. A database that cannot be listed aborts the dump rather than leaving a
+  silently partial file.
+* **`solidb-restore --exclude-collection`** skips collections on the way in.
+  Repeatable, comma-separated values accepted, and `*` matches any run of
+  characters (`--exclude-collection 'events_*'`). The pattern is matched
+  against the collection name *in the dump*, so it still selects the right
+  records when `-c` is rewriting the target. Every record type is filtered —
+  documents, the collection and index declarations, columnar rows and blob
+  chunks — so an excluded collection is not created at all; blob framing stays
+  intact because the chunk payload is consumed before the record is dropped.
+  Excluded records are counted and named in the summary and do not affect the
+  exit status, unlike an unroutable record. A pattern that matches nothing
+  warns rather than reporting a clean run. Pairs with `--all-databases`:
+  `--exclude-collection '_*'` restores the user data out of a whole-instance
+  dump without replaying `_system` bookkeeping into a live server.
+
 ### Fixes
 
 * **A database with an `_env` collection could not list its collections.**
@@ -17,6 +42,11 @@
   `_env` is no longer listed at all — it was never readable through this API,
   and the listing publishes a document count and storage stats per entry —
   and the admin-only `/_api/database/{db}/env` endpoints are unaffected.
+* **The driver protocol's `list_collections` hid credential collections too.**
+  It returned the raw column-family list, so `_env` appeared over the binary
+  protocol while the HTTP listing hid it. Names only — every driver read path
+  already refused them — but the two listings disagreed, and listing `_env`
+  discloses that a database holds provider keys.
 
 ## [1.0.0](https://github.com/solisoft/solidb/compare/v0.34.0...v1.0.0) (2026-08-31)
 

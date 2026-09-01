@@ -440,7 +440,8 @@ end
           <div class="p-8">
             <h3 class="text-lg font-bold text-white mb-3 flex items-center"><span class="bg-indigo-500/20 text-indigo-300 text-xs px-2 py-1 rounded border border-indigo-500/30 mr-2">USAGE</span></h3>
             <div class="bg-gray-950 rounded-lg p-4 mb-8 font-mono text-sm overflow-x-auto border border-white/10">
-              <code class="text-green-400">solidb-dump [OPTIONS] --database &lt;DATABASE&gt;</code>
+              <code class="text-green-400">solidb-dump [OPTIONS] --database &lt;DATABASE&gt;</code><br>
+              <code class="text-green-400">solidb-dump [OPTIONS] --all-databases</code>
             </div>
 
             <h3 class="text-lg font-bold text-white mb-4">Options</h3>
@@ -456,8 +457,13 @@ end
                 <tbody class="divide-y divide-white/5">
                   <tr>
                     <td class="px-4 py-3 font-mono text-indigo-300">-d, --database</td>
-                    <td class="px-4 py-3">Database name (required)</td>
+                    <td class="px-4 py-3">Database name. Required unless <code>--all-databases</code>.</td>
                     <td class="px-4 py-3">-</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-indigo-300">--all-databases</td>
+                    <td class="px-4 py-3">Dump every database the credentials can read into one stream. Conflicts with <code>-d</code> and <code>-c</code>.</td>
+                    <td class="px-4 py-3">off</td>
                   </tr>
                   <tr>
                     <td class="px-4 py-3 font-mono text-indigo-300">-c, --collection</td>
@@ -507,6 +513,18 @@ end
                    <span class="text-green-400">solidb-dump</span> -d mydb -c users | gzip > users.jsonl.gz
                  </div>
               </div>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">Dump every database, restore the user data only</div>
+                 <div class="p-4 font-mono text-sm text-gray-300">
+                   <span class="text-green-400">solidb-dump</span> --all-databases -o all.jsonl<br>
+                   <span class="text-green-400">solidb-restore</span> -i all.jsonl --create-database --exclude-collection <span class="text-yellow-300">'_*'</span>
+                 </div>
+              </div>
+            </div>
+
+            <div class="mt-6 bg-blue-900/10 border border-blue-500/20 rounded-xl p-4 flex items-start">
+               <i class="fas fa-layer-group text-blue-400 mt-1 mr-3"></i>
+               <p class="text-sm text-gray-300"><strong><code class="text-green-400">--all-databases</code> writes one stream.</strong> Every record already carries its own <code>_database</code>, so the combined dump restores to the right place with no <code>-d</code>. The server only lists databases the caller can read, so this captures exactly those — <code>_system</code> included, with its credential collections skipped like anywhere else. Restoring <code>_system</code> into a live server collides with the bookkeeping already there, so pair it with <code>--exclude-collection '_*'</code> unless you specifically want roles and config back.</p>
             </div>
             
             <div class="mt-6 bg-blue-900/10 border border-blue-500/20 rounded-xl p-4 flex items-start">
@@ -620,6 +638,11 @@ end
                     <td class="px-4 py-3">Override collection name</td>
                     <td class="px-4 py-3">From dump</td>
                   </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-purple-300">--exclude-collection</td>
+                    <td class="px-4 py-3">Skip these collections. Repeatable, comma-separated values accepted, and <code>*</code> matches any run of characters.</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
                    <tr>
                     <td class="px-4 py-3 font-mono text-purple-300">--create-database</td>
                     <td class="px-4 py-3">Create database if missing</td>
@@ -648,6 +671,18 @@ end
                    <span class="text-green-400">solidb-restore</span> -i backup.jsonl --database newdb --create-database
                  </div>
               </div>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">Restore everything except some collections</div>
+                 <div class="p-4 font-mono text-sm text-gray-300">
+                   <span class="text-green-400">solidb-restore</span> -i backup.jsonl --exclude-collection audit_log,sessions<br>
+                   <span class="text-green-400">solidb-restore</span> -i backup.jsonl --exclude-collection <span class="text-yellow-300">'events_*'</span>
+                 </div>
+              </div>
+            </div>
+
+            <div class="mt-6 bg-blue-900/10 border border-blue-500/20 rounded-xl p-4 flex items-start">
+               <i class="fas fa-filter text-blue-400 mt-1 mr-3"></i>
+               <p class="text-sm text-gray-300"><strong>What <code class="text-green-400">--exclude-collection</code> matches.</strong> The collection name <em>in the dump</em>, so it still selects the right records when <code>--collection</code> is rewriting the target. Quote patterns containing <code>*</code> so the shell does not expand them first. Every record type is filtered — documents, the collection and index declarations, columnar rows and blob chunks — so an excluded collection is not created at all. Excluded records are counted and named in the summary and do not affect the exit status; a pattern that matches nothing warns rather than passing silently.</p>
             </div>
           </div>
         </div>

@@ -23,13 +23,15 @@ Export SoliDB databases or collections to JSON format.
 
 ```bash
 solidb-dump [OPTIONS] --database <DATABASE>
+solidb-dump [OPTIONS] --all-databases
 ```
 
 ### Options
 
 | Option                      | Short | Description                                               | Default     |
 | --------------------------- | ----- | --------------------------------------------------------- | ----------- |
-| `--database <DATABASE>`     | `-d`  | Database name (required)                                  |             |
+| `--database <DATABASE>`     | `-d`  | Database name. Required unless `--all-databases`.         |             |
+| `--all-databases`           |       | Dump every readable database into one stream. Conflicts with `-d` and `-c`. | off |
 | `--collection <COLLECTION>` | `-c`  | Collection name (optional, dumps all if not specified)    |             |
 | `--output <FILE>`           | `-o`  | Output file (optional, writes to stdout if not specified) |             |
 | `--host <HOST>`             | `-H`  | Database host                                             | `localhost` |
@@ -60,6 +62,24 @@ solidb-dump -d mydb -c users | gzip > users.json.gz
 
 ```bash
 solidb-dump -H prod-server.com -P 6745 -d mydb -o production-backup.json
+```
+
+**Dump every database at once:**
+
+```bash
+solidb-dump --all-databases -o all.jsonl
+```
+
+Every record carries its own `_database`, so the combined dump restores to the
+right place with no `-d`. The server only lists databases the caller can read,
+so this captures exactly those — `_system` included, with its credential
+collections (`_env`, `_admins`, `_api_keys`) skipped as they are everywhere
+else. Restoring `_system` into a live server collides with the bookkeeping
+already there, so pair it with an exclusion unless you want roles and config
+back:
+
+```bash
+solidb-restore -i all.jsonl --create-database --exclude-collection '_*'
 ```
 
 ### Output Format
@@ -113,6 +133,7 @@ solidb-restore [OPTIONS] --input <FILE>
 | `--port <PORT>`             | `-P`  | Target database port                              | `6745`              |
 | `--database <DATABASE>`     |       | Override database name                            | Uses name from dump |
 | `--collection <COLLECTION>` |       | Override collection name (single collection only) | Uses name from dump |
+| `--exclude-collection <PATTERN>` |  | Skip these collections. Repeatable, comma-separated values accepted, `*` matches any run of characters. | |
 | `--create-database`         |       | Create database if it doesn't exist               |                     |
 | `--drop`                    |       | Drop existing collection before restore           |                     |
 
@@ -123,6 +144,22 @@ solidb-restore [OPTIONS] --input <FILE>
 ```bash
 solidb-restore -i backup.json --create-database
 ```
+
+**Restore everything except some collections:**
+
+```bash
+solidb-restore -i backup.jsonl --exclude-collection audit_log,sessions
+solidb-restore -i backup.jsonl --exclude-collection 'events_*'
+```
+
+The pattern is matched against the collection name *in the dump*, so it still
+selects the right records when `--collection` is rewriting the target. Quote
+patterns containing `*` so the shell does not expand them first. Every record
+type is filtered — documents, the collection and index declarations, columnar
+rows and blob chunks — so an excluded collection is not created at all.
+Excluded records are counted and named in the summary and do not affect the
+exit status; a pattern that matches nothing warns rather than passing
+silently.
 
 **Restore to different database:**
 
