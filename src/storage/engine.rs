@@ -155,6 +155,12 @@ pub struct StorageEngine {
     transaction_manager: RwLock<Option<Arc<TransactionManager>>>,
     /// Column families scheduled for background drop (see `pending_drops`)
     pending_cf_drops: Arc<PendingCfDrops>,
+    /// Cloned with the engine, and by nothing else. `Drop` runs once per
+    /// clone, so this is how the *last* live handle recognises itself and
+    /// takes on teardown work that must happen exactly once — joining the
+    /// background CF droppers. `Arc<PendingCfDrops>`'s own count cannot serve:
+    /// the dropper threads and every `Database` hold one too.
+    liveness: Arc<()>,
 }
 
 impl Clone for StorageEngine {
@@ -170,6 +176,7 @@ impl Clone for StorageEngine {
                 self.transaction_manager.read().ok().and_then(|t| t.clone()),
             ),
             pending_cf_drops: self.pending_cf_drops.clone(),
+            liveness: Arc::clone(&self.liveness),
         }
     }
 }
@@ -283,6 +290,7 @@ impl StorageEngine {
             cluster_config: None,
             transaction_manager: RwLock::new(None),
             pending_cf_drops: PendingCfDrops::new(),
+            liveness: Arc::new(()),
         })
     }
 
@@ -986,6 +994,11 @@ impl StorageEngine {
 
 impl Drop for StorageEngine {
     fn drop(&mut self) {
+        // Only the last live handle tears down. `StorageEngine` is Clone and
+        // this runs for every clone, so without the check a clone going out of
+        // scope mid-request would block on the join below.
+        let last = Arc::strong_count(&self.liveness) == 1;
+
         // Clear collections and databases before RocksDB is dropped
         // This ensures proper cleanup order and avoids pthread mutex issues
         self.collections.clear();
@@ -993,6 +1006,18 @@ impl Drop for StorageEngine {
         if let Ok(mut tm) = self.transaction_manager.write() {
             *tm = None;
         }
+
+        if last {
+            // Before the flush and before this handle's `Arc<DB>` goes away:
+            // a background dropper still inside `drop_cf` races the static
+            // destructors that free RocksDB's global option-type registry, and
+            // the process aborts with SIGSEGV or `std::bad_alloc` *after* all
+            // its work reported success. This is what made
+            // `rbac_admin_endpoints_tests` fail at process exit with every test
+            // green, and it was the same race on the server's shutdown path.
+            self.pending_cf_drops.join_droppers();
+        }
+
         // Flush RocksDB before drop (DB is thread-safe, direct access is safe)
         let _ = self.db.flush();
     }

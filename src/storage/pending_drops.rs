@@ -21,7 +21,8 @@
 //! fresh. If the background dropper is mid-`drop_cf` on that exact CF
 //! (`Dropping`), the creator waits for it to finish instead.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -57,6 +58,14 @@ pub enum Claim {
 #[derive(Default)]
 pub struct PendingCfDrops {
     states: DashMap<String, DropState>,
+    /// Handles for the threads spawned by [`Self::spawn_dropper`].
+    ///
+    /// These used to be dropped on the floor. A dropper still inside RocksDB's
+    /// OPTIONS rewrite when the process exits races the static destructors that
+    /// free RocksDB's global option-type registry, and the process dies with
+    /// SIGSEGV or `std::bad_alloc`/SIGABRT *after* every test has reported ok.
+    /// Keeping the handles lets [`Self::join_droppers`] close that window.
+    droppers: Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl PendingCfDrops {
@@ -191,7 +200,10 @@ impl PendingCfDrops {
         if cfs.is_empty() {
             return;
         }
-        std::thread::spawn(move || {
+        // The closure takes ownership of `registry`; keep a handle so the
+        // JoinHandle can be filed against the same registry afterwards.
+        let registry_for_handle = Arc::clone(&registry);
+        let handle = std::thread::spawn(move || {
             let start = Instant::now();
             let total = cfs.len();
             let mut dropped = 0usize;
@@ -223,5 +235,44 @@ impl PendingCfDrops {
                 start.elapsed()
             );
         });
+
+        // Bound to a local rather than matched inline: as the tail expression
+        // of the function, an inline `if let` keeps the lock's temporary alive
+        // past `registry_for_handle`, which the borrow checker rejects.
+        let locked = registry_for_handle.droppers.lock();
+        if let Ok(mut handles) = locked {
+            // Reap the ones that have already finished, so a long-lived
+            // instance that deletes many databases does not accumulate dead
+            // handles for the lifetime of the process.
+            handles.retain(|h| !h.is_finished());
+            handles.push(handle);
+        }
+    }
+
+    /// Block until every dropper thread spawned by [`Self::spawn_dropper`] has
+    /// finished.
+    ///
+    /// Called from `StorageEngine`'s `Drop`, and only by the last live handle
+    /// (see the `liveness` token there). Without it a dropper can still be
+    /// inside `drop_cf` when the process tears down: RocksDB's static
+    /// destructors free the global option-type registry underneath it and the
+    /// process aborts with SIGSEGV or `std::bad_alloc` *after* the work is
+    /// reported as successful. That is why `rbac_admin_endpoints_tests` failed
+    /// at process exit with all of its tests green, and why the server had the
+    /// same race on shutdown.
+    ///
+    /// This can block for as long as the outstanding drops take — 25ms of
+    /// deliberate breathing room per CF plus the OPTIONS rewrite itself. That
+    /// is the point: the alternative is exiting while RocksDB is mid-write.
+    pub fn join_droppers(&self) {
+        let handles = match self.droppers.lock() {
+            Ok(mut guard) => std::mem::take(&mut *guard),
+            // Poisoned means a dropper panicked. Its handle is unusable and
+            // there is nothing left to wait for.
+            Err(_) => return,
+        };
+        for handle in handles {
+            let _ = handle.join();
+        }
     }
 }
