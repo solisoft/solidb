@@ -591,7 +591,21 @@ impl Lexer {
             }
             Some('&') => {
                 self.advance();
-                Token::Ampersand
+                if self.current_char == Some('&') {
+                    self.advance();
+                    // `&&` is a plain alias for `AND`, boolean result and all.
+                    //
+                    // Note the deliberate asymmetry with `||` below, which is
+                    // its own token because it returns the *value* of whichever
+                    // side it settles on (`null || "x"` is `"x"`, where
+                    // `null OR "x"` is `true`). `&&` was chosen to mean `AND`
+                    // rather than a value-returning mirror of `||`, so do not
+                    // "fix" the pair by turning this into a DoubleAmpersand.
+                    Token::And
+                } else {
+                    // Single `&` stays bitwise AND — `6 & 3` is 2.
+                    Token::Ampersand
+                }
             }
             Some('|') => {
                 self.advance();
@@ -737,6 +751,26 @@ mod tests {
         assert_eq!(tokenize("AND")[0], Token::And);
         assert_eq!(tokenize("OR")[0], Token::Or);
         assert_eq!(tokenize("NOT")[0], Token::Not);
+    }
+
+    #[test]
+    fn double_ampersand_is_an_alias_for_and() {
+        // `&&` used to lex as two Ampersand tokens, so `a && b` died in the
+        // parser with "Unexpected token in expression: Ampersand".
+        assert_eq!(tokenize("&&")[0], Token::And);
+        assert_eq!(tokenize("a && b")[1], Token::And);
+        assert_eq!(tokenize("a AND b")[1], Token::And);
+    }
+
+    #[test]
+    fn single_ampersand_is_still_bitwise() {
+        // The alias must not swallow the bitwise operator: `6 & 3` is 2.
+        assert_eq!(tokenize("&")[0], Token::Ampersand);
+        assert_eq!(tokenize("6 & 3")[1], Token::Ampersand);
+        // Three in a row: `&&` then a bitwise `&`, not one long operator.
+        let t = tokenize("a &&& b");
+        assert_eq!(t[1], Token::And);
+        assert_eq!(t[2], Token::Ampersand);
     }
 
     #[test]

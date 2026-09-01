@@ -218,6 +218,23 @@ REFRESH MATERIALIZED VIEW view_name
 ### Logical
 `AND` (`&&`), `OR` (`||`), `NOT` (`!`)
 
+`&&` and `!` are strict aliases — same boolean result as `AND` and `NOT`.
+
+`||` is **not** a strict alias for `OR`. `OR` yields a boolean; `||` yields the
+*value* of whichever side it settles on, which makes it useful as a fallback:
+
+```
+RETURN null OR "fallback"    // true
+RETURN null || "fallback"    // "fallback"
+RETURN 0 OR 5                // true
+RETURN 0 || 5                // 5
+```
+
+Inside a `FILTER` the two are interchangeable, since only truthiness is read.
+In a `RETURN` or a `LET` they are not.
+
+Single `&` and `|` remain bitwise: `6 & 3` is `2`, `6 | 3` is `7`.
+
 ### Arithmetic
 `+`, `-`, `*`, `/`, `%`
 

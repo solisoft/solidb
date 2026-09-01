@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Features
+
+* **`&&` now works as `AND` in SDBQL.** It used to be a syntax error: the lexer
+  read `&` without looking ahead, so `a && b` produced two `Ampersand` tokens
+  and the parser died on the second with `Unexpected token in expression:
+  Ampersand`. `docs/SDBQL_REFERENCE.md` had documented `AND (&&)` all along, so
+  the reference was describing something that had never worked. `&&` is a
+  strict alias: same boolean result as `AND`, `null && 5` is `false` exactly as
+  `null AND 5` is.
+  * Single `&` is untouched and still bitwise — `6 & 3` is `2`, and `a &&& b`
+    lexes as `&&` followed by a bitwise `&`.
+  * Note the deliberate asymmetry with `||`, which is *not* a strict alias for
+    `OR`: `OR` returns a boolean, `||` returns the value of whichever side it
+    settles on (`null || "x"` is `"x"`, `null OR "x"` is `true`). The two are
+    interchangeable inside a `FILTER`, which only reads truthiness, but not in
+    a `RETURN` or `LET`. This is now written down in the reference.
+  * `!` was already a working alias for `NOT`; verified, unchanged.
+  * Applied to both lexers, `src/sdbql/lexer.rs` and `sdbql-core/src/lexer.rs`.
+
 ### Fixes
 
 * **A background column-family drop could crash the process at exit.**

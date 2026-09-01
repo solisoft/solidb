@@ -99,7 +99,7 @@ FOR user IN users
               <h3 class="text-xl font-bold text-white group-hover:text-purple-400 transition-colors">Operators</h3>
             </div>
             <p class="text-gray-400 text-sm leading-relaxed">
-              Comparison (==, !=, &lt;, &gt;, &lt;=&gt;), logical (AND, OR, NOT), arithmetic, bitwise, pattern matching (LIKE, =~), fuzzy (~=), and semantic infix (~).
+              Comparison (==, !=, &lt;, &gt;, &lt;=&gt;), logical (AND, OR, NOT &mdash; also spelled <code>&amp;&amp;</code>, <code>||</code>, <code>!</code>, though <code>||</code> returns a value rather than a boolean), arithmetic, bitwise, pattern matching (LIKE, =~), fuzzy (~=), and semantic infix (~).
             </p>
             <div class="mt-4 text-purple-400 text-sm font-medium flex items-center">
               Learn more <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
