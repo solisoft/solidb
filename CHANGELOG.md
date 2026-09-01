@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.1](https://github.com/solisoft/solidb/compare/v1.0.0...v1.0.1) (2026-09-01)
+
 ### Features
 
 * **`solidb-dump --all-databases`** dumps every database the credentials can
