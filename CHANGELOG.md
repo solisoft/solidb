@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+### Fixes
+
+* **A background column-family drop could crash the process at exit.**
+  `PendingCfDrops::spawn_dropper` detached its thread with a bare
+  `std::thread::spawn` and kept no handle, so a `drop_cf` still inside RocksDB's
+  `PersistRocksDBOptions` raced the static destructors that free the global
+  option-type registry. The process died with `SIGSEGV` or
+  `std::bad_alloc`/`SIGABRT` *after* reporting every operation successful —
+  which is why `rbac_admin_endpoints_tests` aborted at exit with all its tests
+  green, and the server had the same race on shutdown. The handles are now kept
+  and joined from `StorageEngine`'s `Drop`, by whichever clone is the last one
+  alive (`StorageEngine` is `Clone` and its `Drop` runs per clone, so a
+  `liveness` token identifies the last one rather than blocking a request path).
+  Measured on the same binaries, 60 runs each: `db_authorization_tests` 5/60
+  failures → 0/60, `rbac_admin_endpoints_tests` → 0/60.
+
+### Performance
+
+* **CI's test job: ~100 minutes → an expected ~25.** The suite was never the
+  cost — CI spent **95m 07s compiling and 18.4s running** 2597 tests. Each of
+  the ~96 files in `tests/` links its own binary against all of `src/` plus
+  RocksDB, and `[profile.release]`'s `lto = "thin"` re-ran ThinLTO over the
+  whole dependency graph once per binary. A new `[profile.ci]` inherits release
+  — dependencies stay at `opt-level 3`, so the tests still execute in seconds —
+  but drops cross-crate LTO and builds the workspace crates at `opt-level 1`.
+  `[profile.release]` is untouched: `build-binaries` and `docker` ship it.
+* **The CI cargo cache was frozen and over quota.** `actions/cache` refuses to
+  save on a primary-key hit, so `target/` stayed at whatever existed when the
+  `Cargo.lock` hash was first seen; and caching `target/` whole put the repo at
+  17.34 GB against GitHub's 10 GB limit, so the four job caches evicted each
+  other in LRU (clippy's was simply gone) and run times swung between 95 and
+  136 minutes depending on which one lost. All four jobs now use
+  `Swatinem/rust-cache`, which saves on every key change, keys on rustc version
+  and `RUSTFLAGS` too, and keeps only dependency artifacts — with `save-if` so
+  that only `main` writes.
+* **The five benchmarks in `tests/` no longer build by default.** Every test in
+  `benchmark_sort`, `benchmark_perf_fixes`, `sdbql_compare_bench`,
+  `sdbql_datetime_bench` and `sdbql_string_bench` is `#[test] #[ignore]`, so
+  they were paying a full release link each and never running. They are behind a
+  `bench-tests` feature now: `cargo test --profile ci --features bench-tests --
+  --ignored`. They stay linted, because `cargo clippy --all-targets
+  --all-features` still reaches them.
+
 ## [1.0.1](https://github.com/solisoft/solidb/compare/v1.0.0...v1.0.1) (2026-09-01)
 
 ### Features

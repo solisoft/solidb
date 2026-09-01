@@ -1,6 +1,7 @@
 //! Date/time builtin micro-benchmarks (same dispatch as the query executor).
 //!
-//!   cargo test --release --test sdbql_datetime_bench -- --ignored --nocapture
+//!   cargo test --profile ci --features bench-tests \
+//!     --test sdbql_datetime_bench -- --ignored --nocapture
 
 use serde_json::json;
 use solidb::sdbql::executor::builtins;

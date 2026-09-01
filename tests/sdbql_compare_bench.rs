@@ -1,7 +1,8 @@
 //! Same-harness before/after bench. Only calls functions that existed
 //! on the pre-change tree so both trees can run this file unchanged.
 //!
-//!   cargo test --test sdbql_compare_bench -- --ignored --nocapture
+//!   cargo test --profile ci --features bench-tests \
+//!     --test sdbql_compare_bench -- --ignored --nocapture
 
 use serde_json::json;
 use solidb::sdbql::executor::builtins;

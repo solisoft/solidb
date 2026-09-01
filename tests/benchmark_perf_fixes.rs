@@ -3,7 +3,8 @@
 //! and LIMIT pushdown into index lookups.
 //!
 //! Run with:
-//!   cargo test --release --test benchmark_perf_fixes -- --ignored --nocapture
+//!   cargo test --profile ci --features bench-tests \
+//!     --test benchmark_perf_fixes -- --ignored --nocapture
 
 use serde_json::json;
 use solidb::sdbql::QueryExecutor;

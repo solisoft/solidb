@@ -199,6 +199,73 @@ opt-level = 3
 [profile.bench]
 inherits = "release"
 
+# Profile for `cargo test`, in CI and for targeted local runs.
+#
+# Each of the ~96 files in tests/ becomes its own binary statically linking all
+# of src/ (4.4 MB across 303 files) plus RocksDB. Under [profile.release] that
+# is ~96 thin-LTO link steps to run 18 seconds of tests: CI measured 95m 07s of
+# compilation against 18.4s of execution.
+#
+# `[profile.release]` cannot simply be relaxed — the `build-binaries` and
+# `docker` CI jobs ship what it produces — hence a separate profile. Note this
+# writes to target/ci/ *in addition to* target/release/, so a box that builds
+# both keeps two trees.
+[profile.ci]
+inherits = "release"
+# The whole game. Under release's `lto = "thin"` the dependency rlibs carry
+# bitcode and codegen is deferred to the final artifact, so ThinLTO re-runs
+# across the ~400-crate graph once per test binary — ~96 times. With LTO off,
+# dependencies codegen once to object code and each test binary is a plain link.
+#
+# This is also why switching profiles forces one cold rebuild of every
+# dependency: bitcode rlibs and object rlibs have different fingerprints.
+#
+# `lto` may only be set at profile top level; cargo rejects it (like `panic`
+# and `rpath`) inside a `[profile.*.package.*]` override.
+lto = false
+# Applies to the workspace crates and the test harnesses; the overrides below
+# keep dependencies at 3. Not 0 — O0 emits *more* code because it stops
+# inlining wrappers, which makes all ~96 links slower and the suite 5-20x
+# slower to run. O1 is the point where compile time drops but the tests still
+# execute in seconds.
+#
+# Safe because no test that actually runs depends on optimisation: the only
+# files under tests/ that touch `Instant::now()` / `.elapsed()` are the five
+# benchmarks, and those are `#[ignore]`d behind the `bench-tests` feature.
+opt-level = 1
+# Deliberately NOT set here:
+#   codegen-units — release's 16 is right. ubuntu-latest has 4 vCPUs and cargo
+#     already has ~100 independent targets to fill them, so raising it buys no
+#     parallelism and costs cross-CGU inlining, i.e. a bigger rlib to link 96x.
+#   strip — `inherits = "release"` gives debug = 0, and cargo already passes
+#     `-Cstrip=debuginfo` at that debug level. Setting it is a no-op. (What
+#     would shrink target/ is `strip = "symbols"`, which is not worth losing
+#     panic backtrace symbolisation in the CI logs you read on a failure.)
+#   panic — cargo ignores it for test targets since libtest needs unwind, so it
+#     would apply only to the bins, and a panic=abort bin cannot share
+#     dependency artifacts with panic=unwind tests: it would double the
+#     dependency build.
+
+# Dependencies stay fully optimised. Those 18 seconds of tests are spent almost
+# entirely inside RocksDB, ring and aws-lc-sys, and an unoptimised RocksDB would
+# trade the compile time we just saved straight back for runtime. They are built
+# once and cached, so this costs nothing per run.
+[profile.ci.package."*"]
+opt-level = 3
+
+# Whether the `"*"` glob above also matches workspace members that are path
+# dependencies is the murky corner of cargo's override rules, and the whole
+# saving depends on the answer. Restate the three crates that actually
+# recompile on every run so the intent holds either way.
+[profile.ci.package.solidb]
+opt-level = 1
+
+[profile.ci.package.sdbql-core]
+opt-level = 1
+
+[profile.ci.package.solidb-client]
+opt-level = 1
+
 [dev-dependencies]
 tokio-test = "0.4"
 solidb-client = { path = "clients/rust-client" }
@@ -226,6 +293,45 @@ aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
 
 [features]
 fuse = ["dep:fuser"]
+# The five files in tests/ that are benchmarks rather than tests. Off by
+# default, so `cargo test` does not build them — see the [[test]] blocks below.
+bench-tests = []
+
+# Benchmarks living in tests/. Every test in these five files is
+# `#[test] #[ignore]`, so they were paying a full release link each and never
+# running — five of the ~96 link steps for nothing. They are also the only
+# files in tests/ that measure wall-clock time (`Instant::now()` / `elapsed()`),
+# which is exactly why they must not be run as part of the suite.
+#
+# Declaring these explicitly does not disable autodiscovery of the other ~91
+# files (`autotests` stays true), so nothing else needs listing here.
+#
+# Run them with:
+#   cargo test --profile ci --features bench-tests -- --ignored
+[[test]]
+name = "benchmark_sort"
+path = "tests/benchmark_sort.rs"
+required-features = ["bench-tests"]
+
+[[test]]
+name = "benchmark_perf_fixes"
+path = "tests/benchmark_perf_fixes.rs"
+required-features = ["bench-tests"]
+
+[[test]]
+name = "sdbql_compare_bench"
+path = "tests/sdbql_compare_bench.rs"
+required-features = ["bench-tests"]
+
+[[test]]
+name = "sdbql_datetime_bench"
+path = "tests/sdbql_datetime_bench.rs"
+required-features = ["bench-tests"]
+
+[[test]]
+name = "sdbql_string_bench"
+path = "tests/sdbql_string_bench.rs"
+required-features = ["bench-tests"]
 
 [[bin]]
 name = "solidb-fuse"

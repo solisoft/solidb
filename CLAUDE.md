@@ -16,45 +16,68 @@ cargo build --release          # Release build
 # Run server
 ./target/release/solidb --port 6745 --data-dir ./data
 
-# Testing
-cargo test --release --test <name>            # Specific test file (e.g., cargo test --release --test http_api_test)
-cargo test --release <pattern>                # Tests matching pattern (e.g., cargo test --release sdbql)
-cargo test --release -- --nocapture           # Show test output
-cargo test --release                          # FULL suite — CI's job, not yours. See below.
+# Testing — use --profile ci, not --release (see below)
+cargo test --profile ci --test <name>         # Specific test file (e.g., cargo test --profile ci --test http_api_test)
+cargo test --profile ci <pattern>             # Tests matching pattern (e.g., cargo test --profile ci sdbql)
+cargo test --profile ci -- --nocapture        # Show test output
+cargo test --profile ci                       # FULL suite — CI's job, not yours. See below.
+
+# The five benchmarks that live in tests/ are behind a feature and #[ignore]d
+cargo test --profile ci --features bench-tests -- --ignored
 
 # Code quality (required before commits)
 cargo fmt -- --check           # Check formatting
 cargo clippy -- -D warnings    # Lint checks
 ```
 
+### Test with `--profile ci`, not `--release`
+
+`[profile.ci]` (in `Cargo.toml`) is what CI runs and what you should run. It
+inherits `release`, so dependencies — RocksDB above all — stay at `opt-level 3`
+and the suite still executes in seconds. What it drops is thin-LTO and
+release-level codegen for the workspace crates, which is what the ~96 separate
+test binaries were each paying for.
+
+That mattered more than it sounds: CI measured **95m 07s of compilation against
+18.4s of test execution**. Do not "fix" this by relaxing `[profile.release]` —
+the `build-binaries` and `docker` jobs ship what it produces.
+
+Consequence to know about: `--profile ci` writes to `target/ci/`, *alongside*
+`target/release/`. Building both doubles that part of your disk.
+
 ### Do not run the full suite locally
 
-`cargo test --release` with no filter builds and runs ~50 test binaries in
-release mode. Compiling them alone takes over ten minutes on a warm cache, and
-each integration test opens its own RocksDB instance, so a dev box that is also
-running the server and a fleet of app dev servers goes to swap. Runs get killed
-part-way and tell you nothing.
+`cargo test --profile ci` with no filter builds and runs ~96 test binaries.
+Compiling them takes tens of minutes even on a warm cache, and each integration
+test opens its own RocksDB instance, so a dev box that is also running the
+server and a fleet of app dev servers goes to swap. Runs get killed part-way and
+tell you nothing.
 
 Run the targeted forms above — the specific `--test <name>`, or a pattern — and
 let the `test` job in CI run the whole thing. The other six CI jobs (`fmt`,
 `clippy`, `docs-sync`, `audit`, `msrv`, `windows-check`) are all cheap enough to
 reproduce locally and are the ones worth checking before a push.
 
-### Two failures that are not your change
+### One failure that is not your change
 
-Both reproduce on a clean checkout; do not go hunting for them in a diff.
+It reproduces on a clean checkout; do not go hunting for it in a diff.
 
 - **`queue::jobs::tests::validate_target_accepts_webhook_only`** fails only on a
   machine whose resolver wildcards `.test` to `127.0.0.1` (a common local dev
   setup). The SSRF guard resolves `example.test`, sees loopback, and rejects it.
   Passes in CI, where the name does not resolve.
-- **`rbac_admin_endpoints_tests`** aborts at process *exit*, after all of its
-  tests report ok — `SIGSEGV` or `std::bad_alloc`/`SIGABRT`, non-deterministic.
-  `PendingCfDrops::spawn_dropper` (`src/storage/pending_drops.rs`) detaches its
-  thread with a bare `std::thread::spawn` and nothing joins it, so a
-  column-family drop can still be inside RocksDB's `PersistRocksDBOptions` while
-  the main thread's static destructors free the global option-type registry.
-  The same race exists in the server's shutdown path.
+
+The second entry that used to live here — **`rbac_admin_endpoints_tests`
+aborting at process *exit*** with `SIGSEGV` or `std::bad_alloc`/`SIGABRT` after
+all its tests reported ok — is **fixed**. `PendingCfDrops::spawn_dropper`
+(`src/storage/pending_drops.rs`) detached its thread and nothing joined it, so a
+column-family drop could still be inside RocksDB's `PersistRocksDBOptions` while
+the main thread's static destructors freed the global option-type registry. The
+handles are now kept and joined from `StorageEngine`'s `Drop`, by whichever
+clone is the last one alive. Measured before and after on the same binaries,
+60 runs each: `db_authorization_tests` 5/60 → 0/60, `rbac_admin_endpoints_tests`
+→ 0/60. The server's shutdown path went through the same `Drop`, so it is fixed
+there too.
 
 ## Releasing
 

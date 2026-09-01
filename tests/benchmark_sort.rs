@@ -1,6 +1,10 @@
 //! SDBQL Sort Benchmark
 //!
 //! Benchmarks sorting performance on a collection.
+//!
+//! Run with:
+//!   cargo test --profile ci --features bench-tests \
+//!     --test benchmark_sort -- --ignored --nocapture
 
 use serde_json::json;
 use solidb::sdbql::QueryExecutor;

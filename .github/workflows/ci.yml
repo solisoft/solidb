@@ -16,9 +16,11 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # A cold release build plus the suite runs ~1h45m. This is a backstop, not
-    # a budget: a hung test used to sit on the job until GitHub's 6-hour limit
-    # killed it (see the webhook env-flag race fixed in src/queue/jobs.rs).
+    # Backstop, not a budget: a hung test used to sit on the job until
+    # GitHub's 6-hour limit killed it (see the webhook env-flag race fixed in
+    # src/queue/jobs.rs). Left at 150 deliberately — the steady-state run is
+    # ~25m under [profile.ci], but the first run after a profile, toolchain or
+    # RUSTFLAGS change rebuilds every dependency cold and needs the headroom.
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v5
@@ -36,19 +38,36 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # Swatinem/rust-cache rather than actions/cache: the latter refuses to
+      # save on a primary-key hit, so target/ stayed frozen at whatever existed
+      # when the Cargo.lock hash was first seen, and it cached target/ whole —
+      # 7 GB for this job alone, against GitHub's 10 GB per-repo limit, so the
+      # caches evicted each other in LRU and dependency rebuilds came back at
+      # random. rust-cache saves every run, keys on rustc version and RUSTFLAGS
+      # as well as the lockfile, and keeps only dependency artifacts (the local
+      # crates' are rebuilt on any src/ change anyway, and they were the bulk).
       - name: Cargo cache
-        uses: actions/cache@v5
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry/
-            ~/.cargo/git/
-            target/
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-test-
+          key: test
+          # Only main writes. rust-cache saves whenever its key changes, so
+          # without this every PR branch pushes a multi-GB entry into the repo's
+          # 10 GB budget and they LRU-evict each other — which is how the clippy
+          # cache went missing entirely. PRs still *restore* main's entry:
+          # default-branch caches are readable from every ref.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Save even when the job fails, so a flaky test does not throw away a
+          # cold dependency build. Gated by save-if above.
+          cache-on-failure: true
 
+      # --profile ci, not --release: see [profile.ci] in Cargo.toml. Same
+      # optimised dependencies, but no thin-LTO across the ~96 test-binary
+      # links, which is where the 95 minutes went.
       - name: Run tests
-        run: cargo test --release
+        # --lib --bins --tests skips examples/ (three more full links, already
+        # compile-checked by the clippy job) and the doctest pass, which has
+        # nothing to run: every doc fence in src/ is json, lua or text.
+        run: cargo test --profile ci --lib --bins --tests
 
   # Compile-only gate for Windows. The full test suite is not run here: a cold RocksDB C++
   # build on windows-latest is slow enough to dominate CI, and the value of this job is
@@ -67,16 +86,20 @@ jobs:
         shell: pwsh
         run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
+      # rust-cache, for the reasons spelled out on the `test` job above.
       - name: Cargo cache
-        uses: actions/cache@v5
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry/
-            ~/.cargo/git/
-            target/
-          key: ${{ runner.os }}-cargo-check-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-check-
+          key: check
+          # Only main writes. rust-cache saves whenever its key changes, so
+          # without this every PR branch pushes a multi-GB entry into the repo's
+          # 10 GB budget and they LRU-evict each other — which is how the clippy
+          # cache went missing entirely. PRs still *restore* main's entry:
+          # default-branch caches are readable from every ref.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Save even when the job fails, so a flaky test does not throw away a
+          # cold dependency build. Gated by save-if above.
+          cache-on-failure: true
 
       - name: Check
         run: cargo check --all-targets
@@ -98,16 +121,20 @@ jobs:
         with:
           components: clippy
 
+      # rust-cache, for the reasons spelled out on the `test` job above.
       - name: Cargo cache
-        uses: actions/cache@v5
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry/
-            ~/.cargo/git/
-            target/
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-clippy-
+          key: clippy
+          # Only main writes. rust-cache saves whenever its key changes, so
+          # without this every PR branch pushes a multi-GB entry into the repo's
+          # 10 GB budget and they LRU-evict each other — which is how the clippy
+          # cache went missing entirely. PRs still *restore* main's entry:
+          # default-branch caches are readable from every ref.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Save even when the job fails, so a flaky test does not throw away a
+          # cold dependency build. Gated by save-if above.
+          cache-on-failure: true
 
       # --all-targets so test, bench and bin targets are linted too; without it
       # only the default target is checked and test code drifts unlinted.
@@ -177,16 +204,20 @@ jobs:
       - name: Install Rust (MSRV from Cargo.toml)
         uses: dtolnay/rust-toolchain@1.89.0
 
+      # rust-cache, for the reasons spelled out on the `test` job above.
       - name: Cargo cache
-        uses: actions/cache@v5
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry/
-            ~/.cargo/git/
-            target/
-          key: ${{ runner.os }}-cargo-msrv-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-msrv-
+          key: msrv
+          # Only main writes. rust-cache saves whenever its key changes, so
+          # without this every PR branch pushes a multi-GB entry into the repo's
+          # 10 GB budget and they LRU-evict each other — which is how the clippy
+          # cache went missing entirely. PRs still *restore* main's entry:
+          # default-branch caches are readable from every ref.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Save even when the job fails, so a flaky test does not throw away a
+          # cold dependency build. Gated by save-if above.
+          cache-on-failure: true
 
       - name: Check
         run: cargo check --all-targets

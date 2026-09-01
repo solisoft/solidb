@@ -1,6 +1,7 @@
 //! Micro-benchmarks for the live SDBQL string builtins.
 //!
-//!   cargo test --release --test sdbql_string_bench -- --nocapture --ignored
+//!   cargo test --profile ci --features bench-tests \
+//!     --test sdbql_string_bench -- --ignored --nocapture
 
 use serde_json::json;
 use solidb::sdbql::executor::builtins;
