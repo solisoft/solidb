@@ -13,9 +13,9 @@
   <section id="unreleased" class="mb-16 scroll-mt-24">
     <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
-      <p class="text-gray-300 text-sm leading-relaxed">
-        No unreleased changes yet.
-      </p>
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white"><code>/metrics</code> now attributes memory per component</strong> &mdash; a 613-collection instance was OOM-killed at 21.7&nbsp;GB RSS while holding 6.3&nbsp;GB of data, and nothing said which consumer grew. New gauges cover memtables (live and total, the gap being flush backlog), index/filter blocks pinned per open SST &mdash; which sit <em>outside</em> the block cache and are never evicted while <code>--bounded-index-cache</code> is off and <code>--max-open-files</code> is <code>-1</code>, the prod defaults &mdash; shared block cache usage, SST and column-family counts, and jemalloc's own accounting. Those last ones separate live data from fragmentation and from address space merely kept mapped: the killed process showed 113&nbsp;GB virtual against 21.7&nbsp;GB resident. Computed on demand at scrape time, never on a timer.</li>
+      </ul>
     </div>
   </section>
 

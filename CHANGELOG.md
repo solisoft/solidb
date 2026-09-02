@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Features
+
+* **`/metrics` now attributes memory per component.** A 613-collection instance
+  was OOM-killed at 21.7 GB RSS while holding 6.3 GB of data, and there was no
+  way to tell which consumer grew — the arithmetic that *looks* like it explains
+  that (613 collections times the 64 MB per-collection write buffer) is not
+  evidence, because several other consumers are unbounded too. New gauges:
+  `solidb_memtable_bytes` and `_total_bytes` (the gap between them is flush
+  backlog), `solidb_table_readers_bytes` (index and filter blocks pinned per
+  open SST — outside the block cache, and never evicted, whenever
+  `--bounded-index-cache` is off and `--max-open-files` is -1, which are the
+  prod defaults), `solidb_block_cache_bytes` and `_pinned_bytes`,
+  `solidb_sst_files`, `solidb_column_families`,
+  `solidb_cached_collection_handles`, and six `solidb_jemalloc_*_bytes` from the
+  allocator's own accounting.
+  * The jemalloc figures are what separate live data from fragmentation and from
+    address space merely kept mapped: the killed process showed 113 GB virtual
+    against 21.7 GB resident, and `stats.retained` is the difference between
+    that being a leak and it being normal.
+  * The block cache is one shared LRU for every column family, so its two
+    gauges are read from a single handle — summing them per column family would
+    multiply the shared cache by the collection count.
+  * Computed on demand at scrape time, never on a timer: it is one FFI property
+    read per column family, and this repository has already had to fix a stats
+    collector that read ten of them per collection every five seconds.
+  * Requires the `stats` feature on `tikv-jemalloc-ctl`, which builds the C
+    library with its counters enabled.
+
+
 ## [1.0.2](https://github.com/solisoft/solidb/compare/v1.0.1...v1.0.2) (2026-09-01)
 
 ### Features

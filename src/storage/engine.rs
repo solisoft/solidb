@@ -800,6 +800,71 @@ impl StorageEngine {
         grouped
     }
 
+    /// Per-component memory attribution, for the `/metrics` endpoint.
+    ///
+    /// Exists because a 613-collection instance was OOM-killed at 21.7 GB RSS
+    /// while holding 6.3 GB of data, and the arithmetic that *looks* like it
+    /// explains that (613 collections x the 64 MB per-CF write buffer) is not
+    /// evidence — several other consumers are unbounded too. These are the
+    /// numbers that say which one actually grew.
+    ///
+    /// Costs one FFI property read per column family per counter, so this is
+    /// computed on demand at scrape time and never on a timer.
+    pub fn memory_breakdown(&self) -> MemoryBreakdown {
+        let mut out = MemoryBreakdown::default();
+
+        let cf_names: Vec<String> = self
+            .db
+            .cf_names()
+            .into_iter()
+            .filter(|n| !self.pending_cf_drops.contains(n))
+            .collect();
+        out.column_families = cf_names.len() as u64;
+
+        // `AsColumnFamilyRef` is implemented for `&Arc<BoundColumnFamily>`,
+        // which is what `cf_handle` hands back — matching the existing reads in
+        // `collection::core`.
+        let read = |cf: &Arc<rust_rocksdb::BoundColumnFamily<'_>>, prop: &str| -> u64 {
+            self.db
+                .property_int_value_cf(cf, prop)
+                .ok()
+                .flatten()
+                .unwrap_or(0)
+        };
+
+        for name in &cf_names {
+            let Some(cf) = self.db.cf_handle(name) else {
+                continue;
+            };
+            // Live memtables, and live + immutable ones still awaiting flush.
+            // The gap between the two is flush backlog.
+            out.memtable_bytes += read(&cf, "rocksdb.cur-size-all-mem-tables");
+            out.memtable_total_bytes += read(&cf, "rocksdb.size-all-mem-tables");
+            // Index and filter blocks of every open SST. With
+            // `cache_index_and_filter_blocks` off and `max_open_files` at -1
+            // (both the prod defaults) this sits *outside* the block cache and
+            // is never evicted, so it is the counter that grows with the
+            // dataset rather than with write traffic.
+            out.table_readers_bytes += read(&cf, "rocksdb.estimate-table-readers-mem");
+            for level in 0..7 {
+                out.sst_files += read(&cf, &format!("rocksdb.num-files-at-level{}", level));
+            }
+        }
+
+        // The block cache is one shared LRU for every CF
+        // (`shared_block_cache`), and these two properties report that shared
+        // instance. Reading them per CF and summing would multiply it by the
+        // column-family count — take them from one handle only.
+        if let Some(cf) = cf_names.first().and_then(|n| self.db.cf_handle(n)) {
+            out.block_cache_bytes = read(&cf, "rocksdb.block-cache-usage");
+            out.block_cache_pinned_bytes = read(&cf, "rocksdb.block-cache-pinned-usage");
+        }
+
+        out.cached_collection_handles = self.collections.len() as u64;
+
+        out
+    }
+
     /// Save a collection - no-op with RocksDB (auto-persisted)
     pub fn save_collection(&self, _name: &str) -> DbResult<()> {
         // RocksDB automatically persists data, nothing to do
@@ -990,6 +1055,33 @@ impl StorageEngine {
 
         Ok(())
     }
+}
+
+/// Where a SoliDB process's RocksDB memory actually is.
+///
+/// One field per consumer that can grow without a ceiling, so a growth event
+/// can be attributed instead of guessed at. See
+/// [`StorageEngine::memory_breakdown`].
+#[derive(Debug, Default, Clone, serde::Serialize)]
+pub struct MemoryBreakdown {
+    /// Live memtables across every column family.
+    pub memtable_bytes: u64,
+    /// Live plus immutable memtables; the gap over `memtable_bytes` is flush
+    /// backlog. Capped only by `--memtable-budget`, which is unset in prod.
+    pub memtable_total_bytes: u64,
+    /// Index and filter blocks pinned per open SST, *outside* the block cache
+    /// unless `--bounded-index-cache` is set. Never evicted.
+    pub table_readers_bytes: u64,
+    /// The single shared block cache (`--block-cache`, 512 MB in prod).
+    pub block_cache_bytes: u64,
+    /// The part of that cache that cannot be evicted.
+    pub block_cache_pinned_bytes: u64,
+    /// SST files across all levels of all column families.
+    pub sst_files: u64,
+    /// Column families, i.e. collections plus `default` and `_meta`.
+    pub column_families: u64,
+    /// `Collection` handles held in the engine's unbounded cache.
+    pub cached_collection_handles: u64,
 }
 
 impl Drop for StorageEngine {

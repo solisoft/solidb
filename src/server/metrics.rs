@@ -11,6 +11,42 @@ use std::sync::atomic::Ordering;
 
 use super::handlers::AppState;
 
+/// jemalloc's own accounting, in bytes.
+///
+/// `resident` is the number to compare against RSS; `retained` is address
+/// space handed back to the OS but kept mapped, which is what makes the
+/// virtual size enormous (113 GB was observed on a process holding 21.7 GB
+/// resident) without that being a leak. The gap between `resident` and
+/// `allocated` is fragmentation plus allocator metadata — worth knowing before
+/// blaming RocksDB for memory the allocator is merely holding.
+///
+/// Returns `None` when jemalloc is not the active allocator. The
+/// `#[global_allocator]` lives in `main.rs`, so under `cargo test` — which
+/// links the library without it — these mallctls are absent and this reports
+/// nothing rather than zeros that look like real measurements.
+#[cfg(not(target_env = "msvc"))]
+fn jemalloc_stats() -> Option<[(&'static str, u64); 6]> {
+    use tikv_jemalloc_ctl::{epoch, stats};
+
+    // Statistics are cached until the epoch is advanced; without this every
+    // scrape would return the values from process start.
+    epoch::advance().ok()?;
+
+    Some([
+        ("allocated", stats::allocated::read().ok()? as u64),
+        ("active", stats::active::read().ok()? as u64),
+        ("resident", stats::resident::read().ok()? as u64),
+        ("mapped", stats::mapped::read().ok()? as u64),
+        ("retained", stats::retained::read().ok()? as u64),
+        ("metadata", stats::metadata::read().ok()? as u64),
+    ])
+}
+
+#[cfg(target_env = "msvc")]
+fn jemalloc_stats() -> Option<[(&'static str, u64); 6]> {
+    None
+}
+
 fn metrics_authorized(headers: &HeaderMap) -> bool {
     if std::env::var("SOLIDB_METRICS_PUBLIC")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -167,6 +203,74 @@ pub async fn metrics_handler(
         "solidb_collections_total {}\n\n",
         total_collections
     ));
+
+    // Memory attribution. Added after a 613-collection instance was OOM-killed
+    // at 21.7 GB RSS while holding 6.3 GB of data: several consumers here have
+    // no ceiling (the per-collection write buffer with `--memtable-budget`
+    // unset, and index/filter blocks pinned per SST with
+    // `--bounded-index-cache` off), and without these counters there is no way
+    // to tell which one grew. Computed on demand: it is one property read per
+    // column family, so it must not go on a timer.
+    let mem = state.storage.memory_breakdown();
+    for (name, help, value) in [
+        (
+            "solidb_memtable_bytes",
+            "Live memtable memory across all column families",
+            mem.memtable_bytes,
+        ),
+        (
+            "solidb_memtable_total_bytes",
+            "Live plus immutable memtables; the gap over solidb_memtable_bytes is flush backlog",
+            mem.memtable_total_bytes,
+        ),
+        (
+            "solidb_table_readers_bytes",
+            "Index and filter blocks pinned per open SST, outside the block cache",
+            mem.table_readers_bytes,
+        ),
+        (
+            "solidb_block_cache_bytes",
+            "Shared block cache usage",
+            mem.block_cache_bytes,
+        ),
+        (
+            "solidb_block_cache_pinned_bytes",
+            "Portion of the shared block cache that cannot be evicted",
+            mem.block_cache_pinned_bytes,
+        ),
+        (
+            "solidb_sst_files",
+            "SST files across all levels of all column families",
+            mem.sst_files,
+        ),
+        (
+            "solidb_column_families",
+            "Open column families, including default and _meta",
+            mem.column_families,
+        ),
+        (
+            "solidb_cached_collection_handles",
+            "Collection handles held in the engine's unbounded cache",
+            mem.cached_collection_handles,
+        ),
+    ] {
+        output.push_str(&format!("# HELP {} {}\n", name, help));
+        output.push_str(&format!("# TYPE {} gauge\n", name));
+        output.push_str(&format!("{} {}\n\n", name, value));
+    }
+
+    // Allocator-level view, to separate live data from fragmentation and from
+    // address space merely kept mapped.
+    if let Some(stats) = jemalloc_stats() {
+        for (field, value) in stats {
+            output.push_str(&format!(
+                "# HELP solidb_jemalloc_{}_bytes jemalloc stats.{}\n",
+                field, field
+            ));
+            output.push_str(&format!("# TYPE solidb_jemalloc_{}_bytes gauge\n", field));
+            output.push_str(&format!("solidb_jemalloc_{}_bytes {}\n\n", field, value));
+        }
+    }
 
     // Cluster Stats (if cluster mode is enabled)
     if let Some(ref cluster_manager) = state.cluster_manager {
