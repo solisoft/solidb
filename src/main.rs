@@ -7,8 +7,14 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 /// jemalloc tuning, read by the allocator during its own initialization —
 /// before `main`, which is why this is a link-time symbol and not a runtime
-/// mallctl call. tikv-jemalloc-sys exports `malloc_conf` under its `_rjem_`
-/// prefix and leaves it weak, so this strong definition wins at link time.
+/// mallctl call. tikv-jemalloc-sys leaves `malloc_conf` weak, so this strong
+/// definition wins at link time.
+///
+/// The symbol name must track the prefix: with
+/// `unprefixed_malloc_on_supported_platforms` enabled it is plain
+/// `malloc_conf`, and it would be `_rjem_malloc_conf` without. Getting this
+/// wrong loses the tuning silently — which is exactly what
+/// `log_allocator_tuning` below exists to catch.
 ///
 /// `background_thread` is off by default, and without it an arena only purges
 /// its dirty pages while some thread keeps allocating *in that arena*. Under a
@@ -20,7 +26,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 /// back to 625 MB, and the idle baseline dropped ~18%.
 #[cfg(not(target_env = "msvc"))]
 #[allow(non_upper_case_globals)]
-#[export_name = "_rjem_malloc_conf"]
+#[export_name = "malloc_conf"]
 pub static malloc_conf: &[u8; 63] =
     b"background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000\0";
 
@@ -49,7 +55,7 @@ fn log_allocator_tuning() {
     } else {
         tracing::warn!(
             "jemalloc: background_thread is OFF (dirty_decay_ms={}) — pages freed by \
-             threads that then go idle will stay resident. The `_rjem_malloc_conf` \
+             threads that then go idle will stay resident. The `malloc_conf` \
              symbol in main.rs is not reaching the allocator.",
             dirty_ms
         );

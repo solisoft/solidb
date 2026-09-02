@@ -276,7 +276,27 @@ solidb-client = { path = "clients/rust-client" }
 # high-water mark (multi-GB) long after the memory is freed; jemalloc keeps
 # RSS tracking the actual working set. Not used under MSVC (Windows).
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.6"
+tikv-jemallocator = { version = "0.6", features = [
+    # Route C and C++ `malloc` through jemalloc too, not just Rust's
+    # GlobalAlloc. Without this, jemalloc links with its `_rjem_` prefix and
+    # serves Rust only, so RocksDB's C++ allocations — block cache, table
+    # readers, memtables, iterators, compaction buffers, i.e. the bulk of a
+    # large instance's memory — still go to glibc, and the per-thread arena
+    # growth this dependency exists to avoid happens anyway.
+    #
+    # Measured on the same 613-collection checkpoint, importing 400k documents
+    # across 200 collections, prod profile, twice:
+    #
+    #                       glibc     jemalloc
+    #   peak RSS (VmHWM)   1881 MB     1356 MB
+    #   glibc arenas 64MB       20            2
+    #   still held after    1726 MB (swapped out, never returned)
+    #
+    # Note the symbol-name coupling: this feature makes the tuning symbol in
+    # main.rs plain `malloc_conf` instead of `_rjem_malloc_conf`. Change one
+    # without the other and the tuning is silently lost.
+    "unprefixed_malloc_on_supported_platforms",
+] }
 # Read back the allocator's effective options at startup. The tuning in
 # `main.rs` is a link-time symbol: if the symbol name ever stops matching what
 # jemalloc looks for, it silently does nothing. Logging the values it actually

@@ -162,6 +162,16 @@ impl Database {
         Ok(())
     }
 
+    /// How many `Collection` handles this database is holding open.
+    ///
+    /// The cache is unbounded and never evicts, and every handle carries a
+    /// `tokio::sync::broadcast` ring, so on an instance with hundreds of
+    /// collections this is a memory figure, not just a statistic. Reported by
+    /// `/metrics` as `solidb_cached_collection_handles`.
+    pub fn cached_collection_count(&self) -> usize {
+        self.collections.len()
+    }
+
     /// List all collections in this database
     pub fn list_collections(&self) -> Vec<String> {
         let prefix = format!("{}:", self.name);

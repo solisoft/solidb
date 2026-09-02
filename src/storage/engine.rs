@@ -860,7 +860,16 @@ impl StorageEngine {
             out.block_cache_pinned_bytes = read(&cf, "rocksdb.block-cache-pinned-usage");
         }
 
-        out.cached_collection_handles = self.collections.len() as u64;
+        // The handles live in each `Database`'s own cache, not in the engine's
+        // (`self.collections` is the legacy per-engine one and holds almost
+        // nothing). Summing the per-database maps is what actually counts the
+        // 600-odd live handles, each of which carries a broadcast ring.
+        out.cached_collection_handles = self
+            .databases
+            .iter()
+            .map(|entry| entry.value().cached_collection_count() as u64)
+            .sum::<u64>()
+            + self.collections.len() as u64;
 
         out
     }

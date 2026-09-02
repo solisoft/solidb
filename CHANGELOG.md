@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Performance
+
+* **jemalloc now serves RocksDB too, not just Rust.** It was linked with its
+  `_rjem_` prefix, so it backed Rust's `GlobalAlloc` and nothing else: every C++
+  allocation in RocksDB — block cache, table readers, memtables, iterators,
+  compaction buffers, i.e. the bulk of a large instance's memory — went to
+  glibc, whose per-thread arena growth is the very thing this dependency was
+  added to avoid. Enabling
+  `tikv-jemallocator/unprefixed_malloc_on_supported_platforms` routes C and C++
+  `malloc` through jemalloc as well, where the existing
+  `background_thread` + 2s decay tuning finally applies to it.
+  * Measured on the same 613-collection checkpoint, importing 400 000 documents
+    across 200 collections under the prod profile, once per variant:
+
+    | | glibc | jemalloc |
+    |---|---|---|
+    | peak RSS (`VmHWM`) | 1881 MB | 1356 MB |
+    | glibc arenas (~64 MB each) | 4 → 20 | 4 → 2 |
+    | `[heap]` (brk) | 1094 MB | absent |
+    | still held afterwards | 1726 MB, swapped out and never returned | — |
+  * This came out of a 613-collection instance being OOM-killed at 21.7 GB RSS
+    while holding 6.3 GB of data. The tempting explanation — 613 collections
+    times the 64 MB per-collection write buffer is 38.3 GB — is wrong:
+    memtables measure 2.2 MB at idle and plateau around 202 MB during that
+    import while RSS keeps climbing. The growth tracks bytes written, not
+    collections open.
+  * The tuning symbol is coupled to the prefix: with this feature it is plain
+    `malloc_conf`, and `_rjem_malloc_conf` without. Changing one without the
+    other loses the tuning silently, which is what `log_allocator_tuning`
+    reports at startup — it prints `background_thread=true` when the conf
+    arrived.
+  * Not established: whether this alone accounts for the 21.7 GB. One run per
+    variant, and 400 000 documents peak at 1.9 GB, not 21.7. The three
+    unbounded storage knobs (`--memtable-budget`, `--bounded-index-cache`,
+    `--max-open-files`) remain worth setting on large instances.
+
 ### Features
 
 * **`/metrics` now attributes memory per component.** A 613-collection instance
@@ -29,6 +65,9 @@
     collector that read ten of them per collection every five seconds.
   * Requires the `stats` feature on `tikv-jemalloc-ctl`, which builds the C
     library with its counters enabled.
+  * `solidb_cached_collection_handles` counts the per-database caches, where the
+    handles actually live — each carries a `tokio::sync::broadcast` ring, and on
+    a 613-collection instance that is a memory figure rather than a statistic.
 
 
 ## [1.0.2](https://github.com/solisoft/solidb/compare/v1.0.1...v1.0.2) (2026-09-01)
