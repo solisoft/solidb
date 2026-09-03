@@ -56,6 +56,7 @@ sections = [
     { "slug": "views", "label": "Materialized Views", "icon": "fa-table-cells" },
     { "slug": "scripting", "label": "Lua Scripting", "icon": "fa-scroll", "subitems": [
       { "slug": "scripting-management", "label": "Management API" },
+      { "slug": "scripting-services", "label": "Services" },
       { "slug": "scripting-core", "label": "Core API" },
       { "slug": "scripting-database", "label": "Database Access" },
       { "slug": "scripting-ws", "label": "WebSockets" },

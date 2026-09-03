@@ -36,7 +36,7 @@ pub fn handle_insert(
     key: Option<String>,
     document: serde_json::Value,
 ) -> Response {
-    match handler.get_collection(&database, &collection) {
+    match handler.get_collection_for_write(&database, &collection) {
         Ok(coll) => {
             // If key provided, add it to document; otherwise insert() will auto-generate
             let mut doc_data = document;
@@ -73,7 +73,7 @@ pub fn handle_update(
     document: serde_json::Value,
     merge: bool,
 ) -> Response {
-    match handler.get_collection(&database, &collection) {
+    match handler.get_collection_for_write(&database, &collection) {
         Ok(coll) => {
             let result = if merge {
                 // Merge update: get existing doc and merge
@@ -121,7 +121,7 @@ pub fn handle_delete(
     collection: String,
     key: String,
 ) -> Response {
-    match handler.get_collection(&database, &collection) {
+    match handler.get_collection_for_write(&database, &collection) {
         Ok(coll) => match coll.delete(&key) {
             Ok(_) => {
                 handler.log_replication(&database, &collection, Operation::Delete, &key, None);
@@ -143,19 +143,12 @@ pub fn handle_list(
 ) -> Response {
     match handler.get_collection(&database, &collection) {
         Ok(coll) => {
-            // Use scan() which is the correct method for listing documents
-            let all_docs = coll.scan(None);
-            let total = all_docs.len();
-
-            // Apply pagination
+            // Read only the requested page; the total comes from the
+            // collection's own count rather than a full scan.
             let offset = offset.unwrap_or(0);
             let limit = limit.unwrap_or(100);
-            let docs: Vec<_> = all_docs
-                .into_iter()
-                .skip(offset)
-                .take(limit)
-                .map(|d| d.to_value())
-                .collect();
+            let total = coll.count();
+            let docs = coll.scan_values_range(offset, Some(limit));
 
             Response::Ok {
                 data: Some(serde_json::json!(docs)),
@@ -173,7 +166,7 @@ pub fn handle_bulk_insert(
     collection: String,
     documents: Vec<serde_json::Value>,
 ) -> Response {
-    match handler.get_collection(&database, &collection) {
+    match handler.get_collection_for_write(&database, &collection) {
         Ok(coll) => {
             // Use batch insert for efficiency
             match coll.insert_batch(documents) {

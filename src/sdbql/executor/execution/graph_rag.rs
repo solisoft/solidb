@@ -260,7 +260,7 @@ impl<'a> QueryExecutor<'a> {
             }
         }
         Ok(Value::Array(community_search_token_overlap(
-            summaries.scan(None).into_iter().map(|d| d.to_value()),
+            self.scan_bounded(&summaries)?.into_iter(),
             query_text,
             run_id.as_deref(),
             limit,
@@ -323,7 +323,12 @@ impl<'a> QueryExecutor<'a> {
             return Ok(Value::Array(vec![]));
         }
         let edge = self.get_collection(edge_name)?;
-        let expander = EdgeExpander::new(&edge, opts.direction.clone(), true);
+        let expander = EdgeExpander::new(
+            &edge,
+            opts.direction.clone(),
+            true,
+            self.max_intermediate_rows(),
+        )?;
 
         let reached_per_seed: Vec<Vec<Reached>> = seeds
             .iter()
@@ -402,8 +407,7 @@ impl<'a> QueryExecutor<'a> {
         // Build directed out-neighbors for PAGERANK (with weights if present).
         let mut out_neighbors: std::collections::HashMap<String, Vec<(String, f64)>> =
             std::collections::HashMap::new();
-        for doc in edge_coll.scan(None) {
-            let v = doc.to_value();
+        for v in self.scan_bounded(&edge_coll)? {
             if let (Some(from), Some(to)) = (
                 v.get("_from").and_then(|x| x.as_str()),
                 v.get("_to").and_then(|x| x.as_str()),
@@ -443,8 +447,7 @@ impl<'a> QueryExecutor<'a> {
         let edge_coll = self.get_collection(edge_name)?;
         let mut degree: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
 
-        for doc in edge_coll.scan(None) {
-            let v = doc.to_value();
+        for v in self.scan_bounded(&edge_coll)? {
             if let Some(from) = v.get("_from").and_then(|x| x.as_str()) {
                 *degree.entry(from.to_string()).or_insert(0.0) += 1.0;
             }

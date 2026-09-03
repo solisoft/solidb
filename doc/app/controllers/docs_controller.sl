@@ -95,7 +95,7 @@ class DocsController < Controller
             "driver", "getting-started", "graph-rag", "graphs", "hybrid-search", "indexes",
             "live-queries", "nl-queries", "observability", "offline-sync",
             "scripting", "scripting-core", "scripting-database", "scripting-development",
-            "scripting-files", "scripting-management", "scripting-streams",
+            "scripting-files", "scripting-management", "scripting-services", "scripting-streams",
             "scripting-tutorial-crud", "scripting-tutorial-testing", "scripting-utils",
             "scripting-validation", "scripting-ws", "sdbql", "sdbql-aggregations",
             "sdbql-benchmarks", "sdbql-cte", "sdbql-functions-array", "sdbql-functions-crypto",

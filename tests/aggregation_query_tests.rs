@@ -583,3 +583,148 @@ fn test_range_with_calculation() {
     // 1+2+3+4+5 = 15
     assert_eq!(result, json!(15.0));
 }
+
+// ============================================================================
+// COLLECT: streaming accumulators and memory ceiling
+// ============================================================================
+//
+// COLLECT folds each row into its group as it arrives instead of keeping every
+// row alive until the clause ends. These pin the aggregate semantics the fold
+// has to reproduce, and the row ceiling that stops a scan before it is held.
+
+fn create_mixed_data() -> (StorageEngine, TempDir) {
+    let (engine, tmp_dir) = create_test_engine();
+    engine.create_collection("m".to_string(), None).unwrap();
+    let m = engine.get_collection("m").unwrap();
+    m.insert(json!({"_key": "1", "g": "a", "v": 5, "s": "pear", "tag": "x"}))
+        .unwrap();
+    m.insert(json!({"_key": "2", "g": "a", "v": null, "s": "apple", "tag": "x"}))
+        .unwrap();
+    m.insert(json!({"_key": "3", "g": "a", "v": 2.5, "s": null, "tag": "y"}))
+        .unwrap();
+    m.insert(json!({"_key": "4", "g": "b", "v": "not a number", "s": "fig", "tag": "y"}))
+        .unwrap();
+    (engine, tmp_dir)
+}
+
+#[test]
+fn test_collect_streaming_aggregates_match_list_semantics() {
+    let (engine, _tmp) = create_mixed_data();
+
+    let results = execute_query(
+        &engine,
+        "FOR d IN m COLLECT g = d.g AGGREGATE \
+            n = COUNT(), nn = COUNT(d.v), total = SUM(d.v), mean = AVG(d.v), \
+            lo = MIN(d.v), hi = MAX(d.v), slo = MIN(d.s), shi = MAX(d.s), \
+            tags = COUNT_DISTINCT(d.tag), vals = COLLECT_LIST(d.v) \
+         SORT g RETURN {g, n, nn, total, mean, lo, hi, slo, shi, tags, vals}",
+    );
+    assert_eq!(results.len(), 2);
+
+    let a = &results[0];
+    assert_eq!(a["g"], json!("a"));
+    assert_eq!(a["n"], json!(3));
+    assert_eq!(a["nn"], json!(2), "COUNT(expr) skips nulls");
+    assert_eq!(a["total"], json!(7.5));
+    assert_eq!(a["mean"], json!(3.75), "AVG divides by numeric values only");
+    assert_eq!(a["lo"], json!(2.5));
+    assert_eq!(
+        a["hi"],
+        json!(5),
+        "MIN/MAX return the stored value untouched"
+    );
+    assert_eq!(a["slo"], json!("apple"));
+    assert_eq!(a["shi"], json!("pear"));
+    assert_eq!(a["tags"], json!(2));
+    assert_eq!(
+        a["vals"],
+        json!([5, null, 2.5]),
+        "COLLECT_LIST keeps row order and nulls"
+    );
+
+    let b = &results[1];
+    assert_eq!(b["g"], json!("b"));
+    assert_eq!(b["total"], json!(0.0));
+    assert_eq!(b["mean"], json!(null), "AVG over no numbers is null");
+    assert_eq!(
+        b["lo"],
+        json!("not a number"),
+        "first non-null value wins whatever its type"
+    );
+    assert_eq!(b["tags"], json!(1));
+}
+
+#[test]
+fn test_collect_into_keep_projects_before_storing() {
+    let (engine, _tmp) = create_mixed_data();
+
+    let results = execute_query(
+        &engine,
+        "FOR d IN m LET twice = d.tag COLLECT g = d.g INTO items KEEP twice \
+         SORT g RETURN {g, items}",
+    );
+    assert_eq!(results.len(), 2);
+    let items = results[0]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 3);
+    for item in items {
+        let obj = item.as_object().unwrap();
+        assert_eq!(obj.keys().collect::<Vec<_>>(), vec!["twice"]);
+    }
+
+    let err = common::execute_query_expect_err(
+        &engine,
+        "FOR d IN m COLLECT g = d.g INTO items KEEP nope RETURN items",
+    );
+    assert!(err.contains("KEEP variable 'nope'"), "{err}");
+}
+
+#[test]
+fn test_collect_with_count_into_over_wide_rows() {
+    let (engine, _tmp) = create_mixed_data();
+    let result = execute_single(
+        &engine,
+        "FOR d IN m COLLECT t = d.tag WITH COUNT INTO cnt SORT t RETURN {t: t, cnt: cnt}",
+    );
+    assert_eq!(result, json!({"t": "x", "cnt": 2}));
+}
+
+#[test]
+fn test_collect_scan_stops_at_row_ceiling() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("big".to_string(), None).unwrap();
+    let big = engine.get_collection("big").unwrap();
+    for i in 0..20 {
+        big.insert(json!({"_key": i.to_string(), "g": i % 3, "v": i}))
+            .unwrap();
+    }
+
+    let query =
+        solidb::parse("FOR d IN big COLLECT g = d.g AGGREGATE total = SUM(d.v) RETURN {g, total}")
+            .unwrap();
+
+    // At the ceiling: the scan holds at most ceiling + 1 documents and the
+    // budget check rejects the query rather than the OOM killer.
+    let err = solidb::QueryExecutor::new(&engine)
+        .with_max_intermediate_rows(5)
+        .execute(&query)
+        .expect_err("20 rows must not fit a 5-row ceiling");
+    assert!(
+        err.to_string().contains("intermediate row limit (6 > 5)"),
+        "scan should stop one past the ceiling, got: {err}"
+    );
+
+    // Under the ceiling the query is unaffected.
+    let results = solidb::QueryExecutor::new(&engine)
+        .with_max_intermediate_rows(20)
+        .execute(&query)
+        .unwrap();
+    assert_eq!(results.len(), 3);
+
+    // A LIMIT smaller than the ceiling still bounds the scan itself.
+    let limited = solidb::parse("FOR d IN big LIMIT 3 RETURN d.v").unwrap();
+    let results = solidb::QueryExecutor::new(&engine)
+        .with_max_intermediate_rows(5)
+        .execute(&limited)
+        .unwrap();
+    assert_eq!(results.len(), 3);
+}

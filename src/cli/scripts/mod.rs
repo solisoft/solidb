@@ -382,6 +382,7 @@ fn cmd_push(path: Option<&Path>) -> anyhow::Result<()> {
                     &code,
                     meta.description.as_deref(),
                     meta.collection.as_deref(),
+                    &config.default_service(),
                 ) {
                     Ok(_) => {
                         println!(
@@ -408,6 +409,7 @@ fn cmd_push(path: Option<&Path>) -> anyhow::Result<()> {
                     &code,
                     meta.description.as_deref(),
                     meta.collection.as_deref(),
+                    &config.default_service(),
                 ) {
                     Ok(_) => {
                         println!(

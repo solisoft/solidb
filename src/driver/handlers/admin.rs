@@ -80,7 +80,7 @@ pub async fn handle_delete_env_var(
 
 pub async fn handle_list_roles(handler: &DriverHandler) -> Response {
     match handler.storage.get_database("_system") {
-        Ok(db) => match db.get_collection("_roles") {
+        Ok(db) => match db.system_collection("_roles") {
             Ok(coll) => {
                 let roles: Vec<_> = coll.scan(None).into_iter().map(|d| d.to_value()).collect();
                 Response::ok(serde_json::json!({"roles": roles}))
@@ -98,7 +98,7 @@ pub async fn handle_create_role(
 ) -> Response {
     match handler.storage.get_database("_system") {
         Ok(db) => {
-            let roles_coll = match db.get_or_create_collection("_roles") {
+            let roles_coll = match db.get_or_create_system_collection("_roles") {
                 Ok(c) => c,
                 Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
             };
@@ -121,7 +121,7 @@ pub async fn handle_create_role(
 
 pub async fn handle_get_role(handler: &DriverHandler, name: String) -> Response {
     match handler.storage.get_database("_system") {
-        Ok(db) => match db.get_collection("_roles") {
+        Ok(db) => match db.system_collection("_roles") {
             Ok(coll) => match coll.get(&name) {
                 Ok(doc) => Response::ok(doc.to_value()),
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -138,7 +138,7 @@ pub async fn handle_update_role(
     permissions: Vec<String>,
 ) -> Response {
     match handler.storage.get_database("_system") {
-        Ok(db) => match db.get_collection("_roles") {
+        Ok(db) => match db.system_collection("_roles") {
             Ok(coll) => match coll.get(&name) {
                 Ok(existing) => {
                     let mut merged = existing.data.clone();
@@ -171,7 +171,7 @@ pub async fn handle_delete_role(handler: &DriverHandler, name: String) -> Respon
     }
 
     match handler.storage.get_database("_system") {
-        Ok(db) => match db.get_collection("_roles") {
+        Ok(db) => match db.system_collection("_roles") {
             Ok(coll) => match coll.delete(&name) {
                 Ok(_) => Response::ok_empty(),
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -274,7 +274,7 @@ pub async fn handle_delete_user(handler: &DriverHandler, username: String) -> Re
 
 pub async fn handle_get_user_roles(handler: &DriverHandler, username: String) -> Response {
     match handler.storage.get_database("_system") {
-        Ok(db) => match db.get_collection("_user_roles") {
+        Ok(db) => match db.system_collection("_user_roles") {
             Ok(coll) => {
                 let roles: Vec<_> = coll
                     .scan(None)
@@ -304,7 +304,7 @@ pub async fn handle_assign_role(
 ) -> Response {
     match handler.storage.get_database("_system") {
         Ok(db) => {
-            let user_roles_coll = match db.get_or_create_collection("_user_roles") {
+            let user_roles_coll = match db.get_or_create_system_collection("_user_roles") {
                 Ok(c) => c,
                 Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
             };
@@ -334,7 +334,7 @@ pub async fn handle_revoke_role(
     role: String,
 ) -> Response {
     match handler.storage.get_database("_system") {
-        Ok(db) => match db.get_collection("_user_roles") {
+        Ok(db) => match db.system_collection("_user_roles") {
             Ok(coll) => {
                 // Find and delete the role assignment
                 for doc in coll.scan(None) {

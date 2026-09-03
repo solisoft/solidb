@@ -148,6 +148,7 @@ impl ScriptWatcher {
                     &code,
                     meta.description.as_deref(),
                     meta.collection.as_deref(),
+                    &self.config.default_service(),
                 ) {
                     Ok(_) => {
                         println!(
@@ -171,6 +172,7 @@ impl ScriptWatcher {
                     &code,
                     meta.description.as_deref(),
                     meta.collection.as_deref(),
+                    &self.config.default_service(),
                 ) {
                     Ok(_) => {
                         println!(

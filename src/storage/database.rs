@@ -205,6 +205,39 @@ impl Database {
         self.system_collection(collection_name)
     }
 
+    /// Get a collection handle for a *write* driven by a caller-supplied name.
+    ///
+    /// Applies the read guard plus the write-only tier: `_scripts`,
+    /// `_services`, `_triggers`, `_jobs`, `_views`, `_graphs`, `_config` stay
+    /// listable and queryable, but writing them through the generic document
+    /// API bypassed the Admin gate on their dedicated endpoints — inserting a
+    /// `_scripts` row plus a `_services` row installs Lua that
+    /// `/api/{db}/{service}/{path}` then executes, and a `_triggers` or
+    /// `_jobs` row schedules work that runs as `_system`.
+    ///
+    /// `actor` says who is writing: `_jobs` is admitted for admins and the
+    /// server itself, closed to everyone else (see
+    /// [`crate::storage::ADMIN_WRITE_COLLECTIONS`]).
+    pub fn get_collection_for_write(
+        &self,
+        collection_name: &str,
+        actor: crate::storage::WriteActor,
+    ) -> DbResult<Collection> {
+        crate::storage::check_write_access(collection_name, actor)?;
+        self.system_collection(collection_name)
+    }
+
+    /// [`Self::get_or_create_collection`] with the write-tier guard, for write
+    /// paths that auto-create their target collection.
+    pub fn get_or_create_collection_for_write(
+        &self,
+        collection_name: &str,
+        actor: crate::storage::WriteActor,
+    ) -> DbResult<Collection> {
+        crate::storage::check_write_access(collection_name, actor)?;
+        self.get_or_create_system_collection(collection_name)
+    }
+
     /// Unrestricted collection lookup, for server-side code that legitimately
     /// owns a credential collection (`AuthService`, the env endpoints, the
     /// Lua `solidb.env` binding).

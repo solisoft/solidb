@@ -231,19 +231,19 @@
             <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-8">
               <div class="p-4 font-mono text-sm">
 <pre class="text-gray-300">scripts/
-├── hello.lua                → <span class="text-emerald-400">/api/custom/{db}/hello</span>
-├── users.lua                → <span class="text-emerald-400">/api/custom/{db}/users</span>
+├── hello.lua                → <span class="text-emerald-400">/api/{db}/{service}/hello</span>
+├── users.lua                → <span class="text-emerald-400">/api/{db}/{service}/users</span>
 ├── users/
-│   └── _id.lua              → <span class="text-emerald-400">/api/custom/{db}/users/:id</span>
+│   └── _id.lua              → <span class="text-emerald-400">/api/{db}/{service}/users/:id</span>
 └── api/
     └── v1/
-        └── products.lua     → <span class="text-emerald-400">/api/custom/{db}/api/v1/products</span></pre>
+        └── products.lua     → <span class="text-emerald-400">/api/{db}/{service}/api/v1/products</span></pre>
               </div>
             </div>
 
             <div class="bg-blue-900/10 border border-blue-500/20 rounded-xl p-4 flex items-start mb-8">
                <i class="fas fa-info-circle text-blue-400 mt-1 mr-3"></i>
-               <p class="text-sm text-gray-300"><strong>Naming Rules:</strong> Filename (without .lua) = last API path segment. Prefix with <code class="bg-gray-800 px-1 rounded text-xs">_</code> for path parameters (e.g., <code class="bg-gray-800 px-1 rounded text-xs">_id.lua</code> → <code class="bg-gray-800 px-1 rounded text-xs">:id</code>).</p>
+               <p class="text-sm text-gray-300"><strong>Naming Rules:</strong> Filename (without .lua) = last API path segment. Prefix with <code class="bg-gray-800 px-1 rounded text-xs">_</code> for path parameters (e.g., <code class="bg-gray-800 px-1 rounded text-xs">_id.lua</code> → <code class="bg-gray-800 px-1 rounded text-xs">:id</code>). The <code class="bg-gray-800 px-1 rounded text-xs">{service}</code> segment is set per project: <code class="bg-gray-800 px-1 rounded text-xs">service = "default"</code> in <code class="bg-gray-800 px-1 rounded text-xs">solidb-scripts.toml</code>, or the <code class="bg-gray-800 px-1 rounded text-xs">SOLIDB_SERVICE</code> variable. There is no per-file <code class="bg-gray-800 px-1 rounded text-xs">@service</code> directive, and the service must exist on the server before its scripts are reachable.</p>
             </div>
 
             <h3 class="text-lg font-bold text-white mb-4">Comment Header</h3>
@@ -387,6 +387,10 @@
                   <tr>
                     <td class="px-4 py-3 font-mono text-emerald-300">SOLIDB_DATABASE</td>
                     <td class="px-4 py-3">Override target database</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-emerald-300">SOLIDB_SERVICE</td>
+                    <td class="px-4 py-3">Override the service scripts are pushed to (default: <code class="bg-gray-800 px-1 rounded text-xs">default</code>)</td>
                   </tr>
                 </tbody>
               </table>

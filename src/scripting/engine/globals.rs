@@ -37,12 +37,47 @@ const ENV_CACHE_TTL: Duration = Duration::from_secs(5);
 static QUERY_AST_CACHE: Lazy<DashMap<String, Arc<crate::sdbql::ast::Query>>> =
     Lazy::new(|| DashMap::with_capacity(256));
 
+/// Entries kept in each of the two global Lua query caches.
+///
+/// Both are keyed by data a script chooses, so without a ceiling a single
+/// request could grow them without limit: `for i = 1, 1e8 do
+/// db:query("RETURN " .. i) end` adds a permanent AST entry per iteration.
+/// These allocations are Rust-side and therefore *outside* the 64 MB
+/// per-state Lua memory limit — the script stays well within its own budget
+/// while exhausting the host's.
+///
+/// The bound is deliberately generous: this is a safety ceiling, not a
+/// tuning knob. Real workloads have a small set of distinct query strings.
+const MAX_LUA_QUERY_CACHE_ENTRIES: usize = 4096;
+
+/// Drop everything from a global cache once it grows past the ceiling.
+///
+/// Clearing wholesale rather than evicting least-recently-used: `DashMap` has
+/// no recency information, an LRU would need a second index and a lock on the
+/// hot path, and the cost of a rare full rebuild is bounded (these are
+/// re-derivable caches with a 100 ms TTL on the result side).
+fn enforce_cache_ceiling<K, V>(cache: &DashMap<K, V>, name: &str)
+where
+    K: std::hash::Hash + Eq,
+{
+    if cache.len() > MAX_LUA_QUERY_CACHE_ENTRIES {
+        tracing::warn!(
+            "{} exceeded {} entries; clearing. A script is issuing queries with \
+             unbounded distinct text or bind variables.",
+            name,
+            MAX_LUA_QUERY_CACHE_ENTRIES
+        );
+        cache.clear();
+    }
+}
+
 /// Parse a query with caching. Returns a cached AST clone or parses and caches.
 fn parse_cached(query: &str) -> crate::error::DbResult<Arc<crate::sdbql::ast::Query>> {
     if let Some(ast) = QUERY_AST_CACHE.get(query) {
         return Ok(Arc::clone(ast.value()));
     }
     let ast = Arc::new(parse(query)?);
+    enforce_cache_ceiling(&QUERY_AST_CACHE, "Lua query AST cache");
     QUERY_AST_CACHE.insert(query.to_string(), Arc::clone(&ast));
     Ok(ast)
 }
@@ -50,6 +85,41 @@ fn parse_cached(query: &str) -> crate::error::DbResult<Arc<crate::sdbql::ast::Qu
 /// Sync-friendly query result cache for Lua db:query() hot path.
 /// Key: u64 hash (zero-alloc), Value: (cached_at, json_values, json_string)
 type QueryResultEntry = (Instant, Arc<Vec<JsonValue>>, Arc<String>);
+/// The caller a Lua state is currently serving, kept in mlua app data.
+///
+/// Not a Lua global (a script could overwrite it) and not captured by the
+/// `db` closures (a pooled state keeps those closures across requests from
+/// different callers — see `setup_request_globals_selective`). Every write
+/// through a `db` handle reads it at call time.
+#[derive(Clone)]
+pub(crate) struct LuaCaller {
+    pub actor: crate::storage::WriteActor,
+    pub principal: crate::sdbql::QueryPrincipal,
+}
+
+impl LuaCaller {
+    fn from_context(context: &ScriptContext) -> Self {
+        Self {
+            actor: context.write_actor(),
+            principal: context.query_principal(),
+        }
+    }
+
+    /// Nothing installed for this state: fail closed, as an anonymous caller.
+    fn fail_closed() -> Self {
+        Self {
+            actor: crate::storage::WriteActor::client(false),
+            principal: crate::sdbql::QueryPrincipal::anonymous(),
+        }
+    }
+}
+
+fn caller_of(lua: &Lua) -> LuaCaller {
+    lua.app_data_ref::<LuaCaller>()
+        .map(|c| c.clone())
+        .unwrap_or_else(LuaCaller::fail_closed)
+}
+
 static LUA_QUERY_CACHE: Lazy<DashMap<u64, QueryResultEntry>> =
     Lazy::new(|| DashMap::with_capacity(1024));
 
@@ -60,6 +130,7 @@ fn query_cache_key(
     db_name: &str,
     query: &str,
     bind_vars_map: &std::collections::HashMap<String, JsonValue>,
+    principal: &crate::sdbql::QueryPrincipal,
 ) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -67,6 +138,9 @@ fn query_cache_key(
     let mut hasher = DefaultHasher::new();
     db_name.hash(&mut hasher);
     query.hash(&mut hasher);
+    // Row policies make the same query answer differently per caller.
+    principal.user.hash(&mut hasher);
+    (principal.can_read, principal.can_write, principal.can_admin).hash(&mut hasher);
     if !bind_vars_map.is_empty() {
         let mut sorted: Vec<_> = bind_vars_map.iter().collect();
         sorted.sort_by(|a, b| a.0.cmp(b.0));
@@ -85,24 +159,34 @@ fn query_execute_and_cache(
     query: &str,
     bind_vars_map: std::collections::HashMap<String, JsonValue>,
     cache_key: u64,
+    principal: &crate::sdbql::QueryPrincipal,
 ) -> Result<(Arc<Vec<JsonValue>>, Arc<String>), crate::error::DbError> {
     let query_ast = parse_cached(query)?;
 
+    // The caller's principal, so a script's INSERT/UPDATE/REMOVE meets the
+    // same write tiers and row policies as the same query on `/cursor`.
+    // Without one the executor writes as the server itself.
     let executor = if bind_vars_map.is_empty() {
         QueryExecutor::with_database(storage, db_name.to_string())
     } else {
         QueryExecutor::with_database_and_bind_vars(storage, db_name.to_string(), bind_vars_map)
-    };
+    }
+    .with_principal(principal.clone());
 
     let results = executor.execute(&query_ast)?;
     let json_str = serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string());
     let results = Arc::new(results);
     let json_str = Arc::new(json_str);
 
-    LUA_QUERY_CACHE.insert(
-        cache_key,
-        (Instant::now(), Arc::clone(&results), Arc::clone(&json_str)),
-    );
+    // A mutation's result is not a cacheable answer: replaying it would skip
+    // the write.
+    if !query_ast.has_mutations() {
+        enforce_cache_ceiling(&LUA_QUERY_CACHE, "Lua query result cache");
+        LUA_QUERY_CACHE.insert(
+            cache_key,
+            (Instant::now(), Arc::clone(&results), Arc::clone(&json_str)),
+        );
+    }
 
     Ok((results, json_str))
 }
@@ -113,8 +197,9 @@ fn query_cached(
     db_name: &str,
     query: &str,
     bind_vars_map: std::collections::HashMap<String, JsonValue>,
+    principal: &crate::sdbql::QueryPrincipal,
 ) -> Result<Arc<Vec<JsonValue>>, crate::error::DbError> {
-    let cache_key = query_cache_key(db_name, query, &bind_vars_map);
+    let cache_key = query_cache_key(db_name, query, &bind_vars_map, principal);
 
     if let Some(entry) = LUA_QUERY_CACHE.get(&cache_key) {
         let (cached_at, results, _) = entry.value();
@@ -123,7 +208,8 @@ fn query_cached(
         }
     }
 
-    let (results, _) = query_execute_and_cache(storage, db_name, query, bind_vars_map, cache_key)?;
+    let (results, _) =
+        query_execute_and_cache(storage, db_name, query, bind_vars_map, cache_key, principal)?;
     Ok(results)
 }
 
@@ -133,8 +219,9 @@ fn query_cached_json(
     db_name: &str,
     query: &str,
     bind_vars_map: std::collections::HashMap<String, JsonValue>,
+    principal: &crate::sdbql::QueryPrincipal,
 ) -> Result<Arc<String>, crate::error::DbError> {
-    let cache_key = query_cache_key(db_name, query, &bind_vars_map);
+    let cache_key = query_cache_key(db_name, query, &bind_vars_map, principal);
 
     if let Some(entry) = LUA_QUERY_CACHE.get(&cache_key) {
         let (cached_at, _, json_str) = entry.value();
@@ -143,7 +230,8 @@ fn query_cached_json(
         }
     }
 
-    let (_, json_str) = query_execute_and_cache(storage, db_name, query, bind_vars_map, cache_key)?;
+    let (_, json_str) =
+        query_execute_and_cache(storage, db_name, query, bind_vars_map, cache_key, principal)?;
     Ok(json_str)
 }
 
@@ -236,6 +324,12 @@ pub fn setup_request_globals_selective(
         return Ok(());
     }
 
+    // Who this request writes as. Set before the fast path below: the `db`
+    // closures survive across callers on a pooled state, and read this at
+    // call time.
+    lua.set_app_data(LuaCaller::from_context(context));
+    crate::scripting::response::reset_overrides(lua);
+
     let globals = lua.globals();
 
     // Check if db-level globals are already set up for this db+script combo.
@@ -245,18 +339,37 @@ pub fn setup_request_globals_selective(
     let already_bound = !bound_key.is_empty() && bound_key == expected_key;
 
     if already_bound {
-        // Fast path: only refresh what changes per-request
+        // Fast path: only refresh what changes per-request.
+        //
+        // Everything derived from `context.user` MUST be refreshed here. A
+        // pooled Lua state is bound to `{db}:{script}`, not to a caller, so
+        // whatever this branch leaves in place is inherited by the next
+        // request that lands on the slot — and with round-robin selection,
+        // that is eventually every caller of the script. `solidb.env` was
+        // only populated in the full-setup branch below, behind an admin
+        // check, so an admin request warmed the slot with provider API keys
+        // and subsequent non-admin requests read them straight out of the
+        // still-populated table, defeating the SEC-176 gate.
         if needs.request {
             setup_request_table(lua, context)?;
         }
-        if needs.solidb_auth {
+        if needs.solidb_auth || needs.solidb_env {
             if let Ok(solidb) = globals.get::<mlua::Table>("solidb") {
-                let auth_table = auth::create_auth_table(lua, &context.user).map_err(|e| {
-                    DbError::InternalError(format!("Failed to create auth table: {}", e))
-                })?;
-                solidb
-                    .set("auth", auth_table)
-                    .map_err(|e| DbError::InternalError(format!("Failed to set auth: {}", e)))?;
+                if needs.solidb_auth {
+                    let auth_table = auth::create_auth_table(lua, &context.user).map_err(|e| {
+                        DbError::InternalError(format!("Failed to create auth table: {}", e))
+                    })?;
+                    solidb.set("auth", auth_table).map_err(|e| {
+                        DbError::InternalError(format!("Failed to set auth: {}", e))
+                    })?;
+                }
+                if needs.solidb_env {
+                    // Re-evaluated against *this* caller: replaces the table
+                    // wholesale, with an empty one for a non-admin.
+                    let allow_secrets =
+                        context.user.authenticated && context.user.has_role("admin");
+                    setup_env_table_cached(engine, lua, &solidb, db_name, allow_secrets)?;
+                }
             }
         }
         return Ok(());
@@ -789,7 +902,7 @@ fn setup_db_collection_method(
                     .get_database(&db_insert)
                     .map_err(mlua::Error::external)?;
                 let collection = db
-                    .get_collection(&coll_insert)
+                    .get_collection_for_write(&coll_insert, caller_of(lua).actor)
                     .map_err(mlua::Error::external)?;
 
                 let inserted = collection.insert(json_doc).map_err(mlua::Error::external)?;
@@ -810,7 +923,7 @@ fn setup_db_collection_method(
                         .get_database(&db_update)
                         .map_err(mlua::Error::external)?;
                     let collection = db
-                        .get_collection(&coll_update)
+                        .get_collection_for_write(&coll_update, caller_of(lua).actor)
                         .map_err(mlua::Error::external)?;
 
                     let updated = collection
@@ -825,12 +938,12 @@ fn setup_db_collection_method(
             let storage_delete = storage.clone();
             let db_delete = db_name.clone();
             let coll_delete = coll_name.clone();
-            let delete_fn = lua.create_function(move |_, (_, key): (LuaValue, String)| {
+            let delete_fn = lua.create_function(move |lua, (_, key): (LuaValue, String)| {
                 let db = storage_delete
                     .get_database(&db_delete)
                     .map_err(mlua::Error::external)?;
                 let collection = db
-                    .get_collection(&coll_delete)
+                    .get_collection_for_write(&coll_delete, caller_of(lua).actor)
                     .map_err(mlua::Error::external)?;
 
                 collection.delete(&key).map_err(mlua::Error::external)?;
@@ -940,7 +1053,7 @@ fn setup_db_collection_method(
                         .get_database(&db_bulk)
                         .map_err(mlua::Error::external)?;
                     let collection = db
-                        .get_collection(&coll_bulk)
+                        .get_collection_for_write(&coll_bulk, caller_of(lua).actor)
                         .map_err(mlua::Error::external)?;
 
                     let docs_array = match docs_json {
@@ -978,8 +1091,10 @@ fn setup_db_collection_method(
                     let db = storage_upsert
                         .get_database(&db_upsert)
                         .map_err(mlua::Error::external)?;
+                    // Checked before the lookup below: upsert reads first,
+                    // but it is a write.
                     let collection = db
-                        .get_collection(&coll_upsert)
+                        .get_collection_for_write(&coll_upsert, caller_of(lua).actor)
                         .map_err(mlua::Error::external)?;
 
                     let existing_key: Option<String> = match &key_or_filter {
@@ -1072,8 +1187,15 @@ fn setup_db_query_method(
                     std::collections::HashMap::new()
                 };
 
-                let results = query_cached(&storage, &db_query, &query, bind_vars_map)
-                    .map_err(mlua::Error::external)?;
+                let caller = caller_of(lua);
+                let results = query_cached(
+                    &storage,
+                    &db_query,
+                    &query,
+                    bind_vars_map,
+                    &caller.principal,
+                )
+                .map_err(mlua::Error::external)?;
 
                 let result_table = lua.create_table()?;
                 for (i, doc) in results.iter().enumerate() {
@@ -1108,8 +1230,10 @@ fn setup_db_query_method(
                     std::collections::HashMap::new()
                 };
 
-                let json_str = query_cached_json(&storage, &db_qj, &query, bind_vars_map)
-                    .map_err(mlua::Error::external)?;
+                let caller = caller_of(_lua);
+                let json_str =
+                    query_cached_json(&storage, &db_qj, &query, bind_vars_map, &caller.principal)
+                        .map_err(mlua::Error::external)?;
 
                 // Return as RawJson userdata — bypasses all conversion
                 Ok(LuaValue::UserData(_lua.create_userdata(
@@ -1188,6 +1312,11 @@ fn setup_db_transaction_method(
                                 let json_doc = lua_to_json_value(lua, doc)?;
 
                                 let full_coll_name = format!("{}:{}", db_insert, coll_insert);
+                                crate::storage::check_write_access(
+                                    &full_coll_name,
+                                    caller_of(lua).actor,
+                                )
+                                .map_err(mlua::Error::external)?;
                                 let collection = storage_insert
                                     .get_collection(&full_coll_name)
                                     .map_err(mlua::Error::external)?;
@@ -1218,6 +1347,11 @@ fn setup_db_transaction_method(
                                 let json_doc = lua_to_json_value(lua, doc)?;
 
                                 let full_coll_name = format!("{}:{}", db_update, coll_update);
+                                crate::storage::check_write_access(
+                                    &full_coll_name,
+                                    caller_of(lua).actor,
+                                )
+                                .map_err(mlua::Error::external)?;
                                 let collection = storage_update
                                     .get_collection(&full_coll_name)
                                     .map_err(mlua::Error::external)?;
@@ -1245,8 +1379,13 @@ fn setup_db_transaction_method(
                         let coll_delete = coll_name.clone();
                         let tx_id_delete = tx_id;
                         let delete_fn =
-                            lua.create_function(move |_, (_, key): (LuaValue, String)| {
+                            lua.create_function(move |lua, (_, key): (LuaValue, String)| {
                                 let full_coll_name = format!("{}:{}", db_delete, coll_delete);
+                                crate::storage::check_write_access(
+                                    &full_coll_name,
+                                    caller_of(lua).actor,
+                                )
+                                .map_err(mlua::Error::external)?;
                                 let collection = storage_delete
                                     .get_collection(&full_coll_name)
                                     .map_err(mlua::Error::external)?;
@@ -1328,6 +1467,8 @@ pub fn setup_lua_globals(
     script_info: Option<(&str, &str)>,
 ) -> Result<(), DbError> {
     let globals = lua.globals();
+    lua.set_app_data(LuaCaller::from_context(context));
+    crate::scripting::response::reset_overrides(lua);
 
     // Create 'solidb' namespace
     let solidb = lua
@@ -1514,6 +1655,16 @@ pub fn setup_lua_globals(
     solidb
         .set("error", error_fn)
         .map_err(|e| DbError::InternalError(format!("Failed to set error: {}", e)))?;
+    let status_fn = crate::scripting::response::create_status_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create status: {}", e)))?;
+    solidb
+        .set("status", status_fn)
+        .map_err(|e| DbError::InternalError(format!("Failed to set status: {}", e)))?;
+    let header_fn = crate::scripting::response::create_header_function(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create header: {}", e)))?;
+    solidb
+        .set("header", header_fn)
+        .map_err(|e| DbError::InternalError(format!("Failed to set header: {}", e)))?;
 
     let dev_assert_fn = create_dev_assert_function(lua).map_err(|e| {
         DbError::InternalError(format!("Failed to create dev_assert function: {}", e))
@@ -1789,564 +1940,9 @@ pub fn setup_lua_globals(
     // Setup table extensions (table.sorted, table.filter, etc.)
     lua_globals::setup_table_extensions(lua)?;
 
-    // Create global 'db' object
-    let db_handle = lua
-        .create_table()
-        .map_err(|e| DbError::InternalError(format!("Failed to create db table: {}", e)))?;
-    db_handle
-        .set("_name", db_name.to_string())
-        .map_err(|e| DbError::InternalError(format!("Failed to set db name: {}", e)))?;
-
-    // db:collection(name) -> collection handle
-    let storage_ref = engine.storage.clone();
-    let current_db = db_name.to_string();
-
-    let collection_fn = lua
-        .create_function(move |lua, (_, coll_name): (LuaValue, String)| {
-            let storage = storage_ref.clone();
-            let db_name = current_db.clone();
-
-            // Create collection handle table
-            let coll_handle = lua.create_table()?;
-            coll_handle.set("_solidb_handle", true)?; // Marker to skip during session capture
-            coll_handle.set("_db", db_name.clone())?;
-            coll_handle.set("_name", coll_name.clone())?;
-
-            // col:get(key)
-            let storage_get = storage.clone();
-            let db_get = db_name.clone();
-            let coll_get = coll_name.clone();
-            let get_fn = lua.create_function(move |lua, (_, key): (LuaValue, String)| {
-                let db = storage_get
-                    .get_database(&db_get)
-                    .map_err(mlua::Error::external)?;
-                let collection = db
-                    .get_collection(&coll_get)
-                    .map_err(mlua::Error::external)?;
-
-                match collection.get(&key) {
-                    Ok(doc) => {
-                        let json_val = doc.to_value();
-                        json_to_lua(lua, &json_val)
-                    }
-                    Err(DbError::DocumentNotFound(_)) => Ok(LuaValue::Nil),
-                    Err(e) => Err(mlua::Error::external(e)),
-                }
-            })?;
-            coll_handle.set("get", get_fn)?;
-
-            // col:insert(doc)
-            let storage_insert = storage.clone();
-            let db_insert = db_name.clone();
-            let coll_insert = coll_name.clone();
-            let insert_fn = lua.create_function(move |lua, (_, doc): (LuaValue, LuaValue)| {
-                let json_doc = lua_to_json_value(lua, doc)?;
-
-                let db = storage_insert
-                    .get_database(&db_insert)
-                    .map_err(mlua::Error::external)?;
-                let collection = db
-                    .get_collection(&coll_insert)
-                    .map_err(mlua::Error::external)?;
-
-                let inserted = collection.insert(json_doc).map_err(mlua::Error::external)?;
-
-                json_to_lua(lua, &inserted.to_value())
-            })?;
-            coll_handle.set("insert", insert_fn)?;
-
-            // col:update(key, doc)
-            let storage_update = storage.clone();
-            let db_update = db_name.clone();
-            let coll_update = coll_name.clone();
-            let update_fn =
-                lua.create_function(move |lua, (_, key, doc): (LuaValue, String, LuaValue)| {
-                    let json_doc = lua_to_json_value(lua, doc)?;
-
-                    let db = storage_update
-                        .get_database(&db_update)
-                        .map_err(mlua::Error::external)?;
-                    let collection = db
-                        .get_collection(&coll_update)
-                        .map_err(mlua::Error::external)?;
-
-                    let updated = collection
-                        .update(&key, json_doc)
-                        .map_err(mlua::Error::external)?;
-
-                    json_to_lua(lua, &updated.to_value())
-                })?;
-            coll_handle.set("update", update_fn)?;
-
-            // col:delete(key)
-            let storage_delete = storage.clone();
-            let db_delete = db_name.clone();
-            let coll_delete = coll_name.clone();
-            let delete_fn = lua.create_function(move |_, (_, key): (LuaValue, String)| {
-                let db = storage_delete
-                    .get_database(&db_delete)
-                    .map_err(mlua::Error::external)?;
-                let collection = db
-                    .get_collection(&coll_delete)
-                    .map_err(mlua::Error::external)?;
-
-                collection.delete(&key).map_err(mlua::Error::external)?;
-
-                Ok(true)
-            })?;
-            coll_handle.set("delete", delete_fn)?;
-
-            // col:count(filter?) - count all or matching documents
-            let storage_count = storage.clone();
-            let db_count = db_name.clone();
-            let coll_count = coll_name.clone();
-            let count_fn =
-                lua.create_function(move |lua, (_, filter): (LuaValue, Option<LuaValue>)| {
-                    let db = storage_count
-                        .get_database(&db_count)
-                        .map_err(mlua::Error::external)?;
-                    let collection = db
-                        .get_collection(&coll_count)
-                        .map_err(mlua::Error::external)?;
-
-                    match filter {
-                        Some(f) if !matches!(f, LuaValue::Nil) => {
-                            let filter_json = lua_to_json_value(lua, f)?;
-                            // Count matching documents
-                            let all_docs = collection.scan(None);
-                            let count = all_docs
-                                .into_iter()
-                                .filter(|doc| matches_filter(&doc.to_value(), &filter_json))
-                                .count();
-                            Ok(count as i64)
-                        }
-                        _ => Ok(collection.count() as i64),
-                    }
-                })?;
-            coll_handle.set("count", count_fn)?;
-
-            // col:find(filter) - find documents matching filter
-            let storage_find = storage.clone();
-            let db_find = db_name.clone();
-            let coll_find = coll_name.clone();
-            let find_fn = lua.create_function(move |lua, (_, filter): (LuaValue, LuaValue)| {
-                let filter_json = lua_to_json_value(lua, filter)?;
-
-                let db = storage_find
-                    .get_database(&db_find)
-                    .map_err(mlua::Error::external)?;
-                let collection = db
-                    .get_collection(&coll_find)
-                    .map_err(mlua::Error::external)?;
-
-                // Scan all documents and filter
-                let all_docs = collection.scan(None);
-                let mut results = Vec::new();
-
-                for doc in all_docs {
-                    let doc_value = doc.to_value();
-                    if matches_filter(&doc_value, &filter_json) {
-                        results.push(doc_value);
-                    }
-                }
-
-                // Convert to Lua table
-                let result_table = lua.create_table()?;
-                for (i, doc) in results.iter().enumerate() {
-                    result_table.set(i + 1, json_to_lua(lua, doc)?)?;
-                }
-
-                Ok(LuaValue::Table(result_table))
-            })?;
-            coll_handle.set("find", find_fn)?;
-
-            // col:find_one(filter) - find first document matching filter
-            let storage_find_one = storage.clone();
-            let db_find_one = db_name.clone();
-            let coll_find_one = coll_name.clone();
-            let find_one_fn =
-                lua.create_function(move |lua, (_, filter): (LuaValue, LuaValue)| {
-                    let filter_json = lua_to_json_value(lua, filter)?;
-
-                    let db = storage_find_one
-                        .get_database(&db_find_one)
-                        .map_err(mlua::Error::external)?;
-                    let collection = db
-                        .get_collection(&coll_find_one)
-                        .map_err(mlua::Error::external)?;
-
-                    // Scan documents and return first match
-                    let all_docs = collection.scan(None);
-
-                    for doc in all_docs {
-                        let doc_value = doc.to_value();
-                        if matches_filter(&doc_value, &filter_json) {
-                            return json_to_lua(lua, &doc_value);
-                        }
-                    }
-
-                    Ok(LuaValue::Nil)
-                })?;
-            coll_handle.set("find_one", find_one_fn)?;
-
-            // col:bulk_insert(docs) - insert multiple documents
-            let storage_bulk = storage.clone();
-            let db_bulk = db_name.clone();
-            let coll_bulk = coll_name.clone();
-            let bulk_insert_fn =
-                lua.create_function(move |lua, (_, docs): (LuaValue, LuaValue)| {
-                    let docs_json = lua_to_json_value(lua, docs)?;
-
-                    let db = storage_bulk
-                        .get_database(&db_bulk)
-                        .map_err(mlua::Error::external)?;
-                    let collection = db
-                        .get_collection(&coll_bulk)
-                        .map_err(mlua::Error::external)?;
-
-                    let docs_array = match docs_json {
-                        JsonValue::Array(arr) => arr,
-                        _ => {
-                            return Err(mlua::Error::external(DbError::BadRequest(
-                                "bulk_insert expects an array of documents".to_string(),
-                            )))
-                        }
-                    };
-
-                    let mut inserted = Vec::new();
-                    for doc in docs_array {
-                        let result = collection.insert(doc).map_err(mlua::Error::external)?;
-                        inserted.push(result.to_value());
-                    }
-
-                    // Return array of inserted documents
-                    let result_table = lua.create_table()?;
-                    for (i, doc) in inserted.iter().enumerate() {
-                        result_table.set(i + 1, json_to_lua(lua, doc)?)?;
-                    }
-
-                    Ok(LuaValue::Table(result_table))
-                })?;
-            coll_handle.set("bulk_insert", bulk_insert_fn)?;
-
-            // col:upsert(key_or_filter, doc) - insert or update
-            // If key_or_filter is a string, it's treated as a _key lookup
-            // If key_or_filter is a table, it's treated as a filter
-            let storage_upsert = storage.clone();
-            let db_upsert = db_name.clone();
-            let coll_upsert = coll_name.clone();
-            let upsert_fn = lua.create_function(
-                move |lua, (_, key_or_filter, doc): (LuaValue, LuaValue, LuaValue)| {
-                    let mut doc_json = lua_to_json_value(lua, doc)?;
-
-                    let db = storage_upsert
-                        .get_database(&db_upsert)
-                        .map_err(mlua::Error::external)?;
-                    let collection = db
-                        .get_collection(&coll_upsert)
-                        .map_err(mlua::Error::external)?;
-
-                    // Check if key_or_filter is a string (key) or table (filter)
-                    let existing_key: Option<String> = match &key_or_filter {
-                        LuaValue::String(s) => {
-                            let key = s.to_str()?.to_string();
-                            // Check if document with this key exists
-                            match collection.get(&key) {
-                                Ok(_) => Some(key),
-                                Err(_) => {
-                                    // Set _key in doc for insert
-                                    if let JsonValue::Object(ref mut obj) = doc_json {
-                                        obj.insert(
-                                            "_key".to_string(),
-                                            JsonValue::String(key.clone()),
-                                        );
-                                    }
-                                    None
-                                }
-                            }
-                        }
-                        LuaValue::Table(_) => {
-                            let filter_json = lua_to_json_value(lua, key_or_filter)?;
-                            // Find existing document by filter
-                            let all_docs = collection.scan(None);
-                            let mut found_key = None;
-                            for existing_doc in all_docs {
-                                let doc_value = existing_doc.to_value();
-                                if matches_filter(&doc_value, &filter_json) {
-                                    if let Some(key) =
-                                        doc_value.get("_key").and_then(|k| k.as_str())
-                                    {
-                                        found_key = Some(key.to_string());
-                                        break;
-                                    }
-                                }
-                            }
-                            found_key
-                        }
-                        _ => None,
-                    };
-
-                    let result = if let Some(key) = existing_key {
-                        // Update existing
-                        collection
-                            .update(&key, doc_json)
-                            .map_err(mlua::Error::external)?
-                            .to_value()
-                    } else {
-                        // Insert new
-                        collection
-                            .insert(doc_json)
-                            .map_err(mlua::Error::external)?
-                            .to_value()
-                    };
-
-                    json_to_lua(lua, &result)
-                },
-            )?;
-            coll_handle.set("upsert", upsert_fn)?;
-
-            Ok(LuaValue::Table(coll_handle))
-        })
-        .map_err(|e| {
-            DbError::InternalError(format!("Failed to create collection function: {}", e))
-        })?;
-
-    db_handle
-        .set("collection", collection_fn)
-        .map_err(|e| DbError::InternalError(format!("Failed to set collection function: {}", e)))?;
-
-    // db:query(query, bind_vars) -> results
-    let storage_query = engine.storage.clone();
-    let db_query = db_name.to_string();
-    let query_fn = lua
-        .create_function(
-            move |lua, (_, query, bind_vars): (LuaValue, String, Option<LuaValue>)| {
-                let storage = storage_query.clone();
-
-                // Parse bind vars
-                let bind_vars_map = if let Some(vars) = bind_vars {
-                    let json_vars = lua_to_json_value(lua, vars)?;
-                    if let JsonValue::Object(map) = json_vars {
-                        map.into_iter().collect()
-                    } else {
-                        std::collections::HashMap::new()
-                    }
-                } else {
-                    std::collections::HashMap::new()
-                };
-
-                let results = query_cached(&storage, &db_query, &query, bind_vars_map)
-                    .map_err(mlua::Error::external)?;
-
-                // Convert results to Lua table
-                let result_table = lua.create_table()?;
-                for (i, doc) in results.iter().enumerate() {
-                    result_table.set(i + 1, json_to_lua(lua, doc)?)?;
-                }
-
-                Ok(LuaValue::Table(result_table))
-            },
-        )
-        .map_err(|e| DbError::InternalError(format!("Failed to create query function: {}", e)))?;
-
-    db_handle
-        .set("query", query_fn.clone())
-        .map_err(|e| DbError::InternalError(format!("Failed to set query function: {}", e)))?;
-
-    // db:transaction(callback) -> auto-commit/rollback transaction
-    let storage_tx = engine.storage.clone();
-    let db_tx = db_name.to_string();
-    let transaction_fn = lua
-        .create_async_function(move |lua, (_, callback): (LuaValue, mlua::Function)| {
-            let storage = storage_tx.clone();
-            let db_name = db_tx.clone();
-
-            async move {
-                // Initialize transaction manager if needed
-                storage
-                    .initialize_transactions()
-                    .map_err(mlua::Error::external)?;
-
-                // Get transaction manager and begin transaction
-                let tx_manager = storage
-                    .transaction_manager()
-                    .map_err(mlua::Error::external)?;
-
-                let tx_id = tx_manager
-                    .begin(crate::transaction::IsolationLevel::ReadCommitted)
-                    .map_err(mlua::Error::external)?;
-
-                // Create the transaction context table
-                let tx_handle = lua.create_table()?;
-                tx_handle.set("_tx_id", tx_id.to_string())?;
-                tx_handle.set("_db", db_name.clone())?;
-
-                // tx:collection(name) -> transactional collection handle
-                let storage_coll = storage.clone();
-                let tx_manager_coll = tx_manager.clone();
-                let db_coll = db_name.clone();
-                let tx_id_coll = tx_id;
-
-                let tx_collection_fn =
-                    lua.create_function(move |lua, (_, coll_name): (LuaValue, String)| {
-                        let storage = storage_coll.clone();
-                        let tx_manager = tx_manager_coll.clone();
-                        let db_name = db_coll.clone();
-                        let tx_id = tx_id_coll;
-
-                        let lock_manager = tx_manager.lock_manager().clone();
-
-                        let coll_handle = lua.create_table()?;
-                        coll_handle.set("_db", db_name.clone())?;
-                        coll_handle.set("_name", coll_name.clone())?;
-                        coll_handle.set("_tx_id", tx_id.to_string())?;
-
-                        let storage_insert = storage.clone();
-                        let tx_mgr_insert = tx_manager.clone();
-                        let lock_mgr_insert = lock_manager.clone();
-                        let db_insert = db_name.clone();
-                        let coll_insert = coll_name.clone();
-                        let tx_id_insert = tx_id;
-                        let insert_fn =
-                            lua.create_function(move |lua, (_, doc): (LuaValue, LuaValue)| {
-                                let json_doc = lua_to_json_value(lua, doc)?;
-
-                                let full_coll_name = format!("{}:{}", db_insert, coll_insert);
-                                let collection = storage_insert
-                                    .get_collection(&full_coll_name)
-                                    .map_err(mlua::Error::external)?;
-
-                                let tx_arc = tx_mgr_insert
-                                    .get(tx_id_insert)
-                                    .map_err(mlua::Error::external)?;
-                                let mut tx = tx_arc.write().unwrap();
-                                let wal = tx_mgr_insert.wal();
-                                let lock_mgr = lock_mgr_insert.clone();
-
-                                let inserted = collection
-                                    .insert_tx(&mut tx, wal, &lock_mgr, json_doc)
-                                    .map_err(mlua::Error::external)?;
-
-                                json_to_lua(lua, &inserted.to_value())
-                            })?;
-                        coll_handle.set("insert", insert_fn)?;
-
-                        let storage_update = storage.clone();
-                        let tx_mgr_update = tx_manager.clone();
-                        let lock_mgr_update = lock_manager.clone();
-                        let db_update = db_name.clone();
-                        let coll_update = coll_name.clone();
-                        let tx_id_update = tx_id;
-                        let update_fn = lua.create_function(
-                            move |lua, (_, key, doc): (LuaValue, String, LuaValue)| {
-                                let json_doc = lua_to_json_value(lua, doc)?;
-
-                                let full_coll_name = format!("{}:{}", db_update, coll_update);
-                                let collection = storage_update
-                                    .get_collection(&full_coll_name)
-                                    .map_err(mlua::Error::external)?;
-
-                                let tx_arc = tx_mgr_update
-                                    .get(tx_id_update)
-                                    .map_err(mlua::Error::external)?;
-                                let mut tx = tx_arc.write().unwrap();
-                                let wal = tx_mgr_update.wal();
-                                let lock_mgr = lock_mgr_update.clone();
-
-                                let updated = collection
-                                    .update_tx(&mut tx, wal, &lock_mgr, &key, json_doc)
-                                    .map_err(mlua::Error::external)?;
-
-                                json_to_lua(lua, &updated.to_value())
-                            },
-                        )?;
-                        coll_handle.set("update", update_fn)?;
-
-                        let storage_delete = storage.clone();
-                        let tx_mgr_delete = tx_manager.clone();
-                        let lock_mgr_delete = lock_manager.clone();
-                        let db_delete = db_name.clone();
-                        let coll_delete = coll_name.clone();
-                        let tx_id_delete = tx_id;
-                        let delete_fn =
-                            lua.create_function(move |_, (_, key): (LuaValue, String)| {
-                                let full_coll_name = format!("{}:{}", db_delete, coll_delete);
-                                let collection = storage_delete
-                                    .get_collection(&full_coll_name)
-                                    .map_err(mlua::Error::external)?;
-
-                                let tx_arc = tx_mgr_delete
-                                    .get(tx_id_delete)
-                                    .map_err(mlua::Error::external)?;
-                                let mut tx = tx_arc.write().unwrap();
-                                let wal = tx_mgr_delete.wal();
-                                let lock_mgr = lock_mgr_delete.clone();
-
-                                collection
-                                    .delete_tx(&mut tx, wal, &lock_mgr, &key)
-                                    .map_err(mlua::Error::external)?;
-
-                                Ok(true)
-                            })?;
-                        coll_handle.set("delete", delete_fn)?;
-
-                        let storage_get = storage.clone();
-                        let lock_mgr_get = lock_manager.clone();
-                        let db_get = db_name.clone();
-                        let coll_get = coll_name.clone();
-                        let tx_id_get = tx_id;
-                        let get_fn =
-                            lua.create_function(move |lua, (_, key): (LuaValue, String)| {
-                                let full_coll_name = format!("{}:{}", db_get, coll_get);
-                                let collection = storage_get
-                                    .get_collection(&full_coll_name)
-                                    .map_err(mlua::Error::external)?;
-
-                                let lock_mgr = lock_mgr_get.clone();
-                                match collection.get_tx(tx_id_get, &lock_mgr, &key) {
-                                    Ok(Some(doc)) => json_to_lua(lua, &doc.to_value()),
-                                    Ok(None) => Ok(LuaValue::Nil),
-                                    Err(e) => Err(mlua::Error::external(e)),
-                                }
-                            })?;
-                        coll_handle.set("get", get_fn)?;
-
-                        Ok(LuaValue::Table(coll_handle))
-                    })?;
-                tx_handle.set("collection", tx_collection_fn)?;
-
-                // Execute the callback with the transaction context
-                let result = callback
-                    .call_async::<LuaValue>(LuaValue::Table(tx_handle))
-                    .await;
-
-                match result {
-                    Ok(value) => {
-                        // Commit the transaction on success
-                        storage
-                            .commit_transaction(tx_id)
-                            .map_err(mlua::Error::external)?;
-                        Ok(value)
-                    }
-                    Err(e) => {
-                        // Rollback on error
-                        let _ = storage.rollback_transaction(tx_id);
-                        Err(e)
-                    }
-                }
-            }
-        })
-        .map_err(|e| {
-            DbError::InternalError(format!("Failed to create transaction function: {}", e))
-        })?;
-
-    db_handle.set("transaction", transaction_fn).map_err(|e| {
-        DbError::InternalError(format!("Failed to set transaction function: {}", e))
-    })?;
-
-    globals
-        .set("db", db_handle)
-        .map_err(|e| DbError::InternalError(format!("Failed to set db global: {}", e)))?;
+    // Global 'db' object: the same implementation as the pooled path, so
+    // there is exactly one place that decides what a script may write.
+    setup_db_object(engine, lua, db_name)?;
 
     // Create 'request' table with context info
     let request = lua
@@ -2427,45 +2023,9 @@ pub fn setup_lua_globals(
     setup_db_object(engine, lua, db_name)?;
 
     // Create 'response' helper table
-    let response = lua
-        .create_table()
-        .map_err(|e| DbError::InternalError(format!("Failed to create response table: {}", e)))?;
-
-    // response.json(data) - helper to return JSON
-    let json_fn = lua
-        .create_function(|_, data: LuaValue| Ok(data))
-        .map_err(|e| DbError::InternalError(format!("Failed to create json function: {}", e)))?;
-    response
-        .set("json", json_fn)
-        .map_err(|e| DbError::InternalError(format!("Failed to set json: {}", e)))?;
-
-    // response.html(content) - HTML response
-    let html_fn = create_response_html_function(lua)
-        .map_err(|e| DbError::InternalError(format!("Failed to create html function: {}", e)))?;
-    response
-        .set("html", html_fn)
-        .map_err(|e| DbError::InternalError(format!("Failed to set html: {}", e)))?;
-
-    // response.file(path) - file download
-    let file_fn = create_response_file_function(lua)
-        .map_err(|e| DbError::InternalError(format!("Failed to create file function: {}", e)))?;
-    response
-        .set("file", file_fn)
-        .map_err(|e| DbError::InternalError(format!("Failed to set file: {}", e)))?;
-
-    // response.stream(data) - streaming response
-    let stream_fn = create_response_stream_function(lua)
-        .map_err(|e| DbError::InternalError(format!("Failed to create stream function: {}", e)))?;
-    response
-        .set("stream", stream_fn)
-        .map_err(|e| DbError::InternalError(format!("Failed to set stream: {}", e)))?;
-
-    // response.cors(options) - CORS headers
-    let cors_fn = create_response_cors_function(lua)
-        .map_err(|e| DbError::InternalError(format!("Failed to create cors function: {}", e)))?;
-    response
-        .set("cors", cors_fn)
-        .map_err(|e| DbError::InternalError(format!("Failed to set cors: {}", e)))?;
+    // The `response` global: json / html / redirect / file / cors.
+    let response = crate::scripting::response::create_response_table(lua)
+        .map_err(|e| DbError::InternalError(format!("Failed to create response: {}", e)))?;
 
     globals
         .set("response", response)

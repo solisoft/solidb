@@ -36,6 +36,30 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
+    /// Resolve a collection a query is about to *write* to.
+    ///
+    /// Adds the write-only tier to [`Self::get_collection`]'s guard: `FOR d IN
+    /// _scripts RETURN d` stays a documented read, but `INSERT {...} INTO
+    /// _scripts` is how a principal with Write installed Lua that the service
+    /// router then executed, and `INSERT ... INTO _views` is how a `REFRESH`
+    /// was pointed at another tenant's collection.
+    pub(super) fn get_collection_for_write(
+        &self,
+        name: &str,
+    ) -> DbResult<crate::storage::Collection> {
+        crate::storage::check_write_access(name, self.write_actor())?;
+        self.get_collection(name)
+    }
+
+    /// Who this executor writes as: the principal a client handler attached,
+    /// or the server itself when none was (queue worker, triggers, tests).
+    pub(super) fn write_actor(&self) -> crate::storage::WriteActor {
+        match &self.principal {
+            Some(p) => crate::storage::WriteActor::client(p.can_admin),
+            None => crate::storage::WriteActor::Server,
+        }
+    }
+
     /// Resolve a fully-qualified `{database}:{collection}` name supplied by a
     /// query (only `DOCUMENT()` accepts this form).
     ///
@@ -227,6 +251,23 @@ impl<'a> QueryExecutor<'a> {
         // go straight from the stored bytes to a `serde_json::Value`. This
         // is materially faster on large collections (no extra struct
         // construction or re-merging of metadata).
+        //
+        // The row ceiling is checked once the FOR has built its rows, which
+        // is too late for a scan that materialises the whole collection into
+        // a Vec first: `FOR d IN huge COLLECT ...` reached the OOM killer
+        // before it reached `check_budget`. Stop the scan one past the ceiling
+        // instead — the check that follows fails exactly as it would have on
+        // the full scan, just without holding it. Only the plain path can do
+        // this: valid-time and row-policy filtering happen after the scan, and
+        // a capped scan would under-fill them.
+        let limit = if for_clause.valid_time.is_none()
+            && !self.row_policy_applies(&for_clause.collection)
+        {
+            let cap = self.max_intermediate_rows.saturating_add(1);
+            Some(limit.map_or(cap, |n| n.min(cap)))
+        } else {
+            limit
+        };
         let docs = collection.scan_values(limit);
         let docs = self.apply_valid_time(for_clause, docs, ctx)?;
         Ok(self.apply_row_policy(&for_clause.collection, docs, ctx))
@@ -274,6 +315,19 @@ impl<'a> QueryExecutor<'a> {
                     .unwrap_or(0);
                 Ok(docs.into_iter().filter(|d| overlaps(d, fa, tb)).collect())
             }
+        }
+    }
+
+    /// Whether `apply_row_policy` would filter this principal's scan of
+    /// `collection`.
+    fn row_policy_applies(&self, collection: &str) -> bool {
+        match &self.principal {
+            Some(p) if !p.can_admin => self
+                .get_collection(collection)
+                .ok()
+                .and_then(|c| c.get_row_policy())
+                .is_some(),
+            _ => false,
         }
     }
 

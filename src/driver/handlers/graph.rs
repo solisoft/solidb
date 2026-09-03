@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 
 fn graph_executor<'a>(handler: &'a DriverHandler, database: &str) -> QueryExecutor<'a> {
     QueryExecutor::with_database(&handler.storage, database.to_string())
+        .with_timeout(std::time::Duration::from_secs(30))
 }
 
 pub fn handle_graph_neighbors(

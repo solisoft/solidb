@@ -58,16 +58,19 @@ let the `test` job in CI run the whole thing. The other six CI jobs (`fmt`,
 `clippy`, `docs-sync`, `audit`, `msrv`, `windows-check`) are all cheap enough to
 reproduce locally and are the ones worth checking before a push.
 
-### One failure that is not your change
+### Known local-only failures
 
-It reproduces on a clean checkout; do not go hunting for it in a diff.
+There are none right now.
 
-- **`queue::jobs::tests::validate_target_accepts_webhook_only`** fails only on a
-  machine whose resolver wildcards `.test` to `127.0.0.1` (a common local dev
-  setup). The SSRF guard resolves `example.test`, sees loopback, and rejects it.
-  Passes in CI, where the name does not resolve.
+- **`queue::jobs::tests::validate_target_accepts_webhook_only`** used to fail on
+  any machine whose resolver wildcards `.test` to `127.0.0.1` (a common local
+  dev setup): the SSRF guard resolved `example.test`, saw loopback, and
+  rejected it. **Fixed** — the fixture is a literal public IP, so the test does
+  no DNS at all. This became load-bearing when the guard stopped treating an
+  unresolvable host as allowed: `example.test` would now fail in CI too, where
+  the name does not resolve.
 
-The second entry that used to live here — **`rbac_admin_endpoints_tests`
+The entry that used to live here — **`rbac_admin_endpoints_tests`
 aborting at process *exit*** with `SIGSEGV` or `std::bad_alloc`/`SIGABRT` after
 all its tests reported ok — is **fixed**. `PendingCfDrops::spawn_dropper`
 (`src/storage/pending_drops.rs`) detached its thread and nothing joined it, so a
@@ -174,6 +177,57 @@ FOR doc IN users
 - **Replication**: Master-master with eventual consistency; writes queue for offline nodes
 - **Sharding**: `ShardID = hash(key) % NumShards`; configurable replication factor
 - **Cluster Scripts**: `/scripts/` contains cluster testing utilities (`start_cluster.sh`, `test_cluster_full.sh`)
+
+## Security-relevant configuration
+
+These all fail closed. Each exists because the permissive behaviour was a
+finding in the September 2026 audit; flipping one back is an explicit
+decision, not a default.
+
+| Variable | Default | Effect when set |
+|---|---|---|
+| `ADMIN_UI_PASSWORD` | unset | Requires a login on the `admin/` console. Without it (and without the override below) the console refuses to serve. |
+| `ADMIN_UI_ALLOW_NO_AUTH` | off | Declares that something in front of `admin/` authenticates requests. The console holds a SoliDB admin credential and acts under it for every visitor, so one of these two must be set. |
+| `SOLIDB_ENABLE_AI_VALIDATION` | off | Enables `/_api/ai/validate`, which shells out to `cargo` on the server host. Dev hosts only; also requires a global admin. |
+| `SOLIDB_ALLOW_GLOBAL_WEBHOOK_SECRET` | off | Lets a job with no `webhook_secret` be signed with `SOLI_WEBHOOK_SECRET`. Off by default because the target URL is tenant-chosen, which makes it a signing oracle for the instance secret. Prefer a per-trigger secret. |
+| `SOLIDB_MAX_INTERMEDIATE_ROWS` | 5,000,000 | Ceiling on rows a single query may materialise, checked cooperatively inside the executor. Bounds nested-`FOR` cartesian products, which no `LIMIT` applies to. |
+
+Two existing switches worth knowing in the same breath: `SOLIDB_ALLOW_WEBHOOK_LOOPBACK`
+and `SOLIDB_ALLOW_INSECURE_WEBHOOK_TLS` are dev-only escape hatches on the
+webhook path, and `SOLIDB_DB_AUTHZ_MODE=warn` (plus `SOLIDB_DB_AUTHZ_ALLOW_WARN=1`)
+turns per-database authorization into a dry run.
+
+### Three tiers of protected collections
+
+`src/storage/protected.rs` holds the lists, and the boundary is *a
+caller-supplied collection name* — server-side code uses
+`Database::system_collection` and is unaffected.
+
+- **Not readable or writable by name**: `_env`, `_admins`, `_api_keys`,
+  `_roles`, `_user_roles`. Credentials, plus the authorization state the
+  server reads back to decide permissions.
+- **Readable, never written by name**: `_scripts`, `_services`, `_triggers`,
+  `_views`, `_graphs`, `_config`, `_rag_pipelines`. Everything the server
+  later executes or schedules. Writes go through the dedicated Admin-gated
+  endpoints, which validate their input.
+- **Readable, written by name with Admin only**: `_jobs`. The trigger
+  dispatcher executes its `pending` rows as `_system`, so plain Write must
+  not reach it — but it is also the Soli framework's job store, written by
+  name from `perform_later` and the worker with an admin credential.
+
+Every by-name write goes through `check_write_access(name, WriteActor)`; the
+storage getters `get_collection_for_write` take the actor so a handler cannot
+forget to say who is writing. `WriteActor::Server` is for the server's own
+work, never for a name that came in over the wire. The check covers the
+document API, SDBQL, the driver, import, truncate, blob uploads, and the Lua
+bindings: a script writes as its **caller** (`ScriptContext::write_actor`,
+kept in mlua app data as `LuaCaller`), never as the server, so a public
+"insert into `request.body.collection`" script cannot be steered at
+`_scripts`. The queue worker runs job and trigger scripts as `_system` with
+the admin role, which is what lets them write `_jobs`.
+
+Adding a collection that the server interprets after storing it means adding
+it to one of these lists.
 
 ## System Dependencies
 

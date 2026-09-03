@@ -64,6 +64,12 @@ pub async fn execute_ws(
     };
 
     let lua = Lua::new();
+    // The pooled and one-shot script paths cap the allocator and install an
+    // execution hook; this path had neither, so a `while true do end` in a
+    // service script pinned a tokio worker for good, and an allocation loop
+    // grew until the OOM killer arrived.
+    super::pool::LuaPool::apply_memory_limit(&lua);
+    super::install_busy_loop_hook(&lua);
 
     // Secure environment: Remove unsafe standard libraries and functions
     let globals = lua.globals();

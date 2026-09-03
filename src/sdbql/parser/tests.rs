@@ -402,3 +402,111 @@ fn test_parse_collect_aggregate_no_group_var() {
     let query = parse("FOR u IN users COLLECT AGGREGATE count = COUNT() RETURN count");
     assert!(query.is_ok(), "Failed to parse: {:?}", query.err());
 }
+
+// ---------------------------------------------------------------------------
+// Recursion depth
+// ---------------------------------------------------------------------------
+
+/// Chained unary operators recurse in `parse_unary_expression` without going
+/// back through `parse_expression`, so they escaped the SEC-130 depth guard
+/// entirely: a query of N nested unary operators recursed N frames deep and
+/// overflowed the stack, which in Rust aborts the whole process rather than
+/// unwinding. 200k operators is a 200 KB body, well under the request limit.
+///
+/// Note `--` lexes as a line comment, so a negation chain has to be written
+/// with separators; `!` and `~` chain directly.
+#[test]
+fn test_unary_chain_is_depth_limited() {
+    for chain in ["!".repeat(500), "~".repeat(500), "- ".repeat(500)] {
+        let query = format!("RETURN {}5", chain);
+        let err = parse(&query).expect_err("chained unary should hit the depth limit");
+        assert!(
+            err.to_string().contains("too deep"),
+            "expected the depth guard, got: {}",
+            err
+        );
+    }
+}
+
+/// The guard must not be so tight that ordinary negation breaks, and the
+/// depth it consumes has to be released again so later expressions in the
+/// same query still parse.
+#[test]
+fn test_short_unary_chains_still_parse() {
+    assert!(parse("RETURN -5").is_ok());
+    assert!(parse("RETURN - -5").is_ok());
+    assert!(parse("RETURN !!true").is_ok());
+    assert!(parse("RETURN ~~1").is_ok());
+    assert!(parse("FOR u IN users FILTER !u.deleted RETURN -u.score").is_ok());
+    // Many *sibling* unary expressions are fine; only nesting is bounded.
+    let siblings = (0..200)
+        .map(|i| format!("-{}", i))
+        .collect::<Vec<_>>()
+        .join(", ");
+    assert!(
+        parse(&format!("RETURN [{}]", siblings)).is_ok(),
+        "sequential unary operands must not accumulate depth"
+    );
+}
+/// `has_mutations()` decides whether `/cursor`, the live-query subscription
+/// and the transactional query endpoint upgrade a caller from Read to Write.
+/// It used to walk only `body_clauses`, so a mutation parked in an expression
+/// was invisible: a parenthesised subquery is executed by the full body
+/// executor, and the catalog builtins write `_views` / `_graphs` directly.
+/// Both ran under a read-only principal.
+#[test]
+fn test_has_mutations_sees_expression_level_writes() {
+    for query in [
+        "RETURN (FOR e IN c INSERT {} INTO c)",
+        "FOR d IN c LET y = (FOR e IN c REMOVE e IN c) RETURN y",
+        "FOR d IN c FILTER (FOR e IN c INSERT {} INTO c) RETURN d",
+        "FOR d IN c SORT (FOR e IN c REMOVE e IN c) RETURN d",
+        "FOR d IN c RETURN {nested: (FOR e IN c INSERT {} INTO c)}",
+        "FOR d IN c RETURN [1, (FOR e IN c INSERT {} INTO c)]",
+        "RETURN LENGTH((FOR e IN c INSERT {} INTO c))",
+        "RETURN true ? (FOR e IN c INSERT {} INTO c) : 1",
+        "RETURN CREATE_VIEW(\"v\", {})",
+        "RETURN DROP_VIEW(\"v\")",
+        "RETURN CREATE_GRAPH(\"g\", {})",
+        "RETURN DROP_GRAPH(\"g\")",
+        "RETURN LENGTH([DROP_GRAPH(\"g\")])",
+    ] {
+        let parsed = parse(query).unwrap_or_else(|e| panic!("parse {query}: {e}"));
+        assert!(parsed.has_mutations(), "must require Write: {}", query);
+    }
+}
+
+/// The counterpart: ordinary reads must not be pushed up to Write, or every
+/// read-only principal loses query access.
+#[test]
+fn test_has_mutations_leaves_reads_alone() {
+    for query in [
+        "FOR d IN users RETURN d",
+        "FOR d IN users FILTER d.age > 25 SORT d.age DESC LIMIT 10 RETURN d",
+        "FOR d IN users RETURN (FOR o IN orders FILTER o.user == d._key RETURN o)",
+        "RETURN LENGTH(users)",
+        "FOR d IN c COLLECT g = d.kind AGGREGATE n = COUNT() RETURN {g, n}",
+        "WITH t AS (FOR d IN c RETURN d) FOR x IN t RETURN x",
+        "FOR d IN c RETURN CONCAT(d.a, d.b)",
+    ] {
+        let parsed = parse(query).unwrap_or_else(|e| panic!("parse {query}: {e}"));
+        assert!(!parsed.has_mutations(), "must stay a read: {}", query);
+    }
+}
+
+/// Clause-level mutations were always detected; keep them covered so the
+/// rewrite above cannot regress them. (UPSERT is omitted: the query-level
+/// validator rejects UPSERT-only queries as "missing RETURN clause or
+/// mutation", a pre-existing parser gap unrelated to authorization.)
+#[test]
+fn test_has_mutations_still_sees_clause_level_writes() {
+    for query in [
+        "INSERT {a: 1} INTO c",
+        "FOR d IN c UPDATE d WITH {x: 1} IN c",
+        "FOR d IN c REMOVE d IN c",
+        "FOR d IN c RETURN d UNION (FOR e IN c INSERT {} INTO c)",
+    ] {
+        let parsed = parse(query).unwrap_or_else(|e| panic!("parse {query}: {e}"));
+        assert!(parsed.has_mutations(), "must require Write: {}", query);
+    }
+}

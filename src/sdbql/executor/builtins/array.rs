@@ -114,11 +114,12 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let start = if start < 0 {
                 (arr.len() as i64 + start).max(0) as usize
             } else {
-                start as usize
+                // Past the end is an empty slice, not a panic.
+                (start as usize).min(arr.len())
             };
             let end = if args.len() > 2 {
                 let len = args[2].as_u64().unwrap_or(arr.len() as u64) as usize;
-                std::cmp::min(start + len, arr.len())
+                start.saturating_add(len).min(arr.len())
             } else {
                 arr.len()
             };

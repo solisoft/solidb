@@ -249,10 +249,14 @@ impl Parser {
 
     /// Parse float literal
     fn parse_float(&mut self, f: f64) -> DbResult<Expression> {
+        // `"1e999".parse::<f64>()` is `Ok(inf)`, which JSON cannot hold.
+        let Some(n) = serde_json::Number::from_f64(f) else {
+            return Err(DbError::ParseError(
+                "Number literal is out of range".to_string(),
+            ));
+        };
         self.advance();
-        Ok(Expression::Literal(Value::Number(
-            serde_json::Number::from_f64(f).unwrap(),
-        )))
+        Ok(Expression::Literal(Value::Number(n)))
     }
 
     /// Parse string literal

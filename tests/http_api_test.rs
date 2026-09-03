@@ -13,12 +13,13 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
-use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt; // for oneshot
+
+mod common;
 
 fn create_test_app() -> (axum::Router, TempDir, String) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -32,7 +33,7 @@ fn create_test_app() -> (axum::Router, TempDir, String) {
     let script_stats = Arc::new(ScriptStats::default());
 
     let router = create_router(
-        engine,
+        engine.clone(),
         None, // ClusterManager
         None, // SyncLog
         None, // ShardCoordinator
@@ -43,10 +44,12 @@ fn create_test_app() -> (axum::Router, TempDir, String) {
         0,    // port (unused in router creation)
     );
 
-    // Create a JWT token for authentication
-    let token =
-        AuthService::create_jwt_with_roles("test_admin", Some(vec!["admin".to_string()]), None)
-            .expect("Failed to create test token");
+    // A real `_admins` row, not just a signed token: the auth middleware
+    // refuses a JWT whose subject is not a user, which is how deleting a user
+    // revokes their outstanding tokens. Seeded after `create_router`, which
+    // runs `AuthService::init` and only creates the default `admin` while
+    // `_admins` is still empty.
+    let token = common::seed_user_token(&engine, "test_admin", &["admin"]);
 
     (router, tmp_dir, token)
 }

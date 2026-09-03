@@ -88,7 +88,7 @@ impl Query {
     /// clauses, stream or materialized-view DDL). Used to decide whether a
     /// principal needs Write rather than Read permission.
     pub fn has_mutations(&self) -> bool {
-        self.body_clauses.iter().any(|clause| {
+        if self.body_clauses.iter().any(|clause| {
             matches!(
                 clause,
                 BodyClause::Insert(_)
@@ -107,6 +107,193 @@ impl Query {
                 .with_clause
                 .as_ref()
                 .is_some_and(|with| with.ctes.iter().any(|cte| cte.query.has_mutations()))
+            || self
+                .create_materialized_view_clause
+                .as_ref()
+                .is_some_and(|c| c.query.has_mutations())
+        {
+            return true;
+        }
+
+        // A mutation can also hide inside an *expression*: a parenthesised
+        // subquery (`RETURN (FOR e IN c INSERT {} INTO c)`) is executed by the
+        // full body executor, and the catalog builtins below write `_views` /
+        // `_graphs` directly. Neither appears in `body_clauses`, so a check
+        // that only walked clauses classified them as reads and `/cursor`
+        // never upgraded the caller to Write.
+        self.expressions().any(expression_mutates)
+    }
+
+    /// Every expression this query block owns directly.
+    ///
+    /// Not recursive into nested `Query` values — [`expression_mutates`]
+    /// handles that by calling [`Self::has_mutations`] on subqueries — but it
+    /// must cover every field that can carry an `Expression`, or a mutation
+    /// parked in the uncovered one is invisible to authorization.
+    fn expressions(&self) -> impl Iterator<Item = &Expression> {
+        let let_exprs = self.let_clauses.iter().map(|l| &l.expression);
+        let for_exprs = self
+            .for_clauses
+            .iter()
+            .flat_map(|f| f.source_expression.iter().chain(f.system_time.iter()));
+        let valid_time = self
+            .for_clauses
+            .iter()
+            .filter_map(|f| f.valid_time.as_ref());
+        let filter_exprs = self.filter_clauses.iter().map(|f| &f.expression);
+        let sort_exprs = self
+            .sort_clause
+            .iter()
+            .flat_map(|s| s.fields.iter().map(|(e, _)| e));
+        let limit_exprs = self
+            .limit_clause
+            .iter()
+            .flat_map(|l| std::iter::once(&l.offset).chain(l.count.iter()));
+        let return_expr = self.return_clause.iter().map(|r| &r.expression);
+        let join_exprs = self.join_clauses.iter().flat_map(join_expressions);
+        let body_exprs = self.body_clauses.iter().flat_map(body_clause_expressions);
+
+        let_exprs
+            .chain(for_exprs)
+            .chain(valid_time.flat_map(valid_time_expressions))
+            .chain(filter_exprs)
+            .chain(sort_exprs)
+            .chain(limit_exprs)
+            .chain(return_expr)
+            .chain(join_exprs)
+            .chain(body_exprs)
+    }
+}
+
+/// SDBQL functions that write server state rather than compute a value.
+///
+/// These take effect through `executor::catalog`, which edits the `_views` and
+/// `_graphs` catalog collections. They are ordinary function calls, so no
+/// clause-level check can see them: without this list a read-only principal
+/// ran `RETURN DROP_GRAPH("prod")` or replaced a materialized view's
+/// definition through `/cursor`, which is classified Read.
+pub const MUTATING_FUNCTIONS: [&str; 4] =
+    ["CREATE_VIEW", "DROP_VIEW", "CREATE_GRAPH", "DROP_GRAPH"];
+
+/// True when `name` (case-insensitively) is a state-changing builtin.
+pub fn is_mutating_function(name: &str) -> bool {
+    MUTATING_FUNCTIONS
+        .iter()
+        .any(|f| name.eq_ignore_ascii_case(f))
+}
+
+fn valid_time_expressions(spec: &ValidTimeSpec) -> Vec<&Expression> {
+    match spec {
+        ValidTimeSpec::AsOf(e) => vec![e],
+        ValidTimeSpec::Range { from, to } => vec![from, to],
+    }
+}
+
+fn join_expressions(join: &JoinClause) -> Vec<&Expression> {
+    let mut out = vec![&join.condition];
+    if let Some(asof) = &join.asof {
+        out.push(&asof.left_time);
+        out.push(&asof.right_time);
+        out.extend(asof.tolerance.iter());
+    }
+    out
+}
+
+fn body_clause_expressions(clause: &BodyClause) -> Vec<&Expression> {
+    match clause {
+        BodyClause::For(f) => f
+            .source_expression
+            .iter()
+            .chain(f.system_time.iter())
+            .chain(
+                f.valid_time
+                    .iter()
+                    .flat_map(|v| valid_time_expressions(v).into_iter()),
+            )
+            .collect(),
+        BodyClause::Let(l) => vec![&l.expression],
+        BodyClause::Filter(f) | BodyClause::Search(f) => vec![&f.expression],
+        BodyClause::Insert(i) => vec![&i.document],
+        BodyClause::Update(u) => vec![&u.selector, &u.changes],
+        BodyClause::Upsert(u) => vec![&u.search, &u.insert, &u.update],
+        BodyClause::Remove(r) => vec![&r.selector],
+        BodyClause::Join(j) => join_expressions(j),
+        BodyClause::GraphTraversal(g) => std::iter::once(&g.start_vertex)
+            .chain(g.prune.iter())
+            .collect(),
+        BodyClause::ShortestPath(s) => vec![&s.start_vertex, &s.end_vertex],
+        BodyClause::Collect(c) => c
+            .group_vars
+            .iter()
+            .map(|(_, e)| e)
+            .chain(c.aggregates.iter().filter_map(|a| a.argument.as_ref()))
+            .collect(),
+        BodyClause::Window(_) => Vec::new(),
+    }
+}
+
+/// True when evaluating `expr` can write: it contains a mutating subquery or
+/// a state-changing builtin, at any depth.
+pub fn expression_mutates(expr: &Expression) -> bool {
+    match expr {
+        Expression::Subquery(q) => q.has_mutations(),
+        Expression::FunctionCall { name, args } => {
+            is_mutating_function(name) || args.iter().any(expression_mutates)
+        }
+        Expression::WindowFunctionCall {
+            function,
+            arguments,
+            over_clause,
+        } => {
+            is_mutating_function(function)
+                || arguments.iter().any(expression_mutates)
+                || over_clause.partition_by.iter().any(expression_mutates)
+                || over_clause
+                    .order_by
+                    .iter()
+                    .any(|(e, _)| expression_mutates(e))
+        }
+        Expression::FieldAccess(base, _)
+        | Expression::OptionalFieldAccess(base, _)
+        | Expression::ArraySpreadAccess(base, _) => expression_mutates(base),
+        Expression::DynamicFieldAccess(a, b)
+        | Expression::ArrayAccess(a, b)
+        | Expression::Range(a, b)
+        | Expression::Pipeline { left: a, right: b } => {
+            expression_mutates(a) || expression_mutates(b)
+        }
+        Expression::BinaryOp { left, right, .. } => {
+            expression_mutates(left) || expression_mutates(right)
+        }
+        Expression::UnaryOp { operand, .. } => expression_mutates(operand),
+        Expression::Object(fields) => fields.iter().any(|(_, e)| expression_mutates(e)),
+        Expression::Array(items) => items.iter().any(expression_mutates),
+        Expression::Ternary {
+            condition,
+            true_expr,
+            false_expr,
+        } => {
+            expression_mutates(condition)
+                || expression_mutates(true_expr)
+                || expression_mutates(false_expr)
+        }
+        Expression::Case {
+            operand,
+            when_clauses,
+            else_clause,
+        } => {
+            operand.as_deref().is_some_and(expression_mutates)
+                || when_clauses
+                    .iter()
+                    .any(|(c, r)| expression_mutates(c) || expression_mutates(r))
+                || else_clause.as_deref().is_some_and(expression_mutates)
+        }
+        Expression::Lambda { body, .. } => expression_mutates(body),
+        Expression::TemplateString { parts } => parts.iter().any(|p| match p {
+            TemplateStringPart::Expression(e) => expression_mutates(e),
+            TemplateStringPart::Literal(_) => false,
+        }),
+        Expression::Variable(_) | Expression::BindVariable(_) | Expression::Literal(_) => false,
     }
 }
 
@@ -526,6 +713,82 @@ pub enum Expression {
     /// Template string with interpolated expressions: $"Hello ${name}!"
     /// Syntax: $"text ${expression} more text"
     TemplateString { parts: Vec<TemplateStringPart> },
+}
+
+impl Expression {
+    /// Call `f` on every direct sub-expression. Subquery bodies are not
+    /// descended into — they are queries, not expressions.
+    pub fn for_each_child(&self, f: &mut dyn FnMut(&Expression)) {
+        match self {
+            Expression::Variable(_)
+            | Expression::BindVariable(_)
+            | Expression::Literal(_)
+            | Expression::Subquery(_) => {}
+            Expression::FieldAccess(base, _)
+            | Expression::OptionalFieldAccess(base, _)
+            | Expression::ArraySpreadAccess(base, _) => f(base),
+            Expression::DynamicFieldAccess(a, b)
+            | Expression::ArrayAccess(a, b)
+            | Expression::Range(a, b) => {
+                f(a);
+                f(b);
+            }
+            Expression::BinaryOp { left, right, .. } => {
+                f(left);
+                f(right);
+            }
+            Expression::UnaryOp { operand, .. } => f(operand),
+            Expression::Object(fields) => fields.iter().for_each(|(_, e)| f(e)),
+            Expression::Array(items) => items.iter().for_each(&mut *f),
+            Expression::FunctionCall { args, .. } => args.iter().for_each(&mut *f),
+            Expression::Ternary {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
+                f(condition);
+                f(true_expr);
+                f(false_expr);
+            }
+            Expression::Case {
+                operand,
+                when_clauses,
+                else_clause,
+            } => {
+                if let Some(o) = operand {
+                    f(o);
+                }
+                for (w, t) in when_clauses {
+                    f(w);
+                    f(t);
+                }
+                if let Some(e) = else_clause {
+                    f(e);
+                }
+            }
+            Expression::Pipeline { left, right } => {
+                f(left);
+                f(right);
+            }
+            Expression::Lambda { body, .. } => f(body),
+            Expression::WindowFunctionCall {
+                arguments,
+                over_clause,
+                ..
+            } => {
+                arguments.iter().for_each(&mut *f);
+                over_clause.partition_by.iter().for_each(&mut *f);
+                over_clause.order_by.iter().for_each(|(e, _)| f(e));
+            }
+            Expression::TemplateString { parts } => {
+                for p in parts {
+                    if let TemplateStringPart::Expression(e) = p {
+                        f(e);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Window specification (the OVER clause)

@@ -227,3 +227,179 @@ async fn test_lua_regex_replace() {
     );
     assert!(body.get("match_result").unwrap().as_bool().unwrap());
 }
+
+// ============================================================================
+// Write tiers from Lua
+// ============================================================================
+//
+// A script writes as its caller. The write-protected and credential tiers are
+// closed to everyone, `_jobs` opens to admins, ordinary collections are
+// untouched.
+
+fn create_context_as(username: &str, roles: &[&str]) -> ScriptContext {
+    let mut ctx = create_context();
+    ctx.user = ScriptUser {
+        username: username.to_string(),
+        roles: roles.iter().map(|r| r.to_string()).collect(),
+        authenticated: true,
+        scoped_databases: None,
+        exp: None,
+    };
+    ctx
+}
+
+async fn run_as(
+    script_engine: &ScriptEngine,
+    ctx: &ScriptContext,
+    code: &str,
+) -> Result<solidb::scripting::ScriptResult, solidb::error::DbError> {
+    script_engine
+        .execute(&create_script(code), "testdb", ctx)
+        .await
+}
+
+#[tokio::test]
+async fn lua_cannot_write_write_protected_collections() {
+    let (engine, script_engine, _tmp) = create_test_env();
+    let db = engine.get_database("testdb").unwrap();
+    for c in ["_scripts", "_services", "_triggers", "_views"] {
+        db.create_collection(c.to_string(), None).unwrap();
+    }
+
+    let attempts = [
+        r#"db:collection("{c}"):insert({ planted = true })"#,
+        r#"db:collection("{c}"):update("x", { planted = true })"#,
+        r#"db:collection("{c}"):delete("x")"#,
+        r#"db:collection("{c}"):bulk_insert({ { planted = true } })"#,
+        r#"db:collection("{c}"):upsert("x", { planted = true })"#,
+        r#"db:query("INSERT { planted: true } INTO {c}")"#,
+        r#"db:transaction(function(tx) tx:collection("{c}"):insert({ planted = true }) end)"#,
+    ];
+
+    for ctx in [create_context(), create_context_as("root", &["admin"])] {
+        for c in ["_scripts", "_services", "_triggers", "_views", "_env"] {
+            for attempt in &attempts {
+                let code = format!("{} return 1", attempt.replace("{c}", c));
+                let err = run_as(&script_engine, &ctx, &code)
+                    .await
+                    .expect_err(&format!("{c}: `{code}` must be refused"));
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("not writable") || msg.contains("stores credentials"),
+                    "{c}: unexpected error for `{code}`: {msg}"
+                );
+            }
+            if c != "_env" {
+                assert_eq!(db.get_collection(c).unwrap().count(), 0, "{c} gained a row");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn lua_ordinary_collection_writes_still_work() {
+    let (engine, script_engine, _tmp) = create_test_env();
+    let db = engine.get_database("testdb").unwrap();
+    db.create_collection("items".to_string(), None).unwrap();
+
+    let code = r#"
+        db:collection("items"):insert({ n = 1 })
+        db:query("INSERT { n: 2 } INTO items")
+        db:transaction(function(tx) tx:collection("items"):insert({ n = 3 }) end)
+        return #db:query("FOR i IN items RETURN i")
+    "#;
+    let result = run_as(&script_engine, &create_context(), code)
+        .await
+        .unwrap();
+    assert_eq!(result.body, json!(3));
+}
+
+#[tokio::test]
+async fn lua_jobs_requires_admin_caller() {
+    let (engine, script_engine, _tmp) = create_test_env();
+    let db = engine.get_database("testdb").unwrap();
+    db.create_collection("_jobs".to_string(), None).unwrap();
+    let code = r#"return db:collection("_jobs"):insert({ state = "queued" })._key"#;
+
+    let err = run_as(&script_engine, &create_context_as("vwr", &["viewer"]), code)
+        .await
+        .expect_err("viewer must not enqueue");
+    assert!(err.to_string().contains("Admin credential"), "{err}");
+    let err = run_as(&script_engine, &create_context(), code)
+        .await
+        .expect_err("anonymous must not enqueue");
+    assert!(err.to_string().contains("Admin credential"), "{err}");
+
+    run_as(&script_engine, &create_context_as("adm", &["admin"]), code)
+        .await
+        .expect("admin enqueues");
+    // The shape the queue worker runs trigger scripts under.
+    run_as(
+        &script_engine,
+        &create_context_as("_system", &["admin"]),
+        code,
+    )
+    .await
+    .expect("_system enqueues");
+    assert_eq!(db.get_collection("_jobs").unwrap().count(), 2);
+}
+
+#[tokio::test]
+async fn lua_error_carries_its_status() {
+    let (_engine, script_engine, _tmp) = create_test_env();
+    let err = run_as(
+        &script_engine,
+        &create_context(),
+        r#"solidb.error("gone", 410)"#,
+    )
+    .await
+    .expect_err("solidb.error raises");
+    match err {
+        solidb::error::DbError::ScriptError { status, message } => {
+            assert_eq!(status, 410);
+            assert_eq!(message, "gone");
+        }
+        other => panic!("expected ScriptError, got {other:?}"),
+    }
+    // Default code is 500.
+    let err = run_as(&script_engine, &create_context(), r#"solidb.error("boom")"#)
+        .await
+        .expect_err("raises");
+    assert!(
+        matches!(err, solidb::error::DbError::ScriptError { status: 500, .. }),
+        "{err:?}"
+    );
+}
+
+#[tokio::test]
+async fn lua_status_and_response_helpers() {
+    let (_engine, script_engine, _tmp) = create_test_env();
+    let r = run_as(
+        &script_engine,
+        &create_context(),
+        r#"solidb.status(201) solidb.header("X-A", "b") return { ok = true }"#,
+    )
+    .await
+    .unwrap();
+    assert_eq!(r.status, 201);
+    assert_eq!(r.headers.get("X-A").map(String::as_str), Some("b"));
+    assert_eq!(r.body, json!({"ok": true}));
+
+    let r = run_as(
+        &script_engine,
+        &create_context(),
+        r#"return response.html("<p>hi</p>")"#,
+    )
+    .await
+    .unwrap();
+    assert_eq!(r.status, 200);
+    assert_eq!(r.raw_body.as_deref(), Some(b"<p>hi</p>".as_slice()));
+    assert!(r.headers["content-type"].starts_with("text/html"));
+
+    // Overrides do not leak into the next run on the same engine.
+    let r = run_as(&script_engine, &create_context(), r#"return 1"#)
+        .await
+        .unwrap();
+    assert_eq!(r.status, 200);
+    assert!(r.headers.is_empty());
+}

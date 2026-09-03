@@ -9,6 +9,7 @@ use crate::{
 use axum::{
     body::Body,
     extract::{Multipart, Path, State},
+    http::HeaderValue,
     response::Json,
     response::Response,
 };
@@ -20,9 +21,15 @@ use serde_json::Value;
 pub async fn upload_blob(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     multipart_result: Result<Multipart, axum::extract::multipart::MultipartRejection>,
 ) -> Result<Json<Value>, DbError> {
     let mut multipart = multipart_result.map_err(|e| DbError::BadRequest(e.to_string()))?;
+    // A blob upload writes documents and chunks: same tiers as the document API.
+    crate::storage::check_write_access(
+        &coll_name,
+        crate::server::handlers::query::write_actor_from_claims(claims.as_deref()),
+    )?;
     let database = state.storage.get_database(&db_name)?;
 
     // Try to get the collection, auto-create as blob collection if it doesn't exist
@@ -328,7 +335,22 @@ pub async fn download_blob(
     let body = Body::from_stream(stream);
 
     let mut builder = Response::builder();
-    builder = builder.header("Content-Type", content_type);
+    // `content_type` is the blob document's `type` field, written by whoever
+    // uploaded the blob. `Response::builder().header(...)` defers validation
+    // to `.body()`, so a stored type containing a newline or any
+    // non-visible-ASCII byte made the old `.unwrap()` panic on every request
+    // for that blob. Validate it here and fall back instead.
+    let header_value = HeaderValue::from_str(&content_type).unwrap_or_else(|_| {
+        tracing::warn!(
+            "Blob {} declares an unusable content type; serving as octet-stream",
+            key
+        );
+        HeaderValue::from_static("application/octet-stream")
+    });
+    builder = builder.header("Content-Type", header_value);
+    // The stored type is attacker-controlled, so never let a browser sniff
+    // its way to something executable.
+    builder = builder.header("X-Content-Type-Options", "nosniff");
     if let Some(size) = total_size {
         builder = builder.header("Content-Length", size);
     }
@@ -340,7 +362,9 @@ pub async fn download_blob(
         );
     }
 
-    Ok(builder.body(body).unwrap())
+    builder
+        .body(body)
+        .map_err(|e| DbError::InternalError(format!("Failed to build blob response: {}", e)))
 }
 
 /// Distribute blob chunks across the cluster for fault tolerance

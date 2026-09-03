@@ -80,6 +80,9 @@ fn edge_weight(e: &Value, field: Option<&str>) -> Result<f64, String> {
     }
 }
 
+/// Longest path K_PATHS will search for. Bounds the DFS recursion depth.
+const MAX_PATH_HOPS: usize = 64;
+
 fn max_paths() -> usize {
     std::env::var("SOLIDB_MAX_PATHS")
         .ok()
@@ -110,8 +113,10 @@ pub fn find_paths(
             Ok(k_shortest(edges, start, end, &sp.direction, wfield, k)?)
         }
         PathFindMode::KPaths => {
-            let min = sp.min_len.unwrap_or(1);
-            let max = sp.max_len.unwrap_or(5).max(min);
+            // The DFS below recurses one frame per hop, and a stack overflow
+            // is not a panic: it takes the process. Clamp the depth.
+            let min = sp.min_len.unwrap_or(1).min(MAX_PATH_HOPS);
+            let max = sp.max_len.unwrap_or(5).max(min).min(MAX_PATH_HOPS);
             let limit = sp.limit.unwrap_or(100).min(max_paths());
             Ok(k_paths(edges, start, end, &sp.direction, min, max, limit))
         }
@@ -213,6 +218,12 @@ fn all_shortest(edges: &[Value], start: &str, end: &str, dir: &EdgeDirection) ->
         eds: &mut Vec<Value>,
         out: &mut Vec<FoundPath>,
     ) {
+        // The number of shortest paths is exponential in a layered graph;
+        // stop enumerating once the caller's cap is full rather than
+        // truncating afterwards.
+        if out.len() >= max_paths() {
+            return;
+        }
         if node == start {
             let mut v = verts.clone();
             v.push(start.to_string());

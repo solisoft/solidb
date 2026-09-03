@@ -10,26 +10,40 @@ use axum::{
 };
 use serde_json::json;
 use solidb::scripting::ScriptStats;
-use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
+mod common;
+
 fn create_app() -> (TempDir, axum::Router, String, String) {
     let tmp_dir = TempDir::new().expect("temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap()).expect("engine");
     engine.initialize().expect("initialize _system");
     let script_stats = Arc::new(ScriptStats::default());
-    let router = create_router(engine, None, None, None, None, script_stats, None, None, 0);
+    let router = create_router(
+        engine.clone(),
+        None,
+        None,
+        None,
+        None,
+        script_stats,
+        None,
+        None,
+        0,
+    );
 
-    let admin_token =
-        AuthService::create_jwt_with_roles("admin_user", Some(vec!["admin".to_string()]), None)
-            .expect("admin jwt");
-    let viewer_token =
-        AuthService::create_jwt_with_roles("viewer_user", Some(vec!["viewer".to_string()]), None)
-            .expect("viewer jwt");
+    // Seed *after* `create_router`, which runs `AuthService::init`: that only
+    // creates the default `admin` user while `_admins` is empty, so inserting
+    // test principals first would silently suppress it.
+    //
+    // Real `_admins` rows, not just signed tokens: the auth middleware now
+    // refuses a JWT whose subject is not a user, which is how deleting a user
+    // revokes their outstanding tokens.
+    let admin_token = common::seed_user_token(&engine, "admin_user", &["admin"]);
+    let viewer_token = common::seed_user_token(&engine, "viewer_user", &["viewer"]);
 
     (tmp_dir, router, admin_token, viewer_token)
 }

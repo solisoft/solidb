@@ -23,6 +23,7 @@ pub struct PruneRequest {
 
 pub async fn truncate_collection(
     State(state): State<AppState>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Path((db_name, coll_name)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, DbError> {
@@ -35,7 +36,11 @@ pub async fn truncate_collection(
     }
 
     let database = state.storage.get_database(&db_name)?;
-    let collection = database.get_collection(&coll_name)?;
+    // Emptying a collection is a write: same tiers as the document API.
+    let collection = database.get_collection_for_write(
+        &coll_name,
+        crate::server::handlers::query::write_actor_from_claims(claims.as_deref()),
+    )?;
 
     // Check if this is a direct shard truncate request (internal)
     let is_shard_direct = headers.contains_key("X-Shard-Direct");

@@ -17,7 +17,7 @@ use crate::storage::StorageEngine;
 const CHUNK_SIZE: usize = 1024 * 1024;
 
 /// Files collection name
-const FILES_COLLECTION: &str = "_files";
+pub const FILES_COLLECTION: &str = "_files";
 
 /// Maximum image dimension (width or height) to prevent memory exhaustion
 const MAX_IMAGE_DIMENSION: u32 = 8192;

@@ -655,6 +655,20 @@ impl Command {
             // Listing used to be a plain Read (SEC-176).
             ListEnvVars { .. } | SetEnvVar { .. } | DeleteEnvVar { .. } => Some(A::Admin),
 
+            // Installing or changing server-side code. The HTTP router
+            // requires Admin for `POST/PUT/DELETE /_api/database/{db}/scripts`
+            // and `/services` (`authz_middleware::is_script_or_service_mutation`);
+            // these commands fell through to the `_ => Write` arm below, so
+            // the driver was a way around that gate. A trigger names a script
+            // to run, and trigger dispatch executes it with the `_system`
+            // admin identity, so trigger mutations belong here too.
+            CreateScript { .. }
+            | UpdateScript { .. }
+            | DeleteScript { .. }
+            | CreateTrigger { .. }
+            | UpdateTrigger { .. }
+            | DeleteTrigger { .. } => Some(A::Admin),
+
             // Global management commands — Admin (and denied outright for
             // database-scoped API keys since database() is None)
             CreateDatabase { .. }

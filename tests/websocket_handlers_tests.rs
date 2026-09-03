@@ -13,7 +13,6 @@ use futures::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use solidb::cluster::ClusterConfig;
 use solidb::scripting::ScriptStats;
-use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
@@ -22,6 +21,8 @@ use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::StatusCode as TStatus;
+
+mod common;
 
 const TEST_CLUSTER_SECRET: &str = "ws-cov-cluster-secret";
 
@@ -45,7 +46,17 @@ async fn spawn_app() -> TestApp {
     engine.initialize().expect("init _system");
 
     let script_stats = Arc::new(ScriptStats::default());
-    let router = create_router(engine, None, None, None, None, script_stats, None, None, 0);
+    let router = create_router(
+        engine.clone(),
+        None,
+        None,
+        None,
+        None,
+        script_stats,
+        None,
+        None,
+        0,
+    );
 
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("local_addr");
@@ -53,9 +64,12 @@ async fn spawn_app() -> TestApp {
         let _ = axum::serve(listener, router.into_make_service()).await;
     });
 
-    let admin_token =
-        AuthService::create_jwt_with_roles("admin_user", Some(vec!["admin".to_string()]), None)
-            .expect("admin jwt");
+    // A real `_admins` row, not just a signed token: the auth middleware
+    // refuses a JWT whose subject is not a user, which is how deleting a user
+    // revokes their outstanding tokens. Seeded after `create_router`, which
+    // runs `AuthService::init` and only creates the default `admin` while
+    // `_admins` is still empty.
+    let admin_token = common::seed_user_token(&engine, "admin_user", &["admin"]);
 
     TestApp {
         addr,

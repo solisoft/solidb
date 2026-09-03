@@ -3,8 +3,12 @@ version: '3.8'
 # SoliDB 3-Node Cluster Configuration
 # Usage:
 #   1. Generate keyfile: openssl rand -hex 32 > solidb.key
-#   2. Start cluster: docker-compose -f docker-compose-cluster.yml up -d
-#   3. Scale: docker-compose -f docker-compose-cluster.yml up -d --scale solidb-node=5
+#   2. Choose an admin password: export SOLIDB_ADMIN_PASSWORD=$(openssl rand -hex 24)
+#      Compose refuses to start without it. It used to default to `admin`,
+#      which published an admin-credentialled database on ports 6745-6747 for
+#      anyone who followed these instructions without exporting the variable.
+#   3. Start cluster: docker-compose -f docker-compose-cluster.yml up -d
+#   4. Scale: docker-compose -f docker-compose-cluster.yml up -d --scale solidb-node=5
 
 services:
   solidb-node1:
@@ -19,7 +23,7 @@ services:
       - ./solidb.key:/etc/solidb/solidb.key:ro
     environment:
       - SOLIDB_PORT=6745
-      - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:-admin}
+      - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:?set SOLIDB_ADMIN_PASSWORD before starting the cluster}
       - RUST_LOG=solidb=info
     command: >
       sh -c "solidb
@@ -49,7 +53,7 @@ services:
       - ./solidb.key:/etc/solidb/solidb.key:ro
     environment:
       - SOLIDB_PORT=6745
-      - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:-admin}
+      - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:?set SOLIDB_ADMIN_PASSWORD before starting the cluster}
       - RUST_LOG=solidb=info
     command: >
       sh -c "solidb
@@ -82,7 +86,7 @@ services:
       - ./solidb.key:/etc/solidb/solidb.key:ro
     environment:
       - SOLIDB_PORT=6745
-      - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:-admin}
+      - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:?set SOLIDB_ADMIN_PASSWORD before starting the cluster}
       - RUST_LOG=solidb=info
     command: >
       sh -c "solidb

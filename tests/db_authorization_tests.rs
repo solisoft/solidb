@@ -18,30 +18,71 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
+mod common;
+
 struct App {
     _tmp: TempDir,
+    engine: StorageEngine,
     router: axum::Router,
     admin: String,
     editor: String,
     viewer: String,
 }
 
+impl App {
+    /// Mint a token for a principal that actually exists.
+    ///
+    /// The auth middleware refuses a JWT whose subject is not an `_admins`
+    /// row — that is what makes deleting a user revoke their tokens — so a
+    /// test principal has to be seeded, not just signed for.
+    fn token(&self, username: &str, roles: &[&str]) -> String {
+        common::seed_user_token(&self.engine, username, roles)
+    }
+
+    /// Same, but with `scoped_databases` on the claims.
+    fn scoped_token(&self, username: &str, roles: &[&str], databases: &[&str]) -> String {
+        common::seed_user_token(&self.engine, username, roles);
+        AuthService::create_jwt_with_roles(
+            username,
+            Some(roles.iter().map(|r| r.to_string()).collect()),
+            Some(databases.iter().map(|d| d.to_string()).collect()),
+        )
+        .expect("scoped jwt")
+    }
+}
+
 fn create_app() -> App {
     let tmp_dir = TempDir::new().expect("temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap()).expect("engine");
     engine.initialize().expect("initialize _system");
-    let script_stats = Arc::new(ScriptStats::default());
-    let router = create_router(engine, None, None, None, None, script_stats, None, None, 0);
 
-    let admin = AuthService::create_jwt_with_roles("adm", Some(vec!["admin".to_string()]), None)
-        .expect("admin jwt");
-    let editor = AuthService::create_jwt_with_roles("edt", Some(vec!["editor".to_string()]), None)
-        .expect("editor jwt");
-    let viewer = AuthService::create_jwt_with_roles("vwr", Some(vec!["viewer".to_string()]), None)
-        .expect("viewer jwt");
+    let script_stats = Arc::new(ScriptStats::default());
+    let router = create_router(
+        engine.clone(),
+        None,
+        None,
+        None,
+        None,
+        script_stats,
+        None,
+        None,
+        0,
+    );
+
+    // Seed *after* `create_router`, which runs `AuthService::init`: that only
+    // creates the default `admin` user while `_admins` is empty, so inserting
+    // test principals first would silently suppress it.
+    //
+    // Real `_admins` rows, not just signed tokens: the auth middleware now
+    // refuses a JWT whose subject is not a user, which is how deleting a user
+    // revokes their outstanding tokens.
+    let admin = common::seed_user_token(&engine, "adm", &["admin"]);
+    let editor = common::seed_user_token(&engine, "edt", &["editor"]);
+    let viewer = common::seed_user_token(&engine, "vwr", &["viewer"]);
 
     App {
         _tmp: tmp_dir,
+        engine,
         router,
         admin,
         editor,
@@ -237,12 +278,7 @@ async fn scoped_key_cannot_do_global_ops_or_cross_db() {
     setup_db(&app, "scoped2").await;
 
     // Token shaped like a db-scoped API key with the admin role.
-    let scoped = AuthService::create_jwt_with_roles(
-        "scoped_key",
-        Some(vec!["admin".to_string()]),
-        Some(vec!["scoped1".to_string()]),
-    )
-    .expect("scoped jwt");
+    let scoped = app.scoped_token("scoped_key", &["admin"], &["scoped1"]);
 
     // Inside scope: write works
     let (status, _) = send(
@@ -324,12 +360,7 @@ async fn document_qualified_name_cannot_cross_database_boundary() {
     assert_eq!(status, StatusCode::OK);
 
     // A read-only key scoped to `attacker` only.
-    let scoped = AuthService::create_jwt_with_roles(
-        "attacker_key",
-        Some(vec!["viewer".to_string()]),
-        Some(vec!["attacker".to_string()]),
-    )
-    .expect("scoped jwt");
+    let scoped = app.scoped_token("attacker_key", &["viewer"], &["attacker"]);
 
     // Control: direct access to the victim database is refused, so anything the
     // query path returns is a genuine bypass rather than a mis-scoped key.
@@ -413,12 +444,7 @@ async fn document_cross_database_refusal_does_not_confirm_existence() {
     setup_db(&app, "real_neighbour").await;
     setup_db(&app, "mine").await;
 
-    let scoped = AuthService::create_jwt_with_roles(
-        "probe_key",
-        Some(vec!["viewer".to_string()]),
-        Some(vec!["mine".to_string()]),
-    )
-    .expect("scoped jwt");
+    let scoped = app.scoped_token("probe_key", &["viewer"], &["mine"]);
 
     let ask = |query: &'static str| {
         let router = app.router.clone();
@@ -464,12 +490,7 @@ async fn transactional_document_ops_are_scoped_to_the_path_database() {
     let app = create_app();
     setup_db(&app, "tenant_x").await;
 
-    let scoped = AuthService::create_jwt_with_roles(
-        "tenant_key",
-        Some(vec!["editor".to_string()]),
-        Some(vec!["tenant_x".to_string()]),
-    )
-    .expect("scoped jwt");
+    let scoped = app.scoped_token("tenant_key", &["editor"], &["tenant_x"]);
 
     let begin = |token: String| {
         let router = app.router.clone();
@@ -573,12 +594,7 @@ async fn list_databases_filtered_by_permission() {
     setup_db(&app, "visible1").await;
     setup_db(&app, "hidden1").await;
 
-    let scoped = AuthService::create_jwt_with_roles(
-        "scoped_key2",
-        Some(vec!["admin".to_string()]),
-        Some(vec!["visible1".to_string()]),
-    )
-    .expect("scoped jwt");
+    let scoped = app.scoped_token("scoped_key2", &["admin"], &["visible1"]);
 
     let (status, body) = send(&app.router, "GET", "/_api/databases", &scoped, None).await;
     assert_eq!(status, StatusCode::OK);
@@ -634,7 +650,7 @@ async fn cursor_continuation_checks_db_permission() {
         .to_string();
 
     // A principal with no roles can NOT continue someone's cursor.
-    let nobody = AuthService::create_jwt_with_roles("nobody", None, None).expect("role-less jwt");
+    let nobody = app.token("nobody", &[]);
     let (status, _) = send(
         &app.router,
         "PUT",
@@ -662,7 +678,7 @@ async fn role_less_token_denied_on_data_plane() {
     let app = create_app();
     setup_db(&app, "noroles").await;
 
-    let nobody = AuthService::create_jwt_with_roles("ghost", None, None).expect("jwt");
+    let nobody = app.token("ghost", &[]);
 
     let (status, _) = send(
         &app.router,
@@ -1054,4 +1070,520 @@ async fn credential_collections_do_not_break_the_collection_listing() {
             body
         );
     }
+}
+
+// ==================== Audit 2026-09: credential and boundary guards ====================
+
+/// `_copy_shard` forwards this node's `X-Cluster-Secret` to the address in the
+/// request body, and that secret grants admin on every route through
+/// `auth_middleware`'s `X-Shard-Direct` bypass. Without a check that the
+/// *caller* already holds it, any principal with Write on any database could
+/// point the endpoint at a listener they control and read the secret straight
+/// out of the outgoing request.
+#[tokio::test]
+async fn copy_shard_refuses_callers_without_the_cluster_secret() {
+    let app = create_app();
+    setup_db(&app, "shardsrc").await;
+
+    for token in [&app.editor, &app.admin] {
+        let (status, _) = send(
+            &app.router,
+            "POST",
+            "/_api/database/shardsrc/collection/items/_copy_shard",
+            token,
+            Some(json!({"source_address": "attacker.example:8080"})),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "_copy_shard must require the cluster secret, even from an admin"
+        );
+    }
+}
+
+/// `_user_roles` and `_roles` are the authorization decision: `get_user_roles`
+/// trusts every matching row, and a stored `_roles` definition wins over the
+/// built-in one. With only Write on `_system`, inserting one document into
+/// either made the caller an admin.
+#[tokio::test]
+async fn authorization_state_collections_are_not_writable() {
+    let app = create_app();
+
+    for collection in ["_user_roles", "_roles"] {
+        let (status, _) = send(
+            &app.router,
+            "POST",
+            &format!("/_api/database/_system/document/{}", collection),
+            &app.admin,
+            Some(json!({"username": "edt", "role": "admin"})),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "writing {} through the document API must be refused",
+            collection
+        );
+
+        let (status, _) = send(
+            &app.router,
+            "POST",
+            "/_api/database/_system/cursor",
+            &app.admin,
+            Some(json!({
+                "query": format!(
+                    "INSERT {{username: \"edt\", role: \"admin\"}} INTO {}",
+                    collection
+                )
+            })),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "writing {} through SDBQL must be refused",
+            collection
+        );
+    }
+}
+
+/// Collections the server later executes or schedules stay listable but must
+/// not be writable by name: a `_scripts` row plus a `_services` row installs
+/// Lua that the service router runs, and a `_triggers` row schedules work
+/// that runs as `_system`.
+#[tokio::test]
+async fn executable_collections_are_readable_but_not_writable() {
+    let app = create_app();
+    setup_db(&app, "execguard").await;
+
+    for collection in ["_scripts", "_services", "_triggers", "_views"] {
+        let (status, _) = send(
+            &app.router,
+            "POST",
+            &format!("/_api/database/execguard/document/{}", collection),
+            &app.admin,
+            Some(json!({"_key": "planted", "code": "return 1"})),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "writing {} through the document API must be refused",
+            collection
+        );
+
+        // Reading stays available — the admin console browses these.
+        let (status, _) = send(
+            &app.router,
+            "POST",
+            "/_api/database/execguard/cursor",
+            &app.admin,
+            Some(json!({"query": format!("FOR d IN {} RETURN d", collection)})),
+        )
+        .await;
+        assert_ne!(
+            status,
+            StatusCode::FORBIDDEN,
+            "reading {} must stay allowed",
+            collection
+        );
+    }
+}
+
+/// Same primitive as SEC-178, in the materialized-view clauses: a
+/// backtick-quoted `db:collection` name went straight to the storage engine,
+/// which opens any column family by literal name. `CREATE` planted a
+/// collection in another tenant's database and `REFRESH` truncated one.
+#[tokio::test]
+async fn materialized_views_cannot_cross_the_database_boundary() {
+    let app = create_app();
+    setup_db(&app, "mvvictim").await;
+    setup_db(&app, "mvattacker").await;
+
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/database/mvattacker/cursor",
+        &app.admin,
+        Some(json!({
+            "query": "CREATE MATERIALIZED VIEW `mvvictim:planted` AS FOR d IN items RETURN d"
+        })),
+    )
+    .await;
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "qualified view name must be refused, got {:?}",
+        body
+    );
+
+    // The victim database gained nothing.
+    let (status, body) = send(
+        &app.router,
+        "GET",
+        "/_api/database/mvvictim/collection",
+        &app.admin,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let listing = body.to_string();
+    assert!(
+        !listing.contains("planted"),
+        "no collection should have appeared in the victim database: {}",
+        listing
+    );
+
+    let (status, _) = send(
+        &app.router,
+        "POST",
+        "/_api/database/mvattacker/cursor",
+        &app.admin,
+        Some(json!({"query": "REFRESH MATERIALIZED VIEW `mvvictim:items`"})),
+    )
+    .await;
+    assert_ne!(status, StatusCode::OK, "qualified REFRESH must be refused");
+}
+
+/// `has_mutations()` decides whether `/cursor` upgrades a caller from Read to
+/// Write. It used to walk only `body_clauses`, so a mutation parked in a
+/// subquery or behind a catalog builtin ran under a read-only principal.
+#[tokio::test]
+async fn viewer_cannot_mutate_through_a_subquery_or_catalog_builtin() {
+    let app = create_app();
+    setup_db(&app, "hidden_mut").await;
+
+    for query in [
+        "RETURN (FOR e IN items INSERT {x: 1} INTO items)",
+        "FOR d IN items LET y = (FOR e IN items REMOVE e IN items) RETURN y",
+        "RETURN CREATE_VIEW(\"sneaky\", {collection: \"items\"})",
+        "RETURN DROP_GRAPH(\"anything\")",
+    ] {
+        let (status, _) = send(
+            &app.router,
+            "POST",
+            "/_api/database/hidden_mut/cursor",
+            &app.viewer,
+            Some(json!({"query": query})),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "a read-only principal must not run: {}",
+            query
+        );
+    }
+}
+
+/// `_jobs` is the Soli framework's job store: `perform_later` inserts into it
+/// by name and the worker updates rows in place, always with an admin
+/// credential. The trigger dispatcher also executes its `pending` rows as
+/// `_system`, so plain Write must not reach it. Admin yes, editor no.
+#[tokio::test]
+async fn jobs_is_writable_by_admins_only() {
+    let app = create_app();
+    setup_db(&app, "jobsdb").await;
+
+    // Admin: the document API (what Soli's enqueue uses) and SDBQL both work.
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/database/jobsdb/document/_jobs",
+        &app.admin,
+        Some(json!({"_key": "j1", "state": "queued", "class": "MailJob"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "admin enqueue: {:?}", body);
+
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/database/jobsdb/cursor",
+        &app.admin,
+        Some(json!({"query": "UPDATE {_key: \"j1\"} WITH {state: \"running\"} IN _jobs"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "admin claim: {:?}", body);
+
+    // Editor (Write): refused on every write path.
+    let (status, _) = send(
+        &app.router,
+        "POST",
+        "/_api/database/jobsdb/document/_jobs",
+        &app.editor,
+        Some(json!({"_key": "j2", "state": "queued"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "editor document insert");
+
+    let (status, _) = send(
+        &app.router,
+        "POST",
+        "/_api/database/jobsdb/cursor",
+        &app.editor,
+        Some(json!({"query": "INSERT {state: \"queued\"} INTO _jobs"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "editor SDBQL insert");
+
+    let (status, _) = send(
+        &app.router,
+        "DELETE",
+        "/_api/database/jobsdb/document/_jobs/j1",
+        &app.editor,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "editor delete");
+
+    // Reading stays open to the editor: the jobs dashboard lists them.
+    let (status, _) = send(
+        &app.router,
+        "POST",
+        "/_api/database/jobsdb/cursor",
+        &app.editor,
+        Some(json!({"query": "FOR j IN _jobs RETURN j"})),
+    )
+    .await;
+    assert_ne!(status, StatusCode::FORBIDDEN, "editor read");
+}
+
+/// The write tiers used to be enforced only on the document API and SDBQL.
+/// Import, truncate and blob upload write too, and reached the collection
+/// through the plain getter.
+#[tokio::test]
+async fn write_tiers_cover_import_truncate_and_blobs() {
+    let app = create_app();
+    setup_db(&app, "tiers").await;
+
+    let (status, body) = send(
+        &app.router,
+        "PUT",
+        "/_api/database/tiers/collection/_scripts/truncate",
+        &app.admin,
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "truncate _scripts: {:?}",
+        body
+    );
+
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/blob/tiers/_scripts/upload",
+        &app.admin,
+        Some(json!({"file_name": "x", "total_size": 10, "chunk_size": 10, "total_chunks": 1})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "blob upload session on _scripts: {:?}",
+        body
+    );
+}
+
+/// A script writes as its caller. Deploy a public "proxy insert" script — the
+/// realistic shape of the hole — and check that the caller's role, not the
+/// script author's, decides what it may write.
+#[tokio::test]
+async fn scripts_write_as_their_caller() {
+    let app = create_app();
+    setup_db(&app, "luadb").await;
+    // `items` exists from setup_db; `_jobs` is created by the first write
+    // path that resolves it (`get_or_create` semantics on the executor side),
+    // but the document API needs it present.
+    let (status, _) = send(
+        &app.router,
+        "POST",
+        "/_api/database/luadb/collection",
+        &app.admin,
+        Some(json!({"name": "_jobs"})),
+    )
+    .await;
+    assert!(
+        status == StatusCode::OK || status == StatusCode::CREATED,
+        "{status}"
+    );
+
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/database/luadb/services",
+        &app.admin,
+        Some(json!({"key": "pub", "name": "pub", "require_auth": false})),
+    )
+    .await;
+    assert!(status.is_success(), "create service: {:?}", body);
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/database/luadb/scripts",
+        &app.admin,
+        Some(json!({
+            "name": "proxy",
+            "path": "proxy",
+            "methods": ["POST"],
+            "service": "pub",
+            "code": "return db:collection(request.body.collection):insert(request.body.doc)"
+        })),
+    )
+    .await;
+    assert!(status.is_success(), "create script: {:?}", body);
+
+    let call = |token: &str, collection: &str| {
+        let body = json!({"collection": collection, "doc": {"planted": true}});
+        let token = token.to_string();
+        let router = app.router.clone();
+        async move { send(&router, "POST", "/api/luadb/pub/proxy", &token, Some(body)).await }
+    };
+
+    // Viewer and admin alike: the write-protected tier stays closed.
+    for token in [&app.viewer, &app.admin] {
+        let (status, body) = call(token, "_scripts").await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{:?}", body);
+    }
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/database/luadb/cursor",
+        &app.admin,
+        Some(json!({"query": "FOR s IN _scripts RETURN s.name"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["result"], json!(["proxy"]), "nothing was planted");
+
+    // Ordinary collection: fine for everyone.
+    let (status, body) = call(&app.viewer, "items").await;
+    assert_eq!(status, StatusCode::OK, "{:?}", body);
+
+    // `_jobs`: the caller's role decides.
+    let (status, _) = call(&app.viewer, "_jobs").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, body) = call(&app.admin, "_jobs").await;
+    assert_eq!(status, StatusCode::OK, "{:?}", body);
+}
+
+/// The response contract: a script chooses its status, headers and body.
+#[tokio::test]
+async fn scripts_control_status_headers_and_body() {
+    let app = create_app();
+    setup_db(&app, "respdb").await;
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        "/_api/database/respdb/services",
+        &app.admin,
+        Some(json!({"key": "r", "name": "r", "require_auth": false})),
+    )
+    .await;
+    assert!(status.is_success(), "{:?}", body);
+
+    let scripts = [
+        ("plain", r#"return { a = 1 }"#),
+        (
+            "created",
+            r#"solidb.status(201) solidb.header("X-Made", "yes") return { ok = true }"#,
+        ),
+        ("missing", r#"solidb.error("nope", 404)"#),
+        ("page", r#"return response.html("<h1>x</h1>")"#),
+        ("go", r#"return response.redirect("/elsewhere", 302)"#),
+        (
+            "accepted",
+            r#"return response.json({ queued = true }, 202, { ["X-Q"] = "1" })"#,
+        ),
+        (
+            "open",
+            r#"return response.cors({ ok = true }, { origin = "https://a.example" })"#,
+        ),
+    ];
+    for (path, code) in scripts {
+        let (status, body) = send(
+            &app.router,
+            "POST",
+            "/_api/database/respdb/scripts",
+            &app.admin,
+            Some(json!({"name": path, "path": path, "methods": ["GET"], "service": "r", "code": code})),
+        )
+        .await;
+        assert!(status.is_success(), "deploy {path}: {:?}", body);
+    }
+
+    async fn get(router: &axum::Router, path: &str) -> (StatusCode, axum::http::HeaderMap, String) {
+        let resp = router
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("GET")
+                    .uri(format!("/api/respdb/r/{path}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        let headers = resp.headers().clone();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, headers, String::from_utf8_lossy(&bytes).to_string())
+    }
+    let ct = |h: &axum::http::HeaderMap| {
+        h.get("content-type")
+            .map(|v| v.to_str().unwrap_or("").to_string())
+            .unwrap_or_default()
+    };
+
+    let (status, headers, body) = get(&app.router, "plain").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(ct(&headers).starts_with("application/json"));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&body).unwrap(),
+        json!({"a": 1})
+    );
+
+    let (status, headers, body) = get(&app.router, "created").await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(headers.get("x-made").unwrap(), "yes");
+
+    let (status, _, body) = get(&app.router, "missing").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    let err: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(err["error"], json!("nope"));
+
+    let (status, headers, body) = get(&app.router, "page").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(ct(&headers).starts_with("text/html"), "{}", ct(&headers));
+    assert_eq!(body, "<h1>x</h1>");
+
+    let (status, headers, _) = get(&app.router, "go").await;
+    assert_eq!(status, StatusCode::FOUND);
+    assert_eq!(headers.get("location").unwrap(), "/elsewhere");
+
+    let (status, headers, body) = get(&app.router, "accepted").await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    assert_eq!(headers.get("x-q").unwrap(), "1");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&body).unwrap(),
+        json!({"queued": true})
+    );
+
+    let (status, headers, _) = get(&app.router, "open").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers.get("access-control-allow-origin").unwrap(),
+        "https://a.example"
+    );
+
+    // A second call must not inherit the first's status: overrides are
+    // per request, and the pooled state is reused.
+    let (status, _, _) = get(&app.router, "plain").await;
+    assert_eq!(status, StatusCode::OK);
 }

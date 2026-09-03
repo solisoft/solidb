@@ -28,25 +28,51 @@
           </h2>
         </div>
         <div class="p-8">
-          <p class="text-gray-400 text-sm mb-4">Extensions to the standard Lua <code>string</code> library.</p>
+          <p class="text-gray-400 text-sm mb-4">Extensions to the standard Lua 5.4 <code>string</code> library. For random strings use <code>crypto.random_string(len)</code>.</p>
           <ul class="space-y-3 font-mono text-sm text-gray-300">
             <li class="bg-black/20 p-2 rounded border border-white/5">
-              <span class="text-purple-400">string.split(str, sep)</span> <span class="text-gray-500">-&gt; array</span>
-              <div class="text-xs text-gray-500 mt-1">Split string by separator.</div>
+              <span class="text-purple-400">string.split(str, sep?)</span> <span class="text-gray-500">-&gt; array</span>
+              <div class="text-xs text-gray-500 mt-1">Split string by separator (defaults to whitespace).</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">string.trim(str)</span> <span class="text-gray-500">-&gt; string</span>
               <div class="text-xs text-gray-500 mt-1">Remove whitespace from both ends.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
-              <span class="text-purple-400">string.starts_with(str, prefix)</span> <span class="text-gray-500">-&gt; bool</span>
+              <span class="text-purple-400">string.regex(str, pattern)</span> <span class="text-gray-500">-&gt; bool</span>
+              <div class="text-xs text-gray-500 mt-1">Whether the string matches a regular expression. Patterns are size-limited to prevent ReDoS.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
-              <span class="text-purple-400">string.ends_with(str, suffix)</span> <span class="text-gray-500">-&gt; bool</span>
+              <span class="text-purple-400">string.regex_replace(str, pattern, replacement)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Replace every match of the pattern.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
-                <span class="text-purple-400">string.random(len)</span> <span class="text-gray-500">-&gt; string</span>
-                <div class="text-xs text-gray-500 mt-1">Generate random alphanumeric string.</div>
+              <span class="text-purple-400">string.slugify(str)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Lowercase, ASCII, dash-separated form suitable for URLs.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">string.truncate(str, length, suffix?)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Cut to <code>length</code> characters, appending <code>suffix</code> (default <code>"..."</code>).</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">string.template(str, vars)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Replace <code>{{key}}</code> placeholders with the values of a table.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">string.pad_left(str, length, char?)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Left-pad to <code>length</code> (default pad character: space).</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">string.pad_right(str, length, char?)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Right-pad to <code>length</code>.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">string.capitalize(str)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Upper-case the first character.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">string.title_case(str)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Upper-case the first character of every word.</div>
             </li>
           </ul>
         </div>
@@ -74,14 +100,18 @@
               <div class="text-xs text-gray-500 mt-1">Get all values of a table.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
-              <span class="text-purple-400">table.merge(t1, t2)</span> <span class="text-gray-500">-&gt; table</span>
-              <div class="text-xs text-gray-500 mt-1">Merge two tables (shallow copy). t2 overwrites t1.</div>
+              <span class="text-purple-400">table.deep_merge(t1, t2)</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">Recursively merge two tables into a new one. Values from <code>t2</code> win; nested tables are merged rather than replaced.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">table.contains(tbl, value)</span> <span class="text-gray-500">-&gt; bool</span>
+              <div class="text-xs text-gray-500 mt-1">Whether any value of the table equals <code>value</code>.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">table.map(tbl, fn)</span> <span class="text-gray-500">-&gt; table</span>
               <div class="text-xs text-gray-500 mt-1">Apply function to each element.</div>
             </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">table.filter(tbl, fn)</span> <span class="text-gray-500">-&gt; table</span>
               <div class="text-xs text-gray-500 mt-1">Return new table with elements passing the predicate.</div>
             </li>
@@ -102,34 +132,68 @@
         <div class="p-8">
           <p class="text-gray-400 text-sm mb-4">Cryptographic utilities via <code>crypto</code> global.</p>
           <ul class="space-y-3 font-mono text-sm text-gray-300">
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">crypto.md5(data)</span> <span class="text-gray-500">-&gt; string</span>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">crypto.sha256(data)</span> <span class="text-gray-500">-&gt; string</span>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">crypto.base64_encode(data)</span> <span class="text-gray-500">-&gt; string</span>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">crypto.base64_decode(data)</span> <span class="text-gray-500">-&gt; string</span>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">crypto.uuid()</span> <span class="text-gray-500">-&gt; string (v4)</span>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">crypto.jwt_encode(claims, secret)</span> <span class="text-gray-500">-&gt; string</span>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">crypto.jwt_decode(token, secret)</span> <span class="text-gray-500">-&gt; table</span>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">crypto.hash_password(pwd)</span> <span class="text-gray-500">-&gt; string</span>
-                  <div class="text-xs text-gray-500 mt-1">Argon2 hashing (Async).</div>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">crypto.verify_password(hash, pwd)</span> <span class="text-gray-500">-&gt; bool</span>
-              </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.md5(data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.sha256(data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.sha512(data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.hmac_sha256(key, data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.hmac_sha512(key, data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.base64_encode(data)</span> <span class="text-gray-500">-&gt; string</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.base64_decode(data)</span> <span class="text-gray-500">-&gt; string</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.base32_encode(data)</span> <span class="text-gray-500">-&gt; string</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.base32_decode(data)</span> <span class="text-gray-500">-&gt; string</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.hex_encode(data)</span> <span class="text-gray-500">-&gt; string</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.hex_decode(hex)</span> <span class="text-gray-500">-&gt; string</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.uuid()</span> <span class="text-gray-500">-&gt; string (v4)</span>
+              <div class="text-xs text-gray-500 mt-1">Random UUID. There is no <code>solidb.uuid()</code>; this is the function to use.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.uuid_v7()</span> <span class="text-gray-500">-&gt; string (v7)</span>
+              <div class="text-xs text-gray-500 mt-1">Time-ordered UUID, the same kind SoliDB generates for <code>_key</code>.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.random_bytes(n)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1"><code>n</code> cryptographically random bytes.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.random_string(len)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Random alphanumeric string of the given length.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.jwt_encode(claims, secret)</span> <span class="text-gray-500">-&gt; string</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.jwt_decode(token, secret)</span> <span class="text-gray-500">-&gt; table</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.hash_password(pwd)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">Argon2 hashing.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">crypto.verify_password(hash, pwd)</span> <span class="text-gray-500">-&gt; bool</span>
+            </li>
           </ul>
         </div>
       </div>
@@ -145,25 +209,97 @@
           </h2>
         </div>
         <div class="p-8">
-          <p class="text-gray-400 text-sm mb-4">Time utilities via <code>time</code> global.</p>
-            <ul class="space-y-3 font-mono text-sm text-gray-300">
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">time.now()</span> <span class="text-gray-500">-&gt; float (seconds)</span>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">time.iso()</span> <span class="text-gray-500">-&gt; string (ISO 8601)</span>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">time.sleep(ms)</span> <span class="text-gray-500">-&gt; nil</span>
-                  <div class="text-xs text-gray-500 mt-1">Suspend execution for N ms (Non-blocking).</div>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">time.format(ts, format)</span> <span class="text-gray-500">-&gt; string</span>
-              </li>
-              <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">time.parse(iso)</span> <span class="text-gray-500">-&gt; float (seconds)</span>
-              </li>
-            </ul>
+          <p class="text-gray-400 text-sm mb-4">Time utilities via <code>time</code> global. The Lua <code>os</code> library is removed from the sandbox, so use these instead of <code>os.time()</code> or <code>os.date()</code>.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">time.now()</span> <span class="text-gray-500">-&gt; float (seconds)</span>
+              <div class="text-xs text-gray-500 mt-1">Current Unix time with sub-second precision. <code>solidb.now()</code> returns the same instant as an integer number of seconds.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">time.now_ms()</span> <span class="text-gray-500">-&gt; integer (milliseconds)</span>
+              <div class="text-xs text-gray-500 mt-1">The replacement for <code>os.time()</code>, which is not available in the sandbox.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">time.now_ns()</span> <span class="text-gray-500">-&gt; integer (nanoseconds)</span>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">time.iso(ts?)</span> <span class="text-gray-500">-&gt; string (ISO 8601)</span>
+              <div class="text-xs text-gray-500 mt-1">Format a timestamp (default: now) as RFC 3339.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">time.format(ts, format)</span> <span class="text-gray-500">-&gt; string</span>
+              <div class="text-xs text-gray-500 mt-1">strftime-style formatting of a Unix timestamp.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">time.parse(iso)</span> <span class="text-gray-500">-&gt; float (seconds)</span>
+              <div class="text-xs text-gray-500 mt-1">Parse an ISO 8601 / RFC 3339 string.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">time.add(ts, amount, unit)</span> <span class="text-gray-500">-&gt; float (seconds)</span>
+              <div class="text-xs text-gray-500 mt-1">Add <code>amount</code> in units <code>"ms"</code>, <code>"s"</code>, <code>"m"</code>, <code>"h"</code> or <code>"d"</code>.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">time.subtract(ts, amount, unit)</span> <span class="text-gray-500">-&gt; float (seconds)</span>
+              <div class="text-xs text-gray-500 mt-1">Same units as <code>time.add</code>.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">time.sleep(ms)</span> <span class="text-gray-500">-&gt; nil</span>
+              <div class="text-xs text-gray-500 mt-1">Suspend execution for N ms (non-blocking for the server).</div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Resilience & HTTP helpers -->
+    <section id="helpers">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <span class="w-2 h-2 rounded-full bg-indigo-500 mr-2"></span>
+            HTTP Client, Cache &amp; Resilience
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-400 text-sm mb-4">Helpers on the <code>solidb</code> global for calling other services and for keeping a script responsive when they misbehave.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.fetch(url, options?)</span> <span class="text-gray-500">-&gt; table</span>
+              <div class="text-xs text-gray-500 mt-1">SSRF-guarded HTTP client (private and loopback addresses are refused, 30 s timeout). Options: <code>{ method, headers, body }</code>. Returns <code>{ status, headers, body }</code>.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.cache(key, value, ttl?)</span> <span class="text-gray-500">-&gt; true</span>
+              <div class="text-xs text-gray-500 mt-1">Store a value in the in-process cache, optionally expiring after <code>ttl</code> seconds.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.cache_get(key)</span> <span class="text-gray-500">-&gt; value | nil</span>
+              <div class="text-xs text-gray-500 mt-1">Read a cached value.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.rate_limit(identifier, max_requests, window_seconds)</span> <span class="text-gray-500">-&gt; bool</span>
+              <div class="text-xs text-gray-500 mt-1">Sliding-window counter per identifier (a user, an IP, a key). Returns <code>false</code> once the limit is exceeded.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.timeout(ms, fn)</span> <span class="text-gray-500">-&gt; value</span>
+              <div class="text-xs text-gray-500 mt-1">Run <code>fn</code> and raise if it has not returned after <code>ms</code> milliseconds.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.retry(max_attempts, delay_ms, fn)</span> <span class="text-gray-500">-&gt; value</span>
+              <div class="text-xs text-gray-500 mt-1">Retry <code>fn</code> up to <code>max_attempts</code> times, waiting <code>delay_ms</code> between attempts.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.fallback(fn, fallback_fn)</span> <span class="text-gray-500">-&gt; value</span>
+              <div class="text-xs text-gray-500 mt-1">Return the result of <code>fn</code>, or of <code>fallback_fn</code> when <code>fn</code> raises.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.try(fn, catch_fn?)</span> <span class="text-gray-500">-&gt; value</span>
+              <div class="text-xs text-gray-500 mt-1">Run <code>fn</code>; on error call <code>catch_fn(err)</code> and return its result.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.ai.*</span> <span class="text-gray-500">-&gt; namespace</span>
+              <div class="text-xs text-gray-500 mt-1">Bindings for the AI contribution and task pipeline (<code>submit_contribution</code>, <code>claim_task</code>, <code>complete_task</code>, ...). Present only when the AI subsystem is enabled on the server.</div>
+            </li>
+          </ul>
         </div>
       </div>
     </section>

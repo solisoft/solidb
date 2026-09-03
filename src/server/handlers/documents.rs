@@ -1,3 +1,4 @@
+use super::query::write_actor_from_claims;
 use super::system::{is_physical_shard_collection, is_protected_collection, AppState};
 use crate::{
     error::DbError,
@@ -140,6 +141,7 @@ pub struct CopyShardRequest {
 
 pub async fn insert_document(
     State(state): State<AppState>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Path((db_name, coll_name)): Path<(String, String)>,
     headers: HeaderMap,
     Json(data): Json<Value>,
@@ -150,7 +152,9 @@ pub async fn insert_document(
     // still have to be added by an explicit migration; this only handles
     // the bare collection so the first `Model.create(...)` doesn't 404 on a
     // fresh database.
-    let collection = match database.get_collection(&coll_name) {
+    let collection = match database
+        .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))
+    {
         Ok(coll) => coll,
         Err(DbError::CollectionNotFound(_)) => {
             tracing::info!(
@@ -159,7 +163,8 @@ pub async fn insert_document(
                 coll_name
             );
             database.create_collection(coll_name.clone(), None)?;
-            database.get_collection(&coll_name)?
+            database
+                .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))?
         }
         Err(e) => return Err(e),
     };
@@ -280,12 +285,14 @@ pub async fn insert_document(
 /// Accepts an array of documents and inserts them all in one request
 pub async fn insert_documents_batch(
     State(state): State<AppState>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Path((db_name, coll_name)): Path<(String, String)>,
     headers: HeaderMap,
     Json(documents): Json<Vec<Value>>,
 ) -> Result<Json<Value>, DbError> {
     let database = state.storage.get_database(&db_name)?;
-    let collection = database.get_collection(&coll_name)?;
+    let collection = database
+        .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))?;
 
     // This is always a direct shard operation (internal API)
     // X-Shard-Direct should be required
@@ -517,8 +524,19 @@ pub async fn verify_documents_exist(
 pub async fn copy_shard_data(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
+    headers: HeaderMap,
     Json(request): Json<CopyShardRequest>,
 ) -> Result<Json<Value>, DbError> {
+    // This endpoint is only ever called node-to-node (shard rebalancing in
+    // `sharding::coordinator` and `sharding::healing`, both of which already
+    // send the secret). It forwards `X-Cluster-Secret` to `source_address`,
+    // and that secret grants admin on every route via `auth_middleware`'s
+    // `X-Shard-Direct` bypass — so without these two checks any principal
+    // with Write on any database could point it at a listener they control
+    // and read the secret straight out of the outgoing request.
+    let secret = state.require_cluster_secret(&headers)?;
+    state.require_known_peer(&request.source_address)?;
+
     tracing::info!(
         "COPY_SHARD: Copying {}/{} from {}",
         db_name,
@@ -527,7 +545,6 @@ pub async fn copy_shard_data(
     );
 
     // Step 1: Check Source Count using Metadata API
-    let secret = state.cluster_secret();
     let client = get_http_client();
 
     // Get doc count first to avoid massive transfer if already in sync
@@ -700,13 +717,15 @@ pub async fn get_document(
 
 pub async fn update_document(
     State(state): State<AppState>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Path((db_name, coll_name, key)): Path<(String, String, String)>,
     headers: HeaderMap,
     Query(params): Query<std::collections::HashMap<String, String>>,
     Json(mut data): Json<Value>,
 ) -> Result<Json<Value>, DbError> {
     let database = state.storage.get_database(&db_name)?;
-    let collection = database.get_collection(&coll_name)?;
+    let collection = database
+        .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))?;
 
     // Check for upsert query param
     let upsert = params.get("upsert").map(|v| v == "true").unwrap_or(false);
@@ -815,6 +834,7 @@ pub async fn update_document(
 
 pub async fn delete_document(
     State(state): State<AppState>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Path((db_name, coll_name, key)): Path<(String, String, String)>,
     headers: HeaderMap,
 ) -> Result<StatusCode, DbError> {
@@ -827,7 +847,8 @@ pub async fn delete_document(
     }
 
     let database = state.storage.get_database(&db_name)?;
-    let collection = database.get_collection(&coll_name)?;
+    let collection = database
+        .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))?;
 
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {

@@ -406,8 +406,26 @@ fn main() -> anyhow::Result<()> {
             }
         }
 
-        let stdout = File::create(&args.log_file)?;
-        let stderr = File::create(&args.log_file)?;
+        // 0600: the log carries query text, script output and error bodies.
+        // `File::create` would apply the umask instead, which on a default
+        // system leaves it world-readable.
+        let open_log = || -> std::io::Result<File> {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .mode(0o600)
+                    .open(&args.log_file)
+            }
+            #[cfg(not(unix))]
+            {
+                File::create(&args.log_file)
+            }
+        };
+        let stdout = open_log()?;
+        let stderr = open_log()?;
 
         let daemonize = Daemonize::new()
             .pid_file(&args.pid_file)
@@ -731,10 +749,17 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     let _worker_mgr = cluster_manager.clone();
     let worker_storage = Arc::new(storage.clone());
     let worker_node_id = node_id.clone();
-    let worker_keyfile = args
-        .keyfile
-        .clone()
-        .unwrap_or_else(|| "solidb.key".to_string());
+    // Only ever the operator-supplied keyfile.
+    //
+    // This used to fall back to `solidb.key` in the working directory when
+    // `--keyfile` was absent. Every other channel fails closed without a
+    // keyfile (the HTTP bypass, the cluster control messages, startup with
+    // peers configured), so the replication transport was quietly
+    // authenticating against a different credential — one that any local
+    // account able to write the working directory could plant. The empty
+    // string leaves the sync transport with no key, which it already treats
+    // as "refuse unauthenticated peers".
+    let worker_keyfile = args.keyfile.clone().unwrap_or_default();
     let worker_repl_addr = repl_address.clone();
 
     // Construct Sync Worker dependencies
@@ -877,6 +902,28 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     tokio::spawn(async move {
         queue_worker_start.start().await;
     });
+
+    // Abort transactions nobody has touched past their timeout. Their row
+    // locks are no-wait, so an abandoned BEGIN never blocked anyone — it
+    // made every later write to the same keys fail with a conflict, forever,
+    // because the reaper existed but was never scheduled.
+    {
+        let storage = storage.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                tick.tick().await;
+                if let Ok(manager) = storage.transaction_manager() {
+                    let reaped = tokio::task::spawn_blocking(move || manager.cleanup_expired())
+                        .await
+                        .unwrap_or(0);
+                    if reaped > 0 {
+                        tracing::info!("Aborted {} expired transaction(s)", reaped);
+                    }
+                }
+            }
+        });
+    }
 
     // Initialize TTL Worker (background cleanup of expired documents)
     let ttl_worker = Arc::new(solidb::ttl::TtlWorker::new(Arc::new(storage.clone())));

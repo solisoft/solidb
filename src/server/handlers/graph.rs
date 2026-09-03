@@ -19,6 +19,7 @@ fn graph_executor<'a>(
     db_name: &str,
 ) -> QueryExecutor<'a> {
     QueryExecutor::with_database(storage, db_name.to_string())
+        .with_timeout(std::time::Duration::from_secs(30))
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,8 +53,14 @@ pub async fn graph_neighbors(
     Path(db_name): Path<String>,
     Json(req): Json<NeighborsRequest>,
 ) -> Result<Json<Value>, DbError> {
-    let executor = graph_executor(&state.storage, &db_name);
-    let results = executor.neighbors(&req.edge_collection, req.seeds, req.options)?;
+    // Expansion over an unindexed edge collection is a scan: keep it off
+    // the async workers.
+    let storage = state.storage.clone();
+    let results = tokio::task::spawn_blocking(move || {
+        graph_executor(&storage, &db_name).neighbors(&req.edge_collection, req.seeds, req.options)
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
     let count = results.as_array().map(|a| a.len()).unwrap_or(0);
     Ok(Json(json!({ "results": results, "count": count })))
 }

@@ -136,3 +136,108 @@ async fn test_job_execution_success() {
     assert_eq!(log_doc.data["message"], "Job executed");
     assert_eq!(log_doc.data["params"]["foo"], "bar");
 }
+
+// ============================================================================
+// Write tiers from job scripts
+// ============================================================================
+
+fn register_script_and_job(db: &solidb::storage::Database, path: &str, code: &str) -> String {
+    db.get_collection("_scripts")
+        .unwrap()
+        .insert(json!({
+            "_key": format!("key_{path}"),
+            "name": path,
+            "path": path,
+            "methods": ["POST"],
+            "code": code,
+            "database": "testdb",
+            "created_at": "2023-01-01T00:00:00Z",
+            "updated_at": "2023-01-01T00:00:00Z",
+            "description": null,
+            "collection": null
+        }))
+        .unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let job_id = uuid::Uuid::new_v4().to_string();
+    let job = Job {
+        id: job_id.clone(),
+        revision: None,
+        queue: "default".to_string(),
+        priority: 0,
+        script_path: path.to_string(),
+        webhook_url: None,
+        webhook_secret: None,
+        webhook_headers: None,
+        params: json!({}),
+        status: JobStatus::Pending,
+        retry_count: 0,
+        max_retries: 0,
+        last_error: None,
+        cron_job_id: None,
+        run_at: now,
+        created_at: now,
+        started_at: None,
+        completed_at: None,
+    };
+    db.get_collection("_jobs")
+        .unwrap()
+        .insert(serde_json::to_value(&job).unwrap())
+        .unwrap();
+    job_id
+}
+
+async fn wait_for_terminal(db: &solidb::storage::Database, job_id: &str) -> Job {
+    let jobs = db.get_collection("_jobs").unwrap();
+    for _ in 0..50 {
+        let job: Job = serde_json::from_value(jobs.get(job_id).unwrap().to_value()).unwrap();
+        if matches!(job.status, JobStatus::Completed | JobStatus::Failed) {
+            return job;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    panic!("job {job_id} did not reach a terminal state");
+}
+
+/// The worker runs scripts as `_system` with the admin role, so a job that
+/// re-enqueues (Soli's `perform_later` written in Lua) keeps working.
+#[tokio::test]
+async fn job_script_can_enqueue_into_jobs() {
+    let (engine, worker, _tmp) = create_test_env();
+    let db = engine.get_database("testdb").unwrap();
+    let job_id = register_script_and_job(
+        &db,
+        "reenqueue",
+        r#"db:collection("_jobs"):insert({ state = "queued", class = "Later" }) return { ok = true }"#,
+    );
+    worker.check_jobs().await;
+    let job = wait_for_terminal(&db, &job_id).await;
+    assert_eq!(job.status, JobStatus::Completed, "{:?}", job.last_error);
+}
+
+/// Admin or not, `_scripts` is never written by name — a job script is no
+/// exception.
+#[tokio::test]
+async fn job_script_cannot_write_scripts() {
+    let (engine, worker, _tmp) = create_test_env();
+    let db = engine.get_database("testdb").unwrap();
+    let job_id = register_script_and_job(
+        &db,
+        "plant",
+        r#"db:collection("_scripts"):insert({ name = "planted", path = "p", methods = {"GET"}, code = "return 1" }) return 1"#,
+    );
+    worker.check_jobs().await;
+    let job = wait_for_terminal(&db, &job_id).await;
+    assert_eq!(job.status, JobStatus::Failed);
+    assert!(
+        job.last_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("not writable"),
+        "{:?}",
+        job.last_error
+    );
+    assert_eq!(db.get_collection("_scripts").unwrap().count(), 1);
+}

@@ -220,6 +220,17 @@
     <% end %>
   </form>
 
+  <% if @filter_rejected %>
+    <div class="console-card border-red-900 px-4 py-3">
+      <p class="console-label text-red-400">filter rejected</p>
+      <p class="mt-2 text-xs text-red-200">
+        A filter is an SDBQL condition on <code>doc</code>. Clause keywords
+        (FOR, LET, INSERT, UPDATE, REMOVE, RETURN, …) and comment markers are
+        not allowed here. The documents below are unfiltered.
+      </p>
+    </div>
+  <% end %>
+
   <% if !@query_error.blank? %>
     <div class="console-card border-red-900 px-4 py-3">
       <p class="console-label text-red-400">filter error</p>

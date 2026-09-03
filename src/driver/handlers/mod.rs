@@ -45,6 +45,9 @@ pub struct DriverHandler {
     pub(crate) session_scoped_databases: Option<Vec<String>>,
 }
 
+/// How long a client has to deliver a payload once it has sent its length.
+const PAYLOAD_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 impl DriverHandler {
     /// The session's identity as the query executor sees it.
     ///
@@ -127,11 +130,25 @@ impl DriverHandler {
                 break;
             }
 
-            // Read message payload
+            // Read message payload. A client that announces a payload and
+            // then goes quiet must not hold the connection (and this buffer)
+            // open indefinitely; idle time *between* messages is fine.
             let mut payload = vec![0u8; msg_len];
-            if let Err(e) = stream.read_exact(&mut payload).await {
-                tracing::warn!("Driver read payload error from {}: {}", addr, e);
-                break;
+            match tokio::time::timeout(PAYLOAD_READ_TIMEOUT, stream.read_exact(&mut payload)).await
+            {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    tracing::warn!("Driver read payload error from {}: {}", addr, e);
+                    break;
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "Driver payload from {} not received within {:?}",
+                        addr,
+                        PAYLOAD_READ_TIMEOUT
+                    );
+                    break;
+                }
             }
 
             // Decode command
@@ -314,7 +331,25 @@ impl DriverHandler {
                 fields,
                 unique,
                 sparse: _,
-            } => index::handle_create_index(self, database, collection, name, fields, unique),
+            } => {
+                // Off the runtime: a build over a large collection can take
+                // minutes, and this task shares its worker with every other
+                // connection. No time limit on purpose.
+                let coll = self.get_collection(&database, &collection);
+                match coll {
+                    Ok(coll) => tokio::task::spawn_blocking(move || {
+                        index::create_persistent_index(&coll, name, fields, unique)
+                    })
+                    .await
+                    .unwrap_or_else(|e| {
+                        Response::error(DriverError::DatabaseError(format!(
+                            "Task join error: {}",
+                            e
+                        )))
+                    }),
+                    Err(e) => Response::error(e),
+                }
+            }
 
             Command::DeleteIndex {
                 database,
@@ -969,6 +1004,25 @@ impl DriverHandler {
                 .collect();
             log.append_batch(entries);
         }
+    }
+
+    /// A collection the connection's principal is about to write by name.
+    ///
+    /// The driver used to reach every collection through [`Self::get_collection`],
+    /// so the write tiers the HTTP document API enforces did not exist here:
+    /// a driver `Insert` into `_scripts` went through.
+    pub(crate) fn get_collection_for_write(
+        &self,
+        database: &str,
+        collection: &str,
+    ) -> Result<crate::storage::Collection, DriverError> {
+        let actor = crate::storage::WriteActor::client(self.query_principal(database).can_admin);
+        let db = self
+            .storage
+            .get_database(database)
+            .map_err(|e| DriverError::DatabaseError(e.to_string()))?;
+        db.get_collection_for_write(collection, actor)
+            .map_err(|e| DriverError::DatabaseError(e.to_string()))
     }
 
     /// Helper to get a collection

@@ -17,6 +17,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Configuration for query caching
+/// Largest result set worth caching, in rows. The cache evicts by entry
+/// count and TTL, never by bytes, so without this one client varying the
+/// query text could park a thousand multi-hundred-megabyte result sets.
+pub const MAX_CACHED_ROWS: usize = 10_000;
+
 #[derive(Debug, Clone)]
 pub struct QueryCacheConfig {
     /// Maximum number of queries to cache

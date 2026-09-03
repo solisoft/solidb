@@ -149,6 +149,9 @@ pub fn create_fetch_function(lua: &Lua) -> Result<mlua::Function, DbError> {
             let client = reqwest::Client::builder()
                 .resolve(&target.host, target.addr)
                 .redirect(reqwest::redirect::Policy::none())
+                // A peer that accepts and never answers would otherwise hold
+                // the script — and its Lua state — indefinitely.
+                .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .map_err(|e| mlua::Error::RuntimeError(format!("HTTP client: {}", e)))?;
             let url = target.url.as_str().to_string();

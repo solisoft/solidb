@@ -28,34 +28,43 @@
           </h2>
         </div>
         <div class="p-8">
-          <p class="text-gray-400 text-sm mb-4">Validate data structures against a schema-like definition.</p>
+          <p class="text-gray-400 text-sm mb-4">Validate data against a <strong class="text-gray-300">JSON Schema</strong> written as a Lua table. The full draft 2020-12 vocabulary is supported: <code>type</code>, <code>properties</code>, <code>required</code>, <code>minimum</code>/<code>maximum</code>, <code>minLength</code>/<code>maxLength</code>, <code>pattern</code>, <code>format</code>, <code>enum</code>, <code>items</code>, and so on.</p>
            <ul class="space-y-3 font-mono text-sm text-gray-300">
              <li class="bg-black/20 p-3 rounded border border-white/5">
-               <span class="text-purple-400">solidb.validate(data, rules)</span> <span class="text-gray-500">-&gt; bool, error</span>
+               <span class="text-purple-400">solidb.validate(data, schema)</span> <span class="text-gray-500">-&gt; bool</span>
                <div class="text-xs text-gray-500 mt-2">
-                 Returns <code>true</code> if valid, or <code>false</code> and an error message.<br><br>
-                 <strong class="text-gray-400">Rules:</strong>
-                 <ul class="mt-1 ml-4 space-y-1">
-                   <li><code>type</code>: "string", "number", "boolean", "table", "email", "uuid"</li>
-                   <li><code>required</code>: boolean</li>
-                   <li><code>min</code>, <code>max</code>: number (for numbers) or length (for strings)</li>
-                   <li><code>matches</code>: regex string</li>
-                 </ul>
+                 Returns <code>true</code> if <code>data</code> conforms to the schema, <code>false</code> otherwise. Raises an error if the schema itself is invalid.
+               </div>
+             </li>
+             <li class="bg-black/20 p-3 rounded border border-white/5">
+               <span class="text-purple-400">solidb.validate_detailed(data, schema)</span> <span class="text-gray-500">-&gt; table</span>
+               <div class="text-xs text-gray-500 mt-2">
+                 Returns <code>{ valid = true, errors = {} }</code>, or <code>{ valid = false, error_count = n, errors = { { message, path, schema_path }, ... } }</code> so the client can be told exactly which field failed.
                </div>
              </li>
            </ul>
 
            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mt-6">
                 <div class="p-4 font-mono text-sm text-gray-300">
-<pre class="language-lua"><span class="text-blue-400">local</span> valid, err = <span class="text-pink-400">solidb.validate</span>(request.body, {
-  name = { type = <span class="text-green-400">"string"</span>, required = <span class="text-blue-400">true</span>, min = <span class="text-purple-400">3</span> },
-  age = { type = <span class="text-green-400">"number"</span>, min = <span class="text-purple-400">18</span> },
-  email = { type = <span class="text-green-400">"email"</span> }
-})
+<pre class="language-lua"><span class="text-blue-400">local</span> schema = {
+  type = <span class="text-green-400">"object"</span>,
+  required = { <span class="text-green-400">"name"</span> },
+  properties = {
+    name  = { type = <span class="text-green-400">"string"</span>, minLength = <span class="text-purple-400">3</span> },
+    age   = { type = <span class="text-green-400">"integer"</span>, minimum = <span class="text-purple-400">18</span> },
+    email = { type = <span class="text-green-400">"string"</span>, format = <span class="text-green-400">"email"</span> }
+  }
+}
 
-<span class="text-blue-400">if</span> <span class="text-blue-400">not</span> valid <span class="text-blue-400">then</span>
-  response.status = <span class="text-purple-400">400</span>
-  <span class="text-blue-400">return</span> { error = err }
+<span class="text-gray-500">-- Quick check: reject with a 400</span>
+<span class="text-blue-400">if</span> <span class="text-blue-400">not</span> <span class="text-pink-400">solidb.validate</span>(request.body, schema) <span class="text-blue-400">then</span>
+  <span class="text-pink-400">solidb.error</span>(<span class="text-green-400">"Invalid payload"</span>, <span class="text-purple-400">400</span>)
+<span class="text-blue-400">end</span>
+
+<span class="text-gray-500">-- Or report every failing field</span>
+<span class="text-blue-400">local</span> result = <span class="text-pink-400">solidb.validate_detailed</span>(request.body, schema)
+<span class="text-blue-400">if</span> <span class="text-blue-400">not</span> result.valid <span class="text-blue-400">then</span>
+  <span class="text-blue-400">return</span> response.json({ errors = result.errors }, <span class="text-purple-400">422</span>)
 <span class="text-blue-400">end</span></pre>
                 </div>
            </div>
@@ -73,16 +82,35 @@
           </h2>
         </div>
         <div class="p-8">
+           <p class="text-gray-400 text-sm mb-4">Normalise a string or a whole table in one call by listing the operations to apply.</p>
            <ul class="space-y-3 font-mono text-sm text-gray-300">
-             <li class="bg-black/20 p-2 rounded border border-white/5">
-               <span class="text-purple-400">solidb.sanitize(str)</span> <span class="text-gray-500">-&gt; string</span>
-               <div class="text-xs text-gray-500 mt-1">Simple wrapper to strip HTML tags.</div>
-             </li>
-             <li class="bg-black/20 p-2 rounded border border-white/5">
-               <span class="text-purple-400">solidb.escape_html(str)</span> <span class="text-gray-500">-&gt; string</span>
-               <div class="text-xs text-gray-500 mt-1">Convert special characters to HTML entities.</div>
+             <li class="bg-black/20 p-3 rounded border border-white/5">
+               <span class="text-purple-400">solidb.sanitize(data, operations)</span> <span class="text-gray-500">-&gt; value</span>
+               <div class="text-xs text-gray-500 mt-2">
+                 Returns a cleaned copy of <code>data</code>. Each operation is either <code>true</code> (apply to every string field) or an array of field names to restrict it to.<br><br>
+                 <strong class="text-gray-400">Operations:</strong>
+                 <ul class="mt-1 ml-4 space-y-1">
+                   <li><code>trim</code>: strip leading and trailing whitespace</li>
+                   <li><code>lowercase</code>, <code>uppercase</code>: change case</li>
+                   <li><code>normalize_whitespace</code>: collapse runs of whitespace to a single space</li>
+                   <li><code>strip_html</code>: remove HTML tags</li>
+                   <li><code>lowercase_keys</code>, <code>trim_keys</code>: apply to the table's keys instead of its values</li>
+                 </ul>
+               </div>
              </li>
            </ul>
+
+           <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mt-6">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-blue-400">local</span> clean = <span class="text-pink-400">solidb.sanitize</span>(request.body, {
+  trim = <span class="text-blue-400">true</span>,
+  strip_html = { <span class="text-green-400">"bio"</span>, <span class="text-green-400">"comment"</span> },
+  lowercase = { <span class="text-green-400">"email"</span> }
+})
+
+db:collection(<span class="text-green-400">"profiles"</span>):insert(clean)</pre>
+                </div>
+           </div>
         </div>
       </div>
     </section>

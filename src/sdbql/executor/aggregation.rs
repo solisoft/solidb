@@ -1,7 +1,7 @@
 //! Aggregation functions for SDBQL executor.
 //!
 //! This module contains aggregation logic:
-//! - compute_aggregate: Compute aggregate functions (COUNT, SUM, AVG, etc.)
+//! - AggregateAccumulator: streaming COUNT/SUM/AVG/MIN/MAX/... for COLLECT groups
 //! - try_columnar_aggregation: Optimized columnar aggregation path
 
 use serde_json::Value;
@@ -236,156 +236,151 @@ impl<'a> QueryExecutor<'a> {
         }
         Ok(Some(out))
     }
+}
 
-    /// Execute query and return results only (backwards compatible)
-    pub(super) fn compute_aggregate(
-        &self,
-        function: &str,
-        argument: &Option<Expression>,
-        group_docs: &[Context],
-    ) -> DbResult<Value> {
-        match function {
-            "COUNT" => {
-                if argument.is_none() {
-                    // COUNT() - count all rows
-                    Ok(Value::Number((group_docs.len() as i64).into()))
-                } else {
-                    // COUNT(expr) - count non-null values
-                    let mut count = 0i64;
-                    for ctx in group_docs {
-                        if let Some(expr) = argument {
-                            let val = self.evaluate_expr_with_context(expr, ctx)?;
-                            if !val.is_null() {
-                                count += 1;
-                            }
-                        }
-                    }
-                    Ok(Value::Number(count.into()))
-                }
-            }
-            "SUM" => {
-                let mut sum = 0.0f64;
-                if let Some(expr) = argument {
-                    for ctx in group_docs {
-                        let val = self.evaluate_expr_with_context(expr, ctx)?;
-                        if let Some(n) = val.as_f64() {
-                            sum += n;
-                        } else if let Some(n) = val.as_i64() {
-                            sum += n as f64;
-                        }
-                    }
-                }
-                Ok(Value::Number(
-                    serde_json::Number::from_f64(sum).unwrap_or_else(|| (sum as i64).into()),
-                ))
-            }
-            "AVG" => {
-                let mut sum = 0.0f64;
-                let mut count = 0i64;
-                if let Some(expr) = argument {
-                    for ctx in group_docs {
-                        let val = self.evaluate_expr_with_context(expr, ctx)?;
-                        if let Some(n) = val.as_f64() {
-                            sum += n;
-                            count += 1;
-                        } else if let Some(n) = val.as_i64() {
-                            sum += n as f64;
-                            count += 1;
-                        }
-                    }
-                }
-                if count == 0 {
-                    Ok(Value::Null)
-                } else {
-                    let avg = sum / (count as f64);
-                    Ok(Value::Number(
-                        serde_json::Number::from_f64(avg).unwrap_or_else(|| (avg as i64).into()),
-                    ))
-                }
-            }
-            "MIN" => {
-                let mut min: Option<Value> = None;
-                if let Some(expr) = argument {
-                    for ctx in group_docs {
-                        let val = self.evaluate_expr_with_context(expr, ctx)?;
-                        if val.is_null() {
-                            continue;
-                        }
+/// Running state of one `AGGREGATE` function inside one `COLLECT` group.
+///
+/// `COLLECT` used to keep every row of every group alive until the end of the
+/// clause and then compute each aggregate over that list, so `COLLECT
+/// AGGREGATE total = SUM(doc.amount)` over 5M rows held 5M cloned contexts —
+/// the intermediate row ceiling counted them once, memory paid for them twice.
+/// Folding each row in as it arrives keeps the clause at O(groups) for every
+/// function except `COLLECT_LIST`, whose output *is* the rows.
+///
+/// The fold order is the row order, and the result of each variant is exactly
+/// what the list-based computation produced.
+pub(super) enum AggregateAccumulator {
+    /// `COUNT()` — every row.
+    CountAll(i64),
+    /// `COUNT(expr)` — rows whose value is not null.
+    CountNonNull(i64),
+    Sum(f64),
+    Avg {
+        sum: f64,
+        count: i64,
+    },
+    Min(Option<Value>),
+    Max(Option<Value>),
+    /// `LENGTH(expr)` / `COUNT_DISTINCT(expr)` — serialised values seen.
+    Distinct(std::collections::HashSet<String>),
+    /// `COLLECT_LIST(expr)` / `COLLECT(expr)`.
+    List(Vec<Value>),
+}
 
-                        if min.is_none() {
-                            min = Some(val);
-                        } else if let (Some(cur), Some(new)) =
-                            (min.as_ref().and_then(|v| v.as_f64()), val.as_f64())
-                        {
-                            if new < cur {
-                                min = Some(val);
-                            }
-                        } else if let (Some(cur_str), Some(new_str)) =
-                            (min.as_ref().and_then(|v| v.as_str()), val.as_str())
-                        {
-                            if new_str < cur_str {
-                                min = Some(val);
-                            }
-                        }
-                    }
-                }
-                Ok(min.unwrap_or(Value::Null))
+impl AggregateAccumulator {
+    pub(super) fn new(function: &str, has_argument: bool) -> DbResult<Self> {
+        Ok(match function {
+            "COUNT" if !has_argument => Self::CountAll(0),
+            "COUNT" => Self::CountNonNull(0),
+            "SUM" => Self::Sum(0.0),
+            "AVG" => Self::Avg { sum: 0.0, count: 0 },
+            "MIN" => Self::Min(None),
+            "MAX" => Self::Max(None),
+            "LENGTH" | "COUNT_DISTINCT" => Self::Distinct(Default::default()),
+            "COLLECT_LIST" | "COLLECT" => Self::List(Vec::new()),
+            _ => {
+                return Err(DbError::ExecutionError(format!(
+                    "Unknown aggregate function: {}",
+                    function
+                )))
             }
-            "MAX" => {
-                let mut max: Option<Value> = None;
-                if let Some(expr) = argument {
-                    for ctx in group_docs {
-                        let val = self.evaluate_expr_with_context(expr, ctx)?;
-                        if val.is_null() {
-                            continue;
-                        }
+        })
+    }
 
-                        if max.is_none() {
-                            max = Some(val);
-                        } else if let (Some(cur), Some(new)) =
-                            (max.as_ref().and_then(|v| v.as_f64()), val.as_f64())
-                        {
-                            if new > cur {
-                                max = Some(val);
-                            }
-                        } else if let (Some(cur_str), Some(new_str)) =
-                            (max.as_ref().and_then(|v| v.as_str()), val.as_str())
-                        {
-                            if new_str > cur_str {
-                                max = Some(val);
-                            }
-                        }
+    /// Fold one row in. `value` is `None` when the aggregate has no argument,
+    /// in which case only `COUNT()` has anything to count.
+    ///
+    /// Returns whether the value was retained (as opposed to reduced), so the
+    /// caller can budget the memory this clause is holding on to.
+    pub(super) fn push(&mut self, value: Option<Value>) -> bool {
+        match self {
+            Self::CountAll(n) => {
+                *n += 1;
+                false
+            }
+            Self::CountNonNull(n) => {
+                if matches!(value, Some(ref v) if !v.is_null()) {
+                    *n += 1;
+                }
+                false
+            }
+            Self::Sum(sum) => {
+                if let Some(n) = value.as_ref().and_then(as_number) {
+                    *sum += n;
+                }
+                false
+            }
+            Self::Avg { sum, count } => {
+                if let Some(n) = value.as_ref().and_then(as_number) {
+                    *sum += n;
+                    *count += 1;
+                }
+                false
+            }
+            Self::Min(best) => {
+                if let Some(val) = value.filter(|v| !v.is_null()) {
+                    if replaces(best.as_ref(), &val, std::cmp::Ordering::Less) {
+                        *best = Some(val);
                     }
                 }
-                Ok(max.unwrap_or(Value::Null))
+                false
             }
-            "LENGTH" | "COUNT_DISTINCT" => {
-                use std::collections::HashSet;
-                let mut seen: HashSet<String> = HashSet::new();
-                if let Some(expr) = argument {
-                    for ctx in group_docs {
-                        let val = self.evaluate_expr_with_context(expr, ctx)?;
-                        seen.insert(serde_json::to_string(&val).unwrap_or_default());
+            Self::Max(best) => {
+                if let Some(val) = value.filter(|v| !v.is_null()) {
+                    if replaces(best.as_ref(), &val, std::cmp::Ordering::Greater) {
+                        *best = Some(val);
                     }
                 }
-                Ok(Value::Number((seen.len() as i64).into()))
+                false
             }
-            "COLLECT_LIST" | "COLLECT" => {
-                let mut list = Vec::new();
-                if let Some(expr) = argument {
-                    for ctx in group_docs {
-                        let val = self.evaluate_expr_with_context(expr, ctx)?;
-                        list.push(val);
-                    }
+            Self::Distinct(seen) => match value {
+                Some(v) => seen.insert(serde_json::to_string(&v).unwrap_or_default()),
+                None => false,
+            },
+            Self::List(list) => match value {
+                Some(v) => {
+                    list.push(v);
+                    true
                 }
-                Ok(Value::Array(list))
-            }
-            _ => Err(DbError::ExecutionError(format!(
-                "Unknown aggregate function: {}",
-                function
-            ))),
+                None => false,
+            },
         }
     }
+
+    pub(super) fn finish(self) -> Value {
+        match self {
+            Self::CountAll(n) | Self::CountNonNull(n) => Value::Number(n.into()),
+            Self::Sum(sum) => float_value(sum),
+            Self::Avg { count: 0, .. } => Value::Null,
+            Self::Avg { sum, count } => float_value(sum / count as f64),
+            Self::Min(v) | Self::Max(v) => v.unwrap_or(Value::Null),
+            Self::Distinct(seen) => Value::Number((seen.len() as i64).into()),
+            Self::List(list) => Value::Array(list),
+        }
+    }
+}
+
+fn as_number(v: &Value) -> Option<f64> {
+    v.as_f64().or_else(|| v.as_i64().map(|n| n as f64))
+}
+
+fn float_value(f: f64) -> Value {
+    Value::Number(serde_json::Number::from_f64(f).unwrap_or_else(|| (f as i64).into()))
+}
+
+/// MIN/MAX ordering: numbers compare with numbers, strings with strings, and
+/// a candidate of another kind than the current best never replaces it. The
+/// first non-null value always wins.
+fn replaces(current: Option<&Value>, candidate: &Value, want: std::cmp::Ordering) -> bool {
+    let Some(current) = current else { return true };
+    let ord = if let (Some(cur), Some(new)) = (current.as_f64(), candidate.as_f64()) {
+        new.partial_cmp(&cur)
+    } else if let (Some(cur), Some(new)) = (current.as_str(), candidate.as_str()) {
+        Some(new.cmp(cur))
+    } else {
+        None
+    };
+    ord == Some(want)
 }
 
 /// Stable identity for a group across per-aggregate passes.

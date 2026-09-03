@@ -219,9 +219,17 @@ impl<'a> QueryExecutor<'a> {
                                         if let Ok(collection) =
                                             self.get_collection(&for_clause.collection)
                                         {
+                                            // `OFFSET n` alone leaves `max_fetch` unbounded;
+                                            // the ceiling bounds it instead.
+                                            let max_fetch =
+                                                Some(max_fetch.map_or(
+                                                    self.max_intermediate_rows() + 1,
+                                                    |n| n.min(self.max_intermediate_rows() + 1),
+                                                ));
                                             if let Some(docs) =
                                                 collection.index_sorted(field, *sort_asc, max_fetch)
                                             {
+                                                self.check_budget(docs.len())?;
                                                 let start = limit_offset.min(docs.len());
                                                 let end = match limit_count {
                                                     Some(count) => {
@@ -304,9 +312,12 @@ impl<'a> QueryExecutor<'a> {
                                     if let Ok(collection) =
                                         self.get_collection(&for_clause.collection)
                                     {
-                                        if let Some(docs) =
-                                            collection.index_sorted(field, *sort_asc, None)
-                                        {
+                                        if let Some(docs) = collection.index_sorted(
+                                            field,
+                                            *sort_asc,
+                                            self.scan_cap(),
+                                        ) {
+                                            self.check_budget(docs.len())?;
                                             let results = if let Some(ref return_clause) =
                                                 query.return_clause
                                             {
@@ -370,12 +381,16 @@ impl<'a> QueryExecutor<'a> {
                                     // otherwise the simplest query of all,
                                     // `FOR x IN c RETURN x`, is the one shape
                                     // that still reports CollectionNotFound.
-                                    if let Some(rows) = self.columnar_source_rows(
-                                        &for_clause.collection,
-                                        scan_limit.and_then(|(offset, count)| {
+                                    let cap = self.max_intermediate_rows() + 1;
+                                    let fetch = scan_limit
+                                        .and_then(|(offset, count)| {
                                             count.map(|count| offset.saturating_add(count))
-                                        }),
-                                    )? {
+                                        })
+                                        .map_or(cap, |n| n.min(cap));
+                                    if let Some(rows) = self
+                                        .columnar_source_rows(&for_clause.collection, Some(fetch))?
+                                    {
+                                        self.check_budget(rows.len())?;
                                         let results = match scan_limit {
                                             Some((offset, _)) => {
                                                 rows.into_iter().skip(offset).collect()
@@ -388,13 +403,19 @@ impl<'a> QueryExecutor<'a> {
                                         });
                                     }
 
+                                    // This fast path bypasses `get_for_source_docs`
+                                    // and with it the capped scan, so it caps
+                                    // its own: `FOR d IN huge RETURN d` was the
+                                    // one shape that still read everything.
                                     let collection = self.get_collection(&for_clause.collection)?;
                                     let results = match scan_limit {
-                                        Some((offset, count)) => {
-                                            collection.scan_values_range(offset, count)
-                                        }
-                                        None => collection.scan_values(None),
+                                        Some((offset, count)) => collection.scan_values_range(
+                                            offset,
+                                            Some(count.map_or(cap, |n| n.min(cap))),
+                                        ),
+                                        None => collection.scan_values(self.scan_cap()),
                                     };
+                                    self.check_budget(results.len())?;
 
                                     return Ok(QueryExecutionResult {
                                         results,
@@ -574,6 +595,10 @@ impl<'a> QueryExecutor<'a> {
             acc.mutations.documents_updated += rhs.mutations.documents_updated;
             acc.mutations.documents_removed += rhs.mutations.documents_removed;
 
+            // Each operand is bounded on its own; the accumulation was not,
+            // so `q UNION ALL q UNION ALL ...` compounded past the ceiling.
+            self.check_budget(acc.results.len().saturating_add(rhs.results.len()))?;
+
             match op.op {
                 SetOperator::UnionAll => acc.results.extend(rhs.results),
                 SetOperator::Union => {
@@ -665,6 +690,8 @@ impl<'a> QueryExecutor<'a> {
             for step in &steps {
                 let result = self.execute_query_with_bindings(&step.query, ctx.clone())?;
                 next.extend(result.results);
+                // Bound the batch as it grows, not after every step has run.
+                self.check_budget(accumulated.len().saturating_add(next.len()))?;
             }
 
             if next.is_empty() {

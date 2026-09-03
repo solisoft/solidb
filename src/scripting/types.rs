@@ -61,6 +61,31 @@ pub struct ScriptContext {
     pub user: ScriptUser,
 }
 
+impl ScriptContext {
+    /// Who a script's by-name writes are attributed to: its **caller**, never
+    /// the server. The script's code is fixed by an admin, but a public
+    /// route can be called by anyone, and a script that writes to
+    /// `request.body.collection` would otherwise let that anyone pick
+    /// `_scripts`. The queue worker runs scripts as `_system` with the admin
+    /// role, so trigger and job scripts keep their admin rights.
+    pub fn write_actor(&self) -> crate::storage::WriteActor {
+        crate::storage::WriteActor::client(self.user.authenticated && self.user.has_role("admin"))
+    }
+
+    /// The principal a `db:query(...)` runs under — the same one the caller
+    /// would get on `/cursor`.
+    pub fn query_principal(&self) -> crate::sdbql::QueryPrincipal {
+        if self.user.authenticated {
+            crate::sdbql::QueryPrincipal::from_roles(
+                self.user.username.clone(),
+                self.user.roles.clone(),
+            )
+        } else {
+            crate::sdbql::QueryPrincipal::anonymous()
+        }
+    }
+}
+
 /// Script metadata stored in _system/_scripts
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Script {
@@ -117,6 +142,7 @@ pub struct ScriptResult {
     pub status: u16,
     pub body: JsonValue,
     pub headers: HashMap<String, String>,
-    /// Pre-serialized JSON body — if set, used directly instead of serializing `body`
-    pub raw_body: Option<String>,
+    /// Pre-serialized body — if set, sent as-is instead of serializing
+    /// `body`. JSON unless `headers` carries a `content-type`.
+    pub raw_body: Option<Vec<u8>>,
 }

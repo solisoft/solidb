@@ -47,7 +47,15 @@ impl<'e> EdgeExpander<'e> {
     /// `auto_index` is set, creates any missing one. Falls back to a single-scan
     /// in-memory adjacency map only for directions whose required field stays
     /// unindexed.
-    pub(crate) fn new(edge: &'e Collection, direction: EdgeDirection, auto_index: bool) -> Self {
+    ///
+    /// `max_edges` bounds that fallback: an unindexed edge collection larger
+    /// than this is an error rather than a whole-collection load.
+    pub(crate) fn new(
+        edge: &'e Collection,
+        direction: EdgeDirection,
+        auto_index: bool,
+        max_edges: usize,
+    ) -> crate::error::DbResult<Self> {
         let probe = Value::String(String::new());
         let want_from = matches!(direction, EdgeDirection::Outbound | EdgeDirection::Any);
         let want_to = matches!(direction, EdgeDirection::Inbound | EdgeDirection::Any);
@@ -84,7 +92,15 @@ impl<'e> EdgeExpander<'e> {
 
         let adjacency = if needs_adjacency {
             let mut map: HashMap<String, Vec<Document>> = HashMap::new();
-            for doc in edge.scan(None) {
+            let docs = edge.scan(Some(max_edges.saturating_add(1)));
+            if docs.len() > max_edges {
+                return Err(crate::error::DbError::ExecutionError(format!(
+                    "Edge collection '{}' has more than {} edges and no _from/_to index; \
+                     create one, or raise SOLIDB_MAX_INTERMEDIATE_ROWS",
+                    edge.name, max_edges
+                )));
+            }
+            for doc in docs {
                 let from = match doc.get("_from") {
                     Some(Value::String(s)) => Some(s.clone()),
                     _ => None,
@@ -112,11 +128,11 @@ impl<'e> EdgeExpander<'e> {
             None
         };
 
-        Self {
+        Ok(Self {
             edge,
             direction,
             adjacency,
-        }
+        })
     }
 
     fn adjacency_edges(&self, key: &str) -> Vec<Document> {

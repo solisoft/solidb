@@ -53,14 +53,101 @@ pub fn lua_disabled_error() -> DbError {
 /// override with `SOLIDB_LUA_TIMEOUT_SECS`, 0 disables). Checked every 50k
 /// VM instructions, so a `while true do end` cannot pin a pooled state (and
 /// its OS thread) forever. The caller must `lua.remove_hook()` afterwards.
-fn install_deadline_hook(lua: &Lua) {
+/// Stop a long-lived script that has stopped yielding.
+///
+/// WebSocket service scripts live as long as the connection and spend most
+/// of it awaiting messages, so a wall-clock deadline from start would kill
+/// every legitimate one. What must not happen is `while true do end`: the VM
+/// never yields, and the tokio worker polling it never returns to the
+/// scheduler. The hook fires every 50k instructions and adds up the time
+/// between consecutive firings while they are close together — that is
+/// time spent executing Lua without a break. A gap longer than a few
+/// milliseconds means the script awaited (or ran a host call) and the count
+/// starts over. Continuous execution past the script timeout is an error.
+fn install_busy_loop_hook(lua: &Lua) {
+    let timeout = script_timeout_secs();
+    if timeout == 0 {
+        return;
+    }
+    let limit = std::time::Duration::from_secs(timeout);
+    let state = std::sync::Mutex::new((std::time::Instant::now(), std::time::Duration::ZERO));
+    let _ = lua.set_global_hook(
+        mlua::HookTriggers::new().every_nth_instruction(50_000),
+        move |_lua, _debug| {
+            let now = std::time::Instant::now();
+            let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
+            let gap = now.duration_since(st.0);
+            st.0 = now;
+            if gap > std::time::Duration::from_millis(20) {
+                st.1 = std::time::Duration::ZERO;
+            } else {
+                st.1 += gap;
+            }
+            if st.1 > limit {
+                Err(mlua::Error::RuntimeError(format!(
+                    "script ran for {}s without yielding (execution time limit)",
+                    timeout
+                )))
+            } else {
+                Ok(mlua::VmState::Continue)
+            }
+        },
+    );
+}
+
+fn script_timeout_secs() -> u64 {
     static TIMEOUT_SECS: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-    let timeout = *TIMEOUT_SECS.get_or_init(|| {
+    *TIMEOUT_SECS.get_or_init(|| {
         std::env::var("SOLIDB_LUA_TIMEOUT_SECS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(30)
-    });
+    })
+}
+
+/// Turn a Lua failure into the error the caller should see.
+///
+/// A `DbError` raised inside a binding (a refused write to `_scripts`, a
+/// missing document) travels out of mlua as `CallbackError { cause:
+/// ExternalError(..) }`. It used to be flattened into
+/// `InternalError("Lua error: ...")`, so every refusal was a 500 with the
+/// real reason buried in the message. `Forbidden` and friends now come back
+/// out as themselves.
+pub(crate) fn lua_error_to_db_error(e: mlua::Error) -> DbError {
+    fn db_error_in(e: &mlua::Error) -> Option<DbError> {
+        match e {
+            mlua::Error::CallbackError { cause, .. } => db_error_in(cause),
+            mlua::Error::WithContext { cause, .. } => db_error_in(cause),
+            mlua::Error::ExternalError(arc) => match arc.downcast_ref::<DbError>() {
+                Some(DbError::Forbidden(m)) => Some(DbError::Forbidden(m.clone())),
+                Some(DbError::Unauthorized(m)) => Some(DbError::Unauthorized(m.clone())),
+                _ => None,
+            },
+            // `solidb.error(msg, code)` raises "ERROR:{code}:{msg}"; Lua's
+            // own `error()` on such a message prefixes the location, so
+            // search rather than anchor.
+            mlua::Error::RuntimeError(m) => script_error_in(m),
+            _ => None,
+        }
+    }
+    fn script_error_in(m: &str) -> Option<DbError> {
+        let at = m.find("ERROR:")?;
+        let rest = &m[at + "ERROR:".len()..];
+        let (code, message) = rest.split_once(':')?;
+        let status: u16 = code.trim().parse().ok()?;
+        if !(100..=599).contains(&status) {
+            return None;
+        }
+        Some(DbError::ScriptError {
+            status,
+            message: message.trim().to_string(),
+        })
+    }
+    db_error_in(&e).unwrap_or_else(|| DbError::InternalError(format!("Lua error: {}", e)))
+}
+
+fn install_deadline_hook(lua: &Lua) {
+    let timeout = script_timeout_secs();
     if timeout == 0 {
         return;
     }
@@ -186,7 +273,23 @@ impl ScriptEngine {
         db_name: &str,
         context: &ScriptContext,
     ) -> Result<ScriptResult, DbError> {
-        let pool_guard = pool.acquire();
+        // Every state busy means `pool_size` scripts are already running.
+        // Wait for one asynchronously — the old fallback spun a tokio worker
+        // at 100% until a state freed up, with no exit — and give up after
+        // the script timeout rather than queueing forever.
+        let acquire_deadline = std::time::Instant::now()
+            + std::time::Duration::from_secs(script_timeout_secs().max(1));
+        let pool_guard = loop {
+            if let Some(guard) = pool.try_acquire() {
+                break guard;
+            }
+            if std::time::Instant::now() >= acquire_deadline {
+                return Err(DbError::InternalError(
+                    "Script engine busy: every Lua state is in use".to_string(),
+                ));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        };
 
         // Analyze what globals this script needs (cached in script_cache)
         let needs = if let Some(ref cache) = self.script_cache {
@@ -253,27 +356,10 @@ impl ScriptEngine {
             let chunk = lua.load(&bytecode[..]);
             let lua_result = chunk.eval::<LuaValue>();
             lua.remove_hook();
-            let lua_result =
-                lua_result.map_err(|e| DbError::InternalError(format!("Lua error: {}", e)))?;
+            let lua_result = lua_result.map_err(lua_error_to_db_error)?;
 
-            // 4. Check for RawJson (pre-serialized) or convert to JSON
-            if let LuaValue::UserData(ref ud) = lua_result {
-                if let Ok(raw) = ud.borrow::<crate::scripting::conversion::RawJson>() {
-                    return Ok(ScriptResult {
-                        status: 200,
-                        body: JsonValue::Null,
-                        headers: HashMap::new(),
-                        raw_body: Some(raw.0.clone()),
-                    });
-                }
-            }
-            let body = self.lua_to_json(lua, lua_result)?;
-            Ok(ScriptResult {
-                status: 200,
-                body,
-                headers: HashMap::new(),
-                raw_body: None,
-            })
+            // 4. Turn the return value into the response
+            self.finish_result(lua, db_name, lua_result)
         })
     }
 
@@ -324,17 +410,8 @@ impl ScriptEngine {
         lua.remove_hook();
 
         match eval_result {
-            Ok(result) => {
-                // Convert Lua result to JSON
-                let json_result = self.lua_to_json(&lua, result)?;
-                Ok(ScriptResult {
-                    status: 200,
-                    body: json_result,
-                    headers: HashMap::new(),
-                    raw_body: None,
-                })
-            }
-            Err(e) => Err(DbError::InternalError(format!("Lua error: {}", e))),
+            Ok(result) => self.finish_result(&lua, db_name, result),
+            Err(e) => Err(lua_error_to_db_error(e)),
         }
     }
 
@@ -357,6 +434,7 @@ impl ScriptEngine {
         &self,
         code: &str,
         db_name: &str,
+        user: crate::scripting::auth::ScriptUser,
         variables: &HashMap<String, JsonValue>,
         history: &[String],
         output_capture: &mut Vec<String>,
@@ -364,7 +442,104 @@ impl ScriptEngine {
         if !lua_runtime_enabled() {
             return Err(lua_disabled_error());
         }
-        repl::execute_repl(self, code, db_name, variables, history, output_capture).await
+        repl::execute_repl(
+            self,
+            code,
+            db_name,
+            user,
+            variables,
+            history,
+            output_capture,
+        )
+        .await
+    }
+
+    /// Build the HTTP-facing result from a script's return value.
+    ///
+    /// Three shapes: an explicit `ScriptResponse` from `response.*`, a
+    /// `RawJson` fast path, or any other Lua value serialised as JSON. The
+    /// last two honour `solidb.status` / `solidb.header` overrides.
+    fn finish_result(
+        &self,
+        lua: &Lua,
+        db_name: &str,
+        value: LuaValue,
+    ) -> Result<ScriptResult, DbError> {
+        use crate::scripting::response::{take_overrides, ResponseBody, ScriptResponse};
+        let overrides = take_overrides(lua);
+
+        if let LuaValue::UserData(ref ud) = value {
+            if let Ok(resp) = ud.borrow::<ScriptResponse>() {
+                let mut headers: HashMap<String, String> = resp.headers.iter().cloned().collect();
+                let (body, raw_body) = match &resp.body {
+                    ResponseBody::Json(v) => (v.clone(), None),
+                    ResponseBody::Raw {
+                        content_type,
+                        bytes,
+                    } => {
+                        headers.insert("content-type".to_string(), content_type.clone());
+                        (JsonValue::Null, Some(bytes.clone()))
+                    }
+                    ResponseBody::File { key, filename } => {
+                        let (mime, bytes) = self.read_stored_file(db_name, key)?;
+                        headers.insert("content-type".to_string(), mime);
+                        if let Some(name) = filename {
+                            headers.insert(
+                                "content-disposition".to_string(),
+                                format!("attachment; filename=\"{}\"", name.replace('"', "")),
+                            );
+                        }
+                        (JsonValue::Null, Some(bytes))
+                    }
+                };
+                return Ok(ScriptResult {
+                    status: resp.status,
+                    body,
+                    headers,
+                    raw_body,
+                });
+            }
+            if let Ok(raw) = ud.borrow::<crate::scripting::conversion::RawJson>() {
+                return Ok(ScriptResult {
+                    status: overrides.status.unwrap_or(200),
+                    body: JsonValue::Null,
+                    headers: overrides.headers.into_iter().collect(),
+                    raw_body: Some(raw.0.clone().into_bytes()),
+                });
+            }
+        }
+        let body = self.lua_to_json(lua, value)?;
+        Ok(ScriptResult {
+            status: overrides.status.unwrap_or(200),
+            body,
+            headers: overrides.headers.into_iter().collect(),
+            raw_body: None,
+        })
+    }
+
+    /// A file stored through `solidb.upload`: its MIME type and bytes.
+    fn read_stored_file(&self, db_name: &str, key: &str) -> Result<(String, Vec<u8>), DbError> {
+        let database = self.storage.get_database(db_name)?;
+        let collection = database
+            .get_collection(crate::scripting::file_handling::FILES_COLLECTION)
+            .map_err(|_| DbError::DocumentNotFound(key.to_string()))?;
+        let doc = collection
+            .get(key)
+            .map_err(|_| DbError::DocumentNotFound(key.to_string()))?;
+        let meta = doc.to_value();
+        let mime = meta
+            .get("mime_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("application/octet-stream")
+            .to_string();
+        let chunk_count = meta.get("chunks").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+        let mut data = Vec::new();
+        for i in 0..chunk_count {
+            if let Ok(Some(chunk)) = collection.get_blob_chunk(key, i) {
+                data.extend(chunk);
+            }
+        }
+        Ok((mime, data))
     }
 
     // Helper exposed for submodules

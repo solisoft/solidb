@@ -312,7 +312,8 @@ pub async fn execute_transactional_sdbql(
         )
         .with_principal(crate::server::handlers::query::principal_from_claims(
             &claims,
-        ));
+        ))
+        .with_timeout(std::time::Duration::from_secs(30));
         let results = executor.execute(&query)?;
         return Ok(Json(serde_json::json!({"result": results})));
     }
@@ -326,7 +327,8 @@ pub async fn execute_transactional_sdbql(
     )
     .with_principal(crate::server::handlers::query::principal_from_claims(
         &claims,
-    ));
+    ))
+    .with_timeout(std::time::Duration::from_secs(30));
 
     // Execute body clauses manually to intercept mutations
     let mut initial_bindings = std::collections::HashMap::new();
@@ -381,11 +383,7 @@ pub async fn execute_transactional_sdbql(
                             // It's a collection - scan it
                             let full_coll_name = format!("{}:{}", db_name, for_clause.collection);
                             let collection = state.storage.get_collection(&full_coll_name)?;
-                            collection
-                                .scan(None)
-                                .into_iter()
-                                .map(|d| d.to_value())
-                                .collect()
+                            collection.scan_values(executor.scan_cap())
                         }
                     };
 
@@ -395,6 +393,8 @@ pub async fn execute_transactional_sdbql(
                         new_ctx.insert(for_clause.variable.clone(), doc);
                         new_rows.push(new_ctx);
                     }
+                    // This hand-rolled pipeline had no ceiling at all.
+                    executor.check_budget(new_rows.len())?;
                 }
                 rows = new_rows;
             }

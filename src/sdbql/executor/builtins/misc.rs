@@ -87,18 +87,23 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 (get_i64(&args[0]), get_i64(&args[1]), step_val)
             };
 
+            // i128: `end - start` overflows i64 across the full range, and in
+            // release that wrapped to a count of 0, walked past the cap, and
+            // allocated until the process was killed.
+            let (start_w, end_w, step_w) = (start as i128, end as i128, step as i128);
             let count = if step > 0 {
                 if end < start {
                     0
                 } else {
-                    ((end - start) / step + 1) as usize
+                    (end_w - start_w) / step_w + 1
                 }
             } else if end > start {
                 0
             } else {
-                ((start - end) / step.abs() + 1) as usize
+                (start_w - end_w) / step_w.abs() + 1
             };
             const MAX_RANGE: usize = 1_000_000;
+            let count = usize::try_from(count).unwrap_or(usize::MAX);
             if count > MAX_RANGE {
                 return Err(DbError::ExecutionError(format!(
                     "RANGE: result would have {} elements (max {})",
@@ -107,16 +112,9 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }
             let mut result = Vec::with_capacity(count);
             let mut i = start;
-            if step > 0 {
-                while i <= end {
-                    result.push(Value::Number(serde_json::Number::from(i)));
-                    i += step;
-                }
-            } else {
-                while i >= end {
-                    result.push(Value::Number(serde_json::Number::from(i)));
-                    i += step;
-                }
+            while result.len() < count {
+                result.push(Value::Number(serde_json::Number::from(i)));
+                i = i.saturating_add(step);
             }
             Ok(Some(Value::Array(result)))
         }

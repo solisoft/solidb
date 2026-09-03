@@ -414,8 +414,7 @@ impl ConnectionPool {
 
         // Decompress if needed
         let payload = if compressed {
-            lz4_flex::decompress_size_prepended(&data)
-                .map_err(|e| TransportError::DecodeError(format!("Decompression failed: {}", e)))?
+            super::protocol::decompress_checked(&data).map_err(TransportError::DecodeError)?
         } else {
             data
         };

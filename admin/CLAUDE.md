@@ -511,3 +511,58 @@ soli lint                             # static analysis
 12. **Use `||=` for falsey defaults** — `this.balance ||= 0` instead of `if this.balance == nil`.
 13. **Use `.includes?` for membership checks** — replaces chained `||` comparisons.
 14. **Test new features to >90% coverage** — non-negotiable, see above.
+
+## Access control for this app
+
+This console signs in to SoliDB with `SOLIDB_USERNAME` / `SOLIDB_PASSWORD` —
+an administrator — caches the JWT process-wide, and attaches it to every
+upstream call **on behalf of whoever is browsing**. Anyone who can reach the
+port therefore has database-admin rights: `/databases/:db/repl` is arbitrary
+Lua, `/users` mints SoliDB accounts, `DELETE /databases/:db` drops data.
+
+`app/middleware/require_admin_auth.sl` gates every route and fails closed. Set
+exactly one of:
+
+- `ADMIN_UI_PASSWORD=<secret>` — require a login here (`/login`, session-backed,
+  constant-time compare in `AdminAuth.password_matches?`).
+- `ADMIN_UI_ALLOW_NO_AUTH=1` — you terminate authentication in front of this app
+  and accept that this port is unauthenticated.
+
+With neither, the app answers 503 with an explanation. `.env.test` sets the
+second one so specs can drive controllers directly.
+
+Two related rules the controllers now enforce, both from the September 2026
+audit:
+
+- **Browse filters are validated** (`DocumentsController#_safe_filter`). The
+  filter is spliced into query text that runs with the admin JWT, on a **GET**
+  route — and the framework's CSRF gate exempts safe methods, so an `<img src>`
+  in any page an admin views submitted it. Clause keywords and comment markers
+  are rejected.
+- **Blob previews are not served with their stored content type**
+  (`DocumentsController#blob`). Blob metadata is written by application users;
+  replaying a stored `text/html` inline on this origin was stored XSS against
+  the console. Only an allowlist of raster image types renders inline.
+
+`AdminAuth.unauthenticated_response` only redirects a *navigation*. htmx
+requests get `401` + `HX-Redirect: /login`, and scripted requests (the dev
+live-reload client, fetch/XHR) get a bare `401`. A 302 for those was the
+original shape and it was wrong: both htmx and live-reload follow redirects and
+put the response **into the DOM**, so a logged-out session swapped the whole
+sign-in page into a fragment target and the sidebar filled with stacked sign-in
+forms.
+
+The sign-in page sets `@hide_chrome`, which the layout uses (alongside the
+first-connection form's `@setup_required`) to drop the sidebar, database picker
+and connection indicator. That is not cosmetic: the nav partial carries an
+`hx-trigger="load"` request, and on a page reached without a session it comes
+back 401 + HX-Redirect, htmx navigates to `/login`, the nav renders again, and
+the sign-in page refreshes forever.
+
+Sessions are on disk (`SOLI_SESSION_DRIVER=disk` in `.env`). The default
+`in_memory` driver is per-process and `soli serve --dev` restarts on every file
+change, so a login would be dropped on each save.
+
+A `return` inside a `.each do |x|` block leaves the *block*, not the method —
+use `for x in xs` when a loop needs to return early. That bug silently disabled
+the filter guard until a spec caught it.

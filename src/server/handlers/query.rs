@@ -2,7 +2,7 @@ use super::documents::get_transaction_id;
 use super::system::AppState;
 use crate::{
     error::DbError,
-    sdbql::{BodyClause, Query, QueryExecutor},
+    sdbql::{ast::Expression, BodyClause, Query, QueryExecutor},
     server::response::ApiResponse,
     storage::{query_cache, StorageEngine},
 };
@@ -93,6 +93,62 @@ pub(crate) fn is_long_running_query(query: &Query) -> bool {
                 .iter()
                 .any(|cte| is_long_running_query(&cte.query))
         })
+        // Pre-FOR `LET x = (FOR ...)` lives outside `body_clauses`, and a
+        // bare `RETURN EMBED(...)` / `RETURN NEIGHBORS(...)` has none at all;
+        // both ran inline on a tokio worker for up to the whole timeout.
+        || query
+            .let_clauses
+            .iter()
+            .any(|l| expression_is_heavy(&l.expression))
+        || query
+            .return_clause
+            .as_ref()
+            .is_some_and(|r| expression_is_heavy(&r.expression))
+}
+
+/// Functions that scan a collection, call out over the network, or run a
+/// model — none of which belong on an async worker thread.
+const HEAVY_FUNCTIONS: &[&str] = &[
+    "EMBED",
+    "EMBED_BATCH",
+    "RERANK",
+    "LLM",
+    "CHAT",
+    "GRAPH_RAG",
+    "GRAPH_RAG_SEARCH",
+    "NEIGHBORS",
+    "PAGERANK",
+    "DEGREE_CENTRALITY",
+    "COMMUNITY_SEARCH",
+    "SHORTEST_PATH",
+    "K_PATHS",
+    "FULLTEXT",
+    "VECTOR_SEARCH",
+];
+
+/// Whether evaluating this expression can do work proportional to a
+/// collection or wait on I/O: a subquery anywhere inside it, or a call to a
+/// function in `HEAVY_FUNCTIONS`.
+fn expression_is_heavy(expr: &Expression) -> bool {
+    use crate::sdbql::ast::Expression as E;
+    match expr {
+        E::Subquery(q) => {
+            !q.body_clauses.is_empty()
+                || is_long_running_query(q)
+                || q.return_clause
+                    .as_ref()
+                    .is_some_and(|r| expression_is_heavy(&r.expression))
+        }
+        E::FunctionCall { name, args } => {
+            HEAVY_FUNCTIONS.contains(&name.to_ascii_uppercase().as_str())
+                || args.iter().any(expression_is_heavy)
+        }
+        other => {
+            let mut heavy = false;
+            other.for_each_child(&mut |child| heavy |= expression_is_heavy(child));
+            heavy
+        }
+    }
 }
 
 /// Get collection names affected by mutation clauses for targeted cache invalidation.
@@ -234,21 +290,24 @@ fn log_slow_query(
     });
 }
 
-pub(crate) fn principal_from_claims(
-    claims: &crate::server::auth::Claims,
-) -> crate::sdbql::QueryPrincipal {
-    let roles = claims.roles.clone().unwrap_or_default();
-    let lower: Vec<String> = roles.iter().map(|r| r.to_ascii_lowercase()).collect();
-    let can_admin = lower.iter().any(|r| r == "admin");
-    let can_write = can_admin || lower.iter().any(|r| r == "editor" || r == "write");
-    let can_read = can_write || lower.iter().any(|r| r == "viewer" || r == "read");
-    crate::sdbql::QueryPrincipal {
-        user: claims.sub.clone(),
-        roles,
-        can_read,
-        can_write,
-        can_admin,
+/// The write identity of an HTTP request, for the storage write getters.
+///
+/// A handler whose route is not behind the auth layer has no claims; that is
+/// a non-admin client, never the server.
+pub fn write_actor_from_claims(
+    claims: Option<&crate::server::auth::Claims>,
+) -> crate::storage::WriteActor {
+    match claims {
+        Some(c) => crate::storage::WriteActor::client(principal_from_claims(c).can_admin),
+        None => crate::storage::WriteActor::client(false),
     }
+}
+
+pub fn principal_from_claims(claims: &crate::server::auth::Claims) -> crate::sdbql::QueryPrincipal {
+    crate::sdbql::QueryPrincipal::from_roles(
+        claims.sub.clone(),
+        claims.roles.clone().unwrap_or_default(),
+    )
 }
 
 // ==================== Handlers ====================
@@ -311,7 +370,8 @@ pub async fn execute_query(
                 QueryExecutor::with_database(&state.storage, db_name)
             } else {
                 QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
-            };
+            }
+            .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
 
             let results = executor.execute(query)?;
             return Ok(ApiResponse::new(
@@ -339,7 +399,8 @@ pub async fn execute_query(
                 db_name.clone(),
                 req.bind_vars.clone(),
             )
-        };
+        }
+        .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
 
         // Execute body clauses manually to intercept mutations
         let mut initial_bindings = std::collections::HashMap::new();
@@ -415,20 +476,12 @@ pub async fn execute_query(
                                         }
                                         Err(e) => {
                                             eprintln!("Scatter-gather failed: {:?}, using local shards only", e);
-                                            collection
-                                                .scan(None)
-                                                .into_iter()
-                                                .map(|d| d.to_value())
-                                                .collect()
+                                            collection.scan_values(executor.scan_cap())
                                         }
                                     }
                                 } else {
                                     // Non-sharded or no coordinator - local scan
-                                    collection
-                                        .scan(None)
-                                        .into_iter()
-                                        .map(|d| d.to_value())
-                                        .collect()
+                                    collection.scan_values(executor.scan_cap())
                                 }
                             }
                         };
@@ -438,6 +491,8 @@ pub async fn execute_query(
                             new_ctx.insert(for_clause.variable.clone(), doc);
                             new_rows.push(new_ctx);
                         }
+                        // This hand-rolled pipeline had no ceiling at all.
+                        executor.check_budget(new_rows.len())?;
                     }
                     rows = new_rows;
                 }
@@ -658,7 +713,8 @@ pub async fn execute_query(
             } else {
                 QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
             }
-            .with_principal(principal);
+            .with_principal(principal)
+            .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
 
             // Add replication service for mutation logging
             if let Some(ref log) = replication_log {
@@ -712,7 +768,8 @@ pub async fn execute_query(
         } else {
             QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
         }
-        .with_principal(principal_from_claims(&claims));
+        .with_principal(principal_from_claims(&claims))
+        .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
 
         // Add replication service for mutation logging
         if let Some(ref log) = state.replication_log {
@@ -742,10 +799,14 @@ pub async fn execute_query(
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    // Cache read-only query results
+    // Cache read-only query results. The cache evicts by entry count, so
+    // one large result set per entry is the whole heap; only small ones are
+    // worth keeping, and those are the ones a cache hit helps.
     if let Some(key) = cache_key {
-        let result_clone: Vec<serde_json::Value> = query_result.results.clone();
-        query_cache::get_query_cache().put(key, result_clone);
+        if query_result.results.len() <= query_cache::MAX_CACHED_ROWS {
+            let result_clone: Vec<serde_json::Value> = query_result.results.clone();
+            query_cache::get_query_cache().put(key, result_clone);
+        }
     }
 
     // Invalidate query cache when mutations occurred
@@ -822,7 +883,8 @@ pub async fn explain_query(
                 } else {
                     QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
                 }
-                .with_principal(principal);
+                .with_principal(principal)
+                .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
 
                 if !is_scatter_gather {
                     if let Some(coordinator) = shard_coordinator {
@@ -911,5 +973,40 @@ pub async fn delete_cursor(
             "Cursor not found: {}",
             cursor_id
         )))
+    }
+}
+
+#[cfg(test)]
+mod long_running_tests {
+    use super::is_long_running_query;
+    use crate::sdbql::parser::parse;
+
+    #[test]
+    fn point_reads_stay_inline() {
+        assert!(!is_long_running_query(&parse("RETURN 1 + 1").unwrap()));
+        assert!(!is_long_running_query(
+            &parse("LET x = 2 RETURN x * 3").unwrap()
+        ));
+    }
+
+    /// Pre-FOR `LET` lives outside `body_clauses`; a scan hidden in one ran
+    /// inline on a tokio worker.
+    #[test]
+    fn let_subquery_takes_the_blocking_pool() {
+        let q = parse("LET xs = (FOR d IN docs RETURN d) RETURN LENGTH(xs)").unwrap();
+        assert!(is_long_running_query(&q));
+        let q = parse("RETURN (FOR d IN docs RETURN d)").unwrap();
+        assert!(is_long_running_query(&q));
+    }
+
+    #[test]
+    fn heavy_functions_take_the_blocking_pool() {
+        for q in [
+            r#"RETURN EMBED("hello")"#,
+            r#"RETURN NEIGHBORS("edges", ["a/1"])"#,
+            r#"RETURN {p: PAGERANK("edges")}"#,
+        ] {
+            assert!(is_long_running_query(&parse(q).unwrap()), "{q}");
+        }
     }
 }

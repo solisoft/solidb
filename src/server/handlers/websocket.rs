@@ -146,12 +146,32 @@ pub async fn monitor_ws_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
-    if crate::server::auth::AuthService::validate_token(&params.token).is_err() {
-        return Response::builder()
-            .status(StatusCode::UNAUTHORIZED)
-            .body(Body::empty())
-            .expect("Valid status code should not fail")
-            .into_response();
+    // The token was validated but never authorized, so any principal with a
+    // valid token — a read-only viewer included — received the host name,
+    // kernel version and live CPU/memory of the server. Monitoring is an
+    // operator view: require global admin, as the cluster-status socket
+    // already does.
+    let claims = match crate::server::auth::AuthService::validate_token(&params.token) {
+        Ok(claims) => claims,
+        Err(_) => {
+            return Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Body::empty())
+                .expect("Valid status code should not fail")
+                .into_response();
+        }
+    };
+
+    if crate::server::authz_middleware::enforce(
+        &claims,
+        &state,
+        crate::server::authorization::PermissionAction::Admin,
+        None,
+    )
+    .await
+    .is_err()
+    {
+        return forbidden_response();
     }
 
     if validate_ws_origin(&headers).is_err() {
@@ -333,6 +353,10 @@ async fn handle_socket(
         }
     });
 
+    // Each subscription spawns a task with its own change-event buffers;
+    // nothing bounded how many one socket could open.
+    let mut subscriptions = 0usize;
+
     // Main Receiver Loop
     while let Some(Ok(msg)) = receiver.next().await {
         // Security: Check message size to prevent OOM attacks
@@ -367,6 +391,11 @@ async fn handle_socket(
                 let req_result = serde_json::from_str::<ChangefeedRequest>(&text);
                 match req_result {
                     Ok(req) if req.type_ == "subscribe" => {
+                        if subscriptions >= MAX_SUBSCRIPTIONS_PER_CONNECTION {
+                            let _ = tx.send(subscription_limit_message()).await;
+                            continue;
+                        }
+                        subscriptions += 1;
                         let tx_clone = tx.clone();
                         let state_clone = state.clone();
                         let claims_clone = claims.clone();
@@ -384,6 +413,11 @@ async fn handle_socket(
                         });
                     }
                     Ok(req) if req.type_ == "live_query" => {
+                        if subscriptions >= MAX_SUBSCRIPTIONS_PER_CONNECTION {
+                            let _ = tx.send(subscription_limit_message()).await;
+                            continue;
+                        }
+                        subscriptions += 1;
                         let tx_clone = tx.clone();
                         let state_clone = state.clone();
                         let claims_clone = claims.clone();
@@ -423,6 +457,23 @@ async fn handle_socket(
 }
 
 /// Handle a single subscription request
+/// Subscriptions and live queries one WebSocket connection may open.
+const MAX_SUBSCRIPTIONS_PER_CONNECTION: usize = 64;
+
+fn subscription_limit_message() -> Message {
+    Message::Text(
+        serde_json::json!({
+            "type": "error",
+            "error": format!(
+                "Subscription limit reached ({} per connection)",
+                MAX_SUBSCRIPTIONS_PER_CONNECTION
+            ),
+        })
+        .to_string()
+        .into(),
+    )
+}
+
 async fn handle_subscribe_request(
     req: ChangefeedRequest,
     state: AppState,
@@ -1008,22 +1059,25 @@ async fn execute_live_query_step(
     let exec_result = tokio::task::spawn_blocking(move || {
         match crate::sdbql::parser::parse(&query_str) {
             Ok(parsed) => {
-                // Security check
-                for clause in &parsed.body_clauses {
-                    match clause {
-                        crate::sdbql::BodyClause::Insert(_)
-                        | crate::sdbql::BodyClause::Update(_)
-                        | crate::sdbql::BodyClause::Remove(_) => {
-                            return Err(crate::error::DbError::ExecutionError(
-                                "Live queries are read-only".to_string(),
-                            ));
-                        }
-                        _ => {}
-                    }
+                // Live-query subscriptions are authorized as Read, and this
+                // query is re-executed on every matching change, so it must be
+                // a read. The check used to be a hand-rolled match over
+                // `body_clauses` for Insert/Update/Remove only, which let
+                // UPSERT, CREATE STREAM, CREATE/REFRESH MATERIALIZED VIEW,
+                // mutating set-operation operands, mutating CTEs and
+                // mutations nested in subqueries through — all with a
+                // read-only key. `has_mutations()` is the single definition of
+                // "this query writes", shared with `/cursor` and the
+                // transactional query endpoint.
+                if parsed.has_mutations() {
+                    return Err(crate::error::DbError::ExecutionError(
+                        "Live queries are read-only".to_string(),
+                    ));
                 }
 
                 let mut executor =
-                    crate::sdbql::executor::QueryExecutor::with_database(&storage, db_name);
+                    crate::sdbql::executor::QueryExecutor::with_database(&storage, db_name)
+                        .with_timeout(std::time::Duration::from_secs(30));
                 if let Some(coord) = shard_coordinator {
                     executor = executor.with_shard_coordinator(coord);
                 }
@@ -1033,7 +1087,14 @@ async fn execute_live_query_step(
         }
     })
     .await
-    .unwrap();
+    // A panic inside the executor is a failed evaluation of this live
+    // query, not a reason to take the connection down with a second panic.
+    .unwrap_or_else(|e| {
+        Err(crate::error::DbError::InternalError(format!(
+            "Live query task failed: {}",
+            e
+        )))
+    });
 
     match exec_result {
         Ok(results) => {

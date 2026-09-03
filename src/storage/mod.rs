@@ -42,7 +42,12 @@ pub use index::{
     IndexKind, IndexRef, IndexSpec, IndexStats, IndexType, TtlIndex, TtlIndexStats,
     VectorIndexConfig, VectorIndexStats, VectorMetric, BM25_B, BM25_K1, NGRAM_SIZE,
 };
-pub use protected::{is_protected_collection, protected_collection_error, PROTECTED_COLLECTIONS};
+pub use protected::{
+    admin_write_collection_error, check_write_access, is_admin_write_collection,
+    is_protected_collection, is_write_denied_collection, is_write_protected_collection,
+    protected_collection_error, write_denied_collection_error, write_protected_collection_error,
+    WriteActor, ADMIN_WRITE_COLLECTIONS, PROTECTED_COLLECTIONS, WRITE_PROTECTED_COLLECTIONS,
+};
 pub use schema::{
     CollectionSchema, SchemaCompilationError, SchemaValidationError, SchemaValidationMode,
     SchemaValidator, ValidationResult, ValidationViolation,

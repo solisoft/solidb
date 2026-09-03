@@ -44,6 +44,10 @@ pub struct CreateScriptRequest {
     pub code: String,
     pub description: Option<String>,
     pub collection: Option<String>,
+    /// The project's service (`solidb-scripts.toml`). Without it the server
+    /// filed every pushed script under `default`, while `scripts test`
+    /// called the configured service and found nothing.
+    pub service: String,
 }
 
 /// Response from list scripts endpoint
@@ -150,6 +154,7 @@ impl ScriptClient {
     }
 
     /// Create a new script
+    #[allow(clippy::too_many_arguments)]
     pub fn create_script(
         &self,
         database: &str,
@@ -158,6 +163,7 @@ impl ScriptClient {
         code: &str,
         description: Option<&str>,
         collection: Option<&str>,
+        service: &str,
     ) -> anyhow::Result<CreateScriptResponse> {
         let url = format!("{}/_api/database/{}/scripts", self.base_url, database);
 
@@ -171,6 +177,7 @@ impl ScriptClient {
             code: code.to_string(),
             description: description.map(|s| s.to_string()),
             collection: collection.map(|s| s.to_string()),
+            service: service.to_string(),
         };
 
         let request = self.client.post(&url).json(&request_body);
@@ -188,6 +195,7 @@ impl ScriptClient {
 
     /// Update an existing script
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn update_script(
         &self,
         database: &str,
@@ -197,6 +205,7 @@ impl ScriptClient {
         code: &str,
         description: Option<&str>,
         collection: Option<&str>,
+        service: &str,
     ) -> anyhow::Result<Script> {
         let url = format!(
             "{}/_api/database/{}/scripts/{}",
@@ -213,6 +222,7 @@ impl ScriptClient {
             code: code.to_string(),
             description: description.map(|s| s.to_string()),
             collection: collection.map(|s| s.to_string()),
+            service: service.to_string(),
         };
 
         let request = self.client.put(&url).json(&request_body);

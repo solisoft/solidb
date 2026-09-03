@@ -276,6 +276,7 @@ pub async fn import_collection(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
     Query(query): Query<ImportQuery>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     mut multipart: Multipart,
 ) -> Result<Json<Value>, DbError> {
     let upsert = query
@@ -285,12 +286,20 @@ pub async fn import_collection(
         .unwrap_or(false);
 
     let database = state.storage.get_database(&db_name)?;
-    let collection = database.get_collection(&coll_name).or_else(|_| {
-        // Auto-create
-        tracing::info!("Auto-creating collection '{}' during import", coll_name);
-        database.create_collection(coll_name.clone(), None)?;
-        database.get_collection(&coll_name)
-    })?;
+    // Import is a bulk write: the same tiers as the document API apply, or
+    // `_scripts` could be installed by uploading a file.
+    let actor = crate::server::handlers::query::write_actor_from_claims(claims.as_deref());
+    let collection = database
+        .get_collection_for_write(&coll_name, actor)
+        .or_else(|e| {
+            if matches!(e, DbError::Forbidden(_)) {
+                return Err(e);
+            }
+            // Auto-create
+            tracing::info!("Auto-creating collection '{}' during import", coll_name);
+            database.create_collection(coll_name.clone(), None)?;
+            database.get_collection_for_write(&coll_name, actor)
+        })?;
 
     // Check sharding config once
     let shard_config = collection.get_shard_config();
@@ -490,13 +499,14 @@ pub async fn import_collection(
                 let json: Value = serde_json::from_slice(&full_body)
                     .map_err(|e| DbError::BadRequest(format!("Invalid JSON: {}", e)))?;
 
-                if let Some(arr) = json.as_array() {
-                    let batch_docs = arr.clone();
+                if let Value::Array(batch_docs) = json {
+                    // Moved, not cloned: the parsed tree is already several
+                    // times the size of the body it came from.
                     match import_doc_batch(&collection, batch_docs, upsert) {
                         Ok(n) => imported_count += n,
                         Err(e) => return Err(e),
                     }
-                } else if let Some(_obj) = json.as_object() {
+                } else if json.is_object() {
                     // Single document import
                     if upsert {
                         import_doc_batch(&collection, vec![json], true)?;

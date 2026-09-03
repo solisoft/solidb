@@ -26,6 +26,43 @@ describe("DocumentsController") do
       assert_contains(body, "bob")
     end
 
+    # The filter is spliced into query text that runs with the admin JWT this
+    # app holds, on a GET route -- and the CSRF gate exempts safe methods, so
+    # a plain <img src="...?filter=..."> in any page an admin views submitted
+    # it. SDBQL accepts a mutation after FILTER and treats `--` as a line
+    # comment, so `true REMOVE doc IN people --` emptied the collection.
+    test("refuses a filter that tries to escape into a mutation") do
+      payloads = ["true REMOVE doc IN people --",
+                  "true RETURN doc INSERT {x: 1} INTO people",
+                  "true LET x = 1 RETURN x",
+                  "true -- comment",
+                  "true /* block */",
+                  "1 == 1 UPDATE doc WITH {pwned: true} IN people"]
+      for payload in payloads
+        response = get("/databases/admin_spec_docs/collections/people/docs?filter=" + url(payload))
+        assert_eq(res_status(response), 200)
+        assert_eq(assigns()["filter_rejected"], true)
+        assert_eq(assigns()["filter"], "")
+      end
+      # And the data is untouched: both seeded documents are still listed.
+      response = get("/databases/admin_spec_docs/collections/people/docs")
+      body = res_body(response)
+      assert_contains(body, "alice")
+      assert_contains(body, "bob")
+    end
+
+    # Field names that merely contain a keyword must keep working -- the
+    # check matches whole words, not substrings.
+    test("allows ordinary filters whose field names embed keywords") do
+      for allowed in ["doc.age > 25", "doc.name == \"alice\"",
+                      "doc.status IN [\"a\", \"b\"]"]
+        response = get("/databases/admin_spec_docs/collections/people/docs?filter=" + url(allowed))
+        assert_eq(res_status(response), 200)
+        assert_eq(assigns()["filter_rejected"], false)
+        assert_eq(assigns()["filter"], allowed)
+      end
+    end
+
     test("filters with an sdbql expression") do
       response = get("/databases/admin_spec_docs/collections/people/docs?filter=" + url("doc.age > 25"))
       assert_eq(res_status(response), 200)
@@ -237,10 +274,19 @@ describe("DocumentsController") do
       assert_gt(listing.length(), 0)
       blob_key = listing[0]
 
+      # Blob metadata (content type and filename) is written by whoever
+      # uploaded the blob, which on a real deployment is an application user,
+      # not an admin. Replaying a stored `text/html` type with `inline` on
+      # this origin was stored XSS against the admin console -- which holds a
+      # SoliDB admin JWT and can reach the Lua REPL. Only an allowlist of
+      # raster image types is rendered inline; everything else, this text
+      # file included, downloads as an opaque octet-stream.
       response = get("/databases/admin_spec_docs/collections/files/docs/" + blob_key + "/blob")
       assert_eq(res_status(response), 200)
       assert_eq(res_body(response), file_content)
-      assert_contains(res_header(response, "Content-Disposition"), "inline")
+      assert_contains(res_header(response, "Content-Disposition"), "attachment")
+      assert_eq(res_header(response, "Content-Type"), "application/octet-stream")
+      assert_eq(res_header(response, "X-Content-Type-Options"), "nosniff")
 
       response = get("/databases/admin_spec_docs/collections/files/docs/" + blob_key + "/blob?download=1")
       assert_contains(res_header(response, "Content-Disposition"), "attachment")

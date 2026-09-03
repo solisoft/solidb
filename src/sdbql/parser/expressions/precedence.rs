@@ -311,33 +311,33 @@ impl Parser {
     }
 
     /// Parse unary expression (!, -, ~)
+    ///
+    /// Chained unary operators recurse *here*, without going back through
+    /// `parse_expression`, so this is the one recursive production the
+    /// SEC-130 depth guard did not reach: `RETURN` followed by 200k `-`
+    /// characters (200 KB, well under the body limit) recursed 200k frames
+    /// and overflowed the stack. A Rust stack overflow is not catchable — it
+    /// aborts the whole process, taking every other connection with it. The
+    /// depth accounting below puts these frames on the same budget as every
+    /// other nesting construct.
     pub(super) fn parse_unary_expression(&mut self) -> DbResult<Expression> {
-        match self.current_token() {
-            Token::Not => {
-                self.advance();
-                let operand = self.parse_unary_expression()?;
-                Ok(Expression::UnaryOp {
-                    op: UnaryOperator::Not,
-                    operand: Box::new(operand),
-                })
-            }
-            Token::Minus => {
-                self.advance();
-                let operand = self.parse_unary_expression()?;
-                Ok(Expression::UnaryOp {
-                    op: UnaryOperator::Negate,
-                    operand: Box::new(operand),
-                })
-            }
-            Token::Tilde => {
-                self.advance();
-                let operand = self.parse_unary_expression()?;
-                Ok(Expression::UnaryOp {
-                    op: UnaryOperator::BitwiseNot,
-                    operand: Box::new(operand),
-                })
-            }
-            _ => self.parse_postfix_expression(),
-        }
+        let op = match self.current_token() {
+            Token::Not => UnaryOperator::Not,
+            Token::Minus => UnaryOperator::Negate,
+            Token::Tilde => UnaryOperator::BitwiseNot,
+            _ => return self.parse_postfix_expression(),
+        };
+
+        self.advance();
+        self.check_depth()?;
+        let operand = self.parse_unary_expression();
+        // Decrement before propagating: an early `?` here would leak depth
+        // and make later sibling expressions in the same query fail.
+        self.leave_depth();
+
+        Ok(Expression::UnaryOp {
+            op,
+            operand: Box::new(operand?),
+        })
     }
 }

@@ -22,12 +22,21 @@
     <link href="<%- font_link %>" rel="stylesheet">
   <% end %>
 </head>
+<%# Whether to render the app chrome: sidebar nav, mobile nav button, the
+    connection indicator and the database picker.
+    Hidden on the pages that exist precisely because the app is not usable
+    yet -- the first-connection form (@setup_required) and the sign-in form
+    (@hide_chrome). The nav partial carries an `hx-trigger="load"` request; on
+    a page reached without a session that request gets 401 + HX-Redirect and
+    htmx navigates back to the sign-in page, which renders the nav, which
+    fires again. That loop is what "the sign-in page refreshes forever" was. %>
+<% show_chrome = !(@setup_required ?? false) && !(@hide_chrome ?? false) %>
 <%# data-theme/data-font drive the accent + font CSS variables (see Settings
     page); both helpers whitelist their cookie value so they are attr-safe. %>
 <body class="min-h-full bg-zinc-950 text-zinc-100 font-sans antialiased"
       data-theme="<%- admin_theme() %>" data-font="<%- admin_font() %>">
   <div class="flex min-h-screen" x-data="{ navOpen: false }" @keydown.escape.window="navOpen = false">
-    <% if !@setup_required %>
+    <% if show_chrome %>
     <%- partial("shared/nav", { "nav_db": @db ?? "", "nav_path": current_path() }) %>
 
     <%# Mobile-only backdrop behind the off-canvas sidebar. %>
@@ -38,7 +47,7 @@
     <div class="flex min-w-0 flex-1 flex-col">
       <header class="flex h-14 items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/90 px-4 md:px-6">
         <div class="flex min-w-0 items-center gap-2 md:gap-3">
-          <% if !@setup_required %>
+          <% if show_chrome %>
           <button type="button" @click="navOpen = true" aria-label="Open navigation"
                   class="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-200 md:hidden">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
@@ -48,7 +57,7 @@
           <% end %>
           <h1 class="truncate text-base font-medium tracking-tight text-zinc-200"><%= @title ?? "SoliDB Admin" %></h1>
         </div>
-        <% if !@setup_required %>
+        <% if show_chrome %>
         <div class="flex min-w-0 items-center gap-3">
           <%# Current SoliDB connection - click to switch servers. %>
           <a href="<%= connection_path() %>" title="SoliDB connection — click to switch servers"

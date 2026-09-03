@@ -37,8 +37,48 @@
           <div class="mt-6 bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5">
             <div class="text-gray-500"># Initialize your scripts directory</div>
             <div class="text-green-400">$ solidb scripts init --db myapp --host localhost --port 6745</div>
-            <div class="text-gray-500 mt-2"># Login to save authentication</div>
+            <div class="text-gray-500 mt-2"># Login to save authentication (writes SOLIDB_API_KEY to .env)</div>
             <div class="text-green-400">$ solidb scripts login</div>
+          </div>
+
+          <p class="text-gray-300 mt-6 mb-3"><code>init</code> writes <code class="text-cyan-400">solidb-scripts.toml</code>. Two values matter for URLs: <code>database</code> and <code>service</code>.</p>
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-6">
+            <div class="px-4 py-2 bg-gray-800/50 border-b border-white/5 flex items-center">
+              <span class="text-xs text-gray-400 font-mono">solidb-scripts.toml</span>
+            </div>
+            <div class="p-4 font-mono text-sm text-gray-300">
+<pre>host = "localhost"
+port = 6745
+database = "myapp"
+service = "default"
+
+[scripts]
+directory = "."
+tests_dir = "tests"
+ignore = ["*.bak", ".git", "node_modules", "tests"]</pre>
+            </div>
+          </div>
+
+          <h3 class="text-lg font-bold text-white mb-3 mt-0">Create the service</h3>
+          <p class="text-gray-300 mb-3">
+            Scripts are reachable only through a <a href="/docs/scripting-services" class="text-indigo-400 hover:text-indigo-300">service</a>, and nothing creates one for you &mdash; not <code>init</code>, not <code>push</code>. Create the <code>default</code> service once in the <code>myapp</code> database (this call needs an admin token; the one <code>login</code> stored in <code>.env</code> works):
+          </p>
+          <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5">
+            <div class="text-gray-500"># Load the token saved by `solidb scripts login`</div>
+            <div class="text-green-400">$ export $(grep SOLIDB_API_KEY .env) &amp;&amp; TOKEN=$SOLIDB_API_KEY</div>
+            <div class="text-gray-500 mt-2"># Create the "default" service in database "myapp"</div>
+            <div class="text-green-400">$ curl -X POST http://localhost:6745/_api/database/myapp/services \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "default", "name": "Default"}'</div>
+            <div class="text-gray-400 mt-2">{"key":"default","name":"Default","database":"myapp","created_at":"..."}</div>
+          </div>
+
+          <div class="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4 flex items-start">
+            <svg class="w-5 h-5 text-yellow-400 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            <div class="text-sm text-yellow-200">
+              <strong>Authentication:</strong> services are created with <code>require_auth: true</code>, so every call to <code>/api/myapp/default/...</code> must carry <code>Authorization: Bearer &lt;token&gt;</code> or it is rejected with <code>401</code> before your script runs. The curl examples below all send <code>$TOKEN</code>. If you want the API public, create the service with <code>{"key": "default", "name": "Default", "require_auth": false}</code> and drop the header. Until the service exists, every call returns <code>404 Service 'default' not found in database 'myapp'</code>.
+            </div>
           </div>
         </div>
       </div>
@@ -62,9 +102,9 @@
 <pre class="text-gray-300">scripts/
 ├── solidb-scripts.toml      <span class="text-gray-500"># Configuration</span>
 ├── .env                      <span class="text-gray-500"># Environment variables</span>
-├── products.lua              <span class="text-cyan-400"># GET/POST /api/default/myapp/products</span>
+├── products.lua              <span class="text-cyan-400"># GET/POST /api/myapp/default/products</span>
 ├── products/
-│   └── _id.lua               <span class="text-cyan-400"># GET/PUT/DELETE /api/default/myapp/products/:id</span>
+│   └── _id.lua               <span class="text-cyan-400"># GET/PUT/DELETE /api/myapp/default/products/:id</span>
 └── tests/                    <span class="text-gray-500"># Test files (not synced)</span>
     └── products_test.lua</pre>
           </div>
@@ -74,8 +114,9 @@
             <div class="text-sm text-blue-200">
               <strong>Routing Rules:</strong>
               <ul class="mt-2 space-y-1">
-                <li>• <code>products.lua</code> → <code>/api/default/myapp/products</code></li>
-                <li>• <code>products/_id.lua</code> → <code>/api/default/myapp/products/:id</code> (underscore = URL parameter)</li>
+                <li>• The URL is <code>/api/{database}/{service}/{path}</code> &mdash; database first, then service, both taken from <code>solidb-scripts.toml</code></li>
+                <li>• <code>products.lua</code> → <code>/api/myapp/default/products</code></li>
+                <li>• <code>products/_id.lua</code> → <code>/api/myapp/default/products/:id</code> (underscore = URL parameter)</li>
                 <li>• Nested folders create nested routes</li>
               </ul>
             </div>
@@ -264,24 +305,37 @@
 
           <h3 class="text-lg font-bold text-white mb-3 mt-0">Test with cURL</h3>
           <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5 mb-6">
-            <div class="text-gray-500"># Create a product</div>
-            <div class="text-green-400 mb-2">$ curl -X POST http://localhost:6745/api/default/myapp/products \
+            <div class="text-gray-500"># $TOKEN is the API key from .env (see Prerequisites). The service requires it.</div>
+
+            <div class="text-gray-500 mt-4"># Create a product (201 Created, thanks to solidb.status(201))</div>
+            <div class="text-green-400 mb-2">$ curl -i -X POST http://localhost:6745/api/myapp/default/products \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name": "Widget", "price": 29.99, "category": "gadgets"}'</div>
+            <div class="text-gray-400 mb-2">HTTP/1.1 201 Created<br>{"message":"Product created","product":{"_key":"abc123","name":"Widget","price":29.99,...}}</div>
 
             <div class="text-gray-500 mt-4"># List all products</div>
-            <div class="text-green-400 mb-2">$ curl http://localhost:6745/api/default/myapp/products</div>
+            <div class="text-green-400 mb-2">$ curl http://localhost:6745/api/myapp/default/products \
+  -H "Authorization: Bearer $TOKEN"</div>
 
             <div class="text-gray-500 mt-4"># Get a specific product</div>
-            <div class="text-green-400 mb-2">$ curl http://localhost:6745/api/default/myapp/products/abc123</div>
+            <div class="text-green-400 mb-2">$ curl http://localhost:6745/api/myapp/default/products/abc123 \
+  -H "Authorization: Bearer $TOKEN"</div>
 
             <div class="text-gray-500 mt-4"># Update a product</div>
-            <div class="text-green-400 mb-2">$ curl -X PUT http://localhost:6745/api/default/myapp/products/abc123 \
+            <div class="text-green-400 mb-2">$ curl -X PUT http://localhost:6745/api/myapp/default/products/abc123 \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"price": 24.99}'</div>
 
             <div class="text-gray-500 mt-4"># Delete a product</div>
-            <div class="text-green-400">$ curl -X DELETE http://localhost:6745/api/default/myapp/products/abc123</div>
+            <div class="text-green-400 mb-2">$ curl -X DELETE http://localhost:6745/api/myapp/default/products/abc123 \
+  -H "Authorization: Bearer $TOKEN"</div>
+
+            <div class="text-gray-500 mt-4"># Errors raised with solidb.error(msg, code) arrive as that HTTP status with a JSON body</div>
+            <div class="text-green-400 mb-2">$ curl -i http://localhost:6745/api/myapp/default/products/abc123 \
+  -H "Authorization: Bearer $TOKEN"</div>
+            <div class="text-gray-400">HTTP/1.1 404 Not Found<br>{"error":"Product not found","code":404,"type":"ScriptError"}</div>
           </div>
 
           <h3 class="text-lg font-bold text-white mb-3 mt-0">Watch Mode</h3>

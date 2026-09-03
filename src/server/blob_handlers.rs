@@ -37,9 +37,15 @@ use super::handlers::AppState;
 pub async fn upload_blob(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     multipart_result: Result<Multipart, axum::extract::multipart::MultipartRejection>,
 ) -> Result<Json<Value>, DbError> {
     let mut multipart = multipart_result.map_err(|e| DbError::BadRequest(e.to_string()))?;
+    // A blob upload writes documents and chunks: same tiers as the document API.
+    crate::storage::check_write_access(
+        &coll_name,
+        crate::server::handlers::query::write_actor_from_claims(claims.as_deref()),
+    )?;
     let database = state.storage.get_database(&db_name)?;
 
     // Try to get the collection, auto-create as blob collection if it doesn't exist
@@ -339,7 +345,8 @@ pub async fn download_blob(
     let mut headers = axum::http::HeaderMap::new();
     headers.insert(
         axum::http::header::CONTENT_TYPE,
-        axum::http::HeaderValue::from_str(&content_type).unwrap(),
+        axum::http::HeaderValue::from_str(&content_type)
+            .unwrap_or_else(|_| axum::http::HeaderValue::from_static("application/octet-stream")),
     );
 
     if let Some(name) = file_name {

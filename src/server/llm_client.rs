@@ -228,8 +228,13 @@ impl LLMClient {
 
         Ok(LLMClient {
             config,
+            // No redirects: the only tenant-controllable base URL is the
+            // Ollama one, and a redirect would take the request (and the
+            // instance-wide API key it carries) somewhere the SSRF guard
+            // never saw.
             http_client: Client::builder()
                 .timeout(Duration::from_secs(120))
+                .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .unwrap_or_else(|_| Client::new()),
         })
@@ -312,8 +317,13 @@ impl LLMClient {
 
         Ok(LLMClient {
             config,
+            // No redirects: the only tenant-controllable base URL is the
+            // Ollama one, and a redirect would take the request (and the
+            // instance-wide API key it carries) somewhere the SSRF guard
+            // never saw.
             http_client: Client::builder()
                 .timeout(Duration::from_secs(120))
+                .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .unwrap_or_else(|_| Client::new()),
         })
@@ -694,15 +704,21 @@ impl LLMClient {
             system_instruction,
         };
 
+        // Key in a header, not the query string. reqwest's transport errors
+        // stringify as `... for url (<the full url>)`, and those errors are
+        // returned to the caller and logged by the embedding worker — so with
+        // `?key=` a single provider timeout printed the instance-wide Gemini
+        // credential into the logs and into an ordinary API response.
         let url = format!(
-            "{}/{}:generateContent?key={}",
-            self.config.api_url, self.config.model, self.config.api_key
+            "{}/{}:generateContent",
+            self.config.api_url, self.config.model
         );
 
         let response = self
             .http_client
             .post(&url)
             .header("Content-Type", "application/json")
+            .header("x-goog-api-key", &self.config.api_key)
             .json(&request)
             .send()
             .await
@@ -943,10 +959,9 @@ impl LLMClient {
             values: Vec<f32>,
         }
 
-        let url = format!(
-            "{}/{}:embedContent?key={}",
-            self.config.api_url, model, self.config.api_key
-        );
+        // See the chat path: the key goes in a header so it cannot leak
+        // through a reqwest error string.
+        let url = format!("{}/{}:embedContent", self.config.api_url, model);
 
         let request = GeminiEmbedRequest {
             content: GeminiEmbedContent {
@@ -960,6 +975,7 @@ impl LLMClient {
             .http_client
             .post(&url)
             .header("Content-Type", "application/json")
+            .header("x-goog-api-key", &self.config.api_key)
             .json(&request)
             .send()
             .await

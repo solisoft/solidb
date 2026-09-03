@@ -19,12 +19,30 @@ impl Header {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct Validation;
+/// What `decode` checks beyond the signature.
+///
+/// This used to be a unit struct and the argument was named `_validation`:
+/// the signature was verified but `exp` and `nbf` were not, so a script using
+/// `crypto.jwt_decode(token, secret)` to authenticate a session accepted a
+/// token that expired months ago. A verified signature says the token was
+/// issued by someone holding the secret, not that it is still valid.
+#[derive(Debug, Clone)]
+pub(crate) struct Validation {
+    /// Reject a token whose `exp` has passed. On by default.
+    pub validate_exp: bool,
+    /// Reject a token whose `nbf` is still in the future. On by default.
+    pub validate_nbf: bool,
+    /// Clock-skew allowance, in seconds.
+    pub leeway: u64,
+}
 
 impl Validation {
     pub fn default() -> Self {
-        Self
+        Self {
+            validate_exp: true,
+            validate_nbf: true,
+            leeway: 5,
+        }
     }
 }
 
@@ -83,7 +101,7 @@ pub(crate) fn encode<T: serde::Serialize>(
 pub(crate) fn decode<T: serde::de::DeserializeOwned>(
     token: &str,
     key: &DecodingKey,
-    _validation: &Validation,
+    validation: &Validation,
 ) -> Result<TokenData<T>, String> {
     // Split JWT into parts
     let parts: Vec<&str> = token.split('.').collect();
@@ -127,6 +145,12 @@ pub(crate) fn decode<T: serde::de::DeserializeOwned>(
         .decode(claims_b64)
         .map_err(|_| "Invalid JWT claims".to_string())?;
 
+    // Time-based claims are checked on the raw JSON, before deserializing into
+    // `T`: callers pass their own claim types and most do not model `exp`.
+    let raw_claims: serde_json::Value = serde_json::from_slice(&claims_bytes)
+        .map_err(|_| "Invalid JWT claims format".to_string())?;
+    check_time_claims(&raw_claims, validation)?;
+
     let claims: T = serde_json::from_slice(&claims_bytes)
         .map_err(|_| "Invalid JWT claims format".to_string())?;
 
@@ -146,4 +170,113 @@ pub(crate) fn sign_hmac_sha256(data: &str, secret: &[u8]) -> Result<String, Stri
 
     let result = mac.finalize();
     Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(result.into_bytes()))
+}
+
+/// Enforce `exp` / `nbf` against the current clock.
+///
+/// A token without the claim is accepted: a JWT is not required to carry
+/// either, and refusing one would break issuers that deliberately mint
+/// non-expiring tokens. What must not happen is *having* an `exp` and
+/// ignoring it.
+fn check_time_claims(claims: &serde_json::Value, validation: &Validation) -> Result<(), String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "System clock is before the Unix epoch".to_string())?
+        .as_secs();
+
+    if validation.validate_exp {
+        if let Some(exp) = claims.get("exp").and_then(numeric_claim) {
+            if now > exp.saturating_add(validation.leeway) {
+                return Err("JWT has expired".to_string());
+            }
+        }
+    }
+
+    if validation.validate_nbf {
+        if let Some(nbf) = claims.get("nbf").and_then(numeric_claim) {
+            if now.saturating_add(validation.leeway) < nbf {
+                return Err("JWT is not yet valid".to_string());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Read a numeric JWT time claim. Accepts the integer form and the float form
+/// some issuers emit; anything else is treated as absent rather than as zero,
+/// which would make every token look expired.
+fn numeric_claim(value: &serde_json::Value) -> Option<u64> {
+    if let Some(n) = value.as_u64() {
+        return Some(n);
+    }
+    value.as_f64().filter(|f| *f >= 0.0).map(|f| f as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn now() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    fn round_trip(claims: serde_json::Value) -> Result<TokenData<serde_json::Value>, String> {
+        let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(b"k"))?;
+        decode::<serde_json::Value>(
+            &token,
+            &DecodingKey::from_secret(b"k"),
+            &Validation::default(),
+        )
+    }
+
+    #[test]
+    fn expired_tokens_are_rejected() {
+        let err = round_trip(json!({ "sub": "alice", "exp": now() - 3600 }))
+            .expect_err("an expired token must not validate");
+        assert!(err.contains("expired"), "unexpected error: {}", err);
+    }
+
+    #[test]
+    fn future_tokens_are_rejected() {
+        let err = round_trip(json!({ "sub": "alice", "nbf": now() + 3600 }))
+            .expect_err("a not-yet-valid token must not validate");
+        assert!(err.contains("not yet valid"), "unexpected error: {}", err);
+    }
+
+    #[test]
+    fn live_tokens_are_accepted() {
+        let data = round_trip(json!({ "sub": "alice", "exp": now() + 3600 }))
+            .expect("a live token must validate");
+        assert_eq!(data.claims["sub"], "alice");
+    }
+
+    #[test]
+    fn tokens_without_time_claims_are_accepted() {
+        let data = round_trip(json!({ "sub": "alice" })).expect("no exp is not an error");
+        assert_eq!(data.claims["sub"], "alice");
+    }
+
+    #[test]
+    fn a_bad_signature_still_loses() {
+        let token = encode(
+            &Header::default(),
+            &json!({ "sub": "alice", "exp": now() + 3600 }),
+            &EncodingKey::from_secret(b"k"),
+        )
+        .unwrap();
+        assert!(
+            decode::<serde_json::Value>(
+                &token,
+                &DecodingKey::from_secret(b"other"),
+                &Validation::default()
+            )
+            .is_err(),
+            "signature check must still run"
+        );
+    }
 }

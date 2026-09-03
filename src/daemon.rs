@@ -94,8 +94,17 @@ impl Daemonize {
                 }
             }
 
-            // Set umask
-            libc::umask(0o022);
+            // Set umask.
+            //
+            // 0o077, not 0o022: everything this process creates holds
+            // secrets. RocksDB writes the SSTs and WAL that back `_admins`
+            // (argon2 hashes), `_api_keys` (SHA-256 hashes) and `_env`
+            // (provider credentials in cleartext), plus the replication log —
+            // and at 0o022 those land 0644, readable by every local account.
+            // The one file that was explicitly chmod'ed 0600, the bootstrap
+            // admin password, sat in a directory whose siblings exposed the
+            // same secrets.
+            libc::umask(0o077);
 
             // Change working directory
             if let Some(ref dir) = self.working_directory {

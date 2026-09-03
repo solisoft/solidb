@@ -109,19 +109,22 @@ pub async fn handle_query(
         } else {
             QueryExecutor::with_database_and_bind_vars(&storage, database, bind_vars)
         }
-        .with_principal(principal);
+        .with_principal(principal)
+        .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
         if let Some(ref log) = replication {
             executor = executor.with_replication(log);
         }
         return match executor.execute(query) {
             Ok(results) => {
                 if let Some(key) = cache_key {
-                    query_cache::get_query_cache().put(key, results.clone());
+                    if results.len() <= query_cache::MAX_CACHED_ROWS {
+                        query_cache::get_query_cache().put(key, results.clone());
+                    }
                 }
                 if mutates {
                     invalidate_collections(&invalidated);
                 }
-                Response::ok(serde_json::json!(results))
+                Response::ok(serde_json::Value::Array(results))
             }
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         };
@@ -137,7 +140,8 @@ pub async fn handle_query(
         } else {
             QueryExecutor::with_database_and_bind_vars(&storage, database, bind_vars)
         }
-        .with_principal(principal);
+        .with_principal(principal)
+        .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
         // Mutating queries must reach the replication log, same as HTTP.
         if let Some(ref log) = replication {
             executor = executor.with_replication(log);
@@ -155,7 +159,9 @@ pub async fn handle_query(
         Ok(join_result) => match join_result {
             Ok(Ok(results)) => {
                 if let Some(key) = cache_key {
-                    query_cache::get_query_cache().put(key, results.clone());
+                    if results.len() <= query_cache::MAX_CACHED_ROWS {
+                        query_cache::get_query_cache().put(key, results.clone());
+                    }
                 }
                 if mutates {
                     // Same invalidation rule as the HTTP handler: drop the
@@ -163,7 +169,7 @@ pub async fn handle_query(
                     // be determined.
                     invalidate_collections(&invalidated);
                 }
-                Response::ok(serde_json::json!(results))
+                Response::ok(serde_json::Value::Array(results))
             }
             Ok(Err(e)) => Response::error(DriverError::DatabaseError(e.to_string())),
             Err(e) => Response::error(DriverError::DatabaseError(format!(
@@ -218,7 +224,8 @@ pub async fn handle_explain(
         } else {
             QueryExecutor::with_database_and_bind_vars(&storage, database, bind_vars)
         }
-        .with_principal(principal);
+        .with_principal(principal)
+        .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
         executor.explain(&exec_query)
     });
 

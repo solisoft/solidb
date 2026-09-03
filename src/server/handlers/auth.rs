@@ -424,6 +424,17 @@ pub struct LiveQueryTokenResponse {
 pub async fn livequery_token_handler(
     Extension(claims): Extension<crate::server::auth::Claims>,
 ) -> Result<Json<LiveQueryTokenResponse>, DbError> {
+    // A livequery token must not mint another one. Otherwise the token is
+    // renewable without limit and its short life — the whole reason it is
+    // considered safe to put in a WebSocket URL, where proxies and browser
+    // history record it — buys nothing. `livequery_path_allowed` now also
+    // refuses to let a livequery token reach this route at all; this is the
+    // check at the point of issue.
+    if claims.livequery == Some(true) {
+        return Err(DbError::Forbidden(
+            "A live-query token cannot issue another live-query token".to_string(),
+        ));
+    }
     // The short-lived token inherits the requester's identity, roles and
     // database scope so WebSocket subscription authz applies to it.
     let token = crate::server::auth::AuthService::create_livequery_jwt(

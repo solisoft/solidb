@@ -113,7 +113,8 @@ pub async fn execute_sql_handler(
     // reaching the write-side query paths (auto-index creation).
     .with_principal(crate::server::handlers::query::principal_from_claims(
         &claims,
-    ));
+    ))
+    .with_timeout(std::time::Duration::from_secs(30));
     // Mutating SQL must reach the replication log like every other write path.
     if let Some(ref log) = state.replication_log {
         executor = executor.with_replication(log);

@@ -646,6 +646,11 @@ impl HnswGraph {
 /// - Full precision vectors: f32 (4 bytes/dim)
 /// - Quantized vectors: u8 (1 byte/dim)
 /// - Asymmetric search: query stays f32, DB vectors are quantized
+// Lock poisoning: the search paths run distance computations while holding
+// these guards, so a panic there used to make every later `.unwrap()` on the
+// same lock panic too — one bad request broke vector search on that
+// collection for everyone until restart. The data behind a poisoned guard is
+// still the data; recover it.
 pub struct VectorIndex {
     /// Index configuration
     config: VectorIndexConfig,
@@ -682,7 +687,7 @@ impl VectorIndex {
 
     /// Build the HNSW graph from existing vectors
     fn build_hnsw_graph(&self) {
-        let vectors = self.vectors.read().unwrap();
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         if vectors.len() < self.hnsw_threshold() {
             return;
         }
@@ -695,7 +700,7 @@ impl VectorIndex {
         }
 
         // Store the graph
-        let mut hnsw = self.hnsw_graph.write().unwrap();
+        let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
         *hnsw = Some(graph);
     }
 
@@ -706,7 +711,7 @@ impl VectorIndex {
 
     /// Get the number of indexed vectors
     pub fn len(&self) -> usize {
-        self.vectors.read().unwrap().len()
+        self.vectors.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Check if the index is empty
@@ -716,18 +721,21 @@ impl VectorIndex {
 
     /// Clear all vectors from the index
     pub fn clear(&self) {
-        let mut vectors = self.vectors.write().unwrap();
+        let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
         vectors.clear();
 
         // Also clear quantized vectors
-        let mut quantized = self.quantized_vectors.write().unwrap();
+        let mut quantized = self
+            .quantized_vectors
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(q) = quantized.as_mut() {
             q.clear();
         }
         *quantized = None;
 
         // Also clear HNSW graph
-        let mut hnsw = self.hnsw_graph.write().unwrap();
+        let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
         if let Some(graph) = hnsw.as_mut() {
             graph.clear();
         }
@@ -747,27 +755,30 @@ impl VectorIndex {
 
         // Insert into vectors HashMap
         {
-            let mut vectors = self.vectors.write().unwrap();
+            let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
             vectors.insert(doc_key.to_string(), vector.to_vec());
         }
 
         // Also insert into quantized vectors if they exist
         {
-            let mut quantized = self.quantized_vectors.write().unwrap();
+            let mut quantized = self
+                .quantized_vectors
+                .write()
+                .unwrap_or_else(|e| e.into_inner());
             if let Some(q) = quantized.as_mut() {
                 q.insert(doc_key, vector);
             }
         }
 
         // Update HNSW graph if it exists or threshold is reached
-        let vectors = self.vectors.read().unwrap();
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         let count = vectors.len();
         drop(vectors);
 
-        let mut hnsw = self.hnsw_graph.write().unwrap();
+        let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
         if let Some(graph) = hnsw.as_mut() {
             // Graph exists, insert into it
-            let vectors = self.vectors.read().unwrap();
+            let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
             graph.insert(doc_key, vector, &vectors, self.config.metric);
         } else if count >= self.hnsw_threshold() {
             // Threshold reached, build the graph
@@ -782,21 +793,24 @@ impl VectorIndex {
     pub fn remove(&self, doc_key: &str) -> DbResult<bool> {
         // Remove from vectors HashMap
         let removed = {
-            let mut vectors = self.vectors.write().unwrap();
+            let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
             vectors.remove(doc_key).is_some()
         };
 
         if removed {
             // Also remove from quantized vectors if they exist
             {
-                let mut quantized = self.quantized_vectors.write().unwrap();
+                let mut quantized = self
+                    .quantized_vectors
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner());
                 if let Some(q) = quantized.as_mut() {
                     q.remove(doc_key);
                 }
             }
 
             // Also remove from HNSW graph if it exists
-            let mut hnsw = self.hnsw_graph.write().unwrap();
+            let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
             if let Some(graph) = hnsw.as_mut() {
                 graph.remove(doc_key);
             }
@@ -807,12 +821,19 @@ impl VectorIndex {
 
     /// Check if a document has a vector in the index
     pub fn contains(&self, doc_key: &str) -> bool {
-        self.vectors.read().unwrap().contains_key(doc_key)
+        self.vectors
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(doc_key)
     }
 
     /// Get a vector by document key
     pub fn get(&self, doc_key: &str) -> Option<Vec<f32>> {
-        self.vectors.read().unwrap().get(doc_key).cloned()
+        self.vectors
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(doc_key)
+            .cloned()
     }
 
     /// Search for similar vectors
@@ -844,9 +865,9 @@ impl VectorIndex {
 
         // Try HNSW search first if graph exists
         {
-            let hnsw = self.hnsw_graph.read().unwrap();
+            let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
             if let Some(graph) = hnsw.as_ref() {
-                let vectors = self.vectors.read().unwrap();
+                let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
                 let ef_search = ef.max(limit * 2).max(40);
                 let hnsw_results =
                     graph.search(query, limit, ef_search, &vectors, self.config.metric);
@@ -880,14 +901,17 @@ impl VectorIndex {
     fn brute_force_search(&self, query: &[f32], limit: usize) -> DbResult<Vec<VectorSearchResult>> {
         // Check if we have quantized vectors - use asymmetric search if so
         {
-            let quantized = self.quantized_vectors.read().unwrap();
+            let quantized = self
+                .quantized_vectors
+                .read()
+                .unwrap_or_else(|e| e.into_inner());
             if let Some(q) = quantized.as_ref() {
                 return self.brute_force_search_quantized(query, limit, q);
             }
         }
 
         // Fall back to full-precision search
-        let vectors = self.vectors.read().unwrap();
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
 
         // Calculate scores for all vectors
         let mut results: Vec<VectorSearchResult> = vectors
@@ -981,7 +1005,7 @@ impl VectorIndex {
             )));
         }
 
-        let vectors = self.vectors.read().unwrap();
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         let doc_vec = match vectors.get(doc_key) {
             Some(v) => v,
             None => return Ok(None),
@@ -998,9 +1022,12 @@ impl VectorIndex {
 
     /// Serialize the index to bytes for persistence
     pub fn serialize(&self) -> DbResult<Vec<u8>> {
-        let vectors = self.vectors.read().unwrap();
-        let quantized = self.quantized_vectors.read().unwrap();
-        let hnsw = self.hnsw_graph.read().unwrap();
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
+        let quantized = self
+            .quantized_vectors
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
 
         let data = VectorIndexDataV3 {
             config: self.config.clone(),
@@ -1048,17 +1075,28 @@ impl VectorIndex {
 
     /// Check if HNSW graph is currently active
     pub fn is_hnsw_active(&self) -> bool {
-        self.hnsw_graph.read().unwrap().is_some()
+        self.hnsw_graph
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
     }
 
     /// Check if scalar quantization is active
     pub fn is_quantized(&self) -> bool {
-        self.quantized_vectors.read().unwrap().is_some()
+        self.quantized_vectors
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
     }
 
     /// Get the current quantization type
     pub fn quantization_type(&self) -> VectorQuantization {
-        if self.quantized_vectors.read().unwrap().is_some() {
+        if self
+            .quantized_vectors
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
+        {
             VectorQuantization::Scalar
         } else {
             VectorQuantization::None
@@ -1073,7 +1111,7 @@ impl VectorIndex {
     ///
     /// Returns the number of vectors quantized.
     pub fn quantize(&self) -> DbResult<usize> {
-        let vectors = self.vectors.read().unwrap();
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         let count = vectors.len();
 
         if count == 0 {
@@ -1085,7 +1123,10 @@ impl VectorIndex {
         drop(vectors);
 
         // Store the quantized vectors
-        let mut quantized_lock = self.quantized_vectors.write().unwrap();
+        let mut quantized_lock = self
+            .quantized_vectors
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         *quantized_lock = Some(quantized);
 
         Ok(count)
@@ -1093,13 +1134,19 @@ impl VectorIndex {
 
     /// Remove quantization (revert to full-precision search)
     pub fn dequantize(&self) {
-        let mut quantized = self.quantized_vectors.write().unwrap();
+        let mut quantized = self
+            .quantized_vectors
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         *quantized = None;
     }
 
     /// Get quantization statistics
     pub fn quantization_stats(&self) -> Option<QuantizationStats> {
-        let quantized = self.quantized_vectors.read().unwrap();
+        let quantized = self
+            .quantized_vectors
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         quantized.as_ref().map(|q| {
             let vector_count = q.len();
             let memory_bytes = vector_count * self.config.dimension; // u8 per dim

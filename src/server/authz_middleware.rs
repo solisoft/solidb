@@ -117,6 +117,17 @@ pub fn enforce_raw(
 
 /// Map an HTTP request on a `{db}`-scoped route to the permission it needs.
 ///
+/// **`path` must be the matched route *template*** (`/_api/database/{db}/
+/// document/{collection}/{key}`), never the concrete request path. Every rule
+/// below keys off path structure, and on a concrete path the last segment is
+/// usually caller-supplied — a document key, a collection name, an index name.
+/// Classifying `PUT /_api/database/app/document/settings/query` by its
+/// concrete path matched the `/query` read-suffix and let a read-only
+/// principal overwrite the document named `query`; the same trick reached
+/// `DELETE .../document/c/search` and `DELETE .../index/users/cursor`.
+/// Templates contain only literals and `{param}` placeholders, so no request
+/// input can reach these comparisons.
+///
 /// Defaults: GET/HEAD/OPTIONS → Read, everything else → Write. Overrides:
 /// - POST endpoints with read semantics (query execution, explain, search)
 ///   only need Read; the query handlers upgrade to Write themselves when the
@@ -202,6 +213,21 @@ fn is_collection_drop(path: &str) -> bool {
     }
 }
 
+/// Permission from the HTTP method alone: GET/HEAD/OPTIONS read, everything
+/// else writes.
+///
+/// The fallback when the route template is unavailable. It deliberately keeps
+/// none of the read-suffix overrides: those may only *downgrade* a request to
+/// Read, and downgrading on evidence we could not verify is exactly the bug
+/// this module now guards against.
+fn method_default_action(method: &Method) -> PermissionAction {
+    if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
+        PermissionAction::Read
+    } else {
+        PermissionAction::Write
+    }
+}
+
 /// Axum middleware enforcing per-database permissions on routes that carry a
 /// `{db}` path parameter. Must run *after* `auth_middleware`.
 pub async fn db_authz_middleware(
@@ -226,7 +252,24 @@ pub async fn db_authz_middleware(
         .cloned()
         .ok_or_else(|| DbError::Forbidden("Missing authentication context".to_string()))?;
 
-    let action = required_action(req.method(), req.uri().path());
+    // Classify on the matched route template, not the concrete path: the last
+    // segment of a concrete path is caller-supplied on most routes, and the
+    // read-suffix overrides below would otherwise be selected by a document
+    // key or collection name (a key literally named `query` downgraded a PUT
+    // to Read). `MatchedPath` is set by the router before any layer runs, so
+    // the fallback is unreachable in practice; it degrades to method-only
+    // defaults rather than trusting the URI.
+    let action = match req.extensions().get::<axum::extract::MatchedPath>() {
+        Some(matched) => required_action(req.method(), matched.as_str()),
+        None => {
+            tracing::warn!(
+                target: "audit",
+                path = %req.uri().path(),
+                "authz: no matched route template; falling back to method defaults"
+            );
+            method_default_action(req.method())
+        }
+    };
     enforce(&claims, &state, action, Some(&db)).await?;
 
     Ok(next.run(req).await)
@@ -236,6 +279,9 @@ pub async fn db_authz_middleware(
 mod tests {
     use super::*;
 
+    // `required_action` is fed the matched route *template*, so every path in
+    // these tests is written the way the router reports it.
+
     #[test]
     fn test_required_action_defaults() {
         let get = Method::GET;
@@ -244,19 +290,19 @@ mod tests {
         let delete = Method::DELETE;
 
         assert_eq!(
-            required_action(&get, "/_api/database/db1/document/users/k1"),
+            required_action(&get, "/_api/database/{db}/document/{collection}/{key}"),
             PermissionAction::Read
         );
         assert_eq!(
-            required_action(&post, "/_api/database/db1/document/users"),
+            required_action(&post, "/_api/database/{db}/document/{collection}"),
             PermissionAction::Write
         );
         assert_eq!(
-            required_action(&delete, "/_api/database/db1/document/users/k1"),
+            required_action(&delete, "/_api/database/{db}/document/{collection}/{key}"),
             PermissionAction::Write
         );
         assert_eq!(
-            required_action(&put, "/_api/database/db1/collection/users/properties"),
+            required_action(&put, "/_api/database/{db}/collection/{name}/properties"),
             PermissionAction::Write
         );
     }
@@ -265,24 +311,72 @@ mod tests {
     fn test_required_action_read_overrides() {
         let post = Method::POST;
         for path in [
-            "/_api/database/db1/cursor",
-            "/_api/database/db1/explain",
-            "/_api/database/db1/nl",
-            "/_api/database/db1/geo/places/location/near",
-            "/_api/database/db1/geo/places/location/within",
-            "/_api/database/db1/vector/docs/embeddings/search",
-            "/_api/database/db1/hybrid/docs/search",
-            "/_api/database/db1/columnar/metrics/aggregate",
-            "/_api/database/db1/columnar/metrics/query",
-            "/_api/database/db1/transaction/tx1/query",
-            "/_api/database/db1/sql",
-            "/_api/database/db1/document/users/_verify",
+            "/_api/database/{db}/cursor",
+            "/_api/database/{db}/explain",
+            "/_api/database/{db}/nl",
+            "/_api/database/{db}/geo/{collection}/{field}/near",
+            "/_api/database/{db}/geo/{collection}/{field}/within",
+            "/_api/database/{db}/vector/{collection}/{index}/search",
+            "/_api/database/{db}/hybrid/{collection}/search",
+            "/_api/database/{db}/columnar/{collection}/aggregate",
+            "/_api/database/{db}/columnar/{collection}/query",
+            "/_api/database/{db}/transaction/{tx_id}/query",
+            "/_api/database/{db}/sql",
+            "/_api/database/{db}/document/{collection}/_verify",
         ] {
             assert_eq!(
                 required_action(&post, path),
                 PermissionAction::Read,
                 "expected Read for {}",
                 path
+            );
+        }
+    }
+
+    /// A document key, collection name or index name is the last segment of
+    /// many mutating routes. Classifying on the concrete path let a key named
+    /// after a read suffix downgrade the request: `PUT .../document/settings/
+    /// query` matched `/query` and a read-only principal overwrote it.
+    /// Templates have no such segment, so the same requests classify as Write.
+    #[test]
+    fn test_read_suffix_cannot_be_forged_by_a_document_key() {
+        for (method, template) in [
+            (
+                Method::PUT,
+                "/_api/database/{db}/document/{collection}/{key}",
+            ),
+            (
+                Method::DELETE,
+                "/_api/database/{db}/document/{collection}/{key}",
+            ),
+            (Method::POST, "/_api/database/{db}/document/{collection}"),
+            (
+                Method::DELETE,
+                "/_api/database/{db}/index/{collection}/{index_name}",
+            ),
+        ] {
+            assert_eq!(
+                required_action(&method, template),
+                PermissionAction::Write,
+                "{} {} must stay a write",
+                method,
+                template
+            );
+        }
+    }
+
+    /// The fallback used when the router did not record a template never
+    /// downgrades to Read on anything but a genuinely safe method.
+    #[test]
+    fn test_method_default_action_never_downgrades_writes() {
+        assert_eq!(method_default_action(&Method::GET), PermissionAction::Read);
+        assert_eq!(method_default_action(&Method::HEAD), PermissionAction::Read);
+        for method in [Method::POST, Method::PUT, Method::PATCH, Method::DELETE] {
+            assert_eq!(
+                method_default_action(&method),
+                PermissionAction::Write,
+                "{} must default to Write",
+                method
             );
         }
     }
@@ -294,41 +388,44 @@ mod tests {
         let delete = Method::DELETE;
 
         assert_eq!(
-            required_action(&put, "/_api/database/db1/collection/users/truncate"),
+            required_action(&put, "/_api/database/{db}/collection/{name}/truncate"),
             PermissionAction::Admin
         );
         assert_eq!(
-            required_action(&delete, "/_api/database/db1/collection/users"),
+            required_action(&delete, "/_api/database/{db}/collection/{name}"),
             PermissionAction::Admin
         );
         assert_eq!(
-            required_action(&delete, "/_api/database/db1/columnar/metrics"),
+            required_action(&delete, "/_api/database/{db}/columnar/{collection}"),
             PermissionAction::Admin
         );
         assert_eq!(
-            required_action(&post, "/_api/database/db1/repl"),
+            required_action(&post, "/_api/database/{db}/repl"),
             PermissionAction::Admin
         );
         assert_eq!(
-            required_action(&post, "/_api/database/db1/scripts"),
+            required_action(&post, "/_api/database/{db}/scripts"),
             PermissionAction::Admin
         );
         assert_eq!(
-            required_action(&put, "/_api/database/db1/services/users"),
+            required_action(&put, "/_api/database/{db}/services/{key}"),
             PermissionAction::Admin
         );
         assert_eq!(
-            required_action(&delete, "/_api/database/db1/scripts/abc"),
+            required_action(&delete, "/_api/database/{db}/scripts/{script_id}"),
             PermissionAction::Admin
         );
 
         // Deeper DELETE paths are plain writes, not drops
         assert_eq!(
-            required_action(&delete, "/_api/database/db1/collection/users/schema"),
+            required_action(&delete, "/_api/database/{db}/collection/{name}/schema"),
             PermissionAction::Write
         );
         assert_eq!(
-            required_action(&delete, "/_api/database/db1/columnar/metrics/index/col1"),
+            required_action(
+                &delete,
+                "/_api/database/{db}/columnar/{collection}/index/{column}"
+            ),
             PermissionAction::Write
         );
     }

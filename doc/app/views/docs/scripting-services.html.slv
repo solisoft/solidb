@@ -1,0 +1,423 @@
+<div class="max-w-4xl mx-auto">
+  <div class="mb-8">
+    <a href="/docs/scripting" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Lua Scripting Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <!-- Header -->
+    <div class="relative">
+      <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"></div>
+      <div class="relative">
+        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">Services</h1>
+        <p class="text-lg text-gray-300 max-w-3xl leading-relaxed">
+          A service is the named API surface your scripts are mounted under. Every script belongs to exactly one service, and the service is what turns a stored script into a reachable URL.
+        </p>
+      </div>
+    </div>
+
+    <!-- What is a service -->
+    <section id="concept">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            What a Service Is
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">
+            Scripts are stored per database in the <code>_scripts</code> collection, and services in <code>_services</code>. A script is invoked through its service, and the URL always names the <strong>database first</strong>, then the <strong>service</strong>, then the script's path:
+          </p>
+
+          <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 overflow-x-auto mb-6">
+            <div><span class="text-blue-400">GET | POST | PUT | DELETE</span> /api/<span class="text-cyan-400">{database}</span>/<span class="text-purple-400">{service}</span>/<span class="text-green-400">{path}</span></div>
+          </div>
+
+          <p class="text-gray-300 mb-4">
+            With <code>database = "myapp"</code> and <code>service = "default"</code>, a script whose path is <code>products</code> answers at <code>/api/myapp/default/products</code>.
+          </p>
+
+          <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4 flex items-start">
+            <svg class="w-5 h-5 text-yellow-400 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            <div class="text-sm text-yellow-200">
+              <strong>The service must exist before any script under it is reachable.</strong> Nothing creates a service for you &mdash; not <code>solidb scripts init</code>, not <code>push</code>, not the script API. The name <code>default</code> is only the value scripts get when they do not specify a service; it still has to be created once per database.
+              <ul class="mt-2 space-y-1">
+                <li>&bull; Service missing &rarr; <code>404</code> <code>Service 'default' not found in database 'myapp'</code></li>
+                <li>&bull; Service exists but <code>enabled: false</code> &rarr; <code>400</code> <code>Service 'default' is disabled</code></li>
+              </ul>
+              Both checks happen before the script is looked up, so a perfectly valid script returns one of these until its service exists and is enabled.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Fields -->
+    <section id="fields">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
+            Fields
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">A service document, as stored in <code>_services</code> and returned by the list and get endpoints:</p>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-white/10">
+                  <th class="text-left py-3 px-4 text-gray-400 font-medium">Field</th>
+                  <th class="text-left py-3 px-4 text-gray-400 font-medium">Type</th>
+                  <th class="text-left py-3 px-4 text-gray-400 font-medium">Meaning</th>
+                </tr>
+              </thead>
+              <tbody class="text-gray-300">
+                <tr class="border-b border-white/5"><td class="py-3 px-4 font-mono text-cyan-400">_key</td><td class="py-3 px-4 font-mono text-xs">string</td><td class="py-3 px-4">The service identifier used in URLs (<code>default</code>, <code>v1</code>, <code>admin</code>). Sent as <code>key</code> when creating.</td></tr>
+                <tr class="border-b border-white/5"><td class="py-3 px-4 font-mono text-cyan-400">name</td><td class="py-3 px-4 font-mono text-xs">string</td><td class="py-3 px-4">Human-readable name. Required.</td></tr>
+                <tr class="border-b border-white/5"><td class="py-3 px-4 font-mono text-cyan-400">description</td><td class="py-3 px-4 font-mono text-xs">string?</td><td class="py-3 px-4">Free text; also becomes the OpenAPI <code>info.description</code>.</td></tr>
+                <tr class="border-b border-white/5"><td class="py-3 px-4 font-mono text-cyan-400">version</td><td class="py-3 px-4 font-mono text-xs">string?</td><td class="py-3 px-4">API version label such as <code>"1.0.0"</code>. Informational.</td></tr>
+                <tr class="border-b border-white/5"><td class="py-3 px-4 font-mono text-cyan-400">database</td><td class="py-3 px-4 font-mono text-xs">string</td><td class="py-3 px-4">The database the service belongs to. Set from the URL, not the body.</td></tr>
+                <tr class="border-b border-white/5"><td class="py-3 px-4 font-mono text-cyan-400">enabled</td><td class="py-3 px-4 font-mono text-xs">bool</td><td class="py-3 px-4">Default <code>true</code>. When <code>false</code>, every call under the service is rejected with <code>400</code>.</td></tr>
+                <tr class="border-b border-white/5"><td class="py-3 px-4 font-mono text-cyan-400">require_auth</td><td class="py-3 px-4 font-mono text-xs">bool</td><td class="py-3 px-4">Default <code>true</code>. Unauthenticated callers get <code>401</code> before the script runs. See below.</td></tr>
+                <tr class="border-b border-white/5"><td class="py-3 px-4 font-mono text-cyan-400">created_at</td><td class="py-3 px-4 font-mono text-xs">string</td><td class="py-3 px-4">RFC 3339 timestamp, set by the server.</td></tr>
+                <tr><td class="py-3 px-4 font-mono text-cyan-400">updated_at</td><td class="py-3 px-4 font-mono text-xs">string</td><td class="py-3 px-4">RFC 3339 timestamp, bumped on every update.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Management routes -->
+    <section id="management">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            Management API
+          </h2>
+        </div>
+        <div class="p-8 space-y-6">
+          <p class="text-gray-300">
+            Services are managed under <code>/_api/database/{db}/services</code>. These endpoints are admin-gated and are the only way to write <code>_services</code> &mdash; the collection is readable by name but never writable by name, and scripts cannot write it either.
+          </p>
+
+          <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+            <h3 class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider mt-0">Create a service</h3>
+            <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 overflow-x-auto">
+              <div><span class="text-blue-400">POST</span> /_api/database/{db}/services</div>
+            </div>
+            <div class="mt-4 text-xs font-mono text-gray-400 bg-black/40 p-4 rounded border border-white/5 overflow-x-auto">
+<pre>{
+  "key": "default",
+  "name": "Default",
+  "description": "Public product API",   <span class="text-gray-600">// optional</span>
+  "version": "1.0.0",                     <span class="text-gray-600">// optional</span>
+  "enabled": true,                        <span class="text-gray-600">// optional, default true</span>
+  "require_auth": true                    <span class="text-gray-600">// optional, default true</span>
+}</pre>
+            </div>
+            <p class="text-sm text-gray-400 mt-3">Response: <code>{"key", "name", "database", "created_at"}</code>. Creating a key that already exists returns <code>400</code>.</p>
+          </div>
+
+          <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+            <h3 class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider mt-0">List services</h3>
+            <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 overflow-x-auto">
+              <div><span class="text-blue-400">GET</span> /_api/database/{db}/services</div>
+            </div>
+            <p class="text-sm text-gray-400 mt-3">Returns <code>{"services": [...]}</code>; each entry carries the fields above plus <code>script_count</code>.</p>
+          </div>
+
+          <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+            <h3 class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider mt-0">Get, update, delete</h3>
+            <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 overflow-x-auto space-y-1">
+              <div><span class="text-blue-400">GET</span> /_api/database/{db}/services/{key}</div>
+              <div><span class="text-yellow-400">PUT</span> /_api/database/{db}/services/{key}</div>
+              <div><span class="text-red-400">DELETE</span> /_api/database/{db}/services/{key}</div>
+            </div>
+            <p class="text-sm text-gray-400 mt-3">
+              <code>PUT</code> accepts any subset of <code>name</code>, <code>description</code>, <code>version</code>, <code>enabled</code>, <code>require_auth</code>; omitted fields keep their value. <code>DELETE</code> removes the service <strong>and every script registered under it</strong>, and answers <code>{"deleted": true, "scripts_deleted": N}</code>.
+            </p>
+          </div>
+
+          <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+            <h3 class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider mt-0">OpenAPI export</h3>
+            <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 overflow-x-auto">
+              <div><span class="text-blue-400">GET</span> /_api/database/{db}/services/{key}/openapi</div>
+            </div>
+            <p class="text-sm text-gray-400 mt-3">See <a href="#openapi" class="text-indigo-400 hover:text-indigo-300">OpenAPI Export</a> below.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Invocation -->
+    <section id="invocation">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            Invocation &amp; Failure Modes
+          </h2>
+        </div>
+        <div class="p-8">
+          <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 overflow-x-auto mb-6">
+            <div><span class="text-blue-400">GET | POST | PUT | DELETE</span> /api/{db}/{service}/{path}</div>
+          </div>
+
+          <p class="text-gray-300 mb-4">The server resolves a call in this order, and stops at the first failure:</p>
+          <ol class="space-y-3 text-gray-300 mb-6">
+            <li class="flex items-start"><span class="text-green-400 mr-3 font-mono">1.</span><span>Look up the service <code>{service}</code> in database <code>{db}</code>. Missing &rarr; <code class="text-red-400">404</code> <code>Service 'x' not found in database 'y'</code>.</span></li>
+            <li class="flex items-start"><span class="text-green-400 mr-3 font-mono">2.</span><span>Check <code>enabled</code>. Disabled &rarr; <code class="text-red-400">400</code> <code>Service 'x' is disabled</code>.</span></li>
+            <li class="flex items-start"><span class="text-green-400 mr-3 font-mono">3.</span><span>If <code>require_auth</code> is <code>true</code> and the request carries no valid credentials &rarr; <code class="text-red-400">401</code> <code>Authentication required for this service</code>.</span></li>
+            <li class="flex items-start"><span class="text-green-400 mr-3 font-mono">4.</span><span>Find a script in that service whose path and method match <code>{path}</code>. None &rarr; <code class="text-red-400">404</code>.</span></li>
+            <li class="flex items-start"><span class="text-green-400 mr-3 font-mono">5.</span><span>Run the script. Its return value becomes a JSON <code>200</code> unless it sets a status with <code>solidb.status(n)</code>, raises with <code>solidb.error(msg, code)</code>, or builds a response with <code>response.json / html / redirect / file / cors</code>.</span></li>
+          </ol>
+
+          <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+            <h3 class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider mt-0">require_auth</h3>
+            <p class="text-gray-300 text-sm mb-3">
+              <code>require_auth: true</code> (the default) makes the service private: a request without a valid <code>Authorization: Bearer &lt;token&gt;</code> (JWT or API key) is rejected with <code>401</code> before any Lua runs. <code>require_auth: false</code> makes every route in the service public.
+            </p>
+            <p class="text-gray-300 text-sm">
+              A public service can still protect individual scripts itself: <code>solidb.auth.require_auth()</code> rejects anonymous callers, <code>solidb.auth.require_role("admin")</code> demands a role, and <code>solidb.auth.user()</code> / <code>is_authenticated()</code> / <code>has_role()</code> let a script branch on who is calling. The service flag is the coarse switch; the script is where fine-grained rules live.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Attaching scripts -->
+    <section id="scripts">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+            How Scripts Attach to a Service
+          </h2>
+        </div>
+        <div class="p-8 space-y-6">
+          <p class="text-gray-300">
+            Every script has a <code>service</code> field. When it is omitted the server stores <code>"default"</code>. The script's storage key is built from it &mdash; <code>{db}_{service}_[{collection}_]{path}</code> &mdash; so the same path can exist once per service, and a script is only ever visible through its own service.
+          </p>
+
+          <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+            <h3 class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider mt-0">Via the HTTP API</h3>
+            <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 overflow-x-auto">
+              <div><span class="text-blue-400">POST</span> /_api/database/{db}/scripts</div>
+            </div>
+            <div class="mt-4 text-xs font-mono text-gray-400 bg-black/40 p-4 rounded border border-white/5 overflow-x-auto">
+<pre>{
+  "name": "products",
+  "path": "products",
+  "methods": ["GET", "POST"],
+  "service": "v1",                 <span class="text-gray-600">// omitted = "default"</span>
+  "collection": "products",        <span class="text-gray-600">// optional</span>
+  "description": "List or create products",
+  "code": "return { ok = true }"
+}</pre>
+            </div>
+          </div>
+
+          <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+            <h3 class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider mt-0">Via the CLI</h3>
+            <p class="text-gray-300 text-sm mb-3">
+              A scripts project targets one service. It is set in <code>solidb-scripts.toml</code> (written by <code>solidb scripts init</code>) or overridden with the <code>SOLIDB_SERVICE</code> environment variable. <code>push</code> registers every file under that service and <code>test</code> calls <code>/api/{database}/{service}/...</code>.
+            </p>
+            <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 overflow-x-auto">
+<pre>host = "localhost"
+port = 6745
+database = "myapp"
+service = "default"
+
+[scripts]
+directory = "."
+tests_dir = "tests"
+ignore = ["*.bak", ".git", "node_modules", "tests"]</pre>
+            </div>
+            <p class="text-gray-400 text-sm mt-3">
+              There is no <code>-- @service</code> comment directive. The directives a script file understands are <code>-- @methods GET, POST</code>, <code>-- @description ...</code>, <code>-- @collection ...</code> and <code>-- @ws</code>; the service always comes from the project. To publish the same files under a second service, run <code>SOLIDB_SERVICE=v2 solidb scripts push</code>.
+            </p>
+          </div>
+
+          <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+            <h3 class="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider mt-0">Versioning and grouping</h3>
+            <p class="text-gray-300 text-sm mb-3">
+              Because the service is part of the URL and of the script key, several services in one database are the natural way to version or partition an API:
+            </p>
+            <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 overflow-x-auto space-y-1">
+              <div><span class="text-purple-400">v1</span>     &rarr; /api/myapp/<span class="text-purple-400">v1</span>/products     <span class="text-gray-500"># frozen contract</span></div>
+              <div><span class="text-purple-400">v2</span>     &rarr; /api/myapp/<span class="text-purple-400">v2</span>/products     <span class="text-gray-500"># new shape, same path</span></div>
+              <div><span class="text-purple-400">admin</span>  &rarr; /api/myapp/<span class="text-purple-400">admin</span>/products  <span class="text-gray-500"># require_auth: true + require_role("admin") in scripts</span></div>
+              <div><span class="text-purple-400">public</span> &rarr; /api/myapp/<span class="text-purple-400">public</span>/products <span class="text-gray-500"># require_auth: false</span></div>
+            </div>
+            <p class="text-gray-400 text-sm mt-3">
+              Retiring a version is <code>PUT {"enabled": false}</code> (callers get <code>400</code>, scripts are kept) or <code>DELETE</code> (scripts go with it).
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- OpenAPI -->
+    <section id="openapi">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            OpenAPI Export
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">
+            Each service can describe itself as an OpenAPI 3 document. The paths are the real invocation URLs, <code>/api/{db}/{service}/{path}</code>, with one operation per declared HTTP method; scripts marked <code>-- @ws</code> are left out because WebSocket upgrades have no OpenAPI representation.
+          </p>
+          <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5 mb-4">
+            <div class="text-green-400">$ curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:6745/_api/database/myapp/services/default/openapi</div>
+          </div>
+          <div class="text-xs font-mono text-gray-400 bg-black/40 p-4 rounded border border-white/5 overflow-x-auto">
+<pre>{
+  "openapi": "3.0.0",
+  "info": { "title": "Default", "version": "1.0.0", "description": "Public product API" },
+  "paths": {
+    "/api/myapp/default/products": {
+      "get":  { "summary": "List or create products", ... },
+      "post": { "summary": "List or create products", ... }
+    },
+    "/api/myapp/default/products/{id}": {
+      "get": { ... }, "put": { ... }, "delete": { ... }
+    }
+  }
+}</pre>
+          </div>
+          <p class="text-gray-400 text-sm mt-3">Feed it to Swagger UI, Redoc, or a client generator; regenerate after every <code>push</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Walkthrough -->
+    <section id="walkthrough">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            Walkthrough with cURL
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">From an empty database to a working endpoint, using nothing but the HTTP API.</p>
+
+          <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5 space-y-4 overflow-x-auto">
+            <div>
+              <div class="text-gray-500"># 1. Get a token (admin credentials) and keep it in a shell variable</div>
+              <div class="text-green-400">$ TOKEN=$(curl -s -X POST http://localhost:6745/_api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "secret"}' | jq -r .token)</div>
+            </div>
+
+            <div>
+              <div class="text-gray-500"># 2. Create the service. Until this exists, /api/myapp/default/... is a 404.</div>
+              <div class="text-green-400">$ curl -X POST http://localhost:6745/_api/database/myapp/services \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "default", "name": "Default", "version": "1.0.0"}'</div>
+              <div class="text-gray-400 mt-1">{"key":"default","name":"Default","database":"myapp","created_at":"2026-09-03T10:12:41Z"}</div>
+            </div>
+
+            <div>
+              <div class="text-gray-500"># 3. Register a script under it (service omitted = "default")</div>
+              <div class="text-green-400">$ curl -X POST http://localhost:6745/_api/database/myapp/scripts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "hello",
+    "path": "hello",
+    "methods": ["GET"],
+    "code": "return { message = \"Hello, \" .. (request.query.name or \"world\") }"
+  }'</div>
+              <div class="text-gray-400 mt-1">{"id":"myapp_default_hello","name":"hello","path":"hello","methods":["GET"],"service":"default","created_at":"..."}</div>
+            </div>
+
+            <div>
+              <div class="text-gray-500"># 4. Call it — database first, then service, then path. require_auth defaults to true, so send the token.</div>
+              <div class="text-green-400">$ curl "http://localhost:6745/api/myapp/default/hello?name=Ada" \
+  -H "Authorization: Bearer $TOKEN"</div>
+              <div class="text-gray-400 mt-1">{"message":"Hello, Ada"}</div>
+            </div>
+
+            <div>
+              <div class="text-gray-500"># Without the token:</div>
+              <div class="text-green-400">$ curl -i http://localhost:6745/api/myapp/default/hello</div>
+              <div class="text-gray-400 mt-1">HTTP/1.1 401 Unauthorized<br>{"error":"Authentication required for this service", ...}</div>
+            </div>
+
+            <div>
+              <div class="text-gray-500"># 5. Make it public instead (or pass "require_auth": false at creation)</div>
+              <div class="text-green-400">$ curl -X PUT http://localhost:6745/_api/database/myapp/services/default \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"require_auth": false}'</div>
+              <div class="text-green-400 mt-2">$ curl http://localhost:6745/api/myapp/default/hello</div>
+              <div class="text-gray-400 mt-1">{"message":"Hello, world"}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Security -->
+    <section id="security">
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div class="p-8 border-b border-white/5 bg-white/5">
+          <h2 class="text-2xl font-bold text-white flex items-center mt-0 border-0">
+            <svg class="w-6 h-6 mr-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            Security
+          </h2>
+        </div>
+        <div class="p-8">
+          <p class="text-gray-300 mb-4">
+            A script runs <strong>as its caller</strong>, not as the server. What the caller may write, the script may write; what the caller may not, the script may not. On top of that, the system collections the server later interprets are split into tiers:
+          </p>
+          <ul class="space-y-3 text-gray-300 text-sm">
+            <li class="flex items-start"><span class="text-red-400 mr-3">&bull;</span><span><code>_scripts</code>, <code>_services</code>, <code>_triggers</code>, <code>_views</code>, <code>_graphs</code>, <code>_config</code> &mdash; <strong>never writable from a script</strong>, for any caller, even a global admin: <code>403</code>. A script cannot register another script, flip a service to public, or install a trigger. Those changes go through the admin-gated management endpoints, which validate their input.</span></li>
+            <li class="flex items-start"><span class="text-yellow-400 mr-3">&bull;</span><span><code>_jobs</code> &mdash; writable from a script only when the caller is an admin.</span></li>
+            <li class="flex items-start"><span class="text-green-400 mr-3">&bull;</span><span>Ordinary collections &mdash; no extra restriction beyond the caller's own permissions.</span></li>
+          </ul>
+          <p class="text-gray-400 text-sm mt-4">
+            <code>_env</code>, <code>_admins</code>, <code>_api_keys</code>, <code>_roles</code> and <code>_user_roles</code> are not readable by name at all, from scripts or the query API. Reads of the second tier (<code>_services</code> included) are allowed, which is how a script can inspect its own service's metadata.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Next Steps -->
+    <section id="next">
+      <div class="bg-gradient-to-r from-blue-500/10 to-indigo-500/10 border border-blue-500/20 rounded-2xl p-8">
+        <h2 class="text-2xl font-bold text-white mb-4 mt-0">Next Steps</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <a href="/docs/scripting-management" class="bg-gray-900/60 rounded-xl p-4 border border-white/10 hover:border-blue-500/30 transition-colors">
+            <h3 class="font-bold text-blue-400 mb-2 mt-0">Management API</h3>
+            <p class="text-sm text-gray-400">Registering and updating scripts</p>
+          </a>
+          <a href="/docs/scripting-core" class="bg-gray-900/60 rounded-xl p-4 border border-white/10 hover:border-blue-500/30 transition-colors">
+            <h3 class="font-bold text-blue-400 mb-2 mt-0">Core API</h3>
+            <p class="text-sm text-gray-400">request, response, solidb.status and solidb.error</p>
+          </a>
+          <a href="/docs/scripting-tutorial-crud" class="bg-gray-900/60 rounded-xl p-4 border border-white/10 hover:border-blue-500/30 transition-colors">
+            <h3 class="font-bold text-blue-400 mb-2 mt-0">Tutorial: CRUD API</h3>
+            <p class="text-sm text-gray-400">A full service built with the CLI</p>
+          </a>
+          <a href="/docs/scripting-development" class="bg-gray-900/60 rounded-xl p-4 border border-white/10 hover:border-blue-500/30 transition-colors">
+            <h3 class="font-bold text-blue-400 mb-2 mt-0">Development</h3>
+            <p class="text-sm text-gray-400">CLI workflow: init, push, watch, test</p>
+          </a>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

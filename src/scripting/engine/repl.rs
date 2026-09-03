@@ -14,6 +14,7 @@ pub async fn execute_repl(
     engine: &ScriptEngine,
     code: &str,
     db_name: &str,
+    user: crate::scripting::auth::ScriptUser,
     variables: &HashMap<String, JsonValue>,
     history: &[String],
     output_capture: &mut Vec<String>,
@@ -71,7 +72,9 @@ pub async fn execute_repl(
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
-        user: crate::scripting::auth::ScriptUser::anonymous(),
+        // The REPL caller, not an anonymous one: the endpoint is permission
+        // gated, and what the session may write follows from who opened it.
+        user,
     };
 
     // Set up the Lua environment (script info is None for REPL)

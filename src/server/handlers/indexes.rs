@@ -191,6 +191,21 @@ pub struct ListIndexesResponse {
     pub indexes: Vec<IndexStats>,
 }
 
+/// Build an index off the async runtime.
+///
+/// Building walks the whole collection and can take minutes on a large one.
+/// It ran inline in the handler, which pinned a tokio worker — one of `num_cpus`
+/// — for the whole build. There is deliberately no time limit: an index
+/// build takes as long as it takes, and abandoning it half-way helps nobody.
+async fn build_index_blocking(
+    collection: crate::storage::Collection,
+    spec: IndexSpec,
+) -> Result<(), DbError> {
+    tokio::task::spawn_blocking(move || collection.create_index_from_spec(&spec))
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))?
+}
+
 pub async fn create_index(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
@@ -237,7 +252,7 @@ pub async fn create_index(
         },
     };
 
-    collection.create_index_from_spec(&spec)?;
+    build_index_blocking(collection, spec.clone()).await?;
     propagate_index_create(&state, &db_name, &coll_name, &spec).await;
 
     Ok(Json(CreateIndexResponse {
@@ -398,7 +413,7 @@ pub async fn create_geo_index(
         name: req.name.clone(),
         field: req.field.clone(),
     };
-    collection.create_index_from_spec(&spec)?;
+    build_index_blocking(collection, spec.clone()).await?;
     propagate_index_create(&state, &db_name, &coll_name, &spec).await;
 
     Ok(Json(CreateGeoIndexResponse {
@@ -605,7 +620,9 @@ pub async fn create_vector_index(
     }
 
     let spec = IndexSpec::Vector(config.clone());
-    let stats = collection.create_vector_index(config)?;
+    let stats = tokio::task::spawn_blocking(move || collection.create_vector_index(config))
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
     propagate_index_create(&state, &db_name, &coll_name, &spec).await;
 
     let metric_str = match stats.metric {
@@ -706,10 +723,17 @@ pub async fn quantize_vector_index(
 
     // Get the index and quantize it
     // Default to Scalar quantization for this endpoint
-    let stats = collection.quantize_vector_index(
-        &index_name,
-        crate::storage::index::VectorQuantization::Scalar,
-    )?;
+    let stats = {
+        let index_name = index_name.clone();
+        tokio::task::spawn_blocking(move || {
+            collection.quantize_vector_index(
+                &index_name,
+                crate::storage::index::VectorQuantization::Scalar,
+            )
+        })
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??
+    };
 
     Ok(Json(QuantizeVectorIndexResponse {
         name: index_name,
@@ -739,7 +763,12 @@ pub async fn dequantize_vector_index(
     let collection = database.get_collection(&coll_name)?;
 
     // Get the index and dequantize it
-    collection.dequantize_vector_index(&index_name)?;
+    {
+        let index_name = index_name.clone();
+        tokio::task::spawn_blocking(move || collection.dequantize_vector_index(&index_name))
+            .await
+            .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    }
 
     Ok(Json(DequantizeVectorIndexResponse {
         name: index_name,
@@ -788,7 +817,7 @@ pub async fn create_ttl_index(
         field: req.field.clone(),
         expire_after_seconds: req.expire_after_seconds,
     };
-    collection.create_index_from_spec(&spec)?;
+    build_index_blocking(collection, spec.clone()).await?;
     propagate_index_create(&state, &db_name, &coll_name, &spec).await;
 
     Ok(Json(CreateTtlIndexResponse {

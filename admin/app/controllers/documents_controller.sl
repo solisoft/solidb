@@ -116,17 +116,45 @@ class DocumentsController < Controller
     end
     # Blob metadata fields vary by upload path: `name`/`type` are canonical,
     # `filename`/`content_type` only present on some.
-    content_type = meta["content_type"] ?? (meta["type"] ?? "application/octet-stream")
-    filename = meta["filename"] ?? (meta["name"] ?? key)
-    disposition = params["download"] == "1" ? "attachment" : "inline"
+    #
+    # Both of these are attacker-controlled: any principal with write access
+    # to a blob collection sets them, and an admin later opens the preview.
+    # Echoing the stored content type back with `inline` on this origin turned
+    # an uploaded `text/html` (or SVG) blob into stored XSS against the admin
+    # UI -- which holds a SoliDB admin JWT and can reach the Lua REPL. So only
+    # a small allowlist of image types is ever rendered inline; everything
+    # else is downloaded as an opaque octet-stream.
+    declared_type = meta["content_type"] ?? (meta["type"] ?? "application/octet-stream")
+    filename = this._safe_filename(meta["filename"] ?? (meta["name"] ?? key))
+    wants_download = params["download"] == "1"
+    # Raster image types only -- `image/svg+xml` is a script execution
+    # context, so it is deliberately absent.
+    inline_types = ["image/png", "image/jpeg", "image/jpg", "image/gif",
+                    "image/webp", "image/avif", "image/bmp"]
+    inline_ok = !wants_download && inline_types.includes?(declared_type.downcase().trim())
+    content_type = inline_ok ? declared_type.downcase().trim() : "application/octet-stream"
+    disposition = inline_ok ? "inline" : "attachment"
     return {
       "status": 200,
       "headers": {
         "Content-Type": content_type,
-        "Content-Disposition": disposition + "; filename=\"" + filename + "\""
+        "Content-Disposition": disposition + "; filename=\"" + filename + "\"",
+        "X-Content-Type-Options": "nosniff",
+        # Belt and braces: even for an allowlisted image type, deny the
+        # response any ability to execute or load anything.
+        "Content-Security-Policy": "default-src 'none'; img-src 'self' data:; sandbox",
+        "Cache-Control": "no-store"
       },
       "body": Base64.decode(data_base64)
     }
+  end
+
+  # Strip anything that could break out of the quoted Content-Disposition
+  # filename or inject a header.
+  def _safe_filename(name)
+    cleaned = str(name).gsub("[^A-Za-z0-9._ -]", "_").trim()
+    return "download" if cleaned.blank?
+    return cleaned.substring(0, 200)
   end
 
   # GET /databases/:db/collections/:name/docs/export - stream the collection
@@ -191,6 +219,17 @@ class DocumentsController < Controller
     @collection_name = params["name"] ?? ""
     @databases = AdminContext.database_names()
     @filter = (params["filter"] ?? "").trim()
+    @filter_rejected = false
+    # The filter is spliced into query text that runs with the admin JWT this
+    # app holds, on a GET route -- and the framework's CSRF gate exempts safe
+    # methods. So a plain <img src="...?filter=..."> in any page an admin
+    # views executed whatever the filter said. SDBQL accepts a mutation after
+    # FILTER and treats `--` as a line comment, which is all
+    # `true REMOVE doc IN users --` needs to empty a collection.
+    unless this._safe_filter(@filter)
+      @filter_rejected = true
+      @filter = ""
+    end
     @limit = this._page_limit()
     offset = (params["offset"] ?? "0").to_int()
     offset = 0 if offset < 0
@@ -253,6 +292,40 @@ class DocumentsController < Controller
       return lines.join("\n") + "\n"
     end
     return JSON.stringify(parsed) + "\n"
+  end
+
+  # True when `text` is safe to splice after FILTER.
+  #
+  # Clause keywords and comment markers must never appear in a browse filter.
+  # A filter is an *expression*; every keyword below starts a new clause,
+  # opens a comment, or names a catalog-mutating builtin, and each is a way
+  # out of the FILTER and into a write.
+  #
+  # `IN` is deliberately absent: `doc.status IN ["a", "b"]` is an ordinary
+  # filter, and a mutation needs one of the words below to get going.
+  def _safe_filter(text)
+    return true if text.blank?
+    denylist = ["for", "let", "collect", "insert", "update", "upsert",
+                "replace", "remove", "return", "into", "create", "drop",
+                "refresh", "materialized", "view", "graph", "stream",
+                "with", "union", "intersect", "except", "window",
+                "create_view", "drop_view", "create_graph", "drop_graph"]
+    lowered = text.downcase()
+    # Comments would let a payload discard the rest of the generated query.
+    return false if lowered.includes?("--")
+    return false if lowered.includes?("/*")
+    return false if lowered.includes?("*/")
+    # Split on anything that is not part of an identifier, so keywords are
+    # matched as whole words rather than as substrings of a field name
+    # (`doc.created_for` must stay usable).
+    words = lowered.gsub("[^a-z0-9_]", " ").split(" ")
+    # `for`, not `.each`: a `return` inside a block leaves the block, not the
+    # method, so an `.each` here would fall through to `return true` and the
+    # guard would never reject anything.
+    for word in words
+      return false if denylist.includes?(word)
+    end
+    return true
   end
 
   # Runs the listing query: the filter input is spliced as a FILTER clause on

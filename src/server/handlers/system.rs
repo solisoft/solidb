@@ -1,3 +1,4 @@
+use crate::error::DbError;
 use crate::scripting::engine::{LuaPool, ScriptCache, ScriptIndex};
 use crate::scripting::ScriptStats;
 use crate::server::cursor_store::CursorStore;
@@ -105,6 +106,75 @@ impl AppState {
             .cluster_config()
             .and_then(|c| c.keyfile.clone())
             .unwrap_or_default()
+    }
+
+    /// Require that a request carries the cluster secret, and return it.
+    ///
+    /// For endpoints that are only ever called node-to-node but live on the
+    /// public API router. `auth_middleware`'s `X-Shard-Direct` bypass grants
+    /// admin to whoever presents this secret, so any handler that *sends* the
+    /// secret onwards must first prove its caller already had it — otherwise
+    /// the handler is a secret-exfiltration oracle for anyone who can reach
+    /// the route.
+    ///
+    /// Fails closed: a node with no keyfile configured refuses the request
+    /// rather than accepting an empty secret, matching `auth_middleware`.
+    pub fn require_cluster_secret(
+        &self,
+        headers: &axum::http::HeaderMap,
+    ) -> Result<String, DbError> {
+        let expected = self.cluster_secret();
+        if expected.is_empty() {
+            return Err(DbError::Forbidden(
+                "Internal cluster endpoint: no keyfile configured on this node".to_string(),
+            ));
+        }
+        let provided = headers
+            .get("X-Cluster-Secret")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
+        if !crate::server::auth::constant_time_eq(expected.as_bytes(), provided.as_bytes()) {
+            return Err(DbError::Forbidden(
+                "Internal cluster endpoint requires a valid cluster secret".to_string(),
+            ));
+        }
+        Ok(expected)
+    }
+
+    /// Resolve a caller-supplied peer address against known cluster members.
+    ///
+    /// Inter-node handlers that dial an address from a request body must not
+    /// trust that address: it decides where this node's credentials are sent.
+    /// Only addresses this node already knows as members (or its own) are
+    /// accepted.
+    pub fn require_known_peer(&self, address: &str) -> Result<(), DbError> {
+        let manager = self.cluster_manager.as_ref().ok_or_else(|| {
+            DbError::Forbidden("Cluster operations are not enabled on this node".to_string())
+        })?;
+
+        let addr = address.trim();
+        if addr.is_empty() {
+            return Err(DbError::BadRequest("Empty peer address".to_string()));
+        }
+
+        let known = manager.get_local_address() == addr
+            || manager
+                .state()
+                .get_all_members()
+                .iter()
+                .any(|m| m.node.api_address == addr || m.node.address == addr);
+
+        if !known {
+            tracing::warn!(
+                "CLUSTER: refusing peer address '{}' — not a known cluster member",
+                addr
+            );
+            return Err(DbError::Forbidden(format!(
+                "Address '{}' is not a known cluster member",
+                addr
+            )));
+        }
+        Ok(())
     }
 }
 

@@ -9,6 +9,32 @@ const GRAPHS: &str = "_graphs";
 const VIEWS: &str = "_views";
 
 impl<'a> QueryExecutor<'a> {
+    /// Refuse a catalog write unless the principal may write.
+    ///
+    /// `CREATE_GRAPH` / `DROP_GRAPH` / `CREATE_VIEW` / `DROP_VIEW` are
+    /// ordinary function calls that edit `_graphs` and `_views`, so the
+    /// clause-level mutation check never saw them and the routes that reach
+    /// them (`/cursor`, `/sql`, `/explain`, the driver's Query op) are
+    /// classified Read. A viewer could replace a materialized view's
+    /// definition or drop a named graph. `Query::has_mutations` now reports
+    /// these calls too, so the middleware upgrades the request; this is the
+    /// belt-and-braces check at the point of the write, for executors reached
+    /// by any other path.
+    ///
+    /// Absence of a principal is not permission: an executor built without one
+    /// (internal refreshes, jobs, stream tasks) does not edit the catalog
+    /// either. Same rule as auto-index creation in `index_opt`.
+    fn require_catalog_write(&self, function: &str) -> DbResult<()> {
+        match &self.principal {
+            Some(p) if p.can_write || p.can_admin => Ok(()),
+            _ => Err(DbError::Forbidden(format!(
+                "{function} modifies the query catalog and requires write permission"
+            ))),
+        }
+    }
+}
+
+impl<'a> QueryExecutor<'a> {
     fn ensure_meta_collection(&self, name: &str) -> DbResult<crate::storage::Collection> {
         match self.get_collection(name) {
             Ok(c) => Ok(c),
@@ -64,6 +90,7 @@ impl<'a> QueryExecutor<'a> {
     }
 
     pub(super) fn eval_create_graph(&self, args: &[Value]) -> DbResult<Value> {
+        self.require_catalog_write("CREATE_GRAPH")?;
         if args.len() < 2 {
             return Err(DbError::ExecutionError(
                 "CREATE_GRAPH(name, {vertices, edges}) required".into(),
@@ -97,6 +124,7 @@ impl<'a> QueryExecutor<'a> {
     }
 
     pub(super) fn eval_drop_graph(&self, args: &[Value]) -> DbResult<Value> {
+        self.require_catalog_write("DROP_GRAPH")?;
         let name = args
             .first()
             .and_then(Value::as_str)
@@ -121,6 +149,7 @@ impl<'a> QueryExecutor<'a> {
     }
 
     pub(super) fn eval_create_view(&self, args: &[Value]) -> DbResult<Value> {
+        self.require_catalog_write("CREATE_VIEW")?;
         if args.len() < 2 {
             return Err(DbError::ExecutionError(
                 "CREATE_VIEW(name, {collection, fields, analyzer?}) required".into(),
@@ -163,6 +192,7 @@ impl<'a> QueryExecutor<'a> {
     }
 
     pub(super) fn eval_drop_view(&self, args: &[Value]) -> DbResult<Value> {
+        self.require_catalog_write("DROP_VIEW")?;
         let name = args
             .first()
             .and_then(Value::as_str)

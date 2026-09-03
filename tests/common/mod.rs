@@ -155,3 +155,67 @@ pub fn create_collection_with_data(
         coll.insert(doc).unwrap();
     }
 }
+
+// ---------------------------------------------------------------------------
+// Authentication fixtures
+// ---------------------------------------------------------------------------
+
+/// Seed a user into `_system:_admins` and give them `roles` in
+/// `_system:_user_roles`, then mint a JWT for them.
+///
+/// Handler tests used to mint a token for a name that existed nowhere. That
+/// worked because the auth middleware accepted any signed token, which is the
+/// same reason a *deleted* user's token kept working for the rest of its
+/// 24-hour lifetime — `refresh_jwt_roles` now rejects a subject that is not an
+/// `_admins` row, so a test principal has to be a real one.
+///
+/// The password hash is a placeholder: these tests present the JWT directly
+/// and never go through `/auth/login`.
+pub fn seed_user_token(engine: &StorageEngine, username: &str, roles: &[&str]) -> String {
+    let db = match engine.get_database("_system") {
+        Ok(db) => db,
+        Err(_) => {
+            // Some suites build a router without calling `engine.initialize()`.
+            engine
+                .create_database("_system".to_string())
+                .expect("create _system database");
+            engine.get_database("_system").expect("_system database")
+        }
+    };
+
+    let admins = db
+        .get_or_create_system_collection("_admins")
+        .expect("_admins collection");
+    if admins.get(username).is_err() {
+        admins
+            .insert(serde_json::json!({
+                "_key": username,
+                "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQ$00000000000000000000000000000000",
+            }))
+            .expect("seed _admins row");
+    }
+
+    let user_roles = db
+        .get_or_create_system_collection("_user_roles")
+        .expect("_user_roles collection");
+    for role in roles {
+        user_roles
+            .insert(serde_json::json!({
+                "_key": format!("{}:{}", username, role),
+                "id": format!("{}:{}", username, role),
+                "username": username,
+                "role": role,
+                "assigned_at": "2026-01-01T00:00:00Z",
+                "assigned_by": "test",
+            }))
+            .expect("seed _user_roles row");
+    }
+
+    // The role cache is process-wide and keyed by username; a previous test in
+    // the same binary may have cached an empty list for this name.
+    solidb::server::auth::AuthService::invalidate_user_roles_cache(username);
+
+    let owned: Vec<String> = roles.iter().map(|r| r.to_string()).collect();
+    solidb::server::auth::AuthService::create_jwt_with_roles(username, Some(owned), None)
+        .expect("jwt")
+}

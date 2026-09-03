@@ -27,24 +27,18 @@ pub struct VectorIndexCreateConfig {
 
 // ==================== Standard Index Operations ====================
 
-pub fn handle_create_index(
-    handler: &DriverHandler,
-    database: String,
-    collection: String,
+/// Build a persistent index on an already-resolved collection. Synchronous;
+/// the dispatcher runs it on the blocking pool.
+pub fn create_persistent_index(
+    coll: &crate::storage::Collection,
     name: String,
     fields: Vec<String>,
     unique: bool,
 ) -> Response {
-    match handler.get_collection(&database, &collection) {
-        Ok(coll) => {
-            // Default to Persistent index type
-            let index_type = crate::storage::IndexType::Persistent;
-            match coll.create_index(name, fields, index_type, unique) {
-                Ok(stats) => Response::ok(serde_json::to_value(stats).unwrap_or_default()),
-                Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-            }
-        }
-        Err(e) => Response::error(e),
+    let index_type = crate::storage::IndexType::Persistent;
+    match coll.create_index(name, fields, index_type, unique) {
+        Ok(stats) => Response::ok(serde_json::to_value(stats).unwrap_or_default()),
+        Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
     }
 }
 

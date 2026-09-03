@@ -1,4 +1,5 @@
 use axum::http::Method;
+use axum::http::{header, HeaderValue};
 use axum::{
     body::Body,
     extract::DefaultBodyLimit,
@@ -12,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{AllowHeaders, CorsLayer};
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 
 /// Parse CORS allowed origins from environment variable.
@@ -158,7 +160,7 @@ pub fn create_router(
         }
 
         // Initialize _roles collection for RBAC
-        let roles_coll_exists = db.get_collection("_roles").is_ok();
+        let roles_coll_exists = db.system_collection("_roles").is_ok();
         if !roles_coll_exists {
             tracing::info!("Initializing _roles collection...");
             if let Err(e) = db.create_collection("_roles".to_string(), None) {
@@ -166,7 +168,7 @@ pub fn create_router(
             }
         }
         // Seed builtin roles if missing
-        if let Ok(roles_coll) = db.get_collection("_roles") {
+        if let Ok(roles_coll) = db.system_collection("_roles") {
             use crate::server::authorization::Role;
             for role in Role::builtin_roles() {
                 // Check if role already exists
@@ -183,7 +185,7 @@ pub fn create_router(
         }
 
         // Initialize _user_roles collection for RBAC
-        if db.get_collection("_user_roles").is_err() {
+        if db.system_collection("_user_roles").is_err() {
             tracing::info!("Initializing _user_roles collection...");
             if let Err(e) = db.create_collection("_user_roles".to_string(), None) {
                 tracing::warn!(
@@ -1103,6 +1105,30 @@ pub fn create_router(
         .with_state(state)
         // Global request body limit: 10MB default (import/blob have 500MB override)
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        // Baseline response headers.
+        //
+        // `nosniff` matters here because Lua service endpoints under
+        // `/api/{db}/{service}` return whatever content type a script sets,
+        // from data a tenant stored — without it a browser can sniff a
+        // response into HTML and execute it on this origin. `no-store` keeps
+        // tokens and query results out of shared caches, and `DENY` stops the
+        // API being framed.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("no-referrer"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ))
         .layer(TraceLayer::new_for_http())
         .layer(
             CompressionLayer::new()

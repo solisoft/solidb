@@ -1,11 +1,22 @@
 # Routes configuration
 #
 # Admin UI for a SoliDB server. Global resources (users, roles, api keys) are
-# flat; database-scoped resources nest under /databases/:db. No auth
-# middleware here -- access protection happens at the reverse-proxy level.
+# flat; database-scoped resources nest under /databases/:db.
+#
+# Every route below is gated by `require_admin_auth` (app/middleware), which
+# fails closed: the app will not serve traffic unless ADMIN_UI_PASSWORD is set
+# or ADMIN_UI_ALLOW_NO_AUTH=1 explicitly declares that something in front of
+# it authenticates requests. This app performs its actions as a SoliDB
+# administrator, so an unauthenticated port here is an unauthenticated
+# database.
 
 get("/", "home#index", name: "root")
 get("/health", "home#health")
+
+# --- Admin UI session ---
+get("/login", "session#new", name: "login")
+post("/login", "session#create")
+post("/logout", "session#destroy", name: "logout")
 
 # --- Connection (per-session SoliDB server override) ---
 get("/connection", "connection#show", name: "connection")

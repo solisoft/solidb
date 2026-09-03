@@ -1,0 +1,27 @@
+<div class="mx-auto max-w-md space-y-5 animate-fade-up">
+  <div>
+    <p class="console-label">admin ui</p>
+    <h2 class="mt-1">Sign in</h2>
+    <p class="mt-1 console-help">
+      this console acts on the database as an administrator — it asks for the
+      password set in <span class="font-mono">ADMIN_UI_PASSWORD</span>
+    </p>
+  </div>
+
+  <% if !@login_error.blank? %>
+    <div class="console-card border-red-900 px-4 py-3">
+      <p class="console-label text-red-400">sign in failed</p>
+      <p class="mt-1 font-mono text-xs text-red-200"><%= @login_error %></p>
+    </div>
+  <% end %>
+
+  <form method="post" action="/login" class="console-card space-y-4 p-5">
+    <div>
+      <label class="console-label" for="admin-password">password</label>
+      <input id="admin-password" name="password" type="password"
+             autocomplete="current-password" autofocus
+             class="console-input mt-1 font-mono">
+    </div>
+    <button type="submit" class="btn-primary w-full py-2.5">Sign in</button>
+  </form>
+</div>

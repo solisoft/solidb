@@ -71,18 +71,39 @@ pub fn validate_webhook_url(url: &str) -> Result<(), crate::error::DbError> {
             "Webhook URL must not embed credentials".to_string(),
         ));
     }
+    validate_webhook_target(&parsed).map(|_| ())
+}
+
+/// [`validate_webhook_url`] returning the address that was checked, so the
+/// caller can pin its connection to it.
+///
+/// Returns `Ok(None)` for a loopback target explicitly allowed by
+/// `SOLIDB_ALLOW_WEBHOOK_LOOPBACK` — there is nothing to protect against
+/// there, and the address is whatever the operator asked for.
+pub fn validate_webhook_target(
+    parsed: &reqwest::Url,
+) -> Result<Option<crate::server::ssrf::ValidatedTarget>, crate::error::DbError> {
     let allow_loopback = std::env::var("SOLIDB_ALLOW_WEBHOOK_LOOPBACK")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
-    if let Some(host) = parsed.host_str() {
-        if allow_loopback && (host == "127.0.0.1" || host == "localhost" || host == "::1") {
-            return Ok(());
+    if allow_loopback {
+        // Match on the parsed host: `host_str()` renders an IPv6 literal with
+        // brackets, so the old `host == "::1"` comparison never fired and the
+        // documented IPv6 loopback opt-in did not work.
+        let is_loopback = match parsed.host() {
+            Some(url::Host::Ipv4(v4)) => v4.is_loopback(),
+            Some(url::Host::Ipv6(v6)) => v6.is_loopback(),
+            Some(url::Host::Domain(d)) => d.eq_ignore_ascii_case("localhost"),
+            None => false,
+        };
+        if is_loopback {
+            return Ok(None);
         }
     }
-    crate::server::ssrf::validate_public_url_host(&parsed).map_err(|e| {
+    let target = crate::server::ssrf::validate_public_url_target(parsed).map_err(|e| {
         crate::error::DbError::BadRequest(format!("Webhook URL rejected (SSRF): {}", e))
     })?;
-    Ok(())
+    Ok(Some(target))
 }
 
 /// At enqueue time, exactly one of `script_path` or `webhook_url` must be set.
@@ -110,7 +131,28 @@ pub fn validate_job_target(
 /// caps are still enforced claim-by-claim.
 const CLAIM_BATCH: usize = 8;
 
+/// The instance-wide webhook secret, if the operator has opted in to using it
+/// for jobs that carry no secret of their own.
+///
+/// Signing with this secret and sending the signature to a *caller-chosen*
+/// URL is a signing oracle: the request body is tenant-controlled (a trigger
+/// payload is the changed document), so a principal who can create a trigger
+/// pointing at a host they run collects `HMAC(instance secret, body of their
+/// choosing)`. Soli apps verify exactly that format on `/_jobs/run/:name`, so
+/// the collected signature replays against any app sharing the secret.
+///
+/// Default is off: a job with no `webhook_secret` is delivered unsigned, and
+/// a receiver that requires a signature rejects it — a visible failure rather
+/// than a silent credential leak. Set `SOLIDB_ALLOW_GLOBAL_WEBHOOK_SECRET=1`
+/// to restore the old behaviour where every webhook target is trusted with
+/// the instance secret.
 fn default_webhook_secret() -> Option<String> {
+    let allowed = std::env::var("SOLIDB_ALLOW_GLOBAL_WEBHOOK_SECRET")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if !allowed {
+        return None;
+    }
     std::env::var("SOLI_WEBHOOK_SECRET")
         .ok()
         .or_else(|| std::env::var("SOLI_JOBS_SECRET").ok())
@@ -402,17 +444,48 @@ impl QueueWorker {
     ) -> Result<(), crate::error::DbError> {
         let url = job.webhook_url.as_deref().unwrap_or("");
         validate_webhook_url(url)?;
+        let parsed = reqwest::Url::parse(url).map_err(|e| {
+            crate::error::DbError::BadRequest(format!("Invalid webhook URL: {}", e))
+        })?;
+        let target = validate_webhook_target(&parsed)?;
 
         // Use the permissive client only for development-reserved TLDs.
         // Everything else stays on the strict client with full TLS checks.
         let allow_insecure_tls = std::env::var("SOLIDB_ALLOW_INSECURE_WEBHOOK_TLS")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
-        let client = if allow_insecure_tls && host_is_dev_tld(url) {
+        let base_client = if allow_insecure_tls && host_is_dev_tld(url) {
             tracing::debug!("Using permissive TLS client for dev host {}", url);
             dev_http
         } else {
             http
+        };
+
+        // Pin the connection to the address the guard just validated.
+        // Without this, reqwest resolves the name a second time and a
+        // low-TTL record can answer public for the check and loopback for
+        // the request (DNS rebinding). Building a client per delivery costs
+        // a connection pool, which is acceptable for a job that fires at
+        // most a few times a second; the shared client is reused whenever
+        // there is nothing to pin.
+        let pinned;
+        let client = match &target {
+            Some(t) => {
+                pinned = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .redirect(reqwest::redirect::Policy::none())
+                    .danger_accept_invalid_certs(allow_insecure_tls && host_is_dev_tld(url))
+                    .resolve(&t.host, t.addr)
+                    .build()
+                    .map_err(|e| {
+                        crate::error::DbError::InternalError(format!(
+                            "Webhook client build failed: {}",
+                            e
+                        ))
+                    })?;
+                &pinned
+            }
+            None => base_client,
         };
 
         tracing::info!("Firing webhook for job {} to {}", job.id, url);
@@ -431,6 +504,13 @@ impl QueueWorker {
         if let Some(secret) = secret.as_deref() {
             let sig = signing::sign(&body_bytes, secret);
             request = request.header("X-Webhook-Signature", sig);
+        } else {
+            tracing::debug!(
+                "Webhook for job {} is unsigned: no per-job webhook_secret. Set one \
+                 on the trigger, or SOLIDB_ALLOW_GLOBAL_WEBHOOK_SECRET=1 to sign \
+                 with the instance secret.",
+                job.id
+            );
         }
 
         if let Some(headers) = &job.webhook_headers {
@@ -566,9 +646,29 @@ mod tests {
         validate_job_target("hello", None).expect("script-only is valid");
     }
 
+    /// A literal public IP, not a hostname: the SSRF guard resolves names and
+    /// now fails closed when resolution fails, so a name-based fixture makes
+    /// the test depend on the machine's resolver. `example.test` used to be
+    /// used here and failed on any dev box whose resolver wildcards `.test`
+    /// to 127.0.0.1, and would now also fail on a CI runner where the name
+    /// simply does not resolve.
     #[test]
     fn validate_target_accepts_webhook_only() {
-        validate_job_target("", Some("https://example.test/hook")).expect("webhook-only is valid");
+        validate_job_target("", Some("https://93.184.216.34/hook")).expect("webhook-only is valid");
+    }
+
+    /// The guard must not accept a host it could not check. An unresolvable
+    /// name used to return `Ok`, which meant an attacker who could make
+    /// resolution fail got a pass.
+    #[test]
+    fn validate_webhook_url_rejects_unresolvable_hosts() {
+        let err = validate_webhook_url("https://this-name-does-not-exist.invalid/hook")
+            .expect_err("an unresolvable host must fail closed");
+        assert!(
+            format!("{}", err).contains("SSRF"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]
@@ -603,8 +703,9 @@ mod tests {
 
     #[test]
     fn validate_webhook_url_rejects_credentials_in_url() {
+        // Literal IP so the check that fires is the credential one, not DNS.
         let err =
-            validate_webhook_url("http://user:pw@example.test/hook").expect_err("creds must fail");
+            validate_webhook_url("http://user:pw@93.184.216.34/hook").expect_err("creds must fail");
         assert!(format!("{}", err).contains("credentials"));
     }
 

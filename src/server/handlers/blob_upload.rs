@@ -25,8 +25,15 @@ pub struct CreateUploadRequest {
 pub async fn create_upload_session(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Json(body): Json<CreateUploadRequest>,
 ) -> Result<Json<Value>, DbError> {
+    // The session fixes the collection every later chunk is written to, so
+    // the write tiers are decided here, once.
+    crate::storage::check_write_access(
+        &coll_name,
+        crate::server::handlers::query::write_actor_from_claims(claims.as_deref()),
+    )?;
     let database = state.storage.get_database(&db_name)?;
 
     // Validate/auto-create blob collection (same pattern as upload_blob)
@@ -69,11 +76,43 @@ pub async fn create_upload_session(
     })))
 }
 
+/// Refuse a session whose database/collection differ from the ones in the URL.
+///
+/// Authorization ran against the `{db}` path segment, but every handler below
+/// then used `session.db_name` and ignored the segment entirely. A principal
+/// with Write on `attacker` who learned an `upload_id` could append to,
+/// finalize, or abort an upload into `victim` — the check and the effect were
+/// on different databases. Binding them means the path the middleware
+/// authorized is the path the write lands on.
+fn require_session_scope(
+    session_db: &str,
+    session_collection: &str,
+    path_db: &str,
+    path_collection: &str,
+) -> Result<(), DbError> {
+    if session_db != path_db || session_collection != path_collection {
+        tracing::warn!(
+            target: "audit",
+            "upload session scope mismatch: session {}/{} addressed as {}/{}",
+            session_db,
+            session_collection,
+            path_db,
+            path_collection
+        );
+        // Same answer as an unknown id: an attacker probing ids learns
+        // nothing about which of them exist elsewhere.
+        return Err(DbError::DocumentNotFound(
+            "Upload session not found or expired".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// POST /_api/blob/{db}/{collection}/upload/{upload_id}/{chunk_index}
 /// Upload a single chunk (raw binary body). Returns progress + missing chunks.
 pub async fn upload_chunk(
     State(state): State<AppState>,
-    Path((_db_name, _coll_name, upload_id, chunk_index)): Path<(String, String, String, u32)>,
+    Path((path_db, path_coll, upload_id, chunk_index)): Path<(String, String, String, u32)>,
     body: Bytes,
 ) -> Result<Json<Value>, DbError> {
     // Look up session and write chunk
@@ -84,6 +123,13 @@ pub async fn upload_chunk(
             .ok_or_else(|| {
                 DbError::DocumentNotFound("Upload session not found or expired".to_string())
             })?;
+
+        require_session_scope(
+            &session.db_name,
+            &session.collection_name,
+            &path_db,
+            &path_coll,
+        )?;
 
         if chunk_index >= session.total_chunks {
             return Err(DbError::BadRequest(format!(
@@ -138,11 +184,18 @@ pub async fn upload_chunk(
 /// Get upload session status (for resuming after disconnect).
 pub async fn get_upload_status(
     State(state): State<AppState>,
-    Path((_db_name, _coll_name, upload_id)): Path<(String, String, String)>,
+    Path((path_db, path_coll, upload_id)): Path<(String, String, String)>,
 ) -> Result<Json<Value>, DbError> {
     let session = state.upload_session_store.get(&upload_id).ok_or_else(|| {
         DbError::DocumentNotFound("Upload session not found or expired".to_string())
     })?;
+
+    require_session_scope(
+        &session.db_name,
+        &session.collection_name,
+        &path_db,
+        &path_coll,
+    )?;
 
     let received_count = session.received_chunks.iter().filter(|&&r| r).count() as u32;
     let missing: Vec<u32> = session
@@ -174,8 +227,23 @@ pub async fn get_upload_status(
 /// Abort an upload session and clean up temp chunks.
 pub async fn abort_upload(
     State(state): State<AppState>,
-    Path((_db_name, _coll_name, upload_id)): Path<(String, String, String)>,
+    Path((path_db, path_coll, upload_id)): Path<(String, String, String)>,
 ) -> Result<Json<Value>, DbError> {
+    // Scope-check before removing: `remove` is destructive, so a mismatched
+    // request must not be able to abort somebody else's upload as a side
+    // effect of being refused.
+    {
+        let session = state.upload_session_store.get(&upload_id).ok_or_else(|| {
+            DbError::DocumentNotFound("Upload session not found or expired".to_string())
+        })?;
+        require_session_scope(
+            &session.db_name,
+            &session.collection_name,
+            &path_db,
+            &path_coll,
+        )?;
+    }
+
     let session = state
         .upload_session_store
         .remove(&upload_id)
@@ -206,13 +274,20 @@ pub async fn abort_upload(
 /// Finalize: promote temp chunks to permanent, create metadata doc, trigger replication.
 pub async fn complete_upload(
     State(state): State<AppState>,
-    Path((_db_name, _coll_name, upload_id)): Path<(String, String, String)>,
+    Path((path_db, path_coll, upload_id)): Path<(String, String, String)>,
 ) -> Result<Json<Value>, DbError> {
     // Verify all chunks received
     let (db_name, coll_name, blob_key, file_name, mime_type, total_size, total_chunks) = {
         let session = state.upload_session_store.get(&upload_id).ok_or_else(|| {
             DbError::DocumentNotFound("Upload session not found or expired".to_string())
         })?;
+
+        require_session_scope(
+            &session.db_name,
+            &session.collection_name,
+            &path_db,
+            &path_coll,
+        )?;
 
         let missing: Vec<u32> = session
             .received_chunks

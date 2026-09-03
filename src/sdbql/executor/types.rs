@@ -49,6 +49,31 @@ pub struct QueryPrincipal {
     pub can_admin: bool,
 }
 
+impl QueryPrincipal {
+    /// The one mapping from role names to permissions, shared by the HTTP
+    /// handlers (`principal_from_claims`) and the Lua bindings so a script
+    /// evaluates a query exactly as its caller would through `/cursor`.
+    pub fn from_roles(user: impl Into<String>, roles: Vec<String>) -> Self {
+        let lower: Vec<String> = roles.iter().map(|r| r.to_ascii_lowercase()).collect();
+        let can_admin = lower.iter().any(|r| r == "admin");
+        let can_write = can_admin || lower.iter().any(|r| r == "editor" || r == "write");
+        let can_read = can_write || lower.iter().any(|r| r == "viewer" || r == "read");
+        Self {
+            user: user.into(),
+            roles,
+            can_read,
+            can_write,
+            can_admin,
+        }
+    }
+
+    /// A caller with no credential at all: reads nothing by role, writes
+    /// nothing privileged.
+    pub fn anonymous() -> Self {
+        Self::from_roles(String::new(), Vec::new())
+    }
+}
+
 /// Query execution plan with timing information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryExplain {

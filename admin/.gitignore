@@ -32,3 +32,6 @@ Thumbs.db
 # Coverage
 coverage/
 .coverage
+
+# Admin console sessions (runtime state)
+sessions/

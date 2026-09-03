@@ -150,7 +150,16 @@ pub enum BinaryOp {
 pub struct SqlParser {
     tokens: Vec<Token>,
     position: usize,
+    /// Current expression nesting. A recursive-descent parser recurses once
+    /// per nested expression, and a Rust stack overflow is not a panic: it
+    /// aborts the process. `NOT NOT NOT ...` or `((((...` in a 10 MB body
+    /// used to do exactly that. The SDBQL parser has had the same guard
+    /// since it was hit there.
+    depth: usize,
 }
+
+/// Deepest expression nesting the SQL parser accepts.
+const MAX_SQL_PARSE_DEPTH: usize = 64;
 
 impl SqlParser {
     pub fn new(input: &str) -> DbResult<Self> {
@@ -160,7 +169,23 @@ impl SqlParser {
         Ok(Self {
             tokens,
             position: 0,
+            depth: 0,
         })
+    }
+
+    fn enter_depth(&mut self) -> DbResult<()> {
+        if self.depth >= MAX_SQL_PARSE_DEPTH {
+            return Err(DbError::ParseError(format!(
+                "SQL expression nesting too deep (max {})",
+                MAX_SQL_PARSE_DEPTH
+            )));
+        }
+        self.depth += 1;
+        Ok(())
+    }
+
+    fn leave_depth(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
     }
 
     fn current_token(&self) -> &Token {
@@ -611,7 +636,10 @@ impl SqlParser {
     }
 
     fn parse_expression(&mut self) -> DbResult<SqlExpr> {
-        self.parse_or_expression()
+        self.enter_depth()?;
+        let result = self.parse_or_expression();
+        self.leave_depth();
+        result
     }
 
     fn parse_or_expression(&mut self) -> DbResult<SqlExpr> {
@@ -649,8 +677,10 @@ impl SqlParser {
     fn parse_not_expression(&mut self) -> DbResult<SqlExpr> {
         if *self.current_token() == Token::Not {
             self.advance();
-            let expr = self.parse_not_expression()?;
-            return Ok(SqlExpr::Not(Box::new(expr)));
+            self.enter_depth()?;
+            let expr = self.parse_not_expression();
+            self.leave_depth();
+            return Ok(SqlExpr::Not(Box::new(expr?)));
         }
 
         self.parse_comparison_expression()
@@ -1138,5 +1168,32 @@ mod tests {
         } else {
             panic!("Expected SELECT statement");
         }
+    }
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use super::*;
+
+    /// A recursive-descent parser recurses once per nested expression; with
+    /// no bound, a few hundred thousand `NOT`s or `(`s overflowed the stack
+    /// and took the process down.
+    #[test]
+    fn deep_nesting_is_an_error_not_a_stack_overflow() {
+        let nots = "NOT ".repeat(200_000);
+        let sql = format!("SELECT * FROM t WHERE {}x = 1", nots);
+        let err = SqlParser::new(&sql).unwrap().parse().unwrap_err();
+        assert!(err.to_string().contains("nesting too deep"), "{err}");
+
+        let parens = "(".repeat(200_000);
+        let sql = format!("SELECT * FROM t WHERE {}1", parens);
+        let err = SqlParser::new(&sql).unwrap().parse().unwrap_err();
+        assert!(err.to_string().contains("nesting too deep"), "{err}");
+    }
+
+    #[test]
+    fn ordinary_nesting_still_parses() {
+        let sql = "SELECT * FROM t WHERE NOT NOT ((a = 1) AND (b = 2 OR (c = 3)))";
+        SqlParser::new(sql).unwrap().parse().unwrap();
     }
 }

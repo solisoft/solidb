@@ -158,6 +158,13 @@ fn pad_to(s: &str, target: usize, pad: &str, left: bool) -> DbResult<String> {
         return Ok(s.to_string());
     }
     let need = target - current;
+    // Every padding char is at least one byte, so this rejects before the
+    // `reserve` below rather than after it has allocated `target` bytes.
+    if need.saturating_add(s.len()) > MAX_REPEAT_BYTES {
+        return Err(DbError::ExecutionError(
+            "PAD: result would exceed 1 MiB".to_string(),
+        ));
+    }
     let pad_chars: Vec<char> = pad.chars().collect();
     if pad_chars.is_empty() {
         return Ok(s.to_string());

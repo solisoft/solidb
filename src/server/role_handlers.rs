@@ -177,7 +177,7 @@ pub async fn list_roles(
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
     let db = state.storage.get_database("_system")?;
-    let collection = db.get_collection(ROLES_COLLECTION)?;
+    let collection = db.system_collection(ROLES_COLLECTION)?;
 
     let roles: Vec<Role> = collection
         .scan(None)
@@ -233,7 +233,7 @@ pub async fn create_role(
     };
 
     let db = state.storage.get_database("_system")?;
-    let collection = db.get_collection(ROLES_COLLECTION)?;
+    let collection = db.system_collection(ROLES_COLLECTION)?;
 
     // Check if role already exists
     if collection.get(&req.name).is_ok() {
@@ -278,7 +278,7 @@ pub async fn get_role(
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
     let db = state.storage.get_database("_system")?;
-    let collection = db.get_collection(ROLES_COLLECTION)?;
+    let collection = db.system_collection(ROLES_COLLECTION)?;
 
     let doc = collection
         .get(&role_name)
@@ -308,7 +308,7 @@ pub async fn update_role(
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
     let db = state.storage.get_database("_system")?;
-    let collection = db.get_collection(ROLES_COLLECTION)?;
+    let collection = db.system_collection(ROLES_COLLECTION)?;
 
     let doc = collection
         .get(&role_name)
@@ -362,8 +362,17 @@ pub async fn update_role(
         log.append(entry);
     }
 
-    // Invalidate cache for this role
+    // Invalidate cache for this role.
+    //
+    // Two caches, and only one used to be cleared. `invalidate_role` drops
+    // the per-principal permission entries; the role *definition* cache
+    // (`PermissionCache::roles`) has no TTL, and `AuthorizationService`
+    // consults it before storage. Without replacing the definition, removing
+    // Write from a custom role returned 200 and changed nothing until the
+    // process restarted — and the driver path, which reads storage, then
+    // disagreed with HTTP about what the role could do.
     state.permission_cache.invalidate_role(&role_name);
+    state.permission_cache.set_role(role.clone());
 
     Ok(Json(RoleResponse::from(&role)))
 }
@@ -378,7 +387,7 @@ pub async fn delete_role(
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
     let db = state.storage.get_database("_system")?;
-    let collection = db.get_collection(ROLES_COLLECTION)?;
+    let collection = db.system_collection(ROLES_COLLECTION)?;
 
     let doc = collection
         .get(&role_name)
@@ -418,8 +427,10 @@ pub async fn delete_role(
         log.append(entry);
     }
 
-    // Invalidate cache for this role
+    // Drop both the per-principal entries and the cached role definition;
+    // see `update_role` for why the second one matters.
     state.permission_cache.invalidate_role(&role_name);
+    state.permission_cache.remove_role(&role_name);
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -438,7 +449,7 @@ pub async fn get_user_roles(
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
     let db = state.storage.get_database("_system")?;
-    let collection = db.get_collection(USER_ROLES_COLLECTION)?;
+    let collection = db.system_collection(USER_ROLES_COLLECTION)?;
 
     let user_roles: Vec<UserRole> = collection
         .scan(None)
@@ -471,10 +482,26 @@ pub async fn assign_role(
     // Check admin permission
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
+    // Per-database role scoping is not enforced anywhere: `get_user_roles`
+    // returns bare role names, and `Claims.roles` carries no database. So
+    // `{"role": "admin", "database": "tenantA"}` was accepted and granted
+    // admin on *every* database, `_system` included — the opposite of what
+    // the caller asked for. Refuse it rather than silently widening it.
+    // Database-scoped access is available today through an API key's
+    // `scoped_databases`, which the authorization layer does enforce.
+    if req.database.is_some() {
+        return Err(DbError::BadRequest(
+            "Per-database role assignment is not supported: a role grants its \
+             permissions on every database. Use an API key with \
+             `scoped_databases` to limit a principal to one database."
+                .to_string(),
+        ));
+    }
+
     let db = state.storage.get_database("_system")?;
 
     // Verify role exists
-    let roles_coll = db.get_collection(ROLES_COLLECTION)?;
+    let roles_coll = db.system_collection(ROLES_COLLECTION)?;
     if roles_coll.get(&req.role).is_err() {
         return Err(DbError::RoleNotFound(req.role.clone()));
     }
@@ -489,7 +516,7 @@ pub async fn assign_role(
     }
 
     // Check if assignment already exists
-    let user_roles_coll = db.get_collection(USER_ROLES_COLLECTION)?;
+    let user_roles_coll = db.system_collection(USER_ROLES_COLLECTION)?;
     let existing: Vec<UserRole> = user_roles_coll
         .scan(None)
         .into_iter()
@@ -570,7 +597,7 @@ pub async fn revoke_role(
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
     let db = state.storage.get_database("_system")?;
-    let collection = db.get_collection(USER_ROLES_COLLECTION)?;
+    let collection = db.system_collection(USER_ROLES_COLLECTION)?;
 
     // Find the assignment (match database scope if provided)
     let assignment: Option<UserRole> = collection
@@ -707,7 +734,7 @@ pub async fn list_users(
         .collect();
 
     // Get roles for each user
-    let user_roles_coll = db.get_collection(USER_ROLES_COLLECTION)?;
+    let user_roles_coll = db.system_collection(USER_ROLES_COLLECTION)?;
     let all_user_roles: Vec<UserRole> = user_roles_coll
         .scan(None)
         .into_iter()
@@ -809,7 +836,7 @@ pub async fn create_user(
     let mut roles = Vec::new();
     if let Some(initial_role) = req.initial_role {
         // Verify role exists
-        let roles_coll = db.get_collection(ROLES_COLLECTION)?;
+        let roles_coll = db.system_collection(ROLES_COLLECTION)?;
         if roles_coll.get(&initial_role).is_ok() {
             let now = chrono::Utc::now().to_rfc3339();
             let id = uuid::Uuid::new_v4().to_string();
@@ -822,7 +849,7 @@ pub async fn create_user(
                 assigned_by: claims.sub.clone(),
             };
 
-            let user_roles_coll = db.get_collection(USER_ROLES_COLLECTION)?;
+            let user_roles_coll = db.system_collection(USER_ROLES_COLLECTION)?;
             let role_doc = serde_json::to_value(&user_role)?;
             user_roles_coll.insert(role_doc.clone())?;
 
@@ -910,7 +937,7 @@ pub async fn delete_user(
     }
 
     // Delete all role assignments for this user
-    let user_roles_coll = db.get_collection(USER_ROLES_COLLECTION)?;
+    let user_roles_coll = db.system_collection(USER_ROLES_COLLECTION)?;
     let user_roles: Vec<UserRole> = user_roles_coll
         .scan(None)
         .into_iter()

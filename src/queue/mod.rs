@@ -57,8 +57,14 @@ impl QueueWorker {
             .and_then(|v| v.parse().ok())
             .unwrap_or(4);
 
+        // `redirect(none)`: the SSRF guard only ever sees the configured URL,
+        // so a public host answering `302 Location: http://127.0.0.1:...` or
+        // a cloud metadata address would be followed with no second check.
+        // The Lua `fetch` client has always set this; the webhook client did
+        // not, and reqwest's default follows up to 10 hops.
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("reqwest::Client builds with defaults");
 
@@ -68,6 +74,7 @@ impl QueueWorker {
         // does not exist outside the native-tls backend — do not re-add it.
         let dev_http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
             .danger_accept_invalid_certs(true)
             .build()
             .expect("reqwest::Client builds with permissive TLS");

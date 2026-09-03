@@ -12,20 +12,49 @@ use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::{CreateMaterializedViewClause, Query, RefreshMaterializedViewClause};
 
 impl<'a> QueryExecutor<'a> {
+    /// Validate a view name that came from query text.
+    ///
+    /// A view name is a collection name, and collections are column families
+    /// named `"{database}:{collection}"`. Both MV clauses used to pass a name
+    /// containing `:` straight through to `StorageEngine::create_collection` /
+    /// `get_collection`, which open any column family on the instance by
+    /// literal name — the same primitive SEC-178 removed from `DOCUMENT()`.
+    /// The lexer accepts any character inside a backtick-quoted identifier, so
+    /// ``CREATE MATERIALIZED VIEW `victim:secrets` `` created (and, via a
+    /// planted `_views` row, truncated and overwrote) a collection in another
+    /// tenant's database.
+    ///
+    /// Qualified names are refused outright: nothing needs them, the executor
+    /// holds no `Claims` to authorize a second database against, and refusing
+    /// them keeps the `_views` key space unambiguous. `CollectionNotFound` on
+    /// the name as given, so the error cannot be used to probe which databases
+    /// exist.
+    fn view_target_name<'n>(&self, view_name: &'n str) -> DbResult<&'n str> {
+        if view_name.contains(':') {
+            return Err(DbError::CollectionNotFound(view_name.to_string()));
+        }
+        // A view is a writable collection: it must not shadow a credential,
+        // authorization-state, or server-managed collection.
+        crate::storage::check_write_access(view_name, self.write_actor())?;
+        Ok(view_name)
+    }
+
+    /// The database this executor is bound to. Materialized views are always
+    /// created in it; there is no cross-database form.
+    fn view_database(&self) -> &str {
+        self.database.as_deref().unwrap_or("_system")
+    }
+
     /// Execute CREATE MATERIALIZED VIEW
     pub(super) fn execute_create_materialized_view(
         &self,
         clause: &CreateMaterializedViewClause,
     ) -> DbResult<QueryExecutionResult> {
-        let view_name = &clause.name;
-        let db_name = self.database.as_deref().unwrap_or("_system");
+        let view_name = self.view_target_name(&clause.name)?;
+        let db_name = self.view_database();
 
-        // Handle database prefixing
-        let full_view_name = if view_name.contains(':') {
-            view_name.to_string()
-        } else {
-            format!("{}:{}", db_name, view_name)
-        };
+        // The view collection always lives in this executor's own database.
+        let full_view_name = format!("{}:{}", db_name, view_name);
 
         // 1. Create the target collection for the view
         match self.storage.create_collection(full_view_name.clone(), None) {
@@ -114,8 +143,8 @@ impl<'a> QueryExecutor<'a> {
         &self,
         clause: &RefreshMaterializedViewClause,
     ) -> DbResult<QueryExecutionResult> {
-        let view_name = &clause.name;
-        let db_name = self.database.as_deref().unwrap_or("_system");
+        let view_name = self.view_target_name(&clause.name)?;
+        let db_name = self.view_database();
 
         let views_coll_name = format!("{}:_views", db_name);
 
@@ -153,12 +182,10 @@ impl<'a> QueryExecutor<'a> {
         let execution_result = self.execute_with_stats(&inner_query)?;
         let results = execution_result.results;
 
-        // 4. Truncate target collection
-        let full_view_name = if view_name.contains(':') {
-            view_name.to_string()
-        } else {
-            format!("{}:{}", db_name, view_name)
-        };
+        // 4. Truncate target collection. `view_target_name` has already
+        // rejected a qualified name, so this can only address this
+        // executor's own database.
+        let full_view_name = format!("{}:{}", db_name, view_name);
 
         let target_coll = self.storage.get_collection(&full_view_name)?;
         let removed_count = target_coll.truncate()?;
@@ -166,10 +193,7 @@ impl<'a> QueryExecutor<'a> {
         // Replicas only see this refresh through the replication log: log
         // the truncate (or they keep the stale view contents) and the
         // re-inserted rows.
-        let (log_db, log_coll) = match view_name.split_once(':') {
-            Some((db, coll)) => (db, coll),
-            None => (db_name, view_name.as_str()),
-        };
+        let (log_db, log_coll) = (db_name, view_name);
         if let Some(repl) = self.replication {
             repl.log_truncate(log_db, log_coll);
         }

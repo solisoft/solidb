@@ -12,13 +12,14 @@ use axum::{
 use serde_json::{json, Value};
 use solidb::cluster::ClusterConfig;
 use solidb::scripting::ScriptStats;
-use solidb::server::auth::AuthService;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
 use solidb::sync::log::SyncLog;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
+
+mod common;
 
 const TEST_CLUSTER_SECRET: &str = "sync-handlers-cluster-secret";
 
@@ -45,7 +46,7 @@ fn create_app() -> (TempDir, axum::Router, String) {
 
     let script_stats = Arc::new(ScriptStats::default());
     let router = create_router(
-        engine,
+        engine.clone(),
         None,
         Some(log_arc),
         None,
@@ -55,9 +56,12 @@ fn create_app() -> (TempDir, axum::Router, String) {
         None,
         0,
     );
-    let token =
-        AuthService::create_jwt_with_roles("admin_user", Some(vec!["admin".to_string()]), None)
-            .expect("admin jwt");
+    // A real `_admins` row, not just a signed token: the auth middleware
+    // refuses a JWT whose subject is not a user, which is how deleting a user
+    // revokes their outstanding tokens. Seeded after `create_router`, which
+    // runs `AuthService::init` and only creates the default `admin` while
+    // `_admins` is still empty.
+    let token = common::seed_user_token(&engine, "admin_user", &["admin"]);
     (tmp_dir, router, token)
 }
 

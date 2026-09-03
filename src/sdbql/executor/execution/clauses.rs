@@ -60,6 +60,12 @@ fn recv_sharded_with<T>(
     }
 }
 
+/// How often the row-building loops consult the execution budget.
+///
+/// Every row would put an `Instant::now()` on the hot path; every stage is too
+/// coarse to stop a runaway cartesian product before it exhausts memory.
+pub(super) const BUDGET_CHECK_INTERVAL: usize = 4096;
+
 impl<'a> QueryExecutor<'a> {
     /// For each row, the indices (in scan order) of `docs` matching the join
     /// condition with `var_name` bound to the doc.
@@ -162,11 +168,7 @@ impl<'a> QueryExecutor<'a> {
         let spec = join_clause.asof.as_ref().ok_or_else(|| {
             DbError::ExecutionError("ASOF JOIN requires ASOF left, right".to_string())
         })?;
-        let all_docs: Vec<Value> = collection
-            .scan(None)
-            .into_iter()
-            .map(|doc| doc.to_value())
-            .collect();
+        let all_docs = self.scan_bounded(collection)?;
         let match_indices = self.join_match_indices(
             &rows,
             &all_docs,
@@ -341,6 +343,9 @@ impl<'a> QueryExecutor<'a> {
                                         new_ctx
                                             .insert(for_clause.variable.clone(), doc.into_value());
                                         new_rows.push(new_ctx);
+                                        if new_rows.len() % BUDGET_CHECK_INTERVAL == 0 {
+                                            self.check_budget(new_rows.len())?;
+                                        }
                                     }
                                 }
                             } else {
@@ -362,6 +367,7 @@ impl<'a> QueryExecutor<'a> {
                                     .unwrap_or(false)
                                 });
                                 rows = new_rows;
+                                self.check_budget(rows.len())?;
                                 i += 2; // Skip both FOR and FILTER
                                 continue;
                             }
@@ -377,9 +383,20 @@ impl<'a> QueryExecutor<'a> {
                             let mut new_ctx = ctx.clone();
                             new_ctx.insert(for_clause.variable.clone(), doc);
                             new_rows.push(new_ctx);
+                            // Checking at the stage boundary alone is not
+                            // enough here: this is the loop that *builds* the
+                            // cartesian product, so an outer `FOR x IN
+                            // 1..10000000` crossed with an inner one would
+                            // exhaust memory long before the stage ended.
+                            // The modulo keeps the check off the per-row hot
+                            // path while still bounding growth.
+                            if new_rows.len() % BUDGET_CHECK_INTERVAL == 0 {
+                                self.check_budget(new_rows.len())?;
+                            }
                         }
                     }
                     rows = new_rows;
+                    self.check_budget(rows.len())?;
                 }
                 BodyClause::Let(let_clause) => {
                     // Evaluate LET expression for EACH row (correlated subquery support)
@@ -419,7 +436,7 @@ impl<'a> QueryExecutor<'a> {
                 }
                 BodyClause::Insert(insert_clause) => {
                     // Get collection once, outside the loop
-                    let collection = self.get_collection(&insert_clause.collection)?;
+                    let collection = self.get_collection_for_write(&insert_clause.collection)?;
 
                     // SHARDING SUPPORT - Use batch insert for performance
                     if let (Some(config), Some(coordinator)) =
@@ -520,15 +537,26 @@ impl<'a> QueryExecutor<'a> {
                             let coll = collection.clone();
                             std::thread::spawn(move || {
                                 let index_start = std::time::Instant::now();
-                                let result = coll.index_documents(&inserted_docs);
+                                // Nothing joins this thread, so a panic in
+                                // here would otherwise leave a half-built
+                                // index and no trace of why.
+                                let result =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        coll.index_documents(&inserted_docs)
+                                    }));
                                 let index_time = index_start.elapsed();
                                 match result {
-                                    Ok(count) => tracing::debug!(
+                                    Ok(Ok(count)) => tracing::debug!(
                                         "INSERT: Indexed {} docs in {:?}",
                                         count,
                                         index_time
                                     ),
-                                    Err(e) => tracing::error!("INSERT: Indexing failed: {}", e),
+                                    Ok(Err(e)) => {
+                                        tracing::error!("INSERT: Indexing failed: {}", e)
+                                    }
+                                    Err(_) => tracing::error!(
+                                        "INSERT: Indexing panicked; the index may be incomplete"
+                                    ),
                                 }
                             });
                         }
@@ -559,7 +587,7 @@ impl<'a> QueryExecutor<'a> {
                 }
                 BodyClause::Update(update_clause) => {
                     // Get collection once, outside the loop
-                    let collection = self.get_collection(&update_clause.collection)?;
+                    let collection = self.get_collection_for_write(&update_clause.collection)?;
 
                     // SHARDING SUPPORT
                     if let (Some(config), Some(coordinator)) =
@@ -748,7 +776,7 @@ impl<'a> QueryExecutor<'a> {
                 }
                 BodyClause::Remove(remove_clause) => {
                     // Get collection once, outside the loop
-                    let collection = self.get_collection(&remove_clause.collection)?;
+                    let collection = self.get_collection_for_write(&remove_clause.collection)?;
 
                     // SHARDING SUPPORT
                     if let (Some(config), Some(coordinator)) =
@@ -902,7 +930,7 @@ impl<'a> QueryExecutor<'a> {
                     }
                 }
                 BodyClause::Upsert(upsert_clause) => {
-                    let collection = self.get_collection(&upsert_clause.collection)?;
+                    let collection = self.get_collection_for_write(&upsert_clause.collection)?;
 
                     for ctx in &mut rows {
                         let search_value =
@@ -977,7 +1005,8 @@ impl<'a> QueryExecutor<'a> {
                         &edge_collection,
                         gt.direction.clone(),
                         true,
-                    );
+                        self.max_intermediate_rows(),
+                    )?;
 
                     for ctx in &rows {
                         // Evaluate start vertex
@@ -1046,6 +1075,12 @@ impl<'a> QueryExecutor<'a> {
                                         );
                                     }
                                     new_rows.push(new_ctx);
+                                    // The traversal is where rows are built,
+                                    // so the deadline and the ceiling must be
+                                    // seen here, not once it has finished.
+                                    if new_rows.len() % BUDGET_CHECK_INTERVAL == 0 {
+                                        self.check_budget(new_rows.len())?;
+                                    }
                                 }
                             }
 
@@ -1072,6 +1107,7 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
                     rows = new_rows;
+                    self.check_budget(rows.len())?;
                 }
                 BodyClause::ShortestPath(sp) => {
                     let mut new_rows = Vec::new();
@@ -1099,11 +1135,7 @@ impl<'a> QueryExecutor<'a> {
 
                         let edge_name = self.resolve_edge_collection_name(&sp.edge_collection)?;
                         let edge_collection = self.get_collection(&edge_name)?;
-                        let all_edges: Vec<Value> = edge_collection
-                            .scan(None)
-                            .into_iter()
-                            .map(|d| d.to_value())
-                            .collect();
+                        let all_edges = self.scan_bounded(&edge_collection)?;
                         let found = super::paths::find_paths(sp, &all_edges, &start_id, &end_id)
                             .map_err(DbError::ExecutionError)?;
                         for path in found {
@@ -1131,6 +1163,7 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
                     rows = new_rows;
+                    self.check_budget(rows.len())?;
                 }
                 BodyClause::Window(_) => {
                     return Err(DbError::ExecutionError(
@@ -1139,91 +1172,8 @@ impl<'a> QueryExecutor<'a> {
                 }
 
                 BodyClause::Collect(collect) => {
-                    use std::collections::HashMap;
-
-                    // Group rows by the collect key(s)
-                    let mut groups: HashMap<String, (Context, Vec<Context>, i64)> = HashMap::new();
-
-                    for ctx in rows {
-                        // Evaluate group key expressions
-                        let mut key_parts = Vec::new();
-                        let mut group_ctx = Context::new();
-
-                        for (var_name, expr) in &collect.group_vars {
-                            let val = self.evaluate_expr_with_context(expr, &ctx)?;
-                            key_parts.push(serde_json::to_string(&val).unwrap_or_default());
-                            group_ctx.insert(var_name.clone(), val);
-                        }
-
-                        let group_key = key_parts.join("|");
-
-                        let entry = groups
-                            .entry(group_key)
-                            .or_insert_with(|| (group_ctx.clone(), Vec::new(), 0));
-
-                        // Collect into groups
-                        entry.1.push(ctx.clone());
-                        entry.2 += 1;
-                    }
-
-                    // Build result rows from groups
-                    let mut new_rows = Vec::new();
-
-                    for (_key, (mut group_ctx, group_docs, count)) in groups {
-                        // Add INTO variable if present
-                        if let Some(ref into_var) = collect.into_var {
-                            // A KEEP naming a variable that is not in scope
-                            // would silently store `{}` for every group item —
-                            // say so instead.
-                            if let Some(sample) = group_docs.first() {
-                                for keep in &collect.keep_vars {
-                                    if !sample.contains_key(keep) {
-                                        return Err(DbError::ExecutionError(format!(
-                                            "KEEP variable '{}' is not in scope at COLLECT",
-                                            keep
-                                        )));
-                                    }
-                                }
-                            }
-
-                            let group_array: Vec<Value> = group_docs
-                                .iter()
-                                .map(|ctx| {
-                                    // Create an object with the variables in the
-                                    // context, restricted to KEEP when provided
-                                    let obj: serde_json::Map<String, Value> = if collect
-                                        .keep_vars
-                                        .is_empty()
-                                    {
-                                        ctx.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-                                    } else {
-                                        ctx.iter()
-                                            .filter(|(k, _)| collect.keep_vars.contains(k))
-                                            .map(|(k, v)| (k.clone(), v.clone()))
-                                            .collect()
-                                    };
-                                    Value::Object(obj)
-                                })
-                                .collect();
-                            group_ctx.insert(into_var.clone(), Value::Array(group_array));
-                        }
-
-                        // Add COUNT variable if present
-                        if let Some(ref count_var) = collect.count_var {
-                            group_ctx.insert(count_var.clone(), Value::Number(count.into()));
-                        }
-
-                        // Compute aggregates
-                        for agg in &collect.aggregates {
-                            let agg_value =
-                                self.compute_aggregate(&agg.function, &agg.argument, &group_docs)?;
-                            group_ctx.insert(agg.variable.clone(), agg_value);
-                        }
-
-                        new_rows.push(group_ctx);
-                    }
-
-                    rows = new_rows;
+                    rows = self.execute_collect(collect, rows)?;
+                    self.check_budget(rows.len())?;
                 }
 
                 BodyClause::Join(join_clause) => {
@@ -1240,11 +1190,7 @@ impl<'a> QueryExecutor<'a> {
                             // left row, and rescanning it per row turned every join into
                             // O(left × right) disk reads. Matching goes through
                             // join_match_indices (hash join for equi-conditions).
-                            let all_docs: Vec<Value> = collection
-                                .scan(None)
-                                .into_iter()
-                                .map(|doc| doc.to_value())
-                                .collect();
+                            let all_docs = self.scan_bounded(&collection)?;
 
                             let match_indices = self.join_match_indices(
                                 &rows,
@@ -1283,17 +1229,14 @@ impl<'a> QueryExecutor<'a> {
                                 }
                             }
                             rows = new_rows;
+                            self.check_budget(rows.len())?;
                         }
 
                         JoinType::Right => {
                             // RIGHT JOIN: iterate right side, find matching left rows
                             // Keep all right rows, group left matches into array
                             let mut new_rows = Vec::new();
-                            let all_right_docs: Vec<Value> = collection
-                                .scan(None)
-                                .into_iter()
-                                .map(|doc| doc.to_value())
-                                .collect();
+                            let all_right_docs = self.scan_bounded(&collection)?;
 
                             // Transpose row→docs matches into doc→rows so the
                             // hash-join path serves RIGHT JOIN too (row order
@@ -1342,6 +1285,7 @@ impl<'a> QueryExecutor<'a> {
                                 new_rows.push(new_ctx);
                             }
                             rows = new_rows;
+                            self.check_budget(rows.len())?;
                         }
 
                         JoinType::FullOuter => {
@@ -1362,11 +1306,7 @@ impl<'a> QueryExecutor<'a> {
                                 })
                                 .unwrap_or_else(|| "left".to_string());
 
-                            let all_right_docs: Vec<Value> = collection
-                                .scan(None)
-                                .into_iter()
-                                .map(|doc| doc.to_value())
-                                .collect();
+                            let all_right_docs = self.scan_bounded(&collection)?;
 
                             // Phase 1: LEFT JOIN part - iterate left, find right matches
                             let match_indices = self.join_match_indices(
@@ -1406,6 +1346,7 @@ impl<'a> QueryExecutor<'a> {
                             }
 
                             rows = new_rows;
+                            self.check_budget(rows.len())?;
                         }
                     }
                 }

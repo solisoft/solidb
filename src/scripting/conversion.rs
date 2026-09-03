@@ -116,9 +116,28 @@ pub fn matches_filter(doc: &JsonValue, filter: &JsonValue) -> bool {
     }
 }
 
+/// Deepest table nesting converted to JSON. serde_json refuses to parse
+/// deeper than 128 itself, so nothing is lost.
+const MAX_LUA_JSON_DEPTH: usize = 128;
+
 /// Convert Lua value to JSON value (by value)
-#[allow(clippy::only_used_in_recursion)]
 pub fn lua_to_json_value(lua: &Lua, value: LuaValue) -> LuaResult<JsonValue> {
+    lua_to_json_value_at(lua, value, 0)
+}
+
+/// The recursion behind `lua_to_json_value`.
+///
+/// A script can hand over a cyclic table (`t[1] = t`) or one nested a
+/// million deep; both recursed on the Rust stack until the process
+/// segfaulted, out of reach of the Lua instruction hook and memory limit.
+#[allow(clippy::only_used_in_recursion)]
+fn lua_to_json_value_at(lua: &Lua, value: LuaValue, depth: usize) -> LuaResult<JsonValue> {
+    if depth > MAX_LUA_JSON_DEPTH {
+        return Err(mlua::Error::external(format!(
+            "table nesting too deep (max {}); is it cyclic?",
+            MAX_LUA_JSON_DEPTH
+        )));
+    }
     match value {
         LuaValue::Nil => Ok(JsonValue::Null),
         LuaValue::Boolean(b) => Ok(JsonValue::Bool(b)),
@@ -131,9 +150,11 @@ pub fn lua_to_json_value(lua: &Lua, value: LuaValue) -> LuaResult<JsonValue> {
             // Check if it's an array (sequential integer keys starting from 1)
             let mut is_array = true;
             let mut max_index = 0;
+            let mut entries = 0usize;
 
             for pair in t.clone().pairs::<LuaValue, LuaValue>() {
                 let (k, _) = pair?;
+                entries += 1;
                 if let LuaValue::Integer(i) = k {
                     if i > 0 {
                         max_index = max_index.max(i);
@@ -147,18 +168,24 @@ pub fn lua_to_json_value(lua: &Lua, value: LuaValue) -> LuaResult<JsonValue> {
                 }
             }
 
-            if is_array && max_index > 0 {
+            // A sparse table is an array only while the holes are cheap:
+            // `{[1000000000] = 1}` used to size a Vec by its largest key
+            // (the same ratio rule as lua-cjson's `encode_sparse_array`).
+            // `with_capacity` on a key like that is an allocation failure,
+            // which aborts rather than panics.
+            let dense_enough = max_index <= 10 || (max_index as usize) <= entries.saturating_mul(2);
+            if is_array && max_index > 0 && dense_enough {
                 let mut arr = Vec::with_capacity(max_index as usize);
                 for i in 1..=max_index {
                     let v: LuaValue = t.get(i)?;
-                    arr.push(lua_to_json_value(lua, v)?);
+                    arr.push(lua_to_json_value_at(lua, v, depth + 1)?);
                 }
                 Ok(JsonValue::Array(arr))
             } else {
                 let mut obj = serde_json::Map::new();
                 for pair in t.pairs::<String, LuaValue>() {
                     let (k, v) = pair?;
-                    obj.insert(k, lua_to_json_value(lua, v)?);
+                    obj.insert(k, lua_to_json_value_at(lua, v, depth + 1)?);
                 }
                 Ok(JsonValue::Object(obj))
             }
@@ -194,5 +221,44 @@ mod tests {
         let back = lua_to_json_value(&lua, lua_val).unwrap();
 
         assert_eq!(json, back);
+    }
+}
+
+#[cfg(test)]
+mod bounds_tests {
+    use super::*;
+
+    /// `t[1] = t` recursed on the Rust stack until the process segfaulted;
+    /// nothing in the Lua sandbox could see it.
+    #[test]
+    fn cyclic_table_is_an_error() {
+        let lua = Lua::new();
+        let t: LuaValue = lua.load("local t = {} t[1] = t return t").eval().unwrap();
+        let err = lua_to_json_value(&lua, t).unwrap_err();
+        assert!(err.to_string().contains("nesting too deep"), "{err}");
+    }
+
+    #[test]
+    fn deeply_nested_table_is_an_error() {
+        let lua = Lua::new();
+        let t: LuaValue = lua
+            .load("local t = {} for _ = 1, 100000 do t = { t } end return t")
+            .eval()
+            .unwrap();
+        assert!(lua_to_json_value(&lua, t).is_err());
+    }
+
+    /// `{[1000000000] = 1}` used to size a Vec by its largest key.
+    #[test]
+    fn very_sparse_table_becomes_an_object() {
+        let lua = Lua::new();
+        let t: LuaValue = lua.load("return {[1000000000] = 1}").eval().unwrap();
+        let json = lua_to_json_value(&lua, t).unwrap();
+        assert_eq!(json, serde_json::json!({"1000000000": 1}));
+
+        // Small holes are still an array, as before.
+        let t: LuaValue = lua.load("return {1, nil, 3}").eval().unwrap();
+        let json = lua_to_json_value(&lua, t).unwrap();
+        assert_eq!(json, serde_json::json!([1, null, 3]));
     }
 }

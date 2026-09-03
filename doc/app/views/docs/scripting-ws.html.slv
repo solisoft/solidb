@@ -29,8 +29,11 @@
         </div>
         <div class="p-8">
           <p class="text-gray-300 mb-6 leading-relaxed">
-            Lua scripts can act as WebSocket handlers by registering with the <code class="text-purple-400">WS</code> HTTP method.
-            When a client connects via WebSocket, your script runs for the duration of the connection, enabling:
+            Lua scripts can act as WebSocket handlers by registering with the <code class="text-purple-400">WS</code> method:
+            create the script with <code class="text-purple-400">"methods": ["WS"]</code> through the Management API, or put
+            <code class="text-purple-400">-- @ws</code> in the comment header when deploying with <code>solidb scripts push</code>.
+            Clients then connect to <code class="text-purple-400">ws://host:6745/api/{db}/{service}/{path}</code>.
+            The script runs for the duration of the connection, enabling:
           </p>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
@@ -91,7 +94,7 @@
     solidb.ws.send(json.encode({
         type = <span class="text-green-400">"echo"</span>,
         message = msg,
-        timestamp = os.time() * <span class="text-yellow-400">1000</span>
+        timestamp = time.now_ms()
     }))
 <span class="text-blue-400">end</span></pre>
             </div>
@@ -189,7 +192,7 @@ solidb.ws.channel.subscribe(<span class="text-green-400">"global:announcements"<
             <div class="p-4 font-mono text-sm text-gray-300">
 <pre class="language-lua"><span class="text-blue-400">local</span> room = request.query.room <span class="text-blue-400">or</span> <span class="text-green-400">"lobby"</span>
 <span class="text-blue-400">local</span> user_info = {
-    id = request.user.username,
+    id = solidb.auth.user().username,
     name = request.query.name,
     avatar = request.query.avatar
 }
@@ -272,14 +275,16 @@ solidb.ws.send(json.encode({
           <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
             <div class="px-4 py-2 bg-white/5 border-b border-white/10 text-xs text-gray-400">chat_room.lua</div>
             <div class="p-4 font-mono text-sm text-gray-300 overflow-x-auto">
-<pre class="language-lua"><span class="text-gray-500">-- Register: POST /_api/custom/_system/chat with method="WS"</span>
-<span class="text-gray-500">-- Connect: ws://localhost:6745/api/custom/_system/chat?room=general&amp;name=Alice</span>
+<pre class="language-lua"><span class="text-gray-500">-- Register: POST /_api/database/_system/scripts</span>
+<span class="text-gray-500">--   { "name": "chat", "path": "chat", "methods": ["WS"], "service": "default", "code": "..." }</span>
+<span class="text-gray-500">--   (or "-- @ws" in the header and `solidb scripts push`)</span>
+<span class="text-gray-500">-- Connect: ws://localhost:6745/api/_system/default/chat?room=general&amp;name=Alice</span>
 
 <span class="text-blue-400">local</span> room = request.query.room <span class="text-blue-400">or</span> <span class="text-green-400">"general"</span>
 <span class="text-blue-400">local</span> channel = <span class="text-green-400">"chat:"</span> .. room
 <span class="text-blue-400">local</span> user = {
     name = request.query.name <span class="text-blue-400">or</span> <span class="text-green-400">"Anonymous"</span>,
-    joined = os.time() * <span class="text-yellow-400">1000</span>
+    joined = time.now_ms()
 }
 
 <span class="text-gray-500">-- Join the room</span>
@@ -305,7 +310,7 @@ solidb.ws.send(json.encode({
                 type = <span class="text-green-400">"chat"</span>,
                 from = user.name,
                 text = data.text,
-                timestamp = os.time() * <span class="text-yellow-400">1000</span>
+                timestamp = time.now_ms()
             })
         <span class="text-blue-400">end</span>
     <span class="text-blue-400">elseif</span> msg_type == <span class="text-green-400">"channel"</span> <span class="text-blue-400">then</span>
@@ -342,7 +347,7 @@ solidb.ws.send(json.encode({
             <div class="p-4 font-mono text-sm text-gray-300">
 <pre class="language-javascript"><span class="text-gray-500">// Connect to WebSocket handler</span>
 <span class="text-purple-400">const</span> ws = <span class="text-purple-400">new</span> WebSocket(
-  <span class="text-green-400">"ws://localhost:6745/api/custom/_system/chat?room=general&amp;name=Alice"</span>
+  <span class="text-green-400">"ws://localhost:6745/api/_system/default/chat?room=general&amp;name=Alice"</span>
 );
 
 ws.<span class="text-blue-400">onopen</span> = () => {

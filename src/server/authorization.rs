@@ -291,7 +291,7 @@ impl AuthorizationService {
             .storage
             .get_database("_system")
             .ok()
-            .and_then(|db| db.get_collection(ROLES_COLLECTION).ok());
+            .and_then(|db| db.system_collection(ROLES_COLLECTION).ok());
 
         for role_name in &role_names {
             // Try cache first
@@ -334,7 +334,7 @@ impl AuthorizationService {
         let roles_coll = storage
             .get_database("_system")
             .ok()
-            .and_then(|db| db.get_collection(ROLES_COLLECTION).ok());
+            .and_then(|db| db.system_collection(ROLES_COLLECTION).ok());
 
         for role_name in role_names {
             let stored = roles_coll

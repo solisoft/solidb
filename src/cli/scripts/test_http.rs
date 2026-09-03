@@ -43,10 +43,12 @@ impl TestHttpClient {
             return path.to_string();
         }
 
-        // Build URL: /api/{service}/{db}/{path}
+        // Build URL: /api/{db}/{service}/{path} — the order the server
+        // routes on (`execute_service_script_handler`). It was reversed here,
+        // so `solidb scripts test` could never reach a script.
         format!(
             "{}/api/{}/{}/{}",
-            self.base_url, self.service, self.database, normalized_path
+            self.base_url, self.database, self.service, normalized_path
         )
     }
 
@@ -499,5 +501,20 @@ fn json_to_lua(lua: &Lua, value: &serde_json::Value) -> LuaResult<Value> {
             }
             Ok(Value::Table(table))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_is_db_then_service() {
+        let c = TestHttpClient::new("http://h:1/", "myapp", "default", String::new());
+        assert_eq!(
+            c.build_url("/users/1"),
+            "http://h:1/api/myapp/default/users/1"
+        );
+        assert_eq!(c.build_url("http://x/y"), "http://x/y");
     }
 }

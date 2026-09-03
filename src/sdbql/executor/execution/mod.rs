@@ -4,9 +4,11 @@
 //! - entry: Main execution entry points (execute, execute_with_stats)
 //! - streaming: Bulk insert and mutation logging
 //! - clauses: Body clause processing (FOR, FILTER, JOIN, etc.)
+//! - collect: COLLECT grouping and streaming aggregation
 //! - subquery: Correlated subquery execution
 
 mod clauses;
+mod collect;
 mod entry;
 mod graph;
 mod graph_rag;

@@ -668,3 +668,64 @@ mod tests {
         assert_eq!(frame.len(), SyncMessage::HEADER_LEN + declared);
     }
 }
+
+/// Largest payload a peer may claim after LZ4 decompression.
+///
+/// Frames are capped at 10 MB, but `lz4_flex::decompress_size_prepended`
+/// trusts the 4-byte size prefix *inside* the payload and allocates that many
+/// zeroed bytes before it looks at the compressed data. A 9-byte frame
+/// claiming `0xFFFFFFFF` made the node try to allocate 4 GiB — and this runs
+/// on the sync port before the HMAC handshake completes, so it was a
+/// pre-authentication remote abort (a failed allocation in Rust aborts the
+/// process rather than unwinding).
+///
+/// 4x the frame cap: real batches compress well, so the honest ratio stays far
+/// below this, while the allocation a hostile peer can provoke is bounded.
+pub const MAX_DECOMPRESSED_SIZE: usize = 40 * 1024 * 1024;
+
+/// `lz4_flex::decompress_size_prepended` with the size prefix checked first.
+///
+/// Use this everywhere instead of calling `lz4_flex` directly on bytes that
+/// came off a socket.
+pub fn decompress_checked(data: &[u8]) -> Result<Vec<u8>, String> {
+    let declared = lz4_flex::block::uncompressed_size(data)
+        .map_err(|e| format!("malformed compressed frame: {}", e))?
+        .0;
+    if declared > MAX_DECOMPRESSED_SIZE {
+        return Err(format!(
+            "declared decompressed size {} exceeds the {} byte limit",
+            declared, MAX_DECOMPRESSED_SIZE
+        ));
+    }
+    lz4_flex::decompress_size_prepended(data).map_err(|e| format!("decompression failed: {}", e))
+}
+
+#[cfg(test)]
+mod decompress_tests {
+    use super::*;
+
+    #[test]
+    fn oversized_size_prefix_is_rejected_without_allocating() {
+        // 4-byte little-endian size prefix of 0xFFFFFFFF (~4 GiB) followed by
+        // junk: the shape of the pre-auth abort.
+        let mut frame = vec![0xFF, 0xFF, 0xFF, 0xFF];
+        frame.extend_from_slice(&[0u8; 5]);
+        let err = decompress_checked(&frame).expect_err("must be refused");
+        assert!(err.contains("exceeds"), "unexpected error: {}", err);
+    }
+
+    #[test]
+    fn honest_frames_still_round_trip() {
+        let payload = b"solidb sync payload".repeat(64);
+        let compressed = lz4_flex::compress_prepend_size(&payload);
+        assert_eq!(
+            decompress_checked(&compressed).expect("round trip"),
+            payload
+        );
+    }
+
+    #[test]
+    fn truncated_frames_are_rejected() {
+        assert!(decompress_checked(&[0u8; 2]).is_err());
+    }
+}

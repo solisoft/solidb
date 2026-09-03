@@ -186,6 +186,12 @@ fn cache_basic_auth(cache_key: String, claims: Claims) {
 const ADMIN_DB: &str = "_system";
 pub const ADMIN_COLL: &str = "_admins";
 pub const API_KEYS_COLL: &str = "_api_keys";
+/// Clock-skew allowance when validating a JWT's `exp`.
+///
+/// Small enough that the 2-second livequery token stays short-lived, large
+/// enough to absorb realistic skew between cluster nodes.
+const LIVEQUERY_SAFE_LEEWAY_SECS: u64 = 5;
+
 pub const ROLES_COLL: &str = "_roles";
 pub const USER_ROLES_COLL: &str = "_user_roles";
 const DEFAULT_USER: &str = "admin";
@@ -494,7 +500,7 @@ impl AuthService {
         let db = storage.get_database(ADMIN_DB)?;
 
         // Ensure _roles collection exists
-        if let Err(DbError::CollectionNotFound(_)) = db.get_collection(ROLES_COLL) {
+        if let Err(DbError::CollectionNotFound(_)) = db.system_collection(ROLES_COLL) {
             if should_skip_defaults {
                 tracing::info!(
                     "Cluster join detected: Skipping {} creation (waiting for sync)",
@@ -507,7 +513,7 @@ impl AuthService {
         }
 
         // Ensure _user_roles collection exists
-        if let Err(DbError::CollectionNotFound(_)) = db.get_collection(USER_ROLES_COLL) {
+        if let Err(DbError::CollectionNotFound(_)) = db.system_collection(USER_ROLES_COLL) {
             if should_skip_defaults {
                 tracing::info!(
                     "Cluster join detected: Skipping {} creation (waiting for sync)",
@@ -549,7 +555,7 @@ impl AuthService {
         }
 
         // Initialize builtin roles
-        if let Ok(roles_coll) = db.get_collection(ROLES_COLL) {
+        if let Ok(roles_coll) = db.system_collection(ROLES_COLL) {
             for role in Role::builtin_roles() {
                 // Only insert if role doesn't exist
                 if roles_coll.get(&role.name).is_err() {
@@ -605,7 +611,7 @@ impl AuthService {
     ) -> Result<(), DbError> {
         let db = storage.get_database(ADMIN_DB)?;
         let admins_coll = db.system_collection(ADMIN_COLL)?;
-        let user_roles_coll = db.get_collection(USER_ROLES_COLL)?;
+        let user_roles_coll = db.system_collection(USER_ROLES_COLL)?;
 
         // Get all existing admin users
         for doc in admins_coll.scan(None) {
@@ -795,10 +801,17 @@ impl AuthService {
 
     /// Validate JWT and return claims
     pub fn validate_token(token: &str) -> Result<Claims, DbError> {
+        let mut validation = Validation::new(Algorithm::HS256);
+        // jsonwebtoken defaults to 60 seconds of clock leeway, which is fine
+        // for a 24h session token and absurd for the 2-second livequery
+        // token: it made the short-lived token live for 62 seconds. Ordinary
+        // tokens keep a small allowance for clock skew between nodes.
+        validation.leeway = LIVEQUERY_SAFE_LEEWAY_SECS;
+
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(JWT_SECRET.as_bytes()),
-            &Validation::new(Algorithm::HS256),
+            &validation,
         )
         .map_err(|_| DbError::BadRequest("Invalid token".to_string()))?;
 
@@ -932,7 +945,7 @@ impl AuthService {
             Err(_) => return None,
         };
 
-        let user_roles_coll = match db.get_collection(USER_ROLES_COLL) {
+        let user_roles_coll = match db.system_collection(USER_ROLES_COLL) {
             Ok(coll) => coll,
             Err(_) => return None,
         };
@@ -940,9 +953,30 @@ impl AuthService {
         let mut roles = Vec::new();
         for doc in user_roles_coll.scan(None) {
             if let Ok(user_role) = serde_json::from_value::<UserRole>(doc.to_value()) {
-                if user_role.username == username {
-                    roles.push(user_role.role);
+                if user_role.username != username {
+                    continue;
                 }
+                // A row carrying a `database` asked for a role limited to that
+                // database. Nothing downstream can express that limit —
+                // `Claims.roles` is a bare list of role names — so returning
+                // the role here granted it on *every* database, including
+                // `_system`. Skipping the row is the honest reading: the
+                // assignment grants nothing rather than everything.
+                // `assign_role` now refuses to create these; this handles rows
+                // written before that, and rows arriving by replication.
+                if let Some(ref scoped_db) = user_role.database {
+                    tracing::warn!(
+                        target: "audit",
+                        user = username,
+                        role = %user_role.role,
+                        database = %scoped_db,
+                        "ignoring database-scoped role assignment: per-database \
+                         role scoping is not enforced, so honouring it would \
+                         grant the role globally"
+                    );
+                    continue;
+                }
+                roles.push(user_role.role);
             }
         }
 
@@ -1121,8 +1155,16 @@ pub(crate) async fn hash_password_blocking(password: &str) -> Result<String, DbE
         .map_err(|e| DbError::InternalError(format!("hash task failed: {}", e)))?
 }
 
+/// The one endpoint a livequery token may be presented to.
+///
+/// This used to accept the whole `/_api/livequery` prefix — which contains
+/// `/_api/livequery/token`, the endpoint that *mints* livequery tokens. A
+/// captured token could therefore mint itself a fresh one, forever, so the
+/// "2 seconds, safe to put in a WebSocket URL" property was void: anyone who
+/// read the token out of a proxy log or browser history within its lifetime
+/// held an indefinite subscription to the victim's change feeds.
 fn livequery_path_allowed(path: &str) -> bool {
-    path.starts_with("/_api/ws/changefeed") || path.starts_with("/_api/livequery")
+    path == "/_api/ws/changefeed"
 }
 
 fn reject_livequery_token(claims: &Claims, path: &str) -> bool {
@@ -1133,23 +1175,47 @@ fn reject_livequery_token(claims: &Claims, path: &str) -> bool {
     false
 }
 
-/// If `sub` is a real `_admins` user, replace embedded JWT roles with the
-/// current assignments so a revoke takes effect without waiting for expiry.
-fn refresh_jwt_roles(mut claims: Claims, storage: &StorageEngine) -> Claims {
+/// Re-resolve a JWT's roles against current state, or reject the token.
+///
+/// Returns `None` when the token must not be honoured, which the caller turns
+/// into a 401.
+///
+/// Two jobs:
+///
+/// * Replace the embedded roles with the current assignments, so a revoke
+///   takes effect without waiting for the token to expire.
+/// * Refuse a token whose subject no longer exists. This used to fall
+///   through and keep the roles baked in at login, so deleting a user left
+///   their outstanding tokens working — with whatever roles they had — for
+///   the rest of the token lifetime (up to 24h). Deleting an account is the
+///   action an operator takes when they want access gone *now*.
+///
+/// Subjects that are not `_admins` rows by construction (API-key principals,
+/// the cluster identity) are left alone: they are validated on their own
+/// paths, and `_admins` was never their home.
+fn refresh_jwt_roles(mut claims: Claims, storage: &StorageEngine) -> Option<Claims> {
     if claims.livequery == Some(true) {
-        return claims;
+        return Some(claims);
+    }
+    if claims.sub.starts_with("api-key:") || claims.sub == "cluster-internal" {
+        return Some(claims);
     }
     let Ok(db) = storage.get_database(ADMIN_DB) else {
-        return claims;
+        return Some(claims);
     };
     let Ok(coll) = db.system_collection(ADMIN_COLL) else {
-        return claims;
+        return Some(claims);
     };
     if coll.get(&claims.sub).is_err() {
-        return claims;
+        tracing::warn!(
+            target: "audit",
+            user = %claims.sub,
+            "rejecting JWT: subject no longer exists in _admins"
+        );
+        return None;
     }
     claims.roles = AuthService::get_user_roles(storage, &claims.sub);
-    claims
+    Some(claims)
 }
 
 pub async fn auth_middleware(
@@ -1239,7 +1305,9 @@ pub async fn auth_middleware(
                     if reject_livequery_token(&claims, req.uri().path()) {
                         return Err(StatusCode::FORBIDDEN);
                     }
-                    let claims = refresh_jwt_roles(claims, &state.storage);
+                    let Some(claims) = refresh_jwt_roles(claims, &state.storage) else {
+                        return Err(StatusCode::UNAUTHORIZED);
+                    };
                     req.extensions_mut().insert(claims);
                     return Ok(next.run(req).await);
                 }
@@ -1326,7 +1394,9 @@ pub async fn auth_middleware(
                     if reject_livequery_token(&claims, path) {
                         return Err(StatusCode::FORBIDDEN);
                     }
-                    let claims = refresh_jwt_roles(claims, &state.storage);
+                    let Some(claims) = refresh_jwt_roles(claims, &state.storage) else {
+                        return Err(StatusCode::UNAUTHORIZED);
+                    };
                     req.extensions_mut().insert(claims);
                     return Ok(next.run(req).await);
                 }
@@ -1399,7 +1469,9 @@ pub async fn permissive_auth_middleware(
                     if reject_livequery_token(&claims, req.uri().path()) {
                         return Err(StatusCode::FORBIDDEN);
                     }
-                    let claims = refresh_jwt_roles(claims, &state.storage);
+                    let Some(claims) = refresh_jwt_roles(claims, &state.storage) else {
+                        return Err(StatusCode::UNAUTHORIZED);
+                    };
                     req.extensions_mut().insert(claims);
                     return Ok(next.run(req).await);
                 }

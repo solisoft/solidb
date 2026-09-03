@@ -22,8 +22,8 @@
         </div>
         <div class="p-8">
           <p class="text-gray-300 mb-6 leading-relaxed">
-            SoliDB embeds a high-performance Lua 5.1 (LuaJIT) engine, allowing you to run custom code closer to your data.
-            Scripts are stored in the database, can be updated at runtime, and serve as custom HTTP endpoints or background workers.
+            SoliDB embeds a sandboxed Lua 5.4 engine, allowing you to run custom code closer to your data.
+            Scripts are stored in the database, can be updated at runtime, and are served as custom HTTP or WebSocket endpoints under <code class="text-blue-400">/api/{db}/{service}/{path}</code>.
           </p>
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -72,7 +72,7 @@
               <div class="flex-1">
                 <h3 class="font-bold text-white mb-2 pb-1 border-b border-white/10 mt-0">Allowed</h3>
                 <ul class="space-y-2 text-gray-400">
-                  <li class="flex items-center"><span class="text-green-400 mr-2">✓</span> Standard Lua 5.1 Libraries (string, table, math, etc)</li>
+                  <li class="flex items-center"><span class="text-green-400 mr-2">✓</span> Standard Lua 5.4 libraries (string, table, math, etc)</li>
                   <li class="flex items-center"><span class="text-green-400 mr-2">✓</span> SoliDB APIs (db, solidb, request, response)</li>
                   <li class="flex items-center"><span class="text-green-400 mr-2">✓</span> Safe helpers (json, crypto, time)</li>
                 </ul>
@@ -80,7 +80,7 @@
               <div class="flex-1">
                 <h3 class="font-bold text-white mb-2 pb-1 border-b border-white/10 mt-0">Blocked</h3>
                 <ul class="space-y-2 text-gray-400">
-                  <li class="flex items-center"><span class="text-red-400 mr-2">✕</span> OS access (os.*, io.*, debug.*)</li>
+                  <li class="flex items-center"><span class="text-red-400 mr-2">✕</span> OS access (<code>os</code>, <code>io</code> and <code>debug</code> are removed; use <code>time.*</code> instead of <code>os.time()</code>)</li>
                   <li class="flex items-center"><span class="text-red-400 mr-2">✕</span> File system access (except via solidb APIs)</li>
                   <li class="flex items-center"><span class="text-red-400 mr-2">✕</span> Creating excessive threads or consuming all memory</li>
                 </ul>
@@ -106,18 +106,42 @@
         </div>
 
         <div class="p-8">
-            <p class="text-gray-300 mb-6 leading-relaxed">
-              Scripts have access to the current authenticated user via the <code class="text-yellow-400">solidb.auth</code> namespace. Use these functions to implement role-based access control.
+            <p class="text-gray-300 mb-4 leading-relaxed">
+              Authentication happens in two layers. First, the <a href="/docs/scripting-services" class="text-indigo-400 hover:text-indigo-300">service</a> a script belongs to
+              carries a <code class="text-yellow-400">require_auth</code> flag (<code>true</code> by default): when it is set, an unauthenticated caller receives a
+              <strong class="text-white">401 before the script runs</strong>. Second, inside the script the
+              <code class="text-yellow-400">solidb.auth</code> namespace exposes the caller so you can implement role-based access control.
+              There is no <code>request.user</code>; always go through <code>solidb.auth.user()</code>.
             </p>
-            
+            <p class="text-gray-400 text-sm mb-6">
+              Every database operation a script performs runs <strong class="text-gray-300">as the caller</strong>: their permissions and row policies apply, and
+              the system collections the server executes (<code>_scripts</code>, <code>_services</code>, <code>_triggers</code>, ...) can never be written from a script.
+            </p>
+
             <ul class="space-y-3 font-mono text-sm text-gray-300 mb-8">
               <li class="bg-black/20 p-2 rounded border border-white/5">
                 <span class="text-yellow-400">solidb.auth.user()</span> <span class="text-gray-500">-&gt; table</span>
                 <div class="text-xs text-gray-500 mt-1">Returns current user info: <code>{ username, roles, authenticated, scoped_databases, exp }</code></div>
               </li>
               <li class="bg-black/20 p-2 rounded border border-white/5">
-                <span class="text-yellow-400">solidb.auth.require_role(role)</span> <span class="text-gray-500">-&gt; true | error</span>
-                <div class="text-xs text-gray-500 mt-1">Guard that throws 401/403 error if user doesn't have the role.</div>
+                <span class="text-yellow-400">solidb.auth.is_authenticated()</span> <span class="text-gray-500">-&gt; bool</span>
+                <div class="text-xs text-gray-500 mt-1">Whether the request carries a valid JWT or API key.</div>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-yellow-400">solidb.auth.has_role(name)</span> <span class="text-gray-500">-&gt; bool</span>
+                <div class="text-xs text-gray-500 mt-1">Whether the caller holds the given role. Non-throwing.</div>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-yellow-400">solidb.auth.has_database_access(db)</span> <span class="text-gray-500">-&gt; bool</span>
+                <div class="text-xs text-gray-500 mt-1">Whether the caller's token is scoped to (or unrestricted for) the given database.</div>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-yellow-400">solidb.auth.require_auth()</span> <span class="text-gray-500">-&gt; true | error</span>
+                <div class="text-xs text-gray-500 mt-1">Guard that raises a 401 error if the caller is not authenticated. Useful when the service has <code>require_auth = false</code> but a single endpoint still needs a login.</div>
+              </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                <span class="text-yellow-400">solidb.auth.require_role(name)</span> <span class="text-gray-500">-&gt; true | error</span>
+                <div class="text-xs text-gray-500 mt-1">Guard that raises a 401/403 error if the caller doesn't have the role.</div>
               </li>
             </ul>
 

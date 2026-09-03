@@ -519,7 +519,9 @@ impl Parser {
         // Parse optional WITH COUNT INTO var
         if matches!(self.current_token(), Token::With) {
             self.advance(); // consume WITH
-            if !matches!(self.current_token(), Token::Count) {
+                            // The lexer hands `COUNT` over as an identifier (it is also the
+                            // aggregate function name), never as `Token::Count`.
+            if !matches!(self.current_token(), Token::Count) && !self.ident_eq("COUNT") {
                 return Err(DbError::ParseError(
                     "Expected COUNT after WITH in COLLECT".to_string(),
                 ));

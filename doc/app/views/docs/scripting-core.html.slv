@@ -33,22 +33,41 @@
           </p>
           <ul class="space-y-3 font-mono text-sm text-gray-300">
             <li class="bg-black/20 p-2 rounded border border-white/5">
-              <span class="text-purple-400">solidb.now()</span> <span class="text-gray-500">-&gt; float</span>
-              <div class="text-xs text-gray-500 mt-1">Get current timestamp (seconds since epoch).</div>
+              <span class="text-purple-400">solidb.now()</span> <span class="text-gray-500">-&gt; integer</span>
+              <div class="text-xs text-gray-500 mt-1">Current Unix time in whole seconds. For sub-second precision use <code>time.now()</code> (float) or <code>time.now_ms()</code>.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
-              <span class="text-purple-400">solidb.log(msg, level?)</span>
-              <div class="text-xs text-gray-500 mt-1">Log (info/warn/error) to server console.</div>
+              <span class="text-purple-400">solidb.log(msg)</span>
+              <div class="text-xs text-gray-500 mt-1">Write an INFO line to the server log, mirrored into the <code>_logs</code> collection. Takes a single string; there is no level argument.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
-              <span class="text-purple-400">solidb.uuid()</span> <span class="text-gray-500">-&gt; string</span>
-              <div class="text-xs text-gray-500 mt-1">Generate a V4 UUID.</div>
+              <span class="text-purple-400">solidb.status(code)</span> / <span class="text-purple-400">solidb.header(name, value)</span>
+              <div class="text-xs text-gray-500 mt-1">Set the HTTP status and extra headers of the plain-value response. See <a href="#http" class="text-indigo-400 hover:text-indigo-300">HTTP Handling</a>.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.error(message, code?)</span>
+              <div class="text-xs text-gray-500 mt-1">Abort the script; the client receives <code>{"error": message}</code> with the given status (default 500).</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">solidb.env</span> <span class="text-gray-500">-&gt; table</span>
               <div class="text-xs text-gray-500 mt-1">Hash of environment variables loaded from the <code>_env</code> collection. Access by key, e.g. <code>solidb.env.MY_KEY</code>.</div>
             </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.fetch(url, options?)</span> <span class="text-gray-500">-&gt; { status, headers, body }</span>
+              <div class="text-xs text-gray-500 mt-1">Outbound HTTP with SSRF protection and a 30 s timeout. Options: <code>{ method, headers, body }</code>.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.cache(key, value, ttl?)</span> / <span class="text-purple-400">solidb.cache_get(key)</span>
+              <div class="text-xs text-gray-500 mt-1">Small in-process cache with optional TTL in seconds.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-purple-400">solidb.rate_limit</span>, <span class="text-purple-400">solidb.timeout</span>, <span class="text-purple-400">solidb.retry</span>, <span class="text-purple-400">solidb.fallback</span>, <span class="text-purple-400">solidb.try</span>
+              <div class="text-xs text-gray-500 mt-1">Resilience helpers, documented on the <a href="/docs/scripting-utils#helpers" class="text-indigo-400 hover:text-indigo-300">Utilities</a> page.</div>
+            </li>
           </ul>
+          <p class="text-xs text-gray-500 mt-4">
+            Identifiers come from the <code>crypto</code> global: <code>crypto.uuid()</code> (v4) and <code>crypto.uuid_v7()</code>. There is no <code>solidb.uuid()</code>.
+          </p>
         </div>
       </div>
     </section>
@@ -64,34 +83,77 @@
         </div>
         <div class="p-8">
           <p class="text-gray-300 mb-6">
-            When a script is called via HTTP, two global tables are available: <code>request</code> and <code>response</code>.
+            A script is reached at <code class="text-green-400">/api/{db}/{service}/{path}</code>. When it runs, two global tables are available:
+            <code>request</code> (also aliased as <code>context</code>) describes the incoming call, and <code>response</code> holds the constructors for explicit responses.
           </p>
-          
+
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <h3 class="font-bold text-white mb-3 mt-0">Request Object</h3>
               <pre class="text-xs bg-black/40 p-3 rounded border border-white/5 text-gray-300 overflow-x-auto">
+-- Script registered as "products/:id" in service "shop",
+-- called with GET /api/mydb/shop/products/abc123?expand=1
 {
-  method = "POST",
-  path = "/_api/script/myscript",
+  method = "GET",
+  path = "products/abc123",   -- after /api/{db}/{service}/
+  params = { id = "abc123" }, -- :segments of the registered path
+  query = { expand = "1" },   -- alias: query_params
   headers = { ... },
-  query = { page = "1" },
-  body = { ... } -- Auto-parsed JSON
+  body = { ... },             -- auto-parsed JSON
+  is_websocket = false
 }
               </pre>
+              <p class="text-xs text-gray-500 mt-2">There is no <code>request.user</code>. The caller is exposed through <code>solidb.auth.user()</code>.</p>
             </div>
              <div>
-              <h3 class="font-bold text-white mb-3 mt-0">Response Helper</h3>
-              <p class="text-xs text-gray-400 mb-2">Return a table to send JSON automatically.</p>
+              <h3 class="font-bold text-white mb-3 mt-0">Plain Return</h3>
+              <p class="text-xs text-gray-400 mb-2">Return any Lua value and it is sent as JSON with status 200. Adjust that response with <code>solidb.status</code> and <code>solidb.header</code>.</p>
               <pre class="text-xs bg-black/40 p-3 rounded border border-white/5 text-gray-300 overflow-x-auto">
 -- Simple return
 return { success = true }
 
--- Custom Status
-response.status = 201
-response.headers["X-Custom"] = "Foo"
+-- Custom status and header
+solidb.status(201)
+solidb.header("X-Custom", "Foo")
 return { id = 123 }
               </pre>
+              <p class="text-xs text-gray-500 mt-2">Assigning to <code>response.status</code> or <code>response.headers</code> has no effect; use the functions above.</p>
+            </div>
+          </div>
+
+          <h3 class="font-bold text-white mb-3 mt-8">Explicit Responses</h3>
+          <p class="text-xs text-gray-400 mb-3">For anything other than JSON, <code>return</code> the value produced by one of the <code>response</code> constructors.</p>
+          <ul class="space-y-3 font-mono text-sm text-gray-300">
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-green-400">response.json(body, status?, headers?)</span>
+              <div class="text-xs text-gray-500 mt-1">JSON body with an explicit status (default 200) and optional headers table. Accepts a Lua table or a pre-serialised string such as the result of <code>db:query_json</code>.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-green-400">response.html(content, status?)</span>
+              <div class="text-xs text-gray-500 mt-1">Serve a string as <code>text/html</code>.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-green-400">response.redirect(url, status?)</span>
+              <div class="text-xs text-gray-500 mt-1">Sets the <code>Location</code> header; status defaults to 302.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-green-400">response.file(key, filename?)</span>
+              <div class="text-xs text-gray-500 mt-1">Stream a file stored with <code>solidb.upload</code>, using its recorded MIME type. See <a href="/docs/scripting-files" class="text-indigo-400 hover:text-indigo-300">Files &amp; Media</a>.</div>
+            </li>
+            <li class="bg-black/20 p-2 rounded border border-white/5">
+              <span class="text-green-400">response.cors(body, options?)</span>
+              <div class="text-xs text-gray-500 mt-1">JSON body plus CORS headers. Options: <code>{ origin, methods, headers, credentials, max_age }</code> (origin defaults to <code>*</code>).</div>
+            </li>
+          </ul>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mt-6">
+            <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-blue-400">if</span> request.method == <span class="text-green-400">"GET"</span> <span class="text-blue-400">then</span>
+  <span class="text-blue-400">return</span> response.html(<span class="text-green-400">"&lt;h1&gt;Hello&lt;/h1&gt;"</span>)
+<span class="text-blue-400">end</span>
+
+<span class="text-blue-400">local</span> doc = db:collection(<span class="text-green-400">"products"</span>):insert(request.body)
+<span class="text-blue-400">return</span> response.json(doc, <span class="text-purple-400">201</span>, { [<span class="text-green-400">"Location"</span>] = <span class="text-green-400">"/api/mydb/shop/products/"</span> .. doc._key })</pre>
             </div>
           </div>
         </div>
@@ -109,26 +171,32 @@ return { id = 123 }
         </div>
         <div class="p-8">
           <p class="text-gray-300 mb-4">
-            Use standard Lua <code>pcall</code> or specific helpers to handle errors gracefully.
+            Raise <code>solidb.error(message, code?)</code> to fail a request with a specific status; use standard Lua <code>pcall</code> (or <code>solidb.try</code>) to recover from errors you can handle.
           </p>
            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl mb-6">
                 <div class="p-4 font-mono text-sm text-gray-300">
-<pre class="language-lua"><span class="text-blue-400">local</span> status, err = <span class="text-blue-400">pcall</span>(<span class="text-blue-400">function</span>()
-  <span class="text-blue-400">error</span>(<span class="text-green-400">"Something went wrong"</span>)
+<pre class="language-lua"><span class="text-blue-400">local</span> product = db:collection(<span class="text-green-400">"products"</span>):get(request.params.id)
+<span class="text-blue-400">if</span> <span class="text-blue-400">not</span> product <span class="text-blue-400">then</span>
+  <span class="text-gray-500">-- Client receives 404 with {"error": "Product not found"}</span>
+  <span class="text-purple-400">solidb.error</span>(<span class="text-green-400">"Product not found"</span>, <span class="text-purple-400">404</span>)
+<span class="text-blue-400">end</span>
+
+<span class="text-blue-400">local</span> ok, err = <span class="text-blue-400">pcall</span>(<span class="text-blue-400">function</span>()
+  <span class="text-blue-400">return</span> <span class="text-purple-400">solidb.fetch</span>(<span class="text-green-400">"https://pricing.example.com/"</span> .. product._key)
 <span class="text-blue-400">end</span>)
 
-<span class="text-blue-400">if</span> <span class="text-blue-400">not</span> status <span class="text-blue-400">then</span>
-  <span class="text-gray-500">-- Log and return 500</span>
-  <span class="text-purple-400">solidb.log</span>(err, <span class="text-green-400">"error"</span>)
-  response.status = <span class="text-purple-400">500</span>
-  <span class="text-blue-400">return</span> { error = err }
+<span class="text-blue-400">if</span> <span class="text-blue-400">not</span> ok <span class="text-blue-400">then</span>
+  <span class="text-gray-500">-- Log and degrade instead of failing</span>
+  <span class="text-purple-400">solidb.log</span>(<span class="text-green-400">"pricing lookup failed: "</span> .. <span class="text-blue-400">tostring</span>(err))
+  <span class="text-blue-400">return</span> response.json({ product = product, price = <span class="text-blue-400">nil</span> }, <span class="text-purple-400">200</span>)
 <span class="text-blue-400">end</span></pre>
                 </div>
            </div>
 
            <h3 class="text-lg font-bold text-white mb-2 mt-0">Throwing Errors</h3>
            <p class="text-gray-400 text-sm">
-             Using <code>error()</code> will stop execution and return a 500 Internal Server Error response with the message, unless caught.
+             <code>solidb.error(message, code?)</code> stops execution and the client receives <code>{"error": message}</code> with that status (default 500).
+             A plain Lua <code>error()</code>, or any runtime error, behaves the same way with a 500. Errors raised inside <code>db:transaction</code> roll the transaction back.
            </p>
         </div>
       </div>

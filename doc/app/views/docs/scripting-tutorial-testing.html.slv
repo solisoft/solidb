@@ -48,9 +48,9 @@
 ├── solidb-scripts.toml       <span class="text-text-dim"># Project config</span>
 ├── .env                       <span class="text-text-dim"># Auth & server settings</span>
 ├── .env.test                  <span class="text-text-dim"># Test-specific overrides</span>
-├── bookmarks.lua              <span class="text-info"># GET, POST /api/default/myapp/bookmarks</span>
+├── bookmarks.lua              <span class="text-info"># GET, POST /api/myapp/default/bookmarks</span>
 ├── bookmarks/
-│   └── _id.lua                <span class="text-info"># GET, PUT, DELETE /api/default/myapp/bookmarks/:id</span>
+│   └── _id.lua                <span class="text-info"># GET, PUT, DELETE /api/myapp/default/bookmarks/:id</span>
 └── tests/                     <span class="text-primary-light"># Test files (never pushed to server)</span>
     └── bookmarks_test.lua</pre>
           </div>
@@ -120,6 +120,34 @@ SOLIDB_API_KEY=your_test_token</pre>
               <strong>Tip:</strong> The <code>tests/</code> folder is in the ignore list by default. Test files are never pushed to the server &mdash; only executed locally.
             </div>
           </div>
+
+          <h3 class="text-lg font-bold text-text mt-8 mb-3">Create the service</h3>
+          <p class="text-text-muted mb-4">
+            <code>database</code> and <code>service</code> in the config are the first two segments of every script URL: <code>/api/{database}/{service}/{path}</code>, so <code>/api/myapp/default/bookmarks</code> here. A <a href="/docs/scripting-services" class="text-primary-light hover:text-accent-light">service</a> has to exist before any script under it can be called, and neither <code>init</code> nor <code>push</code> creates one. Create <code>default</code> in <em>both</em> databases &mdash; the one you push to and the one the tests hit through <code>.env.test</code>:
+          </p>
+          <div class="bg-bg-dark/60 p-4 rounded-lg font-mono text-sm border border-border mb-4">
+<pre class="text-text-muted"><span class="text-text-dim"># Reuse the token that `solidb scripts login` saved</span>
+<span class="text-success">$ export $(grep SOLIDB_API_KEY .env) &amp;&amp; TOKEN=$SOLIDB_API_KEY</span>
+
+<span class="text-text-dim"># Development database</span>
+<span class="text-success">$ curl -X POST http://localhost:6745/_api/database/myapp/services \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "default", "name": "Default"}'</span>
+
+<span class="text-text-dim"># Test database (the one SOLIDB_DATABASE in .env.test points at)</span>
+<span class="text-success">$ curl -X POST http://localhost:6745/_api/database/myapp_test/services \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "default", "name": "Default"}'</span></pre>
+          </div>
+
+          <div class="bg-warning/10 border border-warning/20 rounded-lg p-4 flex items-start">
+            <svg class="w-5 h-5 text-warning mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            <div class="text-sm text-warning">
+              <strong>Authentication:</strong> a service defaults to <code>require_auth: true</code>, so unauthenticated calls to <code>/api/myapp/default/...</code> get <code>401</code> before the script runs. That is fine for the test runner &mdash; it sends <code>SOLIDB_API_KEY</code> as <code>Authorization: Bearer</code> on every request &mdash; and the curl examples in this tutorial all pass <code>$TOKEN</code>. To make the API public instead, create the service with <code>"require_auth": false</code>. Calling a script whose service does not exist yet returns <code>404 Service 'default' not found in database 'myapp'</code>.
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -141,7 +169,7 @@ SOLIDB_API_KEY=your_test_token</pre>
           <div class="bg-bg-dark rounded-xl border border-border overflow-hidden shadow-xl mb-8">
             <div class="px-4 py-2 bg-bg-card/50 border-b border-border flex items-center justify-between">
               <span class="text-xs text-text-dim font-mono">bookmarks.lua</span>
-              <span class="text-xs text-text-dim">GET, POST /api/default/myapp/bookmarks</span>
+              <span class="text-xs text-text-dim">GET, POST /api/myapp/default/bookmarks</span>
             </div>
             <div class="p-4 font-mono text-sm text-text-muted overflow-x-auto">
 <pre class="language-lua"><span class="text-text-dim">-- @methods GET, POST</span>
@@ -202,7 +230,7 @@ SOLIDB_API_KEY=your_test_token</pre>
           <div class="bg-bg-dark rounded-xl border border-border overflow-hidden shadow-xl">
             <div class="px-4 py-2 bg-bg-card/50 border-b border-border flex items-center justify-between">
               <span class="text-xs text-text-dim font-mono">bookmarks/_id.lua</span>
-              <span class="text-xs text-text-dim">GET, PUT, DELETE /api/default/myapp/bookmarks/:id</span>
+              <span class="text-xs text-text-dim">GET, PUT, DELETE /api/myapp/default/bookmarks/:id</span>
             </div>
             <div class="p-4 font-mono text-sm text-text-muted overflow-x-auto">
 <pre class="language-lua"><span class="text-text-dim">-- @methods GET, PUT, DELETE</span>
@@ -266,6 +294,18 @@ SOLIDB_API_KEY=your_test_token</pre>
 
 Done: 2 created, 0 updated, 0 errors</span></pre>
           </div>
+
+          <p class="text-text-muted mt-6 mb-3">A quick smoke test before writing any Lua tests &mdash; note the URL order and the token:</p>
+          <div class="bg-bg-dark/60 p-4 rounded-lg font-mono text-sm border border-border">
+<pre class="text-text-muted"><span class="text-success">$ curl -i http://localhost:6745/api/myapp/default/bookmarks/nope \
+  -H "Authorization: Bearer $TOKEN"</span>
+
+<span class="text-text-dim">HTTP/1.1 404 Not Found
+{"error":"Bookmark not found","code":404,"type":"ScriptError"}</span></pre>
+          </div>
+          <p class="text-text-dim text-sm mt-3">
+            <code>solidb.error(msg, code)</code> becomes exactly that HTTP status with a <code>{"error", "code", "type"}</code> body, and <code>solidb.status(201)</code> before a <code>return</code> sends <code>201</code>. The tests below assert on both.
+          </p>
 
           <div class="mt-4 bg-warning/10 border border-warning/20 rounded-lg p-4 flex items-start">
             <svg class="w-5 h-5 text-warning mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
@@ -335,7 +375,7 @@ describe(<span class="text-success">"POST /bookmarks"</span>, <span class="text-
     })
 
     expect(res.status):to_equal(<span class="text-accent">400</span>)
-    expect(res.body.error):to_contain(<span class="text-success">"url"</span>)
+    expect(res.body.error):to_equal(<span class="text-success">"url is required"</span>)
   <span class="text-primary-light">end</span>)
 
   it(<span class="text-success">"rejects a bookmark without a title"</span>, <span class="text-primary-light">function</span>()
@@ -344,7 +384,7 @@ describe(<span class="text-success">"POST /bookmarks"</span>, <span class="text-
     })
 
     expect(res.status):to_equal(<span class="text-accent">400</span>)
-    expect(res.body.error):to_contain(<span class="text-success">"title"</span>)
+    expect(res.body.error):to_equal(<span class="text-success">"title is required"</span>)
   <span class="text-primary-light">end</span>)
 
   it(<span class="text-success">"defaults tags to empty array and notes to empty string"</span>, <span class="text-primary-light">function</span>()
@@ -432,6 +472,8 @@ describe(<span class="text-success">"DELETE /bookmarks/:id"</span>, <span class=
     <span class="text-primary-light">local</span> res = http.get(<span class="text-success">"/bookmarks/"</span> .. created_id)
 
     expect(res.status):to_equal(<span class="text-accent">404</span>)
+    expect(res.ok):to_equal(<span class="text-accent">false</span>)
+    expect(res.body.error):to_equal(<span class="text-success">"Bookmark not found"</span>)
   <span class="text-primary-light">end</span>)
 
 <span class="text-primary-light">end</span>)</pre>

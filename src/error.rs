@@ -47,6 +47,10 @@ pub enum DbError {
     #[error("Internal error: {0}")]
     InternalError(String),
 
+    /// A script chose its own HTTP status with `solidb.error(msg, code)`.
+    #[error("{message}")]
+    ScriptError { status: u16, message: String },
+
     #[error("Operation timed out: {0}")]
     Timeout(String),
 
@@ -124,6 +128,10 @@ impl IntoResponse for DbError {
             DbError::OperationNotSupported(msg) => (StatusCode::NOT_IMPLEMENTED, msg.clone()),
             DbError::TransactionTimeout(_) => (StatusCode::REQUEST_TIMEOUT, self.to_string()),
             DbError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.to_string()),
+            DbError::ScriptError { status, message } => (
+                StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                message.clone(),
+            ),
             // Default to 500
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
@@ -131,7 +139,7 @@ impl IntoResponse for DbError {
         let body = serde_json::json!({
             "error": message,
             "code": status.as_u16(),
-            "type": format!("{:?}", self).split('(').next().unwrap_or("Error") // Basic type extraction
+            "type": format!("{:?}", self).split(['(', ' ']).next().unwrap_or("Error") // Basic type extraction
         });
 
         let mut response = (status, Json(body)).into_response();

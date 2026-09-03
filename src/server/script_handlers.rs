@@ -4,6 +4,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
+    Extension,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -347,10 +348,23 @@ pub async fn delete_script_handler(
 }
 
 /// Get script runtime statistics
+///
+/// Admin: this route has no `{db}` segment, so the per-database authorization
+/// layer never runs and the handler is what gates it. Script counts describe
+/// the instance's server-side code, which is admin territory.
 pub async fn get_script_stats_handler(
     State(state): State<AppState>,
+    Extension(claims): Extension<crate::server::auth::Claims>,
 ) -> Result<Json<ScriptStatsResponse>, DbError> {
     use std::sync::atomic::Ordering;
+
+    crate::server::authz_middleware::enforce(
+        &claims,
+        &state,
+        crate::server::authorization::PermissionAction::Admin,
+        None,
+    )
+    .await?;
 
     let stats = &state.script_stats;
     Ok(Json(ScriptStatsResponse {
@@ -525,6 +539,13 @@ pub async fn repl_eval_handler(
         .execute_repl(
             &req.code,
             &db_name,
+            ScriptUser {
+                username: claims.sub.clone(),
+                roles: claims.roles.clone().unwrap_or_default(),
+                authenticated: true,
+                scoped_databases: claims.scoped_databases.clone(),
+                exp: Some(claims.exp as u64),
+            },
             &session.variables,
             &history,
             &mut output_capture,
@@ -1203,17 +1224,29 @@ pub async fn execute_service_script_handler(
 
     let status = StatusCode::from_u16(result.status).unwrap_or(StatusCode::OK);
 
-    // Fast path: if script returned pre-serialized JSON, send it directly
-    if let Some(raw) = result.raw_body {
-        return Ok((
-            status,
-            [(axum::http::header::CONTENT_TYPE, "application/json")],
-            raw,
-        )
-            .into_response());
+    // Headers the script asked for (`solidb.header`, `response.*`).
+    let mut header_map = axum::http::HeaderMap::new();
+    for (name, value) in &result.headers {
+        if let (Ok(n), Ok(v)) = (
+            axum::http::HeaderName::from_bytes(name.as_bytes()),
+            axum::http::HeaderValue::from_str(value),
+        ) {
+            header_map.insert(n, v);
+        }
     }
 
-    Ok((status, Json(result.body)).into_response())
+    // Pre-serialised body: JSON unless the script said otherwise.
+    if let Some(raw) = result.raw_body {
+        if !header_map.contains_key(axum::http::header::CONTENT_TYPE) {
+            header_map.insert(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::HeaderValue::from_static("application/json"),
+            );
+        }
+        return Ok((status, header_map, raw).into_response());
+    }
+
+    Ok((status, header_map, Json(result.body)).into_response())
 }
 
 /// Find a script that matches the given service path and method

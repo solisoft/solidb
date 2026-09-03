@@ -1059,9 +1059,8 @@ impl SyncWorker {
                     doc_count,
                 } => {
                     let docs_data = if compressed {
-                        lz4_flex::decompress_size_prepended(&data).map_err(|e| {
-                            TransportError::DecodeError(format!("Decompression failed: {}", e))
-                        })?
+                        super::protocol::decompress_checked(&data)
+                            .map_err(TransportError::DecodeError)?
                     } else {
                         data
                     };
@@ -1314,10 +1313,10 @@ impl SyncWorker {
             }
 
             let payload = if compressed {
-                match lz4_flex::decompress_size_prepended(&data) {
+                match super::protocol::decompress_checked(&data) {
                     Ok(p) => p,
                     Err(e) => {
-                        tracing::error!("Decompression failed: {}, closing connection", e);
+                        tracing::error!("Decompression rejected: {}, closing connection", e);
                         break;
                     }
                 }

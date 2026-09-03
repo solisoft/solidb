@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::super::types::Context;
 use super::super::QueryExecutor;
-use crate::error::DbResult;
+use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
 use crate::sync::log::LogEntry;
 use crate::sync::protocol::Operation;
@@ -68,9 +68,22 @@ impl<'a> QueryExecutor<'a> {
         const STREAMING_THRESHOLD: i64 = 5_000;
         const BATCH_SIZE: i64 = 5_000;
 
-        let total_count = (end - start + 1).max(0);
-        if total_count < STREAMING_THRESHOLD {
+        // i128: `end - start` overflows i64 for `-9223372036854775808..9223372036854775807`.
+        let total_count = (end as i128 - start as i128 + 1).max(0);
+        if total_count < STREAMING_THRESHOLD as i128 {
             return Ok(None); // Use normal path for small ranges
+        }
+        // With a RETURN every produced index is kept until the end, so the
+        // range is bounded by the row ceiling like any other row set. This
+        // path reads the range straight from the AST, so the evaluator's own
+        // range cap never applied to it.
+        if query.return_clause.is_some() && total_count > self.max_intermediate_rows() as i128 {
+            return Err(DbError::ExecutionError(format!(
+                "Query exceeded the intermediate row limit ({} > {}). Add a \
+                 FILTER or LIMIT, or raise SOLIDB_MAX_INTERMEDIATE_ROWS.",
+                total_count,
+                self.max_intermediate_rows()
+            )));
         }
 
         tracing::info!(
@@ -80,7 +93,7 @@ impl<'a> QueryExecutor<'a> {
         );
 
         // Get collection once
-        let collection = self.get_collection(&insert_clause.collection)?;
+        let collection = self.get_collection_for_write(&insert_clause.collection)?;
 
         // Disable streaming bulk insert for sharded collections (fall back to generic path for routing)
         if let Some(config) = collection.get_shard_config() {
@@ -101,7 +114,9 @@ impl<'a> QueryExecutor<'a> {
         let total_start = std::time::Instant::now();
 
         while current <= end {
-            let batch_end = (current + BATCH_SIZE - 1).min(end);
+            // Deadline and result growth, once per batch.
+            self.check_budget(all_results.len())?;
+            let batch_end = current.saturating_add(BATCH_SIZE - 1).min(end);
             let batch_size = (batch_end - current + 1) as usize;
 
             // Build documents for this batch

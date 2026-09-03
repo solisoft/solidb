@@ -15,6 +15,16 @@ const MIN_CHUNK_SIZE: u32 = 64 * 1024;
 /// Maximum chunk size: 16 MiB
 const MAX_CHUNK_SIZE: u32 = 16 * 1024 * 1024;
 
+/// Maximum number of upload sessions held at once.
+///
+/// A session is cheap to create and expensive to hold: `received_chunks` is a
+/// `Vec<bool>` sized to the declared chunk count, so a 10 GiB upload declared
+/// with 64 KiB chunks reserves ~160 KB that lives for the full 24-hour TTL
+/// even if not one byte is ever sent. Nothing capped the *number* of sessions
+/// — unlike `cursor_store`, which is bounded at 10k with eviction — so
+/// looping the create endpoint was a straightforward way to exhaust memory.
+const MAX_SESSIONS: usize = 10_000;
+
 /// Stores in-progress resumable blob upload sessions
 #[derive(Clone)]
 pub struct UploadSessionStore {
@@ -101,6 +111,7 @@ impl UploadSessionStore {
             last_activity: Instant::now(),
         };
 
+        self.make_room()?;
         self.sessions.insert(upload_id.clone(), session);
 
         Ok(UploadSessionInfo {
@@ -109,6 +120,37 @@ impl UploadSessionStore {
             chunk_size,
             total_chunks,
         })
+    }
+
+    /// Keep the store under [`MAX_SESSIONS`] before admitting a new session.
+    ///
+    /// Sweeps expired sessions first — under normal use that is always
+    /// enough, because the ceiling is far above any real concurrent-upload
+    /// count. If a sweep does not free a slot, every session is live and the
+    /// request is refused rather than served by evicting somebody else's
+    /// in-progress upload.
+    fn make_room(&self) -> Result<(), crate::error::DbError> {
+        if self.sessions.len() < MAX_SESSIONS {
+            return Ok(());
+        }
+
+        let ttl = self.ttl;
+        self.sessions
+            .retain(|_, session| session.created_at.elapsed() <= ttl);
+
+        if self.sessions.len() >= MAX_SESSIONS {
+            tracing::warn!(
+                "Refusing upload session: {} live sessions is at the {} ceiling",
+                self.sessions.len(),
+                MAX_SESSIONS
+            );
+            return Err(crate::error::DbError::BadRequest(format!(
+                "Too many upload sessions in progress (limit {}). Complete or \
+                 abort an existing upload and retry.",
+                MAX_SESSIONS
+            )));
+        }
+        Ok(())
     }
 
     /// Get a reference to a session for reading

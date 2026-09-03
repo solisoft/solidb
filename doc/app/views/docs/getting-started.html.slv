@@ -723,7 +723,7 @@ kubectl -n solidb get pods -w</pre>
 
           <div class="p-8 space-y-6">
             <p class="text-gray-300 leading-relaxed">
-              SoliDB includes a web-based Admin UI for managing databases, collections, documents, and running queries.
+              SoliDB ships a web-based admin console, the Soli app in the <code class="text-purple-400">admin/</code> directory of the repository, for managing databases, collections, documents, scripts and running queries.
             </p>
 
             <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
@@ -737,22 +737,22 @@ kubectl -n solidb get pods -w</pre>
               >
                 <div class="flex">
                   <span class="text-purple-400 mr-2">$</span
-                  ><span class="text-gray-300">cd www</span>
+                  ><span class="text-gray-300">cd admin</span>
                 </div>
                 <div class="flex">
                   <span class="text-purple-400 mr-2">$</span
-                  ><span class="text-gray-300">./luaonbeans -D .</span>
+                  ><span class="text-gray-300">soli serve . --dev</span>
                 </div>
               </div>
               <p class="text-sm text-gray-400">
-                The Admin UI will be available at <code class="text-purple-400">http://localhost:8080</code>
+                The dev server prints the URL it listens on. Copy <code class="text-purple-400">admin/.env.example</code> to <code class="text-purple-400">admin/.env</code> first and set <code class="text-purple-400">ADMIN_UI_PASSWORD</code>: the console holds an admin credential for SoliDB and refuses to serve without a login unless you explicitly set <code class="text-purple-400">ADMIN_UI_ALLOW_NO_AUTH</code>.
               </p>
             </div>
 
             <div class="bg-purple-900/10 border border-purple-500/20 rounded-lg p-4">
               <p class="text-sm text-purple-200">
-                <strong>Note:</strong> The Admin UI requires SoliDB to be running on port 6745 (or accessible at a configured URL).
-                Configure the connection in the UI login screen.
+                <strong>Note:</strong> The admin console requires SoliDB to be running on port 6745 (or at the URL configured in <code>admin/.env</code>).
+                See <code>admin/CLAUDE.md</code> in the repository for the full list of settings.
               </p>
             </div>
           </div>

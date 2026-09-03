@@ -67,6 +67,49 @@ struct PooledState {
     needs_reset: AtomicBool,
 }
 
+/// Globals that survive [`LuaPool::reset_state`].
+///
+/// Also the list that gets snapshotted at static init and restored on reset,
+/// so a script cannot hand the next tenant a replaced `pairs` or `string`.
+const PRESERVED_GLOBALS: &[&str] = &[
+    // Standard Lua globals
+    "_G",
+    "_VERSION",
+    "assert",
+    "collectgarbage",
+    "error",
+    "getmetatable",
+    "ipairs",
+    "next",
+    "pairs",
+    "pcall",
+    "print",
+    "rawequal",
+    "rawget",
+    "rawlen",
+    "rawset",
+    "select",
+    "setmetatable",
+    "tonumber",
+    "tostring",
+    "type",
+    "xpcall",
+    // Standard libraries we keep
+    "coroutine",
+    "math",
+    "string",
+    "table",
+    "utf8",
+    // Static globals initialized by pool (Tier 1)
+    "crypto",
+    "time",
+    "json",
+    "solidb",
+    "response",
+    // Marker for static initialization
+    "__solidb_static_initialized",
+];
+
 impl LuaPool {
     /// Create a new pool with the specified number of Lua states.
     ///
@@ -177,7 +220,29 @@ impl LuaPool {
     pub fn acquire(&self) -> PoolGuard {
         let start = self.next_index.fetch_add(1, Ordering::Relaxed) % self.size;
 
-        // Lock-free try-acquire loop
+        if let Some(guard) = self.try_acquire_from(start) {
+            return guard;
+        }
+
+        // All states busy: wait for one, yielding the thread between
+        // attempts. Async callers should poll `try_acquire` with a deadline
+        // instead of blocking here.
+        loop {
+            if let Some(guard) = self.try_acquire_from(start) {
+                return guard;
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    /// Acquire a state if one is free right now, without waiting.
+    pub fn try_acquire(&self) -> Option<PoolGuard> {
+        let start = self.next_index.fetch_add(1, Ordering::Relaxed) % self.size;
+        self.try_acquire_from(start)
+    }
+
+    /// One lock-free pass over the states starting at `start`.
+    fn try_acquire_from(&self, start: usize) -> Option<PoolGuard> {
         for i in 0..self.size {
             let idx = (start + i) % self.size;
             let state = &self.states[idx];
@@ -189,31 +254,14 @@ impl LuaPool {
                 .is_ok()
             {
                 state.use_count.fetch_add(1, Ordering::Relaxed);
-                return PoolGuard {
+                return Some(PoolGuard {
                     state: state.clone(),
                     index: idx,
                     skip_reset: self.skip_reset,
-                };
+                });
             }
         }
-
-        // All states busy - spin-wait on the first one (fallback)
-        let state = &self.states[start];
-        loop {
-            if state
-                .in_use
-                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-                .is_ok()
-            {
-                state.use_count.fetch_add(1, Ordering::Relaxed);
-                return PoolGuard {
-                    state: state.clone(),
-                    index: start,
-                    skip_reset: self.skip_reset,
-                };
-            }
-            std::hint::spin_loop();
-        }
+        None
     }
 
     /// Cap a state's allocator so a script with an allocation loop OOMs its
@@ -386,6 +434,16 @@ impl LuaPool {
         solidb
             .set("error", error_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set error: {}", e)))?;
+        let status_fn = crate::scripting::response::create_status_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create status: {}", e)))?;
+        solidb
+            .set("status", status_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set status: {}", e)))?;
+        let header_fn = crate::scripting::response::create_header_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create header: {}", e)))?;
+        solidb
+            .set("header", header_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set header: {}", e)))?;
 
         let dev_assert_fn = create_dev_assert_function(lua).map_err(|e| {
             DbError::InternalError(format!("Failed to create dev_assert function: {}", e))
@@ -527,51 +585,9 @@ impl LuaPool {
             .map_err(|e| DbError::InternalError(format!("Failed to set json_decode: {}", e)))?;
 
         // 9. Create response table with static helpers
-        let response = lua.create_table().map_err(|e| {
-            DbError::InternalError(format!("Failed to create response table: {}", e))
-        })?;
-
-        // response.json(data) - helper to return JSON
-        let json_fn = lua
-            .create_function(|_, data: LuaValue| Ok(data))
-            .map_err(|e| {
-                DbError::InternalError(format!("Failed to create json function: {}", e))
-            })?;
-        response
-            .set("json", json_fn)
-            .map_err(|e| DbError::InternalError(format!("Failed to set json: {}", e)))?;
-
-        // response.html(content) - HTML response
-        let html_fn = create_response_html_function(lua).map_err(|e| {
-            DbError::InternalError(format!("Failed to create html function: {}", e))
-        })?;
-        response
-            .set("html", html_fn)
-            .map_err(|e| DbError::InternalError(format!("Failed to set html: {}", e)))?;
-
-        // response.file(path) - file download
-        let file_fn = create_response_file_function(lua).map_err(|e| {
-            DbError::InternalError(format!("Failed to create file function: {}", e))
-        })?;
-        response
-            .set("file", file_fn)
-            .map_err(|e| DbError::InternalError(format!("Failed to set file: {}", e)))?;
-
-        // response.stream(data) - streaming response
-        let stream_fn = create_response_stream_function(lua).map_err(|e| {
-            DbError::InternalError(format!("Failed to create stream function: {}", e))
-        })?;
-        response
-            .set("stream", stream_fn)
-            .map_err(|e| DbError::InternalError(format!("Failed to set stream: {}", e)))?;
-
-        // response.cors(options) - CORS headers
-        let cors_fn = create_response_cors_function(lua).map_err(|e| {
-            DbError::InternalError(format!("Failed to create cors function: {}", e))
-        })?;
-        response
-            .set("cors", cors_fn)
-            .map_err(|e| DbError::InternalError(format!("Failed to set cors: {}", e)))?;
+        // The `response` global: json / html / redirect / file / cors.
+        let response = crate::scripting::response::create_response_table(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create response: {}", e)))?;
 
         // Set globals
         globals
@@ -580,6 +596,12 @@ impl LuaPool {
         globals
             .set("response", response)
             .map_err(|e| DbError::InternalError(format!("Failed to set response global: {}", e)))?;
+
+        // Lock the shared string metatable, and snapshot the globals that
+        // survive a reset. Both close cross-tenant leaks through a pooled
+        // state (SEC-157).
+        Self::protect_shared_metatables(lua);
+        Self::snapshot_preserved_globals(lua);
 
         // Mark state as having static globals initialized
         globals
@@ -591,6 +613,104 @@ impl LuaPool {
         Ok(())
     }
 
+    /// Registry key holding the pristine values of the globals that a reset
+    /// preserves.
+    const PRISTINE_GLOBALS_KEY: &'static str = "__solidb_pristine_globals";
+
+    /// Make the string metatable unreachable from script code.
+    ///
+    /// Strings share one metatable across the whole Lua state, and it is the
+    /// one metatable a sandboxed script can still reach: `debug` is removed,
+    /// but `getmetatable("")` is not. `reset_state` nils user globals and
+    /// never touched metatables, so
+    /// `getmetatable("").__index = function(s, k) ... end` installed by one
+    /// tenant stayed on the pooled state and ran inside the *next* tenant's
+    /// script on any string method call — arbitrary code with that tenant's
+    /// database handle.
+    ///
+    /// Setting `__metatable` is the standard Lua answer: `getmetatable("")`
+    /// now returns this marker string instead of the table, and
+    /// `setmetatable` on a string raises "cannot change a protected
+    /// metatable". Cheaper and more robust than trying to scrub the table
+    /// after the fact, which would itself have to call globals a script may
+    /// have replaced.
+    fn protect_shared_metatables(lua: &Lua) {
+        // `Lua::load` is the Rust-side loader; it does not depend on the
+        // `load` global, which the sandbox removes.
+        let chunk = r#"
+            local getmt, setmt, str = ...
+            local mt = getmt("")
+            if type(mt) == "table" and rawget(mt, "__metatable") == nil then
+                if rawget(mt, "__index") == nil then
+                    rawset(mt, "__index", str)
+                end
+                rawset(mt, "__metatable", "protected: string metatable")
+            end
+            return true
+        "#;
+        let string_table: LuaValue = lua.globals().get("string").unwrap_or(LuaValue::Nil);
+        let getmt: LuaValue = lua.globals().get("getmetatable").unwrap_or(LuaValue::Nil);
+        let setmt: LuaValue = lua.globals().get("setmetatable").unwrap_or(LuaValue::Nil);
+        // Passed as arguments rather than read from globals inside the chunk:
+        // this runs before any script, so the globals are still pristine, and
+        // the chunk stays independent of them.
+        if let Err(e) = lua.load(chunk).call::<bool>((getmt, setmt, string_table)) {
+            tracing::warn!("Failed to protect the string metatable: {}", e);
+        }
+    }
+
+    /// Store the pristine value of every preserved global in the Lua registry.
+    ///
+    /// `reset_state` keeps these globals rather than nilling them, which also
+    /// means it keeps a script's *replacement* for one: `pairs = function() end`
+    /// or `string = {}` set by one tenant was inherited by the next. The
+    /// registry is not reachable from script code, so restoring from it is
+    /// sound where re-reading the globals would not be.
+    fn snapshot_preserved_globals(lua: &Lua) {
+        let globals = lua.globals();
+        let snapshot = match lua.create_table() {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!("Failed to snapshot preserved globals: {}", e);
+                return;
+            }
+        };
+        for name in PRESERVED_GLOBALS {
+            // `_G` is the globals table itself; storing it would pin a cycle
+            // and it cannot be meaningfully restored anyway.
+            if *name == "_G" {
+                continue;
+            }
+            if let Ok(value) = globals.get::<LuaValue>(*name) {
+                if !matches!(value, LuaValue::Nil) {
+                    let _ = snapshot.set(*name, value);
+                }
+            }
+        }
+        if let Err(e) = lua.set_named_registry_value(Self::PRISTINE_GLOBALS_KEY, snapshot) {
+            tracing::warn!("Failed to store preserved-global snapshot: {}", e);
+        }
+    }
+
+    /// Put the preserved globals back to the values captured at static init.
+    fn restore_preserved_globals(lua: &Lua) {
+        let Ok(snapshot) = lua.named_registry_value::<mlua::Table>(Self::PRISTINE_GLOBALS_KEY)
+        else {
+            return;
+        };
+        let globals = lua.globals();
+        for name in PRESERVED_GLOBALS {
+            if *name == "_G" {
+                continue;
+            }
+            if let Ok(value) = snapshot.get::<LuaValue>(*name) {
+                if !matches!(value, LuaValue::Nil) {
+                    let _ = globals.set(*name, value);
+                }
+            }
+        }
+    }
+
     /// Reset a Lua state for reuse.
     ///
     /// This clears user-defined globals while preserving:
@@ -599,53 +719,13 @@ impl LuaPool {
     fn reset_state(lua: &Lua) {
         let globals = lua.globals();
 
-        // List of globals that should be preserved
-        let preserved = [
-            // Standard Lua globals
-            "_G",
-            "_VERSION",
-            "assert",
-            "collectgarbage",
-            "error",
-            "getmetatable",
-            "ipairs",
-            "next",
-            "pairs",
-            "pcall",
-            "print",
-            "rawequal",
-            "rawget",
-            "rawlen",
-            "rawset",
-            "select",
-            "setmetatable",
-            "tonumber",
-            "tostring",
-            "type",
-            "xpcall",
-            // Standard libraries we keep
-            "coroutine",
-            "math",
-            "string",
-            "table",
-            "utf8",
-            // Static globals initialized by pool (Tier 1)
-            "crypto",
-            "time",
-            "json",
-            "solidb",
-            "response",
-            // Marker for static initialization
-            "__solidb_static_initialized",
-        ];
-
         // Collect keys to remove (these are per-request globals like db, request, context)
         let mut to_remove = Vec::new();
 
         let pairs = globals.pairs::<String, LuaValue>();
         for pair in pairs.flatten() {
             let (key, _) = pair;
-            if !preserved.contains(&key.as_str()) {
+            if !PRESERVED_GLOBALS.contains(&key.as_str()) {
                 to_remove.push(key);
             }
         }
@@ -654,6 +734,12 @@ impl LuaPool {
         for key in to_remove {
             let _ = globals.set(key, LuaValue::Nil);
         }
+
+        // Preserving a global by name is not the same as preserving its
+        // value: a script that assigned `pairs = ...` or `string = {}` left
+        // its replacement in place for the next tenant on this state. Put the
+        // pristine values back from the registry snapshot (SEC-157).
+        Self::restore_preserved_globals(lua);
 
         // Reset per-request fields in solidb table (auth, log, env, file functions, ai, streams, stats)
         // These will be re-set by setup_request_globals
@@ -1027,5 +1113,88 @@ mod tests {
         let stats = pool.stats();
         assert_eq!(stats.total_uses, 8);
         assert_eq!(stats.in_use, 0);
+    }
+
+    /// SEC-157: one tenant's script must not be able to leave a hook on the
+    /// shared string metatable for the next tenant on the same pooled state.
+    #[test]
+    fn string_metatable_is_not_reachable_from_script_code() {
+        let pool = LuaPool::new(1);
+        let guard = pool.acquire();
+        guard.with_lua(|lua| {
+            // `getmetatable("")` now yields the protection marker, not the
+            // table, so there is no `__index` to overwrite.
+            let mt_type: String = lua
+                .load(r#"return type(getmetatable(""))"#)
+                .call(())
+                .expect("getmetatable call");
+            assert_eq!(mt_type, "string", "string metatable must be protected");
+
+            // And the poisoning attempt itself fails rather than silently
+            // installing a hook.
+            let poisoned: bool = lua
+                .load(
+                    r#"
+                    local ok = pcall(function()
+                        getmetatable("").__index = function() return "pwned" end
+                    end)
+                    return ok
+                    "#,
+                )
+                .call(())
+                .expect("poison attempt");
+            assert!(!poisoned, "poisoning the string metatable must fail");
+
+            // String methods still work normally.
+            let upper: String = lua
+                .load(r#"return ("abc"):upper()"#)
+                .call(())
+                .expect("string method");
+            assert_eq!(upper, "ABC");
+        });
+    }
+
+    /// A replaced preserved global must not survive into the next borrow.
+    #[test]
+    fn replaced_preserved_globals_are_restored_on_reset() {
+        let pool = LuaPool::new(1);
+        {
+            let guard = pool.acquire();
+            guard.with_lua(|lua| {
+                lua.load(r#"string = {}; pairs = function() end"#)
+                    .exec()
+                    .expect("clobber globals");
+            });
+        }
+        let guard = pool.acquire();
+        guard.with_lua(|lua| {
+            let has_upper: bool = lua
+                .load(r#"return type(string) == "table" and type(string.upper) == "function""#)
+                .call(())
+                .expect("check string");
+            assert!(has_upper, "`string` must be restored for the next tenant");
+            let pairs_ok: bool = lua
+                .load(r#"local n = 0; for _ in pairs({1,2}) do n = n + 1 end; return n == 2"#)
+                .call(())
+                .expect("check pairs");
+            assert!(pairs_ok, "`pairs` must be restored for the next tenant");
+        });
+    }
+}
+
+#[cfg(test)]
+mod saturation_tests {
+    use super::*;
+
+    /// With every state held, `try_acquire` reports it instead of spinning.
+    #[test]
+    fn try_acquire_reports_saturation() {
+        let pool = LuaPool::new(2);
+        let g1 = pool.try_acquire().expect("first state");
+        let g2 = pool.try_acquire().expect("second state");
+        assert!(pool.try_acquire().is_none());
+        drop(g1);
+        assert!(pool.try_acquire().is_some());
+        drop(g2);
     }
 }

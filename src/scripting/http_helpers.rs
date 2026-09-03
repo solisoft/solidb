@@ -8,7 +8,7 @@ use lru::LruCache;
 use mlua::{Function, Lua, Result as LuaResult, Value as LuaValue};
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 use time::{format_description, OffsetDateTime};
 
 use crate::scripting::lua_to_json_value;
@@ -232,120 +232,6 @@ pub fn create_cache_get_function(lua: &Lua) -> LuaResult<Function> {
     })
 }
 
-/// Create response.html(content) function
-pub fn create_response_html_function(_lua: &Lua) -> LuaResult<Function> {
-    let lua_ref = _lua;
-    lua_ref.create_function(move |lua, content: String| {
-        // Return a special marker that response system will understand
-        Ok(LuaValue::String(
-            lua.create_string(format!("HTML_RESPONSE:{}", content))
-                .unwrap(),
-        ))
-    })
-}
-
-/// Create response.file(path) function
-pub fn create_response_file_function(_lua: &Lua) -> LuaResult<Function> {
-    let lua_ref = _lua;
-    lua_ref.create_function(move |lua, path: String| {
-        // Security: reject absolute paths and any ParentDir component.
-        // Component-based check avoids false positives on legit names like `v1.2..md`
-        // and false negatives on tricks substring-matching would miss.
-        let p = std::path::Path::new(&path);
-        let has_parent_dir = p
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir));
-        if p.is_absolute() || has_parent_dir {
-            let file_info = lua.create_table()?;
-            file_info.set(
-                "error",
-                "Invalid path: absolute paths and parent-dir traversal are not allowed",
-            )?;
-            file_info.set("exists", false)?;
-            return Ok(LuaValue::Table(file_info));
-        }
-
-        // Check if file exists and get its metadata
-        match std::fs::metadata(&path) {
-            Ok(metadata) => {
-                let file_info = lua.create_table()?;
-                file_info.set("path", path.clone())?;
-                file_info.set("size", metadata.len())?;
-                file_info.set("exists", true)?;
-
-                if let Ok(modified) = metadata.modified() {
-                    if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
-                        file_info.set("modified", duration.as_secs())?;
-                    }
-                }
-
-                Ok(LuaValue::Table(file_info))
-            }
-            Err(_) => {
-                let file_info = lua.create_table()?;
-                file_info.set("path", path)?;
-                file_info.set("exists", false)?;
-                Ok(LuaValue::Table(file_info))
-            }
-        }
-    })
-}
-
-/// Create response.stream(data) function
-pub fn create_response_stream_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|lua, data: LuaValue| {
-        // Return a marker indicating streaming response
-        let stream_info = lua.create_table()?;
-        stream_info.set("type", "stream")?;
-        stream_info.set("data", data)?;
-        Ok(LuaValue::Table(stream_info))
-    })
-}
-
-/// Create response.cors(options) function
-pub fn create_response_cors_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|lua, options: Option<LuaValue>| {
-        let cors_info = lua.create_table()?;
-
-        if let Some(opts) = options {
-            if let LuaValue::Table(t) = opts {
-                // Origins
-                if let Ok(origins) = t.get::<LuaValue>("origins") {
-                    cors_info.set("origins", origins)?;
-                }
-
-                // Methods
-                if let Ok(methods) = t.get::<LuaValue>("methods") {
-                    cors_info.set("methods", methods)?;
-                }
-
-                // Headers
-                if let Ok(headers) = t.get::<LuaValue>("headers") {
-                    cors_info.set("headers", headers)?;
-                }
-
-                // Credentials
-                if let Ok(credentials) = t.get::<bool>("credentials") {
-                    cors_info.set("credentials", credentials)?;
-                }
-
-                // Max age
-                if let Ok(max_age) = t.get::<u64>("max_age") {
-                    cors_info.set("max_age", max_age)?;
-                }
-            }
-        } else {
-            // Default CORS settings
-            cors_info.set("origins", "*")?;
-            cors_info.set("methods", "GET, POST, PUT, DELETE, OPTIONS")?;
-            cors_info.set("headers", "Content-Type, Authorization")?;
-        }
-
-        // Return CORS configuration that will be processed by response system
-        Ok(LuaValue::Table(cors_info))
-    })
-}
-
 /// Helper to convert JSON to Lua value
 fn json_to_lua(lua: &Lua, json: &JsonValue) -> LuaResult<LuaValue> {
     match json {
@@ -406,19 +292,5 @@ mod tests {
         let result: Result<bool, _> =
             cache_fn.call(("test_key".to_string(), LuaValue::Table(data), Some(60)));
         assert!(result.unwrap());
-    }
-
-    #[test]
-    fn test_response_html() {
-        let lua = Lua::new();
-        let html_fn = create_response_html_function(&lua).unwrap();
-
-        let result: Result<LuaValue, _> = html_fn.call("<h1>Test</h1>");
-        match result {
-            Ok(LuaValue::String(s)) => {
-                assert!(s.to_str().unwrap().starts_with("HTML_RESPONSE:"));
-            }
-            _ => panic!("Expected string result"),
-        }
     }
 }

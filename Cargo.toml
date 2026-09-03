@@ -27,7 +27,7 @@ axum = { version = "0.8.7", features = ["multipart", "ws", "macros"] }
 # HTTP/1 header-read timeout — see the multiplexed HTTP server in main.rs.
 hyper-util = { version = "0.1", features = ["server-auto", "server-graceful", "service", "tokio", "http1", "http2"] }
 tower = { version = "0.5.2", features = ["util"] }
-tower-http = { version = "0.6.8", features = ["trace", "cors", "compression-gzip", "compression-zstd"] }
+tower-http = { version = "0.6.8", features = ["trace", "cors", "compression-gzip", "compression-zstd", "set-header"] }
 async-stream = "0.3"
 async-trait = "0.1"
 
