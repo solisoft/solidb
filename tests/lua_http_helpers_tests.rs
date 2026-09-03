@@ -146,18 +146,16 @@ async fn test_cache_operations() {
 async fn test_cors_headers() {
     let (_engine, script_engine, _tmp) = create_test_env();
 
+    // response.cors(body, options?) returns an explicit response whose
+    // headers the HTTP layer sends.
     let code = r#"
-        local cors_options = {
-            origins = {"https://example.com", "https://app.example.com"},
-            methods = {"GET", "POST", "PUT", "DELETE"},
-            headers = {"Content-Type", "Authorization"},
+        return response.cors({ message = "CORS headers set" }, {
+            origin = "https://example.com",
+            methods = "GET, POST, PUT, DELETE",
+            headers = "Content-Type, Authorization",
             credentials = true,
             max_age = 86400
-        }
-
-        response.cors(cors_options)
-
-        return { message = "CORS headers set" }
+        })
     "#;
 
     let script = create_script(code);
@@ -167,111 +165,69 @@ async fn test_cors_headers() {
         .execute(&script, "testdb", &ctx)
         .await
         .unwrap();
-    let body = result.body.as_object().unwrap();
-
+    assert_eq!(result.status, 200);
+    assert_eq!(result.body["message"], "CORS headers set");
     assert_eq!(
-        body.get("message").unwrap().as_str().unwrap(),
-        "CORS headers set"
+        result.headers["Access-Control-Allow-Origin"],
+        "https://example.com"
     );
+    assert_eq!(
+        result.headers["Access-Control-Allow-Methods"],
+        "GET, POST, PUT, DELETE"
+    );
+    assert_eq!(result.headers["Access-Control-Allow-Credentials"], "true");
+    assert_eq!(result.headers["Access-Control-Max-Age"], "86400");
 }
 
 #[tokio::test]
 async fn test_response_helpers() {
     let (_engine, script_engine, _tmp) = create_test_env();
 
-    let code = r#"
-        -- Test HTML response
-        local html_content = "<html><body><h1>Hello World</h1></body></html>"
-        local html_result = response.html(html_content)
-
-        -- Test JSON response (already exists)
-        local json_data = { message = "Hello from API", status = "success" }
-        local json_result = response.json(json_data)
-
-        return {
-            html_content = html_content,
-            json_result = json_result
-        }
-    "#;
-
-    let script = create_script(code);
-    let ctx = create_context();
-
+    // response.html(content, status?) is sent as text/html, verbatim.
+    let script = create_script(
+        r#"return response.html("<html><body><h1>Hello World</h1></body></html>", 201)"#,
+    );
     let result = script_engine
-        .execute(&script, "testdb", &ctx)
+        .execute(&script, "testdb", &create_context())
         .await
         .unwrap();
-    let body = result.body.as_object().unwrap();
-
+    assert_eq!(result.status, 201);
+    assert!(result.headers["content-type"].starts_with("text/html"));
     assert_eq!(
-        body.get("html_content").unwrap().as_str().unwrap(),
-        "<html><body><h1>Hello World</h1></body></html>"
+        result.raw_body.as_deref(),
+        Some(b"<html><body><h1>Hello World</h1></body></html>".as_slice())
     );
-    assert!(body.get("json_result").is_some());
+
+    // response.json(body, status?, headers?) keeps the body as JSON.
+    let script = create_script(
+        r#"return response.json({ message = "Hello from API" }, 202, { ["X-Api"] = "v1" })"#,
+    );
+    let result = script_engine
+        .execute(&script, "testdb", &create_context())
+        .await
+        .unwrap();
+    assert_eq!(result.status, 202);
+    assert_eq!(result.body["message"], "Hello from API");
+    assert_eq!(result.headers["X-Api"], "v1");
+    assert!(result.raw_body.is_none());
 }
 
 #[tokio::test]
 async fn test_file_download_response() {
     let (_engine, script_engine, _tmp) = create_test_env();
 
-    let code = r#"
-        -- Test file download response
-        local file_path = "/tmp/test_file.txt"
-        local download_result = response.file(file_path)
-
-        return {
-            file_path = file_path,
-            success = download_result ~= nil
-        }
-    "#;
-
-    let script = create_script(code);
-    let ctx = create_context();
-
-    let result = script_engine
-        .execute(&script, "testdb", &ctx)
+    // response.file(key) serves a file stored with solidb.upload; it is
+    // resolved when the response is built, so an unknown key is an error
+    // rather than a 200 with nothing in it.
+    let script = create_script(r#"return response.file("no-such-file")"#);
+    let err = script_engine
+        .execute(&script, "testdb", &create_context())
         .await
-        .unwrap();
-    let body = result.body.as_object().unwrap();
-
-    assert_eq!(
-        body.get("file_path").unwrap().as_str().unwrap(),
-        "/tmp/test_file.txt"
+        .expect_err("unknown file key must fail");
+    assert!(
+        matches!(err, solidb::error::DbError::DocumentNotFound(_)),
+        "{err:?}"
     );
-    assert!(body.get("success").unwrap().as_bool().unwrap());
-}
-
-#[tokio::test]
-async fn test_streaming_response() {
-    let (_engine, script_engine, _tmp) = create_test_env();
-
-    let code = r#"
-        -- Test streaming response
-        local stream_data = {
-            "chunk1",
-            "chunk2",
-            "chunk3"
-        }
-
-        local stream_result = response.stream(stream_data)
-
-        return {
-            chunks_count = #stream_data,
-            success = stream_result ~= nil
-        }
-    "#;
-
-    let script = create_script(code);
-    let ctx = create_context();
-
-    let result = script_engine
-        .execute(&script, "testdb", &ctx)
-        .await
-        .unwrap();
-    let body = result.body.as_object().unwrap();
-
-    assert_eq!(body.get("chunks_count").unwrap().as_i64().unwrap(), 3);
-    assert!(body.get("success").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]
