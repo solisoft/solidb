@@ -71,10 +71,13 @@ async fn test_basic_error_functionality() {
 
     match script_engine.execute(&script, "testdb", &ctx).await {
         Ok(_) => panic!("Expected error, but got success"),
-        Err(e) => {
-            let error_msg = e.to_string();
-            assert!(error_msg.contains("ERROR:400:Validation failed"));
+        // `solidb.error(msg, code)` is delivered as that HTTP status, not as
+        // an internal error carrying "ERROR:code:msg" in its text.
+        Err(solidb::error::DbError::ScriptError { status, message }) => {
+            assert_eq!(status, 400);
+            assert_eq!(message, "Validation failed");
         }
+        Err(other) => panic!("expected ScriptError, got {other:?}"),
     }
 }
 
@@ -92,10 +95,11 @@ async fn test_error_with_default_code() {
 
     match script_engine.execute(&script, "testdb", &ctx).await {
         Ok(_) => panic!("Expected error, but got success"),
-        Err(e) => {
-            let error_msg = e.to_string();
-            assert!(error_msg.contains("ERROR:500:Internal server error"));
+        Err(solidb::error::DbError::ScriptError { status, message }) => {
+            assert_eq!(status, 500);
+            assert_eq!(message, "Internal server error");
         }
+        Err(other) => panic!("expected ScriptError, got {other:?}"),
     }
 }
 
