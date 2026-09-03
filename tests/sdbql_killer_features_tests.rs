@@ -23,6 +23,20 @@ fn exec(engine: &StorageEngine, q: &str) -> Value {
     out.into_iter().next().unwrap_or(Value::Null)
 }
 
+/// Catalog mutations (`CREATE_GRAPH`, `CREATE_VIEW`, ...) require a principal
+/// with write permission; an executor built without one is refused.
+fn exec_as_writer(engine: &StorageEngine, q: &str) -> Value {
+    let query = parse(q).unwrap_or_else(|e| panic!("parse {q}: {e}"));
+    let out = QueryExecutor::new(engine)
+        .with_principal(QueryPrincipal::from_roles(
+            "tester",
+            vec!["editor".to_string()],
+        ))
+        .execute(&query)
+        .unwrap_or_else(|e| panic!("exec {q}: {e}"));
+    out.into_iter().next().unwrap_or(Value::Null)
+}
+
 fn exec_ok(engine: &StorageEngine, q: &str) -> Result<Value, String> {
     let query = parse(q).map_err(|e| e.to_string())?;
     QueryExecutor::new(engine)
@@ -982,7 +996,7 @@ fn named_graph_catalog_and_search_view() {
         .insert(json!({"_from": "people/alice", "_to": "people/bob"}))
         .unwrap();
 
-    let created = exec(
+    let created = exec_as_writer(
         &e,
         r#"RETURN CREATE_GRAPH("social", {vertices: ["people"], edges: ["follows"]})"#,
     );
@@ -997,7 +1011,7 @@ fn named_graph_catalog_and_search_view() {
         .unwrap();
     assert_eq!(walked, vec![json!("bob")]);
 
-    exec(&e, r#"RETURN DROP_GRAPH("social")"#);
+    exec_as_writer(&e, r#"RETURN DROP_GRAPH("social")"#);
     assert!(exec_ok(&e, r#"RETURN GRAPH_INFO("social")"#).is_err());
 
     e.create_collection("notes".into(), None).unwrap();
@@ -1005,7 +1019,7 @@ fn named_graph_catalog_and_search_view() {
         .unwrap()
         .insert(json!({"_key": "1", "body": "hello world"}))
         .unwrap();
-    exec(
+    exec_as_writer(
         &e,
         r#"RETURN CREATE_VIEW("notes_v", {collection: "notes", fields: ["body"]})"#,
     );
@@ -1013,7 +1027,7 @@ fn named_graph_catalog_and_search_view() {
         .execute(&parse(r#"FOR d IN notes_v RETURN d._key"#).unwrap())
         .unwrap();
     assert_eq!(from_view, vec![json!("1")]);
-    exec(&e, r#"RETURN DROP_VIEW("notes_v")"#);
+    exec_as_writer(&e, r#"RETURN DROP_VIEW("notes_v")"#);
 }
 
 #[test]
