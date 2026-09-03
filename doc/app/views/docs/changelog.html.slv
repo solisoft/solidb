@@ -14,6 +14,19 @@
     <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li>Nothing yet.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 1.1.0 -->
+  <section id="v1-1-0" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v1.1.0</h2>
+      <span class="text-sm font-medium text-gray-400">September 3, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
         <li><strong class="text-white">Scripts control their HTTP response</strong> &mdash; a script&rsquo;s return value was always a JSON 200: <code>response.html(...)</code> produced a marker string nothing read, <code>solidb.error("msg", 404)</code> reached the client as a 500, and the tutorials&rsquo; <code>solidb.status(201)</code> did not exist. Now <code>solidb.status(code)</code> and <code>solidb.header(name, value)</code> shape a plain return value; <code>response.json(body, status?, headers?)</code>, <code>response.html(content, status?)</code>, <code>response.redirect(url, status?)</code>, <code>response.file(key, filename?)</code> (a file stored with <code>solidb.upload</code>, served with its MIME type) and <code>response.cors(body, options?)</code> return an explicit response; <code>solidb.error(msg, code)</code> becomes that status with <code>{"error": msg}</code>. A plain table is still a JSON 200. <code>response.stream</code> is gone: it never did anything.</li>
         <li><strong class="text-white"><code>solidb scripts test</code> and <code>push</code> agree with the server</strong> &mdash; the CLI test client built <code>/api/{service}/{db}/...</code> while the server routes <code>/api/{db}/{service}/...</code>, so a project&rsquo;s tests could never reach its scripts; and <code>push</code> did not send the project&rsquo;s <code>service</code>, so every script landed under <code>default</code> whatever <code>solidb-scripts.toml</code> said.</li>
         <li><strong class="text-white">Lua scripts write as their caller</strong> &mdash; <code>db:collection(name)</code>, <code>db:query(...)</code> and <code>db:transaction(...)</code> resolved collections with the plain getter and ran queries with no principal, so none of the write tiers applied from Lua: a script could insert into <code>_scripts</code> and mint itself an endpoint, and a public &ldquo;insert into <code>request.body.collection</code>&rdquo; script let any caller pick the target. Every by-name write from a script is now attributed to the request&rsquo;s user (never to the server): <code>_scripts</code>, <code>_services</code>, <code>_triggers</code>, <code>_views</code>, <code>_graphs</code>, <code>_config</code> and the credential collections are refused for everyone, <code>_jobs</code> needs an admin caller &mdash; the queue worker runs job and trigger scripts as <code>_system</code>/admin, so re-enqueueing from a job keeps working &mdash; and ordinary collections are unchanged. A refusal now surfaces as 403 instead of a 500 wrapping the message. <code>db:query</code> runs under the caller&rsquo;s principal, so row policies apply to non-admins exactly as on <code>/cursor</code>, and its 100&nbsp;ms result cache is keyed per caller and skips mutations. The REPL carries the identity of the admin who opened it. The non-pooled script path had its own copy of the <code>db</code> object; there is one implementation now, and it gained <code>db:query_json</code>.</li>

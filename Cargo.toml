@@ -4,7 +4,7 @@ exclude = ["fuzz"]
 
 [package]
 name = "solidb"
-version = "1.0.2"
+version = "1.1.0"
 edition = "2021"
 # Floor imposed by the dependency tree (rust-rocksdb 0.46 declares 1.89.0).
 # Enforced by the `msrv` CI job, which builds with exactly this toolchain.

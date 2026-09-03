@@ -2,6 +2,51 @@
 
 ## [Unreleased]
 
+## [1.1.0](https://github.com/solisoft/solidb/compare/v1.0.2...v1.1.0) (2026-09-03)
+
+### Security
+
+* **A request may fail; it may no longer take the server with it.** Closed the
+  paths that killed the process (SQL parser recursion, cyclic Lua tables,
+  `RANGE` i64 overflow, `K_PATHS` recursion, WebSocket Lua scripts without a
+  hook or memory limit) and the ones that stalled it (Lua pool spin, unbounded
+  scatter-gather and `fetch` HTTP, driver payload reads, executors without a
+  deadline, the never-scheduled transaction reaper). Every whole-collection
+  read on the query path is bounded before the allocation, `COLLECT` streams
+  its aggregates, and index builds run on the blocking pool.
+* **Three tiers of protected collections, one decision point.**
+  `check_write_access(name, WriteActor)` is enforced by the storage write
+  getters and covers the document API, SDBQL, the driver, import, truncate,
+  blob uploads and the Lua bindings. `_jobs` is writable by name with an Admin
+  credential (the Soli framework's job store); `_scripts`, `_services`,
+  `_triggers`, `_views`, `_graphs`, `_config` are never written by name.
+* **Lua scripts write as their caller, never as the server.** A public
+  "insert into `request.body.collection`" script can no longer be steered at
+  `_scripts`; refusals surface as 403; `db:query` runs under the caller's
+  principal; the REPL carries the identity of the admin who opened it.
+* **Admin console login gate** (`ADMIN_UI_PASSWORD` / `ADMIN_UI_ALLOW_NO_AUTH`),
+  fail-closed.
+
+### Features
+
+* **Scripts control their HTTP response.** `solidb.status(code)`,
+  `solidb.header(name, value)`, `solidb.error(message, code)` (delivered with
+  that status), and `response.json / html / redirect / file / cors`.
+* **`COLLECT ... WITH COUNT INTO` parses.**
+
+### Bug Fixes
+
+* `solidb scripts test` built `/api/{service}/{db}/...` (the server routes
+  `/api/{db}/{service}/...`); `solidb scripts push` did not send the project's
+  service.
+* Request-level panics in `SLICE`, oversized float literals, blob content types
+  and poisoned vector-index locks.
+
+### Documentation
+
+* The scripting section of the docs site rewritten against the code: routes,
+  a Services page, Lua 5.4, and only the globals that exist.
+
 ### Performance
 
 * **jemalloc now serves RocksDB too, not just Rust.** It was linked with its
