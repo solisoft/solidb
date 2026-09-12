@@ -19,6 +19,19 @@
     </div>
   </section>
 
+  <!-- 1.1.1 -->
+  <section id="v1-1-1" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v1.1.1</h2>
+      <span class="text-sm font-medium text-gray-400">September 12, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Static musl build for glibc-incompatible systems</strong> &mdash; CI now builds a fully static <code>solidb-linux-amd64-musl</code> binary on every release, linked against musl libc instead of glibc. The <code>install.sh</code> script tests the downloaded binary and automatically falls back to the static build if it fails due to glibc version mismatch, so users on systems with older glibc/libstdc++ get a working binary without manual intervention.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 1.1.0 -->
   <section id="v1-1-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

@@ -73,15 +73,38 @@ fi
 echo "Installing SoliDB ${TAG} ..."
 
 # --- Download and extract ---
-TARBALL="solidb-${OS}-${ARCH}.tar.gz"
-DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${TARBALL}"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+# Try the gnu binary first (better performance on compatible systems)
+TARBALL="solidb-${OS}-${ARCH}.tar.gz"
+DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${TARBALL}"
+
 echo "Downloading ${DOWNLOAD_URL} ..."
 fetch "$DOWNLOAD_URL" > "${TMP_DIR}/${TARBALL}"
-
 tar xzf "${TMP_DIR}/${TARBALL}" -C "$TMP_DIR"
+
+# Check if binary is compatible with system
+if ! "${TMP_DIR}/solidb" --version >/dev/null 2>&1; then
+  # If it fails and we're on Linux, try the musl static binary instead
+  if [ "$OS" = "linux" ]; then
+    echo "GNU binary not compatible (glibc version mismatch). Trying static musl build..."
+    rm -rf "${TMP_DIR}"/*
+    TARBALL="solidb-linux-${ARCH}-musl.tar.gz"
+    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${TARBALL}"
+    echo "Downloading ${DOWNLOAD_URL} ..."
+    if fetch "$DOWNLOAD_URL" > "${TMP_DIR}/${TARBALL}" 2>/dev/null; then
+      tar xzf "${TMP_DIR}/${TARBALL}" -C "$TMP_DIR"
+      echo "Using static musl build instead."
+    else
+      echo "Error: static musl binary not available for this release."
+      exit 1
+    fi
+  else
+    echo "Error: binary not compatible with system."
+    exit 1
+  fi
+fi
 
 # --- Install binary ---
 if [ "$SYSTEM_INSTALL" = "1" ]; then

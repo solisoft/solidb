@@ -248,6 +248,9 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: solidb-linux-amd64
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            artifact: solidb-linux-amd64-musl
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: solidb-darwin-arm64
@@ -279,6 +282,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Install system dependencies (Linux musl)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
 
       # librocksdb-sys runs bindgen, which needs libclang. LLVM, MSVC and CMake are all
       # preinstalled on windows-latest, so this only points bindgen at libclang.dll.
