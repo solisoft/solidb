@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
 use tracing::error;
@@ -56,6 +57,10 @@ pub struct ClusterStatsCollector {
     /// Per-collection gate holding a hash of the last document written, so an
     /// unchanged collection costs neither the stats gathering nor the write.
     gate: StatsGate<u64>,
+    /// Cleared once the first cycle has reconciled `_cluster_informations`
+    /// against the live collections. The gate only knows what this process
+    /// wrote, so rows left behind by earlier runs are invisible to it.
+    reconciled: AtomicBool,
 }
 
 impl ClusterStatsCollector {
@@ -68,6 +73,7 @@ impl ClusterStatsCollector {
             storage,
             coordinator,
             gate: StatsGate::new(FULL_REFRESH),
+            reconciled: AtomicBool::new(false),
         }
     }
 
@@ -218,8 +224,34 @@ impl ClusterStatsCollector {
             }
         }
 
-        // Drop gate entries for collections that no longer exist.
-        self.gate.retain(&live);
+        // Drop gate entries for collections that no longer exist — and the
+        // documents they wrote. Forgetting only the in-memory entry left the
+        // row in `_cluster_informations` forever: every test database that was
+        // created and dropped added rows nothing would ever delete (measured
+        // at 5585 documents against 969 live collections).
+        for doc_id in self.gate.retain(&live) {
+            if sys_coll.get(&doc_id).is_ok() {
+                let _ = sys_coll.delete(&doc_id);
+            }
+        }
+
+        // The gate starts empty, so it cannot account for rows written before
+        // this process started. Reconcile the whole collection once, then let
+        // the incremental path above keep it in step.
+        if !self.reconciled.swap(true, Ordering::Relaxed) {
+            let mut pruned = 0usize;
+            for doc in sys_coll.scan(None) {
+                if !live.contains(&doc.key) && sys_coll.delete(&doc.key).is_ok() {
+                    pruned += 1;
+                }
+            }
+            if pruned > 0 {
+                tracing::info!(
+                    "Pruned {} stale _cluster_informations document(s) left by earlier runs",
+                    pruned
+                );
+            }
+        }
 
         Ok(())
     }

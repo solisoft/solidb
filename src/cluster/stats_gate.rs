@@ -82,8 +82,21 @@ impl<T: Clone> StatsGate<T> {
 
     /// Forget collections that no longer exist, so a long-lived sweep does not
     /// accumulate entries for dropped collections.
-    pub fn retain(&self, live: &HashSet<String>) {
-        self.entries.lock().retain(|key, _| live.contains(key));
+    ///
+    /// Returns the keys that were forgotten. Dropping the in-memory entry is
+    /// only half the job: the caller also persisted a document per key, and
+    /// those rows outlive the collection unless it deletes them too.
+    pub fn retain(&self, live: &HashSet<String>) -> Vec<String> {
+        let mut removed = Vec::new();
+        self.entries.lock().retain(|key, _| {
+            if live.contains(key) {
+                true
+            } else {
+                removed.push(key.clone());
+                false
+            }
+        });
+        removed
     }
 }
 

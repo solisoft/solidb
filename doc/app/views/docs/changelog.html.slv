@@ -14,7 +14,10 @@
     <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
-        <li>Nothing yet.</li>
+        <li><strong class="text-white">Removed: <code class="text-cyan-400">QUEUE_WORKERS</code></strong> &mdash; the maintenance loop is a single task now. Claimed jobs already executed on <code>tokio::spawn</code>, so their concurrency came from the runtime rather than the worker count, and every sweep takes the same claiming lock &mdash; so each worker past the first woke on the same tick only to lose that lock and go back to sleep. Setting the variable has no effect; nothing needs changing in an existing config.</li>
+        <li><strong class="text-white">Fixed: the embedding sweep ran once per worker</strong> &mdash; <code>check_embeddings</code> was the only periodic sweep without the claiming-lock guard, so every worker enumerated every collection in the instance on the same five-second tick.</li>
+        <li><strong class="text-white">Fixed: <code class="text-cyan-400">_cluster_informations</code> grew without bound</strong> &mdash; the stats gate forgot dropped collections in memory but never deleted the documents it had written for them, so a dev instance that creates and drops databases accumulated rows nothing would ever remove (measured at 5585 documents against 969 live collections). Stale rows are now deleted as collections vanish, and one full reconciliation on startup clears what earlier runs left behind.</li>
+        <li><strong class="text-white">Faster background sweeps on instances with many collections</strong> &mdash; the embedding and TTL sweeps drove <code>Database::list_collections</code> from the database list, and that call clones every column-family name in the instance, making each pass cost <em>databases &times; total collections</em> string allocations. Both now take a single grouped pass, as the cluster stats collector already did.</li>
       </ul>
     </div>
   </section>
