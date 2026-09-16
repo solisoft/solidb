@@ -590,3 +590,24 @@ static PENDING_EMBED_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::At
 pub fn pending_embed_count() -> u64 {
     PENDING_EMBED_COUNT.load(std::sync::atomic::Ordering::Relaxed)
 }
+
+/// Retire `n` from the process-wide pending gauge, saturating at zero.
+///
+/// The gauge is advisory. `mark_embed_pending` counts a marker up and
+/// `clear_embed_pending` counts it back down, but a marker can also vanish
+/// with its column family when a collection or database is dropped, and that
+/// path holds no `Collection` to decrement through. A test suite that creates
+/// and drops databases therefore leaves the gauge permanently above zero,
+/// which keeps `check_embeddings` past its fast path — enumerating every
+/// collection in the instance on every worker tick, forever. The sweep calls
+/// this once a complete pass has proved no markers exist.
+pub(crate) fn release_pending_embed(n: u64) {
+    if n == 0 {
+        return;
+    }
+    let _ = PENDING_EMBED_COUNT.fetch_update(
+        std::sync::atomic::Ordering::Relaxed,
+        std::sync::atomic::Ordering::Relaxed,
+        |cur| Some(cur.saturating_sub(n)),
+    );
+}

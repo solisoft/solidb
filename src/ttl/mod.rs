@@ -29,17 +29,20 @@ impl TtlWorker {
 
     /// Cleanup expired documents across all databases and collections
     async fn cleanup_expired_documents(&self) {
-        let databases = self.storage.list_databases();
         let mut total_deleted = 0;
 
-        for db_name in databases {
+        // One pass over the column families instead of one per database.
+        // `Database::list_collections` calls `DB::cf_names`, which clones every
+        // column-family name in the instance on each call, so driving it from
+        // the database list cost `databases × total collections` string
+        // allocations every interval before a single expiry was examined.
+        for (db_name, coll_names) in self.storage.collections_grouped() {
             let db = match self.storage.get_database(&db_name) {
                 Ok(db) => db,
                 Err(_) => continue,
             };
 
-            let collections = db.list_collections();
-            for coll_name in collections {
+            for coll_name in coll_names {
                 let collection = match db.system_collection(&coll_name) {
                     Ok(coll) => coll,
                     Err(_) => continue,

@@ -350,11 +350,6 @@ volumes:
                       <td class="p-3">Secret for signing JWT tokens</td>
                     </tr>
                     <tr>
-                      <td class="p-3 font-mono text-cyan-400">QUEUE_WORKERS</td>
-                      <td class="p-3">4</td>
-                      <td class="p-3">Maintenance workers per node (trigger dispatch, embeddings, materialized views)</td>
-                    </tr>
-                    <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLI_WEBHOOK_SECRET</td>
                       <td class="p-3"><em>unset</em></td>
                       <td class="p-3">Default HMAC-SHA256 key used to sign outbound trigger webhooks via <code>X-Webhook-Signature</code>. Per-target <code>webhook_secret</code> wins; if both are unset the signature header is omitted. See <a href="/docs/triggers" class="text-cyan-400 hover:underline">Triggers</a>.</td>
@@ -870,11 +865,6 @@ kubectl -n solidb get pods -w</pre>
                       <td class="p-3">false</td>
                       <td class="p-3">Set to <code class="text-amber-400">1</code> or <code class="text-amber-400">true</code> to skip Lua global reset between requests. Provides maximum throughput for stateless scripts. Do not enable if scripts rely on clean global state.</td>
                     </tr>
-                    <tr>
-                      <td class="p-3 font-mono text-indigo-400">QUEUE_WORKERS</td>
-                      <td class="p-3">4</td>
-                      <td class="p-3">Number of concurrent maintenance workers per node. Each worker dispatches fired triggers and refreshes embeddings and materialized views.</td>
-                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -956,7 +946,6 @@ kubectl -n solidb get pods -w</pre>
                 class="bg-gray-950 p-4 rounded-xl border border-white/10 font-mono text-sm text-gray-300 whitespace-pre"
               >SOLIDB_ADMIN_PASSWORD=my_secure_password
 JWT_SECRET=your-secure-jwt-secret-32-chars-min
-QUEUE_WORKERS=8
 SOLIDB_LUA_POOL_SIZE=32
 SOLIDB_LUA_FAST_MODE=1
 SOLIDB_CLUSTER_SCHEME=https

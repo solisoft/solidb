@@ -12,7 +12,7 @@
 use super::QueueWorker;
 use crate::error::DbError;
 use crate::server::llm_client::LLMClient;
-use crate::storage::collection::vector::pending_embed_count;
+use crate::storage::collection::vector::{pending_embed_count, release_pending_embed};
 use crate::storage::index::{extract_field_value, VectorIndexConfig};
 use crate::storage::Collection;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -39,20 +39,41 @@ impl QueueWorker {
     /// One embedding sweep. Called from the worker loop alongside `check_jobs`.
     pub(crate) async fn check_embeddings(&self) {
         // Fast path: nothing pending anywhere → no enumeration at all.
-        if pending_embed_count() == 0 {
+        // Read once: whatever the gauge claims now is what a fruitless sweep
+        // is allowed to retire below, so marks recorded while we sweep survive.
+        let claimed = pending_embed_count();
+        if claimed == 0 {
             return;
         }
         // Respect backoff after a recent provider failure.
         if now_secs() < RETRY_AFTER.load(Ordering::Relaxed) {
             return;
         }
+        // Serialize with the other periodic scanners; skip if another caller
+        // holds it. `check_jobs` and `check_materialized_views` both took this
+        // lock and this sweep did not, so back when the worker loop was spawned
+        // `QUEUE_WORKERS` times (four by default) every one of those loops
+        // enumerated every collection in the instance on the same five-second
+        // tick. The loop is single now, but the guard is what makes that safe.
+        let _lock = match self.claiming_lock.try_lock() {
+            Ok(l) => l,
+            Err(_) => return,
+        };
 
-        for db_name in self.storage.list_databases() {
+        // One pass over the column families instead of one per database.
+        // `Database::list_collections` calls `DB::cf_names`, which clones every
+        // column-family name in the instance on each call, so driving it from
+        // the database list cost `databases × total collections` string
+        // allocations on every worker tick — 46 × 969 here, five seconds apart.
+        let grouped = self.storage.collections_grouped();
+        let mut saw_pending = false;
+
+        for (db_name, coll_names) in grouped {
             let db = match self.storage.get_database(&db_name) {
                 Ok(d) => d,
                 Err(_) => continue,
             };
-            for coll_name in db.list_collections() {
+            for coll_name in coll_names {
                 let coll = match db.system_collection(&coll_name) {
                     Ok(c) => c,
                     Err(_) => continue,
@@ -66,6 +87,7 @@ impl QueueWorker {
                     if pending.is_empty() {
                         continue;
                     }
+                    saw_pending = true;
                     if let Err(e) = self
                         .embed_pending_batch(&db_name, &coll, &config, &pending)
                         .await
@@ -85,6 +107,15 @@ impl QueueWorker {
                     }
                 }
             }
+        }
+
+        // A complete pass that found no marker at all means the gauge has
+        // drifted above reality — markers vanish with a dropped column family
+        // without passing through `clear_embed_pending`. Left alone the gauge
+        // never returns to zero, and this enumeration then runs on every tick
+        // for the life of the process. Retire only what was claimed on entry.
+        if !saw_pending {
+            release_pending_embed(claimed);
         }
     }
 

@@ -37,7 +37,6 @@ pub struct QueueWorker {
     /// reverse proxy succeed without putting the root CA in SolidB's
     /// trust store.
     pub(crate) dev_http_client: reqwest::Client,
-    worker_count: usize,
     notifier: broadcast::Sender<()>,
     pub(crate) claiming_lock: tokio::sync::Mutex<()>,
     /// Per-node next-due times ("db:view" -> unix secs) for scheduled
@@ -51,11 +50,6 @@ impl QueueWorker {
         let script_engine = Arc::new(
             ScriptEngine::new(storage.clone(), stats).with_queue_notifier(notifier.clone()),
         );
-
-        let worker_count = std::env::var("QUEUE_WORKERS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(4);
 
         // `redirect(none)`: the SSRF guard only ever sees the configured URL,
         // so a public host answering `302 Location: http://127.0.0.1:...` or
@@ -84,7 +78,6 @@ impl QueueWorker {
             script_engine,
             http_client,
             dev_http_client,
-            worker_count,
             notifier,
             claiming_lock: tokio::sync::Mutex::new(()),
             mv_next_due: std::sync::Mutex::new(std::collections::HashMap::new()),
@@ -95,32 +88,34 @@ impl QueueWorker {
         self.notifier.clone()
     }
 
+    /// Run the maintenance loop: claim due jobs, sweep pending embeddings,
+    /// refresh scheduled materialized views.
+    ///
+    /// One loop, deliberately. This used to spawn `QUEUE_WORKERS` (default 4)
+    /// identical loops, but nothing was gained by it: claimed jobs execute on
+    /// `tokio::spawn`, so their concurrency comes from the runtime, and all
+    /// three sweeps below take `claiming_lock` — so every worker past the
+    /// first woke on the same tick only to lose the `try_lock` and go back to
+    /// sleep. The knob's one real effect was on `check_embeddings`, which had
+    /// no such guard and so enumerated every collection in the instance once
+    /// per worker, every five seconds.
     pub async fn start(self: Arc<Self>) {
-        tracing::info!("Starting QueueWorker with {} workers", self.worker_count);
+        tracing::info!("Starting QueueWorker");
 
-        let mut workers = Vec::new();
-        for i in 0..self.worker_count {
-            let worker = self.clone();
-            let mut rx = self.notifier.subscribe();
-
-            let handle = tokio::spawn(async move {
-                tracing::info!("Queue Worker {} started", i);
-                loop {
-                    tokio::select! {
-                        _ = rx.recv() => {
-                            tracing::debug!("Queue Worker {} woke up by notification", i);
-                        }
-                        _ = tokio::time::sleep(Duration::from_secs(5)) => {
-                            tracing::debug!("Queue Worker {} periodic check", i);
-                        }
-                    }
-
-                    worker.check_jobs().await;
-                    worker.check_embeddings().await;
-                    worker.check_materialized_views().await;
+        let mut rx = self.notifier.subscribe();
+        loop {
+            tokio::select! {
+                _ = rx.recv() => {
+                    tracing::debug!("Queue worker woke up by notification");
                 }
-            });
-            workers.push(handle);
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {
+                    tracing::debug!("Queue worker periodic check");
+                }
+            }
+
+            self.check_jobs().await;
+            self.check_embeddings().await;
+            self.check_materialized_views().await;
         }
     }
 }
