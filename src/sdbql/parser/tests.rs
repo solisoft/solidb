@@ -510,3 +510,61 @@ fn test_has_mutations_still_sees_clause_level_writes() {
         assert!(parsed.has_mutations(), "must require Write: {}", query);
     }
 }
+
+// --- LET after LIMIT --------------------------------------------------------
+//
+// AQL allows a binding past the limit; this parser used to stop there with
+// "Unexpected token: Let", because the clause order is fixed (body, SORT,
+// LIMIT, RETURN) and a `LET` written afterwards had nowhere to go.
+
+#[test]
+fn test_parse_let_after_limit() {
+    let query = parse("FOR c IN companies SORT c.name ASC LIMIT 0, 50 LET n = 1 RETURN n").unwrap();
+
+    assert_eq!(query.post_limit_lets.len(), 1);
+    assert_eq!(query.post_limit_lets[0].variable, "n");
+    assert!(query.limit_clause.is_some());
+    assert!(query.return_clause.is_some());
+}
+
+#[test]
+fn test_parse_let_after_limit_keeps_body_lets_apart() {
+    // A binding on each side of the limit: the one before belongs to the body
+    // and runs for every row, the one after only for the survivors. Folding
+    // them together would lose exactly that distinction.
+    let query = parse("FOR c IN companies LET a = 1 LIMIT 10 LET b = 2 RETURN [a, b]").unwrap();
+
+    assert_eq!(query.post_limit_lets.len(), 1);
+    assert_eq!(query.post_limit_lets[0].variable, "b");
+    assert!(query
+        .body_clauses
+        .iter()
+        .any(|clause| matches!(clause, BodyClause::Let(l) if l.variable == "a")));
+}
+
+#[test]
+fn test_parse_several_lets_after_limit() {
+    let query = parse("FOR c IN users LIMIT 5 LET a = 1 LET b = 2 RETURN [a, b]").unwrap();
+    assert_eq!(query.post_limit_lets.len(), 2);
+}
+
+#[test]
+fn test_parse_let_after_limit_with_subquery() {
+    // The case this was written for: a correlated subquery paid for once per
+    // returned row rather than once per row scanned.
+    let query = parse(
+        "FOR c IN companies SORT c.name ASC LIMIT 0, 50 \
+         LET dus = (FOR o IN orders FILTER o.company_id == c._key RETURN o.total) \
+         RETURN MERGE(c, { \"encours\": SUM(dus) })",
+    )
+    .unwrap();
+
+    assert_eq!(query.post_limit_lets.len(), 1);
+    assert_eq!(query.post_limit_lets[0].variable, "dus");
+}
+
+#[test]
+fn test_parse_let_after_standalone_offset() {
+    let query = parse("FOR c IN users OFFSET 10 LET n = 1 RETURN n").unwrap();
+    assert_eq!(query.post_limit_lets.len(), 1);
+}

@@ -73,6 +73,16 @@ pub struct Query {
     /// Optional WINDOW clause for stream processing
     pub window_clause: Option<WindowClause>,
 
+    /// `LET` bindings written *after* `LIMIT`, evaluated on the surviving rows.
+    ///
+    /// They are kept apart from `body_clauses` because their position is the
+    /// whole point: a `LET` before `LIMIT` is computed for every row the query
+    /// touches, one after `LIMIT` only for the rows that survive it. Folding
+    /// them into the body would accept the syntax and quietly do the expensive
+    /// thing — on a page of fifty rows out of five thousand, a correlated
+    /// subquery would run a hundred times too often.
+    pub post_limit_lets: Vec<LetClause>,
+
     /// Ordered body clauses (FOR, LET, FILTER) preserving declaration order
     /// This enables correlated subqueries where LET can reference outer FOR variables
     pub body_clauses: Vec<BodyClause>,
@@ -1030,6 +1040,7 @@ mod tests {
             create_materialized_view_clause: None,
             refresh_materialized_view_clause: None,
             window_clause: None,
+            post_limit_lets: vec![],
             body_clauses: vec![],
             set_operations: vec![],
         };

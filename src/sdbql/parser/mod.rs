@@ -285,6 +285,21 @@ impl Parser {
             });
         }
 
+        // `LET` after `LIMIT`, which AQL allows and this parser used to reject
+        // outright ("Unexpected token: Let"). The clause order above is fixed --
+        // body, SORT, LIMIT, RETURN -- so a binding written past the limit had
+        // nowhere to go.
+        //
+        // It is collected separately rather than pushed onto `body_clauses`:
+        // the executor applies the body before SORT and LIMIT, so folding it in
+        // would evaluate the binding for every row the query touches instead of
+        // the handful that survive. Accepting the syntax while silently doing
+        // the expensive thing would be worse than the parse error it replaces.
+        let mut post_limit_lets = Vec::new();
+        while matches!(self.current_token(), Token::Let) {
+            post_limit_lets.extend(self.parse_let_clause()?);
+        }
+
         // RETURN clause is optional - mutations (INSERT/UPDATE/REMOVE) don't require it
         let return_clause = if matches!(self.current_token(), Token::Return) {
             Some(self.parse_return_clause()?)
@@ -372,6 +387,7 @@ impl Parser {
             limit_clause,
             return_clause,
             window_clause,
+            post_limit_lets,
             body_clauses,
             set_operations,
         })

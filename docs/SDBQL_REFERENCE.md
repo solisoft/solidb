@@ -44,6 +44,35 @@ SDBQL queries are composed of high-level clauses that can be chained together.
 | `DELETE` | Removes documents | `DELETE user IN users` |
 | `UPSERT` | Updates or Inserts | `UPSERT {id: 1} INSERT {id: 1, val: 0} UPDATE {val: OLD.val + 1} IN counts` |
 
+### Where `LET` may go
+
+A `LET` binding may be written before `SORT`/`LIMIT` or after them, and the
+position is not cosmetic — it decides how many rows the binding is computed for:
+
+```sdbql
+// Computed for every row the query touches.
+FOR c IN companies
+  LET due = SUM(FOR o IN orders FILTER o.company_id == c._key RETURN o.total)
+  SORT c.name ASC
+  LIMIT 0, 50
+  RETURN MERGE(c, { outstanding: due })
+
+// Computed only for the fifty rows that survive the limit.
+FOR c IN companies
+  SORT c.name ASC
+  LIMIT 0, 50
+  LET due = SUM(FOR o IN orders FILTER o.company_id == c._key RETURN o.total)
+  RETURN MERGE(c, { outstanding: due })
+```
+
+Both forms return the same rows. On five thousand companies paged fifty at a
+time, the second runs the correlated subquery fifty times instead of five
+thousand.
+
+A `LET` after a standalone `OFFSET` is accepted the same way. Bindings written
+after `LIMIT` cannot be referenced by `SORT`, `LIMIT` or a `FILTER` — those
+clauses have already run.
+
 ### Time travel on `FOR`
 
 ```sdbql

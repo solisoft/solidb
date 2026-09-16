@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Fixed
+
+* **`LET` may follow `LIMIT`.** The parser fixed the clause order at body /
+  `SORT` / `LIMIT` / `RETURN`, so a binding written past the limit — which AQL
+  accepts — stopped the parse with `Unexpected token: Let. Expected FOR, LET,
+  RETURN, INSERT, UPDATE, or REMOVE`. It is now parsed and evaluated on the rows
+  that survived the limit, between `LIMIT` and the `RETURN` projection.
+
+  The position is kept, not flattened into the query body: a `LET` before the
+  limit is computed for every row the query touches, one after it only for the
+  rows returned. Folding them together would have accepted the syntax while
+  quietly doing the expensive thing — on a page of fifty rows out of five
+  thousand, a correlated subquery would run a hundred times too often.
+
+  Purely additive: the clause was a parse error at that position, so no query
+  that parsed before changes behaviour.
+
+
 ## [1.1.0](https://github.com/solisoft/solidb/compare/v1.0.2...v1.1.0) (2026-09-03)
 
 ### Security

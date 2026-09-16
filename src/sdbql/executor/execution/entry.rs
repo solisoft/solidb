@@ -546,6 +546,15 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
+        // Bindings written after LIMIT, evaluated only on the rows that
+        // survived it -- the reason they are parsed apart from the body.
+        for let_clause in &query.post_limit_lets {
+            for ctx in &mut rows {
+                let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
+                ctx.insert(let_clause.variable.clone(), value);
+            }
+        }
+
         // Apply RETURN projection (if present)
         let results = if let Some(ref return_clause) = query.return_clause {
             let results: DbResult<Vec<Value>> = rows
