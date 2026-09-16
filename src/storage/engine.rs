@@ -720,8 +720,24 @@ impl StorageEngine {
             }
         };
 
-        // Create and cache the collection
-        let collection = Collection::new(actual_name.clone(), self.db.clone());
+        // Resolve through the owning `Database` so there is exactly one
+        // `Collection` — and therefore one `change_sender` — per (database,
+        // collection). This used to mint a second instance with its own
+        // broadcast channel, so a write arriving through the engine (the
+        // `/transaction/{tx}/document/...` endpoints) fired into a ring that no
+        // changefeed subscriber was listening to.
+        //
+        // A CF can outlive its `db:` metadata key (an interrupted drop), and the
+        // engine path has to keep serving those; fall back to a direct handle
+        // rather than refusing, which is what this did before.
+        let collection = match actual_name.split_once(':') {
+            Some((db_name, coll_name)) => self
+                .get_database(db_name)
+                .and_then(|db| db.system_collection(coll_name))
+                .unwrap_or_else(|_| Collection::new(actual_name.clone(), self.db.clone())),
+            None => Collection::new(actual_name.clone(), self.db.clone()),
+        };
+
         self.collections
             .insert(name.to_string(), collection.clone());
         if actual_name != name {

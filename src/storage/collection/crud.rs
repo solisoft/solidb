@@ -534,7 +534,9 @@ impl Collection {
 
         let mut batch = WriteBatch::default();
         let mut insert_count = 0;
-        let mut upserted_docs: Vec<(String, Value)> = Vec::new();
+        // The bool is "the document already existed", which decides whether the
+        // change event that follows the write is an Update or an Insert.
+        let mut upserted_docs: Vec<(String, Value, bool)> = Vec::new();
 
         for (key, mut data) in documents {
             // Ensure _key is set
@@ -566,7 +568,7 @@ impl Collection {
                 if self.is_versioned() {
                     self.append_version_to_batch(&mut batch, &cf, &key, Some(&val));
                 }
-                upserted_docs.push((key.clone(), val));
+                upserted_docs.push((key.clone(), val, exists));
                 if !exists {
                     insert_count += 1;
                 }
@@ -586,11 +588,29 @@ impl Collection {
         }
 
         // Update vector indexes for all upserted documents
-        for (key, doc_value) in &upserted_docs {
+        for (key, doc_value, _) in &upserted_docs {
             self.update_vector_indexes_on_upsert(key, doc_value);
         }
         // Persist vector indexes after batch
         self.persist_vector_indexes_throttled();
+
+        // Broadcast change events. `insert`, `insert_batch` and `delete` all do
+        // this; this path did not, and it is the one replication applies through
+        // (`sync::worker`) and the one shard replicas receive on
+        // (`insert_documents_replica`) — so a changefeed subscriber saw deletes
+        // propagate but never the inserts that preceded them.
+        for (key, doc_value, existed) in upserted_docs {
+            let _ = self.change_sender.send(ChangeEvent {
+                type_: if existed {
+                    ChangeType::Update
+                } else {
+                    ChangeType::Insert
+                },
+                key,
+                data: Some(doc_value),
+                old_data: None,
+            });
+        }
 
         Ok(count)
     }
