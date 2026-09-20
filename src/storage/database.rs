@@ -66,15 +66,38 @@ impl Database {
             // The CF may be a leftover from a dropped database still awaiting
             // its background drop — claim it and recreate fresh instead of
             // failing with "already exists".
+            let mut reused = false;
             match self.pending_cf_drops.claim_for_recreate(&cf_name) {
                 Claim::Claimed => {
+                    // Reuse the doomed CF instead of dropping and recreating
+                    // it. Both halves of that pair rewrite the whole OPTIONS
+                    // file, so the old path cost ~2× the instance's total CF
+                    // count in fsynced I/O to recreate one collection — the
+                    // dominant cost of a test suite that drops and recreates
+                    // the same names in a loop. Wiping is a range tombstone.
                     if self.db.cf_handle(&cf_name).is_some() {
-                        if let Err(e) = super::cf_ops::timed(|| self.db.drop_cf(&cf_name)) {
-                            self.pending_cf_drops.release_claim(&cf_name);
-                            return Err(DbError::InternalError(format!(
-                                "Failed to reclaim pending collection: {}",
-                                e
-                            )));
+                        match super::cf_ops::wipe_cf(&self.db, &cf_name) {
+                            Ok(()) => {
+                                reused = true;
+                                super::cf_ops::record_reuse();
+                            }
+                            Err(e) => {
+                                // Fall back to the drop/create pair rather
+                                // than hand out a CF that may still hold the
+                                // previous incarnation's data.
+                                tracing::warn!(
+                                    "Reusing column family '{}' failed ({}); dropping it instead",
+                                    cf_name,
+                                    e
+                                );
+                                if let Err(e) = super::cf_ops::timed(|| self.db.drop_cf(&cf_name)) {
+                                    self.pending_cf_drops.release_claim(&cf_name);
+                                    return Err(DbError::InternalError(format!(
+                                        "Failed to reclaim pending collection: {}",
+                                        e
+                                    )));
+                                }
+                            }
                         }
                     }
                     self.pending_cf_drops.complete(&self.db, &cf_name);
@@ -94,13 +117,19 @@ impl Database {
                 }
             }
 
-            // Use the shared tuned options so collections get LZ4 compression,
-            // the shared block cache, and bloom filters (Options::default()
-            // would silently skip all of that)
-            super::cf_ops::timed(|| self.db.create_cf(&cf_name, &tuned_cf_options())).map_err(
-                |e| DbError::InternalError(format!("Failed to create collection: {}", e)),
-            )?;
+            if !reused {
+                // Use the shared tuned options so collections get LZ4 compression,
+                // the shared block cache, and bloom filters (Options::default()
+                // would silently skip all of that)
+                super::cf_ops::timed(|| self.db.create_cf(&cf_name, &tuned_cf_options())).map_err(
+                    |e| DbError::InternalError(format!("Failed to create collection: {}", e)),
+                )?;
+            }
         }
+        // A reused CF keeps no state from its previous incarnation, but a
+        // cached `Collection` handle would: its counters, filters and vector
+        // indexes are all in memory.
+        self.collections.remove(&collection_name);
         super::collection::index_meta::invalidate_index_meta(&self.db, &cf_name);
 
         // Persist collection type (lock-free, thread-safe)
@@ -151,9 +180,39 @@ impl Database {
             return Err(DbError::CollectionNotFound(collection_name.to_string()));
         }
 
-        // MultiThreaded mode: drop_cf takes &self and synchronizes internally
-        super::cf_ops::timed(|| self.db.drop_cf(&cf_name))
-            .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {}", e)))?;
+        // Erase the data now, so the space is reclaimed at deletion time and
+        // not whenever the column family is finally dropped. A range
+        // tombstone costs a pair of seeks; `drop_cf` rewrites and fsyncs the
+        // entire OPTIONS file, which is proportional to the instance's total
+        // CF count.
+        if let Err(e) = super::cf_ops::wipe_cf(&self.db, &cf_name) {
+            tracing::warn!(
+                "Wiping column family '{}' before its drop failed: {}",
+                cf_name,
+                e
+            );
+        }
+
+        // Then schedule the drop rather than performing it. The marker makes
+        // the collection invisible at once — every lookup path filters on
+        // `pending_cf_drops.contains` — and leaves the empty shell for a
+        // same-name recreate to claim, which is the common case on a test
+        // instance. The reaper drops it if nobody comes back.
+        if let Err(e) = self.pending_cf_drops.schedule_one(&self.db, &cf_name) {
+            // No `_meta` to persist the marker in — a `Database` built over a
+            // bare RocksDB handle rather than by `StorageEngine`. Deferring
+            // without a durable marker would orphan the column family on a
+            // crash, with nothing to resume it, so drop it here instead and
+            // pay the OPTIONS rewrite.
+            tracing::debug!(
+                "Cannot defer the drop of '{}' ({}); dropping it synchronously",
+                cf_name,
+                e
+            );
+            super::cf_ops::timed(|| self.db.drop_cf(&cf_name)).map_err(|e| {
+                DbError::InternalError(format!("Failed to delete collection: {}", e))
+            })?;
+        }
 
         // Remove from cache
         self.collections.remove(collection_name);

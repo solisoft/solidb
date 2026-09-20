@@ -715,3 +715,107 @@ fn test_blob_chunk_count_is_exact_when_deleting_before_first_read() {
     assert_eq!(files.chunk_count(), 1);
     assert_eq!(files.blob_stats().unwrap().0, 1);
 }
+
+// ============================================================================
+// Reusing a doomed column family instead of dropping and recreating it
+// ============================================================================
+
+/// Deleting a collection and recreating it under the same name must reuse the
+/// column family — the pair of OPTIONS rewrites this avoids is the whole
+/// point — and the new incarnation must start empty.
+#[test]
+fn test_recreating_a_deleted_collection_reuses_its_column_family() {
+    let (engine, _tmp) = create_test_engine();
+    engine.initialize().unwrap();
+    let db = engine.get_database("_system").unwrap();
+
+    db.create_collection("churn".to_string(), None).unwrap();
+    let coll = db.get_collection("churn").unwrap();
+    coll.insert(json!({ "_key": "before", "v": 1 })).unwrap();
+    assert_eq!(coll.count(), 1);
+
+    let reuses_before = solidb::storage::cf_ops::reuses();
+    db.delete_collection("churn").unwrap();
+    db.create_collection("churn".to_string(), None).unwrap();
+    assert_eq!(
+        solidb::storage::cf_ops::reuses(),
+        reuses_before + 1,
+        "the recreate should have reused the column family, not rebuilt it"
+    );
+
+    // Nothing of the previous incarnation survives.
+    let coll = db.get_collection("churn").unwrap();
+    assert_eq!(coll.count(), 0);
+    assert!(coll.get("before").is_err());
+    assert!(coll.all().is_empty());
+}
+
+/// A deleted collection is invisible the moment `delete_collection` returns,
+/// even though its column family is still on disk awaiting the reaper.
+#[test]
+fn test_deleted_collection_is_invisible_before_its_drop() {
+    let (engine, _tmp) = create_test_engine();
+    engine.initialize().unwrap();
+    let db = engine.get_database("_system").unwrap();
+
+    db.create_collection("gone".to_string(), None).unwrap();
+    assert!(db.list_collections().contains(&"gone".to_string()));
+
+    db.delete_collection("gone").unwrap();
+
+    assert!(!db.list_collections().contains(&"gone".to_string()));
+    assert!(db.get_collection("gone").is_err());
+    // A second delete must report it as already gone, not succeed twice.
+    assert!(db.delete_collection("gone").is_err());
+}
+
+/// Index definitions must not leak from one incarnation to the next: the
+/// column family object is the same, so only the wipe and the cache
+/// invalidation keep them apart.
+#[test]
+fn test_reused_column_family_carries_no_index_definitions() {
+    let (engine, _tmp) = create_test_engine();
+    engine.initialize().unwrap();
+    let db = engine.get_database("_system").unwrap();
+
+    db.create_collection("indexed".to_string(), None).unwrap();
+    let coll = db.get_collection("indexed").unwrap();
+    coll.create_index(
+        "by_email".to_string(),
+        vec!["email".to_string()],
+        solidb::storage::IndexType::Persistent,
+        false,
+    )
+    .unwrap();
+    coll.insert(json!({ "_key": "a", "email": "a@example.com" }))
+        .unwrap();
+    assert!(coll.list_indexes().iter().any(|i| i.name == "by_email"));
+
+    db.delete_collection("indexed").unwrap();
+    db.create_collection("indexed".to_string(), None).unwrap();
+
+    let coll = db.get_collection("indexed").unwrap();
+    assert!(
+        coll.list_indexes().is_empty(),
+        "a recreated collection must not inherit the previous index definitions"
+    );
+    assert_eq!(coll.count(), 0);
+}
+
+/// The collection type is re-established on a reused column family rather
+/// than inherited from whatever was there before.
+#[test]
+fn test_reused_column_family_takes_the_new_collection_type() {
+    let (engine, _tmp) = create_test_engine();
+    engine.initialize().unwrap();
+    let db = engine.get_database("_system").unwrap();
+
+    db.create_collection("shape".to_string(), Some("edge".to_string()))
+        .unwrap();
+    assert_eq!(db.get_collection("shape").unwrap().get_type(), "edge");
+
+    db.delete_collection("shape").unwrap();
+    db.create_collection("shape".to_string(), Some("document".to_string()))
+        .unwrap();
+    assert_eq!(db.get_collection("shape").unwrap().get_type(), "document");
+}

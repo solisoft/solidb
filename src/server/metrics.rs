@@ -259,6 +259,39 @@ pub async fn metrics_handler(
         output.push_str(&format!("{} {}\n\n", name, value));
     }
 
+    // Column-family churn. Every create/drop rewrites and fsyncs the entire
+    // OPTIONS file under the DB mutex, so these are the counters that explain
+    // both OPTIONS growth and latency that no single query accounts for.
+    let cf_ops = crate::storage::cf_ops::snapshot();
+    for (name, help, value) in [
+        (
+            "solidb_cf_ops_total",
+            "Column-family creates and drops since start",
+            cf_ops.ops,
+        ),
+        (
+            "solidb_cf_reuses_total",
+            "Doomed column families wiped and reused instead of dropped and recreated",
+            crate::storage::cf_ops::reuses(),
+        ),
+        (
+            "solidb_collections_autocreated_total",
+            "Collections brought into existence by a write to an unknown name",
+            crate::storage::cf_ops::autocreates(),
+        ),
+    ] {
+        output.push_str(&format!("# HELP {} {}\n", name, help));
+        output.push_str(&format!("# TYPE {} counter\n", name));
+        output.push_str(&format!("{} {}\n\n", name, value));
+    }
+
+    output.push_str("# HELP solidb_cf_op_seconds_total Wall time spent inside column-family creates and drops\n");
+    output.push_str("# TYPE solidb_cf_op_seconds_total counter\n");
+    output.push_str(&format!(
+        "solidb_cf_op_seconds_total {:.6}\n\n",
+        cf_ops.nanos as f64 / 1e9
+    ));
+
     // Allocator-level view, to separate live data from fragmentation and from
     // address space merely kept mapped.
     if let Some(stats) = jemalloc_stats() {

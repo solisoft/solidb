@@ -34,6 +34,29 @@
   persisted counts, and the blob chunk count is resolved on first use. The
   crash path is unchanged: no marker means the full recount still runs.
 
+* **Deleting a collection no longer costs an OPTIONS rewrite, and recreating
+  it costs nothing.** `delete_collection` called `drop_cf` inline, and a
+  same-name recreate then called `create_cf` — two full rewrites and fsyncs of
+  a file whose size is proportional to the instance's *total* column-family
+  count, to end up exactly where it started. On a dev instance that is the
+  dominant cost of ordinary traffic: 11 241 collections were auto-created in
+  eighteen days across 321 distinct names, one of them 358 times.
+
+  A deleted collection's data is now erased with a range tombstone — so the
+  space is reclaimed at deletion time, not whenever the column family is
+  finally dropped — and the empty shell is kept for a grace period
+  (`SOLIDB_CF_REUSE_GRACE_SECS`, five minutes by default) so a recreate under
+  the same name can claim and reuse it. A single reaper thread drops the ones
+  nobody came back for. The collection is invisible the instant the delete
+  returns, exactly as before; on shutdown the reaper stops without spending
+  rewrites, and the persisted markers are resumed at the next startup.
+
+  New counters on `/metrics`: `solidb_cf_ops_total`,
+  `solidb_cf_op_seconds_total`, `solidb_cf_reuses_total` and
+  `solidb_collections_autocreated_total`. Setting
+  `SOLIDB_AUTO_CREATE_COLLECTIONS=0` refuses auto-creation outright, for
+  instances whose schema is managed elsewhere.
+
 * **The WAL no longer stampedes the flusher.** `max_total_wal_size` was pinned
   at 50 MB, which is not a disk cap but a flush trigger: crossing it makes
   RocksDB flush *every* column family holding data in the oldest WAL. Measured

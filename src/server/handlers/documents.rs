@@ -157,6 +157,14 @@ pub async fn insert_document(
     {
         Ok(coll) => coll,
         Err(DbError::CollectionNotFound(_)) => {
+            // Each auto-creation is a `create_cf`, which rewrites and fsyncs
+            // the whole OPTIONS file — a cost proportional to the instance's
+            // *total* column-family count. An instance whose schema is
+            // managed elsewhere can refuse them outright.
+            if !crate::storage::cf_ops::auto_create_enabled() {
+                return Err(DbError::CollectionNotFound(coll_name));
+            }
+            crate::storage::cf_ops::record_autocreate();
             tracing::info!(
                 "Auto-creating document collection {}/{}",
                 db_name,

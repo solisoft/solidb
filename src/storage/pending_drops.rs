@@ -21,6 +21,7 @@
 //! fresh. If the background dropper is mid-`drop_cf` on that exact CF
 //! (`Dropping`), the creator waits for it to finish instead.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -34,6 +35,31 @@ use crate::error::{DbError, DbResult};
 
 /// `_meta` key prefix for persisted drop markers.
 const MARKER_PREFIX: &str = "pending_drop:";
+
+/// How long a deleted collection's column family is kept around so a
+/// same-name recreate can reuse it instead of paying `drop_cf` + `create_cf`.
+///
+/// Observed on a dev instance: the same collection name is deleted and
+/// auto-created again minutes apart by successive test runs
+/// (`default_spec/casc_profile_owners`, two minutes; `csw_admin_test/orders`,
+/// 358 times over four days). A grace measured in seconds would almost never
+/// catch those, so the default is generous — the column family holds no data
+/// while it waits, because `delete_collection` wipes it up front.
+const DEFAULT_REUSE_GRACE_SECS: u64 = 300;
+
+/// How often the reaper looks for column families whose grace has expired.
+const REAP_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Slice length for interruptible sleeps, so shutdown never waits a full tick.
+const SLEEP_SLICE: Duration = Duration::from_millis(50);
+
+fn reuse_grace() -> Duration {
+    let secs = std::env::var("SOLIDB_CF_REUSE_GRACE_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_REUSE_GRACE_SECS);
+    Duration::from_secs(secs)
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum DropState {
@@ -66,6 +92,15 @@ pub struct PendingCfDrops {
     /// SIGSEGV or `std::bad_alloc`/SIGABRT *after* every test has reported ok.
     /// Keeping the handles lets [`Self::join_droppers`] close that window.
     droppers: Mutex<Vec<JoinHandle<()>>>,
+    /// When each CF was scheduled, for the reuse grace period.
+    scheduled_at: DashMap<String, Instant>,
+    /// Set by [`Self::join_droppers`]. A reaper that sees it exits without
+    /// dropping anything: the persisted markers survive, and the next startup
+    /// resumes them. Shutting down is not a reason to pay for OPTIONS
+    /// rewrites.
+    shutting_down: Arc<AtomicBool>,
+    /// Whether the single reaper thread has been started.
+    reaper_started: AtomicBool,
 }
 
 impl PendingCfDrops {
@@ -100,9 +135,40 @@ impl PendingCfDrops {
             DbError::InternalError(format!("Failed to schedule collection drops: {}", e))
         })?;
 
+        let now = Instant::now();
         for cf in cfs {
             self.states.insert(cf.clone(), DropState::Pending);
+            self.scheduled_at.insert(cf.clone(), now);
         }
+        Ok(())
+    }
+
+    /// Persist a drop marker for a single CF, with no database metadata key
+    /// to remove alongside it.
+    ///
+    /// This is [`Self::schedule`] for a lone collection: `delete_collection`
+    /// used to call `drop_cf` inline, paying a full OPTIONS rewrite before it
+    /// could return, and leaving nothing for a same-name recreate to claim —
+    /// so a create/delete loop paid two rewrites per cycle. Deferring the drop
+    /// makes the collection invisible immediately (every lookup path filters
+    /// on [`Self::contains`]) and lets a recreate reuse the CF in place.
+    pub fn schedule_one(&self, db: &DB, cf_name: &str) -> DbResult<()> {
+        let meta_cf = db
+            .cf_handle(META_CF)
+            .ok_or_else(|| DbError::InternalError("_meta column family missing".to_string()))?;
+
+        db.put_cf(
+            &meta_cf,
+            format!("{}{}", MARKER_PREFIX, cf_name).as_bytes(),
+            b"1",
+        )
+        .map_err(|e| {
+            DbError::InternalError(format!("Failed to schedule collection drop: {}", e))
+        })?;
+
+        self.states.insert(cf_name.to_string(), DropState::Pending);
+        self.scheduled_at
+            .insert(cf_name.to_string(), Instant::now());
         Ok(())
     }
 
@@ -124,8 +190,12 @@ impl PendingCfDrops {
             })
             .collect();
 
+        // Markers from a previous run get no grace — whatever might have
+        // reused them is long gone.
+        let expired = Instant::now() - reuse_grace();
         for cf in &cfs {
             self.states.insert(cf.clone(), DropState::Pending);
+            self.scheduled_at.insert(cf.clone(), expired);
         }
         cfs
     }
@@ -159,6 +229,7 @@ impl PendingCfDrops {
             let _ = db.delete_cf(&meta_cf, format!("{}{}", MARKER_PREFIX, cf_name).as_bytes());
         }
         self.states.remove(cf_name);
+        self.scheduled_at.remove(cf_name);
         // A same-name recreate must not inherit this incarnation's cached
         // index definitions.
         super::collection::index_meta::invalidate_index_meta(db, cf_name);
@@ -193,6 +264,77 @@ impl PendingCfDrops {
         }
     }
 
+    /// Interruptible sleep: returns `false` if shutdown was signalled.
+    fn nap(&self, total: Duration) -> bool {
+        let deadline = Instant::now() + total;
+        while Instant::now() < deadline {
+            if self.shutting_down.load(Ordering::Relaxed) {
+                return false;
+            }
+            std::thread::sleep(SLEEP_SLICE.min(deadline - Instant::now()));
+        }
+        !self.shutting_down.load(Ordering::Relaxed)
+    }
+
+    /// CFs whose reuse grace has run out.
+    fn due_for_drop(&self, grace: Duration) -> Vec<String> {
+        self.scheduled_at
+            .iter()
+            .filter(|entry| entry.value().elapsed() >= grace)
+            .map(|entry| entry.key().clone())
+            .collect()
+    }
+
+    /// Start the single reaper thread, if it is not already running.
+    ///
+    /// A deleted collection's CF is kept for [`reuse_grace`] so a same-name
+    /// recreate can wipe and reuse it — two OPTIONS rewrites saved — and this
+    /// is what eventually reclaims the ones nobody came back for. One thread
+    /// for the whole process: spawning one per deletion would put a suite that
+    /// drops a hundred collections into a hundred sleeping threads.
+    pub fn ensure_reaper(db: Arc<DB>, registry: Arc<Self>) {
+        if registry.reaper_started.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let grace = reuse_grace();
+        let registry_for_handle = Arc::clone(&registry);
+        let handle = std::thread::spawn(move || {
+            loop {
+                if !registry.nap(REAP_INTERVAL) {
+                    return;
+                }
+                for cf in registry.due_for_drop(grace) {
+                    if registry.shutting_down.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    // A recreate may have claimed it since the scan.
+                    if !registry.begin_drop(&cf) {
+                        continue;
+                    }
+                    if db.cf_handle(&cf).is_some() {
+                        if let Err(e) = super::cf_ops::timed(|| db.drop_cf(&cf)) {
+                            tracing::warn!("Reaping column family '{}' failed: {}", cf, e);
+                            registry.release_claim(&cf);
+                            continue;
+                        }
+                    }
+                    registry.complete(&db, &cf);
+                    // Same breathing room as the batch dropper: each drop holds
+                    // the DB mutex for its whole OPTIONS rewrite.
+                    if !registry.nap(Duration::from_millis(25)) {
+                        return;
+                    }
+                }
+            }
+        });
+
+        let locked = registry_for_handle.droppers.lock();
+        if let Ok(mut handles) = locked {
+            handles.retain(|h| !h.is_finished());
+            handles.push(handle);
+        }
+    }
+
     /// Drop the scheduled CFs on a background thread. Each successful drop
     /// removes its persisted marker; failed drops stay marked so they are
     /// retried on the next startup.
@@ -212,8 +354,9 @@ impl PendingCfDrops {
                 // its full OPTIONS rewrite, and back-to-back drops starve
                 // concurrent foreground CF ops (an immediate recreate of the
                 // same database would otherwise wait for the whole queue).
-                if i > 0 {
-                    std::thread::sleep(Duration::from_millis(25));
+                if i > 0 && !registry.nap(Duration::from_millis(25)) {
+                    // Shutdown: leave the rest marked for the next startup.
+                    return;
                 }
                 if !registry.begin_drop(cf) {
                     continue; // claimed by a concurrent recreate
@@ -265,6 +408,12 @@ impl PendingCfDrops {
     /// deliberate breathing room per CF plus the OPTIONS rewrite itself. That
     /// is the point: the alternative is exiting while RocksDB is mid-write.
     pub fn join_droppers(&self) {
+        // Tell the reaper to stop before waiting on it, or the join would
+        // block until its next tick — and there is no reason to spend OPTIONS
+        // rewrites on the way out: the markers are persisted, so the next
+        // startup resumes whatever is left.
+        self.shutting_down.store(true, Ordering::Relaxed);
+
         let handles = match self.droppers.lock() {
             Ok(mut guard) => std::mem::take(&mut *guard),
             // Poisoned means a dropper panicked. Its handle is unusable and
@@ -274,5 +423,54 @@ impl PendingCfDrops {
         for handle in handles {
             let _ = handle.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The reaper must leave a freshly deleted collection's column family
+    /// alone — that window is what a same-name recreate reuses — and take it
+    /// once the grace has passed.
+    #[test]
+    fn due_for_drop_respects_the_reuse_grace() {
+        let registry = PendingCfDrops::default();
+        let grace = Duration::from_secs(300);
+
+        registry
+            .scheduled_at
+            .insert("db:fresh".to_string(), Instant::now());
+        registry
+            .scheduled_at
+            .insert("db:stale".to_string(), Instant::now() - grace);
+
+        let due = registry.due_for_drop(grace);
+        assert_eq!(due, vec!["db:stale".to_string()]);
+    }
+
+    /// Markers recovered from a previous run carry an already-expired
+    /// timestamp: nothing from that run is coming back to claim them.
+    #[test]
+    fn resumed_markers_are_immediately_due() {
+        let registry = PendingCfDrops::default();
+        let grace = reuse_grace();
+        registry
+            .scheduled_at
+            .insert("db:resumed".to_string(), Instant::now() - grace);
+
+        assert_eq!(registry.due_for_drop(grace), vec!["db:resumed".to_string()]);
+    }
+
+    /// A signalled shutdown cuts a nap short instead of waiting it out, so a
+    /// process exit never blocks for a grace period.
+    #[test]
+    fn nap_returns_early_once_shutdown_is_signalled() {
+        let registry = Arc::new(PendingCfDrops::default());
+        registry.shutting_down.store(true, Ordering::Relaxed);
+
+        let start = Instant::now();
+        assert!(!registry.nap(Duration::from_secs(30)));
+        assert!(start.elapsed() < Duration::from_secs(1));
     }
 }

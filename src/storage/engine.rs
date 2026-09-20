@@ -457,6 +457,10 @@ impl StorageEngine {
             self.recalculate_all_counts();
         }
 
+        // Reclaim column families left by deleted collections once their
+        // reuse grace expires (see `pending_drops::ensure_reaper`).
+        PendingCfDrops::ensure_reaper(self.db.clone(), self.pending_cf_drops.clone());
+
         // Resume column-family drops interrupted by a previous shutdown/crash
         let resumed = self.pending_cf_drops.resume_from_meta(&self.db);
         if !resumed.is_empty() {
@@ -715,15 +719,34 @@ impl StorageEngine {
             // failing with "already exists" or, worse, leaving the new
             // collection on a doomed CF the background dropper then removes.
             // (Mirrors Database::create_collection.)
+            let mut reused = false;
             match self.pending_cf_drops.claim_for_recreate(&name) {
                 Claim::Claimed => {
+                    // Wipe and reuse rather than drop and recreate: the pair
+                    // costs two full OPTIONS rewrites to end up where it
+                    // started. Falls back to the drop if the wipe fails,
+                    // rather than handing out a CF that may still hold the
+                    // previous incarnation's data.
                     if self.db.cf_handle(&name).is_some() {
-                        if let Err(e) = super::cf_ops::timed(|| self.db.drop_cf(&name)) {
-                            self.pending_cf_drops.release_claim(&name);
-                            return Err(DbError::InternalError(format!(
-                                "Failed to reclaim pending collection: {}",
-                                e
-                            )));
+                        match super::cf_ops::wipe_cf(&self.db, &name) {
+                            Ok(()) => {
+                                reused = true;
+                                super::cf_ops::record_reuse();
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Reusing column family '{}' failed ({}); dropping it instead",
+                                    name,
+                                    e
+                                );
+                                if let Err(e) = super::cf_ops::timed(|| self.db.drop_cf(&name)) {
+                                    self.pending_cf_drops.release_claim(&name);
+                                    return Err(DbError::InternalError(format!(
+                                        "Failed to reclaim pending collection: {}",
+                                        e
+                                    )));
+                                }
+                            }
                         }
                     }
                     self.pending_cf_drops.complete(&self.db, &name);
@@ -743,10 +766,12 @@ impl StorageEngine {
                 }
             }
 
-            // MultiThreaded mode: create_cf takes &self and synchronizes internally
-            super::cf_ops::timed(|| self.db.create_cf(&name, &opts)).map_err(|e| {
-                DbError::InternalError(format!("Failed to create collection: {}", e))
-            })?;
+            if !reused {
+                // MultiThreaded mode: create_cf takes &self and synchronizes internally
+                super::cf_ops::timed(|| self.db.create_cf(&name, &opts)).map_err(|e| {
+                    DbError::InternalError(format!("Failed to create collection: {}", e))
+                })?;
+            }
         }
 
         // A cached handle from the pre-drop incarnation of this CF must not

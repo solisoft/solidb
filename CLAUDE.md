@@ -247,6 +247,24 @@ and `SOLIDB_ALLOW_INSECURE_WEBHOOK_TLS` are dev-only escape hatches on the
 webhook path, and `SOLIDB_DB_AUTHZ_MODE=warn` (plus `SOLIDB_DB_AUTHZ_ALLOW_WARN=1`)
 turns per-database authorization into a dry run.
 
+### Column-family lifecycle knobs
+
+One collection is one RocksDB column family, and every `create_cf`/`drop_cf`
+rewrites *and fsyncs* the whole OPTIONS file — one section per CF, so the cost
+is proportional to the instance's **total** collection count, not to the
+collection being touched. There is no RocksDB setting that avoids this; the
+write is unconditional and ends with a re-parse of the file it just wrote.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SOLIDB_CF_REUSE_GRACE_SECS` | 300 | How long a deleted collection's column family is kept so a same-name recreate can wipe and reuse it, saving two OPTIONS rewrites. Its data is erased at deletion time, so the shell holds nothing while it waits. A single reaper thread drops the ones nobody reclaims. |
+| `SOLIDB_AUTO_CREATE_COLLECTIONS` | on | Writing a document to an unknown collection creates it. Set to `0` to get `CollectionNotFound` instead — worth it on an instance whose schema is managed elsewhere, since every auto-creation grows the OPTIONS file. |
+| `SOLIDB_MAX_TOTAL_WAL_SIZE` | 2GB prod / 256MB `--dev` | Total WAL budget. This is a **flush trigger**, not a disk cap: crossing it flushes every CF holding data in the oldest WAL. Lowering it to save disk is a false economy — it produces thousands of sub-4KB SSTs. Bound memory with `--memtable-budget`, which flushes one CF at a time. |
+
+Watch `solidb_cf_ops_total`, `solidb_cf_op_seconds_total`,
+`solidb_cf_reuses_total` and `solidb_collections_autocreated_total` on
+`/metrics`; CF churn shows up as latency that no single query accounts for.
+
 ### Three tiers of protected collections
 
 `src/storage/protected.rs` holds the lists, and the boundary is *a
