@@ -2,7 +2,56 @@
 
 ## [Unreleased]
 
+### Security
+
+* **rustls 0.23.45 for RUSTSEC-2026-0285.** Rustls accepted TLS 1.3 handshake
+  messages sent at the wrong encryption level when they followed a key-changing
+  message in the same record — a plaintext `EncryptedExtensions` packed into the
+  `ServerHello` record was accepted, where RFC 8446 §5.1 requires the connection
+  be terminated with `unexpected_message`. The transcript stays authenticated,
+  so this does not let an attacker alter or complete a handshake; the effect is
+  that a peer can send in plaintext what should have been encrypted without
+  being rejected. `cargo deny check advisories` is clean again.
+
+### Removed
+
+* **`QUEUE_WORKERS`.** The maintenance loop is a single task now. Claimed jobs
+  already executed on `tokio::spawn`, so their concurrency came from the runtime
+  rather than the worker count, and every sweep takes the same claiming lock —
+  so each worker past the first woke on the same tick only to lose that lock and
+  go back to sleep. Setting the variable has no effect; nothing needs changing
+  in an existing config.
+
 ### Fixed
+
+* **The changefeed missed upserts and engine-side writes.** Two write paths
+  bypassed `change_sender`, so a subscriber went quiet while documents appeared
+  underneath it. `upsert_batch` returned without broadcasting — that is the path
+  replication applies through and the one shard replicas receive on, which made
+  the fan-out asymmetric: a remote subscriber saw replicated deletes but never
+  the inserts that preceded them. Separately, `StorageEngine::system_collection`
+  built its own `Collection`, and `Collection::new` mints a fresh broadcast
+  channel, so a handle obtained by column-family name published into a ring no
+  subscriber held; it now delegates to the owning database's cache.
+
+* **`_cluster_informations` grew without bound.** The stats gate forgot dropped
+  collections in memory but never deleted the documents it had written for them,
+  so an instance that creates and drops databases accumulated rows nothing would
+  ever remove — measured at 5585 documents against 969 live collections, roughly
+  4600 of them orphaned. Stale rows are now deleted as collections vanish, and
+  one full reconciliation on startup clears what earlier runs left behind.
+
+* **The embedding sweep ran once per worker.** `check_embeddings` was the only
+  periodic sweep without the claiming-lock guard, so every worker enumerated
+  every collection in the instance on the same five-second tick.
+
+* **Faster background sweeps on instances with many collections.** The embedding
+  and TTL sweeps drove `Database::list_collections` from the database list, and
+  that call clones every column-family name in the instance, making each pass
+  cost *databases × total collections* string allocations — 46 × 969 on the
+  instance this was found on. Both now take a single grouped pass, as the
+  cluster stats collector already did.
+
 
 * **`LET` may follow `LIMIT`.** The parser fixed the clause order at body /
   `SORT` / `LIMIT` / `RETURN`, so a binding written past the limit — which AQL
@@ -18,6 +67,23 @@
 
   Purely additive: the clause was a parse error at that position, so no query
   that parsed before changes behaviour.
+
+
+## [1.1.1](https://github.com/solisoft/solidb/compare/v1.1.0...v1.1.1) (2026-09-12)
+
+> Written after the fact (2026-09-20). v1.1.1 was tagged by hand rather than
+> through release-please, so this file stayed at 1.1.0 while the docs site did
+> describe the release. Content taken from
+> `doc/app/views/docs/changelog.html.slv`.
+
+### Build
+
+* **Static musl build for glibc-incompatible systems.** CI now builds a fully
+  static `solidb-linux-amd64-musl` binary on every release, linked against musl
+  libc instead of glibc. `install.sh` tests the downloaded binary and
+  automatically falls back to the static build when it fails on a glibc or
+  libstdc++ version mismatch, so users on older systems get a working binary
+  with no manual intervention.
 
 
 ## [1.1.0](https://github.com/solisoft/solidb/compare/v1.0.2...v1.1.0) (2026-09-03)
