@@ -127,19 +127,33 @@ pub async fn rollback_transaction(
 ///
 /// Going through `Database` applies the `{db}:` prefix and the
 /// credential-collection guard, exactly as every non-transactional handler does.
-fn collection_in_database(
+///
+/// SEC-180: that guard is only the *first* of the three tiers in
+/// `storage::protected`. `get_collection` rejects the five credential
+/// collections and nothing else, so `_scripts`, `_services`, `_triggers`,
+/// `_views`, `_graphs`, `_config`, `_rag_pipelines` and `_jobs` stayed writable
+/// by name through here — and `_scripts` is how Lua gets installed for the
+/// service router to execute. Write paths resolve through
+/// `get_collection_for_write`, which runs `check_write_access` for all three
+/// tiers against the caller.
+///
+/// The actor is always the *caller*, never `WriteActor::Server`: the collection
+/// name arrived over the wire.
+fn collection_for_write_in_database(
     state: &AppState,
     db_name: &str,
     coll_name: &str,
+    actor: crate::storage::WriteActor,
 ) -> Result<crate::storage::Collection, DbError> {
     state
         .storage
         .get_database(db_name)?
-        .get_collection(coll_name)
+        .get_collection_for_write(coll_name, actor)
 }
 
 pub async fn insert_document_tx(
     State(state): State<AppState>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Path((db_name, tx_id_str, coll_name)): Path<(String, String, String)>,
     Json(data): Json<Value>,
 ) -> Result<Json<Value>, DbError> {
@@ -158,8 +172,14 @@ pub async fn insert_document_tx(
     let tx_arc = tx_manager.get(tx_id)?;
     let mut tx = tx_arc.write().unwrap();
 
-    // Get collection, scoped to the database named in the path (SEC-179).
-    let collection = collection_in_database(&state, &db_name, &coll_name)?;
+    // Scoped to the database named in the path (SEC-179), and resolved through
+    // the write getter so all three protection tiers apply (SEC-180).
+    let collection = collection_for_write_in_database(
+        &state,
+        &db_name,
+        &coll_name,
+        crate::server::handlers::query::write_actor_from_claims(claims.as_deref()),
+    )?;
 
     // Perform transactional insert
     let wal = tx_manager.wal().clone();
@@ -171,6 +191,7 @@ pub async fn insert_document_tx(
 
 pub async fn update_document_tx(
     State(state): State<AppState>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Path((db_name, tx_id_str, coll_name, key)): Path<(String, String, String, String)>,
     Json(data): Json<Value>,
 ) -> Result<Json<Value>, DbError> {
@@ -189,8 +210,14 @@ pub async fn update_document_tx(
     let tx_arc = tx_manager.get(tx_id)?;
     let mut tx = tx_arc.write().unwrap();
 
-    // Get collection, scoped to the database named in the path (SEC-179).
-    let collection = collection_in_database(&state, &db_name, &coll_name)?;
+    // Scoped to the database named in the path (SEC-179), and resolved through
+    // the write getter so all three protection tiers apply (SEC-180).
+    let collection = collection_for_write_in_database(
+        &state,
+        &db_name,
+        &coll_name,
+        crate::server::handlers::query::write_actor_from_claims(claims.as_deref()),
+    )?;
 
     // Perform transactional update
     let wal = tx_manager.wal().clone();
@@ -202,6 +229,7 @@ pub async fn update_document_tx(
 
 pub async fn delete_document_tx(
     State(state): State<AppState>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Path((db_name, tx_id_str, coll_name, key)): Path<(String, String, String, String)>,
 ) -> Result<StatusCode, DbError> {
     // Parse transaction ID
@@ -219,8 +247,14 @@ pub async fn delete_document_tx(
     let tx_arc = tx_manager.get(tx_id)?;
     let mut tx = tx_arc.write().unwrap();
 
-    // Get collection, scoped to the database named in the path (SEC-179).
-    let collection = collection_in_database(&state, &db_name, &coll_name)?;
+    // Scoped to the database named in the path (SEC-179), and resolved through
+    // the write getter so all three protection tiers apply (SEC-180).
+    let collection = collection_for_write_in_database(
+        &state,
+        &db_name,
+        &coll_name,
+        crate::server::handlers::query::write_actor_from_claims(claims.as_deref()),
+    )?;
 
     // Perform transactional delete
     let wal = tx_manager.wal().clone();
@@ -262,6 +296,11 @@ pub async fn execute_transactional_sdbql(
             .await?;
         }
     }
+
+    // Who is writing, for the protection tiers the mutation clauses enforce
+    // below (SEC-180). Always the caller — the collection names come from the
+    // query text, which arrived over the wire.
+    let write_actor = crate::server::handlers::query::write_actor_from_claims(Some(&claims));
 
     // Parse transaction ID
     let tx_id_value: u64 = tx_id_str
@@ -415,8 +454,17 @@ pub async fn execute_transactional_sdbql(
             }
             BodyClause::Insert(insert_clause) => {
                 // Get collection
-                let full_coll_name = format!("{}:{}", db_name, insert_clause.collection);
-                let collection = state.storage.get_collection(&full_coll_name)?;
+                // SEC-180: the write getter on the *bare* name, so
+                // `check_write_access` sees what it expects and all three
+                // protection tiers apply. `get_collection` would only have
+                // rejected the five credential collections, leaving `_scripts`
+                // and the rest of the write-protected tier reachable.
+                let collection = collection_for_write_in_database(
+                    &state,
+                    &db_name,
+                    &insert_clause.collection,
+                    write_actor,
+                )?;
 
                 // Insert for each row context
                 for ctx in &rows {
@@ -428,8 +476,17 @@ pub async fn execute_transactional_sdbql(
             }
             BodyClause::Update(update_clause) => {
                 // Get collection
-                let full_coll_name = format!("{}:{}", db_name, update_clause.collection);
-                let collection = state.storage.get_collection(&full_coll_name)?;
+                // SEC-180: the write getter on the *bare* name, so
+                // `check_write_access` sees what it expects and all three
+                // protection tiers apply. `get_collection` would only have
+                // rejected the five credential collections, leaving `_scripts`
+                // and the rest of the write-protected tier reachable.
+                let collection = collection_for_write_in_database(
+                    &state,
+                    &db_name,
+                    &update_clause.collection,
+                    write_actor,
+                )?;
 
                 // Update for each row context
                 for ctx in &rows {
@@ -460,8 +517,17 @@ pub async fn execute_transactional_sdbql(
             }
             BodyClause::Remove(remove_clause) => {
                 // Get collection
-                let full_coll_name = format!("{}:{}", db_name, remove_clause.collection);
-                let collection = state.storage.get_collection(&full_coll_name)?;
+                // SEC-180: the write getter on the *bare* name, so
+                // `check_write_access` sees what it expects and all three
+                // protection tiers apply. `get_collection` would only have
+                // rejected the five credential collections, leaving `_scripts`
+                // and the rest of the write-protected tier reachable.
+                let collection = collection_for_write_in_database(
+                    &state,
+                    &db_name,
+                    &remove_clause.collection,
+                    write_actor,
+                )?;
 
                 // Remove for each row context
                 for ctx in &rows {
@@ -489,8 +555,17 @@ pub async fn execute_transactional_sdbql(
                 }
             }
             BodyClause::Upsert(upsert_clause) => {
-                let full_coll_name = format!("{}:{}", db_name, upsert_clause.collection);
-                let collection = state.storage.get_collection(&full_coll_name)?;
+                // SEC-180: the write getter on the *bare* name, so
+                // `check_write_access` sees what it expects and all three
+                // protection tiers apply. `get_collection` would only have
+                // rejected the five credential collections, leaving `_scripts`
+                // and the rest of the write-protected tier reachable.
+                let collection = collection_for_write_in_database(
+                    &state,
+                    &db_name,
+                    &upsert_clause.collection,
+                    write_actor,
+                )?;
 
                 for ctx in &rows {
                     let search_value =

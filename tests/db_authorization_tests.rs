@@ -1587,3 +1587,177 @@ async fn scripts_control_status_headers_and_body() {
     let (status, _, _) = get(&app.router, "plain").await;
     assert_eq!(status, StatusCode::OK);
 }
+
+/// SEC-180: the transactional write paths resolved their target with the
+/// *read* getter, so only the five credential collections were refused. The
+/// write-protected tier — `_scripts` above all, which is how Lua gets
+/// installed for the service router to execute — stayed writable by name for
+/// anyone holding Write on any database.
+#[tokio::test]
+async fn transactional_document_ops_refuse_the_write_protected_tier() {
+    let app = create_app();
+    setup_db(&app, "tenant_x").await;
+
+    let scoped = app.scoped_token("tenant_key", &["editor"], &["tenant_x"]);
+
+    let begin = |token: String| {
+        let router = app.router.clone();
+        async move {
+            let (status, body) = send(
+                &router,
+                "POST",
+                "/_api/database/tenant_x/transaction/begin",
+                &token,
+                Some(json!({})),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "begin transaction: {}", body);
+            body["id"].as_str().expect("transaction id").to_string()
+        }
+    };
+
+    // 403, not 404, and deliberately so: `check_write_access` refuses by name
+    // *before* resolving, so the answer does not leak whether the collection
+    // exists. Before the fix these returned 404 — proof that the request had
+    // got past the guard and reached resolution, and would have written had
+    // the collection been there.
+    for coll in ["_scripts", "_services", "_triggers", "_views", "_graphs"] {
+        let tx = begin(scoped.clone()).await;
+        let (status, body) = send(
+            &app.router,
+            "POST",
+            &format!(
+                "/_api/database/tenant_x/transaction/{}/document/{}",
+                tx, coll
+            ),
+            &scoped,
+            Some(json!({"_key": "pwned", "code": "os.execute('id')"})),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "transactional insert into {} was not refused: {}",
+            coll,
+            body
+        );
+    }
+
+    // Admin-write tier: an editor is not an admin.
+    let tx = begin(scoped.clone()).await;
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        &format!("/_api/database/tenant_x/transaction/{}/document/_jobs", tx),
+        &scoped,
+        Some(json!({"_key": "j1", "status": "pending"})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "transactional insert into _jobs was not refused for a non-admin: {}",
+        body
+    );
+
+    // The update and delete paths share the helper; check one of each so a
+    // future change cannot fix only the insert.
+    let tx = begin(scoped.clone()).await;
+    let (status, body) = send(
+        &app.router,
+        "PUT",
+        &format!(
+            "/_api/database/tenant_x/transaction/{}/document/_scripts/any",
+            tx
+        ),
+        &scoped,
+        Some(json!({"code": "os.execute('id')"})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "transactional update of _scripts was not refused: {}",
+        body
+    );
+
+    let tx = begin(scoped.clone()).await;
+    let (status, body) = send(
+        &app.router,
+        "DELETE",
+        &format!(
+            "/_api/database/tenant_x/transaction/{}/document/_scripts/any",
+            tx
+        ),
+        &scoped,
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "transactional delete from _scripts was not refused: {}",
+        body
+    );
+
+    // An ordinary collection still works — the guard must not be a blanket ban.
+    let tx = begin(scoped.clone()).await;
+    let (status, body) = send(
+        &app.router,
+        "POST",
+        &format!("/_api/database/tenant_x/transaction/{}/document/items", tx),
+        &scoped,
+        Some(json!({"_key": "ok", "value": 1})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ordinary insert broke: {}", body);
+}
+
+/// The same tier, reached through the transactional *query* endpoint rather
+/// than the document endpoints — four mutation clauses, one guard.
+#[tokio::test]
+async fn transactional_query_mutations_refuse_the_write_protected_tier() {
+    let app = create_app();
+    setup_db(&app, "tenant_x").await;
+
+    let scoped = app.scoped_token("tenant_key", &["editor"], &["tenant_x"]);
+
+    let begin = |token: String| {
+        let router = app.router.clone();
+        async move {
+            let (status, body) = send(
+                &router,
+                "POST",
+                "/_api/database/tenant_x/transaction/begin",
+                &token,
+                Some(json!({})),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "begin transaction: {}", body);
+            body["id"].as_str().expect("transaction id").to_string()
+        }
+    };
+
+    for query in [
+        r#"INSERT {"_key": "pwned", "code": "x"} INTO _scripts"#,
+        r#"FOR d IN items UPDATE d WITH {"code": "x"} IN _scripts"#,
+        r#"FOR d IN items REMOVE d IN _scripts"#,
+    ] {
+        let tx = begin(scoped.clone()).await;
+        let (status, body) = send(
+            &app.router,
+            "POST",
+            &format!("/_api/database/tenant_x/transaction/{}/query", tx),
+            &scoped,
+            Some(json!({ "query": query })),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "transactional query `{}` was not refused: {}",
+            query,
+            body
+        );
+    }
+}
