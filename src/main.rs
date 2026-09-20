@@ -131,11 +131,12 @@ fn log_storage_profile(base: &str, p: &solidb::storage::engine::EngineProfile) {
     tracing::info!(
         "Storage profile: {base} — block_cache={}, write_buffer={}/collection, \
          memtable_budget={budget}, max_open_files={open_files}, \
-         bounded_index_cache={}, background_jobs={}",
+         bounded_index_cache={}, background_jobs={}, wal_budget={}",
         human_size(p.block_cache_bytes),
         human_size(p.write_buffer_size),
         p.cache_index_and_filter_blocks,
         p.max_background_jobs,
+        human_size(p.max_total_wal_size),
     );
 
     if p.db_write_buffer_size.is_none() {
@@ -308,6 +309,16 @@ struct Args {
     /// Background compaction/flush threads. Defaults to 6 (prod) or 2 (--dev).
     #[arg(long, env = "SOLIDB_MAX_BACKGROUND_JOBS")]
     max_background_jobs: Option<i32>,
+
+    /// Total WAL budget across all collections (`2GB`, or a byte count).
+    /// Defaults to 2GB (prod) or 256MB (--dev).
+    ///
+    /// Crossing it flushes every collection holding data in the oldest WAL at
+    /// once, so lowering this to save disk costs far more than it saves on an
+    /// instance with many collections: --memtable-budget is the knob that
+    /// bounds memory, and it flushes one collection at a time.
+    #[arg(long, value_parser = parse_size, env = "SOLIDB_MAX_TOTAL_WAL_SIZE")]
+    max_total_wal_size: Option<usize>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -600,6 +611,9 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     }
     if let Some(n) = args.max_background_jobs {
         storage_profile.max_background_jobs = n;
+    }
+    if let Some(bytes) = args.max_total_wal_size {
+        storage_profile.max_total_wal_size = bytes;
     }
     set_engine_profile(storage_profile);
     log_storage_profile(base, &storage_profile);

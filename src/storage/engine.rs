@@ -42,6 +42,29 @@ pub struct EngineProfile {
     /// Store index/filter blocks in the (bounded) block cache instead of
     /// pinning them per-CF. Caps index/filter RAM at the price of some reads.
     pub cache_index_and_filter_blocks: bool,
+    /// Total WAL budget across all column families (bytes).
+    ///
+    /// Crossing it makes RocksDB flush **every** CF holding data in the oldest
+    /// WAL (`DBImpl::SwitchWAL`), so a value small relative to the CF count is
+    /// a stampede generator rather than a disk-usage cap: measured on a
+    /// 963-CF instance at 50MB, 27904 of 27910 flushes had
+    /// `flush_reason: "WAL Full"`, 97.7% of them writing under 4KB, in 39
+    /// events averaging ~715 CFs each — and the WAL sat at 201MB regardless,
+    /// because a WAL is only deletable once every CF that wrote to it has
+    /// flushed. Keep it well above the working set and let
+    /// `db_write_buffer_size` be the memory bound instead; that trigger
+    /// flushes exactly one CF, the one with the oldest memtable.
+    ///
+    /// Never leave this at `0`: RocksDB then computes
+    /// `4 × Σ(write_buffer_size × max_write_buffer_number)` over every CF.
+    pub max_total_wal_size: usize,
+    /// Initial memtable arena block (bytes).
+    ///
+    /// RocksDB's default is `min(1MB, write_buffer_size / 8)`, allocated per CF
+    /// on first write. With thousands of near-empty column families that is
+    /// most of the memtable footprint — ~963MB of arena for near-zero data on
+    /// the instance above.
+    pub arena_block_size: usize,
 }
 
 impl EngineProfile {
@@ -51,10 +74,16 @@ impl EngineProfile {
             block_cache_bytes: 512 * 1024 * 1024,
             write_buffer_size: 64 * 1024 * 1024,
             max_write_buffer_number: 3,
-            db_write_buffer_size: None,
+            // Bounded deliberately. Leaving this unset does not mean "no
+            // flushing" — it means the WAL budget becomes the only trigger,
+            // and that one flushes every CF at once. A global budget makes
+            // the memory ceiling explicit and flushes one CF at a time.
+            db_write_buffer_size: Some(512 * 1024 * 1024),
             max_background_jobs: 6,
             max_open_files: -1,
             cache_index_and_filter_blocks: false,
+            max_total_wal_size: 2 * 1024 * 1024 * 1024,
+            arena_block_size: 64 * 1024,
         }
     }
 
@@ -68,6 +97,8 @@ impl EngineProfile {
             max_background_jobs: 2,
             max_open_files: 512,
             cache_index_and_filter_blocks: true,
+            max_total_wal_size: 256 * 1024 * 1024,
+            arena_block_size: 64 * 1024,
         }
     }
 }
@@ -114,6 +145,9 @@ pub(crate) fn tuned_cf_options() -> Options {
     opts.set_write_buffer_size(p.write_buffer_size);
     opts.set_max_write_buffer_number(p.max_write_buffer_number);
     opts.set_min_write_buffer_number_to_merge(1);
+    // One arena block is reserved per CF on its first write, so this is paid
+    // by every collection that exists rather than by every byte stored.
+    opts.set_arena_block_size(p.arena_block_size);
 
     // Optimize for SSD storage - parallel compactions
     opts.set_max_subcompactions(4);
@@ -219,6 +253,7 @@ impl StorageEngine {
         opts.set_write_buffer_size(p.write_buffer_size);
         opts.set_max_write_buffer_number(p.max_write_buffer_number + 1);
         opts.set_min_write_buffer_number_to_merge(1);
+        opts.set_arena_block_size(p.arena_block_size);
 
         // Global cap on total memtable memory across ALL column families.
         // The single most effective knob when CF count is large: without it,
@@ -245,12 +280,17 @@ impl StorageEngine {
         opts.set_max_bytes_for_level_multiplier(10.0);
         opts.set_num_levels(7);
 
-        // Limit WAL file size to prevent unbounded disk growth
-        // Max total WAL size across all column families: 50MB
-        opts.set_max_total_wal_size(50 * 1024 * 1024);
+        // Total WAL budget across all column families (profile-tuned).
+        // This is a flush *trigger*, not just a disk cap — see the field's
+        // documentation on `EngineProfile` for why a small value costs more
+        // than it saves once the CF count is in the hundreds.
+        opts.set_max_total_wal_size(p.max_total_wal_size as u64);
 
-        // Keep fewer LOG files (RocksDB info logs, not WALs)
+        // Keep fewer LOG files (RocksDB info logs, not WALs). The count is
+        // bounded here and the size below: `keep_log_file_num` alone let
+        // data/LOG reach 118MB on an instance flushing 700 CFs at a time.
         opts.set_keep_log_file_num(5);
+        opts.set_max_log_file_size(64 * 1024 * 1024);
 
         // Recycle LOG files instead of deleting
         opts.set_recycle_log_file_num(3);
