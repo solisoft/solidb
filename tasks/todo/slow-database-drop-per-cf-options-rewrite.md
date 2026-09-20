@@ -1,5 +1,10 @@
 # `DELETE /_api/database/{db}` is O(collections × OPTIONS-file-size)
 
+> **Read the 2026-09-20 update first.** The sections below are the original
+> 2026-06 diagnosis and are kept for history; the drop latency they describe
+> is fixed, and re-measurement since showed the dominant costs were elsewhere.
+> Only the shared-CF direction is still genuinely open.
+
 ## Severity
 
 medium — 7.3s to drop a 41-collection database on an instance with ~800 column families
@@ -83,6 +88,103 @@ Landed (`src/storage/pending_drops.rs`):
 
 Still open (long term): reconsider CF-per-collection — total CF count
 still inflates every OPTIONS rewrite, MANIFEST replay, and DB open.
+
+## Update 2026-09-20 — the diagnosis was too narrow
+
+Re-measured on the dev instance (963 CFs, 46 databases, 7.7 GB, OPTIONS
+4.94 MB, MANIFEST 4.37 MB, 3717 SSTs). Three findings reorder this ticket.
+
+### 1. Most of the pain was never about CF count
+
+- **Startup: 22.5-33.0 s, of which RocksDB's own open is 1.81 s**
+  (`DB SUMMARY` -> `DB pointer` in `data/LOG`). The other 21-31 s was
+  SoliDB: `recalculate_all_counts` walking every `doc:` key of every
+  collection, and `Collection::new` walking `blo:` for every collection
+  whether or not it held a blob.
+- **27 904 of 27 910 flushes had `flush_reason: "WAL Full"`**, 97.7% of
+  them writing under 4 KB, in 39 bursts averaging ~715 CFs each. Cause:
+  `max_total_wal_size = 50 MB` is a *flush trigger*, not a disk cap —
+  crossing it makes `DBImpl::SwitchWAL` flush every CF holding data in the
+  oldest WAL. It was not even holding its own line: the WAL sat at
+  201.8 MB, because a WAL is only deletable once every CF that wrote to it
+  has flushed. That is where 3717 SSTs came from, 87.8% under 64 KB.
+
+Both are fixed and neither was a CF-model problem.
+
+### 2. The dominant CF cost is create/delete churn, not database drops
+
+`grep -c 'Auto-creating' solidb.log` -> **11 241 in eighteen days**, across
+321 distinct names, one of them 358 times. Each is a `create_cf`. Deleting
+a collection then recreating it under the same name cost `drop_cf` +
+`create_cf` — two full OPTIONS rewrites to end up where it started.
+
+Fixed: `delete_collection` now wipes the CF with a range tombstone (space
+reclaimed at deletion time) and schedules the drop instead of performing
+it; a same-name recreate claims the empty shell and reuses it. A single
+reaper thread drops the ones nobody reclaims after
+`SOLIDB_CF_REUSE_GRACE_SECS` (300 s — the observed recreate gap is
+*minutes*, so a grace in seconds would catch almost nothing).
+
+### 3. There is no RocksDB knob, and it is worse than "4.9 MB per op"
+
+Read in the vendored RocksDB 10.10.1: `WriteOptionsFile` is called
+unconditionally by both `DropColumnFamily` and
+`WrapUpCreateColumnFamilies`, and ends with `VerifyRocksDBOptionsFromFile`
+— which re-opens and re-parses all 963 sections. So each CF op costs
+~9.5 MB of I/O *plus* a full parse. `avoid_flush_during_shutdown` is not
+in the C API at all.
+
+The one real API lever is `rocksdb_create_column_families` (plural: N
+creates, **one** `WriteOptionsFile`). It exists in the C API but
+rust-rocksdb 0.46 binds only the singular form — an upstream PR.
+
+Worth filing alongside it: rust-rocksdb's `drop_cf` takes the CF-map write
+lock in a `match` scrutinee, so the guard lives until the end of the
+`match` — **the lock is held across the entire OPTIONS rewrite**. Since
+`cf_handle()` takes a read lock on that same map and SoliDB calls it on
+essentially every storage operation, each drop freezes reads and writes in
+*every* database for ~180-400 ms. One-line fix (bind the guard to a local
+before the `match`).
+
+### Also landed
+
+- **Collection registry** (`src/storage/collection_registry.rs`):
+  `coll:{db}:{name}` in `_meta`. `list_collections` no longer calls
+  `cf_names()`, which cloned every CF name in the instance *and* took the
+  read lock that `create_cf`/`drop_cf` hold across their OPTIONS rewrite.
+  The CF map stays the truth: startup adopts entry-less CFs, and every
+  listing path falls back to the map with no `_meta`.
+- **No more eager `_scripts` + `_slow_queries` per database** — 43 and 42
+  CFs respectively on this instance, almost all empty, and two OPTIONS
+  rewrites per database creation. Both are already created on first use.
+
+### Still open, with a corrected estimate
+
+**Lazy CF materialization was considered and deferred.** 98
+`cf_handle(&self.name)` sites across 13 files, 47 of them
+`expect("Column family should exist")`, and the failure mode is a write
+path that reads instead of materialising. Its two largest justifications
+are now gone: the 11 241 auto-creations materialise anyway (each inserts a
+document), and the ~85 system CFs are removed above. What remains —
+collections created explicitly and never written — does not pay for the
+refactor.
+
+**Shared CF with key prefixing** remains the only thing that addresses the
+~84% of collections holding under 100 documents. Sketch, for whoever picks
+it up: physical key `[4-byte BE collection id][existing logical key]`; one
+shared CF **per database** named `{db}:_shared`, so `delete_database`'s
+existing `cf_names().filter(starts_with("{db}:"))` sweep disposes of it
+with no code change; promotion to a dedicated CF above a byte threshold;
+never shared: credential collections, blob-typed, columnar. Key
+construction is already centralised in `collection/core.rs` (13 builders),
+and no `prefix_extractor` is configured, so lengthening the prefix breaks
+no seek semantics. Phase 1 exit criterion: with every collection still
+owning its CF the prefix is empty, so the emitted bytes must be
+**byte-identical** — that is the only realistic way to review a ~250-site
+diff. **Go/no-go before committing to it:** range tombstones become a
+cross-tenant tax. Put 500 tiny collections in one shared CF, drop 250,
+measure point-get and full-scan latency on a survivor before and after the
+reclaim compaction. A durable regression beyond ~2x kills the approach.
 
 ## Context
 
