@@ -11,3 +11,12 @@ node_modules
 /admin.zip
 /admin/cur.json
 /admin/run_full.html
+
+# Artefacts de build, désuivis le 2026-09-20 (voir le commit correspondant)
+.DS_Store
+/clients/Ruby-client/vendor/
+/clients/js-client/dist/
+/clients/go-client/benchmark_bin
+
+# Liste de travail du nettoyage des bases jetables
+/drop-throwaway-dbs.txt
