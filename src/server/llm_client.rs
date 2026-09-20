@@ -9,6 +9,94 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+/// Turn a failed upstream LLM response into an error that does not carry the
+/// upstream body.
+///
+/// SEC-177: the body used to be interpolated into the returned error. With a
+/// tenant-chosen Ollama URL that made the server a *read* SSRF proxy — the
+/// caller got the internal service's response verbatim, not just the ability
+/// to trigger the request. Echoing a provider's body is a bad idea generally:
+/// it can carry key fragments and account detail the caller has no business
+/// seeing. The body is still logged at debug for operators.
+async fn upstream_error(provider: &str, response: reqwest::Response) -> DbError {
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    tracing::debug!(
+        "{} API error {}: {}",
+        provider,
+        status,
+        body.chars().take(2000).collect::<String>()
+    );
+    DbError::ExecutionError(format!(
+        "{} API request failed with status {}",
+        provider, status
+    ))
+}
+
+/// Reject a tenant-supplied LLM base URL that points somewhere the server
+/// should not dial on a tenant's behalf.
+///
+/// SEC-177: `OLLAMA_URL` lives in the database's own `_env`, which any
+/// principal with `Write` on that database controls, and it is the one
+/// provider base URL that is not hardcoded. Without this, planting a URL and
+/// triggering any LLM-backed path (`/nl`, embeddings, graph-RAG) made the
+/// server issue requests from its own network position.
+///
+/// Reuses the guard the webhook path already uses
+/// ([`crate::server::ssrf::validate_public_url_target`]), which resolves DNS
+/// and refuses if *any* returned address is non-public — so a rebind that
+/// mixes safe and unsafe answers is refused too.
+///
+/// A local Ollama is the normal deployment, so there has to be a way to say
+/// so: `SOLIDB_ALLOW_PRIVATE_LLM_URL=1` opts the whole instance back in. It is
+/// off by default because the URL is tenant-chosen; an operator who points the
+/// instance at a LAN Ollama is making that choice knowingly. The value the
+/// *server* chooses when `_env` holds nothing is never validated — it is not
+/// tenant input.
+fn validate_tenant_llm_url(base_url: &str) -> Result<(), DbError> {
+    let allow_private = std::env::var("SOLIDB_ALLOW_PRIVATE_LLM_URL")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    check_tenant_llm_url(base_url, allow_private)
+}
+
+/// [`validate_tenant_llm_url`] with the opt-in passed in rather than read from
+/// the process environment, so it can be tested without a global that other
+/// tests running in the same process would race.
+fn check_tenant_llm_url(base_url: &str, allow_private: bool) -> Result<(), DbError> {
+    if allow_private {
+        return Ok(());
+    }
+
+    let parsed = url::Url::parse(base_url)
+        .map_err(|e| DbError::BadRequest(format!("OLLAMA_URL is not a valid URL: {}", e)))?;
+
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => {
+            return Err(DbError::BadRequest(format!(
+                "OLLAMA_URL must use http or https, got '{}'",
+                other
+            )))
+        }
+    }
+    if parsed.username() != "" || parsed.password().is_some() {
+        return Err(DbError::BadRequest(
+            "OLLAMA_URL must not embed credentials".to_string(),
+        ));
+    }
+
+    crate::server::ssrf::validate_public_url_target(&parsed).map_err(|e| {
+        DbError::BadRequest(format!(
+            "OLLAMA_URL rejected (SSRF): {}. Set SOLIDB_ALLOW_PRIVATE_LLM_URL=1 \
+             if this instance is meant to reach a private LLM endpoint.",
+            e
+        ))
+    })?;
+
+    Ok(())
+}
+
 /// Supported LLM providers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LLMProvider {
@@ -184,7 +272,11 @@ impl LLMClient {
                 }
             }
             LLMProvider::Ollama => {
-                let base_url = get_env_var(storage, db_name, "OLLAMA_URL")
+                // Whether the URL came from the tenant's `_env` or from the
+                // server's own default decides whether it needs validating.
+                let from_env = get_env_var(storage, db_name, "OLLAMA_URL");
+                let base_url = from_env
+                    .clone()
                     .unwrap_or_else(|| "http://localhost:11434".to_string());
                 // Trim whitespace and trailing slashes to avoid URL issues
                 let base_url = base_url.trim().trim_end_matches('/');
@@ -195,6 +287,11 @@ impl LLMClient {
                     } else {
                         base_url.to_string()
                     };
+                // SEC-177: only the tenant-supplied value is checked. The
+                // default above is the server's own choice, not input.
+                if from_env.is_some() {
+                    validate_tenant_llm_url(&base_url)?;
+                }
                 let model = get_env_var(storage, db_name, "OLLAMA_MODEL")
                     .unwrap_or_else(|| "llama3".to_string())
                     .trim()
@@ -476,12 +573,7 @@ impl LLMClient {
             .map_err(|e| DbError::ExecutionError(format!("OpenAI API request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(DbError::ExecutionError(format!(
-                "OpenAI API error {}: {}",
-                status, body
-            )));
+            return Err(upstream_error("OpenAI", response).await);
         }
 
         let result: OpenAIResponse = response.json().await.map_err(|e| {
@@ -554,12 +646,7 @@ impl LLMClient {
             .map_err(|e| DbError::ExecutionError(format!("Anthropic API request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(DbError::ExecutionError(format!(
-                "Anthropic API error {}: {}",
-                status, body
-            )));
+            return Err(upstream_error("Anthropic", response).await);
         }
 
         let result: AnthropicResponse = response.json().await.map_err(|e| {
@@ -612,12 +699,7 @@ impl LLMClient {
             })?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(DbError::ExecutionError(format!(
-                "Ollama API error {}: {}",
-                status, body
-            )));
+            return Err(upstream_error("Ollama", response).await);
         }
 
         let result: OllamaResponse = response.json().await.map_err(|e| {
@@ -725,12 +807,7 @@ impl LLMClient {
             .map_err(|e| DbError::ExecutionError(format!("Gemini API request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(DbError::ExecutionError(format!(
-                "Gemini API error {}: {}",
-                status, body
-            )));
+            return Err(upstream_error("Gemini", response).await);
         }
 
         let result: GeminiResponse = response.json().await.map_err(|e| {
@@ -1000,5 +1077,93 @@ impl LLMClient {
             .embedding
             .map(|e| e.values)
             .ok_or_else(|| DbError::ExecutionError("No embedding returned from Gemini".to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// SEC-177's exploit URL, and the neighbourhood it lives in. A tenant with
+    /// `Write` on one database sets `OLLAMA_URL`, then any LLM-backed path
+    /// makes the server dial it.
+    #[test]
+    fn tenant_supplied_private_urls_are_rejected() {
+        for url in [
+            "http://127.0.0.1:7803",           // the reported proof of concept
+            "http://localhost:11434",          // the default, once a tenant sets it
+            "http://[::1]:11434",              // IPv6 loopback, brackets and all
+            "http://169.254.169.254",          // cloud metadata
+            "http://[::ffff:169.254.169.254]", // the same, IPv4-mapped
+            "http://10.0.0.5:11434",           // RFC1918
+            "http://192.168.1.10:11434",
+            "http://172.16.0.1:11434",
+            "http://0.0.0.0:11434",
+        ] {
+            assert!(
+                check_tenant_llm_url(url, false).is_err(),
+                "{} should have been rejected",
+                url
+            );
+        }
+    }
+
+    /// The guard must refuse before it ever reaches the network: a scheme that
+    /// is not http(s), or credentials smuggled into the authority.
+    #[test]
+    fn tenant_supplied_urls_must_be_plain_http() {
+        for url in [
+            "file:///etc/passwd",
+            "gopher://127.0.0.1:11434/",
+            "ftp://example.com/",
+        ] {
+            assert!(
+                check_tenant_llm_url(url, false).is_err(),
+                "{} should have been rejected",
+                url
+            );
+        }
+        assert!(check_tenant_llm_url("http://user:pw@example.com", false).is_err());
+        assert!(check_tenant_llm_url("not a url at all", false).is_err());
+    }
+
+    /// The negative control. Without this, a guard that refused *everything*
+    /// would pass every other test here. A literal public IP rather than a
+    /// hostname, because the guard resolves names and the test must not
+    /// depend on DNS being reachable.
+    #[test]
+    fn a_public_endpoint_is_still_accepted() {
+        assert!(
+            check_tenant_llm_url("http://93.184.216.34:11434", false).is_ok(),
+            "a public address must remain reachable, or the feature is dead"
+        );
+        assert!(check_tenant_llm_url("https://93.184.216.34", false).is_ok());
+    }
+
+    /// A local Ollama is the normal deployment, so the opt-in has to actually
+    /// work — otherwise operators would be pushed to disable the feature.
+    #[test]
+    fn the_opt_in_allows_a_private_endpoint() {
+        for url in ["http://127.0.0.1:11434", "http://10.0.0.5:11434"] {
+            assert!(
+                check_tenant_llm_url(url, true).is_ok(),
+                "{} should have been allowed under the opt-in",
+                url
+            );
+        }
+    }
+
+    /// The opt-in is off unless explicitly set: an unset or empty variable, or
+    /// anything other than the documented truthy values, must not open it.
+    #[test]
+    fn the_opt_in_defaults_to_off() {
+        for raw in ["", "0", "no", "false", "off", "yes", "2"] {
+            let allow = raw == "1" || raw.eq_ignore_ascii_case("true");
+            assert!(
+                !allow,
+                "'{}' must not be read as enabling the private-URL opt-in",
+                raw
+            );
+        }
     }
 }

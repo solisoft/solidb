@@ -240,6 +240,7 @@ decision, not a default.
 | `ADMIN_UI_ALLOW_NO_AUTH` | off | Declares that something in front of `admin/` authenticates requests. The console holds a SoliDB admin credential and acts under it for every visitor, so one of these two must be set. |
 | `SOLIDB_ENABLE_AI_VALIDATION` | off | Enables `/_api/ai/validate`, which shells out to `cargo` on the server host. Dev hosts only; also requires a global admin. |
 | `SOLIDB_ALLOW_GLOBAL_WEBHOOK_SECRET` | off | Lets a job with no `webhook_secret` be signed with `SOLI_WEBHOOK_SECRET`. Off by default because the target URL is tenant-chosen, which makes it a signing oracle for the instance secret. Prefer a per-trigger secret. |
+| `SOLIDB_ALLOW_PRIVATE_LLM_URL` | off | Lets a tenant-supplied `OLLAMA_URL` point at a loopback, link-local or RFC1918 address. Off by default: the URL lives in the database's own `_env`, so any principal with Write on that database chooses where the server dials — that is read-SSRF from the server's network position. Turn it on only when the instance is genuinely meant to reach a private LLM endpoint. |
 | `SOLIDB_MAX_INTERMEDIATE_ROWS` | 5,000,000 | Ceiling on rows a single query may materialise, checked cooperatively inside the executor. Bounds nested-`FOR` cartesian products, which no `LIMIT` applies to. |
 
 Two existing switches worth knowing in the same breath: `SOLIDB_ALLOW_WEBHOOK_LOOPBACK`

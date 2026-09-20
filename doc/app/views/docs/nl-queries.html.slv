@@ -1105,6 +1105,7 @@ Fields:
                   <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside">
                     <li>Start Ollama: <code class="text-pink-300">ollama serve</code></li>
                     <li>Check OLLAMA_URL in _env (default: http://localhost:11434)</li>
+                    <li>If you set <code class="text-pink-300">OLLAMA_URL</code> to a loopback, link-local or private address, the request is refused unless the instance runs with <code class="text-pink-300">SOLIDB_ALLOW_PRIVATE_LLM_URL=1</code> &mdash; the value lives in the database's own <code>_env</code>, so anyone with Write there chooses where the server dials. The unset default is the server's own choice and is never refused.</li>
                     <li>Ensure the model is pulled: <code class="text-pink-300">ollama pull llama3</code></li>
                   </ul>
                 </div>
