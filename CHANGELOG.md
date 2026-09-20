@@ -34,6 +34,16 @@
   persisted counts, and the blob chunk count is resolved on first use. The
   crash path is unchanged: no marker means the full recount still runs.
 
+* **Creating a database no longer creates two collections nobody asked for.**
+  `_scripts` and `_slow_queries` were created up front for every new database,
+  costing two `create_cf` calls — two full OPTIONS rewrites, each proportional
+  to the instance's *total* column-family count — whether or not that database
+  ever ran a script or a slow query. Measured on a dev instance: 43 `_scripts`
+  and 42 `_slow_queries` column families across 46 databases, almost all empty.
+  Both are already created on first use, and the race the pre-creation was
+  guarding against is handled where it happens — the slow-query logger creates
+  the collection and then retries the lookup ten times.
+
 * **Listing collections no longer queues behind an unrelated column-family
   operation.** Collection existence was read straight off RocksDB's
   column-family map, which clones every name in the *whole instance* per call

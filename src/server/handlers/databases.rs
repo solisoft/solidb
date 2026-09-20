@@ -55,34 +55,20 @@ pub async fn create_database(
         let _ = log.append(entry);
     }
 
-    // Auto-create system collections for the new database.
-    // _slow_queries is pre-created to avoid a race where concurrent slow-query
-    // log tasks attempt to create it simultaneously on first use.
-    if let Ok(db) = state.storage.get_database(&req.name) {
-        for system_coll in ["_scripts", "_slow_queries"] {
-            if db.create_collection(system_coll.to_string(), None).is_ok() {
-                if let Some(ref log) = state.replication_log {
-                    let metadata = serde_json::json!({
-                        "type": "document",
-                        "shardConfig": None::<serde_json::Value>
-                    });
-
-                    let entry = LogEntry {
-                        sequence: 0,
-                        node_id: "".to_string(),
-                        database: req.name.clone(),
-                        collection: system_coll.to_string(),
-                        operation: Operation::CreateCollection,
-                        key: "".to_string(),
-                        data: serde_json::to_vec(&metadata).ok(),
-                        timestamp: chrono::Utc::now().timestamp_millis() as u64,
-                        origin_sequence: None,
-                    };
-                    let _ = log.append(entry);
-                }
-            }
-        }
-    }
+    // `_scripts` and `_slow_queries` used to be created here, on the theory
+    // that pre-creating `_slow_queries` avoided a race between concurrent
+    // slow-query log tasks. That race is already handled where it happens:
+    // `handlers::query` creates the collection and then retries the lookup ten
+    // times, and `script_handlers` creates `_scripts` on first use.
+    //
+    // Creating them eagerly cost two `create_cf` calls — two full OPTIONS
+    // rewrites, each proportional to the instance's *total* column-family
+    // count — for every database, whether or not it ever ran a script or a
+    // slow query. Measured on a dev instance: 43 `_scripts` and 42
+    // `_slow_queries` column families across 46 databases, almost all empty.
+    //
+    // A peer that receives a write for one of these collections auto-creates
+    // it (`sync::worker`), so nothing needs announcing up front.
 
     Ok(Json(CreateDatabaseResponse {
         name: req.name,

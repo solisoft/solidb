@@ -841,7 +841,7 @@ fn test_dropping_a_database_deregisters_its_collections() {
     );
 
     engine.delete_database("doomed").unwrap();
-    assert!(engine.collections_grouped().get("doomed").is_none());
+    assert!(!engine.collections_grouped().contains_key("doomed"));
 }
 
 /// A collection deleted through the engine-level path is deregistered too,
