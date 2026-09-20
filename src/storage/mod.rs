@@ -9,6 +9,7 @@ pub type RocksDb = rust_rocksdb::DBWithThreadMode<rust_rocksdb::MultiThreaded>;
 pub mod cf_ops;
 pub mod codec;
 pub mod collection;
+pub mod collection_registry;
 pub mod columnar;
 pub mod database;
 pub mod document;

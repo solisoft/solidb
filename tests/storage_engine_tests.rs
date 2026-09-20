@@ -819,3 +819,44 @@ fn test_reused_column_family_takes_the_new_collection_type() {
         .unwrap();
     assert_eq!(db.get_collection("shape").unwrap().get_type(), "document");
 }
+
+// ============================================================================
+// Collection registry in _meta
+// ============================================================================
+
+/// Dropping a database removes its collections' registry entries in the same
+/// batch that removes the database itself.
+#[test]
+fn test_dropping_a_database_deregisters_its_collections() {
+    let (engine, _tmp) = create_test_engine();
+    engine.initialize().unwrap();
+
+    engine.create_database("doomed".to_string()).unwrap();
+    let db = engine.get_database("doomed").unwrap();
+    db.create_collection("a".to_string(), None).unwrap();
+    db.create_collection("b".to_string(), None).unwrap();
+    assert_eq!(
+        engine.collections_grouped().get("doomed").map(|v| v.len()),
+        Some(2)
+    );
+
+    engine.delete_database("doomed").unwrap();
+    assert!(engine.collections_grouped().get("doomed").is_none());
+}
+
+/// A collection deleted through the engine-level path is deregistered too,
+/// not only the one on `Database`.
+#[test]
+fn test_engine_level_delete_deregisters() {
+    let (engine, _tmp) = create_test_engine();
+    engine.initialize().unwrap();
+
+    engine
+        .create_collection("_system:direct".to_string(), None)
+        .unwrap();
+    let db = engine.get_database("_system").unwrap();
+    assert!(db.list_collections().contains(&"direct".to_string()));
+
+    engine.delete_collection("_system:direct").unwrap();
+    assert!(!db.list_collections().contains(&"direct".to_string()));
+}

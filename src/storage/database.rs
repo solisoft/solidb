@@ -141,6 +141,20 @@ impl Database {
                 })?;
         }
 
+        // Register it last: the column family is the underlying truth, so an
+        // entry must never outrun the thing it describes. A crash in between
+        // leaves an orphan that the startup backfill adopts.
+        if super::collection_registry::available(&self.db) {
+            if let Err(e) = super::collection_registry::record(&self.db, &cf_name, &type_) {
+                tracing::warn!(
+                    "Collection '{}' created but not registered ({}); \
+                     the next startup will adopt it",
+                    cf_name,
+                    e
+                );
+            }
+        }
+
         // Edge collections are traversed by their _from/_to fields; index those
         // up-front so graph traversals and GRAPH_RAG never fall back to a full
         // edge scan. The indexes are non-unique (many edges share a _from/_to)
@@ -214,6 +228,12 @@ impl Database {
             })?;
         }
 
+        if super::collection_registry::available(&self.db) {
+            if let Err(e) = super::collection_registry::forget(&self.db, &cf_name) {
+                tracing::warn!("Failed to deregister collection '{}': {}", cf_name, e);
+            }
+        }
+
         // Remove from cache
         self.collections.remove(collection_name);
         super::collection::index_meta::invalidate_index_meta(&self.db, &cf_name);
@@ -233,21 +253,38 @@ impl Database {
 
     /// List all collections in this database
     pub fn list_collections(&self) -> Vec<String> {
+        // From the `_meta` registry, not `DB::cf_names()`: that clones every
+        // column-family name in the whole instance and takes the CF-map read
+        // lock, which `create_cf`/`drop_cf` hold for their entire OPTIONS
+        // rewrite — so listing one database's collections could block
+        // behind a collection being created in another.
         let prefix = format!("{}:", self.name);
 
-        // Use the live in-memory CF list — DB::list_cf would re-read the
-        // MANIFEST from disk on every call
-        let mut collections = Vec::new();
-        for cf_name in self.db.cf_names() {
-            // Skip CFs awaiting their background drop — logically deleted
-            if self.pending_cf_drops.contains(&cf_name) {
-                continue;
-            }
-            if let Some(name) = cf_name.strip_prefix(&prefix) {
-                collections.push(name.to_string());
-            }
-        }
-        collections
+        // With no `_meta` to hold entries — a `Database` built over a bare
+        // RocksDB handle rather than by `StorageEngine` — fall back to the
+        // column-family map, which is the underlying truth either way. The
+        // registry is an optimisation; it must never be a way for a
+        // collection to disappear.
+        let names = if super::collection_registry::available(&self.db) {
+            super::collection_registry::list(&self.db, &self.name)
+        } else {
+            self.db
+                .cf_names()
+                .into_iter()
+                .filter_map(|cf| cf.strip_prefix(&prefix).map(|n| n.to_string()))
+                .collect()
+        };
+
+        names
+            .into_iter()
+            // Skip collections awaiting their background drop — logically
+            // deleted, and their entry is already gone in the common path.
+            .filter(|name| {
+                !self
+                    .pending_cf_drops
+                    .contains(&format!("{}{}", prefix, name))
+            })
+            .collect()
     }
 
     /// Get a collection handle by a name that came from a caller — an HTTP

@@ -34,6 +34,23 @@
   persisted counts, and the blob chunk count is resolved on first use. The
   crash path is unchanged: no marker means the full recount still runs.
 
+* **Listing collections no longer queues behind an unrelated column-family
+  operation.** Collection existence was read straight off RocksDB's
+  column-family map, which clones every name in the *whole instance* per call
+  — 963 allocations to list one database — and takes a read lock that
+  `create_cf`/`drop_cf` hold for the entire duration of their OPTIONS rewrite.
+  Listing one database's collections could therefore block for hundreds of
+  milliseconds behind a collection being created in another. A `coll:{db}:{name}`
+  entry per collection in `_meta` answers the same question with a prefix scan
+  and no column-family lock.
+
+  The column-family map stays the underlying truth: a startup pass adopts any
+  column family with no entry, so a crash between `create_cf` and the entry
+  write — or a downgrade to a binary that never wrote entries — heals itself,
+  and every listing path falls back to the map when there is no `_meta` to
+  consult. The registry is an index; it is never a way for a collection to
+  disappear.
+
 * **Deleting a collection no longer costs an OPTIONS rewrite, and recreating
   it costs nothing.** `delete_collection` called `drop_cf` inline, and a
   same-name recreate then called `create_cf` — two full rewrites and fsyncs of

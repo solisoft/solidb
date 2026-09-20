@@ -1048,6 +1048,18 @@ impl ColumnarCollection {
         super::cf_ops::timed(|| self.db.drop_cf(&self.cf_name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop CF: {}", e)))?;
 
+        // The column family was created through `Database::create_collection`,
+        // so it has a registry entry. Dropping it here without deregistering
+        // would leave the collection listed forever, with no column family
+        // behind it.
+        if let Err(e) = super::collection_registry::forget(&self.db, &self.cf_name) {
+            tracing::warn!(
+                "Failed to deregister columnar collection '{}': {}",
+                self.cf_name,
+                e
+            );
+        }
+
         Ok(())
     }
 

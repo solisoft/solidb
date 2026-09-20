@@ -457,6 +457,12 @@ impl StorageEngine {
             self.recalculate_all_counts();
         }
 
+        // Adopt any column family with no registry entry — created by a
+        // pre-registry binary, or by a run that crashed between `create_cf`
+        // and the entry write. This is what lets listing trust the registry.
+        let pending = self.pending_cf_drops.clone();
+        super::collection_registry::backfill(&self.db, |cf| pending.contains(cf));
+
         // Reclaim column families left by deleted collections once their
         // reuse grace expires (see `pending_drops::ensure_reaper`).
         PendingCfDrops::ensure_reaper(self.db.clone(), self.pending_cf_drops.clone());
@@ -788,6 +794,16 @@ impl StorageEngine {
                 })?;
         }
 
+        // Register last, so an entry never outruns its column family.
+        if let Err(e) = super::collection_registry::record(&self.db, &name, &type_) {
+            tracing::warn!(
+                "Collection '{}' created but not registered ({}); \
+                 the next startup will adopt it",
+                name,
+                e
+            );
+        }
+
         Ok(())
     }
 
@@ -880,6 +896,10 @@ impl StorageEngine {
         super::cf_ops::timed(|| self.db.drop_cf(name))
             .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {}", e)))?;
 
+        if let Err(e) = super::collection_registry::forget(&self.db, name) {
+            tracing::warn!("Failed to deregister collection '{}': {}", name, e);
+        }
+
         // Drop the stale cached handle so a later same-name create starts fresh.
         self.collections.remove(name);
         super::collection::index_meta::invalidate_index_meta(&self.db, name);
@@ -918,10 +938,21 @@ impl StorageEngine {
     pub fn collections_grouped(&self) -> HashMap<String, Vec<String>> {
         let mut grouped: HashMap<String, Vec<String>> = HashMap::new();
 
-        for cf_name in self.db.cf_names() {
-            if cf_name == "default" || cf_name == META_CF {
-                continue;
-            }
+        // From the `_meta` registry rather than `DB::cf_names()`, which clones
+        // every column-family name in the instance and contends with the CF
+        // map's write lock (held across each OPTIONS rewrite). Falls back to
+        // the column-family map when there is no `_meta` to consult.
+        let registered = if super::collection_registry::available(&self.db) {
+            super::collection_registry::list_all(&self.db)
+        } else {
+            self.db
+                .cf_names()
+                .into_iter()
+                .filter(|cf| cf != "default" && cf != META_CF)
+                .collect()
+        };
+
+        for cf_name in registered {
             if self.pending_cf_drops.contains(&cf_name) {
                 continue;
             }

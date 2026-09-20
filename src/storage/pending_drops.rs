@@ -130,6 +130,12 @@ impl PendingCfDrops {
                 format!("{}{}", MARKER_PREFIX, cf).as_bytes(),
                 b"1",
             );
+            // Deregister in the same batch: a collection must never be listed
+            // as existing while its column family is doomed.
+            batch.delete_cf(
+                &meta_cf,
+                super::collection_registry::entry_key(cf).as_bytes(),
+            );
         }
         db.write(&batch).map_err(|e| {
             DbError::InternalError(format!("Failed to schedule collection drops: {}", e))
