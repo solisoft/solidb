@@ -135,8 +135,18 @@ pub struct Collection {
     pub(crate) db: Arc<DB>,
     /// Cached document count (atomic for lock-free updates)
     pub(crate) doc_count: Arc<AtomicUsize>,
-    /// Cached blob chunk count (atomic for lock-free updates)
+    /// Cached blob chunk count (atomic for lock-free updates).
+    ///
+    /// Only meaningful once `chunk_count_ready` is set — see
+    /// [`Collection::ensure_chunk_count`].
     pub(crate) chunk_count: Arc<AtomicUsize>,
+    /// Whether `chunk_count` has been resolved from disk.
+    ///
+    /// Counting blob chunks means walking every `blo:` key, and
+    /// `Collection::new` used to do it for every collection on every handle —
+    /// including the ~96% that hold no blob at all. It is now deferred to the
+    /// first read or write that actually needs the number.
+    pub(crate) chunk_count_ready: Arc<AtomicBool>,
     /// Whether count needs to be persisted to disk
     pub(crate) count_dirty: Arc<AtomicBool>,
     /// Last flush time in seconds since UNIX epoch (for throttling)
@@ -168,6 +178,7 @@ impl Clone for Collection {
             db: self.db.clone(),
             doc_count: self.doc_count.clone(),
             chunk_count: self.chunk_count.clone(),
+            chunk_count_ready: self.chunk_count_ready.clone(),
             count_dirty: self.count_dirty.clone(),
             last_flush_time: self.last_flush_time.clone(),
             vec_dirty: self.vec_dirty.clone(),

@@ -1152,6 +1152,7 @@ impl Collection {
     /// Like [`Self::count`] this is a cached atomic, not a scan — cheap enough
     /// for background sweeps to poll on every pass.
     pub fn chunk_count(&self) -> usize {
+        self.ensure_chunk_count();
         self.chunk_count.load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -1262,7 +1263,10 @@ impl Collection {
 
         // Reset counters and flush the zeroed count to disk immediately.
         self.doc_count.store(0, Ordering::Relaxed);
+        // Every `blo:` key was just range-deleted, so the count is known
+        // without a walk — publish it and mark it resolved.
         self.chunk_count.store(0, Ordering::Relaxed);
+        self.chunk_count_ready.store(true, Ordering::Release);
         self.count_dirty.store(true, Ordering::Relaxed);
         self.flush_stats();
 

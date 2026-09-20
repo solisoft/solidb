@@ -16,6 +16,16 @@ use crate::transaction::manager::TransactionManager;
 /// Metadata column family name
 pub(crate) const META_CF: &str = "_meta";
 
+/// `_meta` key written by [`StorageEngine::flush_all_stats`] once every
+/// collection's cached count is durable, and deleted by
+/// [`StorageEngine::initialize`] the moment it is observed.
+///
+/// Its presence at startup means the previous run shut down gracefully, so the
+/// on-disk counts can be trusted and the full recount skipped. Its absence —
+/// a crash, a kill, or a first boot — triggers the recount. Deleting it during
+/// startup is what makes a crash *after* a clean start still recount.
+const CLEAN_SHUTDOWN_KEY: &str = "shutdown:clean";
+
 /// Process-wide RocksDB memory/tuning profile.
 ///
 /// Memory in RocksDB is dominated by per-CF structures (memtables, pinned
@@ -437,9 +447,15 @@ impl StorageEngine {
             }
         }
 
-        // Recalculate document counts for all collections
-        // This ensures counts are accurate after crashes or unclean shutdowns
-        self.recalculate_all_counts();
+        // Recalculate document counts for all collections, but only when the
+        // previous run did not shut down cleanly — this walks every `doc:` key
+        // of every collection, which on an instance with ~900 collections was
+        // the bulk of a 22-33s startup (RocksDB's own open measured 1.8s).
+        if self.take_clean_shutdown_marker() {
+            tracing::info!("Clean shutdown detected — trusting persisted document counts");
+        } else {
+            self.recalculate_all_counts();
+        }
 
         // Resume column-family drops interrupted by a previous shutdown/crash
         let resumed = self.pending_cf_drops.resume_from_meta(&self.db);
@@ -452,6 +468,42 @@ impl StorageEngine {
         }
 
         Ok(())
+    }
+
+    /// Read and clear the clean-shutdown marker.
+    ///
+    /// Returns whether it was set. Always clears it, so a crash later in this
+    /// run leaves no stale marker for the next startup to trust.
+    fn take_clean_shutdown_marker(&self) -> bool {
+        let Some(meta_cf) = self.db.cf_handle(META_CF) else {
+            return false;
+        };
+        let present = matches!(
+            self.db.get_cf(&meta_cf, CLEAN_SHUTDOWN_KEY.as_bytes()),
+            Ok(Some(_))
+        );
+        if present {
+            if let Err(e) = self.db.delete_cf(&meta_cf, CLEAN_SHUTDOWN_KEY.as_bytes()) {
+                // Leaving it set would let the *next* start skip the recount
+                // after a crash, so treat a failed delete as unclean.
+                tracing::warn!("Failed to clear the clean-shutdown marker: {}", e);
+                return false;
+            }
+        }
+        present
+    }
+
+    /// Record that every collection's cached count is durable on disk.
+    fn set_clean_shutdown_marker(&self) {
+        let Some(meta_cf) = self.db.cf_handle(META_CF) else {
+            return;
+        };
+        if let Err(e) = self
+            .db
+            .put_cf(&meta_cf, CLEAN_SHUTDOWN_KEY.as_bytes(), b"1")
+        {
+            tracing::warn!("Failed to record a clean shutdown: {}", e);
+        }
     }
 
     /// Recalculate document counts for all collections
@@ -502,6 +554,12 @@ impl StorageEngine {
 
         // Also flush RocksDB
         let _ = self.flush();
+
+        // Every cached count is now on disk, so the next startup can trust
+        // them instead of walking every `doc:` key. Written *after* the flush
+        // so the marker can never outrank the data it vouches for.
+        self.set_clean_shutdown_marker();
+
         tracing::info!("Flushed all collection stats to disk");
     }
 

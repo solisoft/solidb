@@ -21,6 +21,11 @@ impl Collection {
 
         let chunk_key = Self::blo_chunk_key(key, chunk_index as usize);
 
+        // Resolve the cached count before writing: the walk reads an absolute
+        // value from disk, so running it afterwards would already include this
+        // chunk and the increment below would count it twice.
+        self.ensure_chunk_count();
+
         // ... existence check ...
         let exists = db.get_cf(&cf, &chunk_key).ok().flatten().is_some();
 
@@ -59,6 +64,11 @@ impl Collection {
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
+
+        // Before the delete: the walk reads an absolute value, so resolving
+        // afterwards would already exclude these chunks and the subtraction
+        // below would remove them twice.
+        self.ensure_chunk_count();
 
         let prefix = format!("{}{}:", BLO_PREFIX, key);
         let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
@@ -130,6 +140,9 @@ impl Collection {
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
+
+        // Before the batch lands, for the same reason as the other two sites.
+        self.ensure_chunk_count();
 
         let mut batch = WriteBatch::default();
 

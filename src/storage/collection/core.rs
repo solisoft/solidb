@@ -33,16 +33,9 @@ impl Collection {
             0
         };
 
-        // Determine initial chunk count (only relevant if it's a blob collection)
-        let chunk_count = if let Some(cf) = db.cf_handle(&name) {
-            let prefix = BLO_PREFIX.as_bytes();
-            db.prefix_iterator_cf(&cf, prefix)
-                .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
-                .count()
-        } else {
-            0
-        };
-
+        // The blob chunk count is resolved lazily: see `ensure_chunk_count`.
+        // Doing it here cost a full `blo:` walk per collection handle, for
+        // every collection in the instance, on every startup.
         let (change_sender, _) = tokio::sync::broadcast::channel(100);
 
         // Load collection type
@@ -59,7 +52,8 @@ impl Collection {
             name,
             db,
             doc_count: Arc::new(AtomicUsize::new(count)),
-            chunk_count: Arc::new(AtomicUsize::new(chunk_count)),
+            chunk_count: Arc::new(AtomicUsize::new(0)),
+            chunk_count_ready: Arc::new(AtomicBool::new(false)),
             count_dirty: Arc::new(AtomicBool::new(false)),
             last_flush_time: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             vec_dirty: Arc::new(AtomicBool::new(false)),
@@ -71,6 +65,38 @@ impl Collection {
             vector_indexes: Arc::new(DashMap::new()),
             schema_validator: Arc::new(RwLock::new(None)),
             schema_hash: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Resolve `chunk_count` from disk on first use.
+    ///
+    /// Walks the collection's `blo:` keys exactly once per handle lineage —
+    /// the flag and the counter are both shared by every clone. Callers that
+    /// read *or* adjust the count must go through this first, otherwise an
+    /// increment applied before the walk would be counted twice: the walk
+    /// stores an absolute value read from disk, which already includes it.
+    pub(crate) fn ensure_chunk_count(&self) {
+        if self.chunk_count_ready.load(Ordering::Acquire) {
+            return;
+        }
+        let count = match self.db.cf_handle(&self.name) {
+            Some(cf) => {
+                let prefix = BLO_PREFIX.as_bytes();
+                self.db
+                    .prefix_iterator_cf(&cf, prefix)
+                    .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
+                    .count()
+            }
+            None => 0,
+        };
+        // Whoever wins publishes its walk; a loser's walk saw the same disk
+        // state, so either answer is correct.
+        if self
+            .chunk_count_ready
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            self.chunk_count.store(count, Ordering::Relaxed);
         }
     }
 
@@ -205,7 +231,10 @@ impl Collection {
         CollectionStats {
             name: self.name.clone(),
             document_count: self.doc_count.load(Ordering::Relaxed),
-            chunk_count: self.chunk_count.load(Ordering::Relaxed),
+            chunk_count: {
+                self.ensure_chunk_count();
+                self.chunk_count.load(Ordering::Relaxed)
+            },
             disk_usage,
         }
     }

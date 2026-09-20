@@ -577,3 +577,141 @@ fn test_checkpoint_refuses_existing_target() {
         "expected a clear 'already exists' error, got: {err}"
     );
 }
+
+// ============================================================================
+// Startup cost: the clean-shutdown marker and the lazy blob-chunk count
+// ============================================================================
+
+/// A graceful shutdown lets the next startup trust the persisted counts
+/// instead of walking every `doc:` key of every collection.
+#[test]
+fn test_clean_shutdown_lets_startup_trust_persisted_counts() {
+    let tmp_dir = TempDir::new().unwrap();
+    let path = tmp_dir.path().to_str().unwrap();
+
+    {
+        let engine = StorageEngine::new(path).unwrap();
+        engine.initialize().unwrap();
+        engine.create_collection("docs".to_string(), None).unwrap();
+        let col = engine.get_collection("docs").unwrap();
+        for i in 0..7 {
+            col.insert(json!({ "num": i })).unwrap();
+        }
+        // The graceful path: this is what records the marker.
+        engine.flush_all_stats();
+    }
+
+    {
+        let engine = StorageEngine::new(path).unwrap();
+        engine.initialize().unwrap();
+        assert_eq!(engine.get_collection("docs").unwrap().count(), 7);
+    }
+
+    // The marker is consumed by the startup that observed it, so a second
+    // reopen with no intervening flush must fall back to the recount — and
+    // still land on the same number.
+    {
+        let engine = StorageEngine::new(path).unwrap();
+        engine.initialize().unwrap();
+        assert_eq!(engine.get_collection("docs").unwrap().count(), 7);
+    }
+}
+
+/// Counts survive a startup with no clean-shutdown marker, which is the
+/// crash path: `initialize` recounts from the documents themselves.
+#[test]
+fn test_counts_are_recovered_without_a_clean_shutdown() {
+    let tmp_dir = TempDir::new().unwrap();
+    let path = tmp_dir.path().to_str().unwrap();
+
+    {
+        let engine = StorageEngine::new(path).unwrap();
+        engine.initialize().unwrap();
+        engine.create_collection("docs".to_string(), None).unwrap();
+        let col = engine.get_collection("docs").unwrap();
+        for i in 0..5 {
+            col.insert(json!({ "num": i })).unwrap();
+        }
+        // Make the documents durable, but never call flush_all_stats — so no
+        // marker is written and the next start must not trust the cache.
+        engine.flush().unwrap();
+    }
+
+    let engine = StorageEngine::new(path).unwrap();
+    engine.initialize().unwrap();
+    assert_eq!(engine.get_collection("docs").unwrap().count(), 5);
+}
+
+/// `Collection::new` no longer walks `blo:` for every collection; the count
+/// is resolved on first use and must agree with an eager walk.
+#[test]
+fn test_blob_chunk_count_resolves_lazily_after_reopen() {
+    let tmp_dir = TempDir::new().unwrap();
+    let path = tmp_dir.path().to_str().unwrap();
+
+    {
+        let engine = StorageEngine::new(path).unwrap();
+        engine.initialize().unwrap();
+        engine
+            .create_collection("files".to_string(), Some("blob".to_string()))
+            .unwrap();
+        let files = engine.get_collection("files").unwrap();
+        files
+            .insert(json!({ "_key": "a", "filename": "a.bin" }))
+            .unwrap();
+        files.put_blob_chunk("a", 0, b"zero").unwrap();
+        files.put_blob_chunk("a", 1, b"one").unwrap();
+        files.put_blob_chunk("a", 2, b"two").unwrap();
+        assert_eq!(files.chunk_count(), 3);
+        engine.flush_all_stats();
+    }
+
+    // Fresh handle, never scanned at construction.
+    let engine = StorageEngine::new(path).unwrap();
+    engine.initialize().unwrap();
+    let files = engine.get_collection("files").unwrap();
+    assert_eq!(files.chunk_count(), 3);
+    assert_eq!(files.blob_stats().unwrap().0, 3);
+
+    // Writing through a handle that has never resolved its count must not
+    // double-count: the resolve reads an absolute value from disk.
+    files.put_blob_chunk("a", 3, b"three").unwrap();
+    assert_eq!(files.chunk_count(), 4);
+    assert_eq!(files.blob_stats().unwrap().0, 4);
+}
+
+/// The same, for the delete path: a handle that never resolved must not
+/// subtract chunks the walk had already excluded.
+#[test]
+fn test_blob_chunk_count_is_exact_when_deleting_before_first_read() {
+    let tmp_dir = TempDir::new().unwrap();
+    let path = tmp_dir.path().to_str().unwrap();
+
+    {
+        let engine = StorageEngine::new(path).unwrap();
+        engine.initialize().unwrap();
+        engine
+            .create_collection("files".to_string(), Some("blob".to_string()))
+            .unwrap();
+        let files = engine.get_collection("files").unwrap();
+        files
+            .insert(json!({ "_key": "a", "filename": "a.bin" }))
+            .unwrap();
+        files
+            .insert(json!({ "_key": "b", "filename": "b.bin" }))
+            .unwrap();
+        files.put_blob_chunk("a", 0, b"zero").unwrap();
+        files.put_blob_chunk("a", 1, b"one").unwrap();
+        files.put_blob_chunk("b", 0, b"other").unwrap();
+        engine.flush_all_stats();
+    }
+
+    let engine = StorageEngine::new(path).unwrap();
+    engine.initialize().unwrap();
+    let files = engine.get_collection("files").unwrap();
+
+    // Delete is the first operation to touch the count on this handle.
+    files.delete_blob_data("a").unwrap();
+    assert_eq!(files.chunk_count(), 1);
+    assert_eq!(files.blob_stats().unwrap().0, 1);
+}
