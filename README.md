@@ -61,7 +61,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 
 ## 📦 Official Clients
 
-SoliDB provides native client libraries for multiple languages. See [**Client Documentation**](docs/CLIENTS.md) for installation and usage details.
+SoliDB provides native client libraries for multiple languages. See the [**client documentation**](https://solidb.solisoft.net/docs/clients) for installation and usage details.
 
 - **Node.js** (`solidb-client`)
 - **Python** (`solidb`)
