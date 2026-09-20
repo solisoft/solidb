@@ -30,6 +30,45 @@ cargo fmt -- --check           # Check formatting
 cargo clippy -- -D warnings    # Lint checks
 ```
 
+### On a workstation with `rbuild`, compile remotely
+
+If `rbuild` is on `PATH`, prefer it for anything that compiles. It rsyncs the
+working tree — uncommitted changes included — to the dedicated build server,
+runs cargo there on twelve cores, and pulls only the executables back.
+Everywhere else (CI runners, a fresh clone, another machine) `rbuild` is absent
+and the plain cargo commands above are the right ones.
+
+```bash
+rbuild db                                   # replaces cargo build --release
+rbuild db --features fuse                   # solidb-fuse; fuse3-devel is installed there
+rbuild check db                             # replaces the fmt + clippy gate
+rbuild test db --profile ci --test <name>   # replaces cargo test
+```
+
+This is the direct answer to the two disk problems described below. The ~96 test
+binaries and the second `target/ci/` tree are built on a machine with 486 GB
+free rather than on the box that is also running the server and a fleet of app
+dev servers — so the swap death spiral stops being a reason not to run tests.
+The local `target/` was deleted when compilation moved off this machine; only
+`target/remote/` survives, so a local `cargo build` now starts from nothing,
+RocksDB's vendored C++ included.
+
+Binaries land in `target/remote/release/` (`solidb`, `solidb-dump`,
+`solidb-restore`, `solidb-repl`) and are linked into `Work/soli/bin/`, first on
+`PATH`. Two caveats:
+
+- **The remote release binary is not the manifest's.** The server overrides
+  `lto` to `thin` and `codegen-units` to 16, and a `[profile.*]` table in a
+  cargo config outranks `Cargo.toml` key by key. Benchmark with
+  `rbuild --faithful db`.
+- **`cargo clean` here also deletes `target/remote/`.** Prefer
+  `rbuild clean db -p solidb`, which is package-scoped and so spares the
+  vendored C/C++ in `target/release/build/` — measured after a run:
+  `tikv-jemalloc-sys` 286 MB, `rust-librocksdb-sys` 95 MB across two units,
+  plus `aws-lc-sys` and `zstd-sys`. A bare `cargo clean` throws all of that
+  away and the next build pays for it in g++. `rbuild pull db` re-fetches the
+  binaries without recompiling.
+
 ### Test with `--profile ci`, not `--release`
 
 `[profile.ci]` (in `Cargo.toml`) is what CI runs and what you should run. It
@@ -113,12 +152,22 @@ matching the existing `v0.32.1` style — CI's `release` job triggers on
 
 ### Core Modules
 
-- **sdbql/** - Custom query language (lexer, parser, AST, executor). The executor (`executor.rs` at 297KB) handles all query execution.
-- **storage/** - RocksDB-backed persistence layer. `collection.rs` (125KB) manages document operations, indexing, and TTL.
-- **server/** - Axum-based HTTP API and WebSocket handlers. `handlers.rs` (241KB) contains all endpoint logic.
+- **sdbql/** - Custom query language (lexer, parser, AST, executor). Query
+  execution lives in the `executor/` directory, not a single file — start at
+  `executor/execution/clauses.rs` for the FOR/FILTER/SORT/LIMIT pipeline.
+- **storage/** - RocksDB-backed persistence layer. `collection/` holds document
+  operations, indexing and TTL, split across `crud.rs`, `indexes.rs`,
+  `fulltext.rs`, `geo.rs`, `ttl.rs`, `blobs.rs`, `vector.rs` and `versioning.rs`.
+  One collection is one RocksDB column family; `collection/mod.rs` defines the
+  key prefixes (`doc:`, `idx:`, `ft:`, `blo:` …) that namespace data within it.
+- **server/** - Axum-based HTTP API and WebSocket handlers. Endpoint logic is in
+  the `handlers/` directory plus ~28 sibling files in `src/server/`; routes are
+  declared in one place, `routes.rs`.
 - **cluster/** - Multi-node coordination with Hybrid Logical Clocks for distributed timestamp ordering.
 - **sync/** - Replication worker and log management for eventual consistency across nodes.
-- **sharding/** - Horizontal partitioning with automatic rebalancing. `coordinator.rs` (151KB) orchestrates shard operations.
+- **sharding/** - Horizontal partitioning with automatic rebalancing.
+  `coordinator.rs` orchestrates shard operations — at 3848 lines it is the
+  largest single source file in the repository.
 - **transaction/** - ACID transactions with configurable isolation levels, WAL support, and row-level locking.
 - **scripting/** - Embedded Lua 5.4 runtime for custom endpoints and database operations.
 - **queue/** - Internal scheduled work: trigger dispatch (script + signed webhook), embedding generation, and materialized-view refresh. SolidB exposes no client-facing job or cron queue; application background jobs live in the Soli framework.
@@ -130,6 +179,7 @@ matching the existing `v0.32.1` style — CI's `release` job triggers on
 - `src/bin/solidb-dump.rs` - Database export utility (logical, per-database)
 - `src/bin/solidb-restore.rs` - Database restore utility
 - `src/bin/solidb-fuse.rs` - FUSE filesystem mount (optional feature)
+- `src/bin/solidb-repl.rs` - Interactive SDBQL shell
 
 ### Backups
 
@@ -240,9 +290,22 @@ macOS: Xcode Command Line Tools (macFUSE for FUSE support)
 
 ## Client SDKs
 
-8 client libraries in `/clients/`: Rust, Go, Python, NodeJS, JavaScript, PHP, Ruby, Elixir
+`clients/` holds nine libraries and four example applications; the count of
+"8 SDKs" that used to sit here counted `js-client` twice (as "NodeJS" and as
+"JavaScript") and missed two.
+
+- **Libraries**: `rust-client`, `go-client`, `PYTHON-client`, `js-client`
+  (Node and browser both), `PHP-client`, `Ruby-client`, `elixir_client`,
+  `solidb-laravel-eloquent`, `mobile-sdk`.
+- **Example apps, not SDKs**: `android-example`, `ios-example`,
+  `flutter-example`, `react-native-example`. The docs site has a page for each,
+  so they are shipped surfaces even though nothing depends on them.
 
 Benchmark all clients: `./bench_all.sh`
+
+`clients/Ruby-client/.bundle/config` sets `BUNDLE_PATH: vendor/bundle`, so
+`bundle install` writes into the working tree. That directory is ignored — do
+not commit it.
 
 ## Web Applications
 
@@ -264,3 +327,10 @@ soli lint              # static analysis
 See `admin/CLAUDE.md` and `doc/CLAUDE.md` for the Soli language and framework conventions.
 
 > The former LuaOnBeans `www/` app (old dashboard + docs website) has been removed; `admin/` and `doc/` supersede it.
+
+### Which documentation is authoritative
+
+`doc/` (the Soli app) is the live documentation site and is the one to update.
+`docs/` is a handful of older engine markdown files kept only where they have no
+page on the site — `SDBQL_REFERENCE.md` and `BACKUP.md` are current; treat
+anything else there as historical. When the two disagree, `doc/` wins.
