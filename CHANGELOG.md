@@ -22,6 +22,31 @@
   go back to sleep. Setting the variable has no effect; nothing needs changing
   in an existing config.
 
+### Performance
+
+* **Startup no longer walks every collection.** On an instance with ~920
+  collections, SoliDB took 22.5–33.0 s to start while RocksDB's own open
+  measured 1.81 s; the rest was two full sweeps of every collection.
+  `initialize` unconditionally recounted every `doc:` key — a sensible guard
+  after a crash, wasted after a graceful stop — and `Collection::new` walked
+  `blo:` for every collection, including the ~96% holding no blob at all.
+  A clean-shutdown marker in `_meta` now lets a graceful restart trust the
+  persisted counts, and the blob chunk count is resolved on first use. The
+  crash path is unchanged: no marker means the full recount still runs.
+
+* **The WAL no longer stampedes the flusher.** `max_total_wal_size` was pinned
+  at 50 MB, which is not a disk cap but a flush trigger: crossing it makes
+  RocksDB flush *every* column family holding data in the oldest WAL. Measured
+  on a 963-CF instance, 27 904 of 27 910 flushes were `WAL Full`, 97.7% of them
+  writing under 4 KB, in 39 bursts averaging ~715 CFs — which is where 3 717
+  SST files came from, 87.8% of them under 64 KB. It was not even holding the
+  line it promised; the WAL sat at 201.8 MB. The budget is now a profile field
+  (2 GB prod, 256 MB `--dev`, `--max-total-wal-size` to override), and the prod
+  profile gained the global memtable budget it had been warning about at every
+  boot — that trigger flushes one column family, not all of them. Also
+  `arena_block_size` down to 64 KB (the 1 MB default is reserved per column
+  family) and a size bound on `data/LOG`, which had reached 118 MB.
+
 ### Fixed
 
 * **The changefeed missed upserts and engine-side writes.** Two write paths
