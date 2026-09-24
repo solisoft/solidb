@@ -192,6 +192,45 @@ pub fn is_mutating_function(name: &str) -> bool {
         .any(|f| name.eq_ignore_ascii_case(f))
 }
 
+/// Builtins that dispatch to another function chosen by their first argument.
+pub const DYNAMIC_CALL_FUNCTIONS: [&str; 2] = ["APPLY", "CALL"];
+
+fn is_dynamic_call_function(name: &str) -> bool {
+    DYNAMIC_CALL_FUNCTIONS
+        .iter()
+        .any(|f| name.eq_ignore_ascii_case(f))
+}
+
+/// True when calling `name` with `args` changes server state.
+///
+/// Beyond [`MUTATING_FUNCTIONS`]:
+/// - `ROW_POLICY(coll, pred)` (the two-argument setter) rewrites the
+///   collection's row policy; the one-argument getter is a read (audit C4).
+/// - `APPLY` / `CALL` run whatever function their first argument names, so
+///   they are writes unless that argument is a string literal naming a
+///   function that is itself not a write (audit A11). `ROW_POLICY` and nested
+///   dynamic calls through them count as writes, since the arity of the inner
+///   call is not visible here.
+pub fn function_call_mutates(name: &str, args: &[Expression]) -> bool {
+    if is_mutating_function(name) {
+        return true;
+    }
+    if name.eq_ignore_ascii_case("ROW_POLICY") {
+        return args.len() >= 2;
+    }
+    if is_dynamic_call_function(name) {
+        return match args.first() {
+            Some(Expression::Literal(Value::String(inner))) => {
+                is_mutating_function(inner)
+                    || is_dynamic_call_function(inner)
+                    || inner.eq_ignore_ascii_case("ROW_POLICY")
+            }
+            _ => true,
+        };
+    }
+    false
+}
+
 fn valid_time_expressions(spec: &ValidTimeSpec) -> Vec<&Expression> {
     match spec {
         ValidTimeSpec::AsOf(e) => vec![e],
@@ -248,7 +287,7 @@ pub fn expression_mutates(expr: &Expression) -> bool {
     match expr {
         Expression::Subquery(q) => q.has_mutations(),
         Expression::FunctionCall { name, args } => {
-            is_mutating_function(name) || args.iter().any(expression_mutates)
+            function_call_mutates(name, args) || args.iter().any(expression_mutates)
         }
         Expression::WindowFunctionCall {
             function,

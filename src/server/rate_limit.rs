@@ -161,7 +161,7 @@ static API_RATE_LIMITER: Lazy<Mutex<LruCache<String, Window>>> = Lazy::new(|| {
 /// headers when explicitly trusted. `None` when the client cannot be
 /// identified at all — such requests are not throttled rather than sharing
 /// one bucket.
-fn client_ip(peer: Option<std::net::IpAddr>, headers: &HeaderMap) -> Option<String> {
+pub(crate) fn client_ip(peer: Option<std::net::IpAddr>, headers: &HeaderMap) -> Option<String> {
     let socket_ip = peer.map(|ip| ip.to_string());
     if crate::server::auth::trust_proxy_headers() {
         headers

@@ -1,3 +1,6 @@
+#[path = "shared/password.rs"]
+mod password;
+
 use clap::Parser;
 use fuser::{
     FileAttr, FileType, Filesystem, MountOption, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry,
@@ -30,8 +33,14 @@ struct Args {
     #[arg(long, default_value = "admin")]
     username: String,
 
-    #[arg(long)]
+    /// Password. Visible in `ps` and shell history: prefer SOLIDB_PASSWORD,
+    /// --password-file, or the prompt shown on a terminal.
+    #[arg(long, conflicts_with = "password_file")]
     password: Option<String>,
+
+    /// Read the password from this file (one trailing newline is ignored).
+    #[arg(long)]
+    password_file: Option<String>,
 
     #[arg(long, help = "Mount point path")]
     mount: String,
@@ -778,6 +787,17 @@ impl Filesystem for SolidBFS {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    // Resolved before daemonizing: the daemon has no terminal to prompt on.
+    // An empty answer at the prompt means "no authentication", as omitting
+    // --password always has.
+    let password = password::resolve_password(
+        args.password.as_deref(),
+        args.password_file.as_deref(),
+        Some(&args.username),
+    )
+    .map_err(anyhow::Error::msg)?
+    .filter(|p| !p.is_empty());
+
     #[cfg(unix)]
     if args.daemon {
         use solidb::daemon::Daemonize;
@@ -868,12 +888,7 @@ fn main() -> anyhow::Result<()> {
     options.push(MountOption::AutoUnmount);
 
     println!("Attempting to mount at {}", mountpoint);
-    let client = SolidBClient::new(
-        &args.host,
-        args.port,
-        &args.username,
-        args.password.as_deref(),
-    );
+    let client = SolidBClient::new(&args.host, args.port, &args.username, password.as_deref());
     let fs = SolidBFS::new(client);
 
     // We always use spawn_mount2 (background thread) and keep the main thread

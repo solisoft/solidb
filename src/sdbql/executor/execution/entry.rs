@@ -184,12 +184,16 @@ impl<'a> QueryExecutor<'a> {
                     if let Some(BodyClause::For(for_clause)) = body.first() {
                         // Only when the FOR iterates a collection (no source_expression)
                         // and matches against a real collection name (not a LET-bound array).
+                        // A row policy is applied by the scan in
+                        // `get_for_source_docs`; the index read here would
+                        // return unfiltered rows (audit H2).
                         let iterates_collection = for_clause.source_expression.is_none()
                             && for_clause
                                 .source_variable
                                 .as_ref()
                                 .is_none_or(|s| s == &for_clause.collection)
-                            && !initial_bindings.contains_key(&for_clause.collection);
+                            && !initial_bindings.contains_key(&for_clause.collection)
+                            && !self.row_policy_applies(&for_clause.collection);
 
                         let (sort_expr, sort_asc) = &sort.fields[0];
                         if iterates_collection {
@@ -303,7 +307,8 @@ impl<'a> QueryExecutor<'a> {
         if let Some(sort) = &query.sort_clause {
             if query.limit_clause.is_none() && query.body_clauses.len() == 1 {
                 if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
-                    if sort.fields.len() == 1 {
+                    // Same row-policy exclusion as the SORT + LIMIT path.
+                    if sort.fields.len() == 1 && !self.row_policy_applies(&for_clause.collection) {
                         let (sort_expr, sort_asc) = &sort.fields[0];
 
                         if let Expression::FieldAccess(base, field) = sort_expr {
@@ -370,7 +375,11 @@ impl<'a> QueryExecutor<'a> {
                                     .as_ref()
                                     .unwrap_or(&for_clause.collection);
 
-                                if !initial_bindings.contains_key(source_name) {
+                                // A row-policy scan must go through
+                                // `get_for_source_docs`, which filters it.
+                                if !initial_bindings.contains_key(source_name)
+                                    && !self.row_policy_applies(&for_clause.collection)
+                                {
                                     let scan_limit = query
                                         .limit_clause
                                         .as_ref()

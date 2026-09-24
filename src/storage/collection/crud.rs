@@ -1,24 +1,53 @@
 use super::*;
 use crate::error::{DbError, DbResult};
-use crate::storage::document_cache::get_document_cache;
 use crate::storage::serializer::{deserialize_doc, deserialize_doc_as_value, serialize_doc};
-use rust_rocksdb::{Direction, IteratorMode, ReadOptions, WriteBatch};
+use rust_rocksdb::{
+    AsColumnFamilyRef, BoundColumnFamily, Direction, IteratorMode, ReadOptions, WriteBatch,
+};
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
+/// The error for an insert whose `_key` is already taken. Single-document and
+/// batch inserts return the same conflict (audit D1: the single path used to
+/// overwrite silently, leaving the old document's index entries behind).
+fn key_exists_error(key: &str) -> DbError {
+    DbError::ConflictError(format!("Document with _key '{}' already exists", key))
+}
+
+/// Remove and return `_key` from `data`, or generate a UUIDv7 key.
+fn take_key(data: &mut Value) -> DbResult<String> {
+    if let Some(obj) = data.as_object_mut() {
+        if let Some(key_value) = obj.remove("_key") {
+            return match key_value.as_str() {
+                Some(key_str) => Ok(key_str.to_string()),
+                None => Err(DbError::InvalidDocument(
+                    "_key must be a string".to_string(),
+                )),
+            };
+        }
+    }
+    Ok(uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string())
+}
 
 impl Collection {
     // ==================== Basic CRUD ====================
+
+    fn live_cf(&self) -> DbResult<Arc<BoundColumnFamily<'_>>> {
+        self.db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })
+    }
 
     /// Get a document by key
     pub fn get(&self, key: &str) -> DbResult<Document> {
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!(
-                "{} (column family dropped mid-operation)",
-                self.name
-            ))
-        })?;
+        let cf = self.live_cf()?;
 
         let bytes = db
             .get_cf(&cf, Self::doc_key(key))
@@ -34,7 +63,107 @@ impl Collection {
         keys.iter().filter_map(|k| self.get(k).ok()).collect()
     }
 
-    /// Insert a new document
+    // ---------- per-document derived entries (idx / geo / ft / ttl) ----------
+
+    fn add_insert_entries<C: AsColumnFamilyRef>(
+        &self,
+        batch: &mut WriteBatch,
+        cf: &C,
+        key: &str,
+        doc_value: &Value,
+    ) -> DbResult<()> {
+        let (regular, geo) = self.compute_index_entries_for_insert(key, doc_value)?;
+        for (entry_key, entry_value) in regular.into_iter().chain(geo) {
+            batch.put_cf(cf, entry_key, entry_value);
+        }
+        for (entry_key, entry_value) in self.compute_fulltext_entries_for_insert(key, doc_value) {
+            batch.put_cf(cf, entry_key, entry_value);
+        }
+        for (entry_key, _) in self.compute_ttl_expiry_entries_for_insert(key, doc_value) {
+            batch.put_cf(cf, entry_key, b"");
+        }
+        Ok(())
+    }
+
+    fn add_update_entries<C: AsColumnFamilyRef>(
+        &self,
+        batch: &mut WriteBatch,
+        cf: &C,
+        key: &str,
+        old_value: &Value,
+        new_value: &Value,
+    ) -> DbResult<()> {
+        // Removals strictly before additions: an unchanged entry appears in
+        // both lists and must end up present.
+        let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
+            self.compute_index_entries_for_update(key, old_value, new_value)?;
+        for key_to_remove in keys_to_remove.into_iter().chain(geo_keys_to_remove) {
+            batch.delete_cf(cf, key_to_remove);
+        }
+        for (entry_key, entry_value) in entries_to_add.into_iter().chain(geo_entries_to_add) {
+            batch.put_cf(cf, entry_key, entry_value);
+        }
+
+        let (ft_to_add, ft_to_remove) =
+            self.compute_fulltext_entries_for_update(key, old_value, new_value);
+        for key_to_remove in ft_to_remove {
+            batch.delete_cf(cf, key_to_remove);
+        }
+        for (entry_key, entry_value) in ft_to_add {
+            batch.put_cf(cf, entry_key, entry_value);
+        }
+
+        let (ttl_to_add, ttl_to_remove) =
+            self.compute_ttl_expiry_entries_for_update(key, old_value, new_value);
+        for key_to_remove in ttl_to_remove {
+            batch.delete_cf(cf, key_to_remove);
+        }
+        for (entry_key, _) in ttl_to_add {
+            batch.put_cf(cf, entry_key, b"");
+        }
+        Ok(())
+    }
+
+    fn add_delete_entries<C: AsColumnFamilyRef>(
+        &self,
+        batch: &mut WriteBatch,
+        cf: &C,
+        key: &str,
+        doc_value: &Value,
+    ) -> DbResult<()> {
+        let (regular_keys, geo_keys) = self.compute_index_entries_for_delete(key, doc_value)?;
+        for key_to_remove in regular_keys.into_iter().chain(geo_keys) {
+            batch.delete_cf(cf, key_to_remove);
+        }
+        for key_to_remove in self.compute_fulltext_entries_for_delete(key, doc_value) {
+            batch.delete_cf(cf, key_to_remove);
+        }
+        for key_to_remove in self.compute_ttl_expiry_entries_for_delete(key, doc_value) {
+            batch.delete_cf(cf, key_to_remove);
+        }
+        Ok(())
+    }
+
+    /// Run a single-document write under its key stripe, then give the
+    /// vector indexes their throttled persist once the stripe is released
+    /// (audit D9: only the batch paths used to persist, so single-document
+    /// vector changes waited for shutdown). The persist can serialize a whole
+    /// index; holding the stripe through it would stall that key's writers.
+    fn with_key_locked<T>(&self, key: &str, f: impl FnOnce() -> DbResult<T>) -> DbResult<T> {
+        let result = {
+            let _key_guard = self.lock_keys([key]);
+            f()
+        };
+        if result.is_ok() {
+            self.persist_vector_indexes_throttled();
+        }
+        result
+    }
+
+    // ---------- insert ----------
+
+    /// Insert a new document. Fails with a conflict if `_key` exists; use
+    /// [`Collection::insert_or_replace`] where overwriting is intended.
     pub fn insert(&self, data: Value) -> DbResult<Document> {
         self.insert_internal(data, true)
     }
@@ -62,44 +191,44 @@ impl Collection {
             })?;
         }
 
-        // Extract or generate key
-        let key = if let Some(obj) = data.as_object_mut() {
-            if let Some(key_value) = obj.remove("_key") {
-                if let Some(key_str) = key_value.as_str() {
-                    key_str.to_string()
-                } else {
-                    return Err(DbError::InvalidDocument(
-                        "_key must be a string".to_string(),
-                    ));
-                }
-            } else {
-                uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
-            }
-        } else {
-            uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
-        };
-
+        let key = take_key(&mut data)?;
         let doc = Document::with_key(&self.name, key.clone(), data);
+
+        self.with_key_locked(&key, || self.insert_locked(doc, update_indexes))
+    }
+
+    /// Insert `doc`; the caller holds its key stripe (audit D4).
+    fn insert_locked(&self, doc: Document, update_indexes: bool) -> DbResult<Document> {
+        let key = doc.key.clone();
         let doc_value = doc.to_value();
 
-        if update_indexes {
+        let tokens = if update_indexes {
+            self.unique_tokens(&doc_value)
+        } else {
+            Vec::new()
+        };
+        let _unique_guard = self.lock_unique_tokens(&tokens);
+
+        let db = &self.db;
+        let cf = self.live_cf()?;
+
+        // Audit D1: an existing key is a conflict, never an overwrite.
+        if db
+            .get_pinned_cf(&cf, Self::doc_key(&key))
+            .map_err(|e| DbError::InternalError(format!("Failed to check existing key: {}", e)))?
+            .is_some()
+        {
+            return Err(key_exists_error(&key));
+        }
+
+        if !tokens.is_empty() {
             self.check_unique_constraints(&key, &doc_value)?;
         }
 
         let doc_bytes = serialize_doc(&doc)?;
 
         // Build WriteBatch with document and all index entries atomically
-        // Lock-free: RocksDB is thread-safe for reads
-        let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!(
-                "{} (column family dropped mid-operation)",
-                self.name
-            ))
-        })?;
         let mut batch = WriteBatch::default();
-
-        // Add document to batch
         batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
 
         // Record a version in the same atomic batch (if versioning is enabled).
@@ -108,43 +237,13 @@ impl Collection {
             self.append_version_to_batch(&mut batch, &cf, &key, Some(&doc_value));
         }
 
-        // Add index entries to batch (if enabled)
         if update_indexes {
-            // Compute and add regular + geo index entries
-            let (regular_entries, geo_entries) =
-                self.compute_index_entries_for_insert(&key, &doc_value)?;
-            for (entry_key, entry_value) in regular_entries {
-                batch.put_cf(&cf, entry_key, entry_value);
-            }
-            for (entry_key, entry_value) in geo_entries {
-                batch.put_cf(&cf, entry_key, entry_value);
-            }
-
-            // Compute and add fulltext entries
-            let fulltext_entries = self.compute_fulltext_entries_for_insert(&key, &doc_value);
-            for (entry_key, entry_value) in fulltext_entries {
-                batch.put_cf(&cf, entry_key, entry_value);
-            }
-
-            // Compute and add TTL expiry entries
-            let ttl_expiry_entries = self.compute_ttl_expiry_entries_for_insert(&key, &doc_value);
-            for (entry_key, _entry_value) in ttl_expiry_entries {
-                batch.put_cf(&cf, entry_key, Vec::new());
-            }
+            self.add_insert_entries(&mut batch, &cf, &key, &doc_value)?;
         }
 
         // Atomic write: document + indexes together
         db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
-
-        // Invalidate document cache for this key
-        let cache_key = format!("{}:{}", self.name, key);
-        let cache = get_document_cache();
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                cache.invalidate(&cache_key).await;
-            });
-        }
 
         // Update vector indexes in-memory (separate from WriteBatch)
         if update_indexes {
@@ -156,19 +255,56 @@ impl Collection {
             self.prune_versions(&key);
         }
 
-        // Update document count
         self.increment_count();
 
-        // Broadcast change event
-        let _ = self.change_sender.send(ChangeEvent {
+        let _ = self.emit_change(ChangeEvent {
             type_: ChangeType::Insert,
-            key: key.clone(),
+            key,
             data: Some(doc_value),
             old_data: None,
         });
 
         Ok(doc)
     }
+
+    /// Insert `data`, or replace the stored document wholesale if its `_key`
+    /// already exists, with full index maintenance.
+    ///
+    /// For callers that relied on `insert` overwriting (audit D1). Unlike
+    /// `update` / `upsert_batch`, which merge, fields absent from `data` are
+    /// removed; `_created_at` is kept, `_rev` and `_updated_at` renewed.
+    pub fn insert_or_replace(&self, mut data: Value) -> DbResult<Document> {
+        if self.collection_type.read().as_str() == "edge" {
+            self.validate_edge_document(&data)?;
+        }
+        if let Some(validator) = self.get_cached_schema_validator()? {
+            validator.validate(&data).map_err(|e| {
+                DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+            })?;
+        }
+
+        let key = take_key(&mut data)?;
+        let mut doc = Document::with_key(&self.name, key.clone(), data);
+
+        self.with_key_locked(&key, || {
+            let old_doc = match self.get(&key) {
+                Ok(old) => old,
+                Err(DbError::DocumentNotFound(_)) => return self.insert_locked(doc, true),
+                Err(e) => return Err(e),
+            };
+            if self.collection_type.read().as_str() == "timeseries" {
+                return Err(DbError::OperationNotSupported(
+                    "Update operations are not allowed on timeseries collections".to_string(),
+                ));
+            }
+            doc.created_at = old_doc.created_at;
+            let old_value = old_doc.to_value();
+            let new_value = doc.to_value();
+            self.write_update_locked(&key, old_value, doc, new_value)
+        })
+    }
+
+    // ---------- update ----------
 
     /// Update a document with atomic document + index writes
     pub fn update(&self, key: &str, data: Value) -> DbResult<Document> {
@@ -177,117 +313,34 @@ impl Collection {
                 "Update operations are not allowed on timeseries collections".to_string(),
             ));
         }
-        // Get old document for index updates
-        let old_doc = self.get(key)?;
-        let old_value = old_doc.to_value();
 
-        // Create updated document
-        let mut doc = old_doc;
-        doc.update(data);
-        let new_value = doc.to_value();
+        // Audit D4: read, diff and write under the key's stripe, so two
+        // concurrent updates cannot both remove the same old index entry
+        // and leave one of their new ones orphaned.
+        self.with_key_locked(key, || {
+            // Get old document for index updates
+            let old_doc = self.get(key)?;
+            let old_value = old_doc.to_value();
 
-        // Validate edge documents after update
-        if self.collection_type.read().as_str() == "edge" {
-            self.validate_edge_document(&new_value)?;
-        }
+            // Create updated document
+            let mut doc = old_doc;
+            doc.update(data);
+            let new_value = doc.to_value();
 
-        // Validate against JSON schema if defined
-        if let Some(validator) = self.get_cached_schema_validator()? {
-            validator.validate(&new_value).map_err(|e| {
-                DbError::InvalidDocument(format!("Schema validation failed: {}", e))
-            })?;
-        }
+            // Validate edge documents after update
+            if self.collection_type.read().as_str() == "edge" {
+                self.validate_edge_document(&new_value)?;
+            }
 
-        let doc_bytes = serialize_doc(&doc)?;
+            // Validate against JSON schema if defined
+            if let Some(validator) = self.get_cached_schema_validator()? {
+                validator.validate(&new_value).map_err(|e| {
+                    DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+                })?;
+            }
 
-        // Build WriteBatch with document and all index updates atomically
-        // Lock-free: RocksDB is thread-safe for reads
-        let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!(
-                "{} (column family dropped mid-operation)",
-                self.name
-            ))
-        })?;
-        let mut batch = WriteBatch::default();
-
-        // Update document in batch
-        batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
-
-        // Record a version in the same atomic batch (if versioning is enabled).
-        let versioned = self.is_versioned();
-        if versioned {
-            self.append_version_to_batch(&mut batch, &cf, key, Some(&new_value));
-        }
-
-        // Compute and apply index updates atomically
-        let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
-            self.compute_index_entries_for_update(key, &old_value, &new_value)?;
-
-        // Remove old index entries
-        for key_to_remove in keys_to_remove {
-            batch.delete_cf(&cf, key_to_remove);
-        }
-        for geo_key in geo_keys_to_remove {
-            batch.delete_cf(&cf, geo_key);
-        }
-
-        // Add new index entries
-        for (entry_key, entry_value) in entries_to_add {
-            batch.put_cf(&cf, entry_key, entry_value);
-        }
-        for (entry_key, entry_value) in geo_entries_to_add {
-            batch.put_cf(&cf, entry_key, entry_value);
-        }
-
-        // Compute and apply fulltext updates
-        let fulltext_keys_to_remove = self.compute_fulltext_entries_for_delete(key, &old_value);
-        for key_to_remove in fulltext_keys_to_remove {
-            batch.delete_cf(&cf, key_to_remove);
-        }
-
-        let fulltext_entries_to_add = self.compute_fulltext_entries_for_insert(key, &new_value);
-        for (entry_key, entry_value) in fulltext_entries_to_add {
-            batch.put_cf(&cf, entry_key, entry_value);
-        }
-
-        // Compute and apply TTL expiry updates
-        let (ttl_entries_to_add, ttl_keys_to_remove) =
-            self.compute_ttl_expiry_entries_for_update(key, &old_value, &new_value);
-        for key_to_remove in ttl_keys_to_remove {
-            batch.delete_cf(&cf, key_to_remove);
-        }
-        for (entry_key, _entry_value) in ttl_entries_to_add {
-            batch.put_cf(&cf, entry_key, Vec::new());
-        }
-
-        // Atomic write: document + all index updates together
-        db.write(&batch)
-            .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
-
-        // Update vector indexes in-memory (separate from WriteBatch). Skip the
-        // delete+reinsert entirely when the embedding is unchanged — a document
-        // rewritten for non-embedding fields must not pay HNSW churn or dirty
-        // the index (which would trigger a full re-serialize on persist).
-        if !self.vector_index_unchanged(&old_value, &new_value) {
-            self.update_vector_indexes_on_delete(key);
-            self.update_vector_indexes_on_upsert(key, &new_value);
-        }
-
-        // Enforce version retention (best-effort, off the atomic write).
-        if versioned {
-            self.prune_versions(key);
-        }
-
-        // Broadcast change event
-        let _ = self.change_sender.send(ChangeEvent {
-            type_: ChangeType::Update,
-            key: key.to_string(),
-            data: Some(new_value),
-            old_data: Some(old_value),
-        });
-
-        Ok(doc)
+            self.write_update_locked(key, old_value, doc, new_value)
+        })
     }
 
     /// Update a document with revision check (optimistic concurrency control)
@@ -302,36 +355,54 @@ impl Collection {
                 "Update operations are not allowed on timeseries collections".to_string(),
             ));
         }
-        // Get old document for index updates
-        let old_doc = self.get(key)?;
 
-        // Check revision matches
-        if old_doc.revision() != expected_rev {
-            return Err(DbError::ConflictError(format!(
-                "Document '{}' has been modified. Expected revision '{}', but current is '{}'",
-                key,
-                expected_rev,
-                old_doc.revision()
-            )));
+        // Held across the revision check too, so check-and-write is atomic.
+        self.with_key_locked(key, || {
+            // Get old document for index updates
+            let old_doc = self.get(key)?;
+
+            // Check revision matches
+            if old_doc.revision() != expected_rev {
+                return Err(DbError::ConflictError(format!(
+                    "Document '{}' has been modified. Expected revision '{}', but current is '{}'",
+                    key,
+                    expected_rev,
+                    old_doc.revision()
+                )));
+            }
+
+            let old_value = old_doc.to_value();
+
+            // Create updated document
+            let mut doc = old_doc;
+            doc.update(data);
+            let new_value = doc.to_value();
+
+            self.write_update_locked(key, old_value, doc, new_value)
+        })
+    }
+
+    /// Write an updated document and its index diff; the caller holds the
+    /// key stripe and has read `old_value` under it.
+    fn write_update_locked(
+        &self,
+        key: &str,
+        old_value: Value,
+        doc: Document,
+        new_value: Value,
+    ) -> DbResult<Document> {
+        // A unique value the update claims is checked and written under that
+        // value's stripe (audit D4; updates used not to check at all).
+        let tokens = self.unique_tokens(&new_value);
+        let _unique_guard = self.lock_unique_tokens(&tokens);
+        if !tokens.is_empty() {
+            self.check_unique_constraints(key, &new_value)?;
         }
 
-        let old_value = old_doc.to_value();
-
-        // Create updated document
-        let mut doc = old_doc;
-        doc.update(data);
-        let new_value = doc.to_value();
         let doc_bytes = serialize_doc(&doc)?;
 
-        // Build WriteBatch with document and all index updates atomically
-        // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!(
-                "{} (column family dropped mid-operation)",
-                self.name
-            ))
-        })?;
+        let cf = self.live_cf()?;
         let mut batch = WriteBatch::default();
 
         // Update document in batch
@@ -343,59 +414,11 @@ impl Collection {
             self.append_version_to_batch(&mut batch, &cf, key, Some(&new_value));
         }
 
-        // Compute and apply index updates atomically
-        let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
-            self.compute_index_entries_for_update(key, &old_value, &new_value)?;
-
-        // Remove old index entries
-        for key_to_remove in keys_to_remove {
-            batch.delete_cf(&cf, key_to_remove);
-        }
-        for geo_key in geo_keys_to_remove {
-            batch.delete_cf(&cf, geo_key);
-        }
-
-        // Add new index entries
-        for (entry_key, entry_value) in entries_to_add {
-            batch.put_cf(&cf, entry_key, entry_value);
-        }
-        for (entry_key, entry_value) in geo_entries_to_add {
-            batch.put_cf(&cf, entry_key, entry_value);
-        }
-
-        // Compute and apply fulltext updates
-        let fulltext_keys_to_remove = self.compute_fulltext_entries_for_delete(key, &old_value);
-        for key_to_remove in fulltext_keys_to_remove {
-            batch.delete_cf(&cf, key_to_remove);
-        }
-
-        let fulltext_entries_to_add = self.compute_fulltext_entries_for_insert(key, &new_value);
-        for (entry_key, entry_value) in fulltext_entries_to_add {
-            batch.put_cf(&cf, entry_key, entry_value);
-        }
-
-        // Compute and apply TTL expiry updates
-        let (ttl_entries_to_add, ttl_keys_to_remove) =
-            self.compute_ttl_expiry_entries_for_update(key, &old_value, &new_value);
-        for key_to_remove in ttl_keys_to_remove {
-            batch.delete_cf(&cf, key_to_remove);
-        }
-        for (entry_key, _entry_value) in ttl_entries_to_add {
-            batch.put_cf(&cf, entry_key, Vec::new());
-        }
+        self.add_update_entries(&mut batch, &cf, key, &old_value, &new_value)?;
 
         // Atomic write: document + all index updates together
         db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
-
-        // Invalidate document cache for this key
-        let cache_key = format!("{}:{}", self.name, key);
-        let cache = get_document_cache();
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                cache.invalidate(&cache_key).await;
-            });
-        }
 
         // Update vector indexes in-memory (separate from WriteBatch). Skip the
         // delete+reinsert entirely when the embedding is unchanged — a document
@@ -412,7 +435,7 @@ impl Collection {
         }
 
         // Broadcast change event
-        let _ = self.change_sender.send(ChangeEvent {
+        let _ = self.emit_change(ChangeEvent {
             type_: ChangeType::Update,
             key: key.to_string(),
             data: Some(new_value),
@@ -422,96 +445,103 @@ impl Collection {
         Ok(doc)
     }
 
+    // ---------- delete ----------
+
     /// Delete a document with atomic document + index removal
     pub fn delete(&self, key: &str) -> DbResult<()> {
-        // Get document for index cleanup
-        let doc = self.get(key)?;
-        let doc_value = doc.to_value();
+        self.with_key_locked(key, || {
+            let doc_value = self.get(key)?.to_value();
+            self.delete_docs_locked(vec![(key.to_string(), doc_value)], Vec::new())?;
+            Ok(())
+        })
+    }
 
-        // Build WriteBatch with document deletion and all index removals atomically
-        // Lock-free: RocksDB is thread-safe for reads
+    /// Delete documents already read under their key stripes, together with
+    /// everything derived from them: index / geo / fulltext / TTL entries,
+    /// a version tombstone, blob chunks, the vector-index entries, the
+    /// document count and a change event. Every delete path goes through
+    /// here — including the TTL reaper, which used to drop the bare `doc:`
+    /// key and nothing else (audit H8). `extra_deletes` ride in the same
+    /// batch (the reaper's consumed expiry entries).
+    pub(crate) fn delete_docs_locked(
+        &self,
+        docs: Vec<(String, Value)>,
+        extra_deletes: Vec<Vec<u8>>,
+    ) -> DbResult<usize> {
+        if docs.is_empty() && extra_deletes.is_empty() {
+            return Ok(0);
+        }
+
         let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!(
-                "{} (column family dropped mid-operation)",
-                self.name
-            ))
-        })?;
+        let cf = self.live_cf()?;
+        let versioned = self.is_versioned();
         let mut batch = WriteBatch::default();
 
-        // Delete document from batch
-        batch.delete_cf(&cf, Self::doc_key(key));
-
-        // Record a delete tombstone version in the same atomic batch.
-        let versioned = self.is_versioned();
-        if versioned {
-            self.append_version_to_batch(&mut batch, &cf, key, None);
+        for (key, doc_value) in &docs {
+            batch.delete_cf(&cf, Self::doc_key(key));
+            if versioned {
+                self.append_version_to_batch(&mut batch, &cf, key, None);
+            }
+            self.add_delete_entries(&mut batch, &cf, key, doc_value)?;
+        }
+        for extra in extra_deletes {
+            batch.delete_cf(&cf, extra);
         }
 
-        // Compute and remove regular + geo index entries
-        let (regular_keys, geo_keys) = self.compute_index_entries_for_delete(key, &doc_value)?;
-        for key_to_remove in regular_keys {
-            batch.delete_cf(&cf, key_to_remove);
-        }
-        for key_to_remove in geo_keys {
-            batch.delete_cf(&cf, key_to_remove);
-        }
-
-        // Compute and remove fulltext entries
-        let fulltext_keys = self.compute_fulltext_entries_for_delete(key, &doc_value);
-        for key_to_remove in fulltext_keys {
-            batch.delete_cf(&cf, key_to_remove);
-        }
-
-        // Compute and remove TTL expiry entries
-        let ttl_keys = self.compute_ttl_expiry_entries_for_delete(key, &doc_value);
-        for key_to_remove in ttl_keys {
-            batch.delete_cf(&cf, key_to_remove);
-        }
-
-        // Atomic write: document deletion + index removals together
+        // Atomic write: document deletions + index removals together
         db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to delete document: {}", e)))?;
 
-        // Invalidate document cache for this key
-        let cache_key = format!("{}:{}", self.name, key);
-        let cache = get_document_cache();
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                cache.invalidate(&cache_key).await;
+        let deleted = docs.len();
+        if deleted == 0 {
+            return Ok(0);
+        }
+
+        // Blob chunks, vector entries and version pruning are separate from
+        // the WriteBatch, and only happen once the documents are really gone.
+        let is_blob = self.collection_type.read().as_str() == "blob";
+        for (key, _) in &docs {
+            if is_blob {
+                if let Err(e) = self.delete_blob_data(key) {
+                    tracing::warn!("Failed to delete blob chunks for {}: {}", key, e);
+                }
+            }
+            self.update_vector_indexes_on_delete(key);
+            if versioned {
+                self.prune_versions(key);
+            }
+        }
+
+        // Update count. Saturating: several Collection instances can exist
+        // for the same CF (engine cache, Database cache, fresh handles), each
+        // with its own counter — a plain fetch_sub on an instance that didn't
+        // see the inserts wraps to u64::MAX and the UI shows
+        // 18446744073709551615 documents.
+        let _ = self
+            .doc_count
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                Some(current.saturating_sub(deleted))
+            });
+        self.count_dirty.store(true, Ordering::Relaxed);
+
+        for (key, old_data) in docs {
+            let _ = self.emit_change(ChangeEvent {
+                type_: ChangeType::Delete,
+                key,
+                data: None,
+                old_data: Some(old_data),
             });
         }
 
-        // If blob collection, delete chunks (separate from WriteBatch)
-        if self.collection_type.read().as_str() == "blob" {
-            self.delete_blob_data(key)?;
-        }
-
-        // Update vector indexes in-memory (separate from WriteBatch)
-        self.update_vector_indexes_on_delete(key);
-
-        // Enforce version retention (best-effort, off the atomic write).
-        if versioned {
-            self.prune_versions(key);
-        }
-
-        // Update document count
-        self.decrement_count();
-
-        // Broadcast change event
-        let _ = self.change_sender.send(ChangeEvent {
-            type_: ChangeType::Delete,
-            key: key.to_string(),
-            data: None,
-            old_data: Some(doc_value),
-        });
-
-        Ok(())
+        Ok(deleted)
     }
 
     // ==================== Batch Operations ====================
 
     /// Batch upsert (insert or update) multiple documents - optimized for replication
+    ///
+    /// Existing documents are merged (`Document::update`), new ones created.
+    /// Returns the number of documents written.
     pub fn upsert_batch(&self, documents: Vec<(String, Value)>) -> DbResult<usize> {
         if documents.is_empty() {
             return Ok(0);
@@ -523,20 +553,14 @@ impl Collection {
             ));
         }
 
-        // Lock-free: RocksDB is thread-safe for reads
-        let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!(
-                "{} (column family dropped mid-operation)",
-                self.name
-            ))
-        })?;
+        let _key_guard = self.lock_keys(documents.iter().map(|(k, _)| k.as_str()));
 
-        let mut batch = WriteBatch::default();
-        let mut insert_count = 0;
-        // The bool is "the document already existed", which decides whether the
-        // change event that follows the write is an Update or an Insert.
-        let mut upserted_docs: Vec<(String, Value, bool)> = Vec::new();
+        let db = &self.db;
+        let cf = self.live_cf()?;
+
+        // (key, value on disk before this batch, merged document, existed)
+        let mut pending: Vec<(String, Option<Value>, Document, bool)> = Vec::new();
+        let mut positions: HashMap<String, usize> = HashMap::new();
 
         for (key, mut data) in documents {
             // Ensure _key is set
@@ -544,38 +568,58 @@ impl Collection {
                 obj.insert("_key".to_string(), Value::String(key.clone()));
             }
 
-            // Check if document exists to determine insert vs update
-            let exists = db.get_cf(&cf, Self::doc_key(&key)).ok().flatten().is_some();
-
-            let doc = if exists {
-                if let Ok(Some(bytes)) = db.get_cf(&cf, Self::doc_key(&key)) {
-                    if let Ok(mut existing) = deserialize_doc(&bytes) {
-                        existing.update(data);
-                        existing
-                    } else {
-                        Document::with_key(&self.name, key.clone(), data)
-                    }
-                } else {
-                    Document::with_key(&self.name, key.clone(), data)
-                }
-            } else {
-                Document::with_key(&self.name, key.clone(), data)
-            };
-
-            if let Ok(doc_bytes) = serialize_doc(&doc) {
-                let val = doc.to_value();
-                batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
-                if self.is_versioned() {
-                    self.append_version_to_batch(&mut batch, &cf, &key, Some(&val));
-                }
-                upserted_docs.push((key.clone(), val, exists));
-                if !exists {
-                    insert_count += 1;
-                }
+            // The same key twice in one batch builds on the pending version,
+            // so the index diff below is still taken against what is on disk.
+            if let Some(&i) = positions.get(&key) {
+                pending[i].2.update(data);
+                continue;
             }
+
+            // The bool is "the document already existed", which decides the
+            // count and whether the change event is an Update or an Insert.
+            let stored = db.get_cf(&cf, Self::doc_key(&key)).ok().flatten();
+            let existed = stored.is_some();
+            let (old_value, doc) = match stored.and_then(|bytes| deserialize_doc(&bytes).ok()) {
+                Some(mut existing) => {
+                    let old_value = existing.to_value();
+                    existing.update(data);
+                    (Some(old_value), existing)
+                }
+                None => (None, Document::with_key(&self.name, key.clone(), data)),
+            };
+            positions.insert(key.clone(), pending.len());
+            pending.push((key, old_value, doc, existed));
         }
 
-        let count = batch.len();
+        let versioned = self.is_versioned();
+        let mut batch = WriteBatch::default();
+        let mut insert_count = 0;
+        let mut written: Vec<(String, Value, Option<Value>, bool)> =
+            Vec::with_capacity(pending.len());
+
+        for (key, old_value, doc, existed) in pending {
+            let Ok(doc_bytes) = serialize_doc(&doc) else {
+                continue;
+            };
+            let new_value = doc.to_value();
+            batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
+            if versioned {
+                self.append_version_to_batch(&mut batch, &cf, &key, Some(&new_value));
+            }
+            // Index maintenance: this path used to write the document alone,
+            // so every replicated or bulk-upserted write left the regular,
+            // geo, fulltext and TTL entries stale.
+            match &old_value {
+                Some(old) => self.add_update_entries(&mut batch, &cf, &key, old, &new_value)?,
+                None => self.add_insert_entries(&mut batch, &cf, &key, &new_value)?,
+            }
+            if !existed {
+                insert_count += 1;
+            }
+            written.push((key, new_value, old_value, existed));
+        }
+
+        let count = written.len();
 
         // Write all documents in one batch operation
         db.write(&batch)
@@ -588,10 +632,21 @@ impl Collection {
         }
 
         // Update vector indexes for all upserted documents
-        for (key, doc_value, _) in &upserted_docs {
-            self.update_vector_indexes_on_upsert(key, doc_value);
+        for (key, new_value, old_value, _) in &written {
+            match old_value {
+                Some(old) if self.vector_index_unchanged(old, new_value) => {}
+                Some(_) => {
+                    self.update_vector_indexes_on_delete(key);
+                    self.update_vector_indexes_on_upsert(key, new_value);
+                }
+                None => self.update_vector_indexes_on_upsert(key, new_value),
+            }
+            if versioned {
+                self.prune_versions(key);
+            }
         }
-        // Persist vector indexes after batch
+        // Persist vector indexes after batch, outside the key stripes.
+        drop(_key_guard);
         self.persist_vector_indexes_throttled();
 
         // Broadcast change events. `insert`, `insert_batch` and `delete` all do
@@ -599,16 +654,16 @@ impl Collection {
         // (`sync::worker`) and the one shard replicas receive on
         // (`insert_documents_replica`) — so a changefeed subscriber saw deletes
         // propagate but never the inserts that preceded them.
-        for (key, doc_value, existed) in upserted_docs {
-            let _ = self.change_sender.send(ChangeEvent {
+        for (key, new_value, old_value, existed) in written {
+            let _ = self.emit_change(ChangeEvent {
                 type_: if existed {
                     ChangeType::Update
                 } else {
                     ChangeType::Insert
                 },
                 key,
-                data: Some(doc_value),
-                old_data: None,
+                data: Some(new_value),
+                old_data: old_value,
             });
         }
 
@@ -621,105 +676,34 @@ impl Collection {
             return Ok(0);
         }
 
-        // Lock-free: RocksDB is thread-safe for reads
+        let _key_guard = self.lock_keys(keys.iter().map(String::as_str));
+
         let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!(
-                "{} (column family dropped mid-operation)",
-                self.name
-            ))
-        })?;
+        let cf = self.live_cf()?;
 
-        let mut batch = WriteBatch::default();
-        let mut deleted_count = 0;
-        let mut deleted_docs = Vec::new(); // To store doc_value for change events
-
-        // Prepare batch with document deletions and index removals atomically
-        for key in &keys {
+        let mut seen: HashSet<String> = HashSet::with_capacity(keys.len());
+        let mut docs = Vec::new();
+        for key in keys {
+            // A repeated key would be counted and announced twice.
+            if !seen.insert(key.clone()) {
+                continue;
+            }
             // Get document first (needed for index cleanup and change events)
-            if let Ok(Some(bytes)) = db.get_cf(&cf, Self::doc_key(key)) {
+            if let Ok(Some(bytes)) = db.get_cf(&cf, Self::doc_key(&key)) {
                 if let Ok(doc) = deserialize_doc(&bytes) {
-                    let doc_value = doc.to_value();
-
-                    // Add document deletion to batch
-                    batch.delete_cf(&cf, Self::doc_key(key));
-
-                    // Compute and add index key removals to batch
-                    let (regular_keys, geo_keys) =
-                        match self.compute_index_entries_for_delete(key, &doc_value) {
-                            Ok(keys) => keys,
-                            Err(e) => {
-                                tracing::warn!("Failed to compute index keys for {}: {}", key, e);
-                                (Vec::new(), Vec::new())
-                            }
-                        };
-                    for key_to_remove in regular_keys {
-                        batch.delete_cf(&cf, key_to_remove);
-                    }
-                    for key_to_remove in geo_keys {
-                        batch.delete_cf(&cf, key_to_remove);
-                    }
-
-                    // Compute and add fulltext key removals to batch
-                    let fulltext_keys = self.compute_fulltext_entries_for_delete(key, &doc_value);
-                    for key_to_remove in fulltext_keys {
-                        batch.delete_cf(&cf, key_to_remove);
-                    }
-
-                    // Compute and add TTL expiry key removals to batch
-                    let ttl_keys = self.compute_ttl_expiry_entries_for_delete(key, &doc_value);
-                    for key_to_remove in ttl_keys {
-                        batch.delete_cf(&cf, key_to_remove);
-                    }
-
-                    // Handle blobs (separate from WriteBatch)
-                    if self.collection_type.read().as_str() == "blob" {
-                        let _ = self.delete_blob_data(key);
-                    }
-
-                    // Update vector indexes in-memory (separate from WriteBatch)
-                    self.update_vector_indexes_on_delete(key);
-
-                    deleted_docs.push((key.clone(), doc_value));
-                    deleted_count += 1;
+                    docs.push((key, doc.to_value()));
                 }
             }
         }
 
-        if deleted_count == 0 {
+        if docs.is_empty() {
             return Ok(0);
         }
 
-        // Persist vector indexes after batch delete
+        let deleted = self.delete_docs_locked(docs, Vec::new())?;
+        drop(_key_guard);
         self.persist_vector_indexes_throttled();
-
-        // Commit batch atomically: all document deletions + index removals together
-        db.write(&batch)
-            .map_err(|e| DbError::InternalError(format!("Failed to batch delete: {}", e)))?;
-
-        // Update count. Saturating: several Collection instances can exist
-        // for the same CF (engine cache, Database cache, fresh handles), each
-        // with its own counter — a plain fetch_sub on an instance that didn't
-        // see the inserts wraps to u64::MAX and the UI shows
-        // 18446744073709551615 documents.
-        let _ = self
-            .doc_count
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                Some(current.saturating_sub(deleted_count))
-            });
-        self.count_dirty.store(true, Ordering::Relaxed);
-
-        // Send Change Events
-        for (key, old_data) in deleted_docs {
-            let _ = self.change_sender.send(ChangeEvent {
-                type_: ChangeType::Delete,
-                key,
-                data: None,
-                old_data: Some(old_data),
-            });
-        }
-
-        Ok(deleted_count)
+        Ok(deleted)
     }
 
     /// Batch update multiple documents with atomic document + index writes
@@ -735,134 +719,142 @@ impl Collection {
             ));
         }
 
-        // Lock-free: RocksDB is thread-safe for reads
+        let _key_guard = self.lock_keys(updates.iter().map(|(k, _)| k.as_str()));
+
         let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!(
-                "{} (column family dropped mid-operation)",
-                self.name
-            ))
-        })?;
+        let cf = self.live_cf()?;
+        let is_edge = self.collection_type.read().as_str() == "edge";
+        let schema_validator = self.get_cached_schema_validator()?;
 
-        let mut batch = WriteBatch::default();
-        let mut updated_docs = Vec::new();
-        let mut change_events = Vec::new();
+        // Pass 1: merge every update. A key updated twice in the batch builds
+        // on its pending version; its index diff is still against the disk.
+        // (key, value on disk, updated document)
+        let mut pending: Vec<(String, Value, Document)> = Vec::new();
+        let mut positions: HashMap<String, usize> = HashMap::new();
 
-        // Prepare batch with document updates and index updates atomically
         for (key, changes) in updates {
-            // Get old document
-            if let Ok(old_doc) = self.get(key) {
-                let old_value = old_doc.to_value();
+            let existing = positions.get(key).copied();
+            let mut doc = match existing {
+                Some(i) => pending[i].2.clone(),
+                None => match self.get(key) {
+                    Ok(old_doc) => old_doc,
+                    Err(_) => continue,
+                },
+            };
+            let old_value = if existing.is_none() {
+                Some(doc.to_value())
+            } else {
+                None
+            };
 
-                // Create updated document
-                let mut doc = old_doc;
-                doc.update(changes.clone());
-                let new_value = doc.to_value();
+            doc.update(changes.clone());
+            let new_value = doc.to_value();
 
-                // Validate edge documents after update
-                if self.collection_type.read().as_str() == "edge" {
-                    if let Err(e) = self.validate_edge_document(&new_value) {
-                        tracing::warn!("Failed to validate edge for {}: {}", key, e);
-                        continue;
-                    }
-                }
-
-                // Validate against JSON schema if defined
-                if let Some(validator) = self.get_cached_schema_validator()? {
-                    if let Err(e) = validator.validate(&new_value) {
-                        tracing::warn!("Schema validation failed for {}: {}", key, e);
-                        continue;
-                    }
-                }
-
-                // Serialize document
-                if let Ok(doc_bytes) = serialize_doc(&doc) {
-                    // Add document to batch
-                    batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
-
-                    // Compute and add index updates to batch atomically
-                    let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
-                        match self.compute_index_entries_for_update(key, &old_value, &new_value) {
-                            Ok(result) => result,
-                            Err(e) => {
-                                tracing::warn!(
-                                    "Failed to compute index updates for {}: {}",
-                                    key,
-                                    e
-                                );
-                                (Vec::new(), Vec::new(), Vec::new(), Vec::new())
-                            }
-                        };
-
-                    // Remove old index entries
-                    for key_to_remove in keys_to_remove {
-                        batch.delete_cf(&cf, key_to_remove);
-                    }
-                    for geo_key in geo_keys_to_remove {
-                        batch.delete_cf(&cf, geo_key);
-                    }
-
-                    // Add new index entries
-                    for (entry_key, entry_value) in entries_to_add {
-                        batch.put_cf(&cf, entry_key, entry_value);
-                    }
-                    for (entry_key, entry_value) in geo_entries_to_add {
-                        batch.put_cf(&cf, entry_key, entry_value);
-                    }
-
-                    // Compute and add fulltext updates to batch
-                    let fulltext_keys_to_remove =
-                        self.compute_fulltext_entries_for_delete(key, &old_value);
-                    for key_to_remove in fulltext_keys_to_remove {
-                        batch.delete_cf(&cf, key_to_remove);
-                    }
-
-                    let fulltext_entries_to_add =
-                        self.compute_fulltext_entries_for_insert(key, &new_value);
-                    for (entry_key, entry_value) in fulltext_entries_to_add {
-                        batch.put_cf(&cf, entry_key, entry_value);
-                    }
-
-                    // Compute and apply TTL expiry updates
-                    let (ttl_entries_to_add, ttl_keys_to_remove) =
-                        self.compute_ttl_expiry_entries_for_update(key, &old_value, &new_value);
-                    for key_to_remove in ttl_keys_to_remove {
-                        batch.delete_cf(&cf, key_to_remove);
-                    }
-                    for (entry_key, _entry_value) in ttl_entries_to_add {
-                        batch.put_cf(&cf, entry_key, Vec::new());
-                    }
-
-                    // Update vector indexes in-memory (separate from
-                    // WriteBatch). Skip the delete+reinsert when the embedding is
-                    // unchanged so a bulk update that only rewrites metadata
-                    // (e.g. an incremental graph sync) pays no HNSW churn and
-                    // doesn't dirty the index into a full re-serialize.
-                    if !self.vector_index_unchanged(&old_value, &new_value) {
-                        self.update_vector_indexes_on_delete(key);
-                        self.update_vector_indexes_on_upsert(key, &new_value);
-                    }
-
-                    change_events.push((key.clone(), old_value, new_value));
-                    updated_docs.push(doc);
+            // Validate edge documents after update
+            if is_edge {
+                if let Err(e) = self.validate_edge_document(&new_value) {
+                    tracing::warn!("Failed to validate edge for {}: {}", key, e);
+                    continue;
                 }
             }
+
+            // Validate against JSON schema if defined
+            if let Some(ref validator) = schema_validator {
+                if let Err(e) = validator.validate(&new_value) {
+                    tracing::warn!("Schema validation failed for {}: {}", key, e);
+                    continue;
+                }
+            }
+
+            match (existing, old_value) {
+                (Some(i), _) => pending[i].2 = doc,
+                (None, Some(old_value)) => {
+                    positions.insert(key.clone(), pending.len());
+                    pending.push((key.clone(), old_value, doc));
+                }
+                (None, None) => unreachable!("old_value is set whenever existing is None"),
+            }
+        }
+
+        if pending.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Pass 2: claim unique values under their stripes (audit D4).
+        let new_values: Vec<Value> = pending.iter().map(|(_, _, doc)| doc.to_value()).collect();
+        let tokens: Vec<String> = new_values
+            .iter()
+            .flat_map(|v| self.unique_tokens(v))
+            .collect();
+        let _unique_guard = self.lock_unique_tokens(&tokens);
+        if !tokens.is_empty() {
+            let mut claimed: HashMap<String, &str> = HashMap::new();
+            for ((key, _, _), new_value) in pending.iter().zip(&new_values) {
+                self.check_unique_constraints(key, new_value)?;
+                for token in self.unique_tokens(new_value) {
+                    if let Some(other) = claimed.insert(token, key.as_str()) {
+                        return Err(DbError::InvalidDocument(format!(
+                            "Unique constraint violated: documents '{}' and '{}' in the same batch share a unique value",
+                            other, key
+                        )));
+                    }
+                }
+            }
+        }
+
+        let versioned = self.is_versioned();
+        let mut batch = WriteBatch::default();
+        let mut updated_docs = Vec::with_capacity(pending.len());
+        let mut change_events = Vec::with_capacity(pending.len());
+
+        for ((key, old_value, doc), new_value) in pending.into_iter().zip(new_values) {
+            let doc_bytes = match serialize_doc(&doc) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    tracing::warn!("Failed to serialize {}: {}", key, e);
+                    continue;
+                }
+            };
+            batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
+            if versioned {
+                self.append_version_to_batch(&mut batch, &cf, &key, Some(&new_value));
+            }
+            self.add_update_entries(&mut batch, &cf, &key, &old_value, &new_value)?;
+
+            change_events.push((key, old_value, new_value));
+            updated_docs.push(doc);
         }
 
         if updated_docs.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Persist vector indexes after batch update
-        self.persist_vector_indexes_throttled();
-
         // Commit batch atomically: all document updates + index updates together
         db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch update: {}", e)))?;
 
+        // Update vector indexes in-memory (separate from WriteBatch), after
+        // the commit. Skip the delete+reinsert when the embedding is
+        // unchanged so a bulk update that only rewrites metadata (e.g. an
+        // incremental graph sync) pays no HNSW churn and doesn't dirty the
+        // index into a full re-serialize.
+        for (key, old_value, new_value) in &change_events {
+            if !self.vector_index_unchanged(old_value, new_value) {
+                self.update_vector_indexes_on_delete(key);
+                self.update_vector_indexes_on_upsert(key, new_value);
+            }
+            if versioned {
+                self.prune_versions(key);
+            }
+        }
+        // Persist vector indexes after batch update, outside the stripes.
+        drop(_unique_guard);
+        drop(_key_guard);
+        self.persist_vector_indexes_throttled();
+
         // Send Change Events
         for (key, old_data, new_data) in change_events {
-            let _ = self.change_sender.send(ChangeEvent {
+            let _ = self.emit_change(ChangeEvent {
                 type_: ChangeType::Update,
                 key,
                 data: Some(new_data),
@@ -882,18 +874,10 @@ impl Collection {
         let is_edge = self.collection_type.read().as_str() == "edge";
         let schema_validator = self.get_cached_schema_validator()?;
 
-        let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!(
-                "{} (column family dropped mid-operation)",
-                self.name
-            ))
-        })?;
-
-        let mut batch = WriteBatch::default();
-        let mut inserted_docs = Vec::with_capacity(documents.len());
-        let mut doc_values: Vec<(String, Value)> = Vec::with_capacity(documents.len());
-
+        // Pass 1: validate and assign keys (all keys are needed up front to
+        // take their stripes).
+        let mut inserted_docs: Vec<Document> = Vec::with_capacity(documents.len());
+        let mut batch_keys: HashSet<String> = HashSet::with_capacity(documents.len());
         for mut data in documents {
             // Validate edge documents
             if is_edge {
@@ -907,83 +891,69 @@ impl Collection {
                 })?;
             }
 
-            // Extract or generate key
-            let key = if let Some(obj) = data.as_object_mut() {
-                if let Some(key_value) = obj.remove("_key") {
-                    if let Some(key_str) = key_value.as_str() {
-                        key_str.to_string()
-                    } else {
-                        return Err(DbError::InvalidDocument(
-                            "_key must be a string".to_string(),
-                        ));
-                    }
-                } else {
-                    uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
-                }
-            } else {
-                uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
-            };
+            let key = take_key(&mut data)?;
 
             // Check for duplicate _key within the batch
-            if doc_values.iter().any(|(k, _)| k == &key) {
+            if !batch_keys.insert(key.clone()) {
                 return Err(DbError::InvalidDocument(format!(
                     "Duplicate _key '{}' within batch",
                     key
                 )));
             }
 
+            inserted_docs.push(Document::with_key(&self.name, key, data));
+        }
+
+        let _key_guard = self.lock_keys(inserted_docs.iter().map(|d| d.key.as_str()));
+        let doc_values: Vec<Value> = inserted_docs.iter().map(|d| d.to_value()).collect();
+        let tokens: Vec<String> = doc_values
+            .iter()
+            .flat_map(|v| self.unique_tokens(v))
+            .collect();
+        let _unique_guard = self.lock_unique_tokens(&tokens);
+
+        let db = &self.db;
+        let cf = self.live_cf()?;
+        let versioned = self.is_versioned();
+        let mut batch = WriteBatch::default();
+        let mut claimed: HashSet<String> = HashSet::new();
+
+        for (doc, doc_value) in inserted_docs.iter().zip(&doc_values) {
+            let key = &doc.key;
+
             // Check if document with this key already exists in the DB
             if db
-                .get_cf(&cf, Self::doc_key(&key))
+                .get_pinned_cf(&cf, Self::doc_key(key))
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to check existing key: {}", e))
                 })?
                 .is_some()
             {
-                return Err(DbError::InvalidDocument(format!(
-                    "Document with _key '{}' already exists",
-                    key
-                )));
+                return Err(key_exists_error(key));
             }
 
-            let doc = Document::with_key(&self.name, key.clone(), data);
-            let doc_value = doc.to_value();
+            // Check unique constraints, against the DB and within the batch
+            if !tokens.is_empty() {
+                self.check_unique_constraints(key, doc_value)?;
+                for token in self.unique_tokens(doc_value) {
+                    if !claimed.insert(token) {
+                        return Err(DbError::InvalidDocument(format!(
+                            "Unique constraint violated: document '{}' repeats a unique value used earlier in the same batch",
+                            key
+                        )));
+                    }
+                }
+            }
 
-            // Check unique constraints
-            self.check_unique_constraints(&key, &doc_value)?;
-
-            let doc_bytes = serialize_doc(&doc)?;
+            let doc_bytes = serialize_doc(doc)?;
 
             // Add document to batch
-            batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
-            if self.is_versioned() {
-                self.append_version_to_batch(&mut batch, &cf, &key, Some(&doc_value));
+            batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
+            if versioned {
+                self.append_version_to_batch(&mut batch, &cf, key, Some(doc_value));
             }
 
-            // Compute and add regular + geo index entries
-            let (regular_entries, geo_entries) =
-                self.compute_index_entries_for_insert(&key, &doc_value)?;
-            for (entry_key, entry_value) in regular_entries {
-                batch.put_cf(&cf, entry_key, entry_value);
-            }
-            for (entry_key, entry_value) in geo_entries {
-                batch.put_cf(&cf, entry_key, entry_value);
-            }
-
-            // Compute and add fulltext entries
-            let fulltext_entries = self.compute_fulltext_entries_for_insert(&key, &doc_value);
-            for (entry_key, entry_value) in fulltext_entries {
-                batch.put_cf(&cf, entry_key, entry_value);
-            }
-
-            // Compute and add TTL expiry entries
-            let ttl_expiry_entries = self.compute_ttl_expiry_entries_for_insert(&key, &doc_value);
-            for (entry_key, _entry_value) in ttl_expiry_entries {
-                batch.put_cf(&cf, entry_key, Vec::new());
-            }
-
-            doc_values.push((key, doc_value));
-            inserted_docs.push(doc);
+            self.add_insert_entries(&mut batch, &cf, key, doc_value)?;
         }
 
         // Atomic write: all documents + indexes together
@@ -991,10 +961,12 @@ impl Collection {
             .map_err(|e| DbError::InternalError(format!("Failed to batch insert: {}", e)))?;
 
         // Update vector indexes in-memory (separate from WriteBatch)
-        for (key, doc_value) in &doc_values {
-            self.update_vector_indexes_on_upsert(key, doc_value);
+        for (doc, doc_value) in inserted_docs.iter().zip(&doc_values) {
+            self.update_vector_indexes_on_upsert(&doc.key, doc_value);
         }
-        // Persist vector indexes after batch
+        // Persist vector indexes after batch, outside the stripes.
+        drop(_unique_guard);
+        drop(_key_guard);
         self.persist_vector_indexes_throttled();
 
         // Update document count
@@ -1003,10 +975,10 @@ impl Collection {
         self.count_dirty.store(true, Ordering::Relaxed);
 
         // Broadcast change events
-        for (key, doc_value) in doc_values {
-            let _ = self.change_sender.send(ChangeEvent {
+        for (doc, doc_value) in inserted_docs.iter().zip(doc_values) {
+            let _ = self.emit_change(ChangeEvent {
                 type_: ChangeType::Insert,
-                key,
+                key: doc.key.clone(),
                 data: Some(doc_value),
                 old_data: None,
             });
@@ -1125,11 +1097,7 @@ impl Collection {
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
         if let Some(cf) = db.cf_handle(&self.name) {
-            let prefix = DOC_PREFIX.as_bytes();
-            let count = db
-                .prefix_iterator_cf(&cf, prefix)
-                .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
-                .count();
+            let count = Self::count_doc_entries(db, &cf);
 
             self.doc_count
                 .store(count, std::sync::atomic::Ordering::Relaxed);
@@ -1159,12 +1127,7 @@ impl Collection {
     /// Recount documents from actual RocksDB data (slow but accurate)
     pub fn recount_documents(&self) -> usize {
         if let Some(cf) = self.db.cf_handle(&self.name) {
-            let prefix = DOC_PREFIX.as_bytes();
-            let actual_count = self
-                .db
-                .prefix_iterator_cf(&cf, prefix)
-                .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
-                .count();
+            let actual_count = Self::count_doc_entries(&self.db, &cf);
 
             // Update the cached count to match reality
             self.doc_count.store(actual_count, Ordering::Relaxed);
@@ -1227,9 +1190,11 @@ impl Collection {
         // `*_meta:` definitions and the `_stats:*` config keys (whose next byte
         // '_' is 0x5F > 0x3B), so index definitions, schema, collection type and
         // shard config all survive the truncate. `doc:` additionally covers the
-        // nested `doc:ttl_exp:` expiry-index entries.
-        let data_ranges: [(&[u8], &[u8]); 9] = [
-            (b"doc:", b"doc;"),         // documents + TTL expiry entries
+        // legacy nested `doc:ttl_exp:` expiry-index entries; `ttl_exp;` sorts
+        // before `ttl_meta:`, so TTL index definitions survive too.
+        let data_ranges: [(&[u8], &[u8]); 10] = [
+            (b"doc:", b"doc;"),         // documents + legacy TTL expiry entries
+            (b"ttl_exp:", b"ttl_exp;"), // TTL expiry entries
             (b"idx:", b"idx;"),         // persistent / hash index entries
             (b"geo:", b"geo;"),         // geo index entries
             (b"ft:", b"ft;"),           // fulltext n-gram entries
@@ -1274,7 +1239,7 @@ impl Collection {
         // (LiveQuery, stream processors) learn the collection was cleared
         // without being flooded.
         if count > 0 {
-            let _ = self.change_sender.send(ChangeEvent {
+            let _ = self.emit_change(ChangeEvent {
                 type_: ChangeType::Truncate,
                 key: String::new(),
                 data: None,

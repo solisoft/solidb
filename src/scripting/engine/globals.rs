@@ -443,7 +443,7 @@ pub fn setup_request_globals_selective(
     if needs.solidb_stream {
         if let Some(ref solidb) = solidb {
             if let Some(stream_manager) = engine.stream_manager.clone() {
-                setup_streams_table(lua, solidb, stream_manager)?;
+                setup_streams_table(lua, solidb, stream_manager, db_name)?;
             }
         }
     }
@@ -694,10 +694,13 @@ fn setup_file_functions(
     Ok(())
 }
 
+/// `solidb.streams`, scoped to the script's own database. Audit H6: list and
+/// stop used to reach every database's streams.
 fn setup_streams_table(
     lua: &Lua,
     solidb: &mlua::Table,
     stream_manager: Arc<StreamManager>,
+    db_name: &str,
 ) -> Result<(), DbError> {
     let streams_table = lua
         .create_table()
@@ -705,9 +708,10 @@ fn setup_streams_table(
 
     // solidb.streams.list()
     let manager_list = stream_manager.clone();
+    let db_list = db_name.to_string();
     let list_fn = lua
         .create_function(move |lua, (): ()| {
-            let streams = manager_list.list_streams();
+            let streams = manager_list.list_streams(&db_list);
             let mut result = Vec::new();
             for stream in streams {
                 let mut s = serde_json::Map::new();
@@ -727,10 +731,11 @@ fn setup_streams_table(
 
     // solidb.streams.stop(name)
     let manager_stop = stream_manager.clone();
+    let db_stop = db_name.to_string();
     let stop_fn = lua
         .create_function(move |_, name: String| {
             manager_stop
-                .stop_stream(&name)
+                .stop_stream(&db_stop, &name)
                 .map_err(|e| mlua::Error::RuntimeError(e.to_string()))
         })
         .map_err(|e| DbError::InternalError(format!("Failed to create streams.stop: {}", e)))?;
@@ -1868,55 +1873,7 @@ pub fn setup_lua_globals(
 
     // Create 'streams' module
     if let Some(stream_manager) = engine.stream_manager.clone() {
-        let streams_table = lua.create_table().map_err(|e| {
-            DbError::InternalError(format!("Failed to create streams table: {}", e))
-        })?;
-
-        // solidb.streams.list() -> array of {name: string, query: string, created_at: number}
-        let manager_list = stream_manager.clone();
-        let list_fn = lua
-            .create_function(move |lua, (): ()| {
-                let streams = manager_list.list_streams();
-                let mut result = Vec::new();
-                for stream in streams {
-                    let mut s = serde_json::Map::new();
-                    s.insert("name".to_string(), serde_json::Value::String(stream.name));
-                    // We might not want to expose full complex query object, maybe just source collection?
-                    // Or string representation if we had it.
-                    // For now, let's just expose created_at
-                    s.insert(
-                        "created_at".to_string(),
-                        serde_json::Value::Number(serde_json::Number::from(stream.created_at)),
-                    );
-                    result.push(serde_json::Value::Object(s));
-                }
-
-                // Use the json helper to convert to Lua table
-                json_to_lua(lua, &serde_json::Value::Array(result))
-            })
-            .map_err(|e| DbError::InternalError(format!("Failed to create streams.list: {}", e)))?;
-
-        streams_table
-            .set("list", list_fn)
-            .map_err(|e| DbError::InternalError(format!("Failed to set streams.list: {}", e)))?;
-
-        // solidb.streams.stop(name) -> void
-        let manager_stop = stream_manager.clone();
-        let stop_fn = lua
-            .create_function(move |_, name: String| {
-                manager_stop
-                    .stop_stream(&name)
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))
-            })
-            .map_err(|e| DbError::InternalError(format!("Failed to create streams.stop: {}", e)))?;
-
-        streams_table
-            .set("stop", stop_fn)
-            .map_err(|e| DbError::InternalError(format!("Failed to set streams.stop: {}", e)))?;
-
-        solidb
-            .set("streams", streams_table)
-            .map_err(|e| DbError::InternalError(format!("Failed to set solidb.streams: {}", e)))?;
+        setup_streams_table(lua, &solidb, stream_manager, db_name)?;
     }
 
     solidb

@@ -52,7 +52,8 @@ impl<'a> QueryExecutor<'a> {
             } else {
                 // Source is a collection name
                 let collection = self.get_collection(&for_clause.collection)?;
-                collection.all().iter().map(|d| d.to_value()).collect()
+                let docs = self.scan_bounded(&collection)?;
+                self.apply_row_policy(&for_clause.collection, docs, let_bindings)
             };
 
             let var_name = &for_clause.variable;

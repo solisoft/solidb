@@ -100,8 +100,11 @@ fn add_calendar(
                 Unit::Year => amount.saturating_mul(12),
                 _ => amount,
             };
-            let total = i64::from(local.year()) * 12 + i64::from(local.month()) - 1 + months;
-            let new_year = (total.div_euclid(12)) as i32;
+            // Audit A9: checked all the way — `amount` is caller-controlled.
+            let total = (i64::from(local.year()) * 12 + i64::from(local.month()) - 1)
+                .checked_add(months)
+                .ok_or_else(out_of_range)?;
+            let new_year = i32::try_from(total.div_euclid(12)).map_err(|_| out_of_range())?;
             let new_month = (total.rem_euclid(12) + 1) as u32;
             let new_day = local.day().min(days_in_month(new_year, new_month));
             let date = NaiveDate::from_ymd_opt(new_year, new_month, new_day).ok_or_else(|| {
@@ -114,14 +117,27 @@ fn add_calendar(
                     DbError::ExecutionError("DATE_ADD: invalid local datetime".to_string())
                 })?
         }
-        Unit::Week => local + Duration::weeks(amount),
-        Unit::Day => local + Duration::days(amount),
-        Unit::Hour => local + Duration::hours(amount),
-        Unit::Minute => local + Duration::minutes(amount),
-        Unit::Second => local + Duration::seconds(amount),
-        Unit::Millisecond => local + Duration::milliseconds(amount),
+        // Audit A9: `Duration::days(1e12)` and `DateTime + Duration` both
+        // panic on overflow; the `try_`/`checked_` forms report it instead.
+        _ => {
+            let delta = match unit {
+                Unit::Week => Duration::try_weeks(amount),
+                Unit::Day => Duration::try_days(amount),
+                Unit::Hour => Duration::try_hours(amount),
+                Unit::Minute => Duration::try_minutes(amount),
+                Unit::Second => Duration::try_seconds(amount),
+                Unit::Millisecond => Duration::try_milliseconds(amount),
+                Unit::Year | Unit::Month => unreachable!("handled above"),
+            }
+            .ok_or_else(out_of_range)?;
+            local.checked_add_signed(delta).ok_or_else(out_of_range)?
+        }
     };
     Ok(result.with_timezone(&Utc))
+}
+
+fn out_of_range() -> DbError {
+    DbError::ExecutionError("DATE_ADD: result is out of the representable date range".to_string())
 }
 
 fn rfc3339_ms(dt: chrono::DateTime<Utc>) -> Value {
@@ -231,9 +247,14 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             } else {
                 chrono_tz::UTC
             };
-            Ok(Some(Value::String(
-                dt.with_timezone(&tz).format(fmt).to_string(),
-            )))
+            // `to_string()` panics when the format string holds an invalid
+            // specifier (the Display impl returns an error); write instead.
+            use std::fmt::Write as _;
+            let mut out = String::new();
+            write!(out, "{}", dt.with_timezone(&tz).format(fmt)).map_err(|_| {
+                DbError::ExecutionError(format!("DATE_FORMAT: invalid format string '{}'", fmt))
+            })?;
+            Ok(Some(Value::String(out)))
         }
         "DATE_TRUNC" | "DATE_ROUND" => date_trunc(args),
         "DATE_DAYS_IN_MONTH" => {
@@ -299,7 +320,8 @@ fn date_add_args(args: &[Value], sign: i64) -> DbResult<Option<Value>> {
     } else {
         chrono_tz::UTC
     };
-    Ok(Some(rfc3339_ms(add_calendar(dt, amount * sign, unit, tz)?)))
+    let amount = amount.checked_mul(sign).ok_or_else(out_of_range)?;
+    Ok(Some(rfc3339_ms(add_calendar(dt, amount, unit, tz)?)))
 }
 
 fn date_trunc(args: &[Value]) -> DbResult<Option<Value>> {
@@ -451,6 +473,9 @@ fn time_bucket(args: &[Value]) -> DbResult<Option<Value>> {
             "TIME_BUCKET: interval cannot be 0".to_string(),
         ));
     }
+    // A saturated u64 turned negative under `as i64`.
+    let interval_ms = i64::try_from(interval_ms)
+        .map_err(|_| DbError::ExecutionError("TIME_BUCKET: interval too large".to_string()))?;
     let ts = match &args[0] {
         Value::Number(n) => n
             .as_i64()
@@ -465,7 +490,12 @@ fn time_bucket(args: &[Value]) -> DbResult<Option<Value>> {
             ))
         }
     };
-    let bucket = ts.div_euclid(interval_ms as i64) * interval_ms as i64;
+    let bucket = ts
+        .div_euclid(interval_ms)
+        .checked_mul(interval_ms)
+        .ok_or_else(|| {
+            DbError::ExecutionError("TIME_BUCKET: timestamp out of range".to_string())
+        })?;
     if args[0].is_string() {
         Ok(Some(rfc3339_ms(
             chrono::DateTime::from_timestamp_millis(bucket).ok_or_else(|| {
@@ -489,7 +519,10 @@ fn human_time(args: &[Value]) -> DbResult<Option<Value>> {
         .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
         .unwrap_or_else(|| Utc::now().timestamp_millis());
     let date_ts = parse_datetime(&args[0])?.timestamp_millis();
-    let diff_secs = (now - date_ts) / 1000;
+    let diff_secs = now
+        .checked_sub(date_ts)
+        .ok_or_else(|| DbError::ExecutionError("HUMAN_TIME: timestamp out of range".to_string()))?
+        / 1000;
     let future = diff_secs < 0;
     let abs = diff_secs.abs();
     let phrase = if abs < 60 {
@@ -561,6 +594,71 @@ mod tests {
             call("DATE_LEAPYEAR", &[json!("2023-01-01T00:00:00Z")]),
             json!(false)
         );
+    }
+
+    #[test]
+    fn date_add_overflow_is_an_error_not_a_panic() {
+        // Audit A9: each of these used to panic inside chrono.
+        for unit in [
+            "day", "week", "hour", "minute", "second", "ms", "month", "year",
+        ] {
+            let r = evaluate(
+                "DATE_ADD",
+                &[json!("2024-01-01T00:00:00Z"), json!(1e17), json!(unit)],
+            );
+            assert!(r.is_err(), "unit {unit} should overflow");
+        }
+        let r = evaluate(
+            "DATE_ADD",
+            &[json!("2024-01-01T00:00:00Z"), json!(i64::MAX), json!("day")],
+        );
+        assert!(r.is_err());
+        // `amount * sign` with i64::MIN.
+        let r = evaluate(
+            "DATE_SUBTRACT",
+            &[json!("2024-01-01T00:00:00Z"), json!(i64::MIN), json!("ms")],
+        );
+        assert!(r.is_err());
+        let r = evaluate(
+            "DATE_ADD",
+            &[
+                json!("2024-01-01T00:00:00Z"),
+                json!(i64::MAX),
+                json!("year"),
+            ],
+        );
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn date_add_normal_amounts_still_work() {
+        let r = call(
+            "DATE_ADD",
+            &[json!("2024-01-01T00:00:00Z"), json!(10), json!("day")],
+        );
+        assert!(r.as_str().unwrap().starts_with("2024-01-11"));
+        let r = call(
+            "DATE_SUBTRACT",
+            &[json!("2024-01-01T00:00:00Z"), json!(1), json!("hour")],
+        );
+        assert!(r.as_str().unwrap().starts_with("2023-12-31T23:00:00"));
+    }
+
+    #[test]
+    fn other_overflows_are_errors() {
+        assert!(evaluate("DATE_FORMAT", &[json!("2024-01-01T00:00:00Z"), json!("%Q")]).is_err());
+        // Must not panic, whichever way it rounds.
+        let _ = evaluate("TIME_BUCKET", &[json!(i64::MIN), json!("7d")]);
+        assert!(evaluate(
+            "TIME_BUCKET",
+            &[json!(1_700_000_000_000_i64), json!("99999999999999999d")]
+        )
+        .is_err());
+        assert!(evaluate(
+            "HUMAN_TIME",
+            &[json!("2024-01-01T00:00:00Z"), json!(i64::MIN)]
+        )
+        .is_err());
     }
 
     #[test]

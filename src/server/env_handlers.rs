@@ -90,7 +90,7 @@ pub async fn set_env_var_handler(
         "updated_at": chrono::Utc::now().to_rfc3339()
     });
 
-    collection.insert(doc)?;
+    collection.insert_or_replace(doc)?;
 
     Ok(Json(serde_json::json!({ "status": "ok", "key": key })))
 }

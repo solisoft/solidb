@@ -8,10 +8,9 @@ impl Collection {
 
     /// Get all geo index metadata
     pub fn get_all_geo_indexes(&self) -> Vec<GeoIndex> {
-        self.index_meta()
-            .expect("Column family should exist")
-            .geo
-            .clone()
+        // Empty when the column family is gone (dropped mid-operation): a
+        // background caller such as the TTL worker must not panic (audit P11).
+        self.index_meta().map(|m| m.geo.clone()).unwrap_or_default()
     }
 
     /// Get a geo index by name

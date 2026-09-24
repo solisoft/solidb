@@ -112,7 +112,7 @@ pub struct GenerateContentResponse {
 pub async fn generate_content_handler(
     State(state): State<AppState>,
     Path(db_name): Path<String>,
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
     Json(request): Json<GenerateContentRequest>,
 ) -> Result<Json<GenerateContentResponse>, DbError> {
     use crate::server::llm_client::{LLMClient, Message};
@@ -141,7 +141,7 @@ pub async fn generate_content_handler(
             None,
         ) {
             if let Ok(emb) = embed_client.embed(&cache_text).await {
-                if let Some(hit) = cache.get(&db_name, &emb) {
+                if let Some(hit) = cache.get(&db_name, &claims.sub, &emb) {
                     if let Some(content) = hit.as_str() {
                         return Ok(Json(GenerateContentResponse {
                             content: content.to_string(),
@@ -168,7 +168,12 @@ pub async fn generate_content_handler(
 
     // Populate the semantic cache for future similar prompts.
     if let Some(emb) = cache_emb {
-        cache.put(&db_name, emb, serde_json::Value::String(content.clone()));
+        cache.put(
+            &db_name,
+            &claims.sub,
+            emb,
+            serde_json::Value::String(content.clone()),
+        );
     }
 
     Ok(Json(GenerateContentResponse {

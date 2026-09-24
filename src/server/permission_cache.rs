@@ -47,7 +47,7 @@ impl CachedPermissions {
 /// Thread-safe permission cache
 #[derive(Clone)]
 pub struct PermissionCache {
-    /// Subject (username or "api-key:{name}") -> cached permissions
+    /// [`PermissionCache::subject_key`] -> cached permissions
     entries: Arc<RwLock<HashMap<String, CachedPermissions>>>,
     /// Role name -> role definition (for quick lookup without DB access)
     roles: Arc<RwLock<HashMap<String, Role>>>,
@@ -74,7 +74,38 @@ impl PermissionCache {
         }
     }
 
-    /// Get cached permissions for a subject
+    /// Cache key for a principal: its subject *and* the role set and
+    /// database scope the permissions were resolved from.
+    ///
+    /// Keyed on the subject alone, the cache let whichever caller resolved
+    /// first decide everyone's permissions for the TTL: a still-valid JWT
+    /// carrying revoked roles, presented on a path that did not refresh them,
+    /// wrote the old privileges back under the user's name, and the user's
+    /// refreshed HTTP requests then hit that entry (audit H7). With the roles
+    /// in the key, a hit can only return what the caller's own roles resolve
+    /// to. JSON encoding keeps the parts unambiguous whatever characters
+    /// subjects or role names contain.
+    pub fn subject_key(
+        subject: &str,
+        roles: &[String],
+        scoped_databases: Option<&[String]>,
+    ) -> String {
+        let mut roles: Vec<&str> = roles.iter().map(String::as_str).collect();
+        roles.sort_unstable();
+        roles.dedup();
+        serde_json::to_string(&(subject, roles, scoped_databases))
+            .unwrap_or_else(|_| subject.to_string())
+    }
+
+    /// Prefix shared by every [`Self::subject_key`] for `subject`.
+    fn subject_key_prefix(subject: &str) -> String {
+        format!(
+            "[{},",
+            serde_json::to_string(subject).unwrap_or_else(|_| subject.to_string())
+        )
+    }
+
+    /// Get cached permissions for a key (see [`Self::subject_key`])
     ///
     /// Returns None if not cached or if the cache entry has expired
     pub fn get(&self, subject: &str) -> Option<CachedPermissions> {
@@ -99,12 +130,14 @@ impl PermissionCache {
         }
     }
 
-    /// Invalidate cache for a specific subject
+    /// Invalidate cache for a specific subject, whatever role sets it was
+    /// cached under
     ///
     /// Called when a user's roles change
     pub fn invalidate(&self, subject: &str) {
+        let prefix = Self::subject_key_prefix(subject);
         let mut entries = self.entries.write().unwrap();
-        entries.remove(subject);
+        entries.retain(|key, _| key != subject && !key.starts_with(&prefix));
     }
 
     /// Invalidate all entries that have a specific role
@@ -306,6 +339,61 @@ mod tests {
 
         // Non-existent role
         assert!(cache.get_role("nonexistent").is_none());
+    }
+
+    #[test]
+    fn stale_roles_cannot_serve_a_refreshed_caller() {
+        let cache = PermissionCache::new();
+        let mut admin = HashSet::new();
+        admin.insert(Permission::global_admin());
+
+        // An old token still carrying "admin" resolves and caches first...
+        let stale_key = PermissionCache::subject_key("alice", &["admin".to_string()], None);
+        cache.set(
+            stale_key.clone(),
+            CachedPermissions::new(admin, vec!["admin".to_string()], None),
+        );
+
+        // ...and a caller whose refreshed roles are only "viewer" misses.
+        let fresh_key = PermissionCache::subject_key("alice", &["viewer".to_string()], None);
+        assert_ne!(stale_key, fresh_key);
+        assert!(cache.get(&fresh_key).is_none());
+        assert!(cache.get(&stale_key).is_some());
+    }
+
+    #[test]
+    fn scope_is_part_of_the_key() {
+        let roles = vec!["editor".to_string()];
+        let scoped = vec!["db1".to_string()];
+        assert_ne!(
+            PermissionCache::subject_key("k", &roles, None),
+            PermissionCache::subject_key("k", &roles, Some(&scoped))
+        );
+        // Role order does not matter.
+        assert_eq!(
+            PermissionCache::subject_key("k", &["a".to_string(), "b".to_string()], None),
+            PermissionCache::subject_key("k", &["b".to_string(), "a".to_string()], None)
+        );
+    }
+
+    #[test]
+    fn invalidate_removes_every_role_set_for_the_subject_only() {
+        let cache = PermissionCache::new();
+        for roles in [vec!["admin".to_string()], vec!["viewer".to_string()]] {
+            cache.set(
+                PermissionCache::subject_key("alice", &roles, None),
+                CachedPermissions::new(HashSet::new(), roles.clone(), None),
+            );
+        }
+        let other = PermissionCache::subject_key("alice2", &["admin".to_string()], None);
+        cache.set(
+            other.clone(),
+            CachedPermissions::new(HashSet::new(), vec!["admin".to_string()], None),
+        );
+
+        cache.invalidate("alice");
+        assert_eq!(cache.entry_count(), 1);
+        assert!(cache.get(&other).is_some());
     }
 
     #[test]

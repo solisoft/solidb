@@ -9,11 +9,13 @@ pub mod blob_rebalance;
 pub mod cleanup;
 pub mod coordinator;
 pub mod distribution;
+pub mod export_stream;
 pub mod healing;
 pub mod migration;
 pub mod rebalance;
 pub mod repro_issue;
 pub mod router;
+pub mod scan;
 
 pub use blob_rebalance::{BlobRebalanceWorker, RebalanceConfig};
 pub use coordinator::{CollectionShardConfig, ShardAssignment, ShardCoordinator, ShardTable};

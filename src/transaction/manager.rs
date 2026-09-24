@@ -39,16 +39,17 @@ impl TransactionManager {
     }
 
     /// Begin a new transaction
+    ///
+    /// Audit M7: nothing is written to the transaction WAL any more. It used
+    /// to get a `Begin` line here and a fsynced `Commit` line at commit, but
+    /// no operation was ever logged, so replay recovered nothing while the
+    /// file grew without bound. Atomicity and durability now come from the
+    /// commit being a single RocksDB `WriteBatch` (synced for isolation
+    /// levels that `requires_wal`), which RocksDB's own WAL covers.
     pub fn begin(&self, isolation_level: IsolationLevel) -> DbResult<TransactionId> {
         let tx = Transaction::new(isolation_level);
         let tx_id = tx.id;
 
-        // Write to WAL only if isolation level requires it
-        if isolation_level.requires_wal() {
-            self.wal.write_begin(tx_id)?;
-        }
-
-        // Store in active transactions
         {
             let mut active = self.active_transactions.write().unwrap();
             active.insert(tx_id, Arc::new(RwLock::new(tx)));
@@ -150,16 +151,19 @@ impl TransactionManager {
         Ok(())
     }
 
-    /// Commit a transaction
-    pub fn commit(&self, tx_id: TransactionId) -> DbResult<()> {
-        // Validate transaction first (consistency checks)
-        self.validate(tx_id)?;
-
-        // Get transaction
+    /// First half of a commit: freeze the transaction and validate it.
+    ///
+    /// Moves the transaction from `Active` to `Preparing` — so no further
+    /// operations can be added and a concurrent commit, rollback or the
+    /// expiry reaper cannot act on it — then runs [`Self::validate`]. On a
+    /// validation failure the transaction is aborted (removed, locks
+    /// released) before the error is returned; nothing has been written.
+    ///
+    /// Returns the operations to apply and whether the write must be synced.
+    pub fn prepare_commit(&self, tx_id: TransactionId) -> DbResult<(Vec<Operation>, bool)> {
         let tx_arc = self.get(tx_id)?;
 
-        // Prepare transaction and get isolation level
-        let requires_wal = {
+        let requires_sync = {
             let mut tx = tx_arc.write().unwrap();
             if !tx.is_active() {
                 return Err(DbError::TransactionConflict(format!(
@@ -171,44 +175,69 @@ impl TransactionManager {
             tx.isolation_level.requires_wal()
         };
 
-        // Write commit to WAL only if isolation level requires it
-        if requires_wal {
-            self.wal.write_commit(tx_id)?;
+        // Audit D2: validate *before* anything is written.
+        if let Err(e) = self.validate(tx_id) {
+            self.abort(tx_id);
+            return Err(e);
         }
 
-        // Mark as committed
-        {
-            let mut tx = tx_arc.write().unwrap();
-            tx.commit();
-        }
+        let operations = tx_arc.read().unwrap().operations.clone();
+        Ok((operations, requires_sync))
+    }
 
-        // Remove from active transactions
+    /// Second half of a commit, once its writes are durable: mark it
+    /// committed, forget it, release its locks.
+    pub fn finish_commit(&self, tx_id: TransactionId) -> DbResult<()> {
+        let tx_arc = self.get(tx_id)?;
+        tx_arc.write().unwrap().commit();
+
         {
             let mut active = self.active_transactions.write().unwrap();
             active.remove(&tx_id);
         }
-
-        // Release locks
         self.lock_manager.release_locks(tx_id);
 
         tracing::debug!("Transaction {} committed", tx_id);
         Ok(())
     }
 
+    /// Commit a transaction that has no storage effects to apply (the
+    /// storage engine drives [`Self::prepare_commit`] / [`Self::finish_commit`]
+    /// itself so it can write in between).
+    pub fn commit(&self, tx_id: TransactionId) -> DbResult<()> {
+        self.prepare_commit(tx_id)?;
+        self.finish_commit(tx_id)
+    }
+
+    /// Abort regardless of state: used when a commit fails part-way, after
+    /// the transaction has already left `Active`. Nothing was written, so
+    /// dropping it and its locks is the whole rollback.
+    pub fn abort(&self, tx_id: TransactionId) {
+        let removed = {
+            let mut active = self.active_transactions.write().unwrap();
+            active.remove(&tx_id)
+        };
+        if let Some(tx_arc) = removed {
+            tx_arc.write().unwrap().abort();
+        }
+        self.lock_manager.release_locks(tx_id);
+        tracing::debug!("Transaction {} aborted", tx_id);
+    }
+
     pub fn rollback(&self, tx_id: TransactionId) -> DbResult<()> {
         let tx_arc = self.get(tx_id)?;
 
-        let requires_wal = {
-            let tx = tx_arc.read().unwrap();
-            tx.isolation_level.requires_wal()
-        };
-
-        if requires_wal {
-            self.wal.write_abort(tx_id)?;
-        }
-
         {
             let mut tx = tx_arc.write().unwrap();
+            if tx.state == super::TransactionState::Preparing {
+                // A commit is writing this transaction right now; yanking its
+                // locks mid-write would let another writer in before the
+                // commit finishes. The committer cleans up on either outcome.
+                return Err(DbError::TransactionConflict(format!(
+                    "Transaction {} is being committed",
+                    tx_id
+                )));
+            }
             tx.abort();
         }
 
@@ -245,11 +274,13 @@ impl TransactionManager {
             let active = self.active_transactions.read().unwrap();
             for (tx_id, tx_arc) in active.iter() {
                 let tx = tx_arc.read().unwrap();
-                if now
-                    .signed_duration_since(tx.created_at)
-                    .to_std()
-                    .unwrap_or(Duration::ZERO)
-                    > self.timeout
+                // A transaction mid-commit is not abandoned.
+                if tx.is_active()
+                    && now
+                        .signed_duration_since(tx.created_at)
+                        .to_std()
+                        .unwrap_or(Duration::ZERO)
+                        > self.timeout
                 {
                     expired.push(*tx_id);
                 }
@@ -273,8 +304,11 @@ impl TransactionManager {
         &self.lock_manager
     }
 
+    /// Nothing in the transaction WAL is needed once its contents are
+    /// applied (see [`Self::begin`]), so a checkpoint empties it rather than
+    /// appending a marker to a file that would otherwise only grow.
     pub fn checkpoint(&self) -> DbResult<()> {
-        self.wal.write_checkpoint()
+        self.wal.truncate()
     }
 }
 
@@ -370,5 +404,67 @@ mod tests {
 
         // Second commit should fail (transaction not found)
         assert!(manager.commit(tx_id).is_err());
+    }
+
+    #[test]
+    fn test_failed_validation_aborts_and_releases_locks() {
+        let dir = tempdir().unwrap();
+        let manager = TransactionManager::new(dir.path().join("test.wal")).unwrap();
+
+        let tx_id = manager.begin(IsolationLevel::ReadCommitted).unwrap();
+        manager
+            .lock_manager()
+            .acquire_exclusive(tx_id, "db", "c", "k")
+            .unwrap();
+        {
+            let tx_arc = manager.get(tx_id).unwrap();
+            let mut tx = tx_arc.write().unwrap();
+            for _ in 0..2 {
+                tx.add_operation(Operation::Insert {
+                    database: "db".into(),
+                    collection: "c".into(),
+                    key: "k".into(),
+                    data: serde_json::json!({}),
+                });
+            }
+        }
+
+        assert!(matches!(
+            manager.prepare_commit(tx_id),
+            Err(DbError::TransactionConflict(_))
+        ));
+        // Gone, and its lock is free for the next transaction.
+        assert_eq!(manager.transaction_count(), 0);
+        let other = manager.begin(IsolationLevel::ReadCommitted).unwrap();
+        assert!(manager
+            .lock_manager()
+            .acquire_exclusive(other, "db", "c", "k")
+            .is_ok());
+    }
+
+    #[test]
+    fn test_rollback_refused_while_preparing() {
+        let dir = tempdir().unwrap();
+        let manager = TransactionManager::new(dir.path().join("test.wal")).unwrap();
+
+        let tx_id = manager.begin(IsolationLevel::ReadCommitted).unwrap();
+        manager.prepare_commit(tx_id).unwrap();
+        assert!(manager.rollback(tx_id).is_err());
+        assert_eq!(manager.cleanup_expired(), 0);
+        manager.finish_commit(tx_id).unwrap();
+        assert_eq!(manager.transaction_count(), 0);
+    }
+
+    #[test]
+    fn test_begin_and_commit_do_not_grow_wal() {
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("test.wal");
+        let manager = TransactionManager::new(wal_path.clone()).unwrap();
+
+        for _ in 0..10 {
+            let tx = manager.begin(IsolationLevel::Serializable).unwrap();
+            manager.commit(tx).unwrap();
+        }
+        assert_eq!(std::fs::metadata(&wal_path).unwrap().len(), 0);
     }
 }

@@ -10,6 +10,7 @@ use crate::scripting::conversion::json_to_lua;
 
 use super::ScriptEngine;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_repl(
     engine: &ScriptEngine,
     code: &str,
@@ -18,6 +19,7 @@ pub async fn execute_repl(
     variables: &HashMap<String, JsonValue>,
     history: &[String],
     output_capture: &mut Vec<String>,
+    timeout_ms: u64,
 ) -> Result<(JsonValue, HashMap<String, JsonValue>), DbError> {
     engine.stats.active_scripts.fetch_add(1, Ordering::SeqCst);
     engine
@@ -35,6 +37,15 @@ pub async fn execute_repl(
     let _guard = ActiveScriptGuard(engine.stats.clone());
 
     let lua = Lua::new();
+    // Audit A4: the REPL had neither the allocator cap nor the deadline the
+    // other script paths have, so `while true do end` pinned a tokio worker
+    // for good and a growing table could take the host down. The budget is
+    // the caller's `timeout_ms`, never more than the script timeout.
+    super::pool::LuaPool::apply_memory_limit(&lua);
+    let limit = repl_time_limit(timeout_ms);
+    if let Some(limit) = limit {
+        super::install_deadline_hook_for(&lua, limit);
+    }
 
     // Secure environment: Remove unsafe standard libraries and functions
     let globals = lua.globals();
@@ -85,10 +96,13 @@ pub async fn execute_repl(
         // Check if this is a saved collection handle that needs recreation
         if let JsonValue::Object(ref obj) = value {
             if obj.get("_solidb_handle").and_then(|v| v.as_bool()) == Some(true) {
-                // Recreate collection handle using db:collection()
+                // Recreate collection handle using db:collection(), called
+                // from Rust: splicing the names into Lua source let a
+                // crafted global name or collection name inject code.
                 if let Some(coll_name) = obj.get("_name").and_then(|v| v.as_str()) {
-                    let recreate_code = format!("{} = db:collection(\"{}\")", name, coll_name);
-                    let _ = lua.load(&recreate_code).exec();
+                    if let Ok(handle) = recreate_collection_handle(&lua, coll_name) {
+                        let _ = globals.set(name.clone(), handle);
+                    }
                     continue;
                 }
             }
@@ -102,17 +116,7 @@ pub async fn execute_repl(
     }
 
     // Replay function definitions from history (functions can't be serialized to JSON)
-    for prev_code in history {
-        let trimmed = prev_code.trim();
-        // Check if this looks like a function definition
-        if trimmed.starts_with("function ")
-            || trimmed.contains("= function")
-            || trimmed.starts_with("local function ")
-        {
-            // Silently re-execute function definitions
-            let _ = lua.load(prev_code).exec();
-        }
-    }
+    replay_function_definitions(&lua, history);
 
     // Set up output capture by replacing solidb.log
     let output_clone = Arc::new(std::sync::Mutex::new(output_capture.clone()));
@@ -199,7 +203,7 @@ pub async fn execute_repl(
     // Execute the code
     let chunk = lua.load(code);
 
-    let result = match chunk.eval_async::<LuaValue>().await {
+    let result = match super::eval_with_deadline(chunk, limit).await {
         Ok(result) => {
             // Convert Lua result to JSON
             let json_result = engine.lua_to_json(&lua, result)?;
@@ -302,9 +306,122 @@ pub async fn execute_repl(
         }
     }
 
+    super::remove_deadline_hook(&lua);
+
     match result {
         Ok(json_result) => Ok((json_result, updated_vars)),
         Err(e) => Err(e),
+    }
+}
+
+/// The REPL's wall-clock budget: the requested `timeout_ms`, capped by the
+/// script timeout. `timeout_ms == 0` means "the script timeout".
+fn repl_time_limit(timeout_ms: u64) -> Option<std::time::Duration> {
+    let requested = (timeout_ms > 0).then(|| std::time::Duration::from_millis(timeout_ms));
+    match (requested, super::script_timeout()) {
+        (Some(r), Some(cap)) => Some(r.min(cap)),
+        (Some(r), None) => Some(r),
+        (None, cap) => cap,
+    }
+}
+
+fn recreate_collection_handle(lua: &Lua, coll_name: &str) -> mlua::Result<LuaValue> {
+    let db: mlua::Table = lua.globals().get("db")?;
+    let collection: mlua::Function = db.get("collection")?;
+    collection.call((db, coll_name))
+}
+
+/// Globals a replayed history entry may read. Pure functions only: nothing
+/// that reaches the database, the network, or the session output.
+const REPLAY_SAFE_GLOBALS: &[&str] = &[
+    "assert",
+    "error",
+    "getmetatable",
+    "ipairs",
+    "math",
+    "next",
+    "pairs",
+    "pcall",
+    "rawequal",
+    "rawget",
+    "rawlen",
+    "rawset",
+    "select",
+    "setmetatable",
+    "string",
+    "table",
+    "tonumber",
+    "tostring",
+    "type",
+    "utf8",
+    "xpcall",
+];
+
+/// Re-create the functions an earlier REPL command defined.
+///
+/// Functions cannot be stored as JSON, so earlier commands that define one
+/// are run again on every eval. They used to be re-executed *whole* in the
+/// real environment, so `f = function() end; db:collection("x"):insert(...)`
+/// repeated its insert on every later eval (audit A4).
+///
+/// Each such command now runs in a scratch environment that holds only
+/// [`REPLAY_SAFE_GLOBALS`]: no `db`, no `solidb`, no `print`, so its top
+/// level can compute but not act — a statement that reaches for the
+/// database fails there, harmlessly. Only the functions it assigned are
+/// kept. The scratch environment is then emptied and made to read and write
+/// through to the real globals, so when a replayed function is later
+/// *called* it sees the session's `db`, variables and other functions as
+/// before. The replay runs under the same deadline and memory cap as the
+/// command itself.
+fn replay_function_definitions(lua: &Lua, history: &[String]) {
+    let candidates: Vec<&String> = history
+        .iter()
+        .filter(|code| code.contains("function"))
+        .collect();
+    if candidates.is_empty() {
+        return;
+    }
+    let globals = lua.globals();
+    let Ok(env) = lua.create_table() else {
+        return;
+    };
+    for name in REPLAY_SAFE_GLOBALS {
+        if let Ok(v) = globals.get::<LuaValue>(*name) {
+            let _ = env.raw_set(*name, v);
+        }
+    }
+    for code in candidates {
+        let _ = lua.load(code.as_str()).set_environment(env.clone()).exec();
+    }
+
+    let defined: Vec<(LuaValue, mlua::Function)> = env
+        .pairs::<LuaValue, LuaValue>()
+        .filter_map(|r| r.ok())
+        .filter_map(|(k, v)| {
+            let LuaValue::Function(f) = v else {
+                return None;
+            };
+            let keep = match &k {
+                LuaValue::String(s) => {
+                    let name = s.to_string_lossy();
+                    !REPLAY_SAFE_GLOBALS.iter().any(|g| *g == &*name)
+                }
+                _ => false,
+            };
+            keep.then_some((k, f))
+        })
+        .collect();
+
+    // Replayed functions resolve globals through `env`; from here on it is
+    // a window onto the real globals, not a stale copy.
+    let _ = env.clear();
+    if let Ok(mt) = lua.create_table() {
+        let _ = mt.raw_set("__index", globals.clone());
+        let _ = mt.raw_set("__newindex", globals.clone());
+        let _ = env.set_metatable(Some(mt));
+    }
+    for (name, f) in defined {
+        let _ = globals.set(name, f);
     }
 }
 

@@ -4,7 +4,6 @@
 //! a conflict resolution strategy determines how to merge or select the winner.
 
 use crate::sync::version_vector::{ConflictInfo, VectorComparison, VersionVector};
-use mlua::{Lua, Result as LuaResult, Value as LuaValue};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -44,7 +43,7 @@ pub enum ConflictResolutionStrategy {
     AutomaticMerge,
     /// Keep both versions and require manual resolution
     Manual,
-    /// Custom Lua script resolver
+    /// Custom Lua script resolver (not implemented; falls back to Manual)
     CustomScript,
 }
 
@@ -56,10 +55,10 @@ impl ConflictResolutionStrategy {
             ConflictResolutionStrategy::Deterministic => Arc::new(DeterministicResolver),
             ConflictResolutionStrategy::AutomaticMerge => Arc::new(AutomaticMergeResolver),
             ConflictResolutionStrategy::Manual => Arc::new(ManualResolver),
-            ConflictResolutionStrategy::CustomScript => {
-                // TODO: Implement Lua script resolver
-                Arc::new(ManualResolver)
-            }
+            // Audit L6: the unsandboxed Lua resolver that used to back this
+            // variant was never wired up and was removed; conflicts under this
+            // strategy are kept for manual resolution.
+            ConflictResolutionStrategy::CustomScript => Arc::new(ManualResolver),
         }
     }
 }
@@ -166,191 +165,6 @@ impl ConflictResolver for ManualResolver {
     fn name(&self) -> &'static str {
         "manual"
     }
-}
-
-/// Custom Lua script-based conflict resolver
-///
-/// The Lua script should return one of:
-/// - "local" - use the local version
-/// - "remote" - use the remote version
-/// - A table - use as the merged document
-///
-/// Available globals in the script:
-/// - local_doc: The local document (server version)
-/// - remote_doc: The remote document (client version)
-/// - key: The document key
-/// - collection: The collection name
-pub struct CustomScriptResolver {
-    script: String,
-}
-
-impl CustomScriptResolver {
-    /// Create a new custom script resolver
-    pub fn new(script: impl Into<String>) -> Self {
-        Self {
-            script: script.into(),
-        }
-    }
-
-    /// Convert a serde_json::Value to a Lua value
-    fn json_to_lua(lua: &Lua, value: &Value) -> LuaResult<LuaValue> {
-        match value {
-            Value::Null => Ok(LuaValue::Nil),
-            Value::Bool(b) => Ok(LuaValue::Boolean(*b)),
-            Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    Ok(LuaValue::Integer(i))
-                } else if let Some(f) = n.as_f64() {
-                    Ok(LuaValue::Number(f))
-                } else {
-                    Ok(LuaValue::Nil)
-                }
-            }
-            Value::String(s) => lua.create_string(s).map(LuaValue::String),
-            Value::Array(arr) => {
-                let table = lua.create_table()?;
-                for (i, v) in arr.iter().enumerate() {
-                    table.set(i + 1, Self::json_to_lua(lua, v)?)?;
-                }
-                Ok(LuaValue::Table(table))
-            }
-            Value::Object(obj) => {
-                let table = lua.create_table()?;
-                for (k, v) in obj {
-                    table.set(k.as_str(), Self::json_to_lua(lua, v)?)?;
-                }
-                Ok(LuaValue::Table(table))
-            }
-        }
-    }
-
-    /// Convert a Lua value to serde_json::Value
-    fn lua_to_json(value: LuaValue) -> Option<Value> {
-        match value {
-            LuaValue::Nil => Some(Value::Null),
-            LuaValue::Boolean(b) => Some(Value::Bool(b)),
-            LuaValue::Integer(i) => Some(Value::Number(i.into())),
-            LuaValue::Number(f) => serde_json::Number::from_f64(f).map(Value::Number),
-            LuaValue::String(s) => Some(Value::String(s.to_string_lossy().to_string())),
-            LuaValue::Table(table) => {
-                // First, check if all keys are integers starting from 1
-                let mut has_string_keys = false;
-                let mut max_int_key = 0i64;
-                let mut int_key_count = 0usize;
-
-                // Iterate with general Value keys to detect the key types
-                for (k, _) in table.clone().pairs::<LuaValue, LuaValue>().flatten() {
-                    match k {
-                        LuaValue::Integer(i) => {
-                            int_key_count += 1;
-                            if i > max_int_key {
-                                max_int_key = i;
-                            }
-                        }
-                        LuaValue::String(_) => {
-                            has_string_keys = true;
-                        }
-                        _ => {}
-                    }
-                }
-
-                // If it has string keys, treat as object
-                // If it only has sequential integer keys from 1 to n, treat as array
-                let is_array =
-                    !has_string_keys && int_key_count > 0 && max_int_key == int_key_count as i64;
-
-                if is_array {
-                    let mut arr: Vec<(i64, Value)> = Vec::new();
-                    for (k, v) in table.pairs::<i64, LuaValue>().flatten() {
-                        if let Some(val) = Self::lua_to_json(v) {
-                            arr.push((k, val));
-                        }
-                    }
-                    // Sort by key and extract values
-                    arr.sort_by_key(|(k, _)| *k);
-                    Some(Value::Array(arr.into_iter().map(|(_, v)| v).collect()))
-                } else {
-                    let mut obj = serde_json::Map::new();
-                    for (k, v) in table.pairs::<LuaValue, LuaValue>().flatten() {
-                        let key = match k {
-                            LuaValue::String(s) => s.to_string_lossy().to_string(),
-                            LuaValue::Integer(i) => i.to_string(),
-                            LuaValue::Number(n) => n.to_string(),
-                            _ => continue,
-                        };
-                        if let Some(val) = Self::lua_to_json(v) {
-                            obj.insert(key, val);
-                        }
-                    }
-                    Some(Value::Object(obj))
-                }
-            }
-            _ => None,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl ConflictResolver for CustomScriptResolver {
-    async fn resolve(&self, conflict: &ConflictInfo) -> ConflictResolution {
-        // Create a new Lua VM for each resolution (safer isolation)
-        let lua = Lua::new();
-
-        // Set up globals
-        let globals = lua.globals();
-
-        // Expose conflict data to Lua
-        if let Ok(local_val) =
-            Self::json_to_lua(&lua, &conflict.local_data.clone().unwrap_or(Value::Null))
-        {
-            let _ = globals.set("local_doc", local_val);
-        }
-
-        if let Ok(remote_val) =
-            Self::json_to_lua(&lua, &conflict.remote_data.clone().unwrap_or(Value::Null))
-        {
-            let _ = globals.set("remote_doc", remote_val);
-        }
-
-        let _ = globals.set("key", conflict.document_key.clone());
-        let _ = globals.set("collection", conflict.collection.clone());
-
-        // Execute the script
-        match lua.load(&self.script).eval::<LuaValue>() {
-            Ok(result) => match &result {
-                LuaValue::String(s) => {
-                    let s_str = s.to_string_lossy();
-                    match s_str.as_ref() {
-                        "local" => ConflictResolution::LocalWins,
-                        "remote" => ConflictResolution::RemoteWins,
-                        _ => ConflictResolution::LocalWins, // Default
-                    }
-                }
-                LuaValue::Table(_) => {
-                    // Script returned a merged table
-                    if let Some(merged) = Self::lua_to_json(result) {
-                        ConflictResolution::Merged(merged)
-                    } else {
-                        ConflictResolution::LocalWins
-                    }
-                }
-                _ => ConflictResolution::LocalWins,
-            },
-            Err(e) => {
-                tracing::error!("Custom conflict resolver script error: {}", e);
-                ConflictResolution::LocalWins
-            }
-        }
-    }
-
-    fn name(&self) -> &'static str {
-        "custom_script"
-    }
-}
-
-/// Create a custom script resolver with the given Lua script
-pub fn create_custom_resolver(script: impl Into<String>) -> Arc<dyn ConflictResolver> {
-    Arc::new(CustomScriptResolver::new(script))
 }
 
 /// Attempt to automatically merge two documents using CRDT rules
@@ -515,124 +329,5 @@ mod tests {
         assert_eq!(merged["name"], "Alice");
         assert_eq!(merged["age"], 31); // Remote wins for age
         assert_eq!(merged["email"], "alice@example.com");
-    }
-
-    #[tokio::test]
-    async fn test_custom_script_returns_local() {
-        let script = r#"
-            return "local"
-        "#;
-        let resolver = CustomScriptResolver::new(script);
-        let conflict = create_conflict_info(50, 100);
-
-        let result = resolver.resolve(&conflict).await;
-        assert!(matches!(result, ConflictResolution::LocalWins));
-    }
-
-    #[tokio::test]
-    async fn test_custom_script_returns_remote() {
-        let script = r#"
-            return "remote"
-        "#;
-        let resolver = CustomScriptResolver::new(script);
-        let conflict = create_conflict_info(50, 100);
-
-        let result = resolver.resolve(&conflict).await;
-        assert!(matches!(result, ConflictResolution::RemoteWins));
-    }
-
-    #[tokio::test]
-    async fn test_custom_script_returns_merged() {
-        let script = r#"
-            -- Merge local and remote, taking name from local and field from remote
-            local result = {}
-            if local_doc and local_doc.name then
-                result.name = local_doc.name
-            else
-                result.name = "unknown"
-            end
-            if remote_doc and remote_doc.field then
-                result.field = remote_doc.field
-            end
-            return result
-        "#;
-
-        // Create conflict with named fields
-        let mut local_vector = VersionVector::new();
-        local_vector.set_hlc(50, 0);
-        local_vector.increment("node-1");
-
-        let mut remote_vector = VersionVector::new();
-        remote_vector.set_hlc(100, 0);
-        remote_vector.increment("node-2");
-
-        let conflict = ConflictInfo {
-            document_key: "test-1".to_string(),
-            collection: "test".to_string(),
-            local_vector,
-            remote_vector,
-            local_data: Some(json!({"name": "Alice", "field": "local_value"})),
-            remote_data: Some(json!({"name": "Bob", "field": "remote_value"})),
-            detected_at: 0,
-        };
-
-        let resolver = CustomScriptResolver::new(script);
-        let result = resolver.resolve(&conflict).await;
-
-        match result {
-            ConflictResolution::Merged(merged) => {
-                assert_eq!(merged["name"], "Alice");
-                assert_eq!(merged["field"], "remote_value");
-            }
-            _ => panic!("Expected Merged resolution"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_custom_script_has_access_to_key() {
-        let script = r#"
-            -- Return remote if key starts with "important"
-            if string.sub(key, 1, 9) == "important" then
-                return "remote"
-            else
-                return "local"
-            end
-        "#;
-
-        let mut local_vector = VersionVector::new();
-        local_vector.set_hlc(50, 0);
-        local_vector.increment("node-1");
-
-        let mut remote_vector = VersionVector::new();
-        remote_vector.set_hlc(100, 0);
-        remote_vector.increment("node-2");
-
-        let conflict = ConflictInfo {
-            document_key: "important-doc-1".to_string(),
-            collection: "test".to_string(),
-            local_vector,
-            remote_vector,
-            local_data: Some(json!({"field": "local"})),
-            remote_data: Some(json!({"field": "remote"})),
-            detected_at: 0,
-        };
-
-        let resolver = CustomScriptResolver::new(script);
-        let result = resolver.resolve(&conflict).await;
-        assert!(matches!(result, ConflictResolution::RemoteWins));
-    }
-
-    #[tokio::test]
-    async fn test_custom_script_error_defaults_to_local() {
-        let script = r#"
-            -- Invalid Lua that will error
-            this_function_does_not_exist()
-        "#;
-        let resolver = CustomScriptResolver::new(script);
-        let conflict = create_conflict_info(50, 100);
-
-        // Should default to LocalWins on error
-        let result = resolver.resolve(&conflict).await;
-        assert!(matches!(result, ConflictResolution::LocalWins));
     }
 }

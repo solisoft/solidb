@@ -169,7 +169,7 @@ pub async fn broadcast_reshard_removed_shards(
                 "removed_shard_id": removed_shard_id
             });
 
-            let url = format!("http://{}/_api/cluster/reshard", addr);
+            let url = crate::cluster::http::peer_url(addr, "/_api/cluster/reshard");
 
             match tokio::time::timeout(
                 std::time::Duration::from_secs(30),
@@ -503,7 +503,10 @@ async fn create_shards(
                 // Remote Create
                 if let Some(mgr) = &cluster_manager {
                     if let Some(addr) = mgr.get_node_api_address(target_node) {
-                        let url = format!("http://{}/_api/database/{}/collection", addr, database);
+                        let url = crate::cluster::http::peer_url(
+                            &addr,
+                            &format!("/_api/database/{}/collection", database),
+                        );
                         tracing::info!(
                             "CREATE_SHARDS: Remote creating {} at {} (url={}) type={:?}",
                             phys_name,

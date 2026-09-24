@@ -599,75 +599,87 @@ pub async fn cluster_reshard(
         .get_shard_config()
         .ok_or_else(|| DbError::InternalError("Missing shard config".to_string()))?;
 
-    // Get all documents from the removed shard
-    let documents = physical_coll.all();
-    let total_docs = documents.len();
+    // Audit P8: page through the removed shard instead of loading it whole
+    // (and then copying it into a move list). Each page is upserted to its
+    // new shard and deleted from this one before the next page is read; the
+    // cursor is a key, so the deletes do not disturb the scan.
     tracing::info!(
         "RESHARD: Migrating {} documents from removed shard {}",
-        total_docs,
+        physical_coll.count(),
         physical_name
     );
 
-    // Collect all documents with their new shard destinations
-    let mut docs_to_move: Vec<(String, serde_json::Value)> = Vec::new();
+    const PAGE_SIZE: usize = 1000;
+    let mut migrated = 0;
+    let mut candidates = 0usize;
+    let mut cursor = crate::sharding::scan::ScanCursor::start();
 
-    for doc in documents {
-        let key = doc.key.clone();
-        let route_key = key.clone();
+    loop {
+        let (documents, next_cursor) =
+            crate::sharding::scan::scan_page_blocking(physical_coll.clone(), cursor, PAGE_SIZE)
+                .await
+                .map_err(DbError::InternalError)?;
 
-        // Route to new shard
-        let new_shard_id =
-            crate::sharding::router::ShardRouter::route(&route_key, request.new_shards);
+        let docs_to_move: Vec<(String, serde_json::Value)> = documents
+            .into_iter()
+            .filter(|doc| {
+                // Only move if going to a different shard (which it should,
+                // since this shard is being removed)
+                crate::sharding::router::ShardRouter::route(&doc.key, request.new_shards)
+                    != request.removed_shard_id
+            })
+            .map(|doc| {
+                let value = doc.to_value();
+                (doc.key, value)
+            })
+            .collect();
 
-        // Only move if going to a different shard (which it should, since this shard is being removed)
-        if new_shard_id != request.removed_shard_id {
-            docs_to_move.push((key, doc.to_value()));
+        if !docs_to_move.is_empty() {
+            let batch_len = docs_to_move.len();
+            candidates += batch_len;
+            // Use upsert via coordinator
+            match coordinator
+                .upsert_batch_to_shards(
+                    &request.database,
+                    &request.collection,
+                    &config,
+                    docs_to_move,
+                )
+                .await
+            {
+                Ok(successful_keys) => {
+                    if !successful_keys.is_empty() {
+                        // Moved: remove from the source so it is not duplicated.
+                        let _ = physical_coll.delete_batch(successful_keys.clone());
+                        migrated += successful_keys.len();
+                    }
+
+                    if successful_keys.len() < batch_len {
+                        tracing::warn!(
+                            "RESHARD: Batch partial success ({}/{}) - kept failed docs in source",
+                            successful_keys.len(),
+                            batch_len
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("RESHARD: Batch migration failed: {}", e);
+                }
+            }
+        }
+
+        match next_cursor {
+            Some(c) => cursor = c,
+            None => break,
         }
     }
 
-    if docs_to_move.is_empty() {
+    if candidates == 0 {
         return Ok(Json(serde_json::json!({
             "success": true,
             "message": "No documents to migrate",
             "migrated": 0
         })));
-    }
-
-    // Use upsert to insert into new shards (via coordinator)
-    let mut migrated = 0;
-    const BATCH_SIZE: usize = 1000;
-
-    for batch in docs_to_move.chunks(BATCH_SIZE) {
-        let batch_keyed: Vec<(String, serde_json::Value)> = batch.to_vec();
-
-        // Use upsert via coordinator
-        match coordinator
-            .upsert_batch_to_shards(&request.database, &request.collection, &config, batch_keyed)
-            .await
-        {
-            Ok(successful_keys) => {
-                if !successful_keys.is_empty() {
-                    // Cleanup successful keys from physical collection to avoid duplicates?
-                    // Or this is a migration?
-                    // If migration succeeded, we might delete from source if it was move?
-                    // The original code was `physical_coll.delete_batch(&successful_keys)`.
-                    // Now `delete_batch` takes Vec<String>.
-                    let _ = physical_coll.delete_batch(successful_keys.clone());
-                    migrated += successful_keys.len();
-                }
-
-                if successful_keys.len() < batch.len() {
-                    tracing::warn!(
-                        "RESHARD: Batch partial success ({}/{}) - kept failed docs in source",
-                        successful_keys.len(),
-                        batch.len()
-                    );
-                }
-            }
-            Err(e) => {
-                tracing::error!("RESHARD: Batch migration failed: {}", e);
-            }
-        }
     }
 
     tracing::info!(

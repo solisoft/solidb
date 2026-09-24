@@ -154,8 +154,11 @@ impl<'a> QueryExecutor<'a> {
         let opts = parse_expand_options(opts_val, "GRAPH_RAG")?;
 
         let seed_mode = opt_str(opts_val, "seed_mode", "GRAPH_RAG")?.unwrap_or("vector");
-        let seed_limit = opt_u64(opts_val, "seed_limit", "GRAPH_RAG")?.unwrap_or(10) as usize;
-        let ef = opt_u64(opts_val, "ef", "GRAPH_RAG")?.map(|v| v as usize);
+        // Both size allocations in the vector index (audit A2).
+        let seed_limit = opt_u64(opts_val, "seed_limit", "GRAPH_RAG")?
+            .unwrap_or(10)
+            .min(10_000) as usize;
+        let ef = opt_u64(opts_val, "ef", "GRAPH_RAG")?.map(|v| v.min(10_000) as usize);
 
         let coll = self.get_collection(seed_collection)?;
         let mut seeds: Vec<(String, f64)> = Vec::new();
@@ -348,7 +351,15 @@ impl<'a> QueryExecutor<'a> {
             // targets (mirrors the traversal clause's tolerant hydration).
             let doc = match hit.id.split_once('/') {
                 Some((coll, key)) => match self.get_collection(coll).and_then(|c| c.get(key)) {
-                    Ok(d) => d.to_value(),
+                    // A target hidden by its row policy is skipped like a
+                    // dangling one (audit H2).
+                    Ok(d) => {
+                        let v = d.to_value();
+                        if !self.row_policy_permits(coll, &v, &Default::default()) {
+                            continue;
+                        }
+                        v
+                    }
                     Err(_) => continue,
                 },
                 None => continue,

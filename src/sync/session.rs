@@ -10,8 +10,49 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+/// Upper bound on sessions a single principal may hold. Registering past it
+/// evicts that principal's least recently active session (audit M2): a
+/// client that re-registers on every launch keeps working, and nobody can
+/// grow the map on their own.
+pub const MAX_SESSIONS_PER_PRINCIPAL: usize = 64;
+/// Upper bound on sessions across every principal. Past it, registration is
+/// refused once expired sessions have been dropped.
+pub const MAX_TOTAL_SESSIONS: usize = 10_000;
+/// Upper bound on collections one session may subscribe to.
+pub const MAX_SUBSCRIPTIONS: usize = 128;
+/// Upper bound on the length of one subscription (collection name).
+pub const MAX_SUBSCRIPTION_LEN: usize = 256;
+/// Upper bound on a session's `filter_query`. It is evaluated against every
+/// pulled entry, so it has no reason to be large.
+pub const MAX_FILTER_QUERY_LEN: usize = 4096;
+/// Upper bound on a client-supplied device id.
+pub const MAX_DEVICE_ID_LEN: usize = 128;
+/// How often the background task drops expired sessions.
+const CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Validate a client-supplied device id: 1..=128 chars of `[A-Za-z0-9._-]`.
+///
+/// It is embedded in the session id and shown in logs, so it is kept to a
+/// charset that cannot confuse either.
+pub fn validate_device_id(device_id: &str) -> Result<(), String> {
+    if device_id.is_empty() || device_id.len() > MAX_DEVICE_ID_LEN {
+        return Err(format!(
+            "device_id must be 1 to {} characters",
+            MAX_DEVICE_ID_LEN
+        ));
+    }
+    if !device_id
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    {
+        return Err("device_id may contain only letters, digits, '-', '_' and '.'".to_string());
+    }
+    Ok(())
+}
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -249,7 +290,7 @@ impl SyncSession {
     /// Check if session has expired (no activity for too long)
     pub fn is_expired(&self, max_inactive_ms: u64) -> bool {
         let now = current_timestamp();
-        now - self.last_activity > max_inactive_ms
+        now.saturating_sub(self.last_activity) > max_inactive_ms
     }
 
     /// Convert to JSON value for storage
@@ -271,6 +312,8 @@ pub struct SyncSessionManager {
     device_index: Arc<RwLock<HashMap<String, Vec<String>>>>,
     /// Maximum inactive time before session expires (default: 7 days)
     max_inactive_ms: u64,
+    /// Set once the periodic cleanup task has been spawned.
+    cleanup_started: AtomicBool,
 }
 
 impl SyncSessionManager {
@@ -280,6 +323,7 @@ impl SyncSessionManager {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             device_index: Arc::new(RwLock::new(HashMap::new())),
             max_inactive_ms: 7 * 24 * 60 * 60 * 1000, // 7 days
+            cleanup_started: AtomicBool::new(false),
         }
     }
 
@@ -289,7 +333,116 @@ impl SyncSessionManager {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             device_index: Arc::new(RwLock::new(HashMap::new())),
             max_inactive_ms,
+            cleanup_started: AtomicBool::new(false),
         }
+    }
+
+    /// Spawn the task that periodically drops expired sessions (audit M2:
+    /// `cleanup_expired` used to have no caller, so sessions lived forever).
+    ///
+    /// Idempotent per manager. Holds only a `Weak`, so the task ends when the
+    /// manager is dropped. A no-op outside a Tokio runtime.
+    pub fn spawn_cleanup_task(self: &Arc<Self>) {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        if self
+            .cleanup_started
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+        let weak = Arc::downgrade(self);
+        handle.spawn(async move {
+            let mut tick = tokio::time::interval(CLEANUP_INTERVAL);
+            tick.tick().await; // the first tick fires immediately
+            loop {
+                tick.tick().await;
+                let Some(manager) = weak.upgrade() else {
+                    break;
+                };
+                let removed = manager.cleanup_expired().await;
+                if removed > 0 {
+                    tracing::debug!("sync sessions: dropped {} expired", removed);
+                }
+            }
+        });
+    }
+
+    /// Register a session under the per-principal and total caps.
+    ///
+    /// The principal is `session.user_id`. When it already holds
+    /// `max_per_owner` sessions, its least recently active ones are evicted.
+    /// When the map holds `max_total`, expired sessions are dropped first and
+    /// the registration is refused if that frees nothing.
+    pub async fn register_session_bounded(
+        &self,
+        session: SyncSession,
+        max_per_owner: usize,
+        max_total: usize,
+    ) -> Result<(), String> {
+        let session_id = session.session_id.clone();
+        let device_id = session.device_id.clone();
+        let mut evicted: Vec<SyncSession> = Vec::new();
+
+        let mut sessions = self.sessions.write().await;
+
+        if let Some(owner) = session.user_id.as_deref() {
+            let mut owned: Vec<(u64, String)> = sessions
+                .values()
+                .filter(|s| s.user_id.as_deref() == Some(owner))
+                .map(|s| (s.last_activity, s.session_id.clone()))
+                .collect();
+            if owned.len() >= max_per_owner {
+                owned.sort();
+                let excess = owned.len() + 1 - max_per_owner.max(1);
+                for (_, id) in owned.into_iter().take(excess) {
+                    if let Some(s) = sessions.remove(&id) {
+                        evicted.push(s);
+                    }
+                }
+            }
+        }
+
+        if sessions.len() >= max_total {
+            let expired: Vec<String> = sessions
+                .values()
+                .filter(|s| s.is_expired(self.max_inactive_ms))
+                .map(|s| s.session_id.clone())
+                .collect();
+            for id in expired {
+                if let Some(s) = sessions.remove(&id) {
+                    evicted.push(s);
+                }
+            }
+        }
+
+        let result = if sessions.len() >= max_total {
+            Err(format!(
+                "too many sync sessions on this server (limit {})",
+                max_total
+            ))
+        } else {
+            sessions.insert(session_id.clone(), session);
+            Ok(())
+        };
+        drop(sessions);
+
+        let mut index = self.device_index.write().await;
+        for s in &evicted {
+            if let Some(ids) = index.get_mut(&s.device_id) {
+                ids.retain(|id| id != &s.session_id);
+                if ids.is_empty() {
+                    index.remove(&s.device_id);
+                }
+            }
+        }
+        if result.is_ok() {
+            index.entry(device_id).or_default().push(session_id);
+        }
+
+        result
     }
 
     /// Register a new session
@@ -590,6 +743,57 @@ mod tests {
 
         let subscribers = manager.get_subscribers("users").await;
         assert_eq!(subscribers.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_bounded_registration_evicts_oldest_of_owner() {
+        let manager = SyncSessionManager::new();
+        for i in 0..3 {
+            let mut s = SyncSession::new(format!("sess-{}", i), "dev", "k");
+            s.user_id = Some("alice".to_string());
+            s.last_activity = i as u64 + 1;
+            manager.register_session_bounded(s, 3, 100).await.unwrap();
+        }
+        let mut s = SyncSession::new("sess-new", "dev", "k");
+        s.user_id = Some("alice".to_string());
+        manager.register_session_bounded(s, 3, 100).await.unwrap();
+
+        assert_eq!(manager.session_count().await, 3);
+        assert!(manager.get_session("sess-0").await.is_none());
+        assert!(manager.get_session("sess-new").await.is_some());
+        assert_eq!(manager.get_device_sessions("dev").await.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_bounded_registration_total_cap() {
+        let manager = SyncSessionManager::new();
+        for i in 0..2 {
+            let mut s = SyncSession::new(format!("sess-{}", i), "dev", "k");
+            s.user_id = Some(format!("user-{}", i));
+            manager.register_session_bounded(s, 10, 2).await.unwrap();
+        }
+        let mut s = SyncSession::new("sess-x", "dev", "k");
+        s.user_id = Some("mallory".to_string());
+        assert!(manager.register_session_bounded(s, 10, 2).await.is_err());
+        assert_eq!(manager.session_count().await, 2);
+
+        // An expired session makes room.
+        let manager = SyncSessionManager::with_expiration(1000);
+        let mut old = SyncSession::new("old", "dev", "k");
+        old.last_activity = 0;
+        manager.register_session(old).await;
+        let s = SyncSession::new("fresh", "dev", "k");
+        manager.register_session_bounded(s, 10, 1).await.unwrap();
+        assert!(manager.get_session("old").await.is_none());
+    }
+
+    #[test]
+    fn test_validate_device_id() {
+        assert!(validate_device_id("iphone-12_a.b").is_ok());
+        assert!(validate_device_id("").is_err());
+        assert!(validate_device_id(&"a".repeat(MAX_DEVICE_ID_LEN + 1)).is_err());
+        assert!(validate_device_id("node b").is_err());
+        assert!(validate_device_id("10.0.0.1:6745").is_err());
     }
 
     #[test]

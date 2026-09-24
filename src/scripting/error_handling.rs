@@ -116,53 +116,127 @@ pub fn create_check_permissions_function(lua: &Lua) -> LuaResult<Function> {
     )
 }
 
+/// In-memory sliding-window limiter behind `solidb.rate_limit`.
+///
+/// Keys are `(database, identifier)`: the map is process-wide, and a bare
+/// identifier let tenant A fill tenant B's `login:<ip>` buckets and lock B's
+/// users out (audit H6). Empty buckets are removed, and the map is capped
+/// (audit M6) — identifiers are often attacker-chosen (`X-Forwarded-For`),
+/// so without both it only ever grew.
+struct RateLimiter {
+    buckets: std::sync::Mutex<std::collections::HashMap<(String, String), Bucket>>,
+    max_keys: usize,
+}
+
+struct Bucket {
+    /// Request timestamps (seconds) inside the window, oldest first.
+    hits: std::collections::VecDeque<u64>,
+    /// The window this bucket was last checked with, for the sweep.
+    window: u64,
+}
+
+impl Bucket {
+    fn prune(&mut self, now: u64) {
+        let cutoff = now.saturating_sub(self.window);
+        while self.hits.front().is_some_and(|&t| t <= cutoff) {
+            self.hits.pop_front();
+        }
+    }
+
+    fn last_hit(&self) -> u64 {
+        self.hits.back().copied().unwrap_or(0)
+    }
+}
+
+impl RateLimiter {
+    fn new(max_keys: usize) -> Self {
+        Self {
+            buckets: std::sync::Mutex::new(std::collections::HashMap::new()),
+            max_keys: max_keys.max(1),
+        }
+    }
+
+    fn check_limit(
+        &self,
+        database: &str,
+        identifier: &str,
+        max_requests: u32,
+        window_seconds: u64,
+        now: u64,
+    ) -> bool {
+        let mut buckets = self.buckets.lock().unwrap_or_else(|e| e.into_inner());
+        let key = (database.to_string(), identifier.to_string());
+
+        if !buckets.contains_key(&key) && buckets.len() >= self.max_keys {
+            // Drop every bucket whose window has passed, then, if the map is
+            // still full, the least recently hit one. Evicting rather than
+            // refusing keeps a flood of fresh identifiers from denying
+            // everyone; resetting a victim's bucket that way costs the
+            // attacker `max_keys` newer requests.
+            buckets.retain(|_, b| {
+                b.prune(now);
+                !b.hits.is_empty()
+            });
+            if buckets.len() >= self.max_keys {
+                if let Some(oldest) = buckets
+                    .iter()
+                    .min_by_key(|(_, b)| b.last_hit())
+                    .map(|(k, _)| k.clone())
+                {
+                    buckets.remove(&oldest);
+                }
+            }
+        }
+
+        let bucket = buckets.entry(key.clone()).or_insert_with(|| Bucket {
+            hits: std::collections::VecDeque::new(),
+            window: window_seconds,
+        });
+        bucket.window = window_seconds;
+        bucket.prune(now);
+
+        let allowed = bucket.hits.len() < max_requests as usize;
+        if allowed {
+            bucket.hits.push_back(now);
+        }
+        if bucket.hits.is_empty() {
+            buckets.remove(&key);
+        }
+        allowed
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.buckets.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+}
+
+/// Buckets the limiter keeps at most (`SOLIDB_LUA_RATE_LIMIT_MAX_KEYS`,
+/// default 100,000).
+fn rate_limit_max_keys() -> usize {
+    std::env::var("SOLIDB_LUA_RATE_LIMIT_MAX_KEYS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(100_000)
+}
+
 /// Create solidb.rate_limit(identifier, max_requests, window_seconds) function
 pub fn create_rate_limit_function(lua: &Lua) -> LuaResult<Function> {
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::OnceLock;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    // Simple in-memory rate limiter
-    struct RateLimiter {
-        requests: Arc<Mutex<HashMap<String, Vec<u64>>>>,
-    }
-
-    impl RateLimiter {
-        fn new() -> Self {
-            Self {
-                requests: Arc::new(Mutex::new(HashMap::new())),
-            }
-        }
-
-        fn check_limit(&self, identifier: &str, max_requests: u32, window_seconds: u64) -> bool {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-
-            let mut requests = self.requests.lock().unwrap();
-            let user_requests = requests.entry(identifier.to_string()).or_default();
-
-            // Remove old requests outside the window
-            user_requests.retain(|&timestamp| timestamp > now - window_seconds);
-
-            // Check if under limit
-            if user_requests.len() < max_requests as usize {
-                user_requests.push(now);
-                true
-            } else {
-                false
-            }
-        }
-    }
-
-    use std::sync::OnceLock;
     static RATE_LIMITER: OnceLock<RateLimiter> = OnceLock::new();
-    let limiter = RATE_LIMITER.get_or_init(RateLimiter::new);
+    let limiter = RATE_LIMITER.get_or_init(|| RateLimiter::new(rate_limit_max_keys()));
 
     lua.create_function(
-        move |_, (identifier, max_requests, window_seconds): (String, u32, u64)| {
-            if limiter.check_limit(&identifier, max_requests, window_seconds) {
+        move |lua, (identifier, max_requests, window_seconds): (String, u32, u64)| {
+            let database = crate::scripting::types::script_db_name(lua)?;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            if limiter.check_limit(&database, &identifier, max_requests, window_seconds, now) {
                 Ok(true)
             } else {
                 Err(mlua::Error::RuntimeError(format!(
@@ -347,6 +421,36 @@ mod tests {
 
         let result: Result<bool, _> = assert_fn.call((true, "Should not fail".to_string()));
         assert!(result.unwrap());
+    }
+
+    #[test]
+    fn rate_limit_is_per_database() {
+        let limiter = RateLimiter::new(100);
+        assert!(limiter.check_limit("a", "login:1.2.3.4", 1, 60, 1000));
+        assert!(!limiter.check_limit("a", "login:1.2.3.4", 1, 60, 1001));
+        // The same identifier in another database has its own bucket.
+        assert!(limiter.check_limit("b", "login:1.2.3.4", 1, 60, 1001));
+    }
+
+    #[test]
+    fn rate_limit_evicts_and_caps() {
+        let limiter = RateLimiter::new(3);
+        for i in 0..10 {
+            assert!(limiter.check_limit("db", &format!("ip{}", i), 5, 10, 1000 + i));
+        }
+        assert!(limiter.len() <= 3, "map must stay under its cap");
+
+        // Expired buckets are dropped when the map is full.
+        let limiter = RateLimiter::new(2);
+        assert!(limiter.check_limit("db", "x", 1, 10, 100));
+        assert!(limiter.check_limit("db", "y", 1, 10, 100));
+        assert!(limiter.check_limit("db", "z", 1, 10, 200));
+        assert_eq!(limiter.len(), 1);
+
+        // A zero-quota check leaves no empty bucket behind.
+        let limiter = RateLimiter::new(10);
+        assert!(!limiter.check_limit("db", "never", 0, 10, 100));
+        assert_eq!(limiter.len(), 0);
     }
 
     #[test]

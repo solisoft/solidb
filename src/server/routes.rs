@@ -205,6 +205,8 @@ pub fn create_router(
 
     // Initialize sync session manager for offline-first client sync
     let sync_session_manager = Arc::new(crate::sync::SyncSessionManager::new());
+    // Audit M2: without this, expired sessions were never dropped.
+    sync_session_manager.spawn_cleanup_task();
 
     let lua_enabled = crate::scripting::lua_runtime_enabled();
 

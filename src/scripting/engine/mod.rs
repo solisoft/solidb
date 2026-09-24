@@ -12,7 +12,7 @@ use crate::storage::StorageEngine;
 use crate::stream::StreamManager;
 
 use super::conversion::lua_to_json_value;
-use super::types::{Script, ScriptContext, ScriptResult, ScriptStats};
+use super::types::{Script, ScriptContext, ScriptDbName, ScriptResult, ScriptStats};
 
 pub mod cache;
 pub mod globals;
@@ -52,7 +52,7 @@ pub fn lua_disabled_error() -> DbError {
 /// Abort a script that runs past its wall-clock deadline (default 30s,
 /// override with `SOLIDB_LUA_TIMEOUT_SECS`, 0 disables). Checked every 50k
 /// VM instructions, so a `while true do end` cannot pin a pooled state (and
-/// its OS thread) forever. The caller must `lua.remove_hook()` afterwards.
+/// its OS thread) forever. The caller must call `remove_deadline_hook` afterwards.
 /// Stop a long-lived script that has stopped yielding.
 ///
 /// WebSocket service scripts live as long as the connection and spend most
@@ -146,28 +146,77 @@ pub(crate) fn lua_error_to_db_error(e: mlua::Error) -> DbError {
     db_error_in(&e).unwrap_or_else(|| DbError::InternalError(format!("Lua error: {}", e)))
 }
 
-fn install_deadline_hook(lua: &Lua) {
-    let timeout = script_timeout_secs();
-    if timeout == 0 {
-        return;
+/// The script wall-clock budget, or `None` when `SOLIDB_LUA_TIMEOUT_SECS=0`
+/// disables it.
+pub(crate) fn script_timeout() -> Option<std::time::Duration> {
+    match script_timeout_secs() {
+        0 => None,
+        secs => Some(std::time::Duration::from_secs(secs)),
     }
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout);
-    let _ = lua.set_hook(
-        mlua::HookTriggers::new().every_nth_instruction(50_000),
-        move |_lua, _debug| {
-            if std::time::Instant::now() > deadline {
+}
+
+fn install_deadline_hook(lua: &Lua) {
+    if let Some(limit) = script_timeout() {
+        install_deadline_hook_for(lua, limit);
+    }
+}
+
+/// Abort the script once `limit` of wall-clock time has passed. Checked
+/// every 50k VM instructions; time spent awaiting a host call is bounded
+/// separately by the caller (see [`eval_with_deadline`]).
+pub(crate) fn install_deadline_hook_for(lua: &Lua, limit: std::time::Duration) {
+    let deadline = std::time::Instant::now() + limit;
+    let hook = move |_lua: &Lua, _debug: &mlua::Debug| {
+        if std::time::Instant::now() > deadline {
+            Err(mlua::Error::RuntimeError(format!(
+                "script exceeded execution time limit ({}ms)",
+                limit.as_millis()
+            )))
+        } else {
+            Ok(mlua::VmState::Continue)
+        }
+    };
+    let triggers = mlua::HookTriggers::new().every_nth_instruction(50_000);
+    // `set_hook` covers only the main thread. `eval_async` runs the chunk in
+    // a new coroutine thread, which takes the *global* hook, so without the
+    // second call `while true do end` never hits the deadline there.
+    let _ = lua.set_hook(triggers, hook);
+    let _ = lua.set_global_hook(triggers, hook);
+}
+
+/// Undo [`install_deadline_hook_for`].
+pub(crate) fn remove_deadline_hook(lua: &Lua) {
+    lua.remove_hook();
+    lua.remove_global_hook();
+}
+
+/// Evaluate `chunk` asynchronously, giving up after `limit`.
+///
+/// The instruction hook cannot fire while the script is parked in an async
+/// binding (`time.sleep`, `fetch`, `solidb.timeout`), so the await itself is
+/// bounded too.
+pub(crate) async fn eval_with_deadline(
+    chunk: mlua::Chunk<'_>,
+    limit: Option<std::time::Duration>,
+) -> mlua::Result<LuaValue> {
+    match limit {
+        Some(limit) => tokio::time::timeout(limit, chunk.eval_async::<LuaValue>())
+            .await
+            .unwrap_or_else(|_| {
                 Err(mlua::Error::RuntimeError(format!(
-                    "script exceeded execution time limit ({}s)",
-                    timeout
+                    "script exceeded execution time limit ({}ms)",
+                    limit.as_millis()
                 )))
-            } else {
-                Ok(mlua::VmState::Continue)
-            }
-        },
-    );
+            }),
+        None => chunk.eval_async::<LuaValue>().await,
+    }
 }
 
 /// Lua scripting engine
+///
+/// Cheap to clone: every field is shared. The pooled path moves a clone
+/// onto a blocking thread (audit A5).
+#[derive(Clone)]
 pub struct ScriptEngine {
     pub(crate) storage: Arc<StorageEngine>,
     pub(crate) queue_notifier: Option<broadcast::Sender<()>>,
@@ -298,16 +347,66 @@ impl ScriptEngine {
             globals::ScriptNeeds::analyze(&script.code)
         };
 
-        // SINGLE lock acquisition for entire operation
-        pool_guard.with_lua(|lua| {
-            // Set up only the globals this script actually uses
-            if needs.any() {
-                // Check if static globals are already initialized (two-tier optimization)
-                let has_static_globals = lua
-                    .globals()
-                    .get::<bool>("__solidb_static_initialized")
-                    .unwrap_or(false);
+        // Run on the blocking pool, not on a tokio worker (audit A5). The
+        // pool used to be sized to the worker count, so as many slow scripts
+        // — anonymous ones included — pinned every runtime worker for up to
+        // the script timeout. On a blocking thread the script is driven by
+        // `Handle::block_on(eval_async)`, which also makes the async
+        // bindings (`fetch`, `crypto.hash_password`, `time.sleep`,
+        // `solidb.timeout`/`retry`/`try`) work here: under the previous
+        // synchronous `eval` they could not yield.
+        let engine = self.clone();
+        let script = script.clone();
+        let db_name = db_name.to_string();
+        let context = context.clone();
+        let handle = tokio::runtime::Handle::current();
+        let task = tokio::task::spawn_blocking(move || {
+            pool_guard.with_lua(|lua| {
+                engine.run_pooled(&handle, lua, &script, &db_name, &context, &needs)
+            })
+        });
+        match task.await {
+            Ok(result) => result,
+            Err(e) => Err(DbError::InternalError(format!(
+                "Script execution task failed: {}",
+                e
+            ))),
+        }
+    }
 
+    /// The body of [`Self::execute_with_pool`], on a blocking thread with
+    /// the pooled state locked.
+    fn run_pooled(
+        &self,
+        handle: &tokio::runtime::Handle,
+        lua: &Lua,
+        script: &Script,
+        db_name: &str,
+        context: &ScriptContext,
+        needs: &globals::ScriptNeeds,
+    ) -> Result<ScriptResult, DbError> {
+        // Identity, database and response overrides are installed for every
+        // request, not only when the globals analysis found something to set
+        // up: a script it misjudged must run as its own caller, never as the
+        // previous one on this state (audit C3). Reset also removes them.
+        lua.set_app_data(globals::LuaCaller {
+            actor: context.write_actor(),
+            principal: context.query_principal(),
+        });
+        lua.set_app_data(ScriptDbName(db_name.to_string()));
+        crate::scripting::response::reset_overrides(lua);
+
+        // Set up only the globals this script actually uses
+        if needs.any() {
+            // Check if static globals are already initialized (two-tier optimization)
+            let has_static_globals = lua
+                .globals()
+                .get::<bool>("__solidb_static_initialized")
+                .unwrap_or(false);
+
+            // The per-request `solidb.*` fields are written into the
+            // read-only shared tables; only engine code runs in here.
+            pool::with_shared_tables_unlocked(lua, || {
                 if has_static_globals {
                     // Fast path: only set up per-request globals the script needs
                     globals::setup_request_globals_selective(
@@ -316,51 +415,44 @@ impl ScriptEngine {
                         db_name,
                         context,
                         Some((&script.key, &script.name)),
-                        Some(&needs),
-                    )?;
+                        Some(needs),
+                    )
                 } else {
                     // Fallback: set up all globals (for states without static initialization)
-                    self.setup_lua_globals(
-                        lua,
-                        db_name,
-                        context,
-                        Some((&script.key, &script.name)),
-                    )?;
+                    self.setup_lua_globals(lua, db_name, context, Some((&script.key, &script.name)))
                 }
-            }
+            })?;
+        }
 
-            // 2. Get or compile bytecode
-            let bytecode = if let Some(ref cache) = self.script_cache {
-                cache
-                    .get_or_compile(&script.key, &script.code, |code| {
-                        let chunk = lua.load(code);
-                        let func = chunk.into_function()?;
-                        Ok(func.dump(false))
-                    })
-                    .map_err(|e| {
-                        DbError::InternalError(format!("Bytecode compilation error: {}", e))
-                    })?
-            } else {
-                // No cache - compile directly
-                let chunk = lua.load(&script.code);
-                let func = chunk.into_function().map_err(|e| {
-                    DbError::InternalError(format!("Script compilation error: {}", e))
-                })?;
-                func.dump(false)
-            };
+        // 2. Get or compile bytecode
+        let bytecode = if let Some(ref cache) = self.script_cache {
+            cache
+                .get_or_compile(&script.key, &script.code, |code| {
+                    let chunk = lua.load(code);
+                    let func = chunk.into_function()?;
+                    Ok(func.dump(false))
+                })
+                .map_err(|e| DbError::InternalError(format!("Bytecode compilation error: {}", e)))?
+        } else {
+            // No cache - compile directly
+            let chunk = lua.load(&script.code);
+            let func = chunk
+                .into_function()
+                .map_err(|e| DbError::InternalError(format!("Script compilation error: {}", e)))?;
+            func.dump(false)
+        };
 
-            // 3. Execute the bytecode under a wall-clock deadline: an
-            // infinite loop in a script would otherwise pin a pooled state
-            // (and its OS thread) forever.
-            install_deadline_hook(lua);
-            let chunk = lua.load(&bytecode[..]);
-            let lua_result = chunk.eval::<LuaValue>();
-            lua.remove_hook();
-            let lua_result = lua_result.map_err(lua_error_to_db_error)?;
+        // 3. Execute the bytecode under a wall-clock deadline: an
+        // infinite loop in a script would otherwise pin a pooled state
+        // (and its OS thread) forever.
+        install_deadline_hook(lua);
+        let chunk = lua.load(&bytecode[..]);
+        let lua_result = handle.block_on(eval_with_deadline(chunk, script_timeout()));
+        remove_deadline_hook(lua);
+        let lua_result = lua_result.map_err(lua_error_to_db_error)?;
 
-            // 4. Turn the return value into the response
-            self.finish_result(lua, db_name, lua_result)
-        })
+        // 4. Turn the return value into the response
+        self.finish_result(lua, db_name, lua_result)
     }
 
     /// Execute without pooling (original behavior, used as fallback)
@@ -406,8 +498,8 @@ impl ScriptEngine {
         // Execute the script under the same deadline as the pooled path
         install_deadline_hook(&lua);
         let chunk = lua.load(&script.code);
-        let eval_result = chunk.eval_async::<LuaValue>().await;
-        lua.remove_hook();
+        let eval_result = eval_with_deadline(chunk, script_timeout()).await;
+        remove_deadline_hook(&lua);
 
         match eval_result {
             Ok(result) => self.finish_result(&lua, db_name, result),
@@ -430,6 +522,7 @@ impl ScriptEngine {
     }
 
     /// Execute Lua code in REPL mode with variable persistence
+    #[allow(clippy::too_many_arguments)]
     pub async fn execute_repl(
         &self,
         code: &str,
@@ -438,6 +531,7 @@ impl ScriptEngine {
         variables: &HashMap<String, JsonValue>,
         history: &[String],
         output_capture: &mut Vec<String>,
+        timeout_ms: u64,
     ) -> Result<(JsonValue, HashMap<String, JsonValue>), DbError> {
         if !lua_runtime_enabled() {
             return Err(lua_disabled_error());
@@ -450,6 +544,7 @@ impl ScriptEngine {
             variables,
             history,
             output_capture,
+            timeout_ms,
         )
         .await
     }
@@ -550,6 +645,10 @@ impl ScriptEngine {
         context: &ScriptContext,
         script_info: Option<(&str, &str)>,
     ) -> Result<(), DbError> {
+        // Every path that builds a script environment goes through here, so
+        // this is where the database namespace for cache / rate-limit /
+        // channel keys is installed (audit H6).
+        lua.set_app_data(ScriptDbName(db_name.to_string()));
         globals::setup_lua_globals(self, lua, db_name, context, script_info)
     }
 

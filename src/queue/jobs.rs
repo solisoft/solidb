@@ -158,12 +158,67 @@ fn default_webhook_secret() -> Option<String> {
         .or_else(|| std::env::var("SOLI_JOBS_SECRET").ok())
 }
 
+/// Default for `SOLIDB_JOBS_RETENTION_SECS`: how long completed and failed
+/// trigger jobs are kept before the sweep deletes them.
+const DEFAULT_JOBS_RETENTION_SECS: u64 = 7 * 24 * 3600;
+
+/// Floor for the `running` lease. The real default is twice the Lua timeout
+/// when that is longer.
+const MIN_JOBS_LEASE_SECS: u64 = 600;
+
+/// Rows one sweep pass deletes or requeues per database, so a large backlog
+/// is worked off over several passes instead of in one long stall.
+const SWEEP_BATCH: usize = 1000;
+
+fn env_u64(name: &str) -> Option<u64> {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+}
+
+/// `SOLIDB_JOBS_RETENTION_SECS` (default 7 days). `0` keeps terminal jobs
+/// forever, which is the old behaviour.
+pub(crate) fn jobs_retention_secs() -> u64 {
+    env_u64("SOLIDB_JOBS_RETENTION_SECS").unwrap_or(DEFAULT_JOBS_RETENTION_SECS)
+}
+
+/// `SOLIDB_JOBS_LEASE_SECS`: how long a job may sit in `running` before it is
+/// presumed orphaned by a crashed worker. Defaults to the larger of 10 minutes
+/// and twice `SOLIDB_LUA_TIMEOUT_SECS`, and never goes below 60 s.
+pub(crate) fn jobs_lease_secs() -> u64 {
+    let lua_timeout = env_u64("SOLIDB_LUA_TIMEOUT_SECS").unwrap_or(30);
+    let default = MIN_JOBS_LEASE_SECS.max(lua_timeout.saturating_mul(2));
+    env_u64("SOLIDB_JOBS_LEASE_SECS").unwrap_or(default).max(60)
+}
+
+/// Removes a job from the worker's in-flight set when its task ends, however
+/// it ends.
+struct InFlightGuard {
+    set: Arc<std::sync::Mutex<std::collections::HashSet<(String, String)>>>,
+    key: (String, String),
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        if let Ok(mut set) = self.set.lock() {
+            set.remove(&self.key);
+        }
+    }
+}
+
 impl QueueWorker {
     pub async fn check_jobs(&self) {
         let _lock = match self.claiming_lock.try_lock() {
             Ok(lock) => lock,
             Err(_) => return, // Already checking
         };
+
+        // Audit P9: claim no more than there are execution permits for. A
+        // backlog used to spawn CLAIM_BATCH tasks per database per wake-up
+        // with nothing bounding the total, each with its own Lua VM.
+        if self.job_permits.available_permits() == 0 {
+            return;
+        }
 
         let databases = self.storage.list_databases();
         let now = std::time::SystemTime::now()
@@ -174,6 +229,11 @@ impl QueueWorker {
         tracing::debug!("Checking for pending jobs at timestamp {}", now);
 
         for db_name in databases {
+            let free = self.job_permits.available_permits();
+            if free == 0 {
+                break;
+            }
+
             let db = match self.storage.get_database(&db_name) {
                 Ok(db) => db,
                 Err(_) => continue,
@@ -191,7 +251,8 @@ impl QueueWorker {
             // configurable through the client-facing queue API, which is gone.
             let query_str = format!(
                 "FOR j IN _jobs FILTER j.status == 'pending' AND j.run_at <= {} SORT j.priority DESC LIMIT {} RETURN j",
-                now, CLAIM_BATCH
+                now,
+                CLAIM_BATCH.min(free)
             );
 
             tracing::debug!("Query for db {}: {}", db_name, query_str);
@@ -233,6 +294,13 @@ impl QueueWorker {
                     }
                 };
 
+                // Take the permit before claiming, so a claimed job always
+                // has somewhere to run.
+                let permit = match self.job_permits.clone().try_acquire_owned() {
+                    Ok(p) => p,
+                    Err(_) => break,
+                };
+
                 // Claim job (CAS on revision — losing a race just skips it)
                 let rev = job.revision.clone().unwrap_or_default();
                 job.status = JobStatus::Running;
@@ -248,6 +316,15 @@ impl QueueWorker {
                 }
                 tracing::info!("Claimed job {} in db {}", job.id, db_name);
 
+                let in_flight_key = (db_name.clone(), job.id.clone());
+                if let Ok(mut set) = self.in_flight.lock() {
+                    set.insert(in_flight_key.clone());
+                }
+                let in_flight_guard = InFlightGuard {
+                    set: self.in_flight.clone(),
+                    key: in_flight_key,
+                };
+
                 // Execute
                 let worker_storage = self.storage.clone();
                 let worker_engine = self.script_engine.clone();
@@ -258,6 +335,8 @@ impl QueueWorker {
                 let db_name_task = db_name.clone();
 
                 tokio::spawn(async move {
+                    let _permit = permit;
+                    let _in_flight = in_flight_guard;
                     let mut job_to_update = job;
                     match Self::execute_job(
                         &worker_storage,
@@ -328,6 +407,138 @@ impl QueueWorker {
                     // of after the poll.
                     let _ = worker_notifier.send(());
                 });
+            }
+        }
+    }
+
+    /// Retention and lease recovery for `_jobs`, with the configured
+    /// `SOLIDB_JOBS_RETENTION_SECS` and `SOLIDB_JOBS_LEASE_SECS`.
+    pub async fn sweep_jobs(&self) {
+        self.sweep_jobs_with(jobs_retention_secs(), jobs_lease_secs())
+            .await;
+    }
+
+    /// Audit M5. Two passes per database over the trigger-dispatch rows only
+    /// (those with a `status` field — Soli framework rows use `state` and are
+    /// never touched):
+    ///
+    /// * delete `completed` / `failed` jobs whose `completed_at` is older than
+    ///   `retention_secs` (skipped when it is 0). Pending jobs are never
+    ///   deleted.
+    /// * requeue `running` jobs whose `started_at` is older than `lease_secs`
+    ///   and which this process is not executing — a crash between claim and
+    ///   completion used to leave them `running` for good. Each recovery
+    ///   counts as an attempt, so a job that kills its worker every time ends
+    ///   up `failed` instead of looping.
+    pub async fn sweep_jobs_with(&self, retention_secs: u64, lease_secs: u64) {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        for db_name in self.storage.list_databases() {
+            let Ok(db) = self.storage.get_database(&db_name) else {
+                continue;
+            };
+            let Ok(jobs_coll) = db.get_collection("_jobs") else {
+                continue;
+            };
+            Self::ensure_status_index(&jobs_coll);
+
+            if retention_secs > 0 {
+                let cutoff = now_ms.saturating_sub(retention_secs.saturating_mul(1000));
+                let q = format!(
+                    "FOR j IN _jobs FILTER (j.status == 'completed' OR j.status == 'failed') \
+                     AND j.completed_at != null AND j.completed_at < {} LIMIT {} RETURN j._key",
+                    cutoff, SWEEP_BATCH
+                );
+                let mut removed = 0usize;
+                for key in self.sweep_query(&db_name, &q) {
+                    if let Some(key) = key.as_str() {
+                        if jobs_coll.delete(key).is_ok() {
+                            removed += 1;
+                        }
+                    }
+                }
+                if removed > 0 {
+                    tracing::info!(
+                        "Job sweep: removed {} finished job(s) from {}/_jobs",
+                        removed,
+                        db_name
+                    );
+                }
+            }
+
+            let lease_cutoff = now_ms.saturating_sub(lease_secs.saturating_mul(1000));
+            let q = format!(
+                "FOR j IN _jobs FILTER j.status == 'running' AND j.started_at != null \
+                 AND j.started_at < {} LIMIT {} RETURN j",
+                lease_cutoff, SWEEP_BATCH
+            );
+            let mut requeued = 0usize;
+            for job_val in self.sweep_query(&db_name, &q) {
+                let Ok(mut job) = serde_json::from_value::<Job>(job_val) else {
+                    continue;
+                };
+                let running_here = self
+                    .in_flight
+                    .lock()
+                    .map(|set| set.contains(&(db_name.clone(), job.id.clone())))
+                    .unwrap_or(true);
+                if running_here {
+                    continue;
+                }
+                let rev = job.revision.clone().unwrap_or_default();
+                job.retry_count = job.retry_count.saturating_add(1);
+                job.last_error = Some(format!(
+                    "lease expired: job was still running after {}s (worker lost)",
+                    lease_secs
+                ));
+                job.started_at = None;
+                if job.retry_count < job.max_retries.max(0) as u32 {
+                    job.status = JobStatus::Pending;
+                    job.run_at = now_ms / 1000;
+                } else {
+                    job.status = JobStatus::Failed;
+                    job.completed_at = Some(now_ms);
+                }
+                let Ok(mut doc) = serde_json::to_value(&job) else {
+                    continue;
+                };
+                // `started_at` is skipped when None, and `update_with_rev`
+                // merges: without an explicit null the old lease start stays.
+                doc["started_at"] = serde_json::Value::Null;
+                // CAS: a worker that finishes the job concurrently wins.
+                if jobs_coll.update_with_rev(&job.id, &rev, doc).is_ok() {
+                    requeued += 1;
+                }
+            }
+            if requeued > 0 {
+                tracing::warn!(
+                    "Job sweep: recovered {} orphaned running job(s) in {}/_jobs",
+                    requeued,
+                    db_name
+                );
+                let _ = self.notifier.send(());
+            }
+        }
+    }
+
+    fn sweep_query(&self, db_name: &str, query: &str) -> Vec<serde_json::Value> {
+        let ast = match crate::sdbql::parse(query) {
+            Ok(q) => q,
+            Err(e) => {
+                tracing::error!("Job sweep: failed to parse query: {}", e);
+                return Vec::new();
+            }
+        };
+        let executor =
+            crate::sdbql::QueryExecutor::with_database(&self.storage, db_name.to_string());
+        match executor.execute(&ast) {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::warn!("Job sweep query failed in db {}: {}", db_name, e);
+                Vec::new()
             }
         }
     }

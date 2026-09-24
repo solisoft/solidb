@@ -109,6 +109,12 @@ pub(crate) fn is_long_running_query(query: &Query) -> bool {
 /// Functions that scan a collection, call out over the network, or run a
 /// model — none of which belong on an async worker thread.
 const HEAVY_FUNCTIONS: &[&str] = &[
+    "SAMPLE",
+    "LEVENSHTEIN",
+    "FUZZY_MATCH",
+    "HYBRID_SEARCH",
+    "SEARCH_INDEX",
+    "SNAPSHOT_DIFF",
     "EMBED",
     "EMBED_BATCH",
     "RERANK",
@@ -169,30 +175,16 @@ pub(crate) fn invalidate_collections(collections: &[String]) {
     }
 }
 
-pub(crate) fn mutated_collections(query: &Query) -> std::collections::HashSet<&str> {
-    let mut collections: std::collections::HashSet<&str> = query
-        .body_clauses
-        .iter()
-        .filter_map(|clause| match clause {
-            BodyClause::Insert(c) => Some(c.collection.as_str()),
-            BodyClause::Update(c) => Some(c.collection.as_str()),
-            BodyClause::Remove(c) => Some(c.collection.as_str()),
-            BodyClause::Upsert(c) => Some(c.collection.as_str()),
-            _ => None,
-        })
-        .collect();
-
-    // Set-operation operands and CTE bodies can carry their own mutations
-    for operand in query.set_operations.iter().map(|op| op.query.as_ref()) {
-        collections.extend(mutated_collections(operand));
+pub(crate) fn mutated_collections(query: &Query) -> std::collections::HashSet<String> {
+    // Every collection the query names, from the same AST walk the cache is
+    // keyed on (audit P2). That is a superset of the written ones, and it sees
+    // a mutation inside a subquery or CTE that a clause-only scan missed.
+    // Empty — which makes `invalidate_collections` drop everything — when the
+    // set cannot be determined.
+    match query_cache::cacheable_collections(query) {
+        Some(refs) => refs.required.into_iter().chain(refs.maybe).collect(),
+        None => std::collections::HashSet::new(),
     }
-    if let Some(with) = &query.with_clause {
-        for cte in &with.ctes {
-            collections.extend(mutated_collections(&cte.query));
-        }
-    }
-
-    collections
 }
 
 /// Log slow query to _slow_queries collection (async, non-blocking)
@@ -303,6 +295,17 @@ pub fn write_actor_from_claims(
     }
 }
 
+/// Whether this request is a coordinator's scatter-gather sub-query, which
+/// must run locally instead of fanning out again.
+///
+/// Audit C1: the header alone used to be honoured, so any client could send
+/// `X-Scatter-Gather` and read only the local shard of a sharded collection
+/// (skipping the coordinator's routing). Only the cluster-internal principal,
+/// which `auth_middleware` grants after verifying the cluster secret, may.
+fn is_scatter_gather_subquery(headers: &HeaderMap, claims: &crate::server::auth::Claims) -> bool {
+    headers.contains_key("X-Scatter-Gather") && crate::server::auth::is_cluster_internal(claims)
+}
+
 pub fn principal_from_claims(claims: &crate::server::auth::Claims) -> crate::sdbql::QueryPrincipal {
     crate::sdbql::QueryPrincipal::from_roles(
         claims.sub.clone(),
@@ -371,6 +374,7 @@ pub async fn execute_query(
             } else {
                 QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
             }
+            .with_principal(principal_from_claims(&claims))
             .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
 
             let results = executor.execute(query)?;
@@ -607,13 +611,21 @@ pub async fn execute_query(
     let is_read_only = !query.has_mutations();
 
     // Try to get cached result for read-only queries (unless cache is disabled).
-    // Include db_name so queries on different databases don't share cache entries.
+    // The key covers the database and the caller (audit H1: row policies and
+    // CURRENT_USER make rows principal-dependent), and is `None` when the
+    // query's collection set cannot be read off the AST (audit P2).
+    // The generation is snapshotted first so a write landing mid-query
+    // prevents the stale rows from being stored.
+    let cache_generation = query_cache::current_generation();
     let cache_key = if is_read_only && req.cache {
-        Some(query_cache::hash_query(
+        query_cache::cache_key_for(
+            &state.storage,
             &db_name,
             &req.query,
+            query,
             &req.bind_vars,
-        ))
+            &principal_from_claims(&claims),
+        )
     } else {
         None
     };
@@ -646,7 +658,11 @@ pub async fn execute_query(
     // Handle CREATE STREAM clause
     if let Some(ref _create_stream) = query.create_stream_clause {
         if let Some(manager) = &state.stream_manager {
-            match manager.create_stream(&db_name, (*query).clone()) {
+            match manager.create_stream_as(
+                &db_name,
+                (*query).clone(),
+                principal_from_claims(&claims),
+            ) {
                 Ok(_name) => {
                     return Ok(ApiResponse::new(
                         ExecuteQueryResponse {
@@ -691,17 +707,14 @@ pub async fn execute_query(
         let bind_vars = req.bind_vars.clone();
         let replication_log = state.replication_log.clone();
         let shard_coordinator = state.shard_coordinator.clone();
-        let is_scatter_gather = headers.contains_key("X-Scatter-Gather");
+        let is_scatter_gather = is_scatter_gather_subquery(&headers, &claims);
         let query = (*query).clone();
         let principal = principal_from_claims(&claims);
 
         // Collections this query invalidates, resolved before the executor
         // moves out of reach, so the timeout arm below can still drop them.
         let invalidated: Vec<String> = if mutates {
-            mutated_collections(&query)
-                .into_iter()
-                .map(|c| c.to_string())
-                .collect()
+            mutated_collections(&query).into_iter().collect()
         } else {
             Vec::new()
         };
@@ -777,7 +790,7 @@ pub async fn execute_query(
         }
 
         // Inject shard coordinator for scatter-gather (if not already a sub-query)
-        if !headers.contains_key("X-Scatter-Gather") {
+        if !is_scatter_gather_subquery(&headers, &claims) {
             if let Some(coordinator) = state.shard_coordinator.clone() {
                 executor = executor.with_shard_coordinator(coordinator);
             }
@@ -805,16 +818,13 @@ pub async fn execute_query(
     if let Some(key) = cache_key {
         if query_result.results.len() <= query_cache::MAX_CACHED_ROWS {
             let result_clone: Vec<serde_json::Value> = query_result.results.clone();
-            query_cache::get_query_cache().put(key, result_clone);
+            query_cache::get_query_cache().put_if_current(key, result_clone, cache_generation);
         }
     }
 
     // Invalidate query cache when mutations occurred
     if mutations.has_mutations() {
-        let collections: Vec<String> = mutated_collections(query)
-            .into_iter()
-            .map(|c| c.to_string())
-            .collect();
+        let collections: Vec<String> = mutated_collections(query).into_iter().collect();
         invalidate_collections(&collections);
     }
 
@@ -868,7 +878,7 @@ pub async fn explain_query(
     let bind_vars = req.bind_vars.clone();
     let storage = state.storage.clone();
     let shard_coordinator = state.shard_coordinator.clone();
-    let is_scatter_gather = headers.contains_key("X-Scatter-Gather");
+    let is_scatter_gather = is_scatter_gather_subquery(&headers, &claims);
     // EXPLAIN reports whether *this* caller's run would auto-index, so it needs
     // the same principal the run would get.
     let principal = principal_from_claims(&claims);

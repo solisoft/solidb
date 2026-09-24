@@ -33,10 +33,14 @@ curl http://localhost:6745/_api/health
 # Generate keyfile for cluster authentication
 openssl rand -hex 32 > keyfile.txt
 
-# Update secret with keyfile
+# Create the secret: keyfile, a JWT secret shared by every pod (without it
+# each pod signs tokens with its own random secret), and the token Prometheus
+# presents on /metrics (without it, scrapes get 401)
 kubectl create secret generic solidb-secret \
   --namespace solidb \
   --from-file=keyfile=keyfile.txt \
+  --from-literal=jwt-secret="$(openssl rand -hex 32)" \
+  --from-literal=metrics-token="$(openssl rand -hex 32)" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Deploy cluster
@@ -93,6 +97,7 @@ curl http://localhost:6745/_api/health
 | Key | Default | Description |
 |-----|---------|-------------|
 | SOLIDB_PORT | 6745 | HTTP server port |
+| SOLIDB_HOST | 0.0.0.0 | Bind address. The server defaults to loopback, which probes and peers cannot reach |
 | SOLIDB_LOG_LEVEL | info | Log verbosity |
 | RUST_LOG | solidb=info | Rust logging filter |
 
@@ -101,6 +106,8 @@ curl http://localhost:6745/_api/health
 | Key | Description |
 |-----|-------------|
 | keyfile | Cluster authentication key (required for cluster mode) |
+| jwt-secret | `JWT_SECRET`, shared by every pod so tokens verify on any of them (required) |
+| metrics-token | `SOLIDB_METRICS_TOKEN`, the bearer token for `/metrics` (required) |
 | admin-password | Optional admin password override |
 
 ## Scaling
@@ -121,6 +128,10 @@ prometheus.io/scrape: "true"
 prometheus.io/port: "6745"
 prometheus.io/path: "/metrics"
 ```
+
+`/metrics` requires the `metrics-token` from the secret, sent as
+`Authorization: Bearer <token>` (or `X-Metrics-Token`). Configure your scrape
+job with it; annotation-based discovery alone does not send credentials.
 
 ## Cleanup
 

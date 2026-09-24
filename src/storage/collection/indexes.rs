@@ -1,6 +1,6 @@
 use super::*;
 use crate::error::{DbError, DbResult};
-use crate::storage::index::{extract_field_value, generate_ngrams, tokenize};
+use crate::storage::index::{extract_field_value, tokenize};
 use crate::storage::serializer::deserialize_doc;
 use rust_rocksdb::{Direction, IteratorMode, WriteBatch};
 use serde_json::Value;
@@ -115,10 +115,11 @@ impl Collection {
 
     /// Get all index metadata
     pub fn get_all_indexes(&self) -> Vec<Index> {
+        // Empty when the column family is gone (dropped mid-operation): a
+        // background caller such as the TTL worker must not panic (audit P11).
         self.index_meta()
-            .expect("Column family should exist")
-            .indexes
-            .clone()
+            .map(|m| m.indexes.clone())
+            .unwrap_or_default()
     }
 
     /// Get an index by name
@@ -420,7 +421,9 @@ impl Collection {
                 }
             }
 
-            // Clear fulltext indexes
+            // Clear fulltext indexes. `ft:` n-gram entries are no longer
+            // written (audit P5: nothing read them); clearing them here drops
+            // what older versions left behind.
             for ft_index in &ft_indexes {
                 let ngram_prefix = format!("{}{}:", FT_PREFIX, ft_index.name);
                 let iter = db.prefix_iterator_cf(&cf, ngram_prefix.as_bytes());
@@ -558,14 +561,6 @@ impl Collection {
                                         batch.put_cf(&cf, term_key, doc.key.as_bytes());
                                         ft_count += 1;
                                     }
-                                }
-
-                                let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                                for ngram in &ngrams {
-                                    let ngram_key =
-                                        Self::ft_ngram_key(&ft_index.name, ngram, &doc.key);
-                                    batch.put_cf(&cf, ngram_key, doc.key.as_bytes());
-                                    ft_count += 1;
                                 }
 
                                 // Flush batch periodically (check after each field)
@@ -741,12 +736,6 @@ impl Collection {
                                     batch.put_cf(&cf, term_key, doc.key.as_bytes());
                                 }
                             }
-
-                            let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                            for ngram in &ngrams {
-                                let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, &doc.key);
-                                batch.put_cf(&cf, ngram_key, doc.key.as_bytes());
-                            }
                         }
                     }
                 }
@@ -787,56 +776,112 @@ impl Collection {
         })
     }
 
-    /// Check unique constraints before inserting/updating a document
+    /// Encode index field values the way `idx_entry_key` does: hex of the
+    /// order-preserving codec per value, joined with `_`. Neither hex nor `_`
+    /// contains `:`, so `idx:<name>:<encoded>:` is an exact value prefix.
+    pub(crate) fn encode_index_values(values: &[Value]) -> String {
+        values
+            .iter()
+            .map(|v| hex::encode(crate::storage::codec::encode_key(v)))
+            .collect::<Vec<_>>()
+            .join("_")
+    }
+
+    fn index_field_values(index: &Index, doc_value: &Value) -> Vec<Value> {
+        index
+            .fields
+            .iter()
+            .map(|f| extract_field_value(doc_value, f))
+            .collect()
+    }
+
+    /// One token per unique index the document has a (non-null) value for:
+    /// `<index>:<encoded values>`. Used to lock the value (audit D4) so the
+    /// uniqueness check and the write that claims the value are atomic, and
+    /// to catch duplicates inside a single batch.
+    pub(crate) fn unique_tokens(&self, doc_value: &Value) -> Vec<String> {
+        let Some(meta) = self.index_meta() else {
+            return Vec::new();
+        };
+        meta.indexes
+            .iter()
+            .filter(|i| i.unique)
+            .filter_map(|index| {
+                let values = Self::index_field_values(index, doc_value);
+                if values.iter().all(|v| v.is_null()) {
+                    None
+                } else {
+                    Some(format!(
+                        "{}:{}",
+                        index.name,
+                        Self::encode_index_values(&values)
+                    ))
+                }
+            })
+            .collect()
+    }
+
+    /// Check unique constraints before inserting/updating a document.
+    ///
+    /// Only atomic with the write when the caller holds the document's key
+    /// stripe and the stripes for `unique_tokens(doc_value)` (audit D4).
     pub(crate) fn check_unique_constraints(
         &self,
         doc_key: &str,
         doc_value: &Value,
     ) -> DbResult<()> {
-        let indexes = self.get_all_indexes();
+        let Some(meta) = self.index_meta() else {
+            return Ok(());
+        };
+        if !meta.indexes.iter().any(|i| i.unique) {
+            return Ok(());
+        }
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                self.name
+            ))
+        })?;
 
-        for index in indexes {
-            if index.unique {
-                // For compound indexes, extract all field values
-                let field_values: Vec<Value> = index
-                    .fields
-                    .iter()
-                    .map(|f| extract_field_value(doc_value, f))
-                    .collect();
+        for index in meta.indexes.iter().filter(|i| i.unique) {
+            let field_values = Self::index_field_values(index, doc_value);
 
-                // Skip if all values are null
-                if field_values.iter().all(|v| v.is_null()) {
-                    continue;
+            // Skip if all values are null
+            if field_values.iter().all(|v| v.is_null()) {
+                continue;
+            }
+
+            let value_part = Self::encode_index_values(&field_values);
+            // Key format: idx:<index_name>:<value_part>:<doc_key>
+            let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_part);
+
+            // Every entry under the value, not just the first: the first may be
+            // this document's own (or a stale) entry while a later one belongs
+            // to another document.
+            for item in db.prefix_iterator_cf(&cf, prefix.as_bytes()) {
+                let Ok((key, value)) = item else {
+                    break;
+                };
+                if !key.starts_with(prefix.as_bytes()) {
+                    break;
                 }
-
-                // Construct a prefix that matches the index entry key up to the values
-                // Uses custom key encoding
-                let encoded_values: Vec<String> = field_values
-                    .iter()
-                    .map(|v| hex::encode(crate::storage::codec::encode_key(v)))
-                    .collect();
-                let value_part = encoded_values.join("_");
-                // Key format: idx:<index_name>:<value_part>:<doc_key>
-                // We want to check if ANY doc_key exists for this (index_name, value_part) combo
-                let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_part);
-                let mut iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
-
-                // Check if any OTHER document already has this value
-                if let Some(Ok((key, value))) = iter.next() {
-                    if key.starts_with(prefix.as_bytes()) {
-                        let existing_key = String::from_utf8_lossy(&value); // Value in index is doc_key
-                                                                            // Allow update of the same document
-                        if existing_key != doc_key {
-                            return Err(DbError::InvalidDocument(format!(
-                                "Unique constraint violated: fields '{:?}' with value {:?} already exists in index '{}'",
-                                index.fields, field_values, index.name
-                            )));
-                        }
-                    }
+                let existing_key = String::from_utf8_lossy(&value); // Value in index is doc_key
+                if existing_key == doc_key {
+                    continue; // Allow update of the same document
+                }
+                // An entry whose document is gone or no longer holds the
+                // value is leftover garbage (from before D4 was fixed), not a
+                // conflict — it must not make the value unusable forever.
+                let holds_value = self.get(&existing_key).is_ok_and(|doc| {
+                    let values = Self::index_field_values(index, &doc.to_value());
+                    Self::encode_index_values(&values) == value_part
+                });
+                if holds_value {
+                    return Err(DbError::InvalidDocument(format!(
+                        "Unique constraint violated: fields '{:?}' with value {:?} already exists in index '{}'",
+                        index.fields, field_values, index.name
+                    )));
                 }
             }
         }

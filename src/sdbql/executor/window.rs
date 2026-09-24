@@ -211,6 +211,10 @@ use super::types::Context;
 use super::{compare_values, QueryExecutor};
 use crate::error::{DbError, DbResult};
 
+/// How often the per-row window loops consult the execution budget (same
+/// cadence as the row-building loops in `execution::clauses`).
+const WINDOW_BUDGET_INTERVAL: usize = 4096;
+
 impl<'a> QueryExecutor<'a> {
     pub(super) fn apply_window_functions(
         &self,
@@ -307,28 +311,38 @@ impl<'a> QueryExecutor<'a> {
         indices: &[usize],
         order_by: &[(Expression, bool)],
     ) -> DbResult<Vec<usize>> {
-        let mut sorted = indices.to_vec();
-
-        if !order_by.is_empty() {
-            sorted.sort_by(|&a, &b| {
-                for (expr, ascending) in order_by {
-                    let a_val = self
-                        .evaluate_expr_with_context(expr, &rows[a])
-                        .unwrap_or(Value::Null);
-                    let b_val = self
-                        .evaluate_expr_with_context(expr, &rows[b])
-                        .unwrap_or(Value::Null);
-
-                    let cmp = compare_values(&a_val, &b_val);
-                    if cmp != std::cmp::Ordering::Equal {
-                        return if *ascending { cmp } else { cmp.reverse() };
-                    }
-                }
-                std::cmp::Ordering::Equal
-            });
+        if order_by.is_empty() {
+            return Ok(indices.to_vec());
         }
 
-        Ok(sorted)
+        // Audit P4: evaluate each row's ORDER BY key once, not twice per
+        // comparison. `sort_by` is stable either way, so ties keep their order.
+        let mut keyed: Vec<(usize, Vec<Value>)> = Vec::with_capacity(indices.len());
+        for (n, &idx) in indices.iter().enumerate() {
+            if n % WINDOW_BUDGET_INTERVAL == 0 {
+                self.check_budget(rows.len())?;
+            }
+            let key = order_by
+                .iter()
+                .map(|(expr, _)| {
+                    self.evaluate_expr_with_context(expr, &rows[idx])
+                        .unwrap_or(Value::Null)
+                })
+                .collect();
+            keyed.push((idx, key));
+        }
+
+        keyed.sort_by(|(_, a), (_, b)| {
+            for ((a_val, b_val), (_, ascending)) in a.iter().zip(b).zip(order_by) {
+                let cmp = compare_values(a_val, b_val);
+                if cmp != std::cmp::Ordering::Equal {
+                    return if *ascending { cmp } else { cmp.reverse() };
+                }
+            }
+            std::cmp::Ordering::Equal
+        });
+
+        Ok(keyed.into_iter().map(|(idx, _)| idx).collect())
     }
     pub(super) fn compute_window_in_partition(
         &self,
@@ -488,58 +502,68 @@ impl<'a> QueryExecutor<'a> {
             }
 
             // Running aggregates (SUM, AVG, COUNT, MIN, MAX)
-            "SUM" | "AVG" | "COUNT" | "MIN" | "MAX" => {
-                // Default frame: UNBOUNDED PRECEDING to CURRENT ROW (running totals)
-                for (current_pos, _) in sorted_indices.iter().enumerate() {
-                    // Collect values from start of partition to current row
-                    let frame_values: Vec<Value> = (0..=current_pos)
-                        .map(|i| {
-                            let idx = sorted_indices[i];
-                            arguments
-                                .first()
-                                .and_then(|arg| {
-                                    self.evaluate_expr_with_context(arg, &rows[idx]).ok()
-                                })
-                                .unwrap_or(Value::Null)
-                        })
-                        .collect();
+            // Default frame: UNBOUNDED PRECEDING to CURRENT ROW (running totals).
+            //
+            // Audit P4: one pass with running accumulators. Re-reducing the
+            // whole frame for every row was O(n²) evaluations — ~5×10¹¹ for a
+            // cumulative SUM over 1M rows — and never looked at the deadline.
+            // Results match the old per-frame reduction: the same left fold for
+            // SUM/AVG, and `min_by`'s first-minimum / `max_by`'s last-maximum
+            // tie-breaking for MIN/MAX.
+            agg @ ("SUM" | "AVG" | "COUNT" | "MIN" | "MAX") => {
+                // Start where `Iterator::sum` over an empty frame starts.
+                let mut sum: f64 = std::iter::empty::<f64>().sum();
+                let mut numeric = 0usize;
+                let mut non_null = 0usize;
+                let mut extreme: Option<Value> = None;
 
-                    let result = match function.to_uppercase().as_str() {
-                        "SUM" => {
-                            let sum: f64 = frame_values.iter().filter_map(|v| v.as_f64()).sum();
-                            serde_json::Number::from_f64(sum)
-                                .map(Value::Number)
-                                .unwrap_or(Value::Null)
+                for (pos, &idx) in sorted_indices.iter().enumerate() {
+                    if pos % WINDOW_BUDGET_INTERVAL == 0 {
+                        self.check_budget(rows.len())?;
+                    }
+                    let value = arguments
+                        .first()
+                        .and_then(|arg| self.evaluate_expr_with_context(arg, &rows[idx]).ok())
+                        .unwrap_or(Value::Null);
+
+                    if let Some(n) = value.as_f64() {
+                        sum += n;
+                        numeric += 1;
+                    }
+                    if !value.is_null() {
+                        non_null += 1;
+                        let replace = match &extreme {
+                            None => true,
+                            Some(cur) => {
+                                let cmp = compare_values(&value, cur);
+                                match agg {
+                                    "MIN" => cmp == std::cmp::Ordering::Less,
+                                    "MAX" => cmp != std::cmp::Ordering::Less,
+                                    _ => false,
+                                }
+                            }
+                        };
+                        if replace && (agg == "MIN" || agg == "MAX") {
+                            extreme = Some(value);
                         }
+                    }
+
+                    let result = match agg {
+                        "SUM" => serde_json::Number::from_f64(sum)
+                            .map(Value::Number)
+                            .unwrap_or(Value::Null),
                         "AVG" => {
-                            let nums: Vec<f64> =
-                                frame_values.iter().filter_map(|v| v.as_f64()).collect();
-                            if nums.is_empty() {
+                            if numeric == 0 {
                                 Value::Null
                             } else {
-                                let avg = nums.iter().sum::<f64>() / nums.len() as f64;
-                                serde_json::Number::from_f64(avg)
+                                serde_json::Number::from_f64(sum / numeric as f64)
                                     .map(Value::Number)
                                     .unwrap_or(Value::Null)
                             }
                         }
-                        "COUNT" => {
-                            let count = frame_values.iter().filter(|v| !v.is_null()).count();
-                            Value::Number(count.into())
-                        }
-                        "MIN" => frame_values
-                            .into_iter()
-                            .filter(|v| !v.is_null())
-                            .min_by(compare_values)
-                            .unwrap_or(Value::Null),
-                        "MAX" => frame_values
-                            .into_iter()
-                            .filter(|v| !v.is_null())
-                            .max_by(compare_values)
-                            .unwrap_or(Value::Null),
-                        _ => Value::Null,
+                        "COUNT" => Value::Number(non_null.into()),
+                        _ => extreme.clone().unwrap_or(Value::Null),
                     };
-
                     results.push(result);
                 }
             }

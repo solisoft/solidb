@@ -98,8 +98,11 @@ pub async fn truncate_collection(
 
                     for (_node_id, addr) in &remote_nodes {
                         let url = format!(
-                            "http://{}/_api/database/{}/collection/{}/truncate",
-                            addr, db_name, physical_name
+                            "{}://{}/_api/database/{}/collection/{}/truncate",
+                            crate::cluster::http::cluster_scheme(),
+                            addr,
+                            db_name,
+                            physical_name
                         );
                         let mut req = client
                             .put(&url)

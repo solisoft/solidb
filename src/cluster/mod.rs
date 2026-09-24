@@ -1,5 +1,6 @@
 pub mod config;
 pub mod hlc;
+pub mod http;
 pub mod websocket_client;
 
 // Cluster management

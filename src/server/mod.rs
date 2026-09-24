@@ -7,7 +7,6 @@ pub mod cursor_store;
 pub mod env_handlers;
 pub mod handlers;
 pub mod llm_client;
-pub mod managed_agent_template;
 pub mod metrics;
 pub mod nl_handlers;
 pub mod permission_cache;

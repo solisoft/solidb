@@ -3,6 +3,11 @@ use crate::error::{DbError, DbResult};
 use rust_rocksdb::WriteBatch;
 use std::sync::atomic::Ordering;
 
+/// True when `rest` (what follows `blo:<key>:`) is a bare chunk index.
+fn is_chunk_suffix(rest: &[u8]) -> bool {
+    !rest.is_empty() && rest.iter().all(|b| b.is_ascii_digit())
+}
+
 impl Collection {
     // ==================== Blob Operations ====================
 
@@ -79,6 +84,11 @@ impl Collection {
             let (k, _) = result;
             if !k.starts_with(prefix.as_bytes()) {
                 break;
+            }
+            // Audit D6: `blo:<key>:` also prefixes the chunks of `<key>:…`.
+            // Only a pure chunk number after the prefix is one of ours.
+            if !is_chunk_suffix(&k[prefix.len()..]) {
+                continue;
             }
             batch.delete_cf(&cf, k);
             count += 1;
@@ -191,6 +201,9 @@ impl Collection {
             if !k.starts_with(prefix.as_bytes()) {
                 break;
             }
+            if !is_chunk_suffix(&k[prefix.len()..]) {
+                continue; // another upload whose id extends this one
+            }
             batch.delete_cf(&cf, k);
             count += 1;
         }
@@ -233,5 +246,19 @@ impl Collection {
         }
 
         Ok((chunk_count, total_bytes))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_chunk_suffix;
+
+    #[test]
+    fn chunk_suffix_rejects_nested_keys() {
+        assert!(is_chunk_suffix(b"0"));
+        assert!(is_chunk_suffix(b"123"));
+        assert!(!is_chunk_suffix(b""));
+        assert!(!is_chunk_suffix(b"1:0")); // chunk 0 of key "<key>:1"
+        assert!(!is_chunk_suffix(b"x:0"));
     }
 }

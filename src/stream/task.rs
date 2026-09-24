@@ -1,12 +1,65 @@
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::{BodyClause, Query, WindowType};
-use crate::sdbql::executor::QueryExecutor;
+use crate::sdbql::executor::{QueryExecutor, QueryPrincipal};
 use crate::storage::collection::{ChangeEvent, ChangeType};
 use crate::storage::StorageEngine;
 use chrono::{DateTime, Duration, Utc};
 use serde_json::Value;
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use tokio::sync::broadcast;
+
+/// Longest accepted window. Audit A1: an unbounded size either panicked in
+/// chrono (`"9999999999h"`) or, with M4, kept a month of writes in RAM.
+pub const MAX_WINDOW: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+const DEFAULT_MAX_BUFFER_EVENTS: usize = 100_000;
+const DEFAULT_MAX_BUFFER_BYTES: usize = 64 * 1024 * 1024;
+
+/// Events dropped from stream window buffers because a cap was reached.
+static STREAM_EVENTS_DROPPED: AtomicU64 = AtomicU64::new(0);
+
+/// Total events dropped from stream window buffers since start-up (Audit M4).
+pub fn stream_events_dropped_total() -> u64 {
+    STREAM_EVENTS_DROPPED.load(Ordering::Relaxed)
+}
+
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+/// Per-stream buffer caps: `SOLIDB_STREAM_MAX_BUFFER_EVENTS` and
+/// `SOLIDB_STREAM_MAX_BUFFER_BYTES`.
+fn buffer_limits() -> (usize, usize) {
+    static LIMITS: OnceLock<(usize, usize)> = OnceLock::new();
+    *LIMITS.get_or_init(|| {
+        (
+            env_usize("SOLIDB_STREAM_MAX_BUFFER_EVENTS", DEFAULT_MAX_BUFFER_EVENTS),
+            env_usize("SOLIDB_STREAM_MAX_BUFFER_BYTES", DEFAULT_MAX_BUFFER_BYTES),
+        )
+    })
+}
+
+/// Cheap upper-ish estimate of a document's in-memory footprint, without
+/// serialising it.
+fn approx_size(v: &Value) -> usize {
+    match v {
+        Value::Null | Value::Bool(_) | Value::Number(_) => 16,
+        Value::String(s) => 24 + s.len(),
+        Value::Array(a) => 24 + a.iter().map(approx_size).sum::<usize>(),
+        Value::Object(o) => {
+            32 + o
+                .iter()
+                .map(|(k, v)| 24 + k.len() + approx_size(v))
+                .sum::<usize>()
+        }
+    }
+}
 
 pub struct StreamTask {
     pub name: String,
@@ -17,10 +70,18 @@ pub struct StreamTask {
     storage: Arc<StorageEngine>,
     rx: broadcast::Receiver<ChangeEvent>,
     db_name: String,
+    /// Who the stream runs as: the creator, or an anonymous non-admin for a
+    /// definition that recorded no one (Audit H6).
+    principal: QueryPrincipal,
 
     // State
-    // Buffer of (timestamp, document) for proper sliding window support
-    buffer: Vec<(DateTime<Utc>, Value)>,
+    // Buffer of (timestamp, document, approx bytes) for sliding window support
+    buffer: VecDeque<(DateTime<Utc>, Value, usize)>,
+    buffer_bytes: usize,
+    max_buffer_events: usize,
+    max_buffer_bytes: usize,
+    /// Events dropped since the last window was processed; logged once per window.
+    dropped_in_window: u64,
     next_window_end: DateTime<Utc>,
 }
 
@@ -31,6 +92,7 @@ impl StreamTask {
         db_name: String,
         storage: Arc<StorageEngine>,
         rx: broadcast::Receiver<ChangeEvent>,
+        principal: QueryPrincipal,
     ) -> DbResult<Self> {
         // Extract window info first
         let (window_type, duration_str) = {
@@ -54,6 +116,11 @@ impl StreamTask {
             .ok_or(DbError::ExecutionError("Missing FOR clause".to_string()))?;
         let collection = for_clause.collection.clone();
 
+        let next_window_end = Utc::now()
+            .checked_add_signed(duration)
+            .ok_or_else(|| DbError::ExecutionError("Window end out of range".to_string()))?;
+        let (max_buffer_events, max_buffer_bytes) = buffer_limits();
+
         Ok(Self {
             name,
             collection,
@@ -63,9 +130,13 @@ impl StreamTask {
             storage,
             rx,
             db_name,
-            buffer: Vec::new(),
-            // Align window to next minute/second/etc? For now just start from now + duration
-            next_window_end: Utc::now() + duration,
+            principal,
+            buffer: VecDeque::new(),
+            buffer_bytes: 0,
+            max_buffer_events,
+            max_buffer_bytes,
+            dropped_in_window: 0,
+            next_window_end,
         })
     }
 
@@ -115,12 +186,14 @@ impl StreamTask {
                                 tracing::error!("Stream {}: Processing error: {}", self.name, e);
                             }
                         }
-                        // Advance window
-                        // For tumbling: start new window from now or previous end?
-                        // Usually aligned.
-                        while self.next_window_end <= Utc::now() {
-                            self.next_window_end += self.window_duration;
-                        }
+                        // Advance window. Audit A1: computed in one step rather
+                        // than a `while` loop with no await point, which a zero
+                        // window turned into a worker that abort() cannot stop.
+                        self.next_window_end = next_window_end_after(
+                            self.next_window_end,
+                            Utc::now(),
+                            self.window_duration,
+                        );
 
                         // For sliding window, we might need different logic (keeping history)
                         if matches!(self.window_type, WindowType::Sliding) {
@@ -140,7 +213,7 @@ impl StreamTask {
         match event.type_ {
             ChangeType::Insert | ChangeType::Update => {
                 if let Some(data) = event.data {
-                    self.buffer.push((now, data));
+                    self.push_buffered(now, data);
                 }
             }
             ChangeType::Delete => {
@@ -154,16 +227,76 @@ impl StreamTask {
                         self.name,
                         self.buffer.len()
                     );
-                    self.buffer.clear();
+                    self.clear_buffer();
                 }
             }
         }
 
         // Opportunistic prune for sliding windows
         if matches!(self.window_type, WindowType::Sliding) {
-            let cutoff = now - self.window_duration;
-            self.buffer.retain(|(ts, _)| *ts > cutoff);
+            self.prune_older_than(now - self.window_duration);
         }
+    }
+
+    /// Append to the window buffer, dropping the oldest entries once the
+    /// count or byte cap is reached (Audit M4).
+    fn push_buffered(&mut self, ts: DateTime<Utc>, doc: Value) {
+        let size = approx_size(&doc);
+        self.buffer.push_back((ts, doc, size));
+        self.buffer_bytes += size;
+        while self.buffer.len() > self.max_buffer_events
+            || (self.buffer_bytes > self.max_buffer_bytes && self.buffer.len() > 1)
+        {
+            let Some((_, _, sz)) = self.buffer.pop_front() else {
+                break;
+            };
+            self.buffer_bytes = self.buffer_bytes.saturating_sub(sz);
+            self.dropped_in_window += 1;
+            STREAM_EVENTS_DROPPED.fetch_add(1, Ordering::Relaxed);
+            if self.dropped_in_window == 1 {
+                tracing::warn!(
+                    "Stream {}: window buffer full ({} events / {} bytes cap), dropping oldest events",
+                    self.name,
+                    self.max_buffer_events,
+                    self.max_buffer_bytes
+                );
+            }
+        }
+    }
+
+    fn prune_older_than(&mut self, cutoff: DateTime<Utc>) {
+        while let Some((ts, _, sz)) = self.buffer.front() {
+            if *ts > cutoff {
+                break;
+            }
+            self.buffer_bytes = self.buffer_bytes.saturating_sub(*sz);
+            self.buffer.pop_front();
+        }
+    }
+
+    fn clear_buffer(&mut self) {
+        self.buffer.clear();
+        self.buffer_bytes = 0;
+    }
+
+    /// The source collection's row policy, parsed, when it applies to this
+    /// stream's principal. `Err` means a policy exists but does not parse:
+    /// the caller must then admit nothing.
+    fn source_row_policy(&self) -> Result<Option<crate::sdbql::ast::Expression>, ()> {
+        if self.principal.can_admin {
+            return Ok(None);
+        }
+        let Some(policy) = self
+            .storage
+            .get_database(&self.db_name)
+            .ok()
+            .and_then(|db| db.get_collection(&self.collection).ok())
+            .and_then(|c| c.get_row_policy())
+        else {
+            return Ok(None);
+        };
+        let mut parser = crate::sdbql::parser::Parser::new(&policy).map_err(|_| ())?;
+        parser.parse_expression().map(Some).map_err(|_| ())
     }
 
     async fn process_window(&mut self) -> DbResult<()> {
@@ -177,20 +310,55 @@ impl StreamTask {
         if event_count == 0 {
             // Advance window anyway
             if matches!(self.window_type, WindowType::Tumbling) {
-                self.buffer.clear();
+                self.clear_buffer();
             }
             return Ok(());
+        }
+        if self.dropped_in_window > 0 {
+            tracing::warn!(
+                "Stream {}: {} events were dropped from this window by the buffer cap",
+                self.name,
+                self.dropped_in_window
+            );
+            self.dropped_in_window = 0;
         }
 
         let for_clause = &self.query.for_clauses[0];
         let var_name = &for_clause.variable;
 
-        let executor = QueryExecutor::with_database(&self.storage, self.db_name.clone());
+        // Audit H6: evaluate as the stream's creator, not as the server, and
+        // apply the source's row policy to buffered documents the way a scan
+        // would — otherwise a stream copies rows its creator cannot read into
+        // an unpoliced `_streams:` collection.
+        let executor = QueryExecutor::with_database(&self.storage, self.db_name.clone())
+            .with_principal(self.principal.clone());
+        let row_policy = self.source_row_policy();
 
         // Build contexts from (timestamped) buffer. For sliding we already pruned opportunistically.
         let mut contexts: Vec<std::collections::HashMap<String, Value>> = Vec::new();
 
-        for (_ts, doc) in &self.buffer {
+        for (_ts, doc, _) in &self.buffer {
+            match &row_policy {
+                Ok(None) => {}
+                Ok(Some(expr)) => {
+                    let mut row = std::collections::HashMap::new();
+                    row.insert(self.collection.clone(), doc.clone());
+                    row.insert("doc".to_string(), doc.clone());
+                    row.insert(
+                        "CURRENT_USER".to_string(),
+                        Value::String(self.principal.user.clone()),
+                    );
+                    let visible = executor
+                        .evaluate_expr_with_context(expr, &row)
+                        .map(|v| crate::sdbql::executor::to_bool(&v))
+                        .unwrap_or(false);
+                    if !visible {
+                        continue;
+                    }
+                }
+                Err(()) => continue,
+            }
+
             let mut keep = true;
             let mut ctx = std::collections::HashMap::new();
             ctx.insert(var_name.clone(), doc.clone());
@@ -285,7 +453,7 @@ impl StreamTask {
                             obj.entry("emitted_at".to_string())
                                 .or_insert(serde_json::json!(Utc::now().to_rfc3339()));
                         }
-                        let _ = coll.insert(to_store);
+                        let _ = coll.insert_or_replace(to_store);
                     }
                 }
             }
@@ -300,43 +468,142 @@ impl StreamTask {
                     "event_count": event_count,
                     "source": self.collection
                 });
-                let _ = coll.insert(summary);
+                let _ = coll.insert_or_replace(summary);
             }
         }
+
+        // Release the borrow of `self.storage` before mutating the buffer.
+        drop(executor);
 
         // Tumbling: clear everything. Sliding: already prunes on ingest + here keep recent.
         // Old results are automatically expired via TTL index on "emitted_at" (created on first use).
         if matches!(self.window_type, WindowType::Tumbling) {
-            self.buffer.clear();
+            self.clear_buffer();
         } else {
             // Final prune for safety on sliding
-            let cutoff = Utc::now() - self.window_duration;
-            self.buffer.retain(|(ts, _)| *ts > cutoff);
+            self.prune_older_than(Utc::now() - self.window_duration);
         }
 
         Ok(())
     }
 }
 
-fn parse_duration(s: &str) -> DbResult<Duration> {
-    if let Some(mins_str) = s.strip_suffix('m') {
-        let mins = mins_str
-            .parse::<i64>()
-            .map_err(|_| DbError::ParseError("Invalid duration".to_string()))?;
-        Ok(Duration::minutes(mins))
-    } else if let Some(secs_str) = s.strip_suffix('s') {
-        let secs = secs_str
-            .parse::<i64>()
-            .map_err(|_| DbError::ParseError("Invalid duration".to_string()))?;
-        Ok(Duration::seconds(secs))
-    } else if let Some(hours_str) = s.strip_suffix('h') {
-        let hours = hours_str
-            .parse::<i64>()
-            .map_err(|_| DbError::ParseError("Invalid duration".to_string()))?;
-        Ok(Duration::hours(hours))
+/// The first window boundary strictly after `now`, stepping from `end` by
+/// whole windows. One division instead of a loop, and checked throughout.
+fn next_window_end_after(
+    end: DateTime<Utc>,
+    now: DateTime<Utc>,
+    window: Duration,
+) -> DateTime<Utc> {
+    if end > now {
+        return end;
+    }
+    let fallback = || now.checked_add_signed(window).unwrap_or(now);
+    let window_ms = window.num_milliseconds();
+    if window_ms <= 0 {
+        return fallback();
+    }
+    let behind_ms = (now - end).num_milliseconds().max(0);
+    let steps = behind_ms / window_ms + 1;
+    steps
+        .checked_mul(window_ms)
+        .and_then(Duration::try_milliseconds)
+        .and_then(|d| end.checked_add_signed(d))
+        .unwrap_or_else(fallback)
+}
+
+/// Parse a window size such as `"30s"`, `"5m"` or `"1h"`.
+///
+/// Audit A1: rejects zero, negative and over-[`MAX_WINDOW`] sizes, and builds
+/// the value with chrono's checked constructors so no input can panic.
+pub(crate) fn parse_duration(s: &str) -> DbResult<Duration> {
+    let invalid = || DbError::ParseError(format!("Invalid duration '{}'", s));
+    let s = s.trim();
+    let (num, ctor): (&str, fn(i64) -> Option<Duration>) = if let Some(n) = s.strip_suffix('m') {
+        (n, Duration::try_minutes)
+    } else if let Some(n) = s.strip_suffix('s') {
+        (n, Duration::try_seconds)
+    } else if let Some(n) = s.strip_suffix('h') {
+        (n, Duration::try_hours)
     } else {
-        Err(DbError::ParseError(
+        return Err(DbError::ParseError(
             "Unknown duration unit (use s, m, h)".to_string(),
-        ))
+        ));
+    };
+    let value = num.trim().parse::<i64>().map_err(|_| invalid())?;
+    if value <= 0 {
+        return Err(DbError::ParseError(format!(
+            "Window size must be positive, got '{}'",
+            s
+        )));
+    }
+    let duration = ctor(value).ok_or_else(invalid)?;
+    let max = Duration::from_std(MAX_WINDOW).map_err(|_| invalid())?;
+    if duration > max {
+        return Err(DbError::ParseError(format!(
+            "Window size '{}' exceeds the maximum of {}h",
+            s,
+            MAX_WINDOW.as_secs() / 3600
+        )));
+    }
+    Ok(duration)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_duration_accepts_units() {
+        assert_eq!(parse_duration("30s").unwrap(), Duration::seconds(30));
+        assert_eq!(parse_duration("5m").unwrap(), Duration::minutes(5));
+        assert_eq!(parse_duration("1h").unwrap(), Duration::hours(1));
+        assert_eq!(parse_duration("24h").unwrap(), Duration::hours(24));
+    }
+
+    #[test]
+    fn parse_duration_rejects_zero_negative_and_huge() {
+        for bad in [
+            "0s",
+            "0m",
+            "-5s",
+            "-1h",
+            "25h",
+            "1441m",
+            "86401s",
+            "9999999999h",
+            "9223372036854775807s",
+            "abc",
+            "10",
+            "",
+        ] {
+            assert!(parse_duration(bad).is_err(), "{bad:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn next_window_end_is_strictly_after_now() {
+        let start = Utc::now();
+        let w = Duration::seconds(10);
+        // Not yet reached: unchanged.
+        let future = start + Duration::seconds(5);
+        assert_eq!(next_window_end_after(future, start, w), future);
+        // Exactly at the boundary: one step.
+        assert_eq!(next_window_end_after(start, start, w), start + w);
+        // Far behind: lands on the grid, just past now.
+        let now = start + Duration::seconds(95);
+        let next = next_window_end_after(start, now, w);
+        assert_eq!(next, start + Duration::seconds(100));
+        assert!(next > now);
+        // Degenerate window cannot loop.
+        let z = next_window_end_after(start, now, Duration::zero());
+        assert_eq!(z, now);
+    }
+
+    #[test]
+    fn approx_size_grows_with_content() {
+        let small = serde_json::json!({"a": 1});
+        let big = serde_json::json!({"a": "x".repeat(1000)});
+        assert!(approx_size(&big) > approx_size(&small) + 900);
     }
 }

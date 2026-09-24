@@ -322,6 +322,27 @@ pub enum SyncMessage {
         /// Collections with changes
         collections: Vec<String>,
     },
+
+    // ---------------------------------------------------------------------
+    // APPEND ONLY BELOW THIS LINE — bincode numbers variants by position; see
+    // the note on `Operation`.
+    // ---------------------------------------------------------------------
+    /// One slice of a single replication entry too large for one frame
+    /// (audit A6). Sent instead of a `SyncBatch` in reply to an
+    /// `IncrementalSyncRequest`: parts `0..total_parts` follow back to back,
+    /// and their concatenated `data` is the bincode encoding of one
+    /// `SyncEntry`. An entry that did not fit used to fail the send, and the
+    /// requester retried the same sequence forever.
+    SyncEntryPart {
+        /// Sequence of the entry being carried
+        sequence: u64,
+        part: u32,
+        total_parts: u32,
+        /// Responder's log head, as in `SyncBatch`
+        current_sequence: u64,
+        #[serde(with = "serde_bytes")]
+        data: Vec<u8>,
+    },
 }
 
 /// Entry describing a conflict for client resolution
@@ -374,6 +395,61 @@ pub fn encode_documents(batch: &[serde_json::Value]) -> Result<Vec<u8>, String> 
 /// Decodes what [`encode_documents`] produced.
 pub fn decode_documents(data: &[u8]) -> Result<Vec<serde_json::Value>, String> {
     serde_json::from_slice(data).map_err(|e| format!("decoding a document batch: {e}"))
+}
+
+/// Incremental [`encode_documents`]: builds the same JSON array one document
+/// at a time, so a sender can stop at a byte budget without serialising each
+/// document twice (audit A6). Lives here so the format still has one owner.
+pub struct DocumentBatchEncoder {
+    buf: Vec<u8>,
+    count: u32,
+}
+
+impl Default for DocumentBatchEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DocumentBatchEncoder {
+    pub fn new() -> Self {
+        Self {
+            buf: vec![b'['],
+            count: 0,
+        }
+    }
+
+    /// Encode one document for [`Self::push_encoded`].
+    pub fn encode_one(doc: &serde_json::Value) -> Result<Vec<u8>, String> {
+        serde_json::to_vec(doc).map_err(|e| format!("encoding a document: {e}"))
+    }
+
+    /// Append a document produced by [`Self::encode_one`].
+    pub fn push_encoded(&mut self, doc_json: &[u8]) {
+        if self.count > 0 {
+            self.buf.push(b',');
+        }
+        self.buf.extend_from_slice(doc_json);
+        self.count += 1;
+    }
+
+    /// Bytes [`Self::finish`] would return now.
+    pub fn encoded_len(&self) -> usize {
+        self.buf.len() + 1
+    }
+
+    pub fn count(&self) -> u32 {
+        self.count
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    pub fn finish(mut self) -> Vec<u8> {
+        self.buf.push(b']');
+        self.buf
+    }
 }
 
 impl SyncMessage {
@@ -607,6 +683,55 @@ mod tests {
         let encoded = encode_documents(&batch).expect("encodes");
         let decoded = decode_documents(&encoded).expect("decodes");
         assert_eq!(decoded, batch);
+    }
+
+    #[test]
+    fn the_incremental_encoder_matches_encode_documents() {
+        let docs = vec![
+            serde_json::json!({"_key": "a", "n": 1}),
+            serde_json::json!({"_key": "b", "s": "é\n"}),
+        ];
+        let mut enc = DocumentBatchEncoder::new();
+        assert!(enc.is_empty());
+        for d in &docs {
+            enc.push_encoded(&DocumentBatchEncoder::encode_one(d).unwrap());
+        }
+        assert_eq!(enc.count(), 2);
+        let len = enc.encoded_len();
+        let bytes = enc.finish();
+        assert_eq!(bytes.len(), len);
+        assert_eq!(bytes, encode_documents(&docs).unwrap());
+        assert_eq!(decode_documents(&bytes).unwrap(), docs);
+        assert!(decode_documents(&DocumentBatchEncoder::new().finish())
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn an_entry_part_round_trips() {
+        let msg = SyncMessage::SyncEntryPart {
+            sequence: 9,
+            part: 1,
+            total_parts: 3,
+            current_sequence: 12,
+            data: vec![1, 2, 3],
+        };
+        match SyncMessage::decode_frame(&msg.encode()).unwrap() {
+            SyncMessage::SyncEntryPart {
+                sequence,
+                part,
+                total_parts,
+                current_sequence,
+                data,
+            } => {
+                assert_eq!(
+                    (sequence, part, total_parts, current_sequence),
+                    (9, 1, 3, 12)
+                );
+                assert_eq!(data, vec![1, 2, 3]);
+            }
+            other => panic!("decoded as {:?}", other),
+        }
     }
 
     #[test]

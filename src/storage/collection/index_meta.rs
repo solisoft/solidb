@@ -10,7 +10,7 @@
 //! rather than a field on `Collection`: `StorageEngine` and `Database` each
 //! keep their own handle cache and build independent `Collection` instances
 //! for the same CF, so a per-instance cache could not be invalidated across
-//! them. (Same shape as `storage::document_cache`.) The DB half of the key is
+//! them. The DB half of the key is
 //! the `Arc` data pointer, with a stored `Weak` to detect a dead-and-reused
 //! allocation — several engines can be open in one process (tests, embedded
 //! use) with colliding CF names like `"users"`.

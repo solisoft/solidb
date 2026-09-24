@@ -3,14 +3,108 @@ use crate::error::{DbError, DbResult};
 use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
 use hex;
+use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Weak};
 
 /// Minimum seconds between throttled vector-index persists during bulk writes.
 /// The trailing window is made durable by the shutdown flush
 /// (`flush_vector_indexes` via the engine's flush-all).
 const VEC_PERSIST_THROTTLE_SECS: u64 = 5;
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+/// Claim the dirty flag and persist every in-memory vector index of one
+/// collection. Shared by `Collection::flush_vector_indexes` and the periodic
+/// dirty-set drain, which holds only weak handles and so has no `Collection`.
+/// Returns false when the persist failed and the flag was re-armed.
+fn flush_vector_index_map(
+    db: &DB,
+    name: &str,
+    indexes: &DashMap<String, Arc<VectorIndex>>,
+    dirty: &AtomicBool,
+    last_persist: &AtomicU64,
+) -> bool {
+    // Claim the dirty flag up front so a writer that dirties again after we
+    // snapshot the index isn't wrongly cleared (mirrors `flush_stats`).
+    if !dirty.swap(false, Ordering::Relaxed) {
+        return true; // Nothing to persist
+    }
+    if let Err(e) = Collection::persist_vector_index_map(db, name, indexes) {
+        tracing::warn!("Failed to persist vector indexes: {}", e);
+        // Re-arm so a later throttled call / shutdown flush retries rather
+        // than silently dropping the change.
+        dirty.store(true, Ordering::Relaxed);
+        return false;
+    }
+    last_persist.store(now_secs(), Ordering::Relaxed);
+    true
+}
+
+/// A collection whose vector indexes changed since their last persist. Weak
+/// handles only: the registry must never keep a dropped engine's RocksDB
+/// instance open.
+struct DirtyVecEntry {
+    db: Weak<DB>,
+    name: String,
+    vector_indexes: Weak<DashMap<String, Arc<VectorIndex>>>,
+    vec_dirty: Arc<AtomicBool>,
+    vec_last_persist: Arc<AtomicU64>,
+}
+
+static DIRTY_VECTOR_INDEXES: Lazy<DashMap<(usize, String), DirtyVecEntry>> =
+    Lazy::new(DashMap::new);
+
+/// Persist every vector index whose changes are older than the throttle
+/// window (audit D9). Single-document writes only mark an index dirty and
+/// persist on a later write, so without this a quiet collection could hold
+/// unpersisted vectors until shutdown. Calling it every
+/// `VEC_PERSIST_THROTTLE_SECS` bounds that window to about twice the throttle.
+/// Blocking (it serializes whole indexes): call it off the async runtime.
+/// Returns the number of collections persisted.
+pub fn flush_dirty_vector_indexes() -> usize {
+    let now = now_secs();
+    let due: Vec<(usize, String)> = DIRTY_VECTOR_INDEXES
+        .iter()
+        .filter(|e| {
+            now.saturating_sub(e.vec_last_persist.load(Ordering::Relaxed))
+                >= VEC_PERSIST_THROTTLE_SECS
+        })
+        .map(|e| e.key().clone())
+        .collect();
+
+    let mut flushed = 0;
+    for key in due {
+        let Some((_, entry)) = DIRTY_VECTOR_INDEXES.remove(&key) else {
+            continue;
+        };
+        let (Some(db), Some(indexes)) = (entry.db.upgrade(), entry.vector_indexes.upgrade()) else {
+            continue; // engine or handle gone; nothing left to persist into
+        };
+        if db.cf_handle(&entry.name).is_none() {
+            continue; // collection dropped
+        }
+        if flush_vector_index_map(
+            &db,
+            &entry.name,
+            &indexes,
+            &entry.vec_dirty,
+            &entry.vec_last_persist,
+        ) {
+            flushed += 1;
+        } else {
+            // Keep it registered so the next drain retries.
+            DIRTY_VECTOR_INDEXES.insert(key, entry);
+        }
+    }
+    flushed
+}
 
 impl Collection {
     /// Create a new collection handle
@@ -21,13 +115,8 @@ impl Collection {
                 Ok(Some(bytes)) => String::from_utf8_lossy(&bytes)
                     .parse::<usize>()
                     .unwrap_or(0),
-                _ => {
-                    // No cached count - calculate from documents
-                    let prefix = DOC_PREFIX.as_bytes();
-                    db.prefix_iterator_cf(&cf, prefix)
-                        .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
-                        .count()
-                }
+                // No cached count - calculate from documents
+                _ => Self::count_doc_entries(&db, &cf),
             }
         } else {
             0
@@ -66,6 +155,17 @@ impl Collection {
             schema_validator: Arc::new(RwLock::new(None)),
             schema_hash: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Count live documents under `doc:`. Pre-H8 TTL expiry entries also live
+    /// there (`doc:ttl_exp::…`) with an empty value; a serialized document is
+    /// never empty, so skipping empty values excludes exactly those.
+    pub(crate) fn count_doc_entries(db: &DB, cf: &impl rust_rocksdb::AsColumnFamilyRef) -> usize {
+        let prefix = DOC_PREFIX.as_bytes();
+        db.prefix_iterator_cf(cf, prefix)
+            .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
+            .filter(|r| r.as_ref().is_ok_and(|(_, v)| !v.is_empty()))
+            .count()
     }
 
     /// Resolve `chunk_count` from disk on first use.
@@ -198,23 +298,34 @@ impl Collection {
     /// regardless of throttle. Called on shutdown (via the engine's flush-all)
     /// so the trailing throttle window can't be lost across a graceful restart.
     pub fn flush_vector_indexes(&self) {
-        // Claim the dirty flag up front so a writer that dirties again after we
-        // snapshot the index isn't wrongly cleared (mirrors `flush_stats`).
-        if !self.vec_dirty.swap(false, Ordering::Relaxed) {
-            return; // Nothing to persist
+        let _ = flush_vector_index_map(
+            &self.db,
+            &self.name,
+            &self.vector_indexes,
+            &self.vec_dirty,
+            &self.vec_last_persist,
+        );
+    }
+
+    /// Record that an in-memory vector index changed. The first change after
+    /// a persist also registers the collection with the process-wide dirty
+    /// set drained by [`flush_dirty_vector_indexes`] (audit D9), so a change
+    /// with no later write behind it is still persisted within a bounded time
+    /// once something calls that periodically.
+    pub(crate) fn mark_vec_dirty(&self) {
+        if self.vec_dirty.swap(true, Ordering::Relaxed) {
+            return; // already registered
         }
-        if let Err(e) = self.persist_vector_indexes() {
-            tracing::warn!("Failed to persist vector indexes: {}", e);
-            // Re-arm so a later throttled call / shutdown flush retries rather
-            // than silently dropping the change.
-            self.vec_dirty.store(true, Ordering::Relaxed);
-            return;
-        }
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        self.vec_last_persist.store(now, Ordering::Relaxed);
+        DIRTY_VECTOR_INDEXES.insert(
+            (Arc::as_ptr(&self.db) as usize, self.name.clone()),
+            DirtyVecEntry {
+                db: Arc::downgrade(&self.db),
+                name: self.name.clone(),
+                vector_indexes: Arc::downgrade(&self.vector_indexes),
+                vec_dirty: self.vec_dirty.clone(),
+                vec_last_persist: self.vec_last_persist.clone(),
+            },
+        );
     }
 
     /// Compact the collection to remove tombstones and reclaim space
@@ -457,28 +568,28 @@ impl Collection {
         format!("{}{}", TTL_META_PREFIX, name).into_bytes()
     }
 
-    /// Build a TTL expiry index key: "ttl_exp:<ttl_index_name>:<expiry_ts>:<doc_key>"
-    /// Sorted by (ttl_index_name, expiry_timestamp) for efficient range queries
+    /// Build a TTL expiry index key: "ttl_exp:<ttl_index_name>:<expiry_ts>:<doc_key>".
+    ///
+    /// Its own top-level prefix, outside `doc:` (audit H8), and the timestamp
+    /// is zero-padded to 20 digits so lexicographic order is numeric order and
+    /// the reaper can stop at the first unexpired entry.
     pub fn ttl_expiry_key(ttl_index_name: &str, expiry_timestamp: u64, doc_key: &str) -> Vec<u8> {
         format!(
-            "{}{}:{}:{}:{}",
-            DOC_PREFIX, TTL_EXPIRY_PREFIX, ttl_index_name, expiry_timestamp, doc_key
+            "{}{}:{:020}:{}",
+            TTL_EXPIRY_PREFIX, ttl_index_name, expiry_timestamp, doc_key
         )
         .into_bytes()
     }
 
-    /// Build a TTL expiry index prefix for a specific index: "doc:ttl_exp:<ttl_index_name>:"
+    /// TTL expiry index prefix for one index: "ttl_exp:<ttl_index_name>:"
     pub fn ttl_expiry_prefix(ttl_index_name: &str) -> Vec<u8> {
-        format!("{}{}:{}:", DOC_PREFIX, TTL_EXPIRY_PREFIX, ttl_index_name).into_bytes()
+        format!("{}{}:", TTL_EXPIRY_PREFIX, ttl_index_name).into_bytes()
     }
 
-    /// Build a TTL expiry index prefix for scanning up to a timestamp: "doc:ttl_exp:<ttl_index_name>:<max_ts>:"
-    pub fn ttl_expiry_prefix_until(ttl_index_name: &str, max_timestamp: u64) -> Vec<u8> {
-        format!(
-            "{}{}:{}:{}:",
-            DOC_PREFIX, TTL_EXPIRY_PREFIX, ttl_index_name, max_timestamp
-        )
-        .into_bytes()
+    /// Prefix of the pre-H8 expiry entries for one index:
+    /// "doc:ttl_exp::<ttl_index_name>:". Read-only — see `LEGACY_TTL_EXPIRY_PREFIX`.
+    pub(crate) fn legacy_ttl_expiry_prefix(ttl_index_name: &str) -> Vec<u8> {
+        format!("{}:{}:", LEGACY_TTL_EXPIRY_PREFIX, ttl_index_name).into_bytes()
     }
 
     /// Create vector index metadata key: "vec_meta:<name>"
@@ -489,5 +600,19 @@ impl Collection {
     /// Create vector index data key: "vec_data:<name>"
     pub fn vec_data_key(name: &str) -> Vec<u8> {
         format!("{}{}", VEC_DATA_PREFIX, name).into_bytes()
+    }
+}
+
+impl Collection {
+    /// Publish a change event, dropping cached query results for this
+    /// collection first. Every document write funnels through here, so the
+    /// write paths outside the HTTP handlers (replication apply, TTL expiry,
+    /// Lua, streams, the queue) invalidate the cache too (audit P2).
+    pub(crate) fn emit_change(
+        &self,
+        event: ChangeEvent,
+    ) -> Result<usize, tokio::sync::broadcast::error::SendError<ChangeEvent>> {
+        crate::storage::query_cache::invalidate_collection("", &self.name);
+        self.change_sender.send(event)
     }
 }

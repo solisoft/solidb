@@ -80,8 +80,12 @@ pub async fn commit_transaction(
         .map_err(|_| DbError::InvalidDocument("Invalid transaction ID".to_string()))?;
     let tx_id = TransactionId::from_u64(tx_id_value);
 
-    // Commit transaction
-    state.storage.commit_transaction(tx_id)?;
+    // Commit transaction. It re-reads every touched document and ends in a
+    // synced RocksDB write, so keep it off the async workers.
+    let storage = state.storage.clone();
+    tokio::task::spawn_blocking(move || storage.commit_transaction(tx_id))
+        .await
+        .map_err(|e| DbError::InternalError(format!("Commit task failed: {}", e)))??;
 
     // Invalidate query cache since committed data is now visible
     query_cache::get_query_cache().invalidate_all();

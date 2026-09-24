@@ -116,9 +116,12 @@ async fn verify_migrated_documents(
 
                 for (shard_id, shard_keys) in keys_by_shard {
                     let physical_name = format!("{}_s{}", coll_name, shard_id);
-                    let url = format!(
-                        "http://{}/_api/database/{}/document/{}/_verify",
-                        addr, db_name, physical_name
+                    let url = crate::cluster::http::peer_url(
+                        &addr,
+                        &format!(
+                            "/_api/database/{}/document/{}/_verify",
+                            db_name, physical_name
+                        ),
                     );
 
                     match client
@@ -299,257 +302,276 @@ pub async fn reshard_collection_with_journal<S: BatchSender>(
             continue;
         }
 
-        // We already have physical_coll from the check above
-        let documents = physical_coll.all();
+        // Audit P8: page through the shard (bounded memory, reads on the
+        // blocking pool) instead of `physical_coll.all()`, which held the whole
+        // shard and then a second copy as the move list. Moved documents are
+        // deleted from this shard as each page is processed; the cursor is a
+        // key, so that does not disturb the scan.
+        //
+        // The old 20,000-document cap per shard is gone with it: it bounded
+        // memory by leaving every later misplaced document where it was.
+        const PAGE_SIZE: usize = 5000;
+        // Process in batches with retry logic
+        const BATCH_SIZE: usize = 5000;
+        // Bounded retries per batch; a persistently failing destination used
+        // to spin this loop forever with no delay.
+        const MAX_SEND_ATTEMPTS: u32 = 5;
 
-        if documents.is_empty() {
-            continue;
-        }
+        let shard_start_time = std::time::Instant::now();
+        let mut moved_count = 0;
+        let mut failed_count = 0;
+        let mut candidates = 0usize;
+        let mut consecutive_failures = 0;
+        let mut aborted = false;
+        let mut logged_start = false;
+        let mut cursor = crate::sharding::scan::ScanCursor::start();
 
-        tracing::info!(
-            "RESHARD: Scanning shard {} ({} docs) for migration...",
-            physical_name,
-            documents.len()
-        );
+        'pages: loop {
+            let (documents, next_cursor) =
+                crate::sharding::scan::scan_page_blocking(physical_coll.clone(), cursor, PAGE_SIZE)
+                    .await?;
 
-        let mut docs_to_move: Vec<(String, Value)> = Vec::new();
-
-        for doc in documents {
-            let id_str = doc.key.clone();
-
-            // Skip documents that have already been processed in this migration
-            if processed_keys.contains(&id_str) {
-                tracing::debug!("RESHARD: Skipping already processed document: {}", id_str);
-                continue;
+            if !logged_start && !documents.is_empty() {
+                tracing::info!(
+                    "RESHARD: Scanning shard {} ({} docs) for migration...",
+                    physical_name,
+                    physical_coll.count()
+                );
+                logged_start = true;
             }
 
-            // Skip documents that have already been migrated (idempotency)
-            if let Some(journal) = journal {
-                if journal.is_document_migrated(db_name, coll_name, &id_str) {
-                    tracing::debug!("RESHARD: Skipping already migrated document: {}", id_str);
-                    processed_keys.insert(id_str);
+            let mut docs_to_move: Vec<(String, Value)> = Vec::new();
+
+            for doc in documents {
+                let id_str = doc.key.clone();
+
+                // Skip documents that have already been processed in this migration
+                if processed_keys.contains(&id_str) {
+                    tracing::debug!("RESHARD: Skipping already processed document: {}", id_str);
                     continue;
                 }
+
+                // Skip documents that have already been migrated (idempotency)
+                if let Some(journal) = journal {
+                    if journal.is_document_migrated(db_name, coll_name, &id_str) {
+                        tracing::debug!("RESHARD: Skipping already migrated document: {}", id_str);
+                        continue;
+                    }
+                }
+
+                // Route using NEW shard count
+                let new_shard_id = ShardRouter::route(&doc.key, new_shards);
+
+                // If the new shard ID is different from the current physical shard index 's', move it.
+                // Note: Even if s < new_shards (kept shard), docs might route elsewhere due to modulo change.
+                if new_shard_id != s {
+                    // Only moved keys are remembered: a document that stays
+                    // cannot be met again in another shard, and tracking every
+                    // key would grow with the collection.
+                    processed_keys.insert(id_str.clone());
+                    docs_to_move.push((id_str, doc.to_value()));
+                }
             }
 
-            processed_keys.insert(id_str.clone());
-
-            // Route using NEW shard count
-            let new_shard_id = ShardRouter::route(&doc.key, new_shards);
-
-            // Debug output
-            if s == 0 && new_shard_id != s {
+            if !docs_to_move.is_empty() {
+                candidates += docs_to_move.len();
                 tracing::info!(
-                    "RESHARD: Document {} routes from shard {} to shard {}",
-                    id_str,
-                    s,
-                    new_shard_id
-                );
-            }
-
-            // If the new shard ID is different from the current physical shard index 's', move it.
-            // Note: Even if s < new_shards (kept shard), docs might route elsewhere due to modulo change.
-            if new_shard_id != s {
-                docs_to_move.push((id_str, doc.to_value()));
-            }
-        }
-
-        if !docs_to_move.is_empty() {
-            tracing::info!(
-                "RESHARD: Moving {} documents from shard {}",
-                docs_to_move.len(),
-                physical_name
-            );
-
-            // Performance monitoring
-            let shard_start_time = std::time::Instant::now();
-
-            // Process in batches with retry logic
-            // PERFORMANCE OPTIMIZATION: Batch size tuned for speed vs reliability
-            // - Too small (50): Slow due to network round trips
-            // - Too large (1000+): Risk of timeouts and memory issues
-            // - Sweet spot (200-500): Good throughput with error recovery
-            const BATCH_SIZE: usize = 10000; // Maximum throughput for fast resharding
-            let mut moved_count = 0;
-            let mut failed_count = 0;
-            let mut consecutive_failures = 0;
-
-            // Safeguard: reasonable limit to prevent excessive memory usage and timeouts
-            const MAX_DOCS_PER_SHARD: usize = 20000; // Balance between performance and safety
-            if docs_to_move.len() > MAX_DOCS_PER_SHARD {
-                tracing::warn!(
-                    "RESHARD: Limiting {} documents to {} for shard {} to prevent hanging",
+                    "RESHARD: Moving {} documents from shard {}",
                     docs_to_move.len(),
-                    MAX_DOCS_PER_SHARD,
                     physical_name
                 );
-                docs_to_move.truncate(MAX_DOCS_PER_SHARD);
-            }
 
-            for (batch_idx, batch) in docs_to_move.chunks(BATCH_SIZE).enumerate() {
-                let batch_vec = batch.to_vec();
+                for (batch_idx, batch) in docs_to_move.chunks(BATCH_SIZE).enumerate() {
+                    let batch_vec = batch.to_vec();
 
-                // Progress indicator
-                if batch_idx % 10 == 0 {
-                    tracing::info!(
-                        "RESHARD: Processing batch {}/{} for shard {}",
-                        batch_idx + 1,
-                        docs_to_move.len().div_ceil(BATCH_SIZE),
-                        physical_name
-                    );
-                }
-
-                // Add delay between batches only during high failure rates
-                let delay_ms = if consecutive_failures > 2 {
-                    200 // Shorter delay when having issues
-                } else {
-                    0 // No delay for normal operation
-                };
-
-                if delay_ms > 0 {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-                }
-
-                // Retry logic for failed batches
-                let mut last_error = None;
-                let successful_keys = loop {
-                    match sender
-                        .send_batch(db_name, coll_name, &config, batch_vec.clone())
-                        .await
-                    {
-                        Ok(keys) => break keys,
-                        Err(e) => {
-                            last_error = Some(e);
-                            // Implement exponential backoff
-                            if let Some(ref error) = last_error {
-                                tracing::warn!("RESHARD: Batch send failed, will retry: {}", error);
-                                // In a real implementation, you'd add a delay here
-                                // tokio::time::sleep(tokio::time::Duration::from_millis(1000 * attempt as u64)).await;
-                            }
-                            continue;
-                        }
-                    }
-                };
-
-                if successful_keys.is_empty() {
-                    failed_count += batch.len();
-                    consecutive_failures += 1;
-
-                    if let Some(error) = last_error {
-                        tracing::error!(
-                            "RESHARD: Batch completely failed after retries: {}",
-                            error
+                    // Progress indicator
+                    if batch_idx % 10 == 0 {
+                        tracing::info!(
+                            "RESHARD: Processing batch {}/{} for shard {}",
+                            batch_idx + 1,
+                            docs_to_move.len().div_ceil(BATCH_SIZE),
+                            physical_name
                         );
                     }
 
-                    // Circuit breaker: stop processing this shard if too many consecutive failures
-                    if consecutive_failures >= 5 {
-                        tracing::error!("RESHARD: Too many consecutive failures ({}), aborting migration for shard {}", consecutive_failures, physical_name);
-                        break;
-                    }
-
-                    // Record failed migrations in journal
-                    if let Some(journal) = journal {
-                        for (key, _) in &batch_vec {
-                            let entry = MigrationJournalEntry::new(
-                                db_name,
-                                coll_name,
-                                key,
-                                s,
-                                ShardRouter::route(key, new_shards),
-                            );
-                            journal.record_migration(entry);
-                        }
-                    }
-                } else {
-                    consecutive_failures = 0; // Reset on success
-                                              // Record successful migrations in journal
-                    if let Some(journal) = journal {
-                        for key in &successful_keys {
-                            let entry = MigrationJournalEntry::new(
-                                db_name,
-                                coll_name,
-                                key,
-                                s,
-                                ShardRouter::route(key, new_shards),
-                            );
-                            journal.record_migration(entry);
-                        }
-                    }
-
-                    // Verify migrated documents are accessible before deleting from source
-                    // Note: cluster_manager not available here, so remote verification falls back to trusting batch
-                    let verified_keys = verify_migrated_documents(
-                        storage,
-                        db_name,
-                        coll_name,
-                        &successful_keys,
-                        &config,
-                        current_assignments,
-                        my_node_id,
-                        None,
-                    )
-                    .await;
-
-                    // Adaptive verification: strict for local, lenient for remote/test scenarios
-                    let keys_to_delete = if verified_keys.len() == successful_keys.len() {
-                        // Perfect verification - all documents confirmed
-                        verified_keys
-                    } else if verified_keys.is_empty() {
-                        // No verification possible - likely test environment or network issues
-                        // Check if we're dealing with remote shards
-                        let has_remote_operations = successful_keys.iter().any(|key| {
-                            let shard_id = ShardRouter::route(key, new_shards);
-                            current_assignments
-                                .get(&shard_id)
-                                .map(|a| a.primary_node != my_node_id)
-                                .unwrap_or(false)
-                        });
-
-                        if has_remote_operations {
-                            // Remote operations - trust the batch sender for now
-                            // TODO: Implement proper remote verification
-                            tracing::warn!("RESHARD: Remote verification not available, trusting batch operations");
-                            successful_keys.clone()
-                        } else {
-                            // Local-only operations - verification should work
-                            tracing::error!(
-                                "RESHARD: Local verification failed completely - skipping batch"
-                            );
-                            failed_count += successful_keys.len();
-                            consecutive_failures += 1;
-                            continue;
-                        }
+                    // Add delay between batches only during high failure rates
+                    let delay_ms = if consecutive_failures > 2 {
+                        200 // Shorter delay when having issues
                     } else {
-                        // Partial verification - some documents verified, others not
-                        let unverified_count = successful_keys.len() - verified_keys.len();
-                        tracing::warn!(
-                            "RESHARD: Partial verification - {} verified, {} unverified",
-                            verified_keys.len(),
-                            unverified_count
-                        );
-
-                        // Use only verified documents to be safe
-                        verified_keys
+                        0 // No delay for normal operation
                     };
 
-                    // Delete ONLY verified migrated documents from source
-                    if let Ok(deleted) = physical_coll.delete_batch(keys_to_delete.clone()) {
-                        moved_count += deleted;
+                    if delay_ms > 0 {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    }
 
-                        // Check for partial failures
-                        if keys_to_delete.len() < batch.len() {
-                            let partial_failures = batch.len() - keys_to_delete.len();
-                            failed_count += partial_failures;
-                            tracing::warn!("RESHARD: Batch partial success ({}/{}) - {} docs failed verification/deletion",
+                    // Retry logic for failed batches
+                    let mut last_error = None;
+                    let mut attempt = 0u32;
+                    let successful_keys = loop {
+                        attempt += 1;
+                        match sender
+                            .send_batch(db_name, coll_name, &config, batch_vec.clone())
+                            .await
+                        {
+                            Ok(keys) => break keys,
+                            Err(e) => {
+                                tracing::warn!(
+                                    "RESHARD: Batch send failed (attempt {}/{}): {}",
+                                    attempt,
+                                    MAX_SEND_ATTEMPTS,
+                                    e
+                                );
+                                last_error = Some(e);
+                                if attempt >= MAX_SEND_ATTEMPTS {
+                                    break Vec::new();
+                                }
+                                tokio::time::sleep(tokio::time::Duration::from_millis(
+                                    100 * u64::from(attempt),
+                                ))
+                                .await;
+                            }
+                        }
+                    };
+
+                    if successful_keys.is_empty() {
+                        failed_count += batch.len();
+                        consecutive_failures += 1;
+
+                        if let Some(error) = last_error {
+                            tracing::error!(
+                                "RESHARD: Batch completely failed after retries: {}",
+                                error
+                            );
+                        }
+
+                        // Circuit breaker: stop processing this shard if too many consecutive failures
+                        if consecutive_failures >= 5 {
+                            tracing::error!("RESHARD: Too many consecutive failures ({}), aborting migration for shard {}", consecutive_failures, physical_name);
+                            aborted = true;
+                            break;
+                        }
+
+                        // Record failed migrations in journal
+                        if let Some(journal) = journal {
+                            for (key, _) in &batch_vec {
+                                let entry = MigrationJournalEntry::new(
+                                    db_name,
+                                    coll_name,
+                                    key,
+                                    s,
+                                    ShardRouter::route(key, new_shards),
+                                );
+                                journal.record_migration(entry);
+                            }
+                        }
+                    } else {
+                        consecutive_failures = 0; // Reset on success
+                                                  // Record successful migrations in journal
+                        if let Some(journal) = journal {
+                            for key in &successful_keys {
+                                let entry = MigrationJournalEntry::new(
+                                    db_name,
+                                    coll_name,
+                                    key,
+                                    s,
+                                    ShardRouter::route(key, new_shards),
+                                );
+                                journal.record_migration(entry);
+                            }
+                        }
+
+                        // Verify migrated documents are accessible before deleting from source
+                        // Note: cluster_manager not available here, so remote verification falls back to trusting batch
+                        let verified_keys = verify_migrated_documents(
+                            storage,
+                            db_name,
+                            coll_name,
+                            &successful_keys,
+                            &config,
+                            current_assignments,
+                            my_node_id,
+                            None,
+                        )
+                        .await;
+
+                        // Adaptive verification: strict for local, lenient for remote/test scenarios
+                        let keys_to_delete = if verified_keys.len() == successful_keys.len() {
+                            // Perfect verification - all documents confirmed
+                            verified_keys
+                        } else if verified_keys.is_empty() {
+                            // No verification possible - likely test environment or network issues
+                            // Check if we're dealing with remote shards
+                            let has_remote_operations = successful_keys.iter().any(|key| {
+                                let shard_id = ShardRouter::route(key, new_shards);
+                                current_assignments
+                                    .get(&shard_id)
+                                    .map(|a| a.primary_node != my_node_id)
+                                    .unwrap_or(false)
+                            });
+
+                            if has_remote_operations {
+                                // Remote operations - trust the batch sender for now
+                                // TODO: Implement proper remote verification
+                                tracing::warn!("RESHARD: Remote verification not available, trusting batch operations");
+                                successful_keys.clone()
+                            } else {
+                                // Local-only operations - verification should work
+                                tracing::error!(
+                                "RESHARD: Local verification failed completely - skipping batch"
+                            );
+                                failed_count += successful_keys.len();
+                                consecutive_failures += 1;
+                                continue;
+                            }
+                        } else {
+                            // Partial verification - some documents verified, others not
+                            let unverified_count = successful_keys.len() - verified_keys.len();
+                            tracing::warn!(
+                                "RESHARD: Partial verification - {} verified, {} unverified",
+                                verified_keys.len(),
+                                unverified_count
+                            );
+
+                            // Use only verified documents to be safe
+                            verified_keys
+                        };
+
+                        // Delete ONLY verified migrated documents from source
+                        if let Ok(deleted) = physical_coll.delete_batch(keys_to_delete.clone()) {
+                            moved_count += deleted;
+
+                            // Check for partial failures
+                            if keys_to_delete.len() < batch.len() {
+                                let partial_failures = batch.len() - keys_to_delete.len();
+                                failed_count += partial_failures;
+                                tracing::warn!("RESHARD: Batch partial success ({}/{}) - {} docs failed verification/deletion",
                                     keys_to_delete.len(), batch.len(), partial_failures);
 
-                            // Record partial failures
+                                // Record partial failures
+                                if let Some(journal) = journal {
+                                    for (key, _) in batch_vec
+                                        .iter()
+                                        .filter(|(k, _)| !successful_keys.contains(k))
+                                    {
+                                        let entry = MigrationJournalEntry::new(
+                                            db_name,
+                                            coll_name,
+                                            key,
+                                            s,
+                                            ShardRouter::route(key, new_shards),
+                                        );
+                                        journal.record_migration(entry);
+                                    }
+                                }
+                            }
+                        } else {
+                            failed_count += keys_to_delete.len();
+                            tracing::error!("RESHARD: Failed to delete verified migrated documents from source shard");
+
+                            // Record these as failed since we couldn't clean up
                             if let Some(journal) = journal {
-                                for (key, _) in batch_vec
-                                    .iter()
-                                    .filter(|(k, _)| !successful_keys.contains(k))
-                                {
+                                for key in &keys_to_delete {
                                     let entry = MigrationJournalEntry::new(
                                         db_name,
                                         coll_name,
@@ -561,46 +583,37 @@ pub async fn reshard_collection_with_journal<S: BatchSender>(
                                 }
                             }
                         }
-                    } else {
-                        failed_count += keys_to_delete.len();
-                        tracing::error!("RESHARD: Failed to delete verified migrated documents from source shard");
-
-                        // Record these as failed since we couldn't clean up
-                        if let Some(journal) = journal {
-                            for key in &keys_to_delete {
-                                let entry = MigrationJournalEntry::new(
-                                    db_name,
-                                    coll_name,
-                                    key,
-                                    s,
-                                    ShardRouter::route(key, new_shards),
-                                );
-                                journal.record_migration(entry);
-                            }
-                        }
                     }
                 }
             }
 
+            if aborted {
+                break 'pages;
+            }
+            match next_cursor {
+                Some(c) => cursor = c,
+                None => break,
+            }
+        }
+
+        if candidates > 0 {
             // Performance metrics
             let shard_duration = shard_start_time.elapsed();
             let throughput = moved_count as f64 / shard_duration.as_secs_f64();
 
             tracing::info!("RESHARD: Completed moving {}/{} docs from {} ({} failed) in {:.2}s ({:.1} docs/sec)",
-                    moved_count, docs_to_move.len(), physical_name, failed_count,
+                    moved_count, candidates, physical_name, failed_count,
                     shard_duration.as_secs_f64(), throughput);
 
             // Return error if too many documents failed to migrate
-            let failure_rate = failed_count as f64 / docs_to_move.len() as f64;
+            let failure_rate = failed_count as f64 / candidates as f64;
             if failure_rate > 0.1 {
                 // More than 10% failure rate for this shard
                 tracing::error!("RESHARD: Aborting migration for shard {} due to high failure rate: {}/{} failed ({:.1}%)",
-                        physical_name, failed_count, docs_to_move.len(), failure_rate * 100.0);
+                        physical_name, failed_count, candidates, failure_rate * 100.0);
                 return Err(format!(
                     "RESHARD: Too many migration failures for shard {}: {}/{} failed",
-                    physical_name,
-                    failed_count,
-                    docs_to_move.len()
+                    physical_name, failed_count, candidates
                 ));
             }
 

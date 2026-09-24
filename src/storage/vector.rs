@@ -31,6 +31,9 @@ pub struct VectorSearchResult {
 /// Default threshold for auto-switching to HNSW
 const DEFAULT_HNSW_THRESHOLD: usize = 10_000;
 
+/// Ceiling on `ef` (HNSW search breadth) derived from caller input (audit A2).
+const MAX_HNSW_EF: usize = 10_000;
+
 // =============================================================================
 // Scalar Quantization
 // =============================================================================
@@ -868,7 +871,13 @@ impl VectorIndex {
             let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
             if let Some(graph) = hnsw.as_ref() {
                 let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
-                let ef_search = ef.max(limit * 2).max(40);
+                // Audit A2: `limit` and `ef` come from the query; `limit * 2`
+                // wrapped in release builds. The result set is at most the
+                // index size anyway, so bound the search breadth.
+                let ef_search = ef
+                    .max(limit.saturating_mul(2))
+                    .max(40)
+                    .min(MAX_HNSW_EF.max(limit.min(vectors.len())));
                 let hnsw_results =
                     graph.search(query, limit, ef_search, &vectors, self.config.metric);
 
@@ -1021,6 +1030,10 @@ impl VectorIndex {
     }
 
     /// Serialize the index to bytes for persistence
+    ///
+    /// Serializes straight from the guarded data (audit D9): cloning the
+    /// vector map and the HNSW graph first put peak memory at 3-4x the index
+    /// size. `VectorIndexDataV3Ref` encodes identically to `VectorIndexDataV3`.
     pub fn serialize(&self) -> DbResult<Vec<u8>> {
         let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         let quantized = self
@@ -1029,11 +1042,11 @@ impl VectorIndex {
             .unwrap_or_else(|e| e.into_inner());
         let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
 
-        let data = VectorIndexDataV3 {
-            config: self.config.clone(),
-            vectors: vectors.clone(),
-            quantized_vectors: quantized.clone(),
-            hnsw_graph: hnsw.clone(),
+        let data = VectorIndexDataV3Ref {
+            config: &self.config,
+            vectors: &vectors,
+            quantized_vectors: &quantized,
+            hnsw_graph: &hnsw,
         };
         bincode::serialize(&data)
             .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))
@@ -1228,6 +1241,16 @@ struct VectorIndexDataV3 {
     hnsw_graph: Option<HnswGraph>,
 }
 
+/// Borrowing twin of `VectorIndexDataV3` for serialization without cloning.
+/// Field order and types must match it exactly: serde encodes `&T` as `T`.
+#[derive(Serialize)]
+struct VectorIndexDataV3Ref<'a> {
+    config: &'a VectorIndexConfig,
+    vectors: &'a HashMap<String, Vec<f32>>,
+    quantized_vectors: &'a Option<QuantizedVectors>,
+    hnsw_graph: &'a Option<HnswGraph>,
+}
+
 /// Calculate cosine similarity between two vectors
 ///
 /// Returns a value between -1 and 1, where 1 means identical direction,
@@ -1411,6 +1434,10 @@ mod tests {
 
         // Serialize
         let bytes = index.serialize().unwrap();
+
+        // The borrowed serializer must produce the owned V3 encoding.
+        let v3: VectorIndexDataV3 = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(v3.vectors.len(), 2);
 
         // Deserialize
         let restored = VectorIndex::deserialize(&bytes).unwrap();

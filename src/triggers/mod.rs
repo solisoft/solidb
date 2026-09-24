@@ -1,10 +1,12 @@
 use crate::error::{DbError, DbResult};
 use crate::queue::{Job, JobStatus};
+use crate::storage::collection::ChangeEvent;
 use crate::storage::{Document, StorageEngine};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 
 /// Trigger event types
@@ -144,6 +146,48 @@ pub struct TriggerJobParams {
     pub old_data: Option<JsonValue>,
 }
 
+/// Upper bound on how long a cached trigger set is trusted, for writers of
+/// `_triggers` that bypass the collection's change broadcast.
+const TRIGGER_CACHE_MAX_AGE: Duration = Duration::from_secs(30);
+
+/// One database's enabled triggers, grouped by watched collection.
+///
+/// Audit P6: every document write used to scan and deserialise the whole
+/// `_triggers` collection. The entry stays valid while its subscription to
+/// `_triggers`' change broadcast is empty — any insert, update, delete or
+/// truncate there, through whichever code path, marks it stale — and while it
+/// still refers to the same `_triggers` handle, so a dropped and recreated
+/// collection (or another `StorageEngine` in the same process) never matches.
+struct TriggerCacheEntry {
+    source: Arc<broadcast::Sender<ChangeEvent>>,
+    changes: broadcast::Receiver<ChangeEvent>,
+    loaded_at: Instant,
+    by_collection: HashMap<String, Vec<Trigger>>,
+}
+
+impl TriggerCacheEntry {
+    fn is_fresh(&mut self, source: &Arc<broadcast::Sender<ChangeEvent>>) -> bool {
+        Arc::ptr_eq(&self.source, source)
+            && self.loaded_at.elapsed() < TRIGGER_CACHE_MAX_AGE
+            && matches!(
+                self.changes.try_recv(),
+                Err(broadcast::error::TryRecvError::Empty)
+            )
+    }
+}
+
+fn trigger_cache() -> &'static dashmap::DashMap<String, TriggerCacheEntry> {
+    static CACHE: OnceLock<dashmap::DashMap<String, TriggerCacheEntry>> = OnceLock::new();
+    CACHE.get_or_init(dashmap::DashMap::new)
+}
+
+/// Drop the cached triggers of `db_name`. The trigger CRUD endpoints call
+/// this after every write; any other writer of `_triggers` is caught by the
+/// change subscription or, failing that, by the maximum age.
+pub fn invalidate_trigger_cache(db_name: &str) {
+    trigger_cache().remove(db_name);
+}
+
 /// Manager for trigger operations
 pub struct TriggerManager {
     storage: Arc<StorageEngine>,
@@ -178,14 +222,46 @@ impl TriggerManager {
             Err(_) => return Ok(Vec::new()), // No triggers collection = no triggers
         };
 
-        let mut triggers = Vec::new();
+        let source = triggers_coll.change_sender.clone();
+        let cache = trigger_cache();
+        if let Some(mut entry) = cache.get_mut(db_name) {
+            if entry.is_fresh(&source) {
+                return Ok(entry
+                    .by_collection
+                    .get(collection_name)
+                    .cloned()
+                    .unwrap_or_default());
+            }
+        }
+
+        // Subscribe before scanning: a write that lands mid-scan then shows
+        // up as a pending change and forces a reload next time, instead of
+        // being lost.
+        let changes = source.subscribe();
+        let mut by_collection: HashMap<String, Vec<Trigger>> = HashMap::new();
         for doc in triggers_coll.scan(None) {
             if let Ok(trigger) = serde_json::from_value::<Trigger>(doc.to_value()) {
-                if trigger.collection == collection_name && trigger.enabled {
-                    triggers.push(trigger);
+                if trigger.enabled {
+                    by_collection
+                        .entry(trigger.collection.clone())
+                        .or_default()
+                        .push(trigger);
                 }
             }
         }
+        let triggers = by_collection
+            .get(collection_name)
+            .cloned()
+            .unwrap_or_default();
+        cache.insert(
+            db_name.to_string(),
+            TriggerCacheEntry {
+                source,
+                changes,
+                loaded_at: Instant::now(),
+                by_collection,
+            },
+        );
 
         Ok(triggers)
     }
@@ -381,5 +457,57 @@ mod tests {
         trigger.enabled = false;
 
         assert!(!trigger.matches_event(&TriggerEvent::Insert));
+    }
+
+    /// Audit P6: the cached trigger set follows writes to `_triggers` made
+    /// directly on the collection, not only through the CRUD endpoints.
+    #[test]
+    fn trigger_cache_sees_direct_writes() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let storage = Arc::new(StorageEngine::new(dir.path()).unwrap());
+        storage.create_database("tdb".to_string()).unwrap();
+        let db = storage.get_database("tdb").unwrap();
+        db.create_collection("_triggers".to_string(), None).unwrap();
+        let coll = db.get_collection("_triggers").unwrap();
+        let manager = TriggerManager::new(storage.clone());
+
+        assert!(manager
+            .get_triggers_for_collection("tdb", "users")
+            .unwrap()
+            .is_empty());
+
+        let t = Trigger::new(
+            "t1".to_string(),
+            "users".to_string(),
+            vec![TriggerEvent::Insert],
+            "a.lua".to_string(),
+        );
+        let id = t.id.clone();
+        coll.insert(serde_json::to_value(&t).unwrap()).unwrap();
+        assert_eq!(
+            manager
+                .get_triggers_for_collection("tdb", "users")
+                .unwrap()
+                .len(),
+            1
+        );
+        // Served from cache while nothing changes.
+        assert_eq!(
+            manager
+                .get_triggers_for_collection("tdb", "users")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(manager
+            .get_triggers_for_collection("tdb", "orders")
+            .unwrap()
+            .is_empty());
+
+        coll.delete(&id).unwrap();
+        assert!(manager
+            .get_triggers_for_collection("tdb", "users")
+            .unwrap()
+            .is_empty());
     }
 }

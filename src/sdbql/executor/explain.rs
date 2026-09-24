@@ -115,7 +115,9 @@ impl<'a> QueryExecutor<'a> {
                                 !for_clause.collection.is_empty()
                             };
 
-                            if is_collection {
+                            // Mirror execution: a row-policy collection is
+                            // scanned, not index-read (audit H2).
+                            if is_collection && !self.row_policy_applies(&for_clause.collection) {
                                 if let Ok(collection) = self.get_collection(&for_clause.collection)
                                 {
                                     // EXPLAIN uses the first row's context (or

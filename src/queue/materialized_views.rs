@@ -42,6 +42,55 @@ pub(crate) fn parse_interval_secs(s: &str) -> Option<u64> {
     (secs > 0).then_some(secs)
 }
 
+/// Upper bound on one scheduled refresh. The inner query runs with the same
+/// cooperative deadline `/cursor` gives a client query (audit H4: the
+/// scheduled refresh used to run unbounded).
+const MV_REFRESH_TIMEOUT_SECS: u64 = 30;
+
+/// The principal a scheduled refresh runs as, from the `owner` recorded in
+/// the `_views` row at creation time.
+///
+/// Audit H4: the refresh used to run with no principal at all, which the
+/// executor treats as `WriteActor::Server` — so a definition written by a
+/// plain Write user ran with the server's rights every interval. A row with
+/// no recorded owner (created before this field existed, or by server-side
+/// code) refreshes as a read-only, non-admin principal instead: it cannot
+/// write a protected tier and row policies apply to it.
+pub(crate) fn refresh_principal(view: &serde_json::Value) -> (crate::sdbql::QueryPrincipal, bool) {
+    let owner = view.get("owner");
+    let user = owner.and_then(|o| o.get("user")).and_then(|u| u.as_str());
+    match user {
+        Some(user) if !user.is_empty() => {
+            let roles = owner
+                .and_then(|o| o.get("roles"))
+                .and_then(|r| r.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|r| r.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            (crate::sdbql::QueryPrincipal::from_roles(user, roles), true)
+        }
+        _ => (
+            crate::sdbql::QueryPrincipal::from_roles(
+                LEGACY_REFRESH_USER,
+                vec!["viewer".to_string()],
+            ),
+            false,
+        ),
+    }
+}
+
+/// User name a view with no recorded owner is refreshed as. Not a real
+/// account: it only matters to row policies written against CURRENT_USER.
+const LEGACY_REFRESH_USER: &str = "_mv_refresh_legacy";
+
+/// Views already warned about for lacking an owner, so the warning is logged
+/// once per process rather than every interval.
+static WARNED_NO_OWNER: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::OnceLock::new();
+
 impl QueueWorker {
     /// One scheduled-materialized-view refresh sweep.
     pub(crate) async fn check_materialized_views(&self) {
@@ -52,6 +101,9 @@ impl QueueWorker {
         };
         let now = now_secs();
 
+        // Collect what is due first: the refreshes below are awaited, and a
+        // storage scan must not be held across an await point.
+        let mut due_views: Vec<(String, String, serde_json::Value)> = Vec::new();
         for db_name in self.storage.list_databases() {
             let views_coll_name = format!("{}:_views", db_name);
             let views_coll = match self.storage.get_collection(&views_coll_name) {
@@ -86,38 +138,97 @@ impl QueueWorker {
                         }
                     }
                 }
+                due_views.push((db_name.clone(), view_key, value));
+            }
+        }
 
-                match self.refresh_view(&db_name, &view_key) {
-                    Ok(()) => tracing::debug!(
-                        "MV refresh worker: refreshed '{}' in '{}'",
+        for (db_name, view_key, value) in due_views {
+            let (principal, has_owner) = refresh_principal(&value);
+            if !has_owner {
+                let due_key = format!("{}:{}", db_name, view_key);
+                let first = WARNED_NO_OWNER
+                    .get_or_init(Default::default)
+                    .lock()
+                    .map(|mut w| w.insert(due_key))
+                    .unwrap_or(false);
+                if first {
+                    tracing::warn!(
+                        "MV refresh worker: view '{}' in '{}' has no recorded owner; \
+                         refreshing it as a read-only principal. Recreate the view to \
+                         refresh it under its creator's permissions.",
                         view_key,
                         db_name
-                    ),
-                    Err(e) => tracing::warn!(
-                        "MV refresh worker: failed to refresh '{}' in '{}': {}",
-                        view_key,
-                        db_name,
-                        e
-                    ),
+                    );
                 }
+            }
+
+            match self.refresh_view(&db_name, &view_key, principal).await {
+                Ok(()) => tracing::debug!(
+                    "MV refresh worker: refreshed '{}' in '{}'",
+                    view_key,
+                    db_name
+                ),
+                Err(e) => tracing::warn!(
+                    "MV refresh worker: failed to refresh '{}' in '{}': {}",
+                    view_key,
+                    db_name,
+                    e
+                ),
             }
         }
     }
 
-    /// Refresh a single materialized view by running `REFRESH MATERIALIZED VIEW`.
-    fn refresh_view(&self, db_name: &str, view_name: &str) -> Result<(), DbError> {
-        let sql = format!("REFRESH MATERIALIZED VIEW {}", view_name);
+    /// Refresh a single materialized view by running `REFRESH MATERIALIZED
+    /// VIEW` as `principal`, on the blocking pool and under a deadline.
+    async fn refresh_view(
+        &self,
+        db_name: &str,
+        view_name: &str,
+        principal: crate::sdbql::QueryPrincipal,
+    ) -> Result<(), DbError> {
+        // Backtick-quote so any name the parser accepted at creation parses
+        // back to the same identifier.
+        let sql = format!("REFRESH MATERIALIZED VIEW `{}`", view_name.replace('`', ""));
         let query = crate::sdbql::parser::parse(&sql)?;
-        let executor =
-            crate::sdbql::QueryExecutor::with_database(&self.storage, db_name.to_string());
-        executor.execute(&query)?;
-        Ok(())
+        let storage = self.storage.clone();
+        let db_name = db_name.to_string();
+        tokio::task::spawn_blocking(move || {
+            let executor = crate::sdbql::QueryExecutor::with_database(&storage, db_name)
+                .with_principal(principal)
+                .with_timeout(std::time::Duration::from_secs(MV_REFRESH_TIMEOUT_SECS));
+            executor.execute(&query).map(|_| ())
+        })
+        .await
+        .map_err(|e| DbError::InternalError(format!("MV refresh task failed: {}", e)))?
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_interval_secs;
+    use super::{parse_interval_secs, refresh_principal};
+    use serde_json::json;
+
+    #[test]
+    fn test_refresh_principal_uses_recorded_owner() {
+        let (p, has_owner) =
+            refresh_principal(&json!({"owner": {"user": "alice", "roles": ["editor"]}}));
+        assert!(has_owner);
+        assert_eq!(p.user, "alice");
+        assert!(p.can_write);
+        assert!(!p.can_admin);
+    }
+
+    #[test]
+    fn test_refresh_principal_legacy_row_is_read_only() {
+        // Audit H4: no owner must never mean "run as the server".
+        let (p, has_owner) = refresh_principal(&json!({"type": "materialized"}));
+        assert!(!has_owner);
+        assert!(p.can_read);
+        assert!(!p.can_write);
+        assert!(!p.can_admin);
+        let (_, has_owner) = refresh_principal(&json!({"owner": {"user": ""}}));
+        assert!(!has_owner);
+    }
 
     #[test]
     fn test_parse_interval_secs() {

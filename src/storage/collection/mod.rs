@@ -26,11 +26,13 @@ pub mod geo;
 pub mod hybrid;
 pub mod index_meta;
 pub mod indexes;
+pub mod locks;
 pub mod schema;
 pub mod ttl;
 pub mod txn;
 pub mod vector;
 pub mod versioning;
+pub use self::core::flush_dirty_vector_indexes;
 pub use self::hybrid::{FusionMethod, HybridSearchOptions, HybridSearchResult};
 pub use self::vector::QuantizationStats;
 
@@ -50,7 +52,12 @@ pub const COLLECTION_TYPE_KEY: &str = "_stats:type"; // Collection type (documen
 pub const BLO_PREFIX: &str = "blo:"; // Blob chunk prefix
 pub const BLO_TMP_PREFIX: &str = "blo_tmp:"; // Temp blob chunk prefix (resumable uploads)
 pub const TTL_META_PREFIX: &str = "ttl_meta:"; // TTL index metadata
-pub const TTL_EXPIRY_PREFIX: &str = "ttl_exp:"; // TTL expiry index (expiry_timestamp -> doc_key)
+pub const TTL_EXPIRY_PREFIX: &str = "ttl_exp:"; // TTL expiry index: ttl_exp:<index>:<ts, 20 digits>:<doc_key>
+/// Where expiry entries used to live: `doc:ttl_exp::<index>:<ts>:<doc_key>`
+/// (note the doubled colon). Inside `doc:` they counted as documents and a
+/// client-chosen `_key` could forge one (audit H8). Still read by the reaper,
+/// which migrates them; never written.
+pub const LEGACY_TTL_EXPIRY_PREFIX: &str = "doc:ttl_exp:";
 
 pub const BLO_IDX_PREFIX: &str = "blo_idx:"; // Bloom filter index prefix
 pub const CFO_IDX_PREFIX: &str = "cfo_idx:"; // Cuckoo filter index prefix

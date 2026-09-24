@@ -84,16 +84,12 @@ pub async fn replicate_blob_to_node(
         return Ok(());
     }
 
-    let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
-    let url_base = if target_node_address.contains("://") {
-        target_node_address.to_string()
-    } else {
-        format!("{}://{}", scheme, target_node_address)
-    };
-
-    let url = format!(
-        "{}/_internal/blob/replicate/{}/{}/{}",
-        url_base, database, collection, blob_key
+    let url = crate::cluster::http::peer_url(
+        target_node_address,
+        &format!(
+            "/_internal/blob/replicate/{}/{}/{}",
+            database, collection, blob_key
+        ),
     );
 
     tracing::debug!(
@@ -104,7 +100,9 @@ pub async fn replicate_blob_to_node(
         target_node_address
     );
 
-    let client = reqwest::Client::new();
+    // The shared, pooled client (audit A10): a fresh `Client::new()` per chunk
+    // paid a new connection each time and had no timeout at all.
+    let client = crate::storage::http_client::get_http_client();
     let mut form = reqwest::multipart::Form::new();
 
     // Add metadata if present
@@ -124,7 +122,12 @@ pub async fn replicate_blob_to_node(
         form = form.part(format!("chunk_{}", index), part);
     }
 
-    let mut req_builder = client.post(&url).header("X-Cluster-Secret", cluster_secret);
+    // Chunks are large; allow more than the shared client's default, but not
+    // forever — the caller awaits this inside the upload request.
+    let mut req_builder = client
+        .post(&url)
+        .header("X-Cluster-Secret", cluster_secret)
+        .timeout(std::time::Duration::from_secs(120));
 
     if let Some(trace_ctx) = crate::observability::get_current_trace_context() {
         req_builder = req_builder.header("traceparent", trace_ctx.to_header());
@@ -212,7 +215,7 @@ pub async fn receive_blob_replication(
                 // However, we need to check if we should be replicating this INSERT to our followers?
                 // Typically `collection.insert` is low-level.
                 // If we are Primary, we should log it.
-                collection.insert(doc_value.clone())?;
+                collection.insert_or_replace(doc_value.clone())?;
 
                 // Replicate metadata insert via Log
                 if let Some(ref log) = state.replication_log {
@@ -370,7 +373,7 @@ pub async fn receive_blob_upload(
             .ok_or_else(|| DbError::BadRequest("Metadata must contain _key".to_string()))?;
 
         tracing::info!("Inserting forwarded blob metadata for blob {}", blob_key);
-        collection.insert(meta.clone())?;
+        collection.insert_or_replace(meta.clone())?;
 
         // NOTE: Don't add to replication log for sharded data!
         // Each node only stores its assigned shards - data is partitioned, not replicated.

@@ -7,8 +7,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+use super::handlers::query::{invalidate_collections, mutated_collections};
 use super::handlers::AppState;
 use crate::sql::translate_sql_to_sdbql;
+
+/// Execution timeout for `/sql`, the same bound `/cursor` applies.
+const SQL_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Debug, Deserialize)]
 pub struct SqlRequest {
@@ -103,36 +107,84 @@ pub async fn execute_sql_handler(
         }
     }
 
-    // Create executor with database context and bind variables
-    let mut executor = crate::sdbql::QueryExecutor::with_database_and_bind_vars(
-        &state.storage,
-        db.clone(),
-        request.bind_vars,
-    )
+    // Audit P1: mirror `/cursor` — the executor is synchronous CPU work, so it
+    // runs on the blocking pool under the same timeout instead of pinning an
+    // async worker, and a mutation invalidates the result cache (or `/cursor`
+    // keeps serving the pre-write rows).
+    let mutates = query_ast.has_mutations();
+    let invalidated: Vec<String> = if mutates {
+        mutated_collections(&query_ast).into_iter().collect()
+    } else {
+        Vec::new()
+    };
+    let storage = state.storage.clone();
+    let replication_log = state.replication_log.clone();
+    let bind_vars = request.bind_vars;
     // `/sql` is a Read route: the principal is what stops a viewer from
     // reaching the write-side query paths (auto-index creation).
-    .with_principal(crate::server::handlers::query::principal_from_claims(
-        &claims,
-    ))
-    .with_timeout(std::time::Duration::from_secs(30));
-    // Mutating SQL must reach the replication log like every other write path.
-    if let Some(ref log) = state.replication_log {
-        executor = executor.with_replication(log);
+    let principal = crate::server::handlers::query::principal_from_claims(&claims);
+    let db_name = db;
+
+    let mut task = tokio::task::spawn_blocking(move || {
+        let mut executor =
+            crate::sdbql::QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
+                .with_principal(principal)
+                .with_timeout(std::time::Duration::from_secs(SQL_TIMEOUT_SECS));
+        // Mutating SQL must reach the replication log like every other write path.
+        if let Some(ref log) = replication_log {
+            executor = executor.with_replication(log);
+        }
+        executor.execute(&query_ast)
+    });
+
+    // `&mut task` so the handle survives a timeout and can still be awaited.
+    let outcome =
+        match tokio::time::timeout(std::time::Duration::from_secs(SQL_TIMEOUT_SECS), &mut task)
+            .await
+        {
+            Ok(Ok(result)) => result.map_err(|e| format!("Query execution error: {}", e)),
+            Ok(Err(e)) => Err(format!("Task join error: {}", e)),
+            Err(_) => {
+                // A blocking task cannot be cancelled: an overrunning mutation
+                // still commits. Drop cached rows now and again once it lands.
+                if mutates {
+                    invalidate_collections(&invalidated);
+                    tokio::spawn(async move {
+                        let _ = task.await;
+                        invalidate_collections(&invalidated);
+                    });
+                }
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(SqlResponse {
+                        result: Value::Null,
+                        sdbql: Some(sdbql),
+                        error: Some(format!(
+                            "Query execution timeout: exceeded {} seconds",
+                            SQL_TIMEOUT_SECS
+                        )),
+                    }),
+                ));
+            }
+        };
+
+    // Invalidate even on error: a mutation can fail part-way after writing.
+    if mutates {
+        invalidate_collections(&invalidated);
     }
 
-    // Execute the query
-    match executor.execute(&query_ast) {
+    match outcome {
         Ok(results) => Ok(Json(SqlResponse {
             result: Value::Array(results),
             sdbql: Some(sdbql),
             error: None,
         })),
-        Err(e) => Err((
+        Err(error) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(SqlResponse {
                 result: Value::Null,
                 sdbql: Some(sdbql),
-                error: Some(format!("Query execution error: {}", e)),
+                error: Some(error),
             }),
         )),
     }

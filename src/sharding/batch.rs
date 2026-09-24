@@ -101,9 +101,12 @@ pub async fn insert_batch(
             // Queue remote batch as future
             if let Some(mgr) = &cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
-                    let url = format!(
-                        "http://{}/_api/database/{}/document/{}/_batch",
-                        addr, database, physical_coll
+                    let url = crate::cluster::http::peer_url(
+                        &addr,
+                        &format!(
+                            "/_api/database/{}/document/{}/_batch",
+                            database, physical_coll
+                        ),
                     );
                     tracing::info!(
                         "INSERT BATCH: Queuing {} docs for remote shard {} at {}",
@@ -148,7 +151,6 @@ pub async fn insert_batch(
     }
 
     // Process local batches and forward to replicas
-    let mut replica_futures = Vec::new();
 
     for (shard_id, physical_coll, batch) in local_batches {
         let db = storage.get_database(database)?;
@@ -178,9 +180,12 @@ pub async fn insert_batch(
                         if let Some(mgr) = &cluster_manager {
                             for replica_node in &assignment.replica_nodes {
                                 if let Some(addr) = mgr.get_node_api_address(replica_node) {
-                                    let url = format!(
-                                        "http://{}/_api/database/{}/document/{}/_replica",
-                                        addr, database, physical_coll
+                                    let url = crate::cluster::http::peer_url(
+                                        &addr,
+                                        &format!(
+                                            "/_api/database/{}/document/{}/_replica",
+                                            database, physical_coll
+                                        ),
                                     );
                                     tracing::debug!(
                                         "REPLICA: Forwarding {} docs to replica {} at {}",
@@ -192,17 +197,35 @@ pub async fn insert_batch(
                                     let client = client.clone();
                                     let secret = cluster_secret.to_string();
                                     let batch = batch.clone();
+                                    let replica = replica_node.clone();
 
                                     let future = async move {
-                                        let _ = client
+                                        match client
                                             .post(&url)
                                             .header("X-Shard-Direct", "true")
                                             .header("X-Cluster-Secret", &secret)
                                             .json(&batch)
                                             .send()
-                                            .await;
+                                            .await
+                                        {
+                                            Ok(r) if r.status().is_success() => {}
+                                            Ok(r) => tracing::warn!(
+                                                "REPLICA: forward of {} docs to {} failed: {}",
+                                                batch.len(),
+                                                replica,
+                                                r.status()
+                                            ),
+                                            Err(e) => tracing::warn!(
+                                                "REPLICA: forward of {} docs to {} failed: {}",
+                                                batch.len(),
+                                                replica,
+                                                e
+                                            ),
+                                        }
                                     };
-                                    replica_futures.push(future);
+                                    // Audit A10: in the background, bounded.
+                                    crate::sharding::coordinator::spawn_replica_forward(future)
+                                        .await;
                                 }
                             }
                         }
@@ -222,11 +245,6 @@ pub async fn insert_batch(
             total_success += success;
             total_fail += fail;
         }
-    }
-
-    // Process replica forwarding in PARALLEL (fire-and-forget, don't wait)
-    if !replica_futures.is_empty() {
-        futures::future::join_all(replica_futures).await;
     }
 
     Ok((total_success, total_fail))
@@ -335,9 +353,12 @@ pub async fn upsert_batch_to_shards(
                     }
                     drop(recently_failed);
 
-                    let url = format!(
-                        "http://{}/_api/database/{}/document/{}/_batch",
-                        addr, database, physical_coll
+                    let url = crate::cluster::http::peer_url(
+                        &addr,
+                        &format!(
+                            "/_api/database/{}/document/{}/_batch",
+                            database, physical_coll
+                        ),
                     );
                     let client = get_http_client();
 

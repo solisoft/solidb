@@ -165,10 +165,12 @@ pub async fn export_collection(
                     // Export from REMOTE physical shard
                     if let Some(mgr) = &cluster_manager_opt {
                         if let Some(addr) = mgr.get_node_api_address(&primary_node) {
-                            let url = format!("http://{}/_api/database/{}/collection/{}/export", addr, db_name_clone, physical_name);
+                            let url = crate::cluster::http::peer_url(&addr, &format!("/_api/database/{}/collection/{}/export", db_name_clone, physical_name));
                             tracing::info!("Exporting remote shard {} from {}", physical_name, addr);
 
                             let req = client.get(&url)
+                                // A whole shard can outlast the shared client's 60 s total.
+                                .timeout(crate::cluster::http::stream_timeout())
                                 .header("X-Shard-Direct", "true")
                                 .header("X-Cluster-Secret", &secret_env);
 

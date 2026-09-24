@@ -136,6 +136,22 @@ pub struct ScriptStats {
     pub total_ws_connections: AtomicUsize,
 }
 
+/// App data: the database the running script belongs to.
+///
+/// Bindings created once per pooled state (`solidb.cache`,
+/// `solidb.rate_limit`) read it at call time to namespace their
+/// process-global stores per database (audit H6). Not a Lua global, so a
+/// script cannot change which database it claims to be.
+pub(crate) struct ScriptDbName(pub String);
+
+/// The database of the script running on `lua`, or an error when none was
+/// installed — fail closed rather than fall into a shared namespace.
+pub(crate) fn script_db_name(lua: &mlua::Lua) -> mlua::Result<String> {
+    lua.app_data_ref::<ScriptDbName>()
+        .map(|d| d.0.clone())
+        .ok_or_else(|| mlua::Error::RuntimeError("no database context for this script".to_string()))
+}
+
 /// Result from script execution
 #[derive(Debug)]
 pub struct ScriptResult {

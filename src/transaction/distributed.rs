@@ -136,8 +136,10 @@ impl DistributedTransactionCoordinator {
         tx_id: &str,
     ) -> Result<(), DbError> {
         let url = format!(
-            "http://{}/_api/distributed/participant/prepare/{}",
-            participant.address, tx_id
+            "{}://{}/_api/distributed/participant/prepare/{}",
+            crate::cluster::http::cluster_scheme(),
+            participant.address,
+            tx_id
         );
 
         let client = crate::storage::http_client::get_http_client();
@@ -186,8 +188,10 @@ impl DistributedTransactionCoordinator {
         tx_id: &str,
     ) -> Result<(), DbError> {
         let url = format!(
-            "http://{}/_api/distributed/participant/commit/{}",
-            participant.address, tx_id
+            "{}://{}/_api/distributed/participant/commit/{}",
+            crate::cluster::http::cluster_scheme(),
+            participant.address,
+            tx_id
         );
 
         let client = crate::storage::http_client::get_http_client();
@@ -236,8 +240,10 @@ impl DistributedTransactionCoordinator {
         tx_id: &str,
     ) -> Result<(), DbError> {
         let url = format!(
-            "http://{}/_api/distributed/participant/abort/{}",
-            participant.address, tx_id
+            "{}://{}/_api/distributed/participant/abort/{}",
+            crate::cluster::http::cluster_scheme(),
+            participant.address,
+            tx_id
         );
 
         let client = crate::storage::http_client::get_http_client();

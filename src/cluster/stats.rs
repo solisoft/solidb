@@ -204,12 +204,7 @@ impl ClusterStatsCollector {
                 // that lands on identical figures must not touch RocksDB.
                 let digest = digest_of(&json);
                 if self.gate.cached(&doc_id) != Some(digest) {
-                    // Store in _system/_cluster_informations. There is no
-                    // replace, so delete first when the document exists.
-                    if sys_coll.get(&doc_id).is_ok() {
-                        sys_coll.delete(&doc_id)?;
-                    }
-
+                    // Store in _system/_cluster_informations.
                     // Add _key to json
                     let mut doc = json.as_object().unwrap().clone();
                     doc.insert(
@@ -217,7 +212,7 @@ impl ClusterStatsCollector {
                         serde_json::Value::String(doc_id.clone()),
                     );
 
-                    sys_coll.insert(serde_json::Value::Object(doc))?;
+                    sys_coll.insert_or_replace(serde_json::Value::Object(doc))?;
                 }
 
                 self.gate.record(&doc_id, counts, digest);

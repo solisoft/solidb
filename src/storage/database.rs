@@ -24,6 +24,12 @@ pub struct Database {
     collections: Arc<DashMap<String, Collection>>,
     /// Column families scheduled for background drop — treated as deleted
     pending_cf_drops: Arc<PendingCfDrops>,
+    /// The owning `StorageEngine`'s handle cache, when there is one. It keys
+    /// handles by CF name (and, for `_system`, by bare name too), and they
+    /// are the same `Collection` instances as ours — so both caches must be
+    /// evicted together or a recreated collection keeps being served its
+    /// predecessor's filters, vector index and change channel (audit D8).
+    engine_collections: Option<Arc<DashMap<String, Collection>>>,
 }
 
 impl std::fmt::Debug for Database {
@@ -43,6 +49,31 @@ impl Database {
             cf_lock: Arc::new(RwLock::new(())),
             collections: Arc::new(DashMap::new()),
             pending_cf_drops,
+            engine_collections: None,
+        }
+    }
+
+    /// Share the owning engine's handle cache so this database evicts from
+    /// it too; see `engine_collections`.
+    pub(crate) fn with_engine_cache(
+        mut self,
+        engine_collections: Arc<DashMap<String, Collection>>,
+    ) -> Self {
+        self.engine_collections = Some(engine_collections);
+        self
+    }
+
+    /// Forget every cached handle for `collection_name`, here and in the
+    /// engine's cache.
+    pub(crate) fn evict_cached_collection(&self, collection_name: &str) {
+        self.collections.remove(collection_name);
+        if let Some(engine) = &self.engine_collections {
+            engine.remove(&self.collection_cf_name(collection_name));
+            // `StorageEngine::system_collection` also caches `_system`
+            // collections under their unqualified name.
+            if self.name == "_system" {
+                engine.remove(collection_name);
+            }
         }
     }
 
@@ -129,7 +160,7 @@ impl Database {
         // A reused CF keeps no state from its previous incarnation, but a
         // cached `Collection` handle would: its counters, filters and vector
         // indexes are all in memory.
-        self.collections.remove(&collection_name);
+        self.evict_cached_collection(&collection_name);
         super::collection::index_meta::invalidate_index_meta(&self.db, &cf_name);
 
         // Persist collection type (lock-free, thread-safe)
@@ -234,8 +265,8 @@ impl Database {
             }
         }
 
-        // Remove from cache
-        self.collections.remove(collection_name);
+        // Remove from cache — ours and the engine's
+        self.evict_cached_collection(collection_name);
         super::collection::index_meta::invalidate_index_meta(&self.db, &cf_name);
 
         Ok(())

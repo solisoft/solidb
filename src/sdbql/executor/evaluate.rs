@@ -17,6 +17,14 @@ use super::phonetic::phonetic::{
     soundex_es, soundex_fr, soundex_it, soundex_ja, soundex_nl, soundex_pt,
 };
 
+/// Ceiling on a search's result count (`VECTOR_SEARCH` k and ef,
+/// `HYBRID_SEARCH` limit). These size allocations downstream (audit A2).
+const MAX_SEARCH_K: usize = 10_000;
+
+/// Ceiling on `VECTOR_SEARCH`'s over-fetch multiplier; k × overfetch is the
+/// candidate pool.
+const MAX_VECTOR_OVERFETCH: usize = 100;
+
 impl<'a> QueryExecutor<'a> {
     /// Evaluate a function call
     pub(super) fn evaluate_function(
@@ -275,14 +283,23 @@ impl<'a> QueryExecutor<'a> {
                 // For now, pass 100 as limit to be safe, or just use max_distance as limit if that was the intent.
                 // Let's use 100 as default limit.
                 let limit = 100;
+                let gate = self.row_policy_gate(collection_name);
                 match collection.fulltext_search(query, Some(vec![field.to_string()]), limit) {
                     Ok(matches) => {
                         let results: Vec<Value> = matches
                             .iter()
                             .filter_map(|m| {
-                                collection.get(&m.doc_key).ok().map(|doc| {
+                                let doc = collection.get(&m.doc_key).ok()?.to_value();
+                                // Audit H2: hits hidden by the row policy are dropped.
+                                if !gate
+                                    .as_ref()
+                                    .is_none_or(|g| self.row_policy_allows(g, &doc, ctx))
+                                {
+                                    return None;
+                                }
+                                Some({
                                     let mut obj = serde_json::Map::new();
-                                    obj.insert("doc".to_string(), doc.to_value());
+                                    obj.insert("doc".to_string(), doc);
                                     obj.insert("score".to_string(), json!(m.score));
                                     obj.insert("matched".to_string(), json!(m.matched_terms));
                                     Value::Object(obj)
@@ -312,20 +329,18 @@ impl<'a> QueryExecutor<'a> {
                     DbError::ExecutionError("SAMPLE: count must be a number".to_string())
                 })? as usize;
 
-                let collection = self.get_collection(collection_name)?;
-                let all_docs = collection.all();
-
-                if all_docs.is_empty() || count == 0 {
+                if count == 0 {
                     return Ok(Value::Array(vec![]));
                 }
+                let collection = self.get_collection(collection_name)?;
 
-                use rand::seq::SliceRandom;
-                let mut rng = rand::thread_rng();
-                let mut docs: Vec<Value> = all_docs.iter().map(|d| d.to_value()).collect();
-                docs.shuffle(&mut rng);
-                let sampled: Vec<Value> = docs.into_iter().take(count).collect();
-
-                Ok(Value::Array(sampled))
+                // Audit P3: the scan is bounded by the row ceiling (it used to
+                // be `all()`, then a full copy and shuffle), rows hidden by the
+                // row policy are excluded (H2), and the sample is drawn by
+                // reservoir, holding at most `count` picks beyond the scan.
+                let docs = self.scan_bounded(&collection)?;
+                let docs = self.apply_row_policy(collection_name, docs, ctx);
+                Ok(Value::Array(reservoir_sample(docs, count)))
             }
 
             // DOCUMENT(id) or DOCUMENT(collection, key) or DOCUMENT(collection, [keys])
@@ -346,10 +361,9 @@ impl<'a> QueryExecutor<'a> {
                                         self.get_collection(collection_name)
                                     }?;
 
-                                    match collection.get(key) {
-                                        Ok(doc) => Ok(doc.to_value()),
-                                        Err(_) => Ok(Value::Null),
-                                    }
+                                    Ok(self
+                                        .get_visible(&collection, collection_name, key, ctx)
+                                        .unwrap_or(Value::Null))
                                 } else {
                                     Err(DbError::ExecutionError(
                                         "DOCUMENT: id must be in format 'collection/key'"
@@ -371,8 +385,13 @@ impl<'a> QueryExecutor<'a> {
                                             };
 
                                             if let Ok(collection) = collection_result {
-                                                if let Ok(doc) = collection.get(key) {
-                                                    results.push(doc.to_value());
+                                                if let Some(doc) = self.get_visible(
+                                                    &collection,
+                                                    collection_name,
+                                                    key,
+                                                    ctx,
+                                                ) {
+                                                    results.push(doc);
                                                 }
                                             }
                                         }
@@ -401,17 +420,18 @@ impl<'a> QueryExecutor<'a> {
 
                         match &evaluated_args[1] {
                             // Single key
-                            Value::String(key) => match collection.get(key) {
-                                Ok(doc) => Ok(doc.to_value()),
-                                Err(_) => Ok(Value::Null),
-                            },
+                            Value::String(key) => Ok(self
+                                .get_visible(&collection, collection_name, key, ctx)
+                                .unwrap_or(Value::Null)),
                             // Array of keys
                             Value::Array(keys) => {
                                 let mut results = Vec::new();
                                 for key_val in keys {
                                     if let Some(key) = key_val.as_str() {
-                                        if let Ok(doc) = collection.get(key) {
-                                            results.push(doc.to_value());
+                                        if let Some(doc) =
+                                            self.get_visible(&collection, collection_name, key, ctx)
+                                        {
+                                            results.push(doc);
                                         }
                                     }
                                 }
@@ -796,7 +816,8 @@ impl<'a> QueryExecutor<'a> {
                             text_weight = tw as f32;
                         }
                         if let Some(l) = opts.get("limit").and_then(|v| v.as_u64()) {
-                            limit = l as usize;
+                            // Audit A2: sizes allocations downstream.
+                            limit = (l as usize).min(MAX_SEARCH_K);
                         }
                         if let Some(f) = opts.get("fusion").and_then(|v| v.as_str()) {
                             fusion_method = f;
@@ -805,6 +826,7 @@ impl<'a> QueryExecutor<'a> {
                 }
 
                 let collection = self.get_collection(collection_name)?;
+                let gate = self.row_policy_gate(collection_name);
 
                 // Delegate to the shared engine implementation (also used by
                 // the HTTP and driver hybrid-search endpoints). Unknown fusion
@@ -827,6 +849,12 @@ impl<'a> QueryExecutor<'a> {
                     .into_iter()
                     .filter_map(|hit| {
                         let doc = hit.document?;
+                        if !gate
+                            .as_ref()
+                            .is_none_or(|g| self.row_policy_allows(g, &doc, ctx))
+                        {
+                            return None;
+                        }
                         let mut obj = serde_json::Map::new();
                         obj.insert("doc".to_string(), doc);
                         obj.insert("score".to_string(), json!(hit.score));
@@ -869,7 +897,10 @@ impl<'a> QueryExecutor<'a> {
                     DbError::ExecutionError(
                         "VECTOR_SEARCH: k must be a non-negative integer".to_string(),
                     )
-                })? as usize;
+                })?;
+                // Audit A2: k, overfetch and ef size allocations in the vector
+                // index; `VECTOR_SEARCH(..., 1e15)` aborted the process.
+                let k = (k.min(MAX_SEARCH_K as u64)) as usize;
 
                 let mut overfetch: usize = 1;
                 let mut ef: Option<usize> = None;
@@ -877,10 +908,10 @@ impl<'a> QueryExecutor<'a> {
                 if evaluated_args.len() == 5 {
                     if let Some(opts) = evaluated_args[4].as_object() {
                         if let Some(o) = opts.get("overfetch").and_then(|v| v.as_u64()) {
-                            overfetch = o as usize;
+                            overfetch = o.clamp(1, MAX_VECTOR_OVERFETCH as u64) as usize;
                         }
                         if let Some(e) = opts.get("ef").and_then(|v| v.as_u64()) {
-                            ef = Some(e as usize);
+                            ef = Some(e.min(MAX_SEARCH_K as u64) as usize);
                         }
                         if let Some(f) = opts.get("filter").and_then(|v| v.as_object()) {
                             filter = f.clone();
@@ -894,9 +925,14 @@ impl<'a> QueryExecutor<'a> {
                 }
 
                 let collection = self.get_collection(collection_name)?;
+                let gate = self.row_policy_gate(collection_name);
                 let results: Vec<Value> = collection
                     .vector_search_filtered(index_name, &query_vector, k, overfetch, ef, &filter)?
                     .into_iter()
+                    .filter(|(doc, _)| {
+                        gate.as_ref()
+                            .is_none_or(|g| self.row_policy_allows(g, doc, ctx))
+                    })
                     .map(|(doc, score)| {
                         let mut obj = serde_json::Map::new();
                         obj.insert("doc".to_string(), doc);
@@ -951,7 +987,10 @@ impl<'a> QueryExecutor<'a> {
                 })?;
                 let as_of = parse_as_of_micros(&evaluated_args[2])?;
                 let collection = self.get_collection(coll_name)?;
-                Ok(collection.get_as_of(key, as_of)?.unwrap_or(Value::Null))
+                Ok(collection
+                    .get_as_of(key, as_of)?
+                    .filter(|doc| self.row_policy_permits(coll_name, doc, ctx))
+                    .unwrap_or(Value::Null))
             }
 
             // DOC_HISTORY(collection, key) - version history, newest first.
@@ -968,7 +1007,29 @@ impl<'a> QueryExecutor<'a> {
                     DbError::ExecutionError("DOC_HISTORY: key must be a string".to_string())
                 })?;
                 let collection = self.get_collection(coll_name)?;
-                Ok(Value::Array(collection.doc_history(key)))
+                let history = collection.doc_history(key);
+                Ok(Value::Array(match self.row_policy_gate(coll_name) {
+                    // A version is shown only if the policy admits its value;
+                    // tombstones only once some version of the key is visible.
+                    Some(gate) => {
+                        let visible: Vec<Option<bool>> = history
+                            .iter()
+                            .map(|v| {
+                                v.get("value")
+                                    .filter(|d| d.is_object())
+                                    .map(|d| self.row_policy_allows(&gate, d, ctx))
+                            })
+                            .collect();
+                        let any_visible = visible.contains(&Some(true));
+                        history
+                            .into_iter()
+                            .zip(visible)
+                            .filter(|(_, vis)| vis.unwrap_or(any_visible))
+                            .map(|(v, _)| v)
+                            .collect()
+                    }
+                    None => history,
+                }))
             }
 
             "SNAPSHOT_DIFF" => {
@@ -985,8 +1046,8 @@ impl<'a> QueryExecutor<'a> {
                 let t1 = parse_as_of_micros(&evaluated_args[1])?;
                 let t2 = parse_as_of_micros(&evaluated_args[2])?;
                 let collection = self.get_collection(coll_name)?;
-                let a = collection.scan_as_of(t1)?;
-                let b = collection.scan_as_of(t2)?;
+                let a = self.apply_row_policy(coll_name, collection.scan_as_of(t1)?, ctx);
+                let b = self.apply_row_policy(coll_name, collection.scan_as_of(t2)?, ctx);
                 let key_of = |d: &Value| {
                     d.get("_key")
                         .and_then(Value::as_str)
@@ -1057,14 +1118,38 @@ impl<'a> QueryExecutor<'a> {
                         .map(Value::String)
                         .unwrap_or(Value::Null));
                 }
+                // Audit C4: the policy binds every non-admin principal, so only
+                // an admin may lift or replace it. An executor with no
+                // principal is refused too, as for the catalog functions.
+                if !self.principal.as_ref().is_some_and(|p| p.can_admin) {
+                    return Err(DbError::Forbidden(
+                        "ROW_POLICY(collection, predicate) changes a row policy and requires admin"
+                            .to_string(),
+                    ));
+                }
                 if evaluated_args[1].is_null() {
                     collection.set_row_policy(None)?;
+                    // Cached results were computed under the old policy.
+                    crate::storage::query_cache::invalidate_collection("", coll_name);
                     return Ok(Value::Null);
                 }
                 let pred = evaluated_args[1].as_str().ok_or_else(|| {
                     DbError::ExecutionError("ROW_POLICY: predicate must be a string".to_string())
                 })?;
+                // The predicate later runs under each reader's principal on
+                // every scan: it must parse, and it must not write.
+                let parsed = crate::sdbql::parser::Parser::new(pred)
+                    .and_then(|mut p| p.parse_expression())
+                    .map_err(|e| {
+                        DbError::ExecutionError(format!("ROW_POLICY: invalid predicate: {e}"))
+                    })?;
+                if crate::sdbql::ast::expression_mutates(&parsed) {
+                    return Err(DbError::ExecutionError(
+                        "ROW_POLICY: predicate must not modify data".to_string(),
+                    ));
+                }
                 collection.set_row_policy(Some(pred))?;
+                crate::storage::query_cache::invalidate_collection("", coll_name);
                 Ok(Value::String(pred.to_string()))
             }
             "EMBED" => self.eval_embed(&evaluated_args),
@@ -1126,7 +1211,18 @@ impl<'a> QueryExecutor<'a> {
             ));
         }
         let lits: Vec<Expression> = args.iter().cloned().map(Expression::Literal).collect();
-        let res = self.evaluate_function(name, &lits, ctx);
+        // Audit A11: the mutation classifier cannot see through a dynamic
+        // name, so state-changing builtins are only callable directly. Nested
+        // APPLY/CALL are checked again at their own level of this function.
+        let state_changing = crate::sdbql::ast::is_mutating_function(name)
+            || (name.eq_ignore_ascii_case("ROW_POLICY") && lits.len() >= 2);
+        let res = if state_changing {
+            Err(DbError::ExecutionError(format!(
+                "APPLY/CALL cannot invoke {name}, which changes server state; call it directly"
+            )))
+        } else {
+            self.evaluate_function(name, &lits, ctx)
+        };
         DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
         res
     }
@@ -1282,4 +1378,26 @@ fn parse_as_of_micros(v: &Value) -> DbResult<u64> {
         ));
     };
     Ok(millis.saturating_mul(1000).saturating_add(999))
+}
+
+/// Uniform sample of up to `k` items (Algorithm R), in no particular order.
+fn reservoir_sample(items: Vec<Value>, k: usize) -> Vec<Value> {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let mut reservoir: Vec<Value> = Vec::with_capacity(k.min(items.len()));
+    for (i, item) in items.into_iter().enumerate() {
+        if i < k {
+            reservoir.push(item);
+        } else {
+            let j = rng.gen_range(0..=i);
+            if j < k {
+                reservoir[j] = item;
+            }
+        }
+    }
+    // Algorithm R keeps the first `k` items in scan order when the input is
+    // no larger than `k`; shuffle so the result order is random either way.
+    use rand::seq::SliceRandom;
+    reservoir.shuffle(&mut rng);
+    reservoir
 }

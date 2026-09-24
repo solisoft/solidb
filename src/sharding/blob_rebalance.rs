@@ -321,15 +321,12 @@ impl BlobRebalanceWorker {
         chunk_index: u32,
         cluster_secret: &str,
     ) -> Option<bool> {
-        let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
-        let url_base = if target_node_address.contains("://") {
-            target_node_address.to_string()
-        } else {
-            format!("{}://{}", scheme, target_node_address)
-        };
-        let url = format!(
-            "{}/_internal/blob/replicate/{}/{}/{}/chunk/{}",
-            url_base, database, collection, blob_key, chunk_index
+        let url = crate::cluster::http::peer_url(
+            target_node_address,
+            &format!(
+                "/_internal/blob/replicate/{}/{}/{}/chunk/{}",
+                database, collection, blob_key, chunk_index
+            ),
         );
 
         match client

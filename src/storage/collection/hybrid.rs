@@ -59,6 +59,9 @@ pub struct HybridSearchResult {
     pub document: Option<Value>,
 }
 
+/// Ceiling on candidates each leg of a hybrid search fetches.
+const MAX_HYBRID_OVERFETCH: usize = 30_000;
+
 impl Collection {
     // ==================== Hybrid Search ====================
 
@@ -79,14 +82,16 @@ impl Collection {
         let limit = opts.limit;
 
         // Step 1: Vector search (get more candidates than limit for better fusion)
-        let vector_results = self.vector_search(vector_index, query_vector, limit * 3, None)?;
+        // Audit A2: `limit` is caller-controlled; `limit * 3` wrapped silently.
+        let overfetch = limit.saturating_mul(3).min(MAX_HYBRID_OVERFETCH);
+        let vector_results = self.vector_search(vector_index, query_vector, overfetch, None)?;
 
         // Step 2: Fulltext search (same over-fetch as the vector leg)
         let fulltext_results = self
             .fulltext_search(
                 text_query,
                 Some(vec![fulltext_field.to_string()]),
-                limit * 3,
+                overfetch,
             )
             .unwrap_or_default();
 

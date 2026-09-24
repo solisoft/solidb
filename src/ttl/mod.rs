@@ -19,6 +19,14 @@ impl TtlWorker {
     }
 
     /// Run the TTL cleanup loop
+    ///
+    /// Nothing inside one sweep can end the loop: the sweep runs as its own
+    /// blocking task, so a panic surfaces here as a `JoinError`, and each
+    /// collection is additionally isolated with `catch_unwind` so one bad
+    /// collection does not skip the rest of the instance. Before, an
+    /// `expect` on the index-metadata path (e.g. a collection dropped
+    /// mid-sweep) killed the worker for the life of the process and
+    /// expired documents silently stopped being removed.
     pub async fn start(self: Arc<Self>) {
         tracing::info!("Starting TTL Worker (interval: {}s)", self.interval_secs);
         loop {
@@ -29,6 +37,26 @@ impl TtlWorker {
 
     /// Cleanup expired documents across all databases and collections
     async fn cleanup_expired_documents(&self) {
+        let storage = self.storage.clone();
+        match tokio::task::spawn_blocking(move || Self::sweep(&storage)).await {
+            Ok(total_deleted) => {
+                if total_deleted > 0 {
+                    tracing::debug!(
+                        "TTL cleanup cycle complete: {} total documents deleted",
+                        total_deleted
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::error!("TTL cleanup sweep panicked; retrying next interval: {}", e);
+            }
+        }
+    }
+
+    /// One pass over every collection. Synchronous: the whole pass is
+    /// storage work, so it runs on one blocking thread rather than hopping
+    /// on and off the runtime per collection.
+    fn sweep(storage: &StorageEngine) -> usize {
         let mut total_deleted = 0;
 
         // One pass over the column families instead of one per database.
@@ -36,8 +64,8 @@ impl TtlWorker {
         // column-family name in the instance on each call, so driving it from
         // the database list cost `databases × total collections` string
         // allocations every interval before a single expiry was examined.
-        for (db_name, coll_names) in self.storage.collections_grouped() {
-            let db = match self.storage.get_database(&db_name) {
+        for (db_name, coll_names) in storage.collections_grouped() {
+            let db = match storage.get_database(&db_name) {
                 Ok(db) => db,
                 Err(_) => continue,
             };
@@ -48,18 +76,11 @@ impl TtlWorker {
                     Err(_) => continue,
                 };
 
-                // Check if this collection has TTL indexes
-                let ttl_indexes = collection.list_ttl_indexes();
-                if ttl_indexes.is_empty() {
-                    continue;
-                }
-
-                // Run cleanup (this is CPU-bound, so run in blocking task)
-                let coll = collection.clone();
-                match tokio::task::spawn_blocking(move || coll.cleanup_all_expired_documents())
-                    .await
-                {
-                    Ok(Ok(count)) => {
+                // `cleanup_all_expired_documents` returns at once for a
+                // collection with no TTL index (the index list is cached).
+                let outcome = Self::guarded(|| collection.cleanup_all_expired_documents());
+                match outcome {
+                    Some(Ok(count)) => {
                         if count > 0 {
                             tracing::info!(
                                 "TTL cleanup: deleted {} expired documents from {}.{}",
@@ -70,22 +91,26 @@ impl TtlWorker {
                             total_deleted += count;
                         }
                     }
-                    Ok(Err(e)) => {
+                    Some(Err(e)) => {
                         tracing::warn!("TTL cleanup failed for {}.{}: {}", db_name, coll_name, e);
                     }
-                    Err(e) => {
-                        tracing::error!("TTL cleanup task panicked: {}", e);
+                    None => {
+                        tracing::error!(
+                            "TTL cleanup panicked for {}.{}; skipping it this interval",
+                            db_name,
+                            coll_name
+                        );
                     }
                 }
             }
         }
 
-        if total_deleted > 0 {
-            tracing::debug!(
-                "TTL cleanup cycle complete: {} total documents deleted",
-                total_deleted
-            );
-        }
+        total_deleted
+    }
+
+    /// Run `f`, turning a panic into `None`.
+    fn guarded<T>(f: impl FnOnce() -> T) -> Option<T> {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).ok()
     }
 }
 
@@ -129,6 +154,28 @@ mod tests {
         let worker = TtlWorker::new(storage);
 
         // Should skip collections without TTL indexes
+        worker.cleanup_expired_documents().await;
+    }
+
+    #[test]
+    fn test_guarded_contains_panic() {
+        assert_eq!(TtlWorker::guarded(|| 7), Some(7));
+        let caught: Option<()> = TtlWorker::guarded(|| panic!("boom"));
+        assert!(caught.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_sweep_survives_dropped_collection() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        storage.create_database("ttl_db".to_string()).unwrap();
+        let db = storage.get_database("ttl_db").unwrap();
+        db.create_collection("c".to_string(), None).unwrap();
+        db.delete_collection("c").unwrap();
+
+        let worker = TtlWorker::new(storage);
+        // Twice: a sweep that panicked or errored must not stop the next.
+        worker.cleanup_expired_documents().await;
         worker.cleanup_expired_documents().await;
     }
 }

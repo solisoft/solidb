@@ -583,7 +583,9 @@ fn row_policy_filters_non_admin() {
         .insert(json!({"_key": "2", "tenant": "other", "n": 2}))
         .unwrap();
 
+    // Setting a policy requires admin (audit C4).
     QueryExecutor::new(&e)
+        .with_principal(principal("root", true, true))
         .execute(&parse(r#"RETURN ROW_POLICY("orders", "doc.tenant == \"acme\"")"#).unwrap())
         .unwrap();
 
@@ -605,6 +607,7 @@ fn row_policy_filters_non_admin() {
     assert_eq!(none.len(), 2, "no principal skips policy");
 
     QueryExecutor::new(&e)
+        .with_principal(principal("root", true, true))
         .execute(&parse(r#"RETURN ROW_POLICY("orders", null)"#).unwrap())
         .unwrap();
     let after = viewer

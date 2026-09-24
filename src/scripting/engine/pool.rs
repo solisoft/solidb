@@ -110,6 +110,46 @@ const PRESERVED_GLOBALS: &[&str] = &[
     "__solidb_static_initialized",
 ];
 
+/// Lua 5.4's incremental-collector defaults (LUAI_GCPAUSE, LUAI_GCMUL,
+/// LUAI_GCSTEPSIZE), restored on reset.
+const DEFAULT_GC_PAUSE: std::os::raw::c_int = 200;
+const DEFAULT_GC_STEP_MUL: std::os::raw::c_int = 100;
+const DEFAULT_GC_STEP_SIZE: std::os::raw::c_int = 13;
+
+/// One shared library table behind its read-only proxy.
+struct SharedTable {
+    proxy: mlua::Table,
+    backing: mlua::Table,
+    /// The backing table's contents at static init.
+    pristine: Vec<(LuaValue, LuaValue)>,
+    /// Set when the engine wrote through the proxy while unlocked.
+    dirty: Arc<AtomicBool>,
+}
+
+/// App data: every proxied table of a pooled state.
+struct SharedTables(Vec<SharedTable>);
+
+/// App data marker: present only while the engine itself writes per-request
+/// fields into a shared table (see [`with_shared_tables_unlocked`]).
+struct SharedTablesUnlocked;
+
+/// Run engine-side setup that writes per-request fields (`solidb.auth`,
+/// `solidb.log`, ...) into the proxied shared tables of a pooled state.
+///
+/// Script code must never run inside `f`: while the marker is set, any write
+/// through a proxy is accepted.
+pub(crate) fn with_shared_tables_unlocked<R>(lua: &Lua, f: impl FnOnce() -> R) -> R {
+    struct Relock<'a>(&'a Lua);
+    impl Drop for Relock<'_> {
+        fn drop(&mut self) {
+            self.0.remove_app_data::<SharedTablesUnlocked>();
+        }
+    }
+    lua.set_app_data(SharedTablesUnlocked);
+    let _relock = Relock(lua);
+    f()
+}
+
 impl LuaPool {
     /// Create a new pool with the specified number of Lua states.
     ///
@@ -597,10 +637,13 @@ impl LuaPool {
             .set("response", response)
             .map_err(|e| DbError::InternalError(format!("Failed to set response global: {}", e)))?;
 
-        // Lock the shared string metatable, and snapshot the globals that
-        // survive a reset. Both close cross-tenant leaks through a pooled
-        // state (SEC-157).
+        // Lock the shared string metatable, put every shared library table
+        // behind a read-only proxy, and snapshot the globals that survive a
+        // reset. All three close cross-tenant leaks through a pooled state
+        // (SEC-157, audit C3). The proxies must exist before the snapshot so
+        // the snapshot restores the proxies, not the writable tables.
         Self::protect_shared_metatables(lua);
+        Self::install_shared_table_proxies(lua);
         Self::snapshot_preserved_globals(lua);
 
         // Mark state as having static globals initialized
@@ -659,6 +702,182 @@ impl LuaPool {
         }
     }
 
+    /// Replace every preserved library table (`string`, `table`, `crypto`,
+    /// `json`, `solidb`, ...) with a read-only proxy.
+    ///
+    /// Restoring a preserved global by reference (SEC-157) put back *which*
+    /// table `crypto` names, not what is inside it: one tenant's
+    /// `crypto.verify_password = function() return true end` ran inside the
+    /// next tenant's login script, and `string.__loot = db` handed the next
+    /// request's caller the previous tenant's database handle (audit C3).
+    ///
+    /// Each proxy is an empty table whose metatable reads through to the
+    /// real ("backing") table, refuses writes, iterates the backing table for
+    /// `pairs`, and is locked with `__metatable` so a script can neither see
+    /// the backing table nor detach the metatable. Nested tables are proxied
+    /// the same way. `rawset` on a proxy still writes to the proxy itself;
+    /// [`Self::restore_shared_tables`] empties every proxy on reset.
+    ///
+    /// The per-request fields of `solidb` (`auth`, `log`, `env`, ...) are
+    /// written by the engine through `Table::set`, which goes through
+    /// `__newindex`: those writes are allowed only while the engine holds
+    /// [`with_shared_tables_unlocked`], and they mark the table dirty so the
+    /// reset restores it to its static-init contents.
+    ///
+    /// The string metatable's `__index` keeps pointing at the backing
+    /// `string` table, so `("x"):upper()` is unaffected.
+    fn install_shared_table_proxies(lua: &Lua) {
+        if let Err(e) = Self::install_shared_table_proxies_inner(lua) {
+            tracing::warn!("Failed to install read-only shared-table proxies: {}", e);
+        }
+    }
+
+    fn install_shared_table_proxies_inner(lua: &Lua) -> mlua::Result<()> {
+        let globals = lua.globals();
+        let setmt: mlua::Function = globals.get("setmetatable")?;
+        let next_fn: mlua::Function = globals.get("next")?;
+        // Built with the pristine `setmetatable`/`next`, passed in as
+        // arguments: nothing here reads a global a script could replace.
+        let make_proxy: mlua::Function = lua
+            .load(
+                r#"
+                local backing, newindex, setmetatable, next = ...
+                local proxy = {}
+                local function iter(_, k) return next(backing, k) end
+                setmetatable(proxy, {
+                    __index = backing,
+                    __newindex = newindex,
+                    __pairs = function(t) return iter, t, nil end,
+                    __len = function() return #backing end,
+                    __metatable = "protected: shared library table",
+                })
+                return proxy
+                "#,
+            )
+            .into_function()?;
+
+        let mut shared = Vec::new();
+        let mut seen: std::collections::HashMap<usize, mlua::Table> =
+            std::collections::HashMap::new();
+        for name in PRESERVED_GLOBALS {
+            if *name == "_G" {
+                continue;
+            }
+            if let Ok(LuaValue::Table(backing)) = globals.raw_get::<LuaValue>(*name) {
+                let proxy = Self::wrap_shared_table(
+                    lua,
+                    &make_proxy,
+                    &setmt,
+                    &next_fn,
+                    backing,
+                    &mut seen,
+                    &mut shared,
+                )?;
+                globals.raw_set(*name, proxy)?;
+            }
+        }
+        lua.set_app_data(SharedTables(shared));
+        Ok(())
+    }
+
+    fn wrap_shared_table(
+        lua: &Lua,
+        make_proxy: &mlua::Function,
+        setmt: &mlua::Function,
+        next_fn: &mlua::Function,
+        backing: mlua::Table,
+        seen: &mut std::collections::HashMap<usize, mlua::Table>,
+        shared: &mut Vec<SharedTable>,
+    ) -> mlua::Result<mlua::Table> {
+        let id = backing.to_pointer() as usize;
+        if let Some(proxy) = seen.get(&id) {
+            return Ok(proxy.clone());
+        }
+        let dirty = Arc::new(AtomicBool::new(false));
+        let newindex = {
+            let backing = backing.clone();
+            let dirty = dirty.clone();
+            lua.create_function(
+                move |lua, (_proxy, key, value): (LuaValue, LuaValue, LuaValue)| {
+                    if lua.app_data_ref::<SharedTablesUnlocked>().is_none() {
+                        let field = match &key {
+                            LuaValue::String(s) => s.to_string_lossy().to_string(),
+                            other => other.type_name().to_string(),
+                        };
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "attempt to modify read-only shared table (field '{}')",
+                            field
+                        )));
+                    }
+                    dirty.store(true, Ordering::Relaxed);
+                    backing.raw_set(key, value)
+                },
+            )?
+        };
+        let proxy: mlua::Table =
+            make_proxy.call((backing.clone(), newindex, setmt.clone(), next_fn.clone()))?;
+        // Recorded before recursing so a cycle resolves to this proxy.
+        seen.insert(id, proxy.clone());
+
+        // Nested tables (none of the stdlib ones, but a namespace may grow
+        // one) are proxied too, in place inside the backing table.
+        let nested: Vec<(LuaValue, mlua::Table)> = backing
+            .pairs::<LuaValue, LuaValue>()
+            .filter_map(|r| match r {
+                Ok((k, LuaValue::Table(t))) => Some((k, t)),
+                _ => None,
+            })
+            .collect();
+        for (key, table) in nested {
+            let nested_proxy =
+                Self::wrap_shared_table(lua, make_proxy, setmt, next_fn, table, seen, shared)?;
+            backing.raw_set(key, nested_proxy)?;
+        }
+
+        let pristine: Vec<(LuaValue, LuaValue)> = backing
+            .pairs::<LuaValue, LuaValue>()
+            .filter_map(|r| r.ok())
+            .collect();
+        shared.push(SharedTable {
+            proxy: proxy.clone(),
+            backing,
+            pristine,
+            dirty,
+        });
+        Ok(proxy)
+    }
+
+    /// Put every shared library table back to its static-init contents.
+    ///
+    /// Proxies are emptied (anything in one came from `rawset`), and a
+    /// backing table the engine wrote to during the request — the per-request
+    /// `solidb.*` fields — is rebuilt from its snapshot, which drops those
+    /// fields generically rather than from a list that has to be kept in
+    /// step with the setup code.
+    fn restore_shared_tables(lua: &Lua) {
+        let Some(tables) = lua.app_data_ref::<SharedTables>() else {
+            return;
+        };
+        for t in tables.0.iter() {
+            if !t.proxy.is_empty() {
+                let _ = t.proxy.clear();
+            }
+            if t.dirty.swap(false, Ordering::Relaxed) {
+                let keys: Vec<LuaValue> = t
+                    .backing
+                    .pairs::<LuaValue, LuaValue>()
+                    .filter_map(|r| r.ok().map(|(k, _)| k))
+                    .collect();
+                for k in keys {
+                    let _ = t.backing.raw_set(k, LuaValue::Nil);
+                }
+                for (k, v) in &t.pristine {
+                    let _ = t.backing.raw_set(k.clone(), v.clone());
+                }
+            }
+        }
+    }
+
     /// Store the pristine value of every preserved global in the Lua registry.
     ///
     /// `reset_state` keeps these globals rather than nilling them, which also
@@ -699,13 +918,17 @@ impl LuaPool {
             return;
         };
         let globals = lua.globals();
+        // `_G` is not in the snapshot (it would be a cycle), but a script
+        // can still reassign it: `_G = {loot = db}` survived for the next
+        // tenant. It always names the globals table itself.
+        let _ = globals.raw_set("_G", globals.clone());
         for name in PRESERVED_GLOBALS {
             if *name == "_G" {
                 continue;
             }
             if let Ok(value) = snapshot.get::<LuaValue>(*name) {
                 if !matches!(value, LuaValue::Nil) {
-                    let _ = globals.set(*name, value);
+                    let _ = globals.raw_set(*name, value);
                 }
             }
         }
@@ -719,20 +942,34 @@ impl LuaPool {
     fn reset_state(lua: &Lua) {
         let globals = lua.globals();
 
-        // Collect keys to remove (these are per-request globals like db, request, context)
+        // A metatable on `_G` (`setmetatable(_G, {__index = ..., __newindex
+        // = ...})`) would otherwise stay on the state, see every global the
+        // next tenant reads or assigns, and run during this very reset.
+        // Rust's `set_metatable` ignores `__metatable` protection.
+        let _ = globals.set_metatable(None);
+
+        // Collect keys to remove (these are per-request globals like db,
+        // request, context). Every key type: a `String`-typed iteration
+        // silently skipped `_G[1] = db` or `_G[true] = db`.
         let mut to_remove = Vec::new();
 
-        let pairs = globals.pairs::<String, LuaValue>();
-        for pair in pairs.flatten() {
-            let (key, _) = pair;
-            if !PRESERVED_GLOBALS.contains(&key.as_str()) {
+        let pairs = globals.pairs::<LuaValue, LuaValue>();
+        for (key, _) in pairs.flatten() {
+            let preserved = match &key {
+                LuaValue::String(s) => {
+                    let name = s.to_string_lossy();
+                    PRESERVED_GLOBALS.iter().any(|p| *p == &*name)
+                }
+                _ => false,
+            };
+            if !preserved {
                 to_remove.push(key);
             }
         }
 
         // Remove non-preserved globals (db, request, context, etc.)
         for key in to_remove {
-            let _ = globals.set(key, LuaValue::Nil);
+            let _ = globals.raw_set(key, LuaValue::Nil);
         }
 
         // Preserving a global by name is not the same as preserving its
@@ -741,22 +978,24 @@ impl LuaPool {
         // pristine values back from the registry snapshot (SEC-157).
         Self::restore_preserved_globals(lua);
 
-        // Reset per-request fields in solidb table (auth, log, env, file functions, ai, streams, stats)
-        // These will be re-set by setup_request_globals
-        if let Ok(solidb) = globals.get::<mlua::Table>("solidb") {
-            let _ = solidb.set("auth", LuaValue::Nil);
-            let _ = solidb.set("log", LuaValue::Nil);
-            let _ = solidb.set("env", LuaValue::Nil);
-            let _ = solidb.set("upload", LuaValue::Nil);
-            let _ = solidb.set("file_info", LuaValue::Nil);
-            let _ = solidb.set("file_read", LuaValue::Nil);
-            let _ = solidb.set("file_delete", LuaValue::Nil);
-            let _ = solidb.set("file_list", LuaValue::Nil);
-            let _ = solidb.set("image_process", LuaValue::Nil);
-            let _ = solidb.set("ai", LuaValue::Nil);
-            let _ = solidb.set("streams", LuaValue::Nil);
-            let _ = solidb.set("stats", LuaValue::Nil);
-        }
+        // The contents of the shared tables, including the per-request
+        // `solidb.*` fields (auth, log, env, file functions, ai, streams,
+        // stats), which setup_request_globals writes again (audit C3).
+        Self::restore_shared_tables(lua);
+
+        // Per-request identity and response state live in app data, not in
+        // globals. Drop them so a script whose setup is skipped (nothing in
+        // it looked like it needed globals) runs as nobody, not as the
+        // previous caller.
+        lua.remove_app_data::<crate::scripting::engine::globals::LuaCaller>();
+        lua.remove_app_data::<crate::scripting::types::ScriptDbName>();
+        lua.remove_app_data::<crate::scripting::response::ResponseOverrides>();
+        lua.remove_app_data::<SharedTablesUnlocked>();
+
+        // `collectgarbage("stop")` or a tuned/generational collector would
+        // otherwise persist into the next tenant's request on this state.
+        lua.gc_restart();
+        let _ = lua.gc_inc(DEFAULT_GC_PAUSE, DEFAULT_GC_STEP_MUL, DEFAULT_GC_STEP_SIZE);
     }
 
     /// Get pool statistics (lock-free)
@@ -1178,6 +1417,152 @@ mod tests {
                 .call(())
                 .expect("check pairs");
             assert!(pairs_ok, "`pairs` must be restored for the next tenant");
+        });
+    }
+
+    /// Audit C3: a tenant must not be able to change a field of a shared
+    /// library table in a way the next tenant on the same state inherits.
+    #[test]
+    fn shared_table_fields_do_not_leak_across_borrows() {
+        let pool = LuaPool::new(1);
+        {
+            let guard = pool.acquire();
+            guard.with_lua(|lua| {
+                // Ordinary assignment is refused outright.
+                let refused: bool = lua
+                    .load(
+                        r#"
+                        local all_refused = true
+                        for _, f in ipairs({
+                            function() crypto.verify_password = function() return true end end,
+                            function() json.encode = function() return "evil" end end,
+                            function() string.__loot = {} end,
+                            function() table.insert = function() end end,
+                            function() solidb.now = function() return 0 end end,
+                            function() setmetatable(crypto, nil) end,
+                        }) do
+                            if pcall(f) then all_refused = false end
+                        end
+                        return all_refused
+                        "#,
+                    )
+                    .call(())
+                    .expect("mutation attempts");
+                assert!(refused, "writes to shared tables must raise");
+
+                // `rawset` bypasses __newindex and lands on the proxy; it
+                // only affects this borrow.
+                lua.load(
+                    r#"
+                    rawset(crypto, "verify_password", function() return true end)
+                    rawset(string, "__loot", "secret")
+                    rawset(table, "insert", function() end)
+                    collectgarbage("stop")
+                    "#,
+                )
+                .exec()
+                .expect("rawset on proxies");
+                let leaked: String = lua
+                    .load(r#"return string.__loot"#)
+                    .call(())
+                    .expect("same-borrow read");
+                assert_eq!(leaked, "secret");
+            });
+        }
+        let guard = pool.acquire();
+        guard.with_lua(|lua| {
+            let clean: bool = lua
+                .load(
+                    r#"
+                    return string.__loot == nil
+                        and type(crypto.verify_password) == "function"
+                        and rawget(crypto, "verify_password") == nil
+                        and rawget(table, "insert") == nil
+                        and json.decode(json.encode({a = 1})).a == 1
+                    "#,
+                )
+                .call(())
+                .expect("check originals");
+            assert!(clean, "next tenant must see the original shared tables");
+
+            let t: i64 = lua
+                .load(r#"local t = {}; table.insert(t, 5); return t[1]"#)
+                .call(())
+                .expect("table.insert");
+            assert_eq!(t, 5);
+
+            let running: bool = lua
+                .load(r#"return collectgarbage("isrunning")"#)
+                .call(())
+                .expect("gc state");
+            assert!(running, "collectgarbage(\"stop\") must not persist");
+
+            // String methods and `pairs` over a proxied library still work.
+            let ok: bool = lua
+                .load(
+                    r#"
+                    local n = 0
+                    for k, v in pairs(string) do n = n + 1 end
+                    return ("abc"):upper() == "ABC" and string.format("%d", 3) == "3" and n > 10
+                    "#,
+                )
+                .call(())
+                .expect("string methods");
+            assert!(ok);
+        });
+    }
+
+    /// Non-string global keys and a metatable on `_G` must not survive.
+    #[test]
+    fn g_metatable_and_non_string_globals_are_cleared() {
+        let pool = LuaPool::new(1);
+        {
+            let guard = pool.acquire();
+            guard.with_lua(|lua| {
+                lua.load(
+                    r#"
+                    _G[1] = "loot"
+                    _G[true] = "loot"
+                    setmetatable(_G, { __index = function() return "hooked" end })
+                    "#,
+                )
+                .exec()
+                .unwrap();
+            });
+        }
+        let guard = pool.acquire();
+        guard.with_lua(|lua| {
+            let clean: bool = lua
+                .load(r#"return rawget(_G, 1) == nil and rawget(_G, true) == nil and undefined_name == nil and getmetatable(_G) == nil"#)
+                .call(())
+                .unwrap();
+            assert!(clean);
+        });
+    }
+
+    /// Engine-side per-request writes to `solidb` are allowed while
+    /// unlocked, and dropped by the reset.
+    #[test]
+    fn unlocked_solidb_fields_are_cleared_on_reset() {
+        let pool = LuaPool::new(1);
+        {
+            let guard = pool.acquire();
+            guard.with_lua(|lua| {
+                let solidb: mlua::Table = lua.globals().get("solidb").unwrap();
+                with_shared_tables_unlocked(lua, || solidb.set("auth", "tenant-a"))
+                    .expect("unlocked write");
+                assert!(solidb.set("auth", "script").is_err(), "locked again");
+                let seen: String = lua.load("return solidb.auth").call(()).unwrap();
+                assert_eq!(seen, "tenant-a");
+            });
+        }
+        let guard = pool.acquire();
+        guard.with_lua(|lua| {
+            let gone: bool = lua
+                .load("return solidb.auth == nil and type(solidb.now) == 'function'")
+                .call(())
+                .unwrap();
+            assert!(gone);
         });
     }
 }

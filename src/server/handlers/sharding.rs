@@ -167,8 +167,7 @@ pub async fn get_sharding_details(
             }
         } else if let Some(primary_addr) = node_id_to_address.get(&primary_node) {
             // Remote primary
-            let scheme =
-                std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
+            let scheme = crate::cluster::http::cluster_scheme().to_string();
             let url = format!(
                 "{}://{}/_api/database/{}/collection/{}/stats",
                 scheme, primary_addr, db_name, physical_coll_name
@@ -227,8 +226,7 @@ pub async fn get_sharding_details(
                     }
                 } else if let Some(replica_addr) = node_id_to_address.get(replica_node) {
                     // Remote replica
-                    let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME")
-                        .unwrap_or_else(|_| "http".to_string());
+                    let scheme = crate::cluster::http::cluster_scheme().to_string();
                     let url = format!(
                         "{}://{}/_api/database/{}/collection/{}/stats",
                         scheme, replica_addr, db_name, physical_coll_name

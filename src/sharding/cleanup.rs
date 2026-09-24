@@ -139,7 +139,7 @@ pub async fn broadcast_cleanup_orphaned_shards(
         }
 
         let addr = &member.node.api_address;
-        let url = format!("http://{}/_api/cluster/cleanup", addr);
+        let url = crate::cluster::http::peer_url(addr, "/_api/cluster/cleanup");
 
         tracing::info!(
             "CLEANUP: Broadcasting cleanup (with {} tables) to node {} at {}",

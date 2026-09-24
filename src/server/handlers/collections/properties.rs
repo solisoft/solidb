@@ -239,8 +239,11 @@ pub async fn update_collection_properties(
 
                 let address = &member.node.api_address;
                 let url = format!(
-                    "http://{}/_api/database/{}/collection/{}/properties",
-                    address, db_name, coll_name
+                    "{}://{}/_api/database/{}/collection/{}/properties",
+                    crate::cluster::http::cluster_scheme(),
+                    address,
+                    db_name,
+                    coll_name
                 );
 
                 tracing::info!(

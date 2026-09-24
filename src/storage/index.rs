@@ -287,43 +287,54 @@ pub fn tokenize(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Calculate Levenshtein distance between two strings
-pub fn levenshtein_distance(a: &str, b: &str) -> usize {
+/// Longest input, in characters, that Levenshtein distance is computed for
+/// (audit A3). The DP is O(a*b) in time; the old full matrix was also
+/// O(a*b) in memory, so `LEVENSHTEIN` of two 60k-char strings asked for ~29 GB.
+pub const LEVENSHTEIN_MAX_CHARS: usize = 4096;
+
+/// Levenshtein distance, or `None` when either input is longer than
+/// [`LEVENSHTEIN_MAX_CHARS`] characters. For callers that would rather
+/// report an error than get the saturated answer of [`levenshtein_distance`].
+pub fn levenshtein_distance_bounded(a: &str, b: &str) -> Option<usize> {
+    if a.chars().nth(LEVENSHTEIN_MAX_CHARS).is_some()
+        || b.chars().nth(LEVENSHTEIN_MAX_CHARS).is_some()
+    {
+        return None;
+    }
+    if a == b {
+        return Some(0);
+    }
+
     let a_chars: Vec<char> = a.chars().collect();
     let b_chars: Vec<char> = b.chars().collect();
-    let a_len = a_chars.len();
-    let b_len = b_chars.len();
-
-    if a_len == 0 {
-        return b_len;
+    if a_chars.is_empty() {
+        return Some(b_chars.len());
     }
-    if b_len == 0 {
-        return a_len;
+    if b_chars.is_empty() {
+        return Some(a_chars.len());
     }
 
-    let mut matrix = vec![vec![0usize; b_len + 1]; a_len + 1];
-
-    for (i, row) in matrix.iter_mut().enumerate().take(a_len + 1) {
-        row[0] = i;
-    }
-    for (j, cell) in matrix[0].iter_mut().enumerate().take(b_len + 1) {
-        *cell = j;
-    }
-
-    for i in 1..=a_len {
-        for j in 1..=b_len {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] {
-                0
-            } else {
-                1
-            };
-            matrix[i][j] = (matrix[i - 1][j] + 1)
-                .min(matrix[i][j - 1] + 1)
-                .min(matrix[i - 1][j - 1] + cost);
+    // Two rows instead of the full (a+1)x(b+1) matrix.
+    let mut prev: Vec<usize> = (0..=b_chars.len()).collect();
+    let mut curr: Vec<usize> = vec![0; b_chars.len() + 1];
+    for (i, ca) in a_chars.iter().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b_chars.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
         }
+        std::mem::swap(&mut prev, &mut curr);
     }
+    Some(prev[b_chars.len()])
+}
 
-    matrix[a_len][b_len]
+/// Calculate Levenshtein distance between two strings.
+///
+/// Inputs longer than [`LEVENSHTEIN_MAX_CHARS`] characters are not compared:
+/// the result is the longer length, the distance's upper bound, so fuzzy
+/// "distance <= n" checks simply fail for them.
+pub fn levenshtein_distance(a: &str, b: &str) -> usize {
+    levenshtein_distance_bounded(a, b).unwrap_or_else(|| a.chars().count().max(b.chars().count()))
 }
 
 /// Calculate n-gram similarity (Jaccard coefficient)
@@ -576,6 +587,22 @@ mod tests {
         assert_eq!(levenshtein_distance("abc", "ab"), 1);
         assert_eq!(levenshtein_distance("abc", "adc"), 1);
         assert_eq!(levenshtein_distance("kitten", "sitting"), 3);
+        assert_eq!(levenshtein_distance("flaw", "lawn"), 2);
+        assert_eq!(levenshtein_distance("héllo", "hello"), 1);
+    }
+
+    #[test]
+    fn test_levenshtein_distance_is_capped() {
+        let long_a = "a".repeat(LEVENSHTEIN_MAX_CHARS + 1);
+        let long_b = "b".repeat(LEVENSHTEIN_MAX_CHARS + 10);
+        assert_eq!(levenshtein_distance_bounded(&long_a, "a"), None);
+        // Saturates at the upper bound instead of allocating a matrix.
+        assert_eq!(
+            levenshtein_distance(&long_a, &long_b),
+            LEVENSHTEIN_MAX_CHARS + 10
+        );
+        let at_cap = "a".repeat(LEVENSHTEIN_MAX_CHARS);
+        assert_eq!(levenshtein_distance_bounded(&at_cap, &at_cap), Some(0));
     }
 
     #[test]

@@ -7,6 +7,7 @@
 //! - Dead node detection and removal
 //! - Shard rebalancing
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -14,8 +15,49 @@ use tracing::{debug, error, info, warn};
 
 use super::protocol::{NodeStats, Operation, ShardConfig, SyncEntry, SyncMessage};
 use super::state::SyncState;
-use super::transport::{ConnectionPool, SyncServer, TransportError};
+use super::transport::{ConnectionPool, SyncServer, TransportError, BATCH_BYTE_BUDGET};
 use crate::storage::StorageEngine;
+
+/// Pages pulled from one peer per sync tick (audit A7). The loop used to
+/// drain `while has_more` with no cap, so a large backlog from one peer
+/// monopolised the worker; the rest is picked up on the next tick.
+const MAX_PAGES_PER_TICK: usize = 32;
+
+/// Size of one `SyncEntryPart` slice (audit A6). Well under the frame limit
+/// even before compression.
+const ENTRY_PART_BYTES: usize = 4 * 1024 * 1024;
+
+/// Largest single entry that is split into parts rather than skipped.
+/// Bounds what a requester will buffer for reassembly.
+const MAX_REASSEMBLED_ENTRY_BYTES: usize = 256 * 1024 * 1024;
+const MAX_ENTRY_PARTS: u32 = (MAX_REASSEMBLED_ENTRY_BYTES / ENTRY_PART_BYTES) as u32;
+
+/// Documents read per page during a full sync (audit P8).
+const FULL_SYNC_PAGE_SIZE: usize = 1000;
+
+static ENTRIES_SENT_IN_PARTS: AtomicU64 = AtomicU64::new(0);
+static ENTRIES_SKIPPED_OVERSIZED: AtomicU64 = AtomicU64::new(0);
+static FULL_SYNC_DOCS_SKIPPED_OVERSIZED: AtomicU64 = AtomicU64::new(0);
+
+/// Counters for replication entries/documents that did not fit a frame.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ReplicationSizeCounters {
+    /// Entries split into `SyncEntryPart` messages (delivered).
+    pub entries_sent_in_parts: u64,
+    /// Entries larger than `MAX_REASSEMBLED_ENTRY_BYTES`, not delivered.
+    pub entries_skipped_oversized: u64,
+    /// Documents a full sync could not fit in a frame, not delivered.
+    pub full_sync_docs_skipped_oversized: u64,
+}
+
+/// Snapshot of [`ReplicationSizeCounters`], for `/metrics`.
+pub fn replication_size_counters() -> ReplicationSizeCounters {
+    ReplicationSizeCounters {
+        entries_sent_in_parts: ENTRIES_SENT_IN_PARTS.load(Ordering::Relaxed),
+        entries_skipped_oversized: ENTRIES_SKIPPED_OVERSIZED.load(Ordering::Relaxed),
+        full_sync_docs_skipped_oversized: FULL_SYNC_DOCS_SKIPPED_OVERSIZED.load(Ordering::Relaxed),
+    }
+}
 
 /// Configuration for the sync worker
 #[derive(Clone)]
@@ -163,14 +205,26 @@ impl SyncWorker {
         let server_clone = server.clone();
         tokio::spawn(async move {
             loop {
-                match server_clone.accept().await {
+                // Accept only; the handshake runs in the per-connection task
+                // with a timeout (audit A8). Running it here let one client
+                // that connected and sent nothing block every later peer.
+                match server_clone.accept_raw().await {
                     Ok((stream, addr)) => {
                         let pool = accept_pool.clone();
                         let state = accept_state.clone();
                         let storage = accept_storage.clone();
                         let sync_log = accept_sync_log.clone();
                         let cluster_manager = accept_cluster_manager.clone();
+                        let keyfile = server_clone.keyfile_path().to_string();
                         tokio::spawn(async move {
+                            let stream = match SyncServer::handshake(stream, &keyfile).await {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    warn!("Sync handshake with {} failed: {}", addr, e);
+                                    return;
+                                }
+                            };
+                            info!("Authenticated connection from {}", addr);
                             if let Err(e) = Self::handle_connection(
                                 stream,
                                 addr,
@@ -188,6 +242,8 @@ impl SyncWorker {
                     }
                     Err(e) => {
                         error!("Accept error: {}", e);
+                        // Avoid a hot loop on persistent accept errors (EMFILE).
+                        tokio::time::sleep(Duration::from_millis(100)).await;
                     }
                 }
             }
@@ -219,11 +275,19 @@ impl SyncWorker {
                     tokio::spawn(async move {
                         // We must authenticate the stream first, as it comes raw from the multiplexer
                         // The multiplexer already verified the magic header, so skip reading it again
-                        match super::transport::SyncServer::authenticate_standalone_skip_magic(
-                            stream, &keyfile,
+                        let auth = tokio::time::timeout(
+                            super::transport::SERVER_HANDSHAKE_TIMEOUT,
+                            super::transport::SyncServer::authenticate_standalone_skip_magic(
+                                stream, &keyfile,
+                            ),
                         )
                         .await
-                        {
+                        .unwrap_or_else(|_| {
+                            Err(TransportError::AuthFailed(
+                                "Handshake timed out".to_string(),
+                            ))
+                        });
+                        match auth {
                             Ok(auth_stream) => {
                                 if let Err(e) = Self::handle_connection(
                                     auth_stream,
@@ -248,9 +312,15 @@ impl SyncWorker {
             });
         }
 
+        // Heartbeats run in their own task on their own connections (audit
+        // A7): in this loop they waited behind sync rounds, and after the
+        // dead-node timeout every peer evicted this healthy node and
+        // rebalanced.
+        let heartbeat_task = self.spawn_heartbeat_task();
+
         // Main worker loop
         let mut sync_interval = tokio::time::interval(self.config.sync_interval);
-        let mut heartbeat_interval = tokio::time::interval(self.config.heartbeat_interval);
+        sync_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut health_check_interval = tokio::time::interval(self.config.dead_node_timeout / 2);
         // Prune ticker is created even when prune is disabled — we just skip
         // the body in that case. Defaulting to a long interval keeps the
@@ -293,11 +363,6 @@ impl SyncWorker {
                     self.sync_with_peers().await;
                 }
 
-                // Periodic heartbeat
-                _ = heartbeat_interval.tick() => {
-                    self.send_heartbeats().await;
-                }
-
                 // Health check
                 _ = health_check_interval.tick() => {
                     self.check_dead_nodes().await;
@@ -311,6 +376,8 @@ impl SyncWorker {
                 }
             }
         }
+
+        heartbeat_task.abort();
 
         // Persist state on shutdown
         self.state.persist();
@@ -362,67 +429,73 @@ impl SyncWorker {
         }
 
         debug!("sync_with_peers: {} peers total", peers.len());
+        if peers.is_empty() {
+            return;
+        }
 
-        for peer in peers {
-            debug!(
-                "sync_with_peers: syncing with {} at {}",
-                peer.node_id, peer.sync_address
+        // Mark ourselves as syncing in cluster state
+        if let Some(ref mgr) = self.cluster_manager {
+            mgr.state().mark_status(
+                &self.local_node_id,
+                crate::cluster::state::NodeStatus::Syncing,
             );
-            if !peer.is_connected {
-                // Try to connect
-                if self.pool.connect(&peer.sync_address).await.is_ok() {
-                    self.state.set_peer_connected(&peer.node_id, true);
+        }
+
+        // Peers are independent connections, so pull from them concurrently:
+        // one slow or black-holed peer no longer delays the others (audit A7).
+        futures::future::join_all(peers.iter().map(|peer| self.sync_with_peer(peer))).await;
+
+        // Mark ourselves as active again
+        if let Some(ref mgr) = self.cluster_manager {
+            mgr.state().mark_status(
+                &self.local_node_id,
+                crate::cluster::state::NodeStatus::Active,
+            );
+        }
+    }
+
+    /// Pull up to [`MAX_PAGES_PER_TICK`] pages from one peer.
+    async fn sync_with_peer(&self, peer: &super::state::PeerInfo) {
+        debug!(
+            "sync_with_peers: syncing with {} at {}",
+            peer.node_id, peer.sync_address
+        );
+        // `connect` returns at once when a connection is already pooled, and
+        // is bounded (connect + handshake) when it is not.
+        if let Err(e) = self.pool.connect(&peer.sync_address).await {
+            debug!(
+                "sync_with_peers: failed to connect to {}: {}",
+                peer.node_id, e
+            );
+            self.state.set_peer_connected(&peer.node_id, false);
+            return;
+        }
+        self.state.set_peer_connected(&peer.node_id, true);
+
+        let mut pages = 0;
+        let mut has_more = true;
+        while has_more && pages < MAX_PAGES_PER_TICK {
+            match self.incremental_sync(&peer.sync_address).await {
+                Ok(more) => {
+                    has_more = more;
+                    pages += 1;
+                }
+                Err(e) => {
+                    warn!("Sync with {} failed: {}", peer.node_id, e);
+                    self.state.set_peer_connected(&peer.node_id, false);
+                    self.pool.disconnect(&peer.sync_address).await;
+                    has_more = false;
                 }
             }
+            // Let other tasks on this worker thread run between pages.
+            tokio::task::yield_now().await;
+        }
 
-            if peer.is_connected || self.pool.connect(&peer.sync_address).await.is_ok() {
-                self.state.set_peer_connected(&peer.node_id, true);
-
-                // Mark ourselves as syncing in cluster state
-                if let Some(ref mgr) = self.cluster_manager {
-                    mgr.state().mark_status(
-                        &self.local_node_id,
-                        crate::cluster::state::NodeStatus::Syncing,
-                    );
-                }
-
-                // Sync loop - keep fetching while there's more data
-                // User requested no page limit to sync millions of documents
-                let mut pages = 0;
-                let mut has_more = true;
-
-                while has_more {
-                    match self.incremental_sync(&peer.sync_address).await {
-                        Ok(more) => {
-                            has_more = more;
-                            pages += 1;
-                        }
-                        Err(e) => {
-                            warn!("Sync with {} failed: {}", peer.node_id, e);
-                            self.state.set_peer_connected(&peer.node_id, false);
-                            self.pool.disconnect(&peer.sync_address).await;
-                            has_more = false;
-                        }
-                    }
-                }
-
-                // Mark ourselves as active again
-                if let Some(ref mgr) = self.cluster_manager {
-                    mgr.state().mark_status(
-                        &self.local_node_id,
-                        crate::cluster::state::NodeStatus::Active,
-                    );
-                }
-
-                if pages > 0 {
-                    debug!(
-                        "Synced {} batches from {} (finished, has_more={})",
-                        pages, peer.node_id, has_more
-                    );
-                }
-            } else {
-                debug!("sync_with_peers: failed to connect to {}", peer.node_id);
-            }
+        if pages > 0 {
+            debug!(
+                "Synced {} batches from {} (has_more={})",
+                pages, peer.node_id, has_more
+            );
         }
     }
 
@@ -430,10 +503,9 @@ impl SyncWorker {
     /// Pulls entries FROM the peer that we haven't received yet
     /// Returns true if there are more entries to sync
     async fn incremental_sync(&self, peer_addr: &str) -> Result<bool, TransportError> {
-        // Get the last sequence we received from this peer's perspective
-        // For pull-based sync, we ask the peer: "give me entries after sequence X from YOUR log"
-        // We track this using get_origin_sequence keyed by peer address
-        let after_seq = self.state.get_origin_sequence(peer_addr);
+        // The last sequence of the peer's own log we have applied. Kept apart
+        // from the origin de-duplication map (audit H9).
+        let after_seq = self.state.get_pull_cursor(peer_addr);
 
         debug!("incremental_sync: {} after_seq={}", peer_addr, after_seq);
 
@@ -452,80 +524,151 @@ impl SyncWorker {
         match response {
             SyncMessage::SyncBatch {
                 entries,
-                has_more,
                 current_sequence,
                 ..
             } => {
-                debug!(
-                    "incremental_sync: {} entries from {} (seq={}) has_more={}",
-                    entries.len(),
-                    peer_addr,
-                    current_sequence,
-                    has_more
-                );
-
-                // Group consecutive entries by (database, collection, operation) for batching
-                let mut batch_start = 0;
-                while batch_start < entries.len() {
-                    let first = &entries[batch_start];
-
-                    // Only batch data operations
-                    if matches!(
-                        first.operation,
-                        Operation::Insert | Operation::Update | Operation::Delete
-                    ) {
-                        let mut batch_end = batch_start + 1;
-                        while batch_end < entries.len() {
-                            let next = &entries[batch_end];
-                            if next.database == first.database
-                                && next.collection == first.collection
-                                && next.operation == first.operation
-                            {
-                                batch_end += 1;
-                            } else {
-                                break;
+                self.apply_pulled_entries(peer_addr, after_seq, entries, current_sequence)
+                    .await
+            }
+            SyncMessage::SyncEntryPart {
+                sequence,
+                part,
+                total_parts,
+                current_sequence,
+                data,
+            } => {
+                if total_parts == 0 {
+                    // The peer could not ship this entry at all and says so;
+                    // advancing is the only way replication continues. The
+                    // document converges on its next write or a full sync.
+                    error!(
+                        "incremental_sync: {} skipped oversized log entry {} (larger than {} bytes); \
+                         this node is missing that write until the document changes again",
+                        peer_addr, sequence, MAX_REASSEMBLED_ENTRY_BYTES
+                    );
+                    ENTRIES_SKIPPED_OVERSIZED.fetch_add(1, Ordering::Relaxed);
+                    self.state.update_pull_cursor(peer_addr, sequence);
+                    return Ok(current_sequence > sequence);
+                }
+                if part != 0 || total_parts > MAX_ENTRY_PARTS {
+                    return Err(TransportError::DecodeError(format!(
+                        "unexpected entry part {}/{} for sequence {}",
+                        part, total_parts, sequence
+                    )));
+                }
+                let mut buf = data;
+                for expected in 1..total_parts {
+                    match self.pool.receive(peer_addr).await? {
+                        SyncMessage::SyncEntryPart {
+                            sequence: s,
+                            part: p,
+                            data: d,
+                            ..
+                        } if s == sequence && p == expected => {
+                            if buf.len() + d.len() > MAX_REASSEMBLED_ENTRY_BYTES {
+                                return Err(TransportError::MessageTooLarge(
+                                    (buf.len() + d.len()) as u32,
+                                ));
                             }
+                            buf.extend_from_slice(&d);
                         }
-
-                        // Process batch
-                        let batch = &entries[batch_start..batch_end];
-                        self.apply_batch(batch).await?;
-                        batch_start = batch_end;
-                    } else {
-                        // Single entry processing for schema changes
-                        self.apply_entry(first).await?;
-                        batch_start += 1;
+                        _ => {
+                            return Err(TransportError::DecodeError(format!(
+                                "entry parts for sequence {} arrived out of order",
+                                sequence
+                            )));
+                        }
                     }
                 }
-
-                // Only update origin_sequence if we ACTUALLY received entries.
-                // We must NOT update to current_sequence if entries are empty, because that implies
-                // the server hasn't persisted the data yet (race condition) or we'd skip data.
-                if let Some(max_seq) = entries.iter().map(|e| e.sequence).max() {
-                    if max_seq > after_seq {
-                        self.state.update_origin_sequence(peer_addr, max_seq);
-                    }
-                }
-
-                debug!("Applied {} entries from {}", entries.len(), peer_addr);
-
-                // Calculate has_more based on what the server claims is the head vs what we have
-                // If server has seq 100, and we are at 90 (either via max_seq or after_seq), we have more.
-                // Note: current_sequence from server is the "head", entries max is what we just got.
-                let latest_we_have = entries
-                    .iter()
-                    .map(|e| e.sequence)
-                    .max()
-                    .unwrap_or(after_seq);
-                let actual_has_more = current_sequence > latest_we_have;
-
-                Ok(actual_has_more)
+                let entry: SyncEntry = bincode::deserialize(&buf)
+                    .map_err(|e| TransportError::DecodeError(e.to_string()))?;
+                debug!(
+                    "incremental_sync: reassembled entry {} ({} bytes, {} parts) from {}",
+                    sequence,
+                    buf.len(),
+                    total_parts,
+                    peer_addr
+                );
+                self.apply_pulled_entries(peer_addr, after_seq, vec![entry], current_sequence)
+                    .await
             }
             _ => {
                 warn!("Unexpected response from {}", peer_addr);
                 Ok(false)
             }
         }
+    }
+
+    /// Apply entries pulled from `peer_addr` and advance its pull cursor.
+    /// Returns whether the peer has more.
+    async fn apply_pulled_entries(
+        &self,
+        peer_addr: &str,
+        after_seq: u64,
+        entries: Vec<SyncEntry>,
+        current_sequence: u64,
+    ) -> Result<bool, TransportError> {
+        debug!(
+            "incremental_sync: {} entries from {} (seq={})",
+            entries.len(),
+            peer_addr,
+            current_sequence
+        );
+
+        // Group consecutive entries by (database, collection, operation) for batching
+        let mut batch_start = 0;
+        while batch_start < entries.len() {
+            let first = &entries[batch_start];
+
+            // Only batch data operations
+            if matches!(
+                first.operation,
+                Operation::Insert | Operation::Update | Operation::Delete
+            ) {
+                let mut batch_end = batch_start + 1;
+                while batch_end < entries.len() {
+                    let next = &entries[batch_end];
+                    if next.database == first.database
+                        && next.collection == first.collection
+                        && next.operation == first.operation
+                    {
+                        batch_end += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                // Process batch
+                let batch = &entries[batch_start..batch_end];
+                self.apply_batch(batch).await?;
+                batch_start = batch_end;
+            } else {
+                // Single entry processing for schema changes
+                self.apply_entry(first).await?;
+                batch_start += 1;
+            }
+        }
+
+        // Only update the cursor if we ACTUALLY received entries.
+        // We must NOT update to current_sequence if entries are empty, because that implies
+        // the server hasn't persisted the data yet (race condition) or we'd skip data.
+        if let Some(max_seq) = entries.iter().map(|e| e.sequence).max() {
+            if max_seq > after_seq {
+                self.state.update_pull_cursor(peer_addr, max_seq);
+            }
+        }
+
+        debug!("Applied {} entries from {}", entries.len(), peer_addr);
+
+        // Calculate has_more based on what the server claims is the head vs what we have
+        // If server has seq 100, and we are at 90 (either via max_seq or after_seq), we have more.
+        // Note: current_sequence from server is the "head", entries max is what we just got.
+        let latest_we_have = entries
+            .iter()
+            .map(|e| e.sequence)
+            .max()
+            .unwrap_or(after_seq);
+        Ok(current_sequence > latest_we_have)
     }
 
     /// Apply a batch of sync entries to local storage
@@ -1068,11 +1211,21 @@ impl SyncWorker {
                     let docs = super::protocol::decode_documents(&docs_data)
                         .map_err(TransportError::DecodeError)?;
 
-                    for doc in docs {
-                        if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
-                            if let Ok(db) = self.storage.get_database(&database) {
-                                if let Ok(coll) = db.get_collection(&collection) {
-                                    let _ = coll.upsert_batch(vec![(key.to_string(), doc)]);
+                    let keyed: Vec<(String, serde_json::Value)> = docs
+                        .into_iter()
+                        .filter_map(|doc| {
+                            let key = doc.get("_key").and_then(|k| k.as_str())?.to_string();
+                            Some((key, doc))
+                        })
+                        .collect();
+                    if !keyed.is_empty() {
+                        if let Ok(db) = self.storage.get_database(&database) {
+                            if let Ok(coll) = db.get_collection(&collection) {
+                                if let Err(e) = coll.upsert_batch(keyed) {
+                                    warn!(
+                                        "Full sync: upsert into {}.{} failed: {}",
+                                        database, collection, e
+                                    );
                                 }
                             }
                         }
@@ -1157,27 +1310,62 @@ impl SyncWorker {
         }
     }
 
-    /// Send heartbeats to all peers
-    async fn send_heartbeats(&mut self) {
-        let peers = self.state.get_peers();
-        if peers.is_empty() {
-            return;
-        }
+    /// Spawn the heartbeat sender (audit A7).
+    ///
+    /// Each peer gets its heartbeat on a dedicated connection, concurrently
+    /// and bounded, so neither a sync round trip nor one unreachable peer can
+    /// delay the others past the dead-node timeout.
+    fn spawn_heartbeat_task(&mut self) -> tokio::task::JoinHandle<()> {
+        let pool = self.pool.clone();
+        let state = self.state.clone();
+        let storage = self.storage.clone();
+        let node_id = self.local_node_id.clone();
+        let period = self.config.heartbeat_interval;
+        let mut system = std::mem::replace(&mut self.system, sysinfo::System::new());
 
-        let stats = self.collect_local_stats();
-        let heartbeat = SyncMessage::Heartbeat {
-            node_id: self.local_node_id.clone(),
-            sequence: self.state.current_sequence(),
-            stats,
-        };
-
-        for peer in self.state.get_peers() {
-            if peer.is_connected {
-                if let Err(e) = self.pool.send(&peer.sync_address, &heartbeat).await {
-                    debug!("Failed to send heartbeat to {}: {}", peer.node_id, e);
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(period);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let per_peer = period.max(Duration::from_secs(5));
+            loop {
+                ticker.tick().await;
+                let peers = state.get_peers();
+                if peers.is_empty() {
+                    continue;
                 }
+
+                let stats = collect_local_stats(&mut system, &storage);
+                let heartbeat = SyncMessage::Heartbeat {
+                    node_id: node_id.clone(),
+                    sequence: state.current_sequence(),
+                    stats,
+                };
+
+                let sends = peers.iter().map(|peer| {
+                    let pool = &pool;
+                    let heartbeat = &heartbeat;
+                    async move {
+                        match tokio::time::timeout(
+                            per_peer,
+                            pool.send_heartbeat(&peer.sync_address, heartbeat),
+                        )
+                        .await
+                        {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                debug!("Failed to send heartbeat to {}: {}", peer.node_id, e)
+                            }
+                            Err(_) => {
+                                debug!("Heartbeat to {} timed out", peer.node_id);
+                                // A frame may be half written; start clean.
+                                pool.drop_heartbeat_connection(&peer.sync_address).await;
+                            }
+                        }
+                    }
+                });
+                futures::future::join_all(sends).await;
             }
-        }
+        })
     }
 
     /// Check for dead nodes and remove them
@@ -1214,47 +1402,91 @@ impl SyncWorker {
         }
     }
 
-    /// Collect local node statistics
-    fn collect_local_stats(&mut self) -> NodeStats {
-        self.system.refresh_cpu_usage();
-        self.system.refresh_memory();
+    /// Serve a full sync to a peer.
+    ///
+    /// Audit P8: each collection is read in fixed-size pages on the blocking
+    /// pool and every batch is written as soon as it is full. The old code
+    /// scanned a whole collection into memory first, so on a large one the
+    /// requester's 30 s read timeout expired before the first batch and the
+    /// retry repeated the scan. Audit A6: batches are bounded by encoded
+    /// bytes, and each write goes through the size-checked framing.
+    async fn serve_full_sync<W>(
+        stream: &mut W,
+        storage: &StorageEngine,
+        sync_log: &super::log::SyncLog,
+    ) -> Result<(), TransportError>
+    where
+        W: tokio::io::AsyncWrite + Unpin,
+    {
+        use super::transport::ConnectionPool;
 
-        let cpu_usage = self
-            .system
-            .cpus()
-            .first()
-            .map(|c| c.cpu_usage())
-            .unwrap_or(0.0);
-        let memory_used = self.system.used_memory();
-        let disk_used = 0;
+        // Enumerate databases and collections
+        let databases = storage.list_databases();
+        let mut total_collections = 0u32;
+        let mut total_documents = 0u64;
 
-        // Count documents and collections
-        let mut document_count = 0u64;
-        let mut collections_count = 0u32;
-
-        let dbs = self.storage.list_databases();
-        for db_name in dbs {
-            if db_name.starts_with('_') {
-                continue; // Skip system databases
-            }
-            if let Ok(db) = self.storage.get_database(&db_name) {
+        for db_name in &databases {
+            if let Ok(db) = storage.get_database(db_name) {
                 let colls = db.list_collections();
-                collections_count = collections_count.saturating_add(colls.len() as u32);
-                for coll_name in colls {
-                    if let Ok(coll) = db.system_collection(&coll_name) {
-                        document_count = document_count.saturating_add(coll.count() as u64);
+                total_collections += colls.len() as u32;
+                for coll_name in &colls {
+                    if let Ok(coll) = db.system_collection(coll_name) {
+                        total_documents += coll.count() as u64;
                     }
                 }
             }
         }
 
-        NodeStats {
-            cpu_usage,
-            memory_used,
-            disk_used,
-            document_count,
-            collections_count,
+        let start = SyncMessage::FullSyncStart {
+            total_databases: databases.len() as u32,
+            total_collections,
+            total_documents,
+        };
+        ConnectionPool::write_message(stream, &start).await?;
+
+        for db_name in &databases {
+            let db_msg = SyncMessage::FullSyncDatabase {
+                name: db_name.clone(),
+            };
+            ConnectionPool::write_message(stream, &db_msg).await?;
+
+            let Ok(db) = storage.get_database(db_name) else {
+                continue;
+            };
+            for coll_name in db.list_collections() {
+                // Carry the collection's real type and shard config;
+                // recreating everything as an untyped document collection
+                // silently downgraded blob and timeseries collections on the
+                // receiver.
+                let (collection_type, shard_config) = match db.system_collection(&coll_name) {
+                    Ok(c) => (
+                        Some(c.get_type().to_string()),
+                        c.get_shard_config().map(|cfg| ShardConfig {
+                            num_shards: cfg.num_shards,
+                            shard_key: cfg.shard_key.clone(),
+                            replication_factor: cfg.replication_factor,
+                        }),
+                    ),
+                    Err(_) => (None, None),
+                };
+                let coll_msg = SyncMessage::FullSyncCollection {
+                    database: db_name.clone(),
+                    name: coll_name.clone(),
+                    shard_config,
+                    collection_type,
+                };
+                ConnectionPool::write_message(stream, &coll_msg).await?;
+
+                if let Ok(coll) = db.get_collection(&coll_name) {
+                    stream_collection_documents(stream, db_name, &coll_name, coll).await?;
+                }
+            }
         }
+
+        let complete = SyncMessage::FullSyncComplete {
+            final_sequence: sync_log.current_sequence(),
+        };
+        ConnectionPool::write_message(stream, &complete).await
     }
 
     /// Handle incoming connection
@@ -1297,7 +1529,7 @@ impl SyncWorker {
             let compressed = header[0] == 1;
             let len = u32::from_be_bytes([header[1], header[2], header[3], header[4]]);
 
-            if len > 10 * 1024 * 1024 {
+            if len > super::transport::MAX_MESSAGE_SIZE {
                 break;
             }
 
@@ -1355,10 +1587,16 @@ impl SyncWorker {
                     // value. This is the high-watermark used by prune logic.
                     if !from_node.is_empty() {
                         state.update_sent_sequence(&from_node, after_sequence);
+                        // An authenticated request proves liveness as well as a
+                        // heartbeat does (audit A7).
+                        state.touch_heartbeat(&from_node);
                     }
 
-                    // Fetch entries from log
-                    let limit = (max_batch_bytes / 1024).max(100) as usize; // Rough estimate
+                    // Audit A6: size the batch by encoded bytes, not by entry
+                    // count. The requester's budget is honoured but capped so a
+                    // batch always fits a frame.
+                    let budget = (max_batch_bytes as usize).clamp(64 * 1024, BATCH_BYTE_BUDGET);
+                    let limit = (budget / 1024).max(100);
                     let log_entries = sync_log.get_entries_after(after_sequence, limit);
                     let current_seq = sync_log.current_sequence();
 
@@ -1370,193 +1608,265 @@ impl SyncWorker {
                         log_entries.len()
                     );
 
-                    // Convert to SyncEntry
-                    let entries: Vec<SyncEntry> =
-                        log_entries.iter().map(|e| e.to_sync_entry(&hlc)).collect();
+                    let mut entries: Vec<SyncEntry> = Vec::new();
+                    let mut batch_bytes = 0usize;
+                    let mut oversized: Option<SyncEntry> = None;
+                    for log_entry in &log_entries {
+                        let entry = log_entry.to_sync_entry(&hlc);
+                        let size = bincode::serialized_size(&entry)
+                            .map(|n| n as usize)
+                            .unwrap_or(usize::MAX);
+                        if size > BATCH_BYTE_BUDGET {
+                            // Cannot share a frame with anything. Ship it on
+                            // its own, in parts, once it is first in line.
+                            if entries.is_empty() {
+                                oversized = Some(entry);
+                            }
+                            break;
+                        }
+                        if !entries.is_empty() && batch_bytes + size > budget {
+                            break;
+                        }
+                        batch_bytes += size;
+                        entries.push(entry);
+                    }
 
-                    let has_more = !entries.is_empty()
-                        && entries.last().map(|e| e.sequence).unwrap_or(0) < current_seq;
+                    let result = match oversized {
+                        Some(entry) => send_entry_in_parts(&mut stream, &entry, current_seq).await,
+                        None => {
+                            let has_more = !entries.is_empty()
+                                && entries.last().map(|e| e.sequence).unwrap_or(0) < current_seq;
 
-                    let response = SyncMessage::SyncBatch {
-                        entries,
-                        has_more,
-                        current_sequence: current_seq,
-                        compressed: false,
+                            let response = SyncMessage::SyncBatch {
+                                entries,
+                                has_more,
+                                current_sequence: current_seq,
+                                compressed: false,
+                            };
+
+                            // Use proper message framing that the client expects
+                            super::transport::ConnectionPool::write_message(&mut stream, &response)
+                                .await
+                        }
                     };
-
-                    // Use proper message framing that the client expects
-                    if let Err(e) =
-                        super::transport::ConnectionPool::write_message(&mut stream, &response)
-                            .await
-                    {
+                    if let Err(e) = result {
                         warn!("Failed to send SyncBatch response: {}", e);
                         break;
                     }
                 }
                 SyncMessage::FullSyncRequest { from_node } => {
                     info!("Full sync request from {}", from_node);
-
-                    // Enumerate databases and collections
-                    let databases = storage.list_databases();
-                    let mut total_collections = 0u32;
-                    let mut total_documents = 0u64;
-
-                    for db_name in &databases {
-                        if let Ok(db) = storage.get_database(db_name) {
-                            let colls = db.list_collections();
-                            total_collections += colls.len() as u32;
-                            for coll_name in &colls {
-                                if let Ok(coll) = db.system_collection(coll_name) {
-                                    total_documents += coll.count() as u64;
-                                }
-                            }
-                        }
+                    if let Err(e) = Self::serve_full_sync(&mut stream, &storage, &sync_log).await {
+                        warn!("Full sync to {} aborted: {}", from_node, e);
+                        break;
                     }
-
-                    // Send start message
-                    let start = SyncMessage::FullSyncStart {
-                        total_databases: databases.len() as u32,
-                        total_collections,
-                        total_documents,
-                    };
-                    let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, &start.encode()).await;
-
-                    // Send each database
-                    for db_name in &databases {
-                        let db_msg = SyncMessage::FullSyncDatabase {
-                            name: db_name.clone(),
-                        };
-                        let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, &db_msg.encode())
-                            .await;
-
-                        if let Ok(db) = storage.get_database(db_name) {
-                            let colls = db.list_collections();
-                            for coll_name in colls {
-                                // Send collection
-                                // Carry the collection's real type and shard
-                                // config; recreating everything as an untyped
-                                // document collection silently downgraded blob
-                                // and timeseries collections on the receiver.
-                                let (collection_type, shard_config) =
-                                    match db.system_collection(&coll_name) {
-                                        Ok(c) => (
-                                            Some(c.get_type().to_string()),
-                                            c.get_shard_config().map(|cfg| ShardConfig {
-                                                num_shards: cfg.num_shards,
-                                                shard_key: cfg.shard_key.clone(),
-                                                replication_factor: cfg.replication_factor,
-                                            }),
-                                        ),
-                                        Err(_) => (None, None),
-                                    };
-                                let coll_msg = SyncMessage::FullSyncCollection {
-                                    database: db_name.clone(),
-                                    name: coll_name.clone(),
-                                    shard_config,
-                                    collection_type,
-                                };
-                                let _ = tokio::io::AsyncWriteExt::write_all(
-                                    &mut stream,
-                                    &coll_msg.encode(),
-                                )
-                                .await;
-
-                                // Send documents in batches
-                                if let Ok(coll) = db.get_collection(&coll_name) {
-                                    let mut batch = Vec::new();
-                                    let mut batch_count = 0u32;
-
-                                    for doc in coll.scan(None) {
-                                        batch.push(doc.to_value());
-                                        batch_count += 1;
-
-                                        if batch.len() >= 1000 {
-                                            // Send batch
-                                            // Not `unwrap_or_default()`: that
-                                            // turned an encoding failure into an
-                                            // empty batch, so a sync reported
-                                            // success having sent nothing.
-                                            let data =
-                                                match super::protocol::encode_documents(&batch) {
-                                                    Ok(data) => data,
-                                                    Err(e) => {
-                                                        return Err(TransportError::DecodeError(
-                                                            format!("full sync aborted: {e}"),
-                                                        ));
-                                                    }
-                                                };
-                                            let compress = data.len() > 10 * 1024;
-                                            let final_data = if compress {
-                                                lz4_flex::compress_prepend_size(&data)
-                                            } else {
-                                                data
-                                            };
-
-                                            let doc_msg = SyncMessage::FullSyncDocuments {
-                                                database: db_name.clone(),
-                                                collection: coll_name.clone(),
-                                                data: final_data,
-                                                compressed: compress,
-                                                doc_count: batch_count,
-                                            };
-                                            let _ = tokio::io::AsyncWriteExt::write_all(
-                                                &mut stream,
-                                                &doc_msg.encode(),
-                                            )
-                                            .await;
-
-                                            batch.clear();
-                                            batch_count = 0;
-                                        }
-                                    }
-
-                                    // Send remaining
-                                    if !batch.is_empty() {
-                                        let data = match super::protocol::encode_documents(&batch) {
-                                            Ok(data) => data,
-                                            Err(e) => {
-                                                return Err(TransportError::DecodeError(format!(
-                                                    "full sync aborted: {e}"
-                                                )));
-                                            }
-                                        };
-                                        let compress = data.len() > 10 * 1024;
-                                        let final_data = if compress {
-                                            lz4_flex::compress_prepend_size(&data)
-                                        } else {
-                                            data
-                                        };
-
-                                        let doc_msg = SyncMessage::FullSyncDocuments {
-                                            database: db_name.clone(),
-                                            collection: coll_name.clone(),
-                                            data: final_data,
-                                            compressed: compress,
-                                            doc_count: batch_count,
-                                        };
-                                        let _ = tokio::io::AsyncWriteExt::write_all(
-                                            &mut stream,
-                                            &doc_msg.encode(),
-                                        )
-                                        .await;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Send complete
-                    let complete = SyncMessage::FullSyncComplete {
-                        final_sequence: sync_log.current_sequence(),
-                    };
-                    let _ =
-                        tokio::io::AsyncWriteExt::write_all(&mut stream, &complete.encode()).await;
                 }
                 _ => {}
             }
         }
 
         Ok(())
+    }
+}
+
+/// Send one replication entry too large for a batch as `SyncEntryPart`s
+/// (audit A6). An entry beyond [`MAX_REASSEMBLED_ENTRY_BYTES`] is not sent;
+/// a `total_parts == 0` marker tells the requester to log it and move on,
+/// which is loud on both nodes rather than wedging replication forever.
+async fn send_entry_in_parts<W>(
+    stream: &mut W,
+    entry: &SyncEntry,
+    current_sequence: u64,
+) -> Result<(), TransportError>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use super::transport::ConnectionPool;
+
+    let bytes =
+        bincode::serialize(entry).map_err(|e| TransportError::EncodeError(e.to_string()))?;
+    if bytes.len() > MAX_REASSEMBLED_ENTRY_BYTES {
+        error!(
+            "Replication entry {} ({}.{} key {}) is {} bytes, above the {} byte limit; \
+             peers will not receive this write",
+            entry.sequence,
+            entry.database,
+            entry.collection,
+            entry.document_key,
+            bytes.len(),
+            MAX_REASSEMBLED_ENTRY_BYTES
+        );
+        ENTRIES_SKIPPED_OVERSIZED.fetch_add(1, Ordering::Relaxed);
+        let marker = SyncMessage::SyncEntryPart {
+            sequence: entry.sequence,
+            part: 0,
+            total_parts: 0,
+            current_sequence,
+            data: Vec::new(),
+        };
+        return ConnectionPool::write_message(stream, &marker).await;
+    }
+
+    let total_parts = bytes.len().div_ceil(ENTRY_PART_BYTES) as u32;
+    for (i, chunk) in bytes.chunks(ENTRY_PART_BYTES).enumerate() {
+        let part = SyncMessage::SyncEntryPart {
+            sequence: entry.sequence,
+            part: i as u32,
+            total_parts,
+            current_sequence,
+            data: chunk.to_vec(),
+        };
+        ConnectionPool::write_message(stream, &part).await?;
+    }
+    ENTRIES_SENT_IN_PARTS.fetch_add(1, Ordering::Relaxed);
+    info!(
+        "Sent replication entry {} ({} bytes) in {} parts",
+        entry.sequence,
+        bytes.len(),
+        total_parts
+    );
+    Ok(())
+}
+
+/// Stream one collection's documents as byte-bounded `FullSyncDocuments`.
+async fn stream_collection_documents<W>(
+    stream: &mut W,
+    db_name: &str,
+    coll_name: &str,
+    coll: crate::storage::collection::Collection,
+) -> Result<(), TransportError>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use super::protocol::DocumentBatchEncoder;
+    use crate::sharding::scan::{scan_page_blocking, ScanCursor};
+
+    let mut batch = DocumentBatchEncoder::new();
+    let mut cursor = ScanCursor::start();
+    loop {
+        let (docs, next) = scan_page_blocking(coll.clone(), cursor, FULL_SYNC_PAGE_SIZE)
+            .await
+            .map_err(TransportError::EncodeError)?;
+
+        for doc in docs {
+            // Not `unwrap_or_default()`: that turned an encoding failure into
+            // an empty batch, so a sync reported success having sent nothing.
+            let json = DocumentBatchEncoder::encode_one(&doc.to_value())
+                .map_err(|e| TransportError::EncodeError(format!("full sync aborted: {e}")))?;
+
+            // The receiver refuses to decompress more than this, so such a
+            // document can never be delivered by full sync.
+            if json.len() + 2 > super::protocol::MAX_DECOMPRESSED_SIZE {
+                skip_oversized_full_sync_doc(db_name, coll_name, &doc.key, json.len());
+                continue;
+            }
+
+            if !batch.is_empty() && batch.encoded_len() + json.len() + 1 > BATCH_BYTE_BUDGET {
+                send_document_batch(stream, db_name, coll_name, std::mem::take(&mut batch)).await?;
+            }
+
+            if json.len() + 2 > BATCH_BYTE_BUDGET {
+                // Alone it may still fit once compressed; `write_message`
+                // checks the size before writing a byte, so a refusal leaves
+                // the stream intact.
+                let mut single = DocumentBatchEncoder::new();
+                single.push_encoded(&json);
+                match send_document_batch(stream, db_name, coll_name, single).await {
+                    Ok(()) => {}
+                    Err(TransportError::MessageTooLarge(_)) => {
+                        skip_oversized_full_sync_doc(db_name, coll_name, &doc.key, json.len());
+                    }
+                    Err(e) => return Err(e),
+                }
+                continue;
+            }
+
+            batch.push_encoded(&json);
+        }
+
+        match next {
+            Some(c) => cursor = c,
+            None => break,
+        }
+    }
+
+    if !batch.is_empty() {
+        send_document_batch(stream, db_name, coll_name, batch).await?;
+    }
+    Ok(())
+}
+
+fn skip_oversized_full_sync_doc(db_name: &str, coll_name: &str, key: &str, len: usize) {
+    error!(
+        "Full sync: document {}.{}/{} is {} bytes and cannot fit a sync frame; \
+         it was NOT sent to the requesting node",
+        db_name, coll_name, key, len
+    );
+    FULL_SYNC_DOCS_SKIPPED_OVERSIZED.fetch_add(1, Ordering::Relaxed);
+}
+
+async fn send_document_batch<W>(
+    stream: &mut W,
+    db_name: &str,
+    coll_name: &str,
+    batch: super::protocol::DocumentBatchEncoder,
+) -> Result<(), TransportError>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let doc_count = batch.count();
+    let data = batch.finish();
+    let compress = data.len() > 10 * 1024;
+    let final_data = if compress {
+        lz4_flex::compress_prepend_size(&data)
+    } else {
+        data
+    };
+    let msg = SyncMessage::FullSyncDocuments {
+        database: db_name.to_string(),
+        collection: coll_name.to_string(),
+        data: final_data,
+        compressed: compress,
+        doc_count,
+    };
+    super::transport::ConnectionPool::write_message(stream, &msg).await
+}
+
+/// Collect local node statistics
+fn collect_local_stats(system: &mut sysinfo::System, storage: &StorageEngine) -> NodeStats {
+    system.refresh_cpu_usage();
+    system.refresh_memory();
+
+    let cpu_usage = system.cpus().first().map(|c| c.cpu_usage()).unwrap_or(0.0);
+    let memory_used = system.used_memory();
+    let disk_used = 0;
+
+    // Count documents and collections
+    let mut document_count = 0u64;
+    let mut collections_count = 0u32;
+
+    let dbs = storage.list_databases();
+    for db_name in dbs {
+        if db_name.starts_with('_') {
+            continue; // Skip system databases
+        }
+        if let Ok(db) = storage.get_database(&db_name) {
+            let colls = db.list_collections();
+            collections_count = collections_count.saturating_add(colls.len() as u32);
+            for coll_name in colls {
+                if let Ok(coll) = db.system_collection(&coll_name) {
+                    document_count = document_count.saturating_add(coll.count() as u64);
+                }
+            }
+        }
+    }
+
+    NodeStats {
+        cpu_usage,
+        memory_used,
+        disk_used,
+        document_count,
+        collections_count,
     }
 }
 

@@ -106,8 +106,6 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        let has_indexes = !collection.list_indexes().is_empty();
-
         let var_name = &for_clause.variable;
         let mut all_results: Vec<Value> = Vec::new();
         let mut current = start;
@@ -141,10 +139,8 @@ impl<'a> QueryExecutor<'a> {
             // Log to replication asynchronously
             self.log_mutations_async(&insert_clause.collection, Operation::Insert, &inserted_docs);
 
-            // Index documents if needed
-            if has_indexes && !inserted_docs.is_empty() {
-                let _ = collection.index_documents(&inserted_docs);
-            }
+            // `insert_batch` already wrote the index entries atomically with
+            // the documents (audit D5); re-indexing here would race writers.
 
             current = batch_end + 1;
 

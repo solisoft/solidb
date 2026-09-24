@@ -339,8 +339,9 @@ pub async fn execute_ws(
         let broadcast_fn = lua
             .create_function(move |_, (channel, data): (String, mlua::Value)| {
                 let json_data = lua_value_to_json(&data)?;
+                // Resolved in this connection's database (audit H6).
                 cm_broadcast
-                    .broadcast(&channel, json_data, Some(&conn_id_bc))
+                    .broadcast_from(&conn_id_bc, &channel, json_data)
                     .map_err(|e| mlua::Error::RuntimeError(format!("Broadcast error: {}", e)))?;
                 Ok(true)
             })
@@ -414,9 +415,10 @@ pub async fn execute_ws(
 
         // ws.presence.list(channel) -> table of users
         let cm_plist = cm.clone();
+        let plist_db = db_name.to_string();
         let list_presence_fn = lua
             .create_function(move |lua, channel: String| {
-                let users = cm_plist.presence_list(&channel);
+                let users = cm_plist.presence_list(&plist_db, &channel);
                 let table = lua.create_table()?;
                 for (i, user) in users.iter().enumerate() {
                     let user_table = lua.create_table()?;

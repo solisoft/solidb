@@ -466,7 +466,7 @@ async fn fetch_blob_chunk_from_cluster(
             continue;
         }
 
-        let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
+        let scheme = crate::cluster::http::cluster_scheme().to_string();
         let url = if node_addr.contains("://") {
             format!(
                 "{}/_internal/blob/replicate/{}/{}/{}/chunk/{}",

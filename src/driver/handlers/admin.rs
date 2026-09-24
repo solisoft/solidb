@@ -404,29 +404,47 @@ pub async fn handle_create_api_key(
                 Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
             };
 
-            // Generate a random API key
-            let key = format!("sdb_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
-
             if permissions.is_empty() {
                 return Response::error(DriverError::InvalidCommand(
                     "API keys must declare at least one role".to_string(),
                 ));
             }
-            let api_key_doc = serde_json::json!({
-                "name": name,
-                "key": key,
-                "permissions": permissions,
-                "roles": permissions,
-                "expires_at": expires_at, // Use i64 directly, serialization will handle it
-                "created_at": chrono::Utc::now().to_rfc3339(),
+
+            // Store only the hash, exactly like `create_api_key_handler`: this
+            // path used to persist the raw key and no `key_hash`, so the key
+            // sat in plaintext in `_api_keys` and never authenticated over HTTP.
+            let (raw_key, key_hash) = crate::server::auth::AuthService::generate_api_key();
+            // The driver takes a Unix timestamp; milliseconds are accepted too.
+            let expires_at = expires_at.and_then(|ts| {
+                let secs = if ts > 1_000_000_000_000 {
+                    ts / 1000
+                } else {
+                    ts
+                };
+                chrono::DateTime::from_timestamp(secs, 0).map(|d| d.to_rfc3339())
             });
+            let api_key = crate::server::auth::ApiKey {
+                id: uuid::Uuid::new_v4().to_string(),
+                name,
+                key_hash,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                roles: permissions,
+                scoped_databases: None,
+                expires_at,
+            };
+            let api_key_doc = match serde_json::to_value(&api_key) {
+                Ok(v) => v,
+                Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
+            };
 
             match api_keys_coll.insert(api_key_doc) {
                 Ok(doc) => {
+                    crate::server::auth::api_key_cache().insert(api_key);
                     // Return the key only on creation
                     let mut val = doc.to_value();
                     if let Some(obj) = val.as_object_mut() {
-                        obj.insert("key".to_string(), serde_json::json!(key));
+                        obj.remove("key_hash");
+                        obj.insert("key".to_string(), serde_json::json!(raw_key));
                     }
                     Response::ok(val)
                 }
@@ -441,7 +459,12 @@ pub async fn handle_delete_api_key(handler: &DriverHandler, key_id: String) -> R
     match handler.storage.get_database("_system") {
         Ok(db) => match db.system_collection("_api_keys") {
             Ok(coll) => match coll.delete(&key_id) {
-                Ok(_) => Response::ok_empty(),
+                Ok(_) => {
+                    // Without this the deleted key keeps authenticating over
+                    // HTTP from the in-memory cache.
+                    crate::server::auth::api_key_cache().remove_by_id(&key_id);
+                    Response::ok_empty()
+                }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
             },
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),

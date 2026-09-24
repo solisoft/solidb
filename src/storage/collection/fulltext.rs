@@ -7,15 +7,25 @@ use rust_rocksdb::WriteBatch;
 use serde_json::Value;
 use std::collections::HashMap;
 
+/// A RocksDB key and value to write.
+type KvPair = (Vec<u8>, Vec<u8>);
+
+/// Postings read per query term before giving up on that term (audit P5).
+const MAX_POSTINGS_PER_TERM: usize = 50_000;
+/// Bounds on how many candidates are loaded and scored per search.
+const MIN_SCORED_CANDIDATES: usize = 100;
+const MAX_SCORED_CANDIDATES: usize = 5_000;
+
 impl Collection {
     // ==================== Fulltext Index Operations ====================
 
     /// Get all fulltext indexes
     pub fn get_all_fulltext_indexes(&self) -> Vec<FulltextIndex> {
+        // Empty when the column family is gone (dropped mid-operation): a
+        // background caller such as the TTL worker must not panic (audit P11).
         self.index_meta()
-            .expect("Column family should exist")
-            .fulltext
-            .clone()
+            .map(|m| m.fulltext.clone())
+            .unwrap_or_default()
     }
 
     /// Get a fulltext index by name
@@ -94,13 +104,7 @@ impl Collection {
                             batch.put_cf(&cf, term_key, doc.key.as_bytes());
                         }
                     }
-
-                    // Index trigrams for fuzzy matching
-                    let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                    for ngram in &ngrams {
-                        let ngram_key = Self::ft_ngram_key(&name, ngram, &doc.key);
-                        batch.put_cf(&cf, ngram_key, doc.key.as_bytes());
-                    }
+                    // No `ft:` n-gram entries: nothing reads them (audit P5).
                     count += 1;
                 }
             }
@@ -225,12 +229,6 @@ impl Collection {
                             batch.put_cf(&cf, term_key, doc_key.as_bytes());
                         }
                     }
-
-                    let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                    for ngram in &ngrams {
-                        let ngram_key = Self::ft_ngram_key(&index.name, ngram, doc_key);
-                        batch.put_cf(&cf, ngram_key, doc_key.as_bytes());
-                    }
                 }
             }
         }
@@ -318,9 +316,9 @@ impl Collection {
         // 3. Collect candidate documents (using term matching first)
         let mut candidate_counts: HashMap<String, usize> = HashMap::new();
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let Some(cf) = db.cf_handle(&self.name) else {
+            return Ok(Vec::new()); // column family dropped mid-operation
+        };
 
         for index in &indexes {
             for term in &query_terms {
@@ -329,18 +327,17 @@ impl Collection {
                     let prefix = format!("{}{}:{}:", FT_TERM_PREFIX, index.name, term);
                     let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
 
-                    for result in iter.flatten() {
+                    for (scanned, result) in iter.flatten().enumerate() {
                         let (key, _) = result;
-                        if !key.starts_with(prefix.as_bytes()) {
+                        if !key.starts_with(prefix.as_bytes()) || scanned >= MAX_POSTINGS_PER_TERM {
                             break;
                         }
-                        let key_str = String::from_utf8_lossy(&key);
-                        // Key is "ft_term:<algo>:<term>:<doc_key>"
-                        // Extract doc_key (last part)
-                        let parts: Vec<&str> = key_str.split(':').collect();
-                        if let Some(doc_key) = parts.last() {
-                            *candidate_counts.entry(doc_key.to_string()).or_insert(0) += 1;
-                        }
+                        // Key is "ft_term:<index>:<term>:<doc_key>". Terms are
+                        // alphanumeric, so everything after the exact prefix is
+                        // the doc key — which may itself contain ':' (audit D6;
+                        // `split(':').last()` truncated such keys).
+                        let doc_key = String::from_utf8_lossy(&key[prefix.len()..]).into_owned();
+                        *candidate_counts.entry(doc_key).or_insert(0) += 1;
                     }
                 }
             }
@@ -353,9 +350,21 @@ impl Collection {
             // We'll proceed with term matching + Levenshtein re-scoring.
         }
 
-        // 4. Score candidates
+        // 4. Score only the most promising candidates (audit P5): scoring
+        // loads the document and runs Levenshtein over its terms, so doing it
+        // for every posting before applying `limit` scaled with the corpus.
+        // Rank by how many query terms matched; score the top N.
+        let max_scored = limit
+            .saturating_mul(4)
+            .clamp(MIN_SCORED_CANDIDATES, MAX_SCORED_CANDIDATES);
+        let mut ranked: Vec<(String, usize)> = candidate_counts.into_iter().collect();
+        if ranked.len() > max_scored {
+            ranked.select_nth_unstable_by(max_scored - 1, |a, b| b.1.cmp(&a.1));
+            ranked.truncate(max_scored);
+        }
+
         let mut matches = Vec::new();
-        for (doc_key, _count) in candidate_counts {
+        for (doc_key, _count) in ranked {
             // Retrieve document to calculate exact score
             // Optimization: Only load full document if count is promising?
             // Here we assume if it matches term, it's relevant.
@@ -424,6 +433,35 @@ impl Collection {
 
     // ==================== Fulltext Index Entry Computation Helpers ====================
 
+    /// Indexed terms of one field value, deduplicated.
+    fn ft_terms(index: &FulltextIndex, text: &str) -> std::collections::BTreeSet<String> {
+        tokenize(text)
+            .into_iter()
+            .filter(|t| t.len() >= index.min_length)
+            .collect()
+    }
+
+    /// Legacy `ft:` n-gram keys for one field value, only if this document
+    /// was indexed by a version that still wrote them. One point read on the
+    /// first n-gram decides, so documents indexed since P5 pay nothing.
+    fn legacy_ngram_keys(&self, index: &FulltextIndex, text: &str, doc_key: &str) -> Vec<Vec<u8>> {
+        let ngrams = generate_ngrams(text, NGRAM_SIZE);
+        let Some(first) = ngrams.first() else {
+            return Vec::new();
+        };
+        let Some(cf) = self.db.cf_handle(&self.name) else {
+            return Vec::new();
+        };
+        let probe = Self::ft_ngram_key(&index.name, first, doc_key);
+        if !matches!(self.db.get_pinned_cf(&cf, &probe), Ok(Some(_))) {
+            return Vec::new();
+        }
+        ngrams
+            .iter()
+            .map(|ngram| Self::ft_ngram_key(&index.name, ngram, doc_key))
+            .collect()
+    }
+
     /// Compute fulltext index entries to add for a document insert (without writing to DB)
     /// Returns Vec<(key_bytes, value_bytes)> where value is typically doc_key
     pub(crate) fn compute_fulltext_entries_for_insert(
@@ -439,24 +477,13 @@ impl Collection {
         let mut entries = Vec::new();
         let doc_key_bytes = doc_key.as_bytes().to_vec();
 
-        for index in indexes {
+        for index in &indexes {
             for field in &index.fields {
                 let field_value = extract_field_value(doc_value, field);
                 if let Some(text) = field_value.as_str() {
-                    // Add term entries
-                    let terms = tokenize(text);
-                    for term in &terms {
-                        if term.len() >= index.min_length {
-                            let term_key = Self::ft_term_key(&index.name, term, doc_key);
-                            entries.push((term_key, doc_key_bytes.clone()));
-                        }
-                    }
-
-                    // Add ngram entries
-                    let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                    for ngram in &ngrams {
-                        let ngram_key = Self::ft_ngram_key(&index.name, ngram, doc_key);
-                        entries.push((ngram_key, doc_key_bytes.clone()));
+                    for term in Self::ft_terms(index, text) {
+                        let term_key = Self::ft_term_key(&index.name, &term, doc_key);
+                        entries.push((term_key, doc_key_bytes.clone()));
                     }
                 }
             }
@@ -479,29 +506,74 @@ impl Collection {
 
         let mut keys_to_remove = Vec::new();
 
-        for index in indexes {
+        for index in &indexes {
             for field in &index.fields {
                 let field_value = extract_field_value(doc_value, field);
                 if let Some(text) = field_value.as_str() {
-                    // Remove term entries
-                    let terms = tokenize(text);
-                    for term in &terms {
-                        if term.len() >= index.min_length {
-                            let term_key = Self::ft_term_key(&index.name, term, doc_key);
-                            keys_to_remove.push(term_key);
-                        }
+                    for term in Self::ft_terms(index, text) {
+                        keys_to_remove.push(Self::ft_term_key(&index.name, &term, doc_key));
                     }
-
-                    // Remove ngram entries
-                    let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                    for ngram in &ngrams {
-                        let ngram_key = Self::ft_ngram_key(&index.name, ngram, doc_key);
-                        keys_to_remove.push(ngram_key);
-                    }
+                    keys_to_remove.extend(self.legacy_ngram_keys(index, text, doc_key));
                 }
             }
         }
 
         keys_to_remove
+    }
+
+    /// Fulltext changes for a document update: `(entries_to_add, keys_to_remove)`.
+    ///
+    /// Fields whose text is unchanged produce nothing (audit P5: an update
+    /// that did not touch the indexed text used to delete and rewrite every
+    /// term), and changed fields only add/remove the terms that differ.
+    /// Callers must apply the removals before the additions.
+    pub(crate) fn compute_fulltext_entries_for_update(
+        &self,
+        doc_key: &str,
+        old_value: &Value,
+        new_value: &Value,
+    ) -> (Vec<KvPair>, Vec<Vec<u8>>) {
+        let indexes = self.get_all_fulltext_indexes();
+        if indexes.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+
+        let mut to_add = Vec::new();
+        let mut to_remove = Vec::new();
+        let doc_key_bytes = doc_key.as_bytes().to_vec();
+
+        for index in &indexes {
+            for field in &index.fields {
+                let old_field = extract_field_value(old_value, field);
+                let new_field = extract_field_value(new_value, field);
+                let old_text = old_field.as_str();
+                let new_text = new_field.as_str();
+                if old_text == new_text {
+                    continue;
+                }
+
+                let old_terms = old_text
+                    .map(|t| Self::ft_terms(index, t))
+                    .unwrap_or_default();
+                let new_terms = new_text
+                    .map(|t| Self::ft_terms(index, t))
+                    .unwrap_or_default();
+
+                for term in old_terms.difference(&new_terms) {
+                    to_remove.push(Self::ft_term_key(&index.name, term, doc_key));
+                }
+                if let Some(text) = old_text {
+                    to_remove.extend(self.legacy_ngram_keys(index, text, doc_key));
+                }
+                for term in new_terms.difference(&old_terms) {
+                    to_add.push((
+                        Self::ft_term_key(&index.name, term, doc_key),
+                        doc_key_bytes.clone(),
+                    ));
+                }
+            }
+        }
+
+        (to_add, to_remove)
     }
 }

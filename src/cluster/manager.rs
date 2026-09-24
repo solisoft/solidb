@@ -585,7 +585,7 @@ impl ClusterManager {
                     let collection = db.get_collection(&entry.collection)?;
                     if let Some(data) = &entry.document_data {
                         let doc_value: serde_json::Value = serde_json::from_slice(data)?;
-                        collection.insert(doc_value)?;
+                        collection.insert_or_replace(doc_value)?;
                     }
                 }
                 Operation::Delete => {

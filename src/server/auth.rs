@@ -80,12 +80,66 @@ static LOGIN_RATE_LIMITER: Lazy<Mutex<LruCache<String, Vec<Instant>>>> = Lazy::n
 /// Bounded LRU so a hostile or buggy client cannot grow the cache without
 /// limit (the previous `RwLock<HashMap>` only evicted opportunistically on
 /// the write path).
-/// Key: base64(username:password_hash), Value: Claims + expiry
+/// Key: see [`basic_auth_cache_key`], Value: Claims + expiry
 static BASIC_AUTH_CACHE: Lazy<Mutex<LruCache<String, AuthCacheEntry>>> = Lazy::new(|| {
     Mutex::new(LruCache::new(
         NonZeroUsize::new(BASIC_AUTH_CACHE_CAPACITY).unwrap(),
     ))
 });
+
+/// Per-process random salt for [`basic_auth_cache_key`], so the cache key is
+/// not a fixed, offline-computable function of the password.
+static BASIC_AUTH_CACHE_SALT: Lazy<[u8; 32]> = Lazy::new(|| {
+    let mut salt = [0u8; 32];
+    OsRng.fill_bytes(&mut salt);
+    salt
+});
+
+/// Concurrency cap on Argon2 work (verify and hash). Each Argon2id run holds
+/// ~19 MiB for tens of milliseconds; without a cap, a burst of Basic-auth or
+/// login attempts fans out across the whole blocking pool — hundreds of
+/// threads, gigabytes of RSS, and no pool left for storage work (audit H5).
+/// Waiters queue as cheap async tasks instead.
+static ARGON2_PERMITS: Lazy<tokio::sync::Semaphore> = Lazy::new(|| {
+    let permits = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    tokio::sync::Semaphore::new(permits)
+});
+
+/// A valid Argon2 hash of a throwaway password. Verifying against it when the
+/// username does not exist makes an unknown user cost the same as a wrong
+/// password, so response timing does not enumerate accounts (audit H5).
+static DUMMY_PASSWORD_HASH: Lazy<String> = Lazy::new(|| {
+    let mut bytes = [0u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+    AuthService::hash_password(&hex::encode(bytes)).unwrap_or_default()
+});
+
+/// Subject used for requests authenticated with the cluster keyfile secret.
+/// No user, JWT or API key may carry it (see `create_user`,
+/// `refresh_jwt_roles`, `authenticate_basic`), so matching on it is a proof
+/// that `auth_middleware` verified the secret.
+pub(crate) const CLUSTER_INTERNAL_SUB: &str = "cluster-internal";
+
+/// True only for claims minted by `auth_middleware` after verifying the
+/// cluster secret. Handlers that trust `X-Shard-Direct` must check this
+/// rather than the mere presence of the header (audit C1).
+pub(crate) fn is_cluster_internal(claims: &Claims) -> bool {
+    claims.sub == CLUSTER_INTERNAL_SUB && claims.livequery != Some(true)
+}
+
+/// Bucket key for the failed-login limiter: `"{client_ip}|{username}"`.
+///
+/// `client_ip` is the socket peer address as a string (or the forwarded
+/// address when `SOLIDB_TRUST_PROXY_HEADERS` is on — see
+/// `rate_limit::client_ip`), or `"unknown"` when there is none. HTTP login,
+/// both Basic-auth middlewares and the driver all use this format, so one
+/// address's failures against one account are counted together whichever
+/// door they come through.
+pub(crate) fn login_bucket(client_ip: &str, username: &str) -> String {
+    format!("{}|{}", client_ip, username)
+}
 
 /// Whether `X-Forwarded-For` / `X-Real-IP` may be trusted for client
 /// identity (rate limiting). Off by default: those headers are
@@ -107,6 +161,10 @@ pub fn trust_proxy_headers() -> bool {
 /// failures count, so any number of successful logins never trips the
 /// limiter. Returns `DbError::RateLimited` (HTTP 429 + `Retry-After`) when
 /// the bucket is full.
+///
+/// Bucket keys come from [`login_bucket`]. Callers pair this with
+/// [`record_login_failure`] on a bad password and [`clear_login_failures`]
+/// on success.
 pub fn check_rate_limit(bucket: &str) -> Result<(), crate::error::DbError> {
     let now = Instant::now();
     let window = std::time::Duration::from_secs(*RATE_LIMIT_WINDOW_SECS);
@@ -153,6 +211,39 @@ pub fn record_login_failure(bucket: &str) {
 /// the right password starts fresh.
 pub fn clear_login_failures(bucket: &str) {
     LOGIN_RATE_LIMITER.lock().pop(bucket);
+}
+
+/// Cache key for a Basic-auth credential pair: `"{username}:{hex digest}"`.
+///
+/// The digest is SHA-256 over a per-process salt and the full credential.
+/// It used to be `DefaultHasher`, which has fixed keys: a 64-bit value anyone
+/// can compute offline. The username prefix stays in clear so
+/// [`invalidate_basic_auth_cache_for_user`] can find a user's entries.
+/// A Basic-auth username cannot contain ':' (the first ':' splits it off),
+/// so the prefix is unambiguous.
+fn basic_auth_cache_key(username: &str, credentials: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(&BASIC_AUTH_CACHE_SALT[..]);
+    hasher.update(credentials.as_bytes());
+    format!("{}:{}", username, hex::encode(hasher.finalize()))
+}
+
+/// Drop every cached Basic-auth result for `username`. Called on password
+/// change, user deletion and role assignment/revocation, so an old password
+/// or old role set stops authenticating immediately instead of for the rest
+/// of the cache TTL (audit H7).
+pub(crate) fn invalidate_basic_auth_cache_for_user(username: &str) {
+    let prefix = format!("{}:", username);
+    let mut cache = BASIC_AUTH_CACHE.lock();
+    let stale: Vec<String> = cache
+        .iter()
+        .filter(|(key, _)| key.starts_with(&prefix))
+        .map(|(key, _)| key.clone())
+        .collect();
+    for key in stale {
+        cache.pop(&key);
+    }
 }
 
 /// Get cached Basic auth claims if still valid
@@ -854,75 +945,63 @@ impl AuthService {
         if let Some(api_key) = api_key_cache().lookup(&incoming_hash) {
             return Some(api_key);
         }
-        if !api_key_cache().is_loaded() {
+        // Audit P7: once the cache is loaded it is authoritative — every
+        // local write and every replicated write keeps it current — so a
+        // miss is an invalid key, not a reason to scan `_api_keys`. Before
+        // that, and at most once per `API_KEY_REFRESH_INTERVAL` afterwards
+        // (a safety net for writes that bypassed the hooks), reload.
+        if api_key_cache().should_reload() {
             let _ = Self::load_api_key_cache(storage);
+            return api_key_cache().lookup(&incoming_hash);
         }
-        api_key_cache().lookup(&incoming_hash)
+        None
     }
 
     /// Validate an API key against stored keys
     pub fn validate_api_key(storage: &StorageEngine, raw_key: &str) -> Result<Claims, DbError> {
-        let incoming_hash = Self::hash_api_key(raw_key);
-
-        // Fast path: in-memory hash -> ApiKey lookup. O(1) instead of O(N) scan
-        // over the _api_keys collection on every authenticated request.
-        if let Some(api_key) = api_key_cache().lookup(&incoming_hash) {
-            return api_key_to_claims(&api_key);
+        match Self::lookup_api_key(storage, raw_key) {
+            Some(api_key) => api_key_to_claims(&api_key),
+            None => Err(DbError::BadRequest("Invalid API key".to_string())),
         }
-
-        // Slow path: cache miss (cache not yet populated, or a key was just
-        // inserted on a peer node and hasn't replicated into the local cache
-        // yet). Fall back to a full scan, then backfill the cache for next time.
-        if !api_key_cache().is_loaded() {
-            // Lazy-load: best-effort populate; if storage doesn't have the
-            // collection yet (first boot), we just return the "invalid key"
-            // error from the scan.
-            let _ = Self::load_api_key_cache(storage);
-        }
-
-        let db = match storage.get_database(ADMIN_DB) {
-            Ok(db) => db,
-            Err(_) => return Err(DbError::BadRequest("Invalid API key".to_string())),
-        };
-        let collection = match db.system_collection(API_KEYS_COLL) {
-            Ok(c) => c,
-            Err(DbError::CollectionNotFound(_)) => {
-                return Err(DbError::BadRequest("Invalid API key".to_string()));
-            }
-            Err(_) => return Err(DbError::BadRequest("Invalid API key".to_string())),
-        };
-
-        for doc in collection.scan(None) {
-            let api_key: ApiKey = serde_json::from_value(doc.to_value())
-                .map_err(|_| DbError::InternalError("Corrupted API key data".to_string()))?;
-
-            // Backfill the cache so subsequent requests are O(1).
-            api_key_cache().insert(api_key.clone());
-
-            if constant_time_eq(incoming_hash.as_bytes(), api_key.key_hash.as_bytes()) {
-                return api_key_to_claims(&api_key);
-            }
-        }
-
-        Err(DbError::BadRequest("Invalid API key".to_string()))
     }
 
     /// Load the API key cache from storage. Called at startup and as a
     /// backfill on first cache miss.
+    ///
+    /// The scan runs without the cache's mutation lock, so a key deleted
+    /// while it runs could be read by the scan and re-inserted afterwards —
+    /// resurrecting a revoked key. Every removal bumps the cache generation;
+    /// the scan's results are applied only if the generation did not move,
+    /// and the scan is retried otherwise (audit P7).
     pub fn load_api_key_cache(storage: &StorageEngine) -> Result<usize, DbError> {
-        let mut loaded = 0;
-        if let Ok(db) = storage.get_database(ADMIN_DB) {
-            if let Ok(collection) = db.system_collection(API_KEYS_COLL) {
-                for doc in collection.scan(None) {
-                    if let Ok(api_key) = serde_json::from_value::<ApiKey>(doc.to_value()) {
-                        api_key_cache().insert(api_key);
-                        loaded += 1;
+        let cache = api_key_cache();
+        // One loader at a time; concurrent first misses wait here and then
+        // find the cache loaded instead of each scanning.
+        let _loading = cache.load_lock.lock();
+        cache.note_reload_attempt();
+
+        for _ in 0..3 {
+            let generation = cache.generation();
+            let mut keys = Vec::new();
+            if let Ok(db) = storage.get_database(ADMIN_DB) {
+                if let Ok(collection) = db.system_collection(API_KEYS_COLL) {
+                    for doc in collection.scan(None) {
+                        if let Ok(api_key) = serde_json::from_value::<ApiKey>(doc.to_value()) {
+                            keys.push(api_key);
+                        }
                     }
                 }
             }
+            let loaded = keys.len();
+            if cache.apply_load_if_generation(generation, keys) {
+                return Ok(loaded);
+            }
         }
-        api_key_cache().mark_loaded();
-        Ok(loaded)
+        // Removals kept racing the scan. Leave the cache unloaded so the next
+        // miss retries, rather than apply a snapshot that may be stale.
+        Err(DbError::InternalError(
+            "API key cache load kept racing deletions".to_string(),
+        ))
     }
 
     /// Get roles for a user from _user_roles collection
@@ -1018,7 +1097,10 @@ fn api_key_to_claims(api_key: &ApiKey) -> Result<Claims, DbError> {
         }
     }
     Ok(Claims {
-        sub: format!("api-key:{}", api_key.name),
+        // Keyed by id, not name: names are not unique, and two keys sharing
+        // a name used to share one principal — one permission-cache entry,
+        // one cursor owner (audit H7).
+        sub: format!("api-key:{}", api_key.id),
         exp: usize::MAX,
         livequery: None,
         roles: if api_key.roles.is_empty() {
@@ -1040,10 +1122,26 @@ pub struct ApiKeyCache {
     by_id: DashMap<String, String>,
     /// True once the cache has been loaded from storage at least once.
     loaded: std::sync::atomic::AtomicBool,
+    /// Bumped on every removal (and on `clear`). A bulk load applies its
+    /// scan only if this did not move while the scan ran (audit P7).
+    generation: AtomicU64,
+    /// Serialises single-key mutations with the apply step of a bulk load,
+    /// so the generation check and the inserts are atomic together.
+    mutation_lock: Mutex<()>,
+    /// Held for the whole of a bulk load: one scanner at a time.
+    load_lock: Mutex<()>,
+    /// When a bulk load last started; bounds post-load refreshes.
+    last_reload: Mutex<Option<Instant>>,
     /// Number of lookups, for observability.
     hits: AtomicU64,
     misses: AtomicU64,
 }
+
+/// After the first load, a miss may trigger at most one storage rescan per
+/// interval. The cache is kept current by the HTTP handlers and the sync
+/// worker hooks, so this is only a safety net; a random `X-API-Key` must not
+/// be able to buy a full-collection scan per request (audit P7).
+const API_KEY_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
 impl ApiKeyCache {
     pub fn new() -> Self {
@@ -1051,9 +1149,48 @@ impl ApiKeyCache {
             by_hash: DashMap::new(),
             by_id: DashMap::new(),
             loaded: std::sync::atomic::AtomicBool::new(false),
+            generation: AtomicU64::new(0),
+            mutation_lock: Mutex::new(()),
+            load_lock: Mutex::new(()),
+            last_reload: Mutex::new(None),
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
         }
+    }
+
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    /// Whether a miss should rescan storage: always before the first load,
+    /// then at most once per [`API_KEY_REFRESH_INTERVAL`].
+    fn should_reload(&self) -> bool {
+        if !self.is_loaded() {
+            return true;
+        }
+        match *self.last_reload.lock() {
+            Some(at) => at.elapsed() >= API_KEY_REFRESH_INTERVAL,
+            None => true,
+        }
+    }
+
+    fn note_reload_attempt(&self) {
+        *self.last_reload.lock() = Some(Instant::now());
+    }
+
+    /// Apply a bulk-load snapshot taken at `generation`. Returns false, and
+    /// applies nothing, if a removal happened since — the snapshot may hold
+    /// a key that has been revoked.
+    fn apply_load_if_generation(&self, generation: u64, keys: Vec<ApiKey>) -> bool {
+        let _guard = self.mutation_lock.lock();
+        if self.generation.load(Ordering::Acquire) != generation {
+            return false;
+        }
+        for api_key in keys {
+            self.insert_locked(api_key);
+        }
+        self.mark_loaded();
+        true
     }
 
     pub fn lookup(&self, key_hash: &str) -> Option<std::sync::Arc<ApiKey>> {
@@ -1067,14 +1204,26 @@ impl ApiKeyCache {
     }
 
     pub fn insert(&self, api_key: ApiKey) {
+        let _guard = self.mutation_lock.lock();
+        self.insert_locked(api_key);
+    }
+
+    fn insert_locked(&self, api_key: ApiKey) {
         let hash = api_key.key_hash.clone();
         let id = api_key.id.clone();
         self.by_hash
             .insert(hash.clone(), std::sync::Arc::new(api_key));
-        self.by_id.insert(id, hash);
+        if let Some(previous) = self.by_id.insert(id, hash.clone()) {
+            // Same id, different hash: drop the stale reverse entry.
+            if previous != hash {
+                self.by_hash.remove(&previous);
+            }
+        }
     }
 
     pub fn remove_by_id(&self, id: &str) {
+        let _guard = self.mutation_lock.lock();
+        self.generation.fetch_add(1, Ordering::AcqRel);
         if let Some((_, hash)) = self.by_id.remove(id) {
             self.by_hash.remove(&hash);
         }
@@ -1089,6 +1238,8 @@ impl ApiKeyCache {
     }
 
     pub fn clear(&self) {
+        let _guard = self.mutation_lock.lock();
+        self.generation.fetch_add(1, Ordering::AcqRel);
         self.by_hash.clear();
         self.by_id.clear();
         self.loaded.store(false, Ordering::Release);
@@ -1138,21 +1289,119 @@ pub fn note_replicated_api_key_delete(id: &str) {
 /// tens of milliseconds by design; calling it inline in an async handler
 /// pins a runtime worker thread for the whole hash, so a burst of
 /// cache-miss authentications can stall every in-flight request.
+///
+/// Runs under [`ARGON2_PERMITS`], so at most one verification per core is in
+/// flight process-wide.
 pub(crate) async fn verify_password_blocking(password: &str, hash: &str) -> bool {
     let password = password.to_string();
     let hash = hash.to_string();
+    // The semaphore is never closed, so `acquire` cannot fail; hold the
+    // permit until the blocking task has finished.
+    let _permit = ARGON2_PERMITS.acquire().await.ok();
     tokio::task::spawn_blocking(move || AuthService::verify_password(&password, &hash))
         .await
         .unwrap_or(false)
+}
+
+/// Spend one Argon2 verification against [`DUMMY_PASSWORD_HASH`] and report
+/// failure. Used when the username does not exist, so an unknown user is as
+/// slow as a wrong password (audit H5).
+pub(crate) async fn verify_password_for_unknown_user(password: &str) -> bool {
+    let password = password.to_string();
+    let _permit = ARGON2_PERMITS.acquire().await.ok();
+    let _ = tokio::task::spawn_blocking(move || {
+        AuthService::verify_password(&password, &DUMMY_PASSWORD_HASH)
+    })
+    .await;
+    false
 }
 
 /// Blocking-pool wrapper for Argon2 password hashing (same rationale as
 /// [`verify_password_blocking`]).
 pub(crate) async fn hash_password_blocking(password: &str) -> Result<String, DbError> {
     let password = password.to_string();
+    let _permit = ARGON2_PERMITS.acquire().await.ok();
     tokio::task::spawn_blocking(move || AuthService::hash_password(&password))
         .await
         .map_err(|e| DbError::InternalError(format!("hash task failed: {}", e)))?
+}
+
+/// Client address for the login limiter, from the request's `ConnectInfo`
+/// (or trusted proxy headers). `"unknown"` when neither is available.
+fn request_client_ip(req: &Request<Body>) -> String {
+    let peer = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|axum::extract::ConnectInfo(addr)| addr.ip());
+    crate::server::rate_limit::client_ip(peer, req.headers())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Verify `Authorization: Basic` credentials. Shared by `auth_middleware`
+/// and `permissive_auth_middleware`, which used to carry two copies — and
+/// the permissive one had neither the result cache nor any rate limit, so
+/// it ran Argon2 on every request, valid credentials included (audit H5).
+///
+/// Failures count against the same login bucket as `POST /_api/auth/login`,
+/// and an over-budget bucket answers 429 before any Argon2 work.
+async fn authenticate_basic(
+    storage: &StorageEngine,
+    encoded: &str,
+    client_ip: &str,
+) -> Result<Claims, StatusCode> {
+    let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let credentials = String::from_utf8(decoded).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let (username, password) = credentials
+        .split_once(':')
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let cache_key = basic_auth_cache_key(username, &credentials);
+    if let Some(mut claims) = get_cached_basic_auth(&cache_key) {
+        // Re-read roles (a 30s-TTL lookup) so a revocation replicated from a
+        // peer, which does not clear this cache, applies here too.
+        claims.roles = AuthService::get_user_roles(storage, username);
+        return Ok(claims);
+    }
+
+    let bucket = login_bucket(client_ip, username);
+    if check_rate_limit(&bucket).is_err() {
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    let stored_hash = if username == CLUSTER_INTERNAL_SUB {
+        // Reserved subject; a legacy account by that name must not
+        // authenticate, or it would pass `is_cluster_internal`.
+        None
+    } else {
+        storage
+            .get_database(ADMIN_DB)
+            .ok()
+            .and_then(|db| db.system_collection(ADMIN_COLL).ok())
+            .and_then(|coll| coll.get(username).ok())
+            .and_then(|doc| serde_json::from_value::<User>(doc.to_value()).ok())
+            .map(|user| user.password_hash)
+    };
+
+    let verified = match stored_hash {
+        Some(hash) => verify_password_blocking(password, &hash).await,
+        None => verify_password_for_unknown_user(password).await,
+    };
+    if !verified {
+        record_login_failure(&bucket);
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    clear_login_failures(&bucket);
+
+    let claims = Claims {
+        sub: username.to_string(),
+        exp: usize::MAX,
+        livequery: None,
+        roles: AuthService::get_user_roles(storage, username),
+        scoped_databases: None,
+    };
+    cache_basic_auth(cache_key, claims.clone());
+    Ok(claims)
 }
 
 /// The one endpoint a livequery token may be presented to.
@@ -1190,14 +1439,29 @@ fn reject_livequery_token(claims: &Claims, path: &str) -> bool {
 ///   the rest of the token lifetime (up to 24h). Deleting an account is the
 ///   action an operator takes when they want access gone *now*.
 ///
-/// Subjects that are not `_admins` rows by construction (API-key principals,
-/// the cluster identity) are left alone: they are validated on their own
-/// paths, and `_admins` was never their home.
-fn refresh_jwt_roles(mut claims: Claims, storage: &StorageEngine) -> Option<Claims> {
+/// API-key principals are left alone: they are validated on their own path,
+/// and `_admins` was never their home.
+///
+/// A JWT whose subject is the cluster identity is refused outright. That
+/// identity is only ever built in-process after the keyfile secret is
+/// verified, never signed into a token, and handlers treat it as proof of a
+/// peer node (audit C1/H7) — a token claiming it (e.g. minted for a legacy
+/// user of that name) must not pass.
+///
+/// `pub(crate)` so the WebSocket handlers, which validate their own tokens,
+/// apply the same refresh.
+pub(crate) fn refresh_jwt_roles(mut claims: Claims, storage: &StorageEngine) -> Option<Claims> {
+    if claims.sub == CLUSTER_INTERNAL_SUB {
+        tracing::warn!(
+            target: "audit",
+            "rejecting JWT: subject is the reserved cluster identity"
+        );
+        return None;
+    }
     if claims.livequery == Some(true) {
         return Some(claims);
     }
-    if claims.sub.starts_with("api-key:") || claims.sub == "cluster-internal" {
+    if claims.sub.starts_with("api-key:") {
         return Some(claims);
     }
     let Ok(db) = storage.get_database(ADMIN_DB) else {
@@ -1229,20 +1493,20 @@ pub async fn auth_middleware(
     let is_internal_cluster_request = req.headers().contains_key("X-Shard-Direct")
         || req.headers().contains_key("X-Scatter-Gather");
 
+    // Get cluster secret from keyfile via storage config
+    let cluster_secret = state
+        .storage
+        .cluster_config()
+        .and_then(|c| c.keyfile.clone())
+        .unwrap_or_default();
+
+    let provided_secret = req
+        .headers()
+        .get("X-Cluster-Secret")
+        .and_then(|h| h.to_str().ok())
+        .map(str::to_string);
+
     if is_internal_cluster_request {
-        // Get cluster secret from keyfile via storage config
-        let cluster_secret = state
-            .storage
-            .cluster_config()
-            .and_then(|c| c.keyfile.clone())
-            .unwrap_or_default();
-
-        let provided_secret = req
-            .headers()
-            .get("X-Cluster-Secret")
-            .and_then(|h| h.to_str().ok())
-            .unwrap_or("");
-
         // Fail closed: if no keyfile configured, reject internal requests
         if cluster_secret.is_empty() {
             tracing::warn!(
@@ -1252,9 +1516,10 @@ pub async fn auth_middleware(
         }
 
         // Only bypass if secrets match
-        if constant_time_eq(cluster_secret.as_bytes(), provided_secret.as_bytes()) {
+        let provided = provided_secret.as_deref().unwrap_or("");
+        if constant_time_eq(cluster_secret.as_bytes(), provided.as_bytes()) {
             let claims = Claims {
-                sub: "cluster-internal".to_string(),
+                sub: CLUSTER_INTERNAL_SUB.to_string(),
                 exp: usize::MAX,
                 livequery: None,
                 roles: Some(vec!["admin".to_string()]), // Cluster internal has admin access
@@ -1262,11 +1527,29 @@ pub async fn auth_middleware(
             };
             req.extensions_mut().insert(claims);
             return Ok(next.run(req).await);
-        } else {
-            tracing::warn!("CLUSTER AUTH FAILURE: Secret mismatch for internal request. Ensure all nodes use the same keyfile.");
         }
-        // If secret doesn't match, fall through to normal auth
-        // This prevents external attackers from using X-Shard-Direct to bypass auth
+        // Audit C1: this used to log and fall through to normal auth, so a
+        // caller's own token plus `X-Shard-Direct: 1` reached handlers that
+        // trusted the header's presence. A peer with the wrong keyfile is a
+        // misconfiguration to surface, not a request to reinterpret.
+        tracing::warn!("CLUSTER AUTH FAILURE: Secret mismatch for internal request. Ensure all nodes use the same keyfile.");
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    // A cluster secret without an internal-route marker still authenticates
+    // through the normal paths below (peers forward the user's own token on
+    // such calls), but a *wrong* one is refused outright (audit C1). An empty
+    // header on a node with no keyfile claims nothing and is ignored.
+    if let Some(provided) = provided_secret.as_deref() {
+        let mismatch = if cluster_secret.is_empty() {
+            !provided.is_empty()
+        } else {
+            !constant_time_eq(cluster_secret.as_bytes(), provided.as_bytes())
+        };
+        if mismatch {
+            tracing::warn!("CLUSTER AUTH FAILURE: X-Cluster-Secret mismatch.");
+            return Err(StatusCode::UNAUTHORIZED);
+        }
     }
 
     // First check for X-API-Key header
@@ -1317,58 +1600,11 @@ pub async fn auth_middleware(
 
         // Support: Authorization: Basic <base64(user:pass)>
         if let Some(encoded) = header.strip_prefix("Basic ") {
-            if let Ok(decoded) =
-                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
-            {
-                if let Ok(credentials) = String::from_utf8(decoded) {
-                    if let Some((username, password)) = credentials.split_once(':') {
-                        // Create cache key from credentials hash
-                        use std::collections::hash_map::DefaultHasher;
-                        use std::hash::{Hash, Hasher};
-                        let mut hasher = DefaultHasher::new();
-                        credentials.hash(&mut hasher);
-                        let cache_key = format!("{}:{}", username, hasher.finish());
-
-                        // Check cache first to avoid expensive Argon2 verification
-                        if let Some(claims) = get_cached_basic_auth(&cache_key) {
-                            req.extensions_mut().insert(claims);
-                            return Ok(next.run(req).await);
-                        }
-
-                        // Validate against _admins collection
-                        if let Ok(db) = state.storage.get_database("_system") {
-                            if let Ok(collection) = db.system_collection("_admins") {
-                                if let Ok(doc) = collection.get(username) {
-                                    if let Ok(user) = serde_json::from_value::<User>(doc.to_value())
-                                    {
-                                        if verify_password_blocking(password, &user.password_hash)
-                                            .await
-                                        {
-                                            // Load user roles from _user_roles
-                                            let roles = AuthService::get_user_roles(
-                                                &state.storage,
-                                                username,
-                                            );
-                                            let claims = Claims {
-                                                sub: username.to_string(),
-                                                exp: usize::MAX,
-                                                livequery: None,
-                                                roles,
-                                                scoped_databases: None,
-                                            };
-                                            // Cache the successful auth result
-                                            cache_basic_auth(cache_key, claims.clone());
-                                            req.extensions_mut().insert(claims);
-                                            return Ok(next.run(req).await);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return Err(StatusCode::UNAUTHORIZED);
+            let encoded = encoded.to_string();
+            let client_ip = request_client_ip(&req);
+            let claims = authenticate_basic(&state.storage, &encoded, &client_ip).await?;
+            req.extensions_mut().insert(claims);
+            return Ok(next.run(req).await);
         }
     }
 
@@ -1481,43 +1717,11 @@ pub async fn permissive_auth_middleware(
 
         // Support: Authorization: Basic <base64(user:pass)>
         if let Some(encoded) = header.strip_prefix("Basic ") {
-            if let Ok(decoded) =
-                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
-            {
-                if let Ok(credentials) = String::from_utf8(decoded) {
-                    if let Some((username, password)) = credentials.split_once(':') {
-                        // Validate against _admins collection
-                        if let Ok(db) = state.storage.get_database("_system") {
-                            if let Ok(collection) = db.system_collection("_admins") {
-                                if let Ok(doc) = collection.get(username) {
-                                    if let Ok(user) = serde_json::from_value::<User>(doc.to_value())
-                                    {
-                                        if verify_password_blocking(password, &user.password_hash)
-                                            .await
-                                        {
-                                            // Load user roles from _user_roles
-                                            let roles = AuthService::get_user_roles(
-                                                &state.storage,
-                                                username,
-                                            );
-                                            let claims = Claims {
-                                                sub: username.to_string(),
-                                                exp: usize::MAX,
-                                                livequery: None,
-                                                roles,
-                                                scoped_databases: None,
-                                            };
-                                            req.extensions_mut().insert(claims);
-                                            return Ok(next.run(req).await);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return Err(StatusCode::UNAUTHORIZED);
+            let encoded = encoded.to_string();
+            let client_ip = request_client_ip(&req);
+            let claims = authenticate_basic(&state.storage, &encoded, &client_ip).await?;
+            req.extensions_mut().insert(claims);
+            return Ok(next.run(req).await);
         }
     }
 
@@ -1763,6 +1967,99 @@ mod tests {
         // A successful login clears the bucket.
         clear_login_failures(bucket);
         assert!(check_rate_limit(bucket).is_ok());
+    }
+
+    fn sample_api_key(id: &str, hash: &str) -> ApiKey {
+        ApiKey {
+            id: id.to_string(),
+            name: "same-name".to_string(),
+            key_hash: hash.to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            roles: vec!["viewer".to_string()],
+            scoped_databases: None,
+            expires_at: None,
+        }
+    }
+
+    #[test]
+    fn a_load_that_raced_a_delete_is_not_applied() {
+        let cache = ApiKeyCache::new();
+        cache.insert(sample_api_key("k1", "h1"));
+
+        // A loader snapshots storage while k1 still exists...
+        let generation = cache.generation();
+        let snapshot = vec![sample_api_key("k1", "h1")];
+        // ...k1 is revoked before the snapshot is applied...
+        cache.remove_by_id("k1");
+        // ...so the stale snapshot must not bring it back.
+        assert!(!cache.apply_load_if_generation(generation, snapshot));
+        assert!(cache.lookup("h1").is_none());
+
+        // A snapshot taken after the delete applies normally.
+        let generation = cache.generation();
+        assert!(cache.apply_load_if_generation(generation, vec![sample_api_key("k2", "h2")]));
+        assert!(cache.lookup("h2").is_some());
+        assert!(cache.is_loaded());
+    }
+
+    #[test]
+    fn a_loaded_cache_does_not_rescan_on_every_miss() {
+        let cache = ApiKeyCache::new();
+        assert!(cache.should_reload());
+        cache.note_reload_attempt();
+        cache.mark_loaded();
+        assert!(!cache.should_reload());
+    }
+
+    #[test]
+    fn api_key_principal_is_keyed_by_id_not_name() {
+        let a = api_key_to_claims(&sample_api_key("id-a", "ha")).unwrap();
+        let b = api_key_to_claims(&sample_api_key("id-b", "hb")).unwrap();
+        assert_ne!(a.sub, b.sub);
+        assert_eq!(a.sub, "api-key:id-a");
+    }
+
+    #[test]
+    fn cluster_identity_is_recognised_only_as_minted() {
+        let mut claims = Claims {
+            sub: CLUSTER_INTERNAL_SUB.to_string(),
+            exp: usize::MAX,
+            livequery: None,
+            roles: Some(vec!["admin".to_string()]),
+            scoped_databases: None,
+        };
+        assert!(is_cluster_internal(&claims));
+        claims.livequery = Some(true);
+        assert!(!is_cluster_internal(&claims));
+        claims.livequery = None;
+        claims.sub = "admin".to_string();
+        assert!(!is_cluster_internal(&claims));
+    }
+
+    #[test]
+    fn basic_auth_cache_is_cleared_per_user() {
+        let alice = Claims {
+            sub: "h7-alice".to_string(),
+            exp: usize::MAX,
+            livequery: None,
+            roles: None,
+            scoped_databases: None,
+        };
+        let mut bob = alice.clone();
+        bob.sub = "h7-alice2".to_string();
+        let alice_key = basic_auth_cache_key("h7-alice", "h7-alice:pw");
+        let bob_key = basic_auth_cache_key("h7-alice2", "h7-alice2:pw");
+        cache_basic_auth(alice_key.clone(), alice);
+        cache_basic_auth(bob_key.clone(), bob);
+
+        invalidate_basic_auth_cache_for_user("h7-alice");
+        assert!(get_cached_basic_auth(&alice_key).is_none());
+        assert!(get_cached_basic_auth(&bob_key).is_some());
+    }
+
+    #[test]
+    fn login_bucket_format_is_ip_pipe_username() {
+        assert_eq!(login_bucket("10.0.0.9", "admin"), "10.0.0.9|admin");
     }
 
     #[test]

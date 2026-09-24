@@ -43,10 +43,36 @@ pub struct DriverHandler {
     pub(crate) session_roles: Vec<String>,
     /// Database restriction for scoped API keys
     pub(crate) session_scoped_databases: Option<Vec<String>>,
+    /// `_key` of the API key the session authenticated with, if any. Kept so
+    /// the session can be re-validated against `_api_keys` (Audit L2).
+    pub(crate) session_api_key_id: Option<String>,
+    /// When the session's credential was last checked against storage.
+    pub(crate) session_validated_at: Option<std::time::Instant>,
+    /// Peer IP, the IP half of the login limiter bucket (same `ip|username`
+    /// format as `/_api/auth/login`).
+    pub(crate) peer_ip: String,
 }
 
 /// How long a client has to deliver a payload once it has sent its length.
 const PAYLOAD_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Frame ceiling before the connection has authenticated. An `Auth` command
+/// is a few hundred bytes; the 16 MB post-auth cap let an anonymous peer make
+/// the server allocate and decode 16 MB per frame (Audit H5).
+pub(crate) const MAX_PREAUTH_MESSAGE_SIZE: usize = 64 * 1024;
+
+/// How often an authenticated session's credential is re-checked: a deleted
+/// user or API key, an expired key, or a revoked role used to keep working
+/// for the lifetime of the TCP connection (Audit L2).
+const SESSION_REVALIDATE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The IP half of `ip:port`, matching `ConnectInfo<SocketAddr>::ip()` on the
+/// HTTP login path so both protocols share one limiter bucket per user.
+pub(crate) fn peer_ip_of(addr: &str) -> String {
+    addr.parse::<std::net::SocketAddr>()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_else(|_| addr.to_string())
+}
 
 impl DriverHandler {
     /// The session's identity as the query executor sees it.
@@ -88,7 +114,77 @@ impl DriverHandler {
             session_permissions: std::collections::HashSet::new(),
             session_roles: Vec::new(),
             session_scoped_databases: None,
+            session_api_key_id: None,
+            session_validated_at: None,
+            peer_ip: String::new(),
         }
+    }
+
+    /// Re-check the session's credential against current storage and refresh
+    /// its permission snapshot. `Err` means the session must be closed.
+    pub(crate) fn revalidate_session(&mut self) -> Result<(), String> {
+        let Some(database) = self.authenticated_db.clone() else {
+            return Ok(());
+        };
+        let system_db = self
+            .storage
+            .get_database("_system")
+            .map_err(|e| format!("system database unavailable: {}", e))?;
+
+        let (roles, scoped) = if let Some(key_id) = &self.session_api_key_id {
+            let coll = system_db
+                .system_collection(crate::server::auth::API_KEYS_COLL)
+                .map_err(|_| "API key no longer exists".to_string())?;
+            let doc = coll
+                .get(key_id)
+                .map_err(|_| "API key no longer exists".to_string())?;
+            let key: crate::server::auth::ApiKey = serde_json::from_value(doc.to_value())
+                .map_err(|_| "API key no longer valid".to_string())?;
+            if let Some(ref expires_at) = key.expires_at {
+                if let Ok(expiry) = chrono::DateTime::parse_from_rfc3339(expires_at) {
+                    if expiry < chrono::Utc::now() {
+                        return Err("API key expired".to_string());
+                    }
+                }
+            }
+            (
+                key.roles,
+                key.scoped_databases.filter(|dbs| !dbs.is_empty()),
+            )
+        } else {
+            let admins = system_db
+                .system_collection(crate::server::auth::ADMIN_COLL)
+                .map_err(|_| "user no longer exists".to_string())?;
+            if admins.get(&self.session_subject).is_err() {
+                return Err("user no longer exists".to_string());
+            }
+            (
+                crate::server::auth::AuthService::get_user_roles(
+                    &self.storage,
+                    &self.session_subject,
+                )
+                .unwrap_or_default(),
+                None,
+            )
+        };
+
+        let permissions = crate::server::AuthorizationService::load_permissions_from_storage(
+            &self.storage,
+            &roles,
+        );
+        crate::server::AuthorizationService::check_permission_raw(
+            &permissions,
+            crate::server::PermissionAction::Read,
+            Some(&database),
+            scoped.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
+
+        self.session_permissions = permissions;
+        self.session_roles = roles;
+        self.session_scoped_databases = scoped;
+        self.session_validated_at = Some(std::time::Instant::now());
+        Ok(())
     }
 
     /// Handle a driver connection.
@@ -100,6 +196,7 @@ impl DriverHandler {
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
     {
         tracing::info!("Driver connection from {}", addr);
+        self.peer_ip = peer_ip_of(&addr);
 
         // The magic header has already been consumed by the multiplexer
         // Start processing commands immediately
@@ -121,8 +218,14 @@ impl DriverHandler {
 
             let msg_len = u32::from_be_bytes(len_buf) as usize;
 
-            // Validate message size
-            if msg_len > MAX_MESSAGE_SIZE {
+            // Validate message size. An unauthenticated peer only gets the
+            // small pre-auth budget.
+            let max_len = if self.authenticated_db.is_some() {
+                MAX_MESSAGE_SIZE
+            } else {
+                MAX_PREAUTH_MESSAGE_SIZE
+            };
+            if msg_len > max_len {
                 let resp = Response::error(DriverError::MessageTooLarge);
                 if let Err(e) = self.send_response(&mut stream, &resp).await {
                     tracing::warn!("Failed to send error response: {}", e);
@@ -163,6 +266,30 @@ impl DriverHandler {
                 }
             };
 
+            // Periodically re-check the credential; a revoked one ends the
+            // session (uncommitted transactions are rolled back below).
+            if self.authenticated_db.is_some()
+                && self
+                    .session_validated_at
+                    .is_none_or(|t| t.elapsed() >= SESSION_REVALIDATE_INTERVAL)
+            {
+                if let Err(reason) = self.revalidate_session() {
+                    tracing::warn!(
+                        target: "audit",
+                        user = %self.session_subject,
+                        "closing driver session from {}: {}",
+                        addr,
+                        reason
+                    );
+                    let resp = Response::error(DriverError::AuthError(format!(
+                        "Session no longer valid: {}",
+                        reason
+                    )));
+                    let _ = self.send_response(&mut stream, &resp).await;
+                    break;
+                }
+            }
+
             // Execute command
             let response = self.execute_command(command).await;
 
@@ -200,12 +327,13 @@ impl DriverHandler {
     /// Execute a command and return a response
     async fn execute_command(&mut self, command: Command) -> Response {
         // Gate every command behind authentication. Only Ping and Auth are
-        // allowed before the connection has authenticated. Batch is allowed
-        // through here so its inner commands are re-checked individually
-        // (an Auth inside a batch will set state for subsequent entries).
+        // allowed before the connection has authenticated. Batch used to be
+        // let through too, so one pre-auth frame could carry hundreds of
+        // thousands of `Auth` entries — each an Argon2 run, none rate
+        // limited (Audit H5).
         if self.authenticated_db.is_none() {
             match &command {
-                Command::Ping | Command::Auth { .. } | Command::Batch { .. } => {}
+                Command::Ping | Command::Auth { .. } => {}
                 _ => {
                     return Response::error(DriverError::AuthError(
                         "Authentication required".to_string(),
@@ -384,6 +512,14 @@ impl DriverHandler {
             Command::Batch { commands } => {
                 let mut responses = Vec::with_capacity(commands.len());
                 for cmd in commands {
+                    // One frame must not carry a stream of password checks:
+                    // each `Auth` is an Argon2 run (Audit H5).
+                    if matches!(cmd, Command::Auth { .. }) {
+                        responses.push(Response::error(DriverError::InvalidCommand(
+                            "Auth is not allowed inside a Batch".to_string(),
+                        )));
+                        continue;
+                    }
                     let resp = Box::pin(self.execute_command(cmd)).await;
                     responses.push(resp);
                 }
@@ -668,7 +804,7 @@ impl DriverHandler {
             Command::ExportCollection {
                 database,
                 collection,
-            } => database::handle_export_collection(self, database, collection),
+            } => database::handle_export_collection(self, database, collection).await,
 
             Command::ImportCollection {
                 database,

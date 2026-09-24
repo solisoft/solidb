@@ -18,6 +18,35 @@ use serde_json::Value;
 
 // ==================== Helper Functions ====================
 
+/// True when the request is a peer node's direct shard operation: it carries
+/// `X-Shard-Direct` *and* `auth_middleware` verified the cluster secret.
+///
+/// Audit C1: the header alone used to be enough, and it is client-settable —
+/// any caller could skip shard routing, or reach the replica/verify
+/// endpoints, by adding it next to their own token.
+fn is_verified_shard_direct(
+    headers: &HeaderMap,
+    claims: Option<&crate::server::auth::Claims>,
+) -> bool {
+    headers.contains_key("X-Shard-Direct")
+        && claims.is_some_and(crate::server::auth::is_cluster_internal)
+}
+
+/// Refuse node-to-node endpoints to anything but the verified cluster identity.
+fn require_cluster_internal(
+    claims: Option<&crate::server::auth::Claims>,
+    endpoint: &str,
+) -> Result<(), DbError> {
+    if claims.is_some_and(crate::server::auth::is_cluster_internal) {
+        Ok(())
+    } else {
+        Err(DbError::Forbidden(format!(
+            "{} is an internal cluster endpoint",
+            endpoint
+        )))
+    }
+}
+
 pub fn get_transaction_id(headers: &HeaderMap) -> Option<TransactionId> {
     headers
         .get("X-Transaction-ID")
@@ -209,7 +238,7 @@ pub async fn insert_document(
         if shard_config.num_shards > 0 {
             if let Some(ref coordinator) = state.shard_coordinator {
                 // Check for direct shard access (prevention of infinite loops)
-                if !headers.contains_key("X-Shard-Direct") {
+                if !is_verified_shard_direct(&headers, claims.as_deref()) {
                     tracing::info!(
                         "[INSERT] Using ShardCoordinator for {}/{}",
                         db_name,
@@ -298,10 +327,6 @@ pub async fn insert_documents_batch(
     headers: HeaderMap,
     Json(documents): Json<Vec<Value>>,
 ) -> Result<Json<Value>, DbError> {
-    let database = state.storage.get_database(&db_name)?;
-    let collection = database
-        .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))?;
-
     // This is always a direct shard operation (internal API)
     // X-Shard-Direct should be required
     if !headers.contains_key("X-Shard-Direct") {
@@ -309,6 +334,11 @@ pub async fn insert_documents_batch(
             "Batch endpoint requires X-Shard-Direct header".to_string(),
         ));
     }
+    require_cluster_internal(claims.as_deref(), "_batch")?;
+
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database
+        .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))?;
 
     // Use upsert for physical shard collections (prevents duplicates during resharding)
     // Physical shards have names like "users_s0", "users_s1", etc.
@@ -387,8 +417,11 @@ pub async fn insert_documents_batch(
                                             cluster_manager.get_node_api_address(replica_node)
                                         {
                                             let url = format!(
-                                                "http://{}/_api/database/{}/document/{}/_replica",
-                                                addr, db_name, coll_name
+                                                "{}://{}/_api/database/{}/document/{}/_replica",
+                                                crate::cluster::http::cluster_scheme(),
+                                                addr,
+                                                db_name,
+                                                coll_name
                                             );
                                             tracing::debug!("REPLICA FWD: Forwarding {} docs to replica {} at {}", documents.len(), replica_node, addr);
 
@@ -435,6 +468,7 @@ pub async fn insert_documents_batch(
 /// This is called by primary nodes to replicate data to their replicas
 pub async fn insert_documents_replica(
     State(state): State<AppState>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Path((db_name, coll_name)): Path<(String, String)>,
     headers: HeaderMap,
     Json(documents): Json<Vec<Value>>,
@@ -445,9 +479,16 @@ pub async fn insert_documents_replica(
             "Replica endpoint requires X-Shard-Direct header".to_string(),
         ));
     }
+    // Audit C1: this upserts by name into any collection, protected ones
+    // included, so only a peer that proved the cluster secret may call it.
+    require_cluster_internal(claims.as_deref(), "_replica")?;
 
     let database = state.storage.get_database(&db_name)?;
-    let collection = database.get_collection(&coll_name)?;
+    // A verified peer replicating its own data is the server acting on its
+    // own behalf, so the write tiers do not apply — but the lookup still goes
+    // through the write gate rather than bypassing it.
+    let collection =
+        database.get_collection_for_write(&coll_name, crate::storage::WriteActor::Server)?;
 
     // Use upsert to prevent duplicates (replicas may already have some data)
     // Convert documents to (key, doc) pairs for upsert
@@ -489,9 +530,14 @@ pub async fn insert_documents_replica(
 /// Returns: { "found": ["key1"], "missing": ["key2"], "total_checked": 2 }
 pub async fn verify_documents_exist(
     State(state): State<AppState>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Path((db_name, coll_name)): Path<(String, String)>,
     Json(request): Json<serde_json::Value>,
 ) -> Result<Json<Value>, DbError> {
+    // Audit C1: a key-existence oracle on any collection (`_admins`
+    // included) for anyone with Read; only migration between peers uses it.
+    require_cluster_internal(claims.as_deref(), "_verify")?;
+
     let keys = request
         .get("keys")
         .and_then(|k| k.as_array())
@@ -557,8 +603,11 @@ pub async fn copy_shard_data(
 
     // Get doc count first to avoid massive transfer if already in sync
     let meta_url = format!(
-        "http://{}/_api/database/{}/collection/{}",
-        request.source_address, db_name, coll_name
+        "{}://{}/_api/database/{}/collection/{}",
+        crate::cluster::http::cluster_scheme(),
+        request.source_address,
+        db_name,
+        coll_name
     );
     let meta_res = client
         .get(&meta_url)
@@ -621,8 +670,10 @@ pub async fn copy_shard_data(
 
     // Query all documents from source shard
     let url = format!(
-        "http://{}/_api/database/{}/cursor",
-        request.source_address, db_name
+        "{}://{}/_api/database/{}/cursor",
+        crate::cluster::http::cluster_scheme(),
+        request.source_address,
+        db_name
     );
     let query = format!("FOR doc IN {} RETURN doc", coll_name);
     // Reuse secret from above or fetch again
@@ -758,7 +809,7 @@ pub async fn update_document(
         if shard_config.num_shards > 0 {
             if let Some(ref coordinator) = state.shard_coordinator {
                 // Check for direct shard access
-                if !headers.contains_key("X-Shard-Direct") {
+                if !is_verified_shard_direct(&headers, claims.as_deref()) {
                     let doc = coordinator
                         .update(&db_name, &coll_name, &shard_config, &key, data)
                         .await?;
@@ -876,7 +927,7 @@ pub async fn delete_document(
     if let Some(shard_config) = collection.get_shard_config() {
         if shard_config.num_shards > 0 {
             if let Some(ref coordinator) = state.shard_coordinator {
-                if !headers.contains_key("X-Shard-Direct") {
+                if !is_verified_shard_direct(&headers, claims.as_deref()) {
                     coordinator
                         .delete(&db_name, &coll_name, &shard_config, &key)
                         .await?;

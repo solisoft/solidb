@@ -33,10 +33,10 @@ impl ClusterWebsocketClient {
             ));
         }
 
-        let url_str = format!(
-            "ws://{}/_api/ws/changefeed?token=cluster-internal",
-            node_addr
-        );
+        // wss:// when the cluster scheme is https (audit L1): the header
+        // below carries the raw cluster secret.
+        let url_str =
+            super::http::peer_ws_url(node_addr, "/_api/ws/changefeed?token=cluster-internal");
         let url = Url::parse(&url_str)?;
 
         tracing::debug!(
@@ -47,11 +47,17 @@ impl ClusterWebsocketClient {
 
         // Connect with cluster secret header for authentication
         let mut request = IntoClientRequest::into_client_request(url.as_str())?;
-        request
-            .headers_mut()
-            .insert("X-Cluster-Secret", cluster_secret.parse().unwrap());
+        request.headers_mut().insert(
+            "X-Cluster-Secret",
+            cluster_secret
+                .parse()
+                .map_err(|_| anyhow::anyhow!("cluster secret is not a valid header value"))?,
+        );
 
-        let (ws_stream, _) = connect_async(request).await?;
+        let (ws_stream, _) =
+            tokio::time::timeout(std::time::Duration::from_secs(10), connect_async(request))
+                .await
+                .map_err(|_| anyhow::anyhow!("WebSocket connect to {} timed out", node_addr))??;
         let (mut write, mut read) = ws_stream.split();
 
         // Send subscription message

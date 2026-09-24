@@ -191,7 +191,7 @@ pub async fn list_collections(
 
                                         for node_id in &nodes_to_try {
                                             if let Some(addr) = mgr.get_node_api_address(node_id) {
-                                                let url = format!("http://{}/_api/database/{}/collection/{}/stats?local=true", addr, db_name, physical_name);
+                                                let url = format!("{}://{}/_api/database/{}/collection/{}/stats?local=true", crate::cluster::http::cluster_scheme(), addr, db_name, physical_name);
 
                                                 let mut req = client
                                                     .get(&url)

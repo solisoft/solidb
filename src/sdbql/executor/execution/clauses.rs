@@ -168,7 +168,7 @@ impl<'a> QueryExecutor<'a> {
         let spec = join_clause.asof.as_ref().ok_or_else(|| {
             DbError::ExecutionError("ASOF JOIN requires ASOF left, right".to_string())
         })?;
-        let all_docs = self.scan_bounded(collection)?;
+        let all_docs = self.scan_bounded_with_policy(&join_clause.collection, collection)?;
         let match_indices = self.join_match_indices(
             &rows,
             &all_docs,
@@ -262,7 +262,12 @@ impl<'a> QueryExecutor<'a> {
                         true
                     };
 
-                    if next_is_filter && is_collection {
+                    // The index read returns unfiltered rows; a collection
+                    // under a row policy takes the scan below (audit H2).
+                    if next_is_filter
+                        && is_collection
+                        && !self.row_policy_applies(&for_clause.collection)
+                    {
                         if let BodyClause::Filter(filter_clause) = &clauses[i + 1] {
                             // Index path only if *every* row's filter is
                             // indexable — mixing index and scan per-row would
@@ -489,14 +494,8 @@ impl<'a> QueryExecutor<'a> {
 
                     // For bulk inserts (>100 docs), use batch mode for maximum performance
                     let bulk_mode = rows.len() > 100;
-                    let has_indexes = !collection.list_indexes().is_empty();
 
-                    tracing::debug!(
-                        "INSERT: {} documents, bulk_mode={}, has_indexes={}",
-                        rows.len(),
-                        bulk_mode,
-                        has_indexes
-                    );
+                    tracing::debug!("INSERT: {} documents, bulk_mode={}", rows.len(), bulk_mode);
 
                     if bulk_mode {
                         // Evaluate all documents first
@@ -528,38 +527,11 @@ impl<'a> QueryExecutor<'a> {
                             &inserted_docs,
                         );
 
-                        // Index ONLY the newly inserted documents asynchronously
-                        if has_indexes {
-                            tracing::debug!(
-                                "INSERT: Starting async indexing of {} new docs",
-                                inserted_docs.len()
-                            );
-                            let coll = collection.clone();
-                            std::thread::spawn(move || {
-                                let index_start = std::time::Instant::now();
-                                // Nothing joins this thread, so a panic in
-                                // here would otherwise leave a half-built
-                                // index and no trace of why.
-                                let result =
-                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                        coll.index_documents(&inserted_docs)
-                                    }));
-                                let index_time = index_start.elapsed();
-                                match result {
-                                    Ok(Ok(count)) => tracing::debug!(
-                                        "INSERT: Indexed {} docs in {:?}",
-                                        count,
-                                        index_time
-                                    ),
-                                    Ok(Err(e)) => {
-                                        tracing::error!("INSERT: Indexing failed: {}", e)
-                                    }
-                                    Err(_) => tracing::error!(
-                                        "INSERT: Indexing panicked; the index may be incomplete"
-                                    ),
-                                }
-                            });
-                        }
+                        // Audit D5: no post-insert indexing pass. `insert_batch`
+                        // writes idx/geo/fulltext entries in the same WriteBatch
+                        // as the documents; a second, detached pass re-wrote them
+                        // from insert-time values and resurrected entries for rows
+                        // updated or removed in between.
                     } else {
                         // Small inserts - use normal path with indexes
                         let insert_start = std::time::Instant::now();
@@ -1036,7 +1008,12 @@ impl<'a> QueryExecutor<'a> {
                             if let Some((coll_name, key)) = current_id.split_once('/') {
                                 if let Ok(vertex_coll) = self.get_collection(coll_name) {
                                     if let Ok(vertex_doc) = vertex_coll.get(key) {
-                                        vertex_val = Some(vertex_doc.to_value());
+                                        let v = vertex_doc.to_value();
+                                        // A vertex hidden by its row policy
+                                        // is not emitted (audit H2).
+                                        if self.row_policy_permits(coll_name, &v, ctx) {
+                                            vertex_val = Some(v);
+                                        }
                                     }
                                 }
                             }
@@ -1143,10 +1120,14 @@ impl<'a> QueryExecutor<'a> {
                             let last_edge = path.edges.last().cloned().unwrap_or(Value::Null);
                             if let Some((coll_name, key)) = last_id.split_once('/') {
                                 if let Ok(vertex_coll) = self.get_collection(coll_name) {
-                                    if let Ok(vertex_doc) = vertex_coll.get(key) {
+                                    if let Some(vertex_doc) = vertex_coll
+                                        .get(key)
+                                        .ok()
+                                        .map(|d| d.to_value())
+                                        .filter(|v| self.row_policy_permits(coll_name, v, ctx))
+                                    {
                                         let mut new_ctx = ctx.clone();
-                                        new_ctx
-                                            .insert(sp.vertex_var.clone(), vertex_doc.to_value());
+                                        new_ctx.insert(sp.vertex_var.clone(), vertex_doc);
                                         if let Some(ref edge_var) = sp.edge_var {
                                             new_ctx.insert(edge_var.clone(), last_edge);
                                         }
@@ -1190,7 +1171,8 @@ impl<'a> QueryExecutor<'a> {
                             // left row, and rescanning it per row turned every join into
                             // O(left × right) disk reads. Matching goes through
                             // join_match_indices (hash join for equi-conditions).
-                            let all_docs = self.scan_bounded(&collection)?;
+                            let all_docs = self
+                                .scan_bounded_with_policy(&join_clause.collection, &collection)?;
 
                             let match_indices = self.join_match_indices(
                                 &rows,
@@ -1236,7 +1218,8 @@ impl<'a> QueryExecutor<'a> {
                             // RIGHT JOIN: iterate right side, find matching left rows
                             // Keep all right rows, group left matches into array
                             let mut new_rows = Vec::new();
-                            let all_right_docs = self.scan_bounded(&collection)?;
+                            let all_right_docs = self
+                                .scan_bounded_with_policy(&join_clause.collection, &collection)?;
 
                             // Transpose row→docs matches into doc→rows so the
                             // hash-join path serves RIGHT JOIN too (row order
@@ -1306,7 +1289,8 @@ impl<'a> QueryExecutor<'a> {
                                 })
                                 .unwrap_or_else(|| "left".to_string());
 
-                            let all_right_docs = self.scan_bounded(&collection)?;
+                            let all_right_docs = self
+                                .scan_bounded_with_policy(&join_clause.collection, &collection)?;
 
                             // Phase 1: LEFT JOIN part - iterate left, find right matches
                             let match_indices = self.join_match_indices(

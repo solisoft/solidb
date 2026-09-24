@@ -354,7 +354,7 @@ async fn document_qualified_name_cannot_cross_database_boundary() {
         "POST",
         "/_api/database/victim/document/items",
         &app.admin,
-        Some(json!({"_key": "k1", "card": "4111-1111-1111-1111"})),
+        Some(json!({"_key": "k_card", "card": "4111-1111-1111-1111"})),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -367,7 +367,7 @@ async fn document_qualified_name_cannot_cross_database_boundary() {
     let (status, _) = send(
         &app.router,
         "GET",
-        "/_api/database/victim/document/items/k1",
+        "/_api/database/victim/document/items/k_card",
         &scoped,
         None,
     )
@@ -377,9 +377,9 @@ async fn document_qualified_name_cannot_cross_database_boundary() {
     // The attack: query the key's *own* database, reach across with a qualified
     // name. Every shape that accepts one.
     for query in [
-        "RETURN DOCUMENT(\"victim:items/k1\")",
-        "RETURN DOCUMENT([\"victim:items/k1\"])",
-        "RETURN DOCUMENT(\"victim:items\", \"k1\")",
+        "RETURN DOCUMENT(\"victim:items/k_card\")",
+        "RETURN DOCUMENT([\"victim:items/k_card\"])",
+        "RETURN DOCUMENT(\"victim:items\", \"k_card\")",
         "RETURN DOCUMENT(\"_system:_admins/admin\")",
         "RETURN DOCUMENT(\"victim:_env/OPENAI_API_KEY\")",
     ] {

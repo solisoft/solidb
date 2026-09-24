@@ -127,8 +127,6 @@ pub async fn copy_shard_from_source(
     physical_coll: &str,
     source_node: &str,
 ) -> Result<usize, DbError> {
-    use base64::{engine::general_purpose, Engine as _};
-
     let mgr = cluster_manager
         .as_ref()
         .ok_or_else(|| DbError::InternalError("No cluster manager".to_string()))?;
@@ -141,9 +139,9 @@ pub async fn copy_shard_from_source(
     let client = get_http_client();
 
     // Use standard Collection API to get metadata (count)
-    let meta_url = format!(
-        "http://{}/_api/database/{}/collection/{}",
-        source_addr, database, physical_coll
+    let meta_url = crate::cluster::http::peer_url(
+        &source_addr,
+        &format!("/_api/database/{}/collection/{}", database, physical_coll),
     );
     let meta_res = client
         .get(&meta_url)
@@ -198,17 +196,19 @@ pub async fn copy_shard_from_source(
     }
 
     // Use EXPORT endpoint to stream all data (Docs + Blob Chunks)
-    let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
-    let url = format!(
-        "{}://{}/_api/database/{}/collection/{}/export",
-        scheme, source_addr, database, physical_coll
+    let url = crate::cluster::http::peer_url(
+        &source_addr,
+        &format!(
+            "/_api/database/{}/collection/{}/export",
+            database, physical_coll
+        ),
     );
 
-    let mut resp = client
+    let resp = client
         .get(&url)
         .header("X-Cluster-Secret", cluster_secret)
         .header("X-Shard-Direct", "true")
-        .timeout(std::time::Duration::from_secs(3600)) // Long timeout for large shards
+        .timeout(crate::cluster::http::stream_timeout()) // Long timeout for large shards
         .send()
         .await
         .map_err(|e| DbError::InternalError(format!("Export request failed: {}", e)))?;
@@ -222,92 +222,9 @@ pub async fn copy_shard_from_source(
         )));
     }
 
-    let mut batch_docs = Vec::with_capacity(1000);
-    let mut total_copied = 0;
-    let mut line_buffer = String::new();
-
-    // Stream processing
-    while let Ok(Some(chunk)) = resp.chunk().await {
-        // Append chunk to buffer
-        let chunk_str = String::from_utf8_lossy(&chunk);
-        line_buffer.push_str(&chunk_str);
-
-        // Process lines
-        while let Some(pos) = line_buffer.find('\n') {
-            let line: String = line_buffer.drain(..pos + 1).collect();
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-
-            if let Ok(mut doc) = serde_json::from_str::<serde_json::Value>(line) {
-                // Check if blob chunk
-                let is_blob_chunk = doc
-                    .get("_type")
-                    .and_then(|t| t.as_str())
-                    .map(|t| t == "blob_chunk")
-                    .unwrap_or(false);
-
-                if is_blob_chunk {
-                    // Import Chunk immediately
-                    if let (Some(key), Some(index), Some(data_b64)) = (
-                        doc.get("_doc_key").and_then(|s| s.as_str()),
-                        doc.get("_chunk_index").and_then(|n| n.as_u64()),
-                        doc.get("_blob_data").and_then(|s| s.as_str()),
-                    ) {
-                        if let Ok(data) = general_purpose::STANDARD.decode(data_b64) {
-                            if let Err(e) = coll.put_blob_chunk(key, index as u32, &data) {
-                                tracing::error!(
-                                    "HEAL: Failed to write chunk {} for {}: {}",
-                                    index,
-                                    key,
-                                    e
-                                );
-                            }
-                        }
-                    }
-                } else {
-                    // Clean metadata (same as import)
-                    if let Some(obj) = doc.as_object_mut() {
-                        obj.remove("_database");
-                        obj.remove("_collection");
-                        obj.remove("_shardConfig");
-                    }
-
-                    // Prepare for batch upsert
-                    let key = doc
-                        .get("_key")
-                        .and_then(|k| k.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    if !key.is_empty() {
-                        batch_docs.push((key, doc));
-                    }
-                }
-            }
-        }
-
-        // Flush Batch if full
-        if batch_docs.len() >= 1000 {
-            let count = batch_docs.len();
-            let batch_to_insert: Vec<(String, serde_json::Value)> = std::mem::take(&mut batch_docs);
-            if let Err(e) = coll.upsert_batch(batch_to_insert) {
-                tracing::error!("HEAL: Batch upsert failed: {}", e);
-            } else {
-                total_copied += count;
-            }
-        }
-    }
-
-    // Final Flush
-    if !batch_docs.is_empty() {
-        let count = batch_docs.len();
-        if let Err(e) = coll.upsert_batch(batch_docs) {
-            tracing::error!("HEAL: Final batch upsert failed: {}", e);
-        } else {
-            total_copied += count;
-        }
-    }
+    // Audit D7: raw-byte line splitting with a length cap; see
+    // `sharding::export_stream`.
+    let total_copied = crate::sharding::export_stream::import_export_response(resp, &coll).await?;
 
     tracing::info!(
         "HEAL: Copied {} docs (and associated chunks) to {}/{}",
@@ -505,9 +422,12 @@ pub async fn heal_shards(
                 } else {
                     // Tell target node to copy from source
                     if let Some(target_addr) = mgr.get_node_api_address(&target_node) {
-                        let url = format!(
-                            "http://{}/_api/database/{}/collection/{}/_copy_shard",
-                            target_addr, database, physical_coll
+                        let url = crate::cluster::http::peer_url(
+                            &target_addr,
+                            &format!(
+                                "/_api/database/{}/collection/{}/_copy_shard",
+                                database, physical_coll
+                            ),
                         );
 
                         let source_addr =
@@ -624,9 +544,12 @@ pub async fn heal_shards(
 
             // Get source document count
             let source_count = if let Some(source_addr) = mgr.get_node_api_address(&source_node) {
-                let url = format!(
-                    "http://{}/_api/database/{}/collection/{}/count",
-                    source_addr, database, physical_coll
+                let url = crate::cluster::http::peer_url(
+                    &source_addr,
+                    &format!(
+                        "/_api/database/{}/collection/{}/count",
+                        database, physical_coll
+                    ),
                 );
                 let client = get_http_client();
 

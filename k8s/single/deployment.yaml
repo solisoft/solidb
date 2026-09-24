@@ -40,6 +40,16 @@ spec:
           env:
             - name: SOLIDB_DATA_DIR
               value: "/data"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: solidb-secret
+                  key: jwt-secret
+            - name: SOLIDB_METRICS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: solidb-secret
+                  key: metrics-token
           volumeMounts:
             - name: data
               mountPath: /data

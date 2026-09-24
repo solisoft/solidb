@@ -24,6 +24,13 @@ pub struct SyncState {
     /// Highest sequence received from each origin node (for deduplication)
     origin_sequences: RwLock<HashMap<String, u64>>,
 
+    /// Pull cursor per peer *address*: the last sequence of that peer's log we
+    /// have applied. Audit H9: this used to share `origin_sequences`, keyed by
+    /// address there, so an origin id equal to a peer's address (e.g. a client
+    /// `device_id`) could move the cursor past the peer's head and stop
+    /// replication from it. The two maps now never alias.
+    pull_cursors: RwLock<HashMap<String, u64>>,
+
     /// Last sequence we sent to each peer
     sent_sequences: RwLock<HashMap<String, u64>>,
 
@@ -59,6 +66,7 @@ impl SyncState {
             node_id,
             local_sequence: RwLock::new(0),
             origin_sequences: RwLock::new(HashMap::new()),
+            pull_cursors: RwLock::new(HashMap::new()),
             sent_sequences: RwLock::new(HashMap::new()),
             last_heartbeat: RwLock::new(HashMap::new()),
             node_stats: RwLock::new(HashMap::new()),
@@ -94,6 +102,31 @@ impl SyncState {
                         }
                     }
                 }
+                match data.get("pull_cursors").and_then(|v| v.as_object()) {
+                    Some(cursors) => {
+                        let mut map = self.pull_cursors.write().unwrap();
+                        for (k, v) in cursors {
+                            if let Some(seq) = v.as_u64() {
+                                map.insert(k.clone(), seq);
+                            }
+                        }
+                    }
+                    None => {
+                        // State persisted before the split: the pull cursors
+                        // live in `origin_sequences` under the peer's
+                        // `host:port`. Copy those across so an upgrade does not
+                        // restart every pull from sequence 0. They are left in
+                        // place too; an entry there only affects origins
+                        // literally named like an address.
+                        let origins = self.origin_sequences.read().unwrap();
+                        let mut map = self.pull_cursors.write().unwrap();
+                        for (k, seq) in origins.iter() {
+                            if looks_like_socket_address(k) {
+                                map.insert(k.clone(), *seq);
+                            }
+                        }
+                    }
+                }
                 if let Some(sent) = data.get("sent_sequences").and_then(|v| v.as_object()) {
                     let mut map = self.sent_sequences.write().unwrap();
                     for (k, v) in sent {
@@ -107,9 +140,19 @@ impl SyncState {
 
         // Load peers
         if let Ok(doc) = sync_coll.get(Self::PEERS_KEY) {
-            if let Some(peers) = doc.data.as_object() {
+            // `persist` nests the map under "peers"; reading the document's
+            // top level instead produced a bogus peer named "peers".
+            let peers_obj = doc
+                .data
+                .get("peers")
+                .and_then(|p| p.as_object())
+                .or_else(|| doc.data.as_object());
+            if let Some(peers) = peers_obj {
                 let mut map = self.peers.write().unwrap();
                 for (node_id, info) in peers {
+                    if node_id.starts_with('_') {
+                        continue; // document metadata (_key, _rev, ...)
+                    }
                     if let Some(obj) = info.as_object() {
                         let sync_addr = obj
                             .get("sync_address")
@@ -159,18 +202,19 @@ impl SyncState {
 
         let seq = *self.local_sequence.read().unwrap();
         let origins: HashMap<String, u64> = self.origin_sequences.read().unwrap().clone();
+        let cursors: HashMap<String, u64> = self.pull_cursors.read().unwrap().clone();
         let sent: HashMap<String, u64> = self.sent_sequences.read().unwrap().clone();
 
         let state_doc = serde_json::json!({
             "_key": Self::STATE_KEY,
             "sequence": seq,
             "origin_sequences": origins,
+            "pull_cursors": cursors,
             "sent_sequences": sent,
         });
 
         // Delete and insert to upsert
-        let _ = sync_coll.delete(Self::STATE_KEY);
-        let _ = sync_coll.insert(state_doc);
+        let _ = sync_coll.insert_or_replace(state_doc);
 
         // Persist peers
         let peers = self.peers.read().unwrap();
@@ -184,8 +228,7 @@ impl SyncState {
             }).collect::<HashMap<_, _>>(),
         });
 
-        let _ = sync_coll.delete(Self::PEERS_KEY);
-        let _ = sync_coll.insert(peers_doc);
+        let _ = sync_coll.insert_or_replace(peers_doc);
     }
 
     /// Get the local node ID
@@ -222,6 +265,37 @@ impl SyncState {
             .get(origin)
             .copied()
             .unwrap_or(0)
+    }
+
+    /// Last sequence of `peer_addr`'s log that we have pulled and applied.
+    pub fn get_pull_cursor(&self, peer_addr: &str) -> u64 {
+        self.pull_cursors
+            .read()
+            .unwrap()
+            .get(peer_addr)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Advance the pull cursor for `peer_addr` (never moves backwards).
+    pub fn update_pull_cursor(&self, peer_addr: &str, seq: u64) {
+        let mut cursors = self.pull_cursors.write().unwrap();
+        let current = cursors.get(peer_addr).copied().unwrap_or(0);
+        if seq > current {
+            cursors.insert(peer_addr.to_string(), seq);
+        }
+    }
+
+    /// Refresh the liveness of a node already tracked by heartbeats, without
+    /// replacing its last stats.
+    ///
+    /// Any authenticated request from a peer proves liveness as well as a
+    /// heartbeat does (audit A7). Nodes not yet tracked are left alone, so a
+    /// node that only pulls from us never becomes subject to eviction.
+    pub fn touch_heartbeat(&self, node_id: &str) {
+        if let Some(last) = self.last_heartbeat.write().unwrap().get_mut(node_id) {
+            *last = Instant::now();
+        }
     }
 
     /// Check if an entry is a duplicate (already applied)
@@ -327,6 +401,15 @@ impl SyncState {
     }
 }
 
+/// `host:port` with a numeric port — the shape of a peer sync address, and
+/// not of a node id (a UUID or an operator-chosen name).
+fn looks_like_socket_address(s: &str) -> bool {
+    match s.rsplit_once(':') {
+        Some((host, port)) => !host.is_empty() && port.parse::<u16>().is_ok(),
+        None => false,
+    }
+}
+
 impl Clone for SyncState {
     fn clone(&self) -> Self {
         Self {
@@ -334,6 +417,7 @@ impl Clone for SyncState {
             node_id: self.node_id.clone(),
             local_sequence: RwLock::new(*self.local_sequence.read().unwrap()),
             origin_sequences: RwLock::new(self.origin_sequences.read().unwrap().clone()),
+            pull_cursors: RwLock::new(self.pull_cursors.read().unwrap().clone()),
             sent_sequences: RwLock::new(self.sent_sequences.read().unwrap().clone()),
             last_heartbeat: RwLock::new(self.last_heartbeat.read().unwrap().clone()),
             node_stats: RwLock::new(self.node_stats.read().unwrap().clone()),
@@ -409,6 +493,51 @@ mod tests {
 
         // Unknown origin is not duplicate if > 0
         assert!(!state.is_duplicate("unknown", 1));
+    }
+
+    #[test]
+    fn pull_cursors_and_origin_sequences_do_not_alias() {
+        // Audit H9: an origin named like a peer address must not move the
+        // pull cursor for that peer, and vice versa.
+        let storage = create_test_storage();
+        let state = SyncState::new(storage, "node1".to_string());
+
+        state.update_pull_cursor("10.0.0.2:6746", 40);
+        state.update_origin_sequence("10.0.0.2:6746", 1_000_000);
+
+        assert_eq!(state.get_pull_cursor("10.0.0.2:6746"), 40);
+        assert_eq!(state.get_origin_sequence("10.0.0.2:6746"), 1_000_000);
+
+        state.update_pull_cursor("10.0.0.2:6746", 30);
+        assert_eq!(state.get_pull_cursor("10.0.0.2:6746"), 40);
+    }
+
+    #[test]
+    fn pull_cursors_survive_persist_and_reload() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        storage.initialize().unwrap();
+        let state = SyncState::new(storage.clone(), "node1".to_string());
+        state.update_pull_cursor("10.0.0.2:6746", 77);
+        state.update_origin_sequence("node-b", 12);
+        state.persist();
+
+        let reloaded = SyncState::new(storage, "node1".to_string());
+        assert_eq!(reloaded.get_pull_cursor("10.0.0.2:6746"), 77);
+        assert_eq!(reloaded.get_origin_sequence("node-b"), 12);
+        assert_eq!(reloaded.get_pull_cursor("node-b"), 0);
+    }
+
+    #[test]
+    fn socket_address_detection() {
+        assert!(looks_like_socket_address("10.0.0.2:6746"));
+        assert!(looks_like_socket_address("node-b.internal:6745"));
+        assert!(looks_like_socket_address("[::1]:6745"));
+        assert!(!looks_like_socket_address("node-b"));
+        assert!(!looks_like_socket_address(
+            "0b0a8e3c-5c1b-4a8e-9a57-3f3d1d2e4f50"
+        ));
+        assert!(!looks_like_socket_address(":6745"));
     }
 
     #[test]

@@ -470,6 +470,16 @@ fn test_has_mutations_sees_expression_level_writes() {
         "RETURN CREATE_GRAPH(\"g\", {})",
         "RETURN DROP_GRAPH(\"g\")",
         "RETURN LENGTH([DROP_GRAPH(\"g\")])",
+        // Audit C4: the ROW_POLICY setter lifts or rewrites a row policy.
+        "RETURN ROW_POLICY(\"orders\", null)",
+        "RETURN ROW_POLICY(\"orders\", \"doc.owner == CURRENT_USER\")",
+        // Audit A11: dynamic dispatch hides the called function's name.
+        "RETURN APPLY(\"DROP_GRAPH\", [\"prod\"])",
+        "RETURN CALL(\"drop_view\", \"v\")",
+        "RETURN APPLY(\"ROW_POLICY\", [\"orders\", null])",
+        "RETURN CALL(\"APPLY\", \"DROP_GRAPH\", [\"g\"])",
+        "FOR d IN c RETURN CALL(d.fn, 1)",
+        "RETURN APPLY(@fn, [])",
     ] {
         let parsed = parse(query).unwrap_or_else(|e| panic!("parse {query}: {e}"));
         assert!(parsed.has_mutations(), "must require Write: {}", query);
@@ -488,6 +498,9 @@ fn test_has_mutations_leaves_reads_alone() {
         "FOR d IN c COLLECT g = d.kind AGGREGATE n = COUNT() RETURN {g, n}",
         "WITH t AS (FOR d IN c RETURN d) FOR x IN t RETURN x",
         "FOR d IN c RETURN CONCAT(d.a, d.b)",
+        "RETURN ROW_POLICY(\"orders\")",
+        "RETURN CALL(\"ABS\", -3)",
+        "RETURN APPLY(\"CONCAT\", [\"a\", \"b\"])",
     ] {
         let parsed = parse(query).unwrap_or_else(|e| panic!("parse {query}: {e}"));
         assert!(!parsed.has_mutations(), "must stay a read: {}", query);

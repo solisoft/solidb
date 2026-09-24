@@ -72,23 +72,54 @@ struct ChannelState {
     message_tx: broadcast::Sender<ChannelMessage>,
     /// Presence information for users in this channel
     presence: HashMap<ConnectionId, PresenceInfo>,
-    /// Number of active subscribers (for cleanup)
-    subscriber_count: usize,
+    /// Connections subscribed to this channel. A set, not a counter:
+    /// subscribing twice used to count twice while unregistering
+    /// decremented once, so such a channel (and its 1000-slot ring) was
+    /// never freed (audit M6).
+    subscribers: HashSet<ConnectionId>,
     /// Created timestamp
     #[allow(dead_code)]
     created_at: i64,
 }
 
+impl ChannelState {
+    fn new(stats: &ChannelStats) -> Self {
+        let (tx, _) = broadcast::channel(1000);
+        stats.total_channels_created.fetch_add(1, Ordering::SeqCst);
+        stats.active_channels.fetch_add(1, Ordering::SeqCst);
+        Self {
+            message_tx: tx,
+            presence: HashMap::new(),
+            subscribers: HashSet::new(),
+            created_at: chrono::Utc::now().timestamp_millis(),
+        }
+    }
+
+    fn is_unused(&self) -> bool {
+        self.subscribers.is_empty() && self.presence.is_empty()
+    }
+}
+
+/// Channels are keyed by `(database, name)`: the manager is shared by every
+/// database on the instance, and a bare name let one tenant's script listen
+/// to or inject into another tenant's `"chat"` (audit H6). A connection's
+/// database is fixed when it registers, and every operation on a
+/// connection resolves channel names inside it.
+type ChannelKey = (String, String);
+
+fn channel_key(database: &str, channel: &str) -> ChannelKey {
+    (database.to_string(), channel.to_string())
+}
+
 /// Information about a single WebSocket connection
 struct ConnectionInfo {
-    /// Channels this connection is subscribed to
+    /// Channels this connection is subscribed to (names within `database`)
     subscribed_channels: HashSet<String>,
     /// Channels where this connection has presence
     presence_channels: HashSet<String>,
     /// Channel to send events to this specific connection
     event_tx: mpsc::Sender<ChannelEvent>,
-    /// Associated database (for scoping)
-    #[allow(dead_code)]
+    /// Database the connection's script belongs to: the channel namespace
     database: String,
     /// Connection created timestamp
     #[allow(dead_code)]
@@ -141,7 +172,7 @@ impl std::error::Error for ChannelError {}
 /// Central manager for WebSocket channels and presence
 pub struct ChannelManager {
     /// All active channels
-    channels: Arc<RwLock<HashMap<String, ChannelState>>>,
+    channels: Arc<RwLock<HashMap<ChannelKey, ChannelState>>>,
     /// All active connections
     connections: Arc<RwLock<HashMap<ConnectionId, ConnectionInfo>>>,
     /// Stats
@@ -188,6 +219,16 @@ impl ChannelManager {
         (conn_id, event_rx)
     }
 
+    /// The database a registered connection belongs to.
+    fn database_of(&self, conn_id: &ConnectionId) -> Result<String, ChannelError> {
+        self.connections
+            .read()
+            .unwrap()
+            .get(conn_id)
+            .map(|c| c.database.clone())
+            .ok_or_else(|| ChannelError::ConnectionNotFound(conn_id.clone()))
+    }
+
     /// Unregister a connection and cleanup all subscriptions/presence
     pub fn unregister_connection(&self, conn_id: &ConnectionId) {
         let conn_info = self.connections.write().unwrap().remove(conn_id);
@@ -195,41 +236,33 @@ impl ChannelManager {
         if let Some(info) = conn_info {
             // Leave all presence channels
             for channel in info.presence_channels.iter() {
-                self.presence_leave_internal(conn_id, channel);
+                self.presence_leave_internal(conn_id, &info.database, channel);
             }
 
             // Unsubscribe from all channels
             for channel in info.subscribed_channels.iter() {
-                self.unsubscribe_internal(conn_id, channel);
+                self.unsubscribe_internal(conn_id, &info.database, channel);
             }
 
             self.stats.active_connections.fetch_sub(1, Ordering::SeqCst);
         }
     }
 
-    /// Subscribe to a channel
+    /// Subscribe to a channel in the connection's database. Idempotent per
+    /// connection.
     pub fn subscribe(
         &self,
         conn_id: &ConnectionId,
         channel: &str,
     ) -> Result<broadcast::Receiver<ChannelMessage>, ChannelError> {
+        let database = self.database_of(conn_id)?;
+
         // Get or create channel
         let mut channels = self.channels.write().unwrap();
-        let channel_state = channels.entry(channel.to_string()).or_insert_with(|| {
-            let (tx, _) = broadcast::channel(1000);
-            self.stats
-                .total_channels_created
-                .fetch_add(1, Ordering::SeqCst);
-            self.stats.active_channels.fetch_add(1, Ordering::SeqCst);
-            ChannelState {
-                message_tx: tx,
-                presence: HashMap::new(),
-                subscriber_count: 0,
-                created_at: chrono::Utc::now().timestamp_millis(),
-            }
-        });
-
-        channel_state.subscriber_count += 1;
+        let channel_state = channels
+            .entry(channel_key(&database, channel))
+            .or_insert_with(|| ChannelState::new(&self.stats));
+        channel_state.subscribers.insert(conn_id.clone());
         let rx = channel_state.message_tx.subscribe();
         drop(channels);
 
@@ -243,55 +276,87 @@ impl ChannelManager {
 
     /// Unsubscribe from a channel
     pub fn unsubscribe(&self, conn_id: &ConnectionId, channel: &str) {
-        self.unsubscribe_internal(conn_id, channel);
+        let Ok(database) = self.database_of(conn_id) else {
+            return;
+        };
+        self.unsubscribe_internal(conn_id, &database, channel);
 
         if let Some(conn) = self.connections.write().unwrap().get_mut(conn_id) {
             conn.subscribed_channels.remove(channel);
         }
     }
 
-    fn unsubscribe_internal(&self, _conn_id: &ConnectionId, channel: &str) {
+    fn unsubscribe_internal(&self, conn_id: &ConnectionId, database: &str, channel: &str) {
         let mut channels = self.channels.write().unwrap();
-        if let Some(state) = channels.get_mut(channel) {
-            state.subscriber_count = state.subscriber_count.saturating_sub(1);
+        let key = channel_key(database, channel);
+        if let Some(state) = channels.get_mut(&key) {
+            state.subscribers.remove(conn_id);
 
             // Cleanup empty channels
-            if state.subscriber_count == 0 && state.presence.is_empty() {
-                channels.remove(channel);
+            if state.is_unused() {
+                channels.remove(&key);
                 self.stats.active_channels.fetch_sub(1, Ordering::SeqCst);
             }
         }
     }
 
-    /// Broadcast a message to all subscribers of a channel
+    /// Broadcast a message to all subscribers of `channel` in `database`.
+    ///
+    /// Delivered to every subscribed connection's event queue (what
+    /// `ws.recv_any` reads) and to any `broadcast::Receiver` handed out by
+    /// [`Self::subscribe`]. Returns the number of connections reached.
     pub fn broadcast(
         &self,
+        database: &str,
         channel: &str,
         data: JsonValue,
         sender_id: Option<&ConnectionId>,
     ) -> Result<usize, ChannelError> {
         let channels = self.channels.read().unwrap();
 
-        if let Some(state) = channels.get(channel) {
-            let msg = ChannelMessage {
-                channel: channel.to_string(),
-                data,
-                sender_id: sender_id.cloned(),
-                timestamp: chrono::Utc::now().timestamp_millis(),
-            };
+        let Some(state) = channels.get(&channel_key(database, channel)) else {
+            return Err(ChannelError::ChannelNotFound(channel.to_string()));
+        };
+        let msg = ChannelMessage {
+            channel: channel.to_string(),
+            data,
+            sender_id: sender_id.cloned(),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+        };
+        let subscribers: Vec<ConnectionId> = state.subscribers.iter().cloned().collect();
+        let _ = state.message_tx.send(msg.clone());
+        drop(channels);
 
-            let sent = state
-                .message_tx
-                .send(msg)
-                .map_err(|_| ChannelError::NoSubscribers)?;
-
-            self.stats
-                .total_messages_broadcast
-                .fetch_add(1, Ordering::SeqCst);
-            Ok(sent)
-        } else {
-            Err(ChannelError::ChannelNotFound(channel.to_string()))
+        let connections = self.connections.read().unwrap();
+        let mut delivered = 0;
+        for id in &subscribers {
+            if let Some(conn) = connections.get(id) {
+                if conn.database == database
+                    && conn
+                        .event_tx
+                        .try_send(ChannelEvent::Message(msg.clone()))
+                        .is_ok()
+                {
+                    delivered += 1;
+                }
+            }
         }
+
+        self.stats
+            .total_messages_broadcast
+            .fetch_add(1, Ordering::SeqCst);
+        Ok(delivered)
+    }
+
+    /// Broadcast from a connection, in that connection's database.
+    pub fn broadcast_from(
+        &self,
+        conn_id: &ConnectionId,
+        channel: &str,
+        data: JsonValue,
+    ) -> Result<usize, ChannelError> {
+        let database = self.database_of(conn_id)?;
+        self.broadcast(&database, channel, data, Some(conn_id))
     }
 
     /// Join presence in a channel
@@ -301,22 +366,13 @@ impl ChannelManager {
         channel: &str,
         user_info: JsonValue,
     ) -> Result<(), ChannelError> {
+        let database = self.database_of(conn_id)?;
         let mut channels = self.channels.write().unwrap();
 
         // Ensure channel exists
-        let channel_state = channels.entry(channel.to_string()).or_insert_with(|| {
-            let (tx, _) = broadcast::channel(1000);
-            self.stats
-                .total_channels_created
-                .fetch_add(1, Ordering::SeqCst);
-            self.stats.active_channels.fetch_add(1, Ordering::SeqCst);
-            ChannelState {
-                message_tx: tx,
-                presence: HashMap::new(),
-                subscriber_count: 0,
-                created_at: chrono::Utc::now().timestamp_millis(),
-            }
-        });
+        let channel_state = channels
+            .entry(channel_key(&database, channel))
+            .or_insert_with(|| ChannelState::new(&self.stats));
 
         let presence_info = PresenceInfo {
             connection_id: conn_id.clone(),
@@ -341,29 +397,34 @@ impl ChannelManager {
         };
 
         drop(channels);
-        self.broadcast_presence_event(channel, event);
 
         // Track in connection
         if let Some(conn) = self.connections.write().unwrap().get_mut(conn_id) {
             conn.presence_channels.insert(channel.to_string());
         }
 
+        self.broadcast_presence_event(&database, channel, event);
+
         Ok(())
     }
 
     /// Leave presence in a channel
     pub fn presence_leave(&self, conn_id: &ConnectionId, channel: &str) {
-        self.presence_leave_internal(conn_id, channel);
+        let Ok(database) = self.database_of(conn_id) else {
+            return;
+        };
+        self.presence_leave_internal(conn_id, &database, channel);
 
         if let Some(conn) = self.connections.write().unwrap().get_mut(conn_id) {
             conn.presence_channels.remove(channel);
         }
     }
 
-    fn presence_leave_internal(&self, conn_id: &ConnectionId, channel: &str) {
+    fn presence_leave_internal(&self, conn_id: &ConnectionId, database: &str, channel: &str) {
         let mut channels = self.channels.write().unwrap();
+        let key = channel_key(database, channel);
 
-        if let Some(state) = channels.get_mut(channel) {
+        if let Some(state) = channels.get_mut(&key) {
             if let Some(info) = state.presence.remove(conn_id) {
                 let event = PresenceEvent {
                     event_type: PresenceEventType::Leave,
@@ -374,23 +435,23 @@ impl ChannelManager {
                 };
 
                 // Cleanup empty channels
-                if state.subscriber_count == 0 && state.presence.is_empty() {
-                    channels.remove(channel);
+                if state.is_unused() {
+                    channels.remove(&key);
                     self.stats.active_channels.fetch_sub(1, Ordering::SeqCst);
                 }
 
                 drop(channels);
-                self.broadcast_presence_event(channel, event);
+                self.broadcast_presence_event(database, channel, event);
             }
         }
     }
 
-    /// List all users present in a channel
-    pub fn presence_list(&self, channel: &str) -> Vec<PresenceInfo> {
+    /// List all users present in `channel` of `database`
+    pub fn presence_list(&self, database: &str, channel: &str) -> Vec<PresenceInfo> {
         let channels = self.channels.read().unwrap();
 
         channels
-            .get(channel)
+            .get(&channel_key(database, channel))
             .map(|state| state.presence.values().cloned().collect())
             .unwrap_or_default()
     }
@@ -405,13 +466,15 @@ impl ChannelManager {
             .unwrap_or_default()
     }
 
-    /// Broadcast presence event to all connections listening for presence changes
-    fn broadcast_presence_event(&self, channel: &str, event: PresenceEvent) {
+    /// Broadcast presence event to the connections of `database` listening
+    /// on `channel`
+    fn broadcast_presence_event(&self, database: &str, channel: &str, event: PresenceEvent) {
         let connections = self.connections.read().unwrap();
 
         for conn in connections.values() {
-            if conn.subscribed_channels.contains(channel)
-                || conn.presence_channels.contains(channel)
+            if conn.database == database
+                && (conn.subscribed_channels.contains(channel)
+                    || conn.presence_channels.contains(channel))
             {
                 let _ = conn
                     .event_tx
@@ -427,6 +490,11 @@ impl ChannelManager {
             .unwrap()
             .get(conn_id)
             .map(|c| c.event_tx.clone())
+    }
+
+    #[cfg(test)]
+    fn channel_count(&self) -> usize {
+        self.channels.read().unwrap().len()
     }
 }
 
@@ -454,6 +522,7 @@ mod tests {
 
         // Broadcast a message
         let result = manager.broadcast(
+            "test_db",
             "test-channel",
             serde_json::json!({"hello": "world"}),
             Some(&conn_id),
@@ -506,7 +575,7 @@ mod tests {
         }
 
         // Check presence list
-        let users = manager.presence_list("room-1");
+        let users = manager.presence_list("test_db", "room-1");
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].connection_id, conn_id);
 
@@ -520,10 +589,56 @@ mod tests {
             assert!(matches!(event.event_type, PresenceEventType::Leave));
         }
 
-        let users = manager.presence_list("room-1");
+        let users = manager.presence_list("test_db", "room-1");
         assert_eq!(users.len(), 0);
 
         manager.unregister_connection(&conn_id);
         manager.unregister_connection(&conn_id2);
+    }
+
+    /// Audit H6: channels and presence are scoped to the connection's
+    /// database.
+    #[tokio::test]
+    async fn channels_are_namespaced_per_database() {
+        let manager = ChannelManager::new();
+        let (a, mut a_rx) = manager.register_connection("tenant_a");
+        let (b, mut b_rx) = manager.register_connection("tenant_b");
+        manager.subscribe(&a, "chat").unwrap();
+        manager.subscribe(&b, "chat").unwrap();
+        manager
+            .presence_join(&a, "chat", serde_json::json!({"user": "alice"}))
+            .unwrap();
+
+        // A's own presence event.
+        let _ = a_rx.try_recv();
+        // B sees neither A's presence nor A's message.
+        assert!(b_rx.try_recv().is_err());
+        assert!(manager.presence_list("tenant_b", "chat").is_empty());
+        assert_eq!(manager.presence_list("tenant_a", "chat").len(), 1);
+
+        let delivered = manager
+            .broadcast_from(&a, "chat", serde_json::json!("hi"))
+            .unwrap();
+        assert_eq!(delivered, 1);
+        assert!(matches!(a_rx.try_recv(), Ok(ChannelEvent::Message(_))));
+        assert!(b_rx.try_recv().is_err());
+
+        manager.unregister_connection(&a);
+        manager.unregister_connection(&b);
+        assert_eq!(manager.channel_count(), 0);
+    }
+
+    /// Audit M6: resubscribing must not leave a channel alive after the
+    /// connection goes away.
+    #[tokio::test]
+    async fn resubscribe_is_idempotent() {
+        let manager = ChannelManager::new();
+        let (conn, _rx) = manager.register_connection("db");
+        for _ in 0..5 {
+            manager.subscribe(&conn, "room").unwrap();
+        }
+        manager.unregister_connection(&conn);
+        assert_eq!(manager.channel_count(), 0);
+        assert_eq!(manager.stats.active_channels.load(Ordering::SeqCst), 0);
     }
 }

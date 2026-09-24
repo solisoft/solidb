@@ -11,6 +11,80 @@ pub const MAX_CLUSTER_MESSAGE_SIZE: usize = 1024 * 1024;
 /// Maximum clock skew tolerated when validating a signed message (replay window).
 const MAX_TIMESTAMP_SKEW_MS: u64 = 5 * 60 * 1000;
 
+/// Upper bound on remembered nonces. Only correctly signed messages are
+/// recorded, so only a secret holder can fill it; at one heartbeat per second
+/// from each of 50 nodes the 10-minute window holds ~30k.
+const MAX_REMEMBERED_NONCES: usize = 200_000;
+
+/// Nonces seen inside the replay window (audit L1).
+///
+/// The timestamp check alone let a captured `Leave` be replayed for five
+/// minutes. A nonce is kept for twice the skew window (a message may be
+/// stamped up to one window in the future or the past), after which the
+/// timestamp check rejects it anyway.
+struct NonceCache {
+    seen: std::collections::HashSet<String>,
+    order: std::collections::VecDeque<(u64, String)>,
+}
+
+impl NonceCache {
+    fn new() -> Self {
+        Self {
+            seen: std::collections::HashSet::new(),
+            order: std::collections::VecDeque::new(),
+        }
+    }
+
+    fn evict_expired(&mut self, now_ms: u64) {
+        let horizon = now_ms.saturating_sub(2 * MAX_TIMESTAMP_SKEW_MS);
+        while let Some((at, _)) = self.order.front() {
+            if *at >= horizon {
+                break;
+            }
+            if let Some((_, nonce)) = self.order.pop_front() {
+                self.seen.remove(&nonce);
+            }
+        }
+    }
+
+    /// `true` when the nonce is new (and is now remembered).
+    fn insert(&mut self, nonce: &str, now_ms: u64) -> bool {
+        self.evict_expired(now_ms);
+        if self.seen.contains(nonce) {
+            return false;
+        }
+        if self.seen.len() >= MAX_REMEMBERED_NONCES {
+            // Fail closed: forgetting a live nonce would reopen the replay.
+            tracing::warn!("cluster nonce cache full; rejecting signed message");
+            return false;
+        }
+        self.seen.insert(nonce.to_string());
+        self.order.push_back((now_ms, nonce.to_string()));
+        true
+    }
+}
+
+fn nonce_cache() -> &'static std::sync::Mutex<NonceCache> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<NonceCache>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(NonceCache::new()))
+}
+
+/// Record a nonce from an authenticated message. Returns `false` if it was
+/// already seen inside the replay window (a replay) — the caller must reject.
+///
+/// Shared by cluster control messages and signed inter-node HTTP requests
+/// (`cluster::http::verify_signed_request`); callers namespace their nonces.
+pub fn remember_nonce(nonce: &str) -> bool {
+    let now = chrono::Utc::now().timestamp_millis() as u64;
+    match nonce_cache().lock() {
+        Ok(mut cache) => cache.insert(nonce, now),
+        Err(poisoned) => poisoned.into_inner().insert(nonce, now),
+    }
+}
+
+/// Connect timeout for one-shot cluster control connections.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Message types for cluster management
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClusterMessage {
@@ -130,6 +204,13 @@ pub fn open_cluster_message(data: &[u8], secret: Option<&str>) -> Result<Cluster
             {
                 anyhow::bail!("cluster message signature mismatch");
             }
+            if envelope.nonce.is_empty() || envelope.nonce.len() > 128 {
+                anyhow::bail!("cluster message nonce missing or oversized");
+            }
+            // Checked after the signature so only authentic nonces are stored.
+            if !remember_nonce(&format!("msg:{}", envelope.nonce)) {
+                anyhow::bail!("cluster message replay rejected (nonce already seen)");
+            }
             Ok(serde_json::from_str(&envelope.payload)?)
         }
         _ => anyhow::bail!(
@@ -164,9 +245,15 @@ impl TcpTransport {
         msg: ClusterMessage,
         secret: Option<&str>,
     ) -> Result<()> {
-        let mut stream = TcpStream::connect(addr).await?;
         let data = seal_cluster_message(&msg, secret)?;
-        stream.write_all(&data).await?;
+        // Bounded: a black-holed peer otherwise holds the caller for the OS
+        // connect timeout (~2 minutes).
+        let mut stream = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(addr))
+            .await
+            .map_err(|_| anyhow::anyhow!("connect to {} timed out", addr))??;
+        tokio::time::timeout(CONNECT_TIMEOUT, stream.write_all(&data))
+            .await
+            .map_err(|_| anyhow::anyhow!("write to {} timed out", addr))??;
         Ok(())
     }
 
@@ -234,6 +321,28 @@ mod cluster_auth_tests {
         // "simplified" by making both arms permissive again.
         let raw = serde_json::to_vec(&message()).unwrap();
         assert!(open_cluster_message(&raw, Some(SECRET)).is_err());
+    }
+
+    #[test]
+    fn a_replayed_message_is_rejected() {
+        // Audit L1: a captured `Leave` used to be accepted again for as long
+        // as its timestamp was inside the five-minute window.
+        let sealed = seal_cluster_message(&message(), Some(SECRET)).unwrap();
+        assert!(open_cluster_message(&sealed, Some(SECRET)).is_ok());
+        let replay = open_cluster_message(&sealed, Some(SECRET));
+        assert!(replay.is_err());
+        assert!(replay.unwrap_err().to_string().contains("replay"));
+    }
+
+    #[test]
+    fn nonce_cache_forgets_after_the_window() {
+        let mut cache = NonceCache::new();
+        let t0 = 1_000_000_000u64;
+        assert!(cache.insert("a", t0));
+        assert!(!cache.insert("a", t0 + 1));
+        // Past twice the skew window the entry is evicted; the timestamp check
+        // rejects such an old message before the cache is consulted.
+        assert!(cache.insert("a", t0 + 2 * MAX_TIMESTAMP_SKEW_MS + 1));
     }
 
     #[test]

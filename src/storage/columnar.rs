@@ -8,7 +8,7 @@
 
 use fastbloom::BloomFilter;
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
-use rust_rocksdb::AsColumnFamilyRef;
+use rust_rocksdb::{AsColumnFamilyRef, WriteBatch};
 
 use super::RocksDb as DB;
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,11 @@ const COL_IDX_MINMAX_PREFIX: &str = "col_idx_mm:"; // col_idx_mm:{column}:{chunk
 const COL_IDX_BLOOM_PREFIX: &str = "col_idx_blo:"; // col_idx_blo:{column}:{chunk_id} -> [bloom_filter]
 
 const MINMAX_CHUNK_SIZE: u64 = 1000;
+
+/// One writer lock per (RocksDB instance, columnar CF), shared by every handle.
+type WriteLockMap = dashmap::DashMap<(usize, String), Arc<parking_lot::Mutex<()>>>;
+static COLUMNAR_WRITE_LOCKS: once_cell::sync::Lazy<WriteLockMap> =
+    once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
 /// Column data types supported in columnar storage
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -309,13 +314,130 @@ impl ColumnarCollection {
         })
     }
 
+    /// Lock shared by every handle of this columnar collection. The per-handle
+    /// `meta` lock does not serialise writers: `load` builds independent
+    /// handles, and two concurrent `insert_rows` lost `row_count` increments
+    /// and each other's index appends (read-modify-write of the same keys).
+    fn shared_write_lock(&self) -> Arc<parking_lot::Mutex<()>> {
+        COLUMNAR_WRITE_LOCKS
+            .entry((Arc::as_ptr(&self.db) as usize, self.cf_name.clone()))
+            .or_default()
+            .clone()
+    }
+
+    /// Reload metadata from disk; another handle may have written it since
+    /// this one was loaded. Call under the shared write lock.
+    fn refresh_meta(
+        &self,
+        db: &DB,
+        cf: &impl AsColumnFamilyRef,
+        meta: &mut ColumnarCollectionMeta,
+    ) {
+        let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
+        if let Ok(Some(bytes)) = db.get_cf(cf, meta_key.as_bytes()) {
+            if let Ok(disk_meta) = serde_json::from_slice::<ColumnarCollectionMeta>(&bytes) {
+                *meta = disk_meta;
+            }
+        }
+    }
+
+    fn stage_meta(
+        &self,
+        cf: &impl AsColumnFamilyRef,
+        batch: &mut WriteBatch,
+        meta: &ColumnarCollectionMeta,
+    ) -> DbResult<()> {
+        let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
+        batch.put_cf(cf, meta_key.as_bytes(), serde_json::to_vec(meta)?);
+        Ok(())
+    }
+
+    /// Stage one row (column values, UUID index appends, full row) into
+    /// `batch`. Index lists are accumulated in `uuid_indexes` and written
+    /// once by `stage_uuid_indexes`, so rows in the same batch that share an
+    /// index value do not overwrite each other's append.
+    #[allow(clippy::too_many_arguments)]
+    fn stage_row(
+        &self,
+        db: &DB,
+        cf: &impl AsColumnFamilyRef,
+        batch: &mut WriteBatch,
+        uuid_indexes: &mut HashMap<String, Vec<String>>,
+        meta: &ColumnarCollectionMeta,
+        obj: &serde_json::Map<String, Value>,
+        row: &Value,
+        row_uuid: &str,
+    ) -> DbResult<()> {
+        // Store each column value separately
+        for col_def in &meta.columns {
+            let value = obj.get(&col_def.name).unwrap_or(&Value::Null);
+            let col_key = format!("{}{}:{}", COL_DATA_PREFIX, col_def.name, row_uuid);
+            let value_bytes = serde_json::to_vec(value)?;
+            batch.put_cf(
+                cf,
+                col_key.as_bytes(),
+                self.compress_data(&value_bytes, &meta.compression),
+            );
+        }
+
+        // Inverted UUID index for indexed columns. Bitmap indexes need
+        // positional ids, so UUID rows fall back to the inverted index;
+        // MinMax is skipped for UUID rows.
+        for col_def in meta.columns.iter().filter(|c| c.indexed) {
+            if matches!(col_def.index_type, Some(ColumnarIndexType::MinMax)) {
+                continue;
+            }
+            let value = obj.get(&col_def.name).unwrap_or(&Value::Null);
+            // A different key suffix distinguishes UUID indexes from u64 ones.
+            let uuid_idx_key = format!("{}_uuids", self.encode_index_key(&col_def.name, value));
+            let uuids = match uuid_indexes.entry(uuid_idx_key) {
+                std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    let existing: Vec<String> = match db.get_cf(cf, e.key().as_bytes()) {
+                        Ok(Some(bytes)) => serde_json::from_slice(&bytes)?,
+                        Ok(None) => Vec::new(),
+                        Err(err) => return Err(DbError::InternalError(err.to_string())),
+                    };
+                    e.insert(existing)
+                }
+            };
+            uuids.push(row_uuid.to_string());
+        }
+
+        // Also store full row for reconstruction
+        let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
+        let row_bytes = serde_json::to_vec(row)?;
+        batch.put_cf(
+            cf,
+            row_key.as_bytes(),
+            self.compress_data(&row_bytes, &meta.compression),
+        );
+        Ok(())
+    }
+
+    fn stage_uuid_indexes(
+        cf: &impl AsColumnFamilyRef,
+        batch: &mut WriteBatch,
+        uuid_indexes: HashMap<String, Vec<String>>,
+    ) -> DbResult<()> {
+        for (key, uuids) in uuid_indexes {
+            batch.put_cf(cf, key.as_bytes(), serde_json::to_vec(&uuids)?);
+        }
+        Ok(())
+    }
+
     /// Insert rows into columnar storage
     /// Returns a vector of UUIDs for the inserted rows (for replication)
+    ///
+    /// All rows, their index entries and the updated metadata land in one
+    /// WriteBatch, so a failure part-way leaves nothing half-written.
     pub fn insert_rows(&self, rows: Vec<Value>) -> DbResult<Vec<String>> {
         if rows.is_empty() {
             return Ok(Vec::new());
         }
 
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
         let mut meta = self
             .meta
             .write()
@@ -324,7 +446,10 @@ impl ColumnarCollection {
         let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
+        self.refresh_meta(db, &cf, &mut meta);
 
+        let mut batch = WriteBatch::default();
+        let mut uuid_indexes = HashMap::new();
         let mut inserted_ids = Vec::new();
 
         for row in rows.iter() {
@@ -332,40 +457,30 @@ impl ColumnarCollection {
             let row_uuid = uuid7::uuid7().to_string();
 
             if let Value::Object(obj) = row {
-                // Store each column value separately
-                for col_def in &meta.columns {
-                    let value = obj.get(&col_def.name).unwrap_or(&Value::Null);
-                    let col_key = format!("{}{}:{}", COL_DATA_PREFIX, col_def.name, row_uuid);
-
-                    let value_bytes = serde_json::to_vec(value)?;
-                    let stored_bytes = self.compress_data(&value_bytes, &meta.compression);
-
-                    db.put_cf(&cf, col_key.as_bytes(), &stored_bytes)
-                        .map_err(|e| DbError::InternalError(e.to_string()))?;
-                }
-
-                // Update indexes for indexed columns (using UUID string)
-                self.update_indexes_for_row_uuid(db, &cf, &meta.columns, obj, &row_uuid)?;
-
-                // Also store full row for reconstruction
-                let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
-                let row_bytes = serde_json::to_vec(row)?;
-                let stored_row = self.compress_data(&row_bytes, &meta.compression);
-                db.put_cf(&cf, row_key.as_bytes(), &stored_row)
-                    .map_err(|e| DbError::InternalError(e.to_string()))?;
-
+                self.stage_row(
+                    db,
+                    &cf,
+                    &mut batch,
+                    &mut uuid_indexes,
+                    &meta,
+                    obj,
+                    row,
+                    &row_uuid,
+                )?;
                 inserted_ids.push(row_uuid);
             }
         }
+        Self::stage_uuid_indexes(&cf, &mut batch, uuid_indexes)?;
 
         // Update metadata
-        meta.row_count += inserted_ids.len() as u64;
-        meta.last_updated_at = chrono::Utc::now().timestamp();
+        let mut new_meta = meta.clone();
+        new_meta.row_count += inserted_ids.len() as u64;
+        new_meta.last_updated_at = chrono::Utc::now().timestamp();
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
 
-        let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
-        let meta_bytes = serde_json::to_vec(&*meta)?;
-        db.put_cf(&cf, meta_key.as_bytes(), &meta_bytes)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
+        *meta = new_meta;
 
         Ok(inserted_ids)
     }
@@ -373,6 +488,8 @@ impl ColumnarCollection {
     /// Insert a row with a specific UUID (for replication)
     /// This is idempotent - if the row already exists, it's skipped
     pub fn insert_row_with_id(&self, row_uuid: &str, row: Value) -> DbResult<bool> {
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
         let mut meta = self
             .meta
             .write()
@@ -381,6 +498,7 @@ impl ColumnarCollection {
         let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
+        self.refresh_meta(db, &cf, &mut meta);
 
         // Check if row already exists (idempotency for replication)
         let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
@@ -393,35 +511,29 @@ impl ColumnarCollection {
         }
 
         if let Value::Object(obj) = &row {
-            // Store each column value separately
-            for col_def in &meta.columns {
-                let value = obj.get(&col_def.name).unwrap_or(&Value::Null);
-                let col_key = format!("{}{}:{}", COL_DATA_PREFIX, col_def.name, row_uuid);
-
-                let value_bytes = serde_json::to_vec(value)?;
-                let stored_bytes = self.compress_data(&value_bytes, &meta.compression);
-
-                db.put_cf(&cf, col_key.as_bytes(), &stored_bytes)
-                    .map_err(|e| DbError::InternalError(e.to_string()))?;
-            }
-
-            // Update indexes for indexed columns
-            self.update_indexes_for_row_uuid(db, &cf, &meta.columns, obj, row_uuid)?;
-
-            // Store full row for reconstruction
-            let row_bytes = serde_json::to_vec(&row)?;
-            let stored_row = self.compress_data(&row_bytes, &meta.compression);
-            db.put_cf(&cf, row_key.as_bytes(), &stored_row)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
+            let mut batch = WriteBatch::default();
+            let mut uuid_indexes = HashMap::new();
+            self.stage_row(
+                db,
+                &cf,
+                &mut batch,
+                &mut uuid_indexes,
+                &meta,
+                obj,
+                &row,
+                row_uuid,
+            )?;
+            Self::stage_uuid_indexes(&cf, &mut batch, uuid_indexes)?;
 
             // Update metadata
-            meta.row_count += 1;
-            meta.last_updated_at = chrono::Utc::now().timestamp();
+            let mut new_meta = meta.clone();
+            new_meta.row_count += 1;
+            new_meta.last_updated_at = chrono::Utc::now().timestamp();
+            self.stage_meta(&cf, &mut batch, &new_meta)?;
 
-            let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
-            let meta_bytes = serde_json::to_vec(&*meta)?;
-            db.put_cf(&cf, meta_key.as_bytes(), &meta_bytes)
+            db.write(&batch)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
+            *meta = new_meta;
 
             Ok(true)
         } else {
@@ -431,6 +543,8 @@ impl ColumnarCollection {
 
     /// Delete a row by UUID
     pub fn delete_row(&self, row_uuid: &str) -> DbResult<bool> {
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
         let mut meta = self
             .meta
             .write()
@@ -439,6 +553,7 @@ impl ColumnarCollection {
         let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
+        self.refresh_meta(db, &cf, &mut meta);
 
         // Check if row exists
         let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
@@ -450,27 +565,26 @@ impl ColumnarCollection {
             return Ok(false); // Doesn't exist
         }
 
+        let mut batch = WriteBatch::default();
+
         // Delete column values
         for col_def in &meta.columns {
             let col_key = format!("{}{}:{}", COL_DATA_PREFIX, col_def.name, row_uuid);
-            db.delete_cf(&cf, col_key.as_bytes())
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
+            batch.delete_cf(&cf, col_key.as_bytes());
         }
 
         // Delete full row
-        db.delete_cf(&cf, row_key.as_bytes())
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        batch.delete_cf(&cf, row_key.as_bytes());
 
         // Update metadata
-        if meta.row_count > 0 {
-            meta.row_count -= 1;
-        }
-        meta.last_updated_at = chrono::Utc::now().timestamp();
+        let mut new_meta = meta.clone();
+        new_meta.row_count = new_meta.row_count.saturating_sub(1);
+        new_meta.last_updated_at = chrono::Utc::now().timestamp();
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
 
-        let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
-        let meta_bytes = serde_json::to_vec(&*meta)?;
-        db.put_cf(&cf, meta_key.as_bytes(), &meta_bytes)
+        db.write(&batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
+        *meta = new_meta;
 
         Ok(true)
     }
@@ -997,6 +1111,8 @@ impl ColumnarCollection {
 
     /// Truncate all data from the collection (preserves schema)
     pub fn truncate(&self) -> DbResult<()> {
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
         let mut meta = self
             .meta
             .write()
@@ -1005,39 +1121,39 @@ impl ColumnarCollection {
         let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
+        self.refresh_meta(db, &cf, &mut meta);
 
-        // Delete all row data (col: prefix)
-        let prefix = COL_DATA_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
-        for (key, _) in iter.flatten() {
-            db.delete_cf(&cf, &key)
-                .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
+        // Row data, full rows and index entries. Each scan stops at the end
+        // of its prefix: `col:` sorts right before `col_idx…`/`col_meta:`,
+        // and an unbounded walk used to delete the schema along with the data.
+        let mut batch = WriteBatch::default();
+        for prefix in [
+            COL_DATA_PREFIX,
+            COL_ROW_PREFIX,
+            COL_IDX_PREFIX,
+            COL_IDX_BITMAP_PREFIX,
+            COL_IDX_MINMAX_PREFIX,
+            COL_IDX_BLOOM_PREFIX,
+        ] {
+            let prefix = prefix.as_bytes();
+            for (key, _) in db.prefix_iterator_cf(&cf, prefix).flatten() {
+                if !key.starts_with(prefix) {
+                    break;
+                }
+                batch.delete_cf(&cf, &key);
+            }
         }
 
-        // Delete all row entries (col_row: prefix)
-        let row_prefix = COL_ROW_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, row_prefix);
-        for (key, _) in iter.flatten() {
-            db.delete_cf(&cf, &key)
-                .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
-        }
+        // Reset row count, saved under the key `load` reads (this used to
+        // write a bare `meta` key nothing read back).
+        let mut new_meta = meta.clone();
+        new_meta.row_count = 0;
+        new_meta.last_updated_at = chrono::Utc::now().timestamp();
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
 
-        // Delete all index data (idx: prefix)
-        let idx_prefix = b"idx:";
-        let iter = db.prefix_iterator_cf(&cf, idx_prefix);
-        for (key, _) in iter.flatten() {
-            db.delete_cf(&cf, &key)
-                .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
-        }
-
-        // Reset row count
-        meta.row_count = 0;
-
-        // Save updated metadata
-        let meta_bytes = serde_json::to_vec(&*meta)
-            .map_err(|e| DbError::InternalError(format!("Failed to serialize meta: {}", e)))?;
-        db.put_cf(&cf, b"meta", &meta_bytes)
-            .map_err(|e| DbError::InternalError(format!("Failed to save meta: {}", e)))?;
+        db.write(&batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to truncate: {}", e)))?;
+        *meta = new_meta;
 
         Ok(())
     }
@@ -1067,6 +1183,8 @@ impl ColumnarCollection {
 
     /// Create an index on a column
     pub fn create_index(&self, column: &str, index_type: ColumnarIndexType) -> DbResult<()> {
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
         let mut meta = self
             .meta
             .write()
@@ -1075,6 +1193,7 @@ impl ColumnarCollection {
         let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
+        self.refresh_meta(db, &cf, &mut meta);
 
         // Validate column exists and check if already indexed
         let col_idx = meta
@@ -1168,6 +1287,8 @@ impl ColumnarCollection {
 
     /// Drop an index from a column
     pub fn drop_index(&self, column: &str) -> DbResult<()> {
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
         let mut meta = self
             .meta
             .write()
@@ -1176,6 +1297,7 @@ impl ColumnarCollection {
         let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
+        self.refresh_meta(db, &cf, &mut meta);
 
         // Validate column exists and has index
         let col_idx = meta
@@ -1685,68 +1807,6 @@ impl ColumnarCollection {
 
         let chunk_bytes = serde_json::to_vec(&chunk)?;
         db.put_cf(cf, idx_key.as_bytes(), &chunk_bytes)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-
-        Ok(())
-    }
-
-    /// Update indexes when inserting a row with UUID (for UUID-based storage)
-    /// Note: Bitmap indexes are not supported with UUIDs (they require positional IDs)
-    fn update_indexes_for_row_uuid(
-        &self,
-        db: &DB,
-        cf: &impl AsColumnFamilyRef,
-        columns: &[ColumnDef],
-        row: &serde_json::Map<String, Value>,
-        row_uuid: &str,
-    ) -> DbResult<()> {
-        for col_def in columns {
-            if col_def.indexed {
-                let value = row.get(&col_def.name).unwrap_or(&Value::Null);
-
-                match col_def.index_type {
-                    Some(ColumnarIndexType::Bitmap) => {
-                        // Bitmap indexes require positional IDs, not UUIDs
-                        // Fall back to standard inverted index for UUID-based rows
-                        let idx_key = self.encode_index_key(&col_def.name, value);
-                        self.append_uuid_to_index(db, cf, &idx_key, row_uuid)?;
-                    }
-                    Some(ColumnarIndexType::MinMax) => {
-                        // MinMax indexes track min/max per chunk - skip for UUID rows
-                        // or we could track globally, but skip for now
-                    }
-                    _ => {
-                        // Sorted/Hash: Use inverted index with UUIDs
-                        let idx_key = self.encode_index_key(&col_def.name, value);
-                        self.append_uuid_to_index(db, cf, &idx_key, row_uuid)?;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Append a UUID to an index entry (for UUID-based storage)
-    fn append_uuid_to_index(
-        &self,
-        db: &DB,
-        cf: &impl AsColumnFamilyRef,
-        idx_key: &str,
-        row_uuid: &str,
-    ) -> DbResult<()> {
-        // Use a different key suffix to distinguish UUID indexes from u64 indexes
-        let uuid_idx_key = format!("{}_uuids", idx_key);
-
-        let mut uuids: Vec<String> = match db.get_cf(cf, uuid_idx_key.as_bytes()) {
-            Ok(Some(bytes)) => serde_json::from_slice(&bytes)?,
-            Ok(None) => Vec::new(),
-            Err(e) => return Err(DbError::InternalError(e.to_string())),
-        };
-
-        uuids.push(row_uuid.to_string());
-
-        let uuids_bytes = serde_json::to_vec(&uuids)?;
-        db.put_cf(cf, uuid_idx_key.as_bytes(), &uuids_bytes)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         Ok(())

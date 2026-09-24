@@ -1,3 +1,6 @@
+#[path = "shared/password.rs"]
+mod password;
+
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
@@ -287,9 +290,15 @@ struct Args {
     #[arg(short = 'u', long)]
     user: Option<String>,
 
-    /// Password for authentication
-    #[arg(short = 'p', long)]
+    /// Password for authentication. Visible in `ps` and shell history:
+    /// prefer SOLIDB_PASSWORD, --password-file, or the interactive prompt
+    /// shown when -u is given without a password on a terminal.
+    #[arg(short = 'p', long, conflicts_with = "password_file")]
     password: Option<String>,
+
+    /// Read the password from this file (one trailing newline is ignored).
+    #[arg(long)]
+    password_file: Option<String>,
 }
 
 #[tokio::main]
@@ -302,8 +311,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let base_url = format!("{}://{}:{}", scheme, args.host, args.port);
 
-    let token = match (&args.user, &args.password) {
-        (None, None) => None,
+    // SOLIDB_PASSWORD alone does not imply a login: it may be exported for
+    // other tools, and without -u there is no user to log in as.
+    if args.user.is_none() && (args.password.is_some() || args.password_file.is_some()) {
+        return Err("-u/--user is required when a password is given".into());
+    }
+    let password = match &args.user {
+        Some(user) => password::resolve_password(
+            args.password.as_deref(),
+            args.password_file.as_deref(),
+            Some(user),
+        )?,
+        None => None,
+    };
+
+    let token = match (&args.user, &password) {
+        (None, _) => None,
         (Some(user), Some(password)) => {
             let login_url = format!("{}/auth/login", base_url);
             let client = reqwest::Client::new();
@@ -329,8 +352,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("Authentication response missing token".into());
             }
         }
-        _ => {
-            return Err("Both -u/--user and -p/--password are required for authentication".into());
+        (Some(_), None) => {
+            return Err(format!(
+                "-u/--user needs a password: set {}, pass --password-file, or run on a \
+                 terminal to be prompted",
+                password::PASSWORD_ENV
+            )
+            .into());
         }
     };
 
@@ -1586,6 +1614,7 @@ mod tests {
             allow_skipped,
             user: None,
             password: None,
+            password_file: None,
         }
     }
 

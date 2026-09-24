@@ -116,10 +116,7 @@ impl<'a> QueryExecutor<'a> {
             "vertices": vertices,
             "edges": edges,
         });
-        if coll.get(name).is_ok() {
-            coll.delete(name)?;
-        }
-        coll.insert(doc)?;
+        coll.insert_or_replace(doc)?;
         Ok(json!({"name": name, "vertices": vertices, "edges": edges}))
     }
 
@@ -178,10 +175,7 @@ impl<'a> QueryExecutor<'a> {
             "fields": fields,
             "analyzer": analyzer,
         });
-        if coll.get(name).is_ok() {
-            coll.delete(name)?;
-        }
-        coll.insert(doc)?;
+        coll.insert_or_replace(doc)?;
         Ok(json!({
             "name": name,
             "type": "search",
@@ -226,12 +220,20 @@ impl<'a> QueryExecutor<'a> {
         let limit = args.get(3).and_then(Value::as_u64).unwrap_or(20).min(1000) as usize;
         let collection = self.get_collection(cname)?;
         let hits = collection.fulltext_search(query, Some(vec![field.to_string()]), limit)?;
+        let gate = self.row_policy_gate(cname);
+        let no_ctx = super::types::Context::new();
         let mut out = Vec::with_capacity(hits.len());
         for h in hits {
             let doc = collection
                 .get(&h.doc_key)
                 .map(|d| d.to_value())
                 .unwrap_or(Value::Null);
+            // Audit H2: hits hidden by the row policy are dropped.
+            if let Some(g) = &gate {
+                if !self.row_policy_allows(g, &doc, &no_ctx) {
+                    continue;
+                }
+            }
             out.push(json!({
                 "doc": doc,
                 "score": h.score,

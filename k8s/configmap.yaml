@@ -7,5 +7,8 @@ metadata:
     app.kubernetes.io/name: solidb
 data:
   SOLIDB_PORT: "6745"
+  # The server binds loopback by default; a pod must listen on all
+  # interfaces for its probes and Service to reach it.
+  SOLIDB_HOST: "0.0.0.0"
   SOLIDB_LOG_LEVEL: "info"
   RUST_LOG: "solidb=info,tower_http=info"

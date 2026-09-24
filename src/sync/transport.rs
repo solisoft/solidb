@@ -7,16 +7,37 @@
 //! - LZ4 compression for large payloads
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, info, warn};
 
 use super::protocol::SyncMessage;
 
 /// Maximum message size (10 MB)
-const MAX_MESSAGE_SIZE: u32 = 10 * 1024 * 1024;
+pub const MAX_MESSAGE_SIZE: u32 = 10 * 1024 * 1024;
+
+/// Budget for the encoded payload of one batch, well under
+/// [`MAX_MESSAGE_SIZE`] so framing and incompressible data still fit
+/// (audit A6).
+pub const BATCH_BYTE_BUDGET: usize = 8 * 1024 * 1024;
+
+/// TCP connect timeout to a peer. Without it a black-holed address held the
+/// sync worker for the OS default (~2 minutes) — longer than the dead-node
+/// timeout, so peers evicted this healthy node (audit A7).
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Bound on the whole client handshake (magic + challenge/response).
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Bound on writing one frame to a peer whose receive window is full.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Bound on an inbound connection's server-side handshake, magic included
+/// (audit A8).
+pub const SERVER_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Compression threshold (64 KB)
 const COMPRESSION_THRESHOLD: usize = 64 * 1024;
@@ -75,9 +96,17 @@ struct PeerConnection {
     last_activity: std::time::Instant,
 }
 
+type SharedConnection = Arc<Mutex<PeerConnection>>;
+
 /// Connection pool for managing peer connections
+///
+/// Each connection has its own lock (audit A7): the pool map used to be
+/// write-locked across a whole `receive`, so one slow peer stalled every
+/// other peer and the heartbeats. Heartbeats use a separate connection per
+/// peer so they are never queued behind a long sync round trip.
 pub struct ConnectionPool {
-    connections: RwLock<HashMap<String, PeerConnection>>,
+    connections: RwLock<HashMap<String, SharedConnection>>,
+    heartbeat_connections: RwLock<HashMap<String, SharedConnection>>,
     _local_node_id: String,
     keyfile_path: String,
 }
@@ -86,6 +115,7 @@ impl ConnectionPool {
     pub fn new(local_node_id: String, keyfile_path: String) -> Self {
         Self {
             connections: RwLock::new(HashMap::new()),
+            heartbeat_connections: RwLock::new(HashMap::new()),
             _local_node_id: local_node_id,
             keyfile_path,
         }
@@ -101,24 +131,62 @@ impl ConnectionPool {
             }
         }
 
+        let stream = self.establish(peer_addr).await?;
+
+        // Store connection (keep an existing one if a concurrent connect won)
+        self.connections
+            .write()
+            .await
+            .entry(peer_addr.to_string())
+            .or_insert_with(|| {
+                Arc::new(Mutex::new(PeerConnection {
+                    stream,
+                    last_activity: std::time::Instant::now(),
+                }))
+            });
+
+        debug!("ConnectionPool: Connected to peer: {}", peer_addr);
+        Ok(())
+    }
+
+    /// Open, announce and authenticate a new TCP connection, all bounded.
+    async fn establish(&self, peer_addr: &str) -> Result<TcpStream, TransportError> {
+        tokio::time::timeout(
+            HANDSHAKE_TIMEOUT + CONNECT_TIMEOUT,
+            self.establish_inner(peer_addr),
+        )
+        .await
+        .map_err(|_| {
+            TransportError::ConnectionFailed(format!("{}: handshake timed out", peer_addr))
+        })?
+    }
+
+    async fn establish_inner(&self, peer_addr: &str) -> Result<TcpStream, TransportError> {
         debug!("ConnectionPool: Connecting to peer: {}", peer_addr);
 
-        let stream = match TcpStream::connect(peer_addr).await {
-            Ok(s) => {
-                debug!("ConnectionPool: TCP connected to {}", peer_addr);
-                s
-            }
-            Err(e) => {
-                debug!(
-                    "ConnectionPool: TCP connection failed to {}: {}",
-                    peer_addr, e
-                );
-                return Err(TransportError::ConnectionFailed(format!(
-                    "{}: {}",
-                    peer_addr, e
-                )));
-            }
-        };
+        let stream =
+            match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(peer_addr)).await {
+                Ok(Ok(s)) => {
+                    debug!("ConnectionPool: TCP connected to {}", peer_addr);
+                    s
+                }
+                Ok(Err(e)) => {
+                    debug!(
+                        "ConnectionPool: TCP connection failed to {}: {}",
+                        peer_addr, e
+                    );
+                    return Err(TransportError::ConnectionFailed(format!(
+                        "{}: {}",
+                        peer_addr, e
+                    )));
+                }
+                Err(_) => {
+                    return Err(TransportError::ConnectionFailed(format!(
+                        "{}: connect timed out after {:?}",
+                        peer_addr, CONNECT_TIMEOUT
+                    )));
+                }
+            };
 
         // Send magic header for protocol detection
         use tokio::io::AsyncWriteExt;
@@ -142,28 +210,83 @@ impl ConnectionPool {
         }
 
         // Perform authentication
-        let stream = match self.authenticate_client(stream).await {
-            Ok(s) => s,
+        match self.authenticate_client(stream).await {
+            Ok(s) => Ok(s),
             Err(e) => {
                 debug!(
                     "ConnectionPool: Authentication failed with {}: {}",
                     peer_addr, e
                 );
-                return Err(e);
+                Err(e)
+            }
+        }
+    }
+
+    /// Send a heartbeat on the peer's dedicated heartbeat connection,
+    /// connecting it on demand. Bounded end to end; on failure the
+    /// connection is dropped so the next tick reconnects.
+    pub async fn send_heartbeat(
+        &self,
+        peer_addr: &str,
+        msg: &SyncMessage,
+    ) -> Result<(), TransportError> {
+        let existing = self
+            .heartbeat_connections
+            .read()
+            .await
+            .get(peer_addr)
+            .cloned();
+        let conn = match existing {
+            Some(c) => c,
+            None => {
+                let stream = self.establish(peer_addr).await?;
+                let c = Arc::new(Mutex::new(PeerConnection {
+                    stream,
+                    last_activity: std::time::Instant::now(),
+                }));
+                self.heartbeat_connections
+                    .write()
+                    .await
+                    .insert(peer_addr.to_string(), c.clone());
+                c
             }
         };
 
-        // Store connection
-        self.connections.write().await.insert(
-            peer_addr.to_string(),
-            PeerConnection {
-                stream,
-                last_activity: std::time::Instant::now(),
-            },
-        );
+        let result = {
+            let mut guard = conn.lock().await;
+            let r = Self::write_message_timed(&mut guard.stream, msg).await;
+            if r.is_ok() {
+                guard.last_activity = std::time::Instant::now();
+            }
+            r
+        };
+        if result.is_err() {
+            self.heartbeat_connections.write().await.remove(peer_addr);
+        }
+        result
+    }
 
-        debug!("ConnectionPool: Connected to peer: {}", peer_addr);
-        Ok(())
+    /// Forget the heartbeat connection to a peer (next heartbeat reconnects).
+    pub async fn drop_heartbeat_connection(&self, peer_addr: &str) {
+        self.heartbeat_connections.write().await.remove(peer_addr);
+    }
+
+    async fn write_message_timed<T>(stream: &mut T, msg: &SyncMessage) -> Result<(), TransportError>
+    where
+        T: tokio::io::AsyncWrite + Unpin,
+    {
+        tokio::time::timeout(WRITE_TIMEOUT, Self::write_message(stream, msg))
+            .await
+            .map_err(|_| {
+                TransportError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "sync write timed out",
+                ))
+            })?
+    }
+
+    async fn get_connection(&self, peer_addr: &str) -> Option<SharedConnection> {
+        self.connections.read().await.get(peer_addr).cloned()
     }
 
     /// Authenticate as client (respond to server's challenge)
@@ -266,33 +389,32 @@ impl ConnectionPool {
 
     /// Send a message to a peer
     pub async fn send(&self, peer_addr: &str, msg: &SyncMessage) -> Result<(), TransportError> {
-        let mut conns = self.connections.write().await;
-
-        if let Some(conn) = conns.get_mut(peer_addr) {
-            Self::write_message(&mut conn.stream, msg).await?;
-            conn.last_activity = std::time::Instant::now();
-            Ok(())
-        } else {
-            Err(TransportError::Disconnected)
-        }
+        let conn = self
+            .get_connection(peer_addr)
+            .await
+            .ok_or(TransportError::Disconnected)?;
+        let mut conn = conn.lock().await;
+        Self::write_message_timed(&mut conn.stream, msg).await?;
+        conn.last_activity = std::time::Instant::now();
+        Ok(())
     }
 
     /// Receive a message from a peer
     pub async fn receive(&self, peer_addr: &str) -> Result<SyncMessage, TransportError> {
-        let mut conns = self.connections.write().await;
-
-        if let Some(conn) = conns.get_mut(peer_addr) {
-            let msg = Self::read_message(&mut conn.stream).await?;
-            conn.last_activity = std::time::Instant::now();
-            Ok(msg)
-        } else {
-            Err(TransportError::Disconnected)
-        }
+        let conn = self
+            .get_connection(peer_addr)
+            .await
+            .ok_or(TransportError::Disconnected)?;
+        let mut conn = conn.lock().await;
+        let msg = Self::read_message(&mut conn.stream).await?;
+        conn.last_activity = std::time::Instant::now();
+        Ok(msg)
     }
 
     /// Disconnect from a peer
     pub async fn disconnect(&self, peer_addr: &str) {
         self.connections.write().await.remove(peer_addr);
+        self.heartbeat_connections.write().await.remove(peer_addr);
         debug!("Disconnected from peer: {}", peer_addr);
     }
 
@@ -454,7 +576,19 @@ impl SyncServer {
     }
 
     /// Accept incoming connection and authenticate
+    ///
+    /// Runs the handshake inline, so a caller looping on this is blocked by
+    /// one silent client; accept loops should use [`Self::accept_raw`] and
+    /// spawn [`Self::handshake`] per connection (audit A8).
     pub async fn accept(&self) -> Result<(SyncStream, String), TransportError> {
+        let (stream, peer_addr) = self.accept_raw().await?;
+        let stream = Self::handshake(stream, &self.keyfile_path).await?;
+        info!("Authenticated connection from {}", peer_addr);
+        Ok((stream, peer_addr))
+    }
+
+    /// Accept a TCP connection without authenticating it.
+    pub async fn accept_raw(&self) -> Result<(SyncStream, String), TransportError> {
         let listener = self.listener.as_ref().ok_or_else(|| {
             TransportError::IoError(std::io::Error::new(
                 std::io::ErrorKind::NotConnected,
@@ -463,15 +597,28 @@ impl SyncServer {
         })?;
         let (stream, addr) = listener.accept().await?;
         let peer_addr = addr.to_string();
-
         debug!("Incoming connection from {}", peer_addr);
+        Ok((Box::new(stream), peer_addr))
+    }
 
-        // Authenticate the client
-        let stream: SyncStream = Box::new(stream);
-        let stream = self.authenticate_server(stream).await?;
+    /// Keyfile used to authenticate inbound peers.
+    pub fn keyfile_path(&self) -> &str {
+        &self.keyfile_path
+    }
 
-        info!("Authenticated connection from {}", peer_addr);
-        Ok((stream, peer_addr))
+    /// Server-side handshake (magic header + challenge), bounded by
+    /// [`SERVER_HANDSHAKE_TIMEOUT`] so a client that connects and sends
+    /// nothing cannot hold the task.
+    pub async fn handshake(
+        stream: SyncStream,
+        keyfile_path: &str,
+    ) -> Result<SyncStream, TransportError> {
+        tokio::time::timeout(
+            SERVER_HANDSHAKE_TIMEOUT,
+            Self::authenticate_standalone(stream, keyfile_path),
+        )
+        .await
+        .map_err(|_| TransportError::AuthFailed("Handshake timed out".to_string()))?
     }
 
     /// Authenticate as server (send challenge, verify response)

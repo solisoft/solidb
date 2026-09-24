@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use super::handlers::AppState;
 use crate::error::DbError;
-use crate::triggers::{Trigger, TriggerEvent};
+use crate::triggers::{invalidate_trigger_cache, Trigger, TriggerEvent};
 
 #[derive(Debug, Serialize)]
 pub struct ListTriggersResponse {
@@ -187,6 +187,7 @@ pub async fn create_trigger_handler(
     let doc_val = serde_json::to_value(&trigger)
         .map_err(|e| DbError::InternalError(format!("Failed to serialize trigger: {}", e)))?;
     triggers_coll.insert(doc_val)?;
+    invalidate_trigger_cache(&db_name);
 
     Ok(Json(trigger))
 }
@@ -265,6 +266,7 @@ pub async fn update_trigger_handler(
     let doc_val = serde_json::to_value(&trigger)
         .map_err(|e| DbError::InternalError(format!("Failed to serialize trigger: {}", e)))?;
     triggers_coll.update_with_rev(&trigger_id, &rev, doc_val)?;
+    invalidate_trigger_cache(&db_name);
 
     Ok(Json(trigger))
 }
@@ -277,6 +279,7 @@ pub async fn delete_trigger_handler(
     let db = state.storage.get_database(&db_name)?;
     let triggers_coll = db.get_collection("_triggers")?;
     triggers_coll.delete(&trigger_id)?;
+    invalidate_trigger_cache(&db_name);
     Ok(Json(serde_json::json!({ "success": true })))
 }
 
@@ -336,6 +339,7 @@ pub async fn toggle_trigger_handler(
     let doc_val = serde_json::to_value(&trigger)
         .map_err(|e| DbError::InternalError(format!("Failed to serialize trigger: {}", e)))?;
     triggers_coll.update_with_rev(&trigger_id, &rev, doc_val)?;
+    invalidate_trigger_cache(&db_name);
 
     Ok(Json(trigger))
 }

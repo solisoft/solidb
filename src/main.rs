@@ -946,6 +946,20 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         ttl_worker_start.start().await;
     });
 
+    // Persist vector indexes changed by single-document writes, which only
+    // persist on a throttle; this bounds what a crash can lose to ~10 s.
+    tokio::spawn(async {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            let _ = tokio::task::spawn_blocking(
+                solidb::storage::collection::flush_dirty_vector_indexes,
+            )
+            .await;
+        }
+    });
+
     // Initialize AI Recovery Worker (autonomous recovery for stalled tasks and agent health)
     let recovery_config = solidb::ai::RecoveryConfig::default();
     let recovery_worker = Arc::new(solidb::ai::RecoveryWorker::new(
@@ -964,7 +978,13 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         storage.clone(),
     )));
 
-    // Create HTTP client with connection pooling for better performance
+    // Create HTTP client with connection pooling for better performance.
+    //
+    // Audit A10: a connect timeout alone let a peer that accepted the
+    // connection and then stalled hang sharded writes forever. `timeout` caps
+    // the whole request (streaming transfers override it per request with
+    // `cluster::http::stream_timeout()`), `read_timeout` catches a peer that
+    // goes quiet mid-body even on those.
     let http_client = Arc::new(
         reqwest::Client::builder()
             .pool_max_idle_per_host(10)
@@ -972,6 +992,8 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
             .tcp_keepalive(Duration::from_secs(60))
             .tcp_nodelay(true)
             .connect_timeout(Duration::from_secs(10))
+            .timeout(solidb::cluster::http::request_timeout())
+            .read_timeout(solidb::cluster::http::read_timeout())
             .build()
             .expect("Failed to create HTTP client"),
     );
@@ -1003,6 +1025,13 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         (None, None) => None,
         _ => anyhow::bail!("--tls-cert and --tls-key must be provided together to enable HTTPS"),
     };
+
+    // Audit L1: when this listener refuses plaintext, peers configured the
+    // same way can only be reached over TLS, so default inter-node URLs to
+    // https/wss (SOLIDB_CLUSTER_SCHEME still wins when set).
+    if tls_acceptor.is_some() && solidb::server::tls::tls_required() {
+        solidb::cluster::http::set_default_https(true);
+    }
 
     // Determine launch mode
     // Determine launch mode

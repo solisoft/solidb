@@ -17,7 +17,7 @@
 use super::{Collection, DOCV_PREFIX, ROW_POLICY_META_KEY, VERSIONING_META_KEY};
 use crate::error::{DbError, DbResult};
 use dashmap::DashMap;
-use rust_rocksdb::{AsColumnFamilyRef, Direction, IteratorMode, WriteBatch};
+use rust_rocksdb::{AsColumnFamilyRef, Direction, IteratorMode, ReadOptions, WriteBatch};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -91,6 +91,36 @@ impl Collection {
     fn version_key(key: &str, ts_micros: u64) -> String {
         // Inverted, fixed-width hex → newest-first, lexicographic == numeric order.
         format!("{}{}:{:016x}", DOCV_PREFIX, key, u64::MAX - ts_micros)
+    }
+
+    /// Whether `full_key` is a version of exactly `prefix`'s document.
+    ///
+    /// `docv:<key>:` is also a prefix of every version of `<key>:<anything>`
+    /// (audit D6: `prune_versions("a")` walked and deleted the history of all
+    /// `a:*` documents, and `get_as_of("victim")` could return a record stored
+    /// under `victim:ffff…`). A version of `<key>` has exactly the 16 hex
+    /// digits of the timestamp after the prefix; any other document's
+    /// remainder is longer, since it holds another `:<16 hex>` at least.
+    fn is_own_version(full_key: &[u8], prefix: &[u8]) -> bool {
+        full_key.len() == prefix.len() + 16
+            && full_key[prefix.len()..]
+                .iter()
+                .all(|b| b.is_ascii_hexdigit())
+    }
+
+    /// Exclusive upper bound for one document's versions: every own version
+    /// sorts at or below `docv:<key>:ffffffffffffffff`, so iteration stops
+    /// there instead of walking the rest of the `<key>:*` family.
+    fn version_upper_bound(key: &str) -> Vec<u8> {
+        let mut b = format!("{}{}:ffffffffffffffff", DOCV_PREFIX, key).into_bytes();
+        b.push(0);
+        b
+    }
+
+    fn version_read_opts(key: &str) -> ReadOptions {
+        let mut opts = ReadOptions::default();
+        opts.set_iterate_upper_bound(Self::version_upper_bound(key));
+        opts
     }
 
     /// Whether this collection records document history.
@@ -167,9 +197,11 @@ impl Collection {
         let prefix = Self::version_prefix(key);
         // First key >= inverted(as_of) is the newest version with ts <= as_of.
         let seek = Self::version_key(key, as_of_micros);
-        let iter = self
-            .db
-            .iterator_cf(&cf, IteratorMode::From(seek.as_bytes(), Direction::Forward));
+        let iter = self.db.iterator_cf_opt(
+            &cf,
+            Self::version_read_opts(key),
+            IteratorMode::From(seek.as_bytes(), Direction::Forward),
+        );
         for item in iter {
             let (k, v) = match item {
                 Ok(kv) => kv,
@@ -177,6 +209,9 @@ impl Collection {
             };
             if !k.starts_with(prefix.as_bytes()) {
                 break; // moved past this document's versions
+            }
+            if !Self::is_own_version(&k, prefix.as_bytes()) {
+                continue; // a version of `<key>:…`, not of `<key>`
             }
             let record: VersionRecord = match serde_json::from_slice(&v) {
                 Ok(r) => r,
@@ -206,9 +241,12 @@ impl Collection {
             let key_str = String::from_utf8_lossy(&k);
             // docv:<doc_key>:<inverted_hex>
             let rest = key_str.strip_prefix(DOCV_PREFIX).unwrap_or(&key_str);
-            let Some((doc_key, _)) = rest.rsplit_once(':') else {
+            let Some((doc_key, ts_hex)) = rest.rsplit_once(':') else {
                 continue;
             };
+            if ts_hex.len() != 16 || !ts_hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                continue;
+            }
             let Ok(record) = serde_json::from_slice::<VersionRecord>(&v) else {
                 continue;
             };
@@ -239,12 +277,20 @@ impl Collection {
         };
         let prefix = Self::version_prefix(key);
         let mut out = Vec::new();
-        for item in self.db.prefix_iterator_cf(&cf, prefix.as_bytes()) {
+        let iter = self.db.iterator_cf_opt(
+            &cf,
+            Self::version_read_opts(key),
+            IteratorMode::From(prefix.as_bytes(), Direction::Forward),
+        );
+        for item in iter {
             let Ok((k, v)) = item else {
                 break;
             };
             if !k.starts_with(prefix.as_bytes()) {
                 break;
+            }
+            if !Self::is_own_version(&k, prefix.as_bytes()) {
+                continue;
             }
             if let Ok(record) = serde_json::from_slice::<VersionRecord>(&v) {
                 out.push(serde_json::json!({
@@ -266,20 +312,26 @@ impl Collection {
         };
         let prefix = Self::version_prefix(key);
         let mut to_delete: Vec<Box<[u8]>> = Vec::new();
-        for (idx, item) in self
-            .db
-            .prefix_iterator_cf(&cf, prefix.as_bytes())
-            .enumerate()
-        {
+        let iter = self.db.iterator_cf_opt(
+            &cf,
+            Self::version_read_opts(key),
+            IteratorMode::From(prefix.as_bytes(), Direction::Forward),
+        );
+        let mut own = 0usize;
+        for item in iter {
             let Ok((k, _)) = item else {
                 break;
             };
             if !k.starts_with(prefix.as_bytes()) {
                 break;
             }
-            if idx >= max {
+            if !Self::is_own_version(&k, prefix.as_bytes()) {
+                continue; // another document's history: never ours to prune
+            }
+            if own >= max {
                 to_delete.push(k); // newest-first, so these are the oldest
             }
+            own += 1;
         }
         for k in to_delete {
             let _ = self.db.delete_cf(&cf, k);
@@ -311,5 +363,32 @@ impl Collection {
             .ok()
             .flatten()
             .and_then(|b| String::from_utf8(b).ok())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn own_version_requires_exact_timestamp_remainder() {
+        let prefix = Collection::version_prefix("a");
+        let own = Collection::version_key("a", 42);
+        let other = Collection::version_key("a:b", 42);
+        let hexy_other = Collection::version_key("a:0123456789abcdef", 42);
+        assert!(Collection::is_own_version(
+            own.as_bytes(),
+            prefix.as_bytes()
+        ));
+        assert!(!Collection::is_own_version(
+            other.as_bytes(),
+            prefix.as_bytes()
+        ));
+        assert!(!Collection::is_own_version(
+            hexy_other.as_bytes(),
+            prefix.as_bytes()
+        ));
+        // Every own version sorts below the per-key upper bound.
+        assert!(own.as_bytes() < Collection::version_upper_bound("a").as_slice());
     }
 }

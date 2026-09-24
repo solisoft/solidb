@@ -195,8 +195,13 @@ pub struct StorageEngine {
     databases: Arc<DashMap<String, Database>>,
     /// Cluster configuration (if running in cluster mode)
     cluster_config: Option<ClusterConfig>,
-    /// Transaction manager (optionally initialized, uses RwLock for interior mutability)
-    transaction_manager: RwLock<Option<Arc<TransactionManager>>>,
+    /// Transaction manager, created on first use. Shared by every clone:
+    /// each clone used to copy the `Option` it saw at clone time, so clones
+    /// taken before initialisation each built their own manager — separate
+    /// lock tables and active-transaction maps over the same data. A
+    /// `OnceCell` also closes the check-then-set race in
+    /// `initialize_transactions` (audit M7).
+    transaction_manager: Arc<once_cell::sync::OnceCell<Arc<TransactionManager>>>,
     /// Column families scheduled for background drop (see `pending_drops`)
     pending_cf_drops: Arc<PendingCfDrops>,
     /// Cloned with the engine, and by nothing else. `Drop` runs once per
@@ -216,9 +221,7 @@ impl Clone for StorageEngine {
             collections: self.collections.clone(),
             databases: self.databases.clone(),
             cluster_config: self.cluster_config.clone(),
-            transaction_manager: RwLock::new(
-                self.transaction_manager.read().ok().and_then(|t| t.clone()),
-            ),
+            transaction_manager: Arc::clone(&self.transaction_manager),
             pending_cf_drops: self.pending_cf_drops.clone(),
             liveness: Arc::clone(&self.liveness),
         }
@@ -338,7 +341,7 @@ impl StorageEngine {
             collections: Arc::new(DashMap::new()),
             databases: Arc::new(DashMap::new()),
             cluster_config: None,
-            transaction_manager: RwLock::new(None),
+            transaction_manager: Arc::new(once_cell::sync::OnceCell::new()),
             pending_cf_drops: PendingCfDrops::new(),
             liveness: Arc::new(()),
         })
@@ -702,7 +705,8 @@ impl StorageEngine {
             name.to_string(),
             self.db.clone(),
             self.pending_cf_drops.clone(),
-        );
+        )
+        .with_engine_cache(self.collections.clone());
         self.databases.insert(name.to_string(), database.clone());
 
         Ok(database)
@@ -781,8 +785,9 @@ impl StorageEngine {
         }
 
         // A cached handle from the pre-drop incarnation of this CF must not
-        // shadow the fresh one.
+        // shadow the fresh one — in this cache or the owning database's.
         self.collections.remove(&name);
+        self.evict_database_cached_collection(&name);
         super::collection::index_meta::invalidate_index_meta(&self.db, &name);
 
         // Persist collection type (lock-free, thread-safe)
@@ -902,9 +907,20 @@ impl StorageEngine {
 
         // Drop the stale cached handle so a later same-name create starts fresh.
         self.collections.remove(name);
+        self.evict_database_cached_collection(name);
         super::collection::index_meta::invalidate_index_meta(&self.db, name);
 
         Ok(())
+    }
+
+    /// Evict `db:coll` from the owning `Database`'s handle cache, if that
+    /// database is loaded (audit D8: the two caches share instances).
+    fn evict_database_cached_collection(&self, cf_name: &str) {
+        if let Some((db_name, coll_name)) = cf_name.split_once(':') {
+            if let Some(database) = self.databases.get(db_name) {
+                database.evict_cached_collection(coll_name);
+            }
+        }
     }
 
     /// List all collection names
@@ -1061,173 +1077,177 @@ impl StorageEngine {
     // ==================== Transaction Operations ====================
 
     /// Initialize transaction manager (call once on startup if transactions are needed)
+    ///
+    /// Runs at most once per engine (and its clones): concurrent first
+    /// callers block on the cell rather than each replaying the WAL.
     pub fn initialize_transactions(&self) -> DbResult<()> {
-        // Check if already initialized (read lock first)
-        {
-            if let Ok(tx_mgr) = self.transaction_manager.read() {
-                if tx_mgr.is_some() {
-                    return Ok(()); // Already initialized
+        self.transaction_manager
+            .get_or_try_init(|| -> DbResult<Arc<TransactionManager>> {
+                let wal_path = self.path.join("transaction.wal");
+
+                // Recover any committed transactions from WAL BEFORE creating
+                // the manager.
+                let recovered = self.recover_transactions()?;
+
+                let manager = TransactionManager::new(wal_path)?;
+
+                // Audit M7: the log holds nothing that is not applied now, so
+                // empty it instead of re-reading an ever-growing file at every
+                // startup. Kept when recovery skipped something, so it stays
+                // available for inspection.
+                if recovered {
+                    if let Err(e) = manager.checkpoint() {
+                        tracing::warn!("Failed to truncate transaction WAL: {}", e);
+                    }
                 }
-            }
-        }
 
-        let wal_path = self.path.join("transaction.wal");
-
-        // Recover any committed transactions from WAL BEFORE creating manager
-        // This ensures we don't double-apply on restart
-        self.recover_transactions()?;
-
-        let manager = TransactionManager::new(wal_path)?;
-
-        // Now acquire write lock to store manager
-        {
-            if let Ok(mut tx_mgr) = self.transaction_manager.write() {
-                *tx_mgr = Some(Arc::new(manager));
-            }
-        }
-
-        tracing::info!("Transaction manager initialized");
-        Ok(())
+                tracing::info!("Transaction manager initialized");
+                Ok(Arc::new(manager))
+            })
+            .map(|_| ())
     }
 
     /// Get transaction manager (initializes if needed)
     pub fn transaction_manager(&self) -> DbResult<Arc<TransactionManager>> {
-        // Try to read first
-        {
-            if let Ok(tx_mgr) = self.transaction_manager.read() {
-                if let Some(ref manager) = *tx_mgr {
-                    return Ok(manager.clone());
-                }
-            }
+        if let Some(manager) = self.transaction_manager.get() {
+            return Ok(manager.clone());
         }
-
-        // Not initialized, so initialize it
         self.initialize_transactions()?;
-
-        // Read again after initialization
-        if let Ok(tx_mgr) = self.transaction_manager.read() {
-            if let Some(manager) = tx_mgr.as_ref() {
-                return Ok(manager.clone());
-            }
-        }
-
-        Err(DbError::InternalError(
-            "Transaction manager not initialized".to_string(),
-        ))
+        self.transaction_manager.get().cloned().ok_or_else(|| {
+            DbError::InternalError("Transaction manager not initialized".to_string())
+        })
     }
 
-    /// Recover committed transactions from WAL (called on startup)
-    fn recover_transactions(&self) -> DbResult<()> {
+    /// The manager, only if something already initialized it.
+    fn initialized_transaction_manager(&self) -> DbResult<Arc<TransactionManager>> {
+        self.transaction_manager.get().cloned().ok_or_else(|| {
+            DbError::InternalError("Transaction manager not initialized".to_string())
+        })
+    }
+
+    /// Recover committed transactions from WAL (called on startup).
+    ///
+    /// Returns whether every committed transaction in the log was applied.
+    /// Since operations stopped being logged, a log written by this version
+    /// holds none; replay is kept for logs left by older ones.
+    fn recover_transactions(&self) -> DbResult<bool> {
         use crate::transaction::wal::WalReader;
 
         let wal_path = self.path.join("transaction.wal");
         if !wal_path.exists() {
-            return Ok(()); // No WAL to recover
+            return Ok(true); // No WAL to recover
         }
 
         let reader = WalReader::new(&wal_path);
         let committed_txs = reader.replay()?;
 
-        if committed_txs.is_empty() {
-            return Ok(());
+        let with_ops: Vec<_> = committed_txs
+            .into_iter()
+            .filter(|tx| !tx.operations.is_empty())
+            .collect();
+        if with_ops.is_empty() {
+            return Ok(true);
         }
 
         tracing::info!(
             "Recovering {} committed transactions from WAL",
-            committed_txs.len()
+            with_ops.len()
         );
 
-        // Apply each committed transaction
-        for tx in committed_txs {
-            // Group operations by collection
-            let mut ops_by_collection: HashMap<String, Vec<crate::transaction::Operation>> =
-                HashMap::new();
-
-            for op in tx.operations {
-                let coll_name = format!("{}:{}", op.database(), op.collection());
-                ops_by_collection.entry(coll_name).or_default().push(op);
-            }
-
-            // Apply operations for each collection
-            for (coll_name, ops) in ops_by_collection {
-                if let Ok(collection) = self.system_collection(&coll_name) {
-                    collection.apply_transaction_operations(ops)?;
-                } else {
-                    tracing::warn!(
-                        "Collection {} not found during WAL recovery, skipping",
-                        coll_name
-                    );
-                }
+        let mut complete = true;
+        for tx in with_ops {
+            // A conflict here most likely means the transaction was already
+            // applied before the restart; skip it rather than refuse to start.
+            if let Err(e) = self.apply_operations_atomically(&tx.operations, true) {
+                tracing::warn!("Skipping transaction {} during WAL recovery: {}", tx.id, e);
+                complete = false;
             }
         }
 
         tracing::info!("Transaction recovery complete");
+        Ok(complete)
+    }
+
+    /// Stage every operation, across all collections, into ONE `WriteBatch`
+    /// and write it. All collections are column families of the same RocksDB
+    /// instance, so the batch is atomic across them: either every document,
+    /// index entry and version record lands, or none does. In-memory effects
+    /// (vector indexes, counts, change events) run only after the write.
+    fn apply_operations_atomically(
+        &self,
+        operations: &[crate::transaction::Operation],
+        sync: bool,
+    ) -> DbResult<()> {
+        // Group by collection, keeping each collection's operations in order.
+        let mut order: Vec<String> = Vec::new();
+        let mut ops_by_collection: HashMap<String, Vec<crate::transaction::Operation>> =
+            HashMap::new();
+        for op in operations {
+            let coll_name = format!("{}:{}", op.database(), op.collection());
+            let entry = ops_by_collection.entry(coll_name.clone()).or_default();
+            if entry.is_empty() {
+                order.push(coll_name);
+            }
+            entry.push(op.clone());
+        }
+
+        // Collections are locked in name order: a commit is the only writer
+        // that holds write stripes of several collections at once, and a
+        // fixed order keeps two commits from deadlocking on them.
+        order.sort();
+
+        let mut batch = rust_rocksdb::WriteBatch::default();
+        let mut staged = Vec::with_capacity(order.len());
+        let mut guards = Vec::new();
+        for coll_name in order {
+            let ops = ops_by_collection.remove(&coll_name).unwrap_or_default();
+            let collection = self.system_collection(&coll_name)?;
+            guards.extend(collection.lock_for_transaction(&ops));
+            let plan = collection.stage_transaction_operations(&ops, &mut batch)?;
+            staged.push((collection, plan));
+        }
+
+        let mut write_opts = rust_rocksdb::WriteOptions::default();
+        write_opts.set_sync(sync);
+        self.db.write_opt(&batch, &write_opts).map_err(|e| {
+            DbError::InternalError(format!("Failed to commit transaction batch: {}", e))
+        })?;
+        drop(guards);
+
+        for (collection, plan) in staged {
+            collection.finish_transaction_operations(plan);
+        }
         Ok(())
     }
 
-    /// Commit a transaction by applying all operations atomically
+    /// Commit a transaction by applying all operations atomically.
+    ///
+    /// Audit D2: this used to write one batch per collection and only then
+    /// validate, so a failed validation or a failure in a later collection
+    /// left earlier writes committed, and the transaction (with its locks)
+    /// lingered until the expiry reaper. Now: validate, stage everything into
+    /// one batch, write once. Any failure writes nothing, and the transaction
+    /// is removed and its locks released before the error is returned.
     pub fn commit_transaction(&self, tx_id: crate::transaction::TransactionId) -> DbResult<()> {
-        let manager = {
-            if let Ok(tx_mgr) = self.transaction_manager.read() {
-                if let Some(mgr) = tx_mgr.as_ref() {
-                    mgr.clone()
-                } else {
-                    return Err(DbError::InternalError(
-                        "Transaction manager not initialized".to_string(),
-                    ));
-                }
-            } else {
-                return Err(DbError::InternalError(
-                    "Transaction manager lock failed".to_string(),
-                ));
-            }
-        };
+        let manager = self.initialized_transaction_manager()?;
 
-        // Get transaction
-        let tx_arc = manager.get(tx_id)?;
-        let operations = {
-            let tx = tx_arc.read().expect("Transaction lock poisoned");
-            tx.operations.clone()
-        };
+        // Freezes the transaction and validates it; aborts it on failure.
+        let (operations, sync) = manager.prepare_commit(tx_id)?;
 
-        // Group operations by collection
-        let mut ops_by_collection: HashMap<String, Vec<crate::transaction::Operation>> =
-            HashMap::new();
-
-        for op in operations {
-            let coll_name = format!("{}:{}", op.database(), op.collection());
-            ops_by_collection.entry(coll_name).or_default().push(op);
+        // Staging re-reads every touched document while this transaction
+        // still holds its exclusive locks, so the conflict checks see the
+        // state the write will land on.
+        if let Err(e) = self.apply_operations_atomically(&operations, sync) {
+            manager.abort(tx_id);
+            return Err(e);
         }
 
-        // Apply operations for each collection
-        for (coll_name, ops) in ops_by_collection {
-            let collection = self.system_collection(&coll_name)?;
-            collection.apply_transaction_operations(ops)?;
-        }
-
-        // Mark transaction as committed in manager
-        manager.commit(tx_id)?;
-
-        Ok(())
+        manager.finish_commit(tx_id)
     }
 
     /// Rollback a transaction (operations already in WAL as aborted)
     pub fn rollback_transaction(&self, tx_id: crate::transaction::TransactionId) -> DbResult<()> {
-        let manager = {
-            if let Ok(tx_mgr) = self.transaction_manager.read() {
-                if let Some(mgr) = tx_mgr.as_ref() {
-                    mgr.clone()
-                } else {
-                    return Err(DbError::InternalError(
-                        "Transaction manager not initialized".to_string(),
-                    ));
-                }
-            } else {
-                return Err(DbError::InternalError(
-                    "Transaction manager lock failed".to_string(),
-                ));
-            }
-        };
+        let manager = self.initialized_transaction_manager()?;
 
         // Just mark as aborted - operations were never applied
         manager.rollback(tx_id)?;
@@ -1274,9 +1294,6 @@ impl Drop for StorageEngine {
         // This ensures proper cleanup order and avoids pthread mutex issues
         self.collections.clear();
         self.databases.clear();
-        if let Ok(mut tm) = self.transaction_manager.write() {
-            *tm = None;
-        }
 
         if last {
             // Before the flush and before this handle's `Arc<DB>` goes away:

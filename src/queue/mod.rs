@@ -42,6 +42,36 @@ pub struct QueueWorker {
     /// Per-node next-due times ("db:view" -> unix secs) for scheduled
     /// materialized-view refreshes. In-memory (reset on restart).
     pub(crate) mv_next_due: std::sync::Mutex<std::collections::HashMap<String, u64>>,
+    /// Bounds concurrently executing jobs across every database (Audit P9).
+    /// Sized by `SOLIDB_QUEUE_MAX_CONCURRENCY`, default four per core.
+    pub(crate) job_permits: Arc<tokio::sync::Semaphore>,
+    /// (database, job key) of jobs this process is executing right now, so
+    /// lease recovery never requeues a job that is merely slow.
+    pub(crate) in_flight: Arc<std::sync::Mutex<std::collections::HashSet<(String, String)>>>,
+    /// When `_jobs` retention / lease recovery last ran.
+    last_job_sweep: std::sync::Mutex<Option<std::time::Instant>>,
+    /// Per "(db, collection, index)" unix-seconds before which embedding is
+    /// not retried after a failure. It used to be one process-wide deadline,
+    /// so one tenant's bad provider config stalled every tenant (Audit P9).
+    pub(crate) embed_backoff: std::sync::Mutex<std::collections::HashMap<String, u64>>,
+}
+
+/// How often the `_jobs` retention / lease sweep runs.
+const JOB_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
+
+/// `SOLIDB_QUEUE_MAX_CONCURRENCY`, default 4 × available cores.
+fn queue_max_concurrency() -> usize {
+    std::env::var("SOLIDB_QUEUE_MAX_CONCURRENCY")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+                .saturating_mul(4)
+        })
+        .min(tokio::sync::Semaphore::MAX_PERMITS)
 }
 
 impl QueueWorker {
@@ -81,11 +111,31 @@ impl QueueWorker {
             notifier,
             claiming_lock: tokio::sync::Mutex::new(()),
             mv_next_due: std::sync::Mutex::new(std::collections::HashMap::new()),
+            job_permits: Arc::new(tokio::sync::Semaphore::new(queue_max_concurrency())),
+            in_flight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
+            last_job_sweep: std::sync::Mutex::new(None),
+            embed_backoff: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 
     pub fn notifier(&self) -> broadcast::Sender<()> {
         self.notifier.clone()
+    }
+
+    /// Run the `_jobs` sweep on the first loop pass (start-up) and then at
+    /// most once per [`JOB_SWEEP_INTERVAL`].
+    async fn maybe_sweep_jobs(&self) {
+        {
+            let mut last = match self.last_job_sweep.lock() {
+                Ok(l) => l,
+                Err(_) => return,
+            };
+            if last.is_some_and(|t| t.elapsed() < JOB_SWEEP_INTERVAL) {
+                return;
+            }
+            *last = Some(std::time::Instant::now());
+        }
+        self.sweep_jobs().await;
     }
 
     /// Run the maintenance loop: claim due jobs, sweep pending embeddings,
@@ -113,6 +163,7 @@ impl QueueWorker {
                 }
             }
 
+            self.maybe_sweep_jobs().await;
             self.check_jobs().await;
             self.check_embeddings().await;
             self.check_materialized_views().await;

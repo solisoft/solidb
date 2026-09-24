@@ -24,9 +24,9 @@ impl Collection {
     /// Get all vector index configurations
     pub fn get_all_vector_index_configs(&self) -> Vec<VectorIndexConfig> {
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        let Some(cf) = db.cf_handle(&self.name) else {
+            return Vec::new(); // column family dropped mid-operation
+        };
         let prefix = VEC_META_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(&cf, prefix);
 
@@ -292,7 +292,8 @@ impl Collection {
         let fetch = k.saturating_mul(overfetch.max(1)).max(k);
         let candidates = self.vector_search(name, query, fetch, ef_search)?;
 
-        let mut out: Vec<(Value, f32)> = Vec::with_capacity(k);
+        // Audit A2: `k` is caller-controlled; never reserve more than exists.
+        let mut out: Vec<(Value, f32)> = Vec::with_capacity(k.min(candidates.len()));
         for r in candidates {
             if out.len() >= k {
                 break;
@@ -362,16 +363,31 @@ impl Collection {
 
     /// Persist all in-memory vector indexes to disk
     pub fn persist_vector_indexes(&self) -> DbResult<()> {
-        let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
+        Self::persist_vector_index_map(&self.db, &self.name, &self.vector_indexes)
+    }
 
-        for entry in self.vector_indexes.iter() {
-            let name = entry.key();
-            let index_arc = entry.value();
+    /// Persist every index in `indexes` into column family `cf_name`.
+    pub(crate) fn persist_vector_index_map(
+        db: &crate::storage::RocksDb,
+        cf_name: &str,
+        indexes: &dashmap::DashMap<String, Arc<VectorIndex>>,
+    ) -> DbResult<()> {
+        let cf = db.cf_handle(cf_name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!(
+                "{} (column family dropped mid-operation)",
+                cf_name
+            ))
+        })?;
+
+        // Snapshot the handles first: serializing a large index takes a
+        // while, and must not pin a DashMap shard lock meanwhile.
+        let snapshot: Vec<(String, Arc<VectorIndex>)> = indexes
+            .iter()
+            .map(|e| (e.key().clone(), Arc::clone(e.value())))
+            .collect();
+        for (name, index_arc) in snapshot {
             let bytes = index_arc.serialize()?;
-            db.put_cf(&cf, Self::vec_data_key(name), &bytes)
+            db.put_cf(&cf, Self::vec_data_key(&name), &bytes)
                 .map_err(|e| {
                     DbError::InternalError(format!(
                         "Failed to persist vector index {}: {}",
@@ -413,8 +429,7 @@ impl Collection {
                     // Mark for (throttled) persistence; the actual disk write is
                     // deferred so a bulk load doesn't re-serialize the whole
                     // index per batch.
-                    self.vec_dirty
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                    self.mark_vec_dirty();
                     if config.embedding_source.is_some() {
                         // Vector is now present; drop any stale pending-embed marker.
                         self.clear_embed_pending(&config.name, doc_key);
@@ -448,8 +463,7 @@ impl Collection {
             }
         }
         if changed {
-            self.vec_dirty
-                .store(true, std::sync::atomic::Ordering::Relaxed);
+            self.mark_vec_dirty();
         }
         // Drop any pending-embed markers for this doc across all auto-embed indexes.
         for config in self.get_all_vector_index_configs() {

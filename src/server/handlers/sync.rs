@@ -1,8 +1,14 @@
 use super::system::AppState;
 use crate::error::DbError;
+use crate::server::auth::Claims;
+use crate::storage::WriteActor;
 use crate::sync::{
     protocol::Operation,
-    session::{ChangeOperation, SyncChange, SyncSession},
+    session::{
+        validate_device_id, ChangeOperation, SyncChange, SyncSession, SyncSessionManager,
+        MAX_FILTER_QUERY_LEN, MAX_SESSIONS_PER_PRINCIPAL, MAX_SUBSCRIPTIONS, MAX_SUBSCRIPTION_LEN,
+        MAX_TOTAL_SESSIONS,
+    },
     LogEntry, VersionVector,
 };
 use axum::{
@@ -188,6 +194,57 @@ fn log_entry_to_sync_change(entry: &LogEntry) -> SyncChange {
     }
 }
 
+/// Maximum number of log entries one pull may return (audit H3).
+const MAX_PULL_LIMIT: usize = 1000;
+const DEFAULT_PULL_LIMIT: usize = 100;
+
+/// Clamp a client-supplied pull `limit` to `1..=MAX_PULL_LIMIT`.
+fn clamp_pull_limit(requested: Option<u64>) -> usize {
+    requested
+        .map(|n| n.min(MAX_PULL_LIMIT as u64) as usize)
+        .unwrap_or(DEFAULT_PULL_LIMIT)
+        .max(1)
+}
+
+/// Whether a replication-log entry may be handed to a sync client at all,
+/// before any per-database permission check.
+///
+/// The credential tier (`_admins`, `_api_keys`, `_env`, `_roles`,
+/// `_user_roles`) is never readable by name, and the sync log carries its
+/// rows verbatim — password and key hashes included (audit H3).
+fn servable_to_sync_client(entry: &LogEntry) -> bool {
+    !crate::storage::is_protected_collection(&entry.collection)
+}
+
+/// Look up a session and check it belongs to the caller.
+///
+/// A session is bound to the principal that registered it (audit M2). One
+/// owned by somebody else is reported exactly like a missing one, so session
+/// ids cannot be probed.
+async fn owned_session(
+    state: &AppState,
+    session_id: &str,
+    claims: &Claims,
+) -> Result<SyncSession, DbError> {
+    let session_manager = get_session_manager(state)?;
+    let not_found = || DbError::BadRequest(format!("Session '{}' not found", session_id));
+    let session = session_manager
+        .get_session(session_id)
+        .await
+        .ok_or_else(not_found)?;
+    if session.user_id.as_deref() != Some(claims.sub.as_str()) {
+        return Err(not_found());
+    }
+    Ok(session)
+}
+
+fn get_session_manager(state: &AppState) -> Result<&SyncSessionManager, DbError> {
+    state
+        .sync_session_manager
+        .as_deref()
+        .ok_or_else(|| DbError::InternalError("Sync session manager not initialized".to_string()))
+}
+
 // ==================== Request/Response Types ====================
 
 #[derive(Debug, Deserialize)]
@@ -237,6 +294,7 @@ pub struct ResolveConflictRequest {
 /// Register a new sync session for offline-first synchronization
 pub async fn register_sync_session(
     State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<Claims>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, DbError> {
     // Parse request fields from JSON
@@ -245,6 +303,7 @@ pub async fn register_sync_session(
         .and_then(|v| v.as_str())
         .ok_or_else(|| DbError::BadRequest("device_id is required".to_string()))?
         .to_string();
+    validate_device_id(&device_id).map_err(DbError::BadRequest)?;
 
     let api_key = req
         .get("api_key")
@@ -261,11 +320,38 @@ pub async fn register_sync_session(
                 .collect()
         })
         .unwrap_or_default();
+    if subscriptions.len() > MAX_SUBSCRIPTIONS {
+        return Err(DbError::BadRequest(format!(
+            "at most {} subscriptions per session",
+            MAX_SUBSCRIPTIONS
+        )));
+    }
+    for sub in &subscriptions {
+        if sub.len() > MAX_SUBSCRIPTION_LEN {
+            return Err(DbError::BadRequest(format!(
+                "subscription names are limited to {} bytes",
+                MAX_SUBSCRIPTION_LEN
+            )));
+        }
+        // Pull drops these anyway; refusing here tells the client why.
+        if crate::storage::is_protected_collection(sub) {
+            return Err(crate::storage::protected_collection_error(sub));
+        }
+    }
 
     let filter_query = req
         .get("filter_query")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    if filter_query
+        .as_ref()
+        .is_some_and(|f| f.len() > MAX_FILTER_QUERY_LEN)
+    {
+        return Err(DbError::BadRequest(format!(
+            "filter_query is limited to {} bytes",
+            MAX_FILTER_QUERY_LEN
+        )));
+    }
 
     // Get cluster secret for HMAC signing
     let cluster_secret = state.cluster_secret();
@@ -283,13 +369,13 @@ pub async fn register_sync_session(
     let session_id = session.session_id.clone();
     session.subscriptions = subscriptions;
     session.filter_query = filter_query;
+    // Bind the session to its creator; every other endpoint checks this.
+    session.user_id = Some(claims.sub.clone());
 
-    // Store session in manager
-    let session_manager = state.sync_session_manager.as_ref().ok_or_else(|| {
-        DbError::InternalError("Sync session manager not initialized".to_string())
-    })?;
-
-    session_manager.register_session(session).await;
+    get_session_manager(&state)?
+        .register_session_bounded(session, MAX_SESSIONS_PER_PRINCIPAL, MAX_TOTAL_SESSIONS)
+        .await
+        .map_err(|e| DbError::RateLimited(e, 60))?;
 
     // Get server vector (for now, return empty - would be fetched from sync state)
     let server_vector = VersionVector::new();
@@ -322,15 +408,8 @@ pub async fn pull_changes(
         .ok_or_else(|| DbError::BadRequest("session_id is required".to_string()))?
         .to_string();
 
-    // Verify session exists
-    let session_manager = state.sync_session_manager.as_ref().ok_or_else(|| {
-        DbError::InternalError("Sync session manager not initialized".to_string())
-    })?;
-
-    let session = session_manager
-        .get_session(&session_id)
-        .await
-        .ok_or_else(|| DbError::BadRequest(format!("Session '{}' not found", session_id)))?;
+    let session_manager = get_session_manager(&state)?;
+    let session = owned_session(&state, &session_id, &claims).await?;
 
     // Verify session ID signature if cluster secret is configured
     let cluster_secret = state.cluster_secret();
@@ -346,11 +425,7 @@ pub async fn pull_changes(
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_else(VersionVector::new);
 
-    let limit = req
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as usize)
-        .unwrap_or(100);
+    let limit = clamp_pull_limit(req.get("limit").and_then(|v| v.as_u64()));
 
     // Get session's subscriptions and last sequence
     let subscriptions = &session.subscriptions;
@@ -364,9 +439,21 @@ pub async fn pull_changes(
 
     let log_entries = sync_log.get_entries_after(after_sequence, limit);
 
-    // Filter by subscriptions (if any subscriptions are specified)
+    // Cursor and paging come from what was *read*, not what survives the
+    // filters below: otherwise a session whose filters drop a whole page
+    // never advances past it.
+    let has_more = log_entries.len() == limit;
+    let max_seq = log_entries
+        .iter()
+        .map(|e| e.sequence)
+        .max()
+        .unwrap_or(after_sequence);
+
+    // Filter by subscriptions (if any subscriptions are specified), and never
+    // serve the credential tier.
     let filtered: Vec<_> = log_entries
         .into_iter()
+        .filter(servable_to_sync_client)
         .filter(|e| subscriptions.is_empty() || subscriptions.contains(&e.collection))
         .collect();
 
@@ -419,25 +506,12 @@ pub async fn pull_changes(
     // Convert LogEntry -> SyncChange
     let changes: Vec<SyncChange> = filtered.iter().map(log_entry_to_sync_change).collect();
 
-    // Build response
-    let has_more = changes.len() == limit;
-    let max_seq = filtered
-        .iter()
-        .map(|e| e.sequence)
-        .max()
-        .unwrap_or(after_sequence);
-
     // Build server vector from the latest entries
     let mut server_vector = VersionVector::new();
     for entry in &filtered {
-        let current = server_vector.get(&entry.node_id);
-        if entry.sequence > current {
-            server_vector.increment(&entry.node_id);
-            // Set to actual sequence value
-            while server_vector.get(&entry.node_id) < entry.sequence {
-                server_vector.increment(&entry.node_id);
-            }
-        }
+        // A max-merge, not an increment loop: that was O(sequence) per entry,
+        // millions of iterations on a long-lived node.
+        server_vector.merge(&VersionVector::with_node(&entry.node_id, entry.sequence));
     }
 
     // Update session with the new sequence
@@ -462,36 +536,79 @@ pub async fn pull_changes(
 
 /// Write a single pushed change into storage.
 ///
-/// Creates the database and collection on demand, mirroring what the cluster
-/// replication worker does when it receives an entry for something this node
-/// has not seen yet (`sync/worker.rs`).
+/// The collection is resolved through the write-tier guard with the caller's
+/// identity (audit C2): a push is a client write like any other, so
+/// `_scripts`, `_triggers`, the credential tier and — without Admin — `_jobs`
+/// are refused before anything is created. A missing collection is created
+/// on demand under the same rule as the document API
+/// (`SOLIDB_AUTO_CREATE_COLLECTIONS`). A missing database is created only
+/// when `can_create_database` says the caller holds the instance-level Admin
+/// that `POST /_api/database` requires.
 ///
 /// Delta changes are rejected rather than silently dropped: `SyncChange`
 /// carries `is_delta`/`delta_patch`, but no patch application exists anywhere
 /// in the codebase yet, so accepting one would lose the write.
-fn apply_sync_change(state: &AppState, change: &SyncChange) -> Result<(), DbError> {
+fn apply_sync_change(
+    state: &AppState,
+    change: &SyncChange,
+    actor: WriteActor,
+    can_create_database: bool,
+) -> Result<(), DbError> {
     if change.is_delta {
         return Err(DbError::OperationNotSupported(
             "delta sync changes are not supported; push the full document".to_string(),
         ));
     }
 
-    if matches!(
+    // Refuse the protected tiers before anything is created on their behalf.
+    crate::storage::check_write_access(&change.collection, actor)?;
+
+    let is_write = matches!(
         change.operation,
         ChangeOperation::Insert | ChangeOperation::Update
-    ) {
-        if state.storage.get_database(&change.database).is_err() {
-            let _ = state.storage.create_database(change.database.clone());
-        }
-        if let Ok(db) = state.storage.get_database(&change.database) {
-            if db.get_collection(&change.collection).is_err() {
-                let _ = db.create_collection(change.collection.clone(), None);
-            }
-        }
-    }
+    );
 
-    let db = state.storage.get_database(&change.database)?;
-    let collection = db.get_collection(&change.collection)?;
+    let db = match state.storage.get_database(&change.database) {
+        Ok(db) => db,
+        Err(DbError::CollectionNotFound(_)) if is_write && can_create_database => {
+            match state.storage.create_database(change.database.clone()) {
+                Ok(()) => {
+                    // Replicate the creation like `POST /_api/database` does,
+                    // or peers receive documents for a database they lack.
+                    if let Some(ref log) = state.replication_log {
+                        log.append(LogEntry::new_op(
+                            change.database.clone(),
+                            "",
+                            Operation::CreateDatabase,
+                            "",
+                            None,
+                        ));
+                    }
+                }
+                // Lost a race with a concurrent creator.
+                Err(DbError::CollectionAlreadyExists(_)) => {}
+                Err(e) => return Err(e),
+            }
+            state.storage.get_database(&change.database)?
+        }
+        Err(e) => return Err(e),
+    };
+    let collection = match db.get_collection_for_write(&change.collection, actor) {
+        Ok(coll) => coll,
+        Err(DbError::CollectionNotFound(_))
+            if is_write && crate::storage::cf_ops::auto_create_enabled() =>
+        {
+            crate::storage::cf_ops::record_autocreate();
+            if let Err(e) = db.create_collection(change.collection.clone(), None) {
+                // Lost a race with a concurrent creator: fine, fetch below.
+                if !matches!(e, DbError::CollectionAlreadyExists(_)) {
+                    return Err(e);
+                }
+            }
+            db.get_collection_for_write(&change.collection, actor)?
+        }
+        Err(e) => return Err(e),
+    };
 
     match change.operation {
         ChangeOperation::Insert | ChangeOperation::Update => {
@@ -530,15 +647,8 @@ pub async fn push_changes(
         .ok_or_else(|| DbError::BadRequest("session_id is required".to_string()))?
         .to_string();
 
-    // Verify session exists
-    let session_manager = state.sync_session_manager.as_ref().ok_or_else(|| {
-        DbError::InternalError("Sync session manager not initialized".to_string())
-    })?;
-
-    let session = session_manager
-        .get_session(&session_id)
-        .await
-        .ok_or_else(|| DbError::BadRequest(format!("Session '{}' not found", session_id)))?;
+    let session_manager = get_session_manager(&state)?;
+    let session = owned_session(&state, &session_id, &claims).await?;
 
     // Verify session ID signature if cluster secret is configured
     let cluster_secret = state.cluster_secret();
@@ -559,10 +669,21 @@ pub async fn push_changes(
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_else(VersionVector::new);
 
+    let write_actor = crate::server::handlers::query::write_actor_from_claims(Some(&claims));
+
     // Per-database write permission, resolved once per distinct database.
     let permissions =
         crate::server::AuthorizationService::get_effective_permissions(&claims, &state).await?;
     let scoped = claims.scoped_databases.as_deref();
+    // Audit C2: creating a database on demand takes the same instance-level
+    // Admin as `POST /_api/database`, not just Write on the (absent) database.
+    let can_create_database = crate::server::authz_middleware::enforce_raw(
+        &permissions,
+        crate::server::PermissionAction::Admin,
+        None,
+        scoped,
+        &claims.sub,
+    );
     let mut writable_dbs: std::collections::HashMap<String, bool> =
         std::collections::HashMap::new();
 
@@ -601,7 +722,7 @@ pub async fn push_changes(
         // is the client's HLC while `_updated_at` is set by this server's wall
         // clock, and dropping writes on that comparison would silently discard
         // data from any client whose clock runs behind.
-        if let Err(e) = apply_sync_change(&state, change) {
+        if let Err(e) = apply_sync_change(&state, change, write_actor, can_create_database) {
             tracing::warn!(
                 "sync push: failed to apply {:?} on {}/{} key {}: {}",
                 change.operation,
@@ -628,17 +749,19 @@ pub async fn push_changes(
                 .as_ref()
                 .and_then(|d| serde_json::to_vec(d).ok());
 
-            let entry = LogEntry {
-                sequence: 0, // Auto-generated by log
-                node_id: session.device_id.clone(),
-                database: change.database.clone(),
-                collection: change.collection.clone(),
+            // Audit H9: logged under this node's id (`new_op` leaves node_id
+            // empty and `append` fills it in), never the client's device_id.
+            // Peers key their per-origin dedupe and pull cursors on node_id,
+            // so a device named after a peer used to make them drop that
+            // peer's genuine entries. The timestamp is the server's for the
+            // same reason: the client's clock is not the replication clock.
+            let entry = LogEntry::new_op(
+                change.database.clone(),
+                change.collection.clone(),
                 operation,
-                key: change.document_key.clone(),
-                data: data_bytes,
-                timestamp: change.timestamp,
-                origin_sequence: None,
-            };
+                change.document_key.clone(),
+                data_bytes,
+            );
 
             let _ = log.append(entry);
         }
@@ -666,6 +789,7 @@ pub async fn push_changes(
 /// Acknowledge receipt of changes
 pub async fn acknowledge_changes(
     State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<Claims>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, DbError> {
     let session_id = req
@@ -679,18 +803,10 @@ pub async fn acknowledge_changes(
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_else(VersionVector::new);
 
-    // Verify session exists
-    let session_manager = state.sync_session_manager.as_ref().ok_or_else(|| {
-        DbError::InternalError("Sync session manager not initialized".to_string())
-    })?;
-
-    let _session = session_manager
-        .get_session(&session_id)
-        .await
-        .ok_or_else(|| DbError::BadRequest(format!("Session '{}' not found", session_id)))?;
+    let _session = owned_session(&state, &session_id, &claims).await?;
 
     // Update session vector to reflect acknowledged state
-    session_manager
+    get_session_manager(&state)?
         .update_session_vector(&session_id, &applied_vector)
         .await;
 
@@ -703,17 +819,10 @@ pub async fn acknowledge_changes(
 /// List unresolved conflicts for a session
 pub async fn list_conflicts(
     State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<Claims>,
     Query(params): Query<ConflictsQuery>,
 ) -> Result<Json<serde_json::Value>, DbError> {
-    // Verify session exists
-    let session_manager = state.sync_session_manager.as_ref().ok_or_else(|| {
-        DbError::InternalError("Sync session manager not initialized".to_string())
-    })?;
-
-    let _session = session_manager
-        .get_session(&params.session_id)
-        .await
-        .ok_or_else(|| DbError::BadRequest(format!("Session '{}' not found", params.session_id)))?;
+    let _session = owned_session(&state, &params.session_id, &claims).await?;
 
     // No conflict store exists. This endpoint used to return an empty list,
     // which is indistinguishable from "there are no conflicts" — a client
@@ -735,6 +844,7 @@ pub async fn list_conflicts(
 /// Resolve a conflict manually
 pub async fn resolve_conflict(
     State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<Claims>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, DbError> {
     let session_id = req
@@ -757,15 +867,7 @@ pub async fn resolve_conflict(
 
     let merged_data = req.get("merged_data").cloned();
 
-    // Verify session exists
-    let session_manager = state.sync_session_manager.as_ref().ok_or_else(|| {
-        DbError::InternalError("Sync session manager not initialized".to_string())
-    })?;
-
-    let _session = session_manager
-        .get_session(&session_id)
-        .await
-        .ok_or_else(|| DbError::BadRequest(format!("Session '{}' not found", session_id)))?;
+    let _session = owned_session(&state, &session_id, &claims).await?;
 
     // Validate resolution value
     if !matches!(resolution.as_str(), "local" | "remote" | "merged") {
@@ -792,4 +894,27 @@ pub async fn resolve_conflict(
          document '{}'. Pushes currently resolve last-write-wins.",
         document_key
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pull_limit_is_clamped() {
+        assert_eq!(clamp_pull_limit(None), DEFAULT_PULL_LIMIT);
+        assert_eq!(clamp_pull_limit(Some(0)), 1);
+        assert_eq!(clamp_pull_limit(Some(50)), 50);
+        assert_eq!(clamp_pull_limit(Some(1_000_000_000)), MAX_PULL_LIMIT);
+        assert_eq!(clamp_pull_limit(Some(u64::MAX)), MAX_PULL_LIMIT);
+    }
+
+    #[test]
+    fn credential_collections_are_not_servable() {
+        let entry = |coll: &str| LogEntry::new_op("_system", coll, Operation::Insert, "k", None);
+        for coll in ["_admins", "_api_keys", "_env", "_roles", "_user_roles"] {
+            assert!(!servable_to_sync_client(&entry(coll)), "{}", coll);
+        }
+        assert!(servable_to_sync_client(&entry("orders")));
+    }
 }

@@ -58,6 +58,170 @@ fn forbidden_response() -> Response {
         .into_response()
 }
 
+fn unauthorized_response() -> Response {
+    Response::builder()
+        .status(StatusCode::UNAUTHORIZED)
+        .body(Body::empty())
+        .expect("Valid status code should not fail")
+        .into_response()
+}
+
+/// Apply the frame limits to an upgrade. Without them axum buffers up to its
+/// 64 MB default before the `MAX_WS_MESSAGE_SIZE` check in the read loop ever
+/// runs (Audit M1).
+fn limit_upgrade(ws: WebSocketUpgrade) -> WebSocketUpgrade {
+    ws.max_message_size(MAX_WS_MESSAGE_SIZE)
+        .max_frame_size(MAX_WS_MESSAGE_SIZE)
+}
+
+/// How often an open socket's credential is re-checked (Audit L2).
+const WS_REVALIDATE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Validate a WebSocket bearer token the way `auth_middleware` validates an
+/// HTTP one: signature and expiry, then roles re-resolved from storage so a
+/// revoked role or a deleted user takes effect on the socket too (Audit H7).
+/// Skipping the refresh let `enforce()` resolve the token's stale roles and
+/// cache them under `sub`, handing revoked privileges back to the user's HTTP
+/// requests as well.
+///
+/// `allow_livequery` is true only for the changefeed, the one endpoint a
+/// live-query token may be presented to.
+async fn authenticate_ws_token(
+    token: &str,
+    storage: &Arc<StorageEngine>,
+    allow_livequery: bool,
+) -> Option<crate::server::auth::Claims> {
+    let claims = crate::server::auth::AuthService::validate_token(token).ok()?;
+    if claims.livequery == Some(true) && !allow_livequery {
+        tracing::warn!("livequery token presented to a non-changefeed WebSocket");
+        return None;
+    }
+    let storage = storage.clone();
+    tokio::task::spawn_blocking(move || {
+        let claims = crate::server::auth::refresh_jwt_roles(claims, &storage)?;
+        // `refresh_jwt_roles` passes live-query and API-key subjects through
+        // untouched; the credential check below covers those.
+        check_ws_credential(&claims, &storage)
+            .map_err(|reason| {
+                tracing::warn!(
+                    target: "audit",
+                    user = %claims.sub,
+                    "rejecting WebSocket token: {}",
+                    reason
+                );
+            })
+            .ok()?;
+        Some(claims)
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Whether the principal behind an open socket still holds the access it was
+/// admitted with. `Err` carries the reason the socket must be closed.
+///
+/// A live-query token is valid for two seconds *to connect*; what it stands
+/// for afterwards is its subject, so that is what gets re-checked. A role
+/// change of either kind closes the socket: its subscriptions were
+/// authorized against the old roles, and the client reconnects to have them
+/// re-authorized.
+fn check_ws_credential(
+    claims: &crate::server::auth::Claims,
+    storage: &StorageEngine,
+) -> Result<(), &'static str> {
+    if claims.livequery != Some(true) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as usize)
+            .unwrap_or(usize::MAX);
+        if claims.exp <= now {
+            return Err("token expired");
+        }
+    }
+    let system_db = storage
+        .get_database("_system")
+        .map_err(|_| "system database unavailable")?;
+
+    if let Some(name) = claims.sub.strip_prefix("api-key:") {
+        let coll = system_db
+            .system_collection(crate::server::auth::API_KEYS_COLL)
+            .map_err(|_| "API key revoked")?;
+        let now = chrono::Utc::now();
+        let alive = coll
+            .scan(None)
+            .into_iter()
+            .filter_map(|d| {
+                serde_json::from_value::<crate::server::auth::ApiKey>(d.to_value()).ok()
+            })
+            .any(|k| {
+                k.name == name
+                    && !k
+                        .expires_at
+                        .as_deref()
+                        .and_then(|e| chrono::DateTime::parse_from_rfc3339(e).ok())
+                        .is_some_and(|e| e < now)
+            });
+        return if alive {
+            Ok(())
+        } else {
+            Err("API key revoked or expired")
+        };
+    }
+
+    let admins = system_db
+        .system_collection(crate::server::auth::ADMIN_COLL)
+        .map_err(|_| "user no longer exists")?;
+    if admins.get(&claims.sub).is_err() {
+        return Err("user no longer exists");
+    }
+    let normalized = |roles: Option<Vec<String>>| {
+        let mut roles = roles.unwrap_or_default();
+        roles.sort();
+        roles.dedup();
+        roles
+    };
+    let current = crate::server::auth::AuthService::get_user_roles(storage, &claims.sub);
+    if normalized(current) != normalized(claims.roles.clone()) {
+        return Err("roles changed");
+    }
+    Ok(())
+}
+
+/// `check_ws_credential` off the async runtime (it reads `_system`).
+async fn ws_credential_still_valid(
+    claims: &crate::server::auth::Claims,
+    storage: &Arc<StorageEngine>,
+) -> bool {
+    let claims = claims.clone();
+    let storage = storage.clone();
+    tokio::task::spawn_blocking(move || match check_ws_credential(&claims, &storage) {
+        Ok(()) => true,
+        Err(reason) => {
+            tracing::warn!(
+                target: "audit",
+                user = %claims.sub,
+                "closing WebSocket: {}",
+                reason
+            );
+            false
+        }
+    })
+    .await
+    .unwrap_or(false)
+}
+
+fn session_ended_message() -> Message {
+    Message::Text(
+        serde_json::json!({
+            "type": "error",
+            "error": "Session no longer valid; reconnect with a fresh token"
+        })
+        .to_string()
+        .into(),
+    )
+}
+
 // ==================== Cluster Status WebSocket ====================
 
 /// WebSocket handler for real-time cluster status updates
@@ -67,12 +231,8 @@ pub async fn cluster_status_ws(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
-    let Ok(claims) = crate::server::auth::AuthService::validate_token(&params.token) else {
-        return Response::builder()
-            .status(StatusCode::UNAUTHORIZED)
-            .body(Body::empty())
-            .expect("Valid status code should not fail")
-            .into_response();
+    let Some(claims) = authenticate_ws_token(&params.token, &state.storage, false).await else {
+        return unauthorized_response();
     };
     if crate::server::authz_middleware::enforce(
         &claims,
@@ -90,14 +250,19 @@ pub async fn cluster_status_ws(
         return forbidden_response();
     }
 
-    ws.on_upgrade(|socket| handle_cluster_ws(socket, state))
+    limit_upgrade(ws).on_upgrade(|socket| handle_cluster_ws(socket, state, claims))
 }
 
 /// Handle the WebSocket connection for cluster status
-async fn handle_cluster_ws(mut socket: WebSocket, state: AppState) {
+async fn handle_cluster_ws(
+    mut socket: WebSocket,
+    state: AppState,
+    claims: crate::server::auth::Claims,
+) {
     use tokio::time::{interval, Duration};
 
     let mut ticker = interval(Duration::from_secs(1));
+    let mut validated_at = tokio::time::Instant::now();
 
     // We use the shared system monitor from AppState to avoid expensive initialization
     // and to ensure CPU usage is calculated correctly (delta since last refresh).
@@ -105,6 +270,13 @@ async fn handle_cluster_ws(mut socket: WebSocket, state: AppState) {
     loop {
         tokio::select! {
             _ = ticker.tick() => {
+                if validated_at.elapsed() >= WS_REVALIDATE_INTERVAL {
+                    if !ws_credential_still_valid(&claims, &state.storage).await {
+                        let _ = socket.send(session_ended_message()).await;
+                        break;
+                    }
+                    validated_at = tokio::time::Instant::now();
+                }
                 // Extract sysinfo under a short lock, then generate status without holding it
                 let sysinfo = {
                     let mut sys = state.system_monitor.lock().unwrap();
@@ -151,15 +323,8 @@ pub async fn monitor_ws_handler(
     // kernel version and live CPU/memory of the server. Monitoring is an
     // operator view: require global admin, as the cluster-status socket
     // already does.
-    let claims = match crate::server::auth::AuthService::validate_token(&params.token) {
-        Ok(claims) => claims,
-        Err(_) => {
-            return Response::builder()
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Body::empty())
-                .expect("Valid status code should not fail")
-                .into_response();
-        }
+    let Some(claims) = authenticate_ws_token(&params.token, &state.storage, false).await else {
+        return unauthorized_response();
     };
 
     if crate::server::authz_middleware::enforce(
@@ -178,19 +343,32 @@ pub async fn monitor_ws_handler(
         return forbidden_response();
     }
 
-    ws.on_upgrade(|socket| handle_monitor_socket(socket, state))
+    limit_upgrade(ws).on_upgrade(|socket| handle_monitor_socket(socket, state, claims))
 }
 
-async fn handle_monitor_socket(mut socket: WebSocket, state: AppState) {
+async fn handle_monitor_socket(
+    mut socket: WebSocket,
+    state: AppState,
+    claims: crate::server::auth::Claims,
+) {
     use std::sync::atomic::Ordering;
 
     tracing::info!("Monitor WS: Client connected");
 
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+    let mut validated_at = tokio::time::Instant::now();
 
     loop {
         // Wait for next tick
         interval.tick().await;
+
+        if validated_at.elapsed() >= WS_REVALIDATE_INTERVAL {
+            if !ws_credential_still_valid(&claims, &state.storage).await {
+                let _ = socket.send(session_ended_message()).await;
+                break;
+            }
+            validated_at = tokio::time::Instant::now();
+        }
 
         let stats = {
             let mut sys = state.system_monitor.lock().unwrap();
@@ -286,15 +464,9 @@ pub async fn ws_changefeed_handler(
             scoped_databases: None,
         }
     } else {
-        match crate::server::auth::AuthService::validate_token(&params.token) {
-            Ok(claims) => claims,
-            Err(_) => {
-                return Response::builder()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .body(Body::empty())
-                    .expect("Valid status code should not fail")
-                    .into_response();
-            }
+        match authenticate_ws_token(&params.token, &state.storage, true).await {
+            Some(claims) => claims,
+            None => return unauthorized_response(),
         }
     };
 
@@ -305,7 +477,9 @@ pub async fn ws_changefeed_handler(
     // Check if HTMX mode is requested
     let use_htmx = params.htmx.map(|s| s == "true").unwrap_or(false);
 
-    ws.on_upgrade(move |socket| handle_socket(socket, state, claims, use_htmx))
+    limit_upgrade(ws).on_upgrade(move |socket| {
+        handle_socket(socket, state, claims, use_htmx, is_cluster_internal)
+    })
 }
 
 async fn handle_socket(
@@ -313,6 +487,7 @@ async fn handle_socket(
     state: AppState,
     claims: crate::server::auth::Claims,
     use_htmx: bool,
+    is_cluster_internal: bool,
 ) {
     // Split socket into sender and receiver
     let (mut sender, mut receiver) = socket.split();
@@ -322,7 +497,7 @@ async fn handle_socket(
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Message>(1000);
 
     // Spawn writer task that forwards messages from the channel to the WebSocket
-    let send_task = tokio::spawn(async move {
+    let mut send_task = tokio::spawn(async move {
         // Heartbeat: Send a Ping every 30 seconds to keep the connection alive.
         // Start the interval 30s in the future — `tokio::time::interval` would
         // otherwise fire its first tick immediately, racing the first response
@@ -341,14 +516,15 @@ async fn handle_socket(
                         break;
                     }
                 }
-                // Forward messages
-                Some(msg) = rx.recv() => {
+                // Forward messages; stop once every sender is gone and the
+                // queue is drained.
+                msg = rx.recv() => {
+                    let Some(msg) = msg else { break };
                     if sender.send(msg).await.is_err() {
                         tracing::debug!("[WS] Failed to send message, closing writer");
                         break;
                     }
                 }
-                else => break,
             }
         }
     });
@@ -357,8 +533,40 @@ async fn handle_socket(
     // nothing bounded how many one socket could open.
     let mut subscriptions = 0usize;
 
+    // Every subscription and live query runs in this set, and each owns a
+    // JoinSet of its forwarders, so dropping it when the socket ends aborts
+    // the whole tree. Forwarders used to notice a gone client only when a
+    // send failed — never, on a quiet collection or a key filter that never
+    // matched — so reconnect loops piled them up (Audit M1).
+    let mut tasks = tokio::task::JoinSet::new();
+
+    let mut revalidate = tokio::time::interval_at(
+        tokio::time::Instant::now() + WS_REVALIDATE_INTERVAL,
+        WS_REVALIDATE_INTERVAL,
+    );
+
     // Main Receiver Loop
-    while let Some(Ok(msg)) = receiver.next().await {
+    loop {
+        let msg = tokio::select! {
+            next = receiver.next() => match next {
+                Some(Ok(msg)) => msg,
+                _ => break,
+            },
+            // The writer is gone (client stopped reading): nothing more can
+            // be delivered.
+            _ = tx.closed() => break,
+            _ = revalidate.tick() => {
+                if !is_cluster_internal
+                    && !ws_credential_still_valid(&claims, &state.storage).await
+                {
+                    let _ = tx.send(session_ended_message()).await;
+                    break;
+                }
+                continue;
+            }
+            // Reap finished subscription tasks so the set does not grow.
+            Some(_) = tasks.join_next(), if !tasks.is_empty() => continue,
+        };
         // Security: Check message size to prevent OOM attacks
         let msg_len = match &msg {
             Message::Text(text) => text.len(),
@@ -401,7 +609,7 @@ async fn handle_socket(
                         let claims_clone = claims.clone();
 
                         // Spawn a dedicated task for this subscription
-                        tokio::spawn(async move {
+                        tasks.spawn(async move {
                             handle_subscribe_request(
                                 req,
                                 state_clone,
@@ -423,7 +631,7 @@ async fn handle_socket(
                         let claims_clone = claims.clone();
 
                         // Spawn a dedicated task for this live query
-                        tokio::spawn(async move {
+                        tasks.spawn(async move {
                             handle_live_query_request(req, state_clone, claims_clone, tx_clone)
                                 .await;
                         });
@@ -452,8 +660,18 @@ async fn handle_socket(
         }
     }
 
-    // When log out, abort the sender task
-    send_task.abort();
+    // Stop every subscription (and, through their JoinSets, every
+    // forwarder and remote cluster stream) before the writer.
+    tasks.shutdown().await;
+    // Give the writer a moment to flush what is queued (such as the reason
+    // for closing), then stop it regardless.
+    drop(tx);
+    if tokio::time::timeout(std::time::Duration::from_secs(1), &mut send_task)
+        .await
+        .is_err()
+    {
+        send_task.abort();
+    }
 }
 
 /// Handle a single subscription request
@@ -472,6 +690,166 @@ fn subscription_limit_message() -> Message {
         .to_string()
         .into(),
     )
+}
+
+/// Forward one collection's broadcast change events into a subscription's
+/// aggregate channel until the subscription goes away.
+///
+/// Selecting on `out.closed()` matters: waiting on `rx.recv()` alone meant a
+/// forwarder on a quiet collection never learned its subscriber had left.
+async fn forward_changes(
+    mut rx: tokio::sync::broadcast::Receiver<crate::storage::collection::ChangeEvent>,
+    out: tokio::sync::mpsc::Sender<crate::storage::collection::ChangeEvent>,
+    key: Option<String>,
+    source: String,
+    lag_notice: Option<tokio::sync::mpsc::Sender<Message>>,
+) {
+    use tokio::sync::broadcast::error::RecvError;
+    loop {
+        let received = tokio::select! {
+            _ = out.closed() => break,
+            received = rx.recv() => received,
+        };
+        match received {
+            Ok(event) => {
+                if key.as_ref().is_some_and(|k| &event.key != k) {
+                    continue;
+                }
+                if out.send(event).await.is_err() {
+                    break;
+                }
+            }
+            Err(RecvError::Lagged(skipped)) => {
+                // The subscriber fell behind the broadcast buffer; those
+                // events are gone. Say so rather than silently continuing.
+                tracing::warn!(
+                    "[WS] changefeed on '{}' lagged: {} events dropped",
+                    source,
+                    skipped
+                );
+                if let Some(client) = &lag_notice {
+                    let _ = client.try_send(Message::Text(
+                        serde_json::json!({
+                            "type": "lagged",
+                            "collection": source,
+                            "skipped": skipped,
+                        })
+                        .to_string()
+                        .into(),
+                    ));
+                }
+            }
+            Err(RecvError::Closed) => break,
+        }
+    }
+}
+
+/// Forward a remote node's change stream for one collection.
+async fn forward_remote_changes(
+    node_addr: String,
+    db_name: String,
+    coll_name: String,
+    secret: String,
+    out: tokio::sync::mpsc::Sender<crate::storage::collection::ChangeEvent>,
+) {
+    use crate::cluster::ClusterWebsocketClient;
+    let connect = ClusterWebsocketClient::connect(&node_addr, &db_name, &coll_name, true, &secret);
+    let stream = tokio::select! {
+        _ = out.closed() => return,
+        stream = connect => match stream {
+            Ok(stream) => stream,
+            Err(_) => return,
+        },
+    };
+    tokio::pin!(stream);
+    loop {
+        let next = tokio::select! {
+            _ = out.closed() => break,
+            next = stream.next() => next,
+        };
+        match next {
+            Some(Ok(event)) => {
+                if out.send(event).await.is_err() {
+                    break;
+                }
+            }
+            _ => break,
+        }
+    }
+}
+
+/// Whether `doc` passes the collection's row policy for `principal` — the
+/// same evaluation `apply_row_policy` does for a scan, so a changefeed shows
+/// a non-admin exactly the rows `/cursor` would (Audit H2). An unparsable
+/// policy or an evaluation error hides the row.
+fn row_policy_allows(
+    storage: &StorageEngine,
+    db_name: String,
+    collection: &str,
+    principal: &crate::sdbql::QueryPrincipal,
+    policy: &str,
+    doc: serde_json::Value,
+) -> bool {
+    let Ok(mut parser) = crate::sdbql::parser::Parser::new(policy) else {
+        return false;
+    };
+    let Ok(expr) = parser.parse_expression() else {
+        return false;
+    };
+    let executor = crate::sdbql::executor::QueryExecutor::with_database(storage, db_name)
+        .with_principal(principal.clone())
+        .with_timeout(std::time::Duration::from_secs(5));
+    let mut ctx = std::collections::HashMap::new();
+    ctx.insert(collection.to_string(), doc.clone());
+    ctx.insert("doc".to_string(), doc);
+    ctx.insert(
+        "CURRENT_USER".to_string(),
+        serde_json::Value::String(principal.user.clone()),
+    );
+    executor
+        .evaluate_expr_with_context(&expr, &ctx)
+        .map(|v| crate::sdbql::executor::to_bool(&v))
+        .unwrap_or(false)
+}
+
+/// Row-policy gate for one changefeed event.
+///
+/// The policy is re-read per event so a policy set after the subscription
+/// opened still applies. Inserts and updates are judged on the new document
+/// (an update that moves a row out of view is not announced, rather than
+/// leaking its new content); deletes on the old one. A truncate names no
+/// row and passes.
+async fn changefeed_event_visible(
+    storage: &Arc<StorageEngine>,
+    db_name: &str,
+    collection: &crate::storage::Collection,
+    principal: &crate::sdbql::QueryPrincipal,
+    event: &crate::storage::collection::ChangeEvent,
+) -> bool {
+    use crate::storage::collection::ChangeType;
+    if principal.can_admin {
+        return true;
+    }
+    let Some(policy) = collection.get_row_policy() else {
+        return true;
+    };
+    let row = match event.type_ {
+        ChangeType::Truncate => return true,
+        ChangeType::Insert | ChangeType::Update => event.data.clone(),
+        ChangeType::Delete => event.old_data.clone().or_else(|| event.data.clone()),
+    };
+    let Some(row) = row else {
+        return false;
+    };
+    let storage = storage.clone();
+    let db_name = db_name.to_string();
+    let coll_name = collection.name.clone();
+    let principal = principal.clone();
+    tokio::task::spawn_blocking(move || {
+        row_policy_allows(&storage, db_name, &coll_name, &principal, &policy, row)
+    })
+    .await
+    .unwrap_or(false)
 }
 
 async fn handle_subscribe_request(
@@ -590,30 +968,18 @@ async fn handle_subscribe_request(
             let (sub_tx, mut sub_rx) =
                 tokio::sync::mpsc::channel::<crate::storage::collection::ChangeEvent>(1000);
             let req_key = req.key.clone();
+            let lag_notice = if use_htmx { None } else { Some(tx.clone()) };
+            // Owned by this task: aborting the subscription aborts these.
+            let mut forwarders = tokio::task::JoinSet::new();
 
             // 1. Subscribe to local logical collection
-            let mut local_rx = collection.change_sender.subscribe();
-            let sub_tx_local = sub_tx.clone();
-            let req_key_local = req_key.clone();
-
-            tokio::spawn(async move {
-                loop {
-                    match local_rx.recv().await {
-                        Ok(event) => {
-                            if let Some(ref target_key) = req_key_local {
-                                if &event.key != target_key {
-                                    continue;
-                                }
-                            }
-                            if sub_tx_local.send(event).await.is_err() {
-                                break;
-                            }
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(_) => break,
-                    }
-                }
-            });
+            forwarders.spawn(forward_changes(
+                collection.change_sender.subscribe(),
+                sub_tx.clone(),
+                req_key.clone(),
+                coll_name.clone(),
+                lag_notice.clone(),
+            ));
 
             // 2. Subscribe to PHYSICAL SHARDS (if sharded)
             if let Some(shard_config) = collection.get_shard_config() {
@@ -622,30 +988,13 @@ async fn handle_subscribe_request(
                         for shard_id in 0..shard_config.num_shards {
                             let physical_name = format!("{}_s{}", coll_name, shard_id);
                             if let Ok(physical_coll) = database.get_collection(&physical_name) {
-                                let mut shard_rx = physical_coll.change_sender.subscribe();
-                                let sub_tx_shard = sub_tx.clone();
-                                let req_key_shard = req_key.clone();
-
-                                tokio::spawn(async move {
-                                    loop {
-                                        match shard_rx.recv().await {
-                                            Ok(event) => {
-                                                if let Some(ref target_key) = req_key_shard {
-                                                    if &event.key != target_key {
-                                                        continue;
-                                                    }
-                                                }
-                                                if sub_tx_shard.send(event).await.is_err() {
-                                                    break;
-                                                }
-                                            }
-                                            Err(
-                                                tokio::sync::broadcast::error::RecvError::Lagged(_),
-                                            ) => continue,
-                                            Err(_) => break,
-                                        }
-                                    }
-                                });
+                                forwarders.spawn(forward_changes(
+                                    physical_coll.change_sender.subscribe(),
+                                    sub_tx.clone(),
+                                    req_key.clone(),
+                                    physical_name,
+                                    lag_notice.clone(),
+                                ));
                             }
                         }
                     }
@@ -670,36 +1019,13 @@ async fn handle_subscribe_request(
                         }
 
                         for node_addr in remote_nodes {
-                            let sub_tx_remote = sub_tx.clone();
-                            let db_name_remote = db_name.clone();
-                            let coll_name_remote = coll_name.clone();
-                            let node_addr_clone = node_addr.clone();
-                            let secret_clone = cluster_secret.clone();
-
-                            tokio::spawn(async move {
-                                use crate::cluster::ClusterWebsocketClient;
-                                if let Ok(stream) = ClusterWebsocketClient::connect(
-                                    &node_addr_clone,
-                                    &db_name_remote,
-                                    &coll_name_remote,
-                                    true,
-                                    &secret_clone,
-                                )
-                                .await
-                                {
-                                    tokio::pin!(stream);
-                                    while let Some(result) = stream.next().await {
-                                        match result {
-                                            Ok(event) => {
-                                                if sub_tx_remote.send(event).await.is_err() {
-                                                    break;
-                                                }
-                                            }
-                                            Err(_) => break,
-                                        }
-                                    }
-                                }
-                            });
+                            forwarders.spawn(forward_remote_changes(
+                                node_addr,
+                                db_name.clone(),
+                                coll_name.clone(),
+                                cluster_secret.clone(),
+                                sub_tx.clone(),
+                            ));
                         }
                     }
                 }
@@ -708,13 +1034,35 @@ async fn handle_subscribe_request(
             // Drop original sub_tx so we don't hold the channel open forever if all producers die
             drop(sub_tx);
 
+            let principal = crate::server::handlers::query::principal_from_claims(&claims);
+
             // Forward aggregated events to the main socket channel
-            while let Some(event) = sub_rx.recv().await {
+            loop {
+                let event = tokio::select! {
+                    _ = tx.closed() => break,
+                    event = sub_rx.recv() => match event {
+                        Some(event) => event,
+                        None => break,
+                    },
+                };
                 // Double check filter (especially for remote events)
                 if let Some(ref target_key) = req.key {
                     if &event.key != target_key {
                         continue;
                     }
+                }
+                // Remote and shard events are filtered against the logical
+                // collection's policy here too.
+                if !changefeed_event_visible(
+                    &state.storage,
+                    &db_name,
+                    &collection,
+                    &principal,
+                    &event,
+                )
+                .await
+                {
+                    continue;
                 }
 
                 // Format message
@@ -854,6 +1202,9 @@ async fn handle_live_query_request(
                 let (dep_tx, mut dep_rx) =
                     tokio::sync::mpsc::channel::<crate::storage::collection::ChangeEvent>(1000);
 
+                // Owned by this task: aborting the live query aborts these.
+                let mut forwarders = tokio::task::JoinSet::new();
+
                 // 3. Subscribe to ALL dependencies
                 for coll_name in &dependencies {
                     let coll_name = coll_name.clone();
@@ -863,24 +1214,16 @@ async fn handle_live_query_request(
                         .get_database(&db_name)
                         .and_then(|db| db.get_collection(&coll_name))
                     {
-                        // A. Subscribe to local logical
-                        let mut local_rx = collection.change_sender.subscribe();
-                        let tx_local = dep_tx.clone();
-                        tokio::spawn(async move {
-                            loop {
-                                match local_rx.recv().await {
-                                    Ok(event) => {
-                                        if tx_local.send(event).await.is_err() {
-                                            break;
-                                        }
-                                    }
-                                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                                        continue
-                                    }
-                                    Err(_) => break,
-                                }
-                            }
-                        });
+                        // A. Subscribe to local logical. Events only trigger a
+                        // re-run, so a lag needs no client notice: the events
+                        // still buffered trigger the next one.
+                        forwarders.spawn(forward_changes(
+                            collection.change_sender.subscribe(),
+                            dep_tx.clone(),
+                            None,
+                            coll_name.clone(),
+                            None,
+                        ));
 
                         // B. Subscribe to local physical shards
                         if let Some(shard_config) = collection.get_shard_config() {
@@ -891,18 +1234,13 @@ async fn handle_live_query_request(
                                         if let Ok(physical_coll) =
                                             database.get_collection(&physical_name)
                                         {
-                                            let mut shard_rx =
-                                                physical_coll.change_sender.subscribe();
-                                            let tx_shard = dep_tx.clone();
-                                            tokio::spawn(async move {
-                                                loop {
-                                                    match shard_rx.recv().await {
-                                                        Ok(event) => { if tx_shard.send(event).await.is_err() { break; } },
-                                                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                                                        Err(_) => break,
-                                                    }
-                                                }
-                                            });
+                                            forwarders.spawn(forward_changes(
+                                                physical_coll.change_sender.subscribe(),
+                                                dep_tx.clone(),
+                                                None,
+                                                physical_name,
+                                                None,
+                                            ));
                                         }
                                     }
                                 }
@@ -925,35 +1263,13 @@ async fn handle_live_query_request(
                                     }
 
                                     for node_addr in remote_nodes {
-                                        let tx_remote = dep_tx.clone();
-                                        let db_remote = db_name.clone();
-                                        let c_remote = coll_name.clone();
-                                        let n_addr = node_addr.clone();
-                                        let secret_clone = cluster_secret.clone();
-
-                                        tokio::spawn(async move {
-                                            use crate::cluster::ClusterWebsocketClient;
-                                            if let Ok(stream) = ClusterWebsocketClient::connect(
-                                                &n_addr,
-                                                &db_remote,
-                                                &c_remote,
-                                                true,
-                                                &secret_clone,
-                                            )
-                                            .await
-                                            {
-                                                tokio::pin!(stream);
-                                                while let Some(result) = stream.next().await {
-                                                    if let Ok(event) = result {
-                                                        if tx_remote.send(event).await.is_err() {
-                                                            break;
-                                                        }
-                                                    } else {
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        });
+                                        forwarders.spawn(forward_remote_changes(
+                                            node_addr,
+                                            db_name.clone(),
+                                            coll_name.clone(),
+                                            cluster_secret.clone(),
+                                            dep_tx.clone(),
+                                        ));
                                     }
                                 }
                             }
@@ -963,6 +1279,11 @@ async fn handle_live_query_request(
 
                 drop(dep_tx); // Close original sender
 
+                // The query runs as the caller, exactly as `/cursor` would run
+                // it: CURRENT_USER, CAN() and row policies all need the
+                // principal, and a live query used to run with none (Audit H2).
+                let principal = crate::server::handlers::query::principal_from_claims(&claims);
+
                 // 5. Initial Execution
                 if !execute_live_query_step(
                     &tx,
@@ -970,6 +1291,7 @@ async fn handle_live_query_request(
                     query_str.clone(),
                     db_name.clone(),
                     state.shard_coordinator.clone(),
+                    principal.clone(),
                     req.id.clone(),
                 )
                 .await
@@ -987,7 +1309,15 @@ async fn handle_live_query_request(
                 // buffered in the channel and start the next cycle.
                 const DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(150);
                 const MAX_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
-                'reactive: while dep_rx.recv().await.is_some() {
+                'reactive: loop {
+                    tokio::select! {
+                        _ = tx.closed() => break 'reactive,
+                        first = dep_rx.recv() => {
+                            if first.is_none() {
+                                break 'reactive; // all forwarders gone
+                            }
+                        }
+                    }
                     let deadline = tokio::time::Instant::now() + MAX_DELAY;
                     loop {
                         tokio::select! {
@@ -1011,6 +1341,7 @@ async fn handle_live_query_request(
                         query_str.clone(),
                         db_name.clone(),
                         state.shard_coordinator.clone(),
+                        principal.clone(),
                         req.id.clone(),
                     )
                     .await
@@ -1053,6 +1384,7 @@ async fn execute_live_query_step(
     query_str: String,
     db_name: String,
     shard_coordinator: Option<Arc<crate::sharding::ShardCoordinator>>,
+    principal: crate::sdbql::QueryPrincipal,
     req_id: Option<String>,
 ) -> bool {
     // Execute SDBQL
@@ -1077,6 +1409,7 @@ async fn execute_live_query_step(
 
                 let mut executor =
                     crate::sdbql::executor::QueryExecutor::with_database(&storage, db_name)
+                        .with_principal(principal)
                         .with_timeout(std::time::Duration::from_secs(30));
                 if let Some(coord) = shard_coordinator {
                     executor = executor.with_shard_coordinator(coord);
@@ -1121,5 +1454,95 @@ async fn execute_live_query_step(
                 .await
                 .is_ok()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::auth::Claims;
+
+    fn engine() -> (StorageEngine, tempfile::TempDir) {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let engine = StorageEngine::new(tmp.path().to_str().unwrap()).expect("engine");
+        (engine, tmp)
+    }
+
+    fn claims(sub: &str, exp: usize, livequery: Option<bool>) -> Claims {
+        Claims {
+            sub: sub.to_string(),
+            exp,
+            livequery,
+            roles: None,
+            scoped_databases: None,
+        }
+    }
+
+    #[test]
+    fn row_policy_filters_changefeed_rows_by_principal() {
+        let (engine, _tmp) = engine();
+        engine.create_database("app".to_string()).unwrap();
+        let alice = crate::sdbql::QueryPrincipal::from_roles("alice", vec!["viewer".into()]);
+        let policy = "doc.owner == CURRENT_USER";
+        let own = serde_json::json!({"_key": "1", "owner": "alice"});
+        let other = serde_json::json!({"_key": "2", "owner": "bob"});
+
+        assert!(row_policy_allows(
+            &engine,
+            "app".into(),
+            "orders",
+            &alice,
+            policy,
+            own
+        ));
+        assert!(!row_policy_allows(
+            &engine,
+            "app".into(),
+            "orders",
+            &alice,
+            policy,
+            other.clone()
+        ));
+        // An unparsable policy hides the row rather than exposing it.
+        assert!(!row_policy_allows(
+            &engine,
+            "app".into(),
+            "orders",
+            &alice,
+            "((",
+            other
+        ));
+    }
+
+    #[test]
+    fn ws_credential_follows_user_existence_and_expiry() {
+        let (engine, _tmp) = engine();
+        engine.create_database("_system".to_string()).unwrap();
+        let system = engine.get_database("_system").unwrap();
+        system
+            .create_collection(crate::server::auth::ADMIN_COLL.to_string(), None)
+            .unwrap();
+        system
+            .system_collection(crate::server::auth::ADMIN_COLL)
+            .unwrap()
+            .insert(serde_json::json!({"_key": "ws_cred_alice", "password_hash": "x"}))
+            .unwrap();
+
+        let far = usize::MAX - 1;
+        assert!(check_ws_credential(&claims("ws_cred_alice", far, None), &engine).is_ok());
+        // Deleted (here: never created) user.
+        assert!(check_ws_credential(&claims("ws_cred_bob", far, None), &engine).is_err());
+        // Expired session token.
+        assert!(check_ws_credential(&claims("ws_cred_alice", 1, None), &engine).is_err());
+        // A live-query token only had to be fresh to connect; its subject is
+        // what keeps the socket alive.
+        assert!(check_ws_credential(&claims("ws_cred_alice", 1, Some(true)), &engine).is_ok());
+        assert!(check_ws_credential(&claims("ws_cred_bob", 1, Some(true)), &engine).is_err());
+        // Roles that no longer match the current assignment close the socket.
+        let mut stale = claims("ws_cred_alice", far, None);
+        stale.roles = Some(vec!["admin".to_string()]);
+        assert!(check_ws_credential(&stale, &engine).is_err());
+        // An API-key subject with no such key.
+        assert!(check_ws_credential(&claims("api-key:ws_cred_gone", far, None), &engine).is_err());
     }
 }

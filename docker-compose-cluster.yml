@@ -7,8 +7,16 @@ version: '3.8'
 #      Compose refuses to start without it. It used to default to `admin`,
 #      which published an admin-credentialled database on ports 6745-6747 for
 #      anyone who followed these instructions without exporting the variable.
-#   3. Start cluster: docker-compose -f docker-compose-cluster.yml up -d
-#   4. Scale: docker-compose -f docker-compose-cluster.yml up -d --scale solidb-node=5
+#   3. Choose a JWT secret shared by all nodes: export JWT_SECRET=$(openssl rand -hex 32)
+#      Without one, each node signs tokens with its own random secret, so a
+#      token issued by one node is rejected by the others.
+#   4. Choose a metrics token: export SOLIDB_METRICS_TOKEN=$(openssl rand -hex 32)
+#      /metrics answers 401 without it; scrape with `Authorization: Bearer <token>`.
+#   5. Start cluster: docker-compose -f docker-compose-cluster.yml up -d
+#
+# Each node binds 0.0.0.0 inside its container, advertises its compose
+# hostname to peers, and names each peer with its own `--peer` flag (the
+# server has no comma-separated `--cluster-peers` option).
 
 services:
   solidb-node1:
@@ -24,13 +32,19 @@ services:
     environment:
       - SOLIDB_PORT=6745
       - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:?set SOLIDB_ADMIN_PASSWORD before starting the cluster}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET before starting the cluster}
+      - SOLIDB_METRICS_TOKEN=${SOLIDB_METRICS_TOKEN:?set SOLIDB_METRICS_TOKEN before starting the cluster}
       - RUST_LOG=solidb=info
     command: >
       sh -c "solidb
         --port 6745
         --data-dir /data
         --keyfile /etc/solidb/solidb.key
-        --cluster-peers solidb-node2:6745,solidb-node3:6745"
+        --host 0.0.0.0
+        --node-id solidb-node1
+        --advertise solidb-node1:6745
+        --peer solidb-node2:6745
+        --peer solidb-node3:6745"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6745/_api/health"]
       interval: 10s
@@ -54,13 +68,19 @@ services:
     environment:
       - SOLIDB_PORT=6745
       - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:?set SOLIDB_ADMIN_PASSWORD before starting the cluster}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET before starting the cluster}
+      - SOLIDB_METRICS_TOKEN=${SOLIDB_METRICS_TOKEN:?set SOLIDB_METRICS_TOKEN before starting the cluster}
       - RUST_LOG=solidb=info
     command: >
       sh -c "solidb
         --port 6745
         --data-dir /data
         --keyfile /etc/solidb/solidb.key
-        --cluster-peers solidb-node1:6745,solidb-node3:6745"
+        --host 0.0.0.0
+        --node-id solidb-node2
+        --advertise solidb-node2:6745
+        --peer solidb-node1:6745
+        --peer solidb-node3:6745"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6745/_api/health"]
       interval: 10s
@@ -87,13 +107,19 @@ services:
     environment:
       - SOLIDB_PORT=6745
       - SOLIDB_ADMIN_PASSWORD=${SOLIDB_ADMIN_PASSWORD:?set SOLIDB_ADMIN_PASSWORD before starting the cluster}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET before starting the cluster}
+      - SOLIDB_METRICS_TOKEN=${SOLIDB_METRICS_TOKEN:?set SOLIDB_METRICS_TOKEN before starting the cluster}
       - RUST_LOG=solidb=info
     command: >
       sh -c "solidb
         --port 6745
         --data-dir /data
         --keyfile /etc/solidb/solidb.key
-        --cluster-peers solidb-node1:6745,solidb-node2:6745"
+        --host 0.0.0.0
+        --node-id solidb-node3
+        --advertise solidb-node3:6745
+        --peer solidb-node1:6745
+        --peer solidb-node2:6745"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6745/_api/health"]
       interval: 10s

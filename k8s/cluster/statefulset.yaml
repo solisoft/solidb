@@ -30,7 +30,9 @@ spec:
         fsGroup: 1000
       terminationGracePeriodSeconds: 30
       initContainers:
-        # Init container to build peer list dynamically
+        # Init container to build the peer arguments dynamically. The server
+        # takes one `--peer host:port` per peer (it has no comma-separated
+        # `--cluster-peers` flag), so the file holds ready-made arguments.
         - name: init-peers
           image: busybox:1.36
           command:
@@ -39,18 +41,15 @@ spec:
             - |
               # Build peer list excluding self
               REPLICAS=3
-              PEERS=""
+              PEER_ARGS=""
               for i in $(seq 0 $((REPLICAS - 1))); do
                 PEER="solidb-${i}.solidb-headless.solidb.svc.cluster.local:6745"
                 if [ "$PEER" != "${HOSTNAME}.solidb-headless.solidb.svc.cluster.local:6745" ]; then
-                  if [ -n "$PEERS" ]; then
-                    PEERS="${PEERS},"
-                  fi
-                  PEERS="${PEERS}${PEER}"
+                  PEER_ARGS="${PEER_ARGS} --peer ${PEER}"
                 fi
               done
-              echo "$PEERS" > /config/peers
-              echo "Peers: $PEERS"
+              echo "$PEER_ARGS" > /config/peer-args
+              echo "Peer args:$PEER_ARGS"
           volumeMounts:
             - name: config
               mountPath: /config
@@ -62,12 +61,19 @@ spec:
             - sh
             - -c
             - |
-              PEERS=$(cat /config/peers)
+              # PEER_ARGS is deliberately unquoted: it is a list of arguments.
+              PEER_ARGS=$(cat /config/peer-args)
+              # Bind every interface so probes and peers can reach the pod,
+              # and advertise the stable headless-service name, which is what
+              # peers can dial (the server refuses to advertise 0.0.0.0).
               exec solidb \
+                --host 0.0.0.0 \
                 --port 6745 \
+                --node-id "${HOSTNAME}" \
+                --advertise "${HOSTNAME}.solidb-headless.solidb.svc.cluster.local:6745" \
                 --data-dir /data \
                 --keyfile /secrets/keyfile \
-                --cluster-peers "$PEERS"
+                $PEER_ARGS
           ports:
             - name: http
               containerPort: 6745
@@ -75,6 +81,18 @@ spec:
           envFrom:
             - configMapRef:
                 name: solidb-config
+          env:
+            # Shared by every pod, so a token issued by one is valid on all.
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: solidb-secret
+                  key: jwt-secret
+            - name: SOLIDB_METRICS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: solidb-secret
+                  key: metrics-token
           volumeMounts:
             - name: data
               mountPath: /data

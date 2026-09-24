@@ -33,6 +33,19 @@ pub async fn handle_auth(
         return handle_api_key_auth(handler, &system_db, &database, &key).await;
     }
 
+    // Same (IP, username) failed-attempt budget as `/_api/auth/login`, so the
+    // binary protocol is not an unthrottled side door for password guessing
+    // (Audit H5). Checked before Argon2 runs.
+    let rate_bucket = crate::server::auth::login_bucket(&handler.peer_ip, &username);
+    if let Err(e) = crate::server::auth::check_rate_limit(&rate_bucket) {
+        return Response::error(DriverError::AuthError(e.to_string()));
+    }
+    // Reserved principals are never password users (same rule as HTTP login).
+    if username == crate::server::auth::CLUSTER_INTERNAL_SUB || username.starts_with("api-key:") {
+        crate::server::auth::record_login_failure(&rate_bucket);
+        return Response::error(DriverError::AuthError("Invalid credentials".to_string()));
+    }
+
     // Username/password authentication
     // Get admins collection (username is the _key)
     let admins = match system_db.system_collection("_admins") {
@@ -48,7 +61,11 @@ pub async fn handle_auth(
     let user_doc = match admins.get(&username) {
         Ok(doc) => doc,
         Err(_) => {
-            return Response::error(DriverError::AuthError("Invalid credentials".to_string()))
+            // Spend the same Argon2 time as a real user so response timing
+            // does not reveal which usernames exist.
+            crate::server::auth::verify_password_for_unknown_user(&password).await;
+            crate::server::auth::record_login_failure(&rate_bucket);
+            return Response::error(DriverError::AuthError("Invalid credentials".to_string()));
         }
     };
 
@@ -63,8 +80,10 @@ pub async fn handle_auth(
     // Verify password using AuthService (on the blocking pool — Argon2 is
     // CPU-bound and must not pin the async runtime)
     if !crate::server::auth::verify_password_blocking(&password, &user.password_hash).await {
+        crate::server::auth::record_login_failure(&rate_bucket);
         return Response::error(DriverError::AuthError("Invalid credentials".to_string()));
     }
+    crate::server::auth::clear_login_failures(&rate_bucket);
 
     // Resolve the user's roles to a permission snapshot for this connection;
     // every subsequent command is checked against it.
@@ -89,6 +108,8 @@ pub async fn handle_auth(
     handler.session_permissions = permissions;
     handler.session_roles = role_names;
     handler.session_scoped_databases = None;
+    handler.session_api_key_id = None;
+    handler.session_validated_at = Some(std::time::Instant::now());
     handler.authenticated_db = Some(database);
     Response::ok_empty()
 }
@@ -101,10 +122,19 @@ async fn handle_api_key_auth(
 ) -> Response {
     // O(1) cached lookup (shared with the HTTP path) instead of scanning the
     // whole _api_keys collection per auth attempt.
+    // API keys are high-entropy, but failures still count against a
+    // per-IP bucket so a peer cannot use the driver as a free lookup oracle.
+    let rate_bucket = format!("{}|<api-key>", handler.peer_ip);
+    if let Err(e) = crate::server::auth::check_rate_limit(&rate_bucket) {
+        return Response::error(DriverError::AuthError(e.to_string()));
+    }
     let api_key_data =
         match crate::server::auth::AuthService::lookup_api_key(&handler.storage, api_key) {
             Some(k) => k,
-            None => return Response::error(DriverError::AuthError("Invalid API key".to_string())),
+            None => {
+                crate::server::auth::record_login_failure(&rate_bucket);
+                return Response::error(DriverError::AuthError("Invalid API key".to_string()));
+            }
         };
 
     // Check if API key is expired
@@ -149,6 +179,8 @@ async fn handle_api_key_auth(
     handler.session_permissions = permissions;
     handler.session_roles = api_key_data.roles.clone();
     handler.session_scoped_databases = scoped;
+    handler.session_api_key_id = Some(api_key_data.id.clone());
+    handler.session_validated_at = Some(std::time::Instant::now());
     handler.authenticated_db = Some(database.to_string());
     Response::ok_empty()
 }

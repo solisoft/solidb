@@ -15,7 +15,6 @@ use crate::server::llm_client::LLMClient;
 use crate::storage::collection::vector::{pending_embed_count, release_pending_embed};
 use crate::storage::index::{extract_field_value, VectorIndexConfig};
 use crate::storage::Collection;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Max documents embedded per (collection, index) per sweep — bounds a single
 /// batch request and keeps one collection from starving the others.
@@ -24,9 +23,6 @@ const EMBED_BATCH: usize = 128;
 /// Backoff (seconds) after a provider/config failure so we don't hammer a
 /// down or misconfigured provider every worker tick.
 const ERROR_BACKOFF_SECS: u64 = 60;
-
-/// Unix-seconds before which embedding sweeps are skipped (set after an error).
-static RETRY_AFTER: AtomicU64 = AtomicU64::new(0);
 
 fn now_secs() -> u64 {
     std::time::SystemTime::now()
@@ -43,10 +39,6 @@ impl QueueWorker {
         // is allowed to retire below, so marks recorded while we sweep survive.
         let claimed = pending_embed_count();
         if claimed == 0 {
-            return;
-        }
-        // Respect backoff after a recent provider failure.
-        if now_secs() < RETRY_AFTER.load(Ordering::Relaxed) {
             return;
         }
         // Serialize with the other periodic scanners; skip if another caller
@@ -68,6 +60,13 @@ impl QueueWorker {
         let grouped = self.storage.collections_grouped();
         let mut saw_pending = false;
 
+        // Forget backoffs that have expired, so the map only holds indexes
+        // that are failing right now.
+        let now = now_secs();
+        if let Ok(mut backoff) = self.embed_backoff.lock() {
+            backoff.retain(|_, until| *until > now);
+        }
+
         for (db_name, coll_names) in grouped {
             let db = match self.storage.get_database(&db_name) {
                 Ok(d) => d,
@@ -83,6 +82,18 @@ impl QueueWorker {
                     if config.embedding_source.is_none() {
                         continue;
                     }
+                    let backoff_key = format!("{}\u{0}{}\u{0}{}", db_name, coll_name, config.name);
+                    let backing_off = self
+                        .embed_backoff
+                        .lock()
+                        .map(|b| b.get(&backoff_key).is_some_and(|until| *until > now))
+                        .unwrap_or(false);
+                    if backing_off {
+                        // Its markers are still there; don't let the gauge
+                        // reconciliation below treat this pass as empty.
+                        saw_pending = true;
+                        continue;
+                    }
                     let pending = coll.list_embed_pending(&config.name, EMBED_BATCH);
                     if pending.is_empty() {
                         continue;
@@ -92,8 +103,9 @@ impl QueueWorker {
                         .embed_pending_batch(&db_name, &coll, &config, &pending)
                         .await
                     {
-                        // Provider/config problem — back off and stop this sweep.
-                        // Markers remain and are retried after the backoff.
+                        // Provider/config problem — back off this index only
+                        // and carry on with the rest. Markers remain and are
+                        // retried after the backoff.
                         tracing::warn!(
                             "Auto-embed worker: {}/{} index '{}' failed: {} (backing off {}s)",
                             db_name,
@@ -102,8 +114,9 @@ impl QueueWorker {
                             e,
                             ERROR_BACKOFF_SECS
                         );
-                        RETRY_AFTER.store(now_secs() + ERROR_BACKOFF_SECS, Ordering::Relaxed);
-                        return;
+                        if let Ok(mut backoff) = self.embed_backoff.lock() {
+                            backoff.insert(backoff_key, now_secs() + ERROR_BACKOFF_SECS);
+                        }
                     }
                 }
             }

@@ -186,18 +186,65 @@ pub fn handle_recount_collection(
     }
 }
 
-pub fn handle_export_collection(
+/// Budget for an export reply's encoded documents, a little under the frame
+/// cap so the response envelope still fits. A reply over the frame cap fails
+/// to encode and drops the connection, so stop before building it.
+const EXPORT_MAX_BYTES: usize = crate::driver::protocol::MAX_MESSAGE_SIZE - 64 * 1024;
+
+pub async fn handle_export_collection(
     handler: &DriverHandler,
     database: String,
     collection: String,
 ) -> Response {
-    match handler.get_collection(&database, &collection) {
-        Ok(coll) => {
-            let docs: Vec<_> = coll.scan(None).into_iter().map(|d| d.to_value()).collect();
-            Response::ok(serde_json::json!(docs))
+    let coll = match handler.get_collection(&database, &collection) {
+        Ok(coll) => coll,
+        Err(e) => return Response::error(e),
+    };
+    // Audit P10: the scan used to run on the async worker and materialise the
+    // whole collection (twice) before the frame cap rejected it.
+    tokio::task::spawn_blocking(move || export_bounded(&coll, EXPORT_MAX_BYTES))
+        .await
+        .unwrap_or_else(|e| {
+            Response::error(DriverError::DatabaseError(format!(
+                "Task join error: {}",
+                e
+            )))
+        })
+}
+
+/// Stream the collection's documents, giving up as soon as their encoded
+/// size passes `max_bytes`.
+fn export_bounded(coll: &crate::storage::Collection, max_bytes: usize) -> Response {
+    use rust_rocksdb::{Direction, IteratorMode};
+
+    let Some(cf) = coll.db.cf_handle(&coll.name) else {
+        return Response::ok(serde_json::json!([]));
+    };
+    let prefix = crate::storage::collection::DOC_PREFIX.as_bytes();
+    let iter = coll
+        .db
+        .iterator_cf(&cf, IteratorMode::From(prefix, Direction::Forward));
+
+    let mut docs = Vec::new();
+    let mut bytes = 0usize;
+    for (key, value) in iter.flatten() {
+        if !key.starts_with(prefix) {
+            break;
         }
-        Err(e) => Response::error(e),
+        let Ok(doc) = crate::storage::serializer::deserialize_doc_as_value(&value) else {
+            continue;
+        };
+        bytes += rmp_serde::to_vec_named(&doc).map(|v| v.len()).unwrap_or(0);
+        if bytes > max_bytes {
+            return Response::error(DriverError::DatabaseError(format!(
+                "Collection too large to export in one reply (over {} bytes); \
+                 use a paged List or an SDBQL query with LIMIT",
+                max_bytes
+            )));
+        }
+        docs.push(doc);
     }
+    Response::ok(Value::Array(docs))
 }
 
 pub fn handle_import_collection(

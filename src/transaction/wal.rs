@@ -264,6 +264,22 @@ impl WalWriter {
         self.sync_up_to(seq)
     }
 
+    /// Empty the log. Used once its contents are known to be applied —
+    /// after startup recovery and on checkpoint — so the file cannot grow
+    /// without bound (audit M7). Lock order matches `write_and_sync`
+    /// (buffer, then file).
+    pub fn truncate(&self) -> DbResult<()> {
+        let mut buffer = self.buffer.lock().unwrap();
+        let file = self.file.lock().unwrap();
+        buffer.entries.clear();
+        file.set_len(0)
+            .map_err(|e| DbError::InternalError(format!("Failed to truncate WAL: {}", e)))?;
+        file.sync_all()
+            .map_err(|e| DbError::InternalError(format!("Failed to sync WAL: {}", e)))?;
+        self.pending_writes.store(0, Ordering::SeqCst);
+        Ok(())
+    }
+
     /// Get WAL file path
     pub fn path(&self) -> &Path {
         &self.path
@@ -538,5 +554,24 @@ mod tests {
 
         let committed = reader.replay().unwrap();
         assert_eq!(committed.len(), THREADS * COMMITS_PER_THREAD);
+    }
+
+    #[test]
+    fn test_wal_writer_truncate_empties_file() {
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("trunc.wal");
+        let writer = WalWriter::new(&wal_path).unwrap();
+
+        let tx = TransactionId::from_u64(7);
+        writer.write_begin(tx).unwrap();
+        writer.write_commit(tx).unwrap();
+        assert!(std::fs::metadata(&wal_path).unwrap().len() > 0);
+
+        writer.truncate().unwrap();
+        assert_eq!(std::fs::metadata(&wal_path).unwrap().len(), 0);
+
+        // Still usable afterwards; appends start from the empty file.
+        writer.write_commit(TransactionId::from_u64(8)).unwrap();
+        assert_eq!(WalReader::new(&wal_path).read_all().unwrap().len(), 1);
     }
 }

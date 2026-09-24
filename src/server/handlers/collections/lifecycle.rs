@@ -243,8 +243,11 @@ pub async fn delete_collection(
 
                         for (_node_id, addr) in &remote_nodes {
                             let url = format!(
-                                "http://{}/_api/database/{}/collection/{}",
-                                addr, db_name, physical_name
+                                "{}://{}/_api/database/{}/collection/{}",
+                                crate::cluster::http::cluster_scheme(),
+                                addr,
+                                db_name,
+                                physical_name
                             );
                             let _ = client
                                 .delete(&url)

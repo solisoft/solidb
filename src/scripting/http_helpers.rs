@@ -210,10 +210,21 @@ fn get_http_cache() -> &'static HttpCache {
     HTTP_CACHE.get_or_init(|| HttpCache::new(1000))
 }
 
+/// The process-wide cache key for a script's `key`: namespaced by the
+/// script's database, read from app data at call time. The cache is shared
+/// by every database on the instance, so without the prefix tenant A's
+/// `solidb.cache_get("session:abc")` read tenant B's entry (audit H6).
+fn namespaced_cache_key(lua: &Lua, key: &str) -> LuaResult<String> {
+    let db = crate::scripting::types::script_db_name(lua)?;
+    // NUL cannot appear in a database name, so the split is unambiguous.
+    Ok(format!("{}\u{0}{}", db, key))
+}
+
 /// Create solidb.cache(key, value, ttl_seconds) -> boolean function
 pub fn create_cache_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(
         move |lua, (key, value, ttl): (String, LuaValue, Option<u64>)| {
+            let key = namespaced_cache_key(lua, &key)?;
             let json_value = lua_to_json_value(lua, value)?;
             get_http_cache().set(key, json_value, ttl);
             Ok(true)
@@ -224,6 +235,7 @@ pub fn create_cache_function(lua: &Lua) -> LuaResult<Function> {
 /// Create solidb.cache_get(key) -> value function
 pub fn create_cache_get_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(move |lua, key: String| {
+        let key = namespaced_cache_key(lua, &key)?;
         if let Some(value) = get_http_cache().get(&key) {
             json_to_lua(lua, &value)
         } else {
@@ -284,6 +296,7 @@ mod tests {
     #[test]
     fn test_cache_function() {
         let lua = Lua::new();
+        lua.set_app_data(crate::scripting::types::ScriptDbName("db".to_string()));
         let cache_fn = create_cache_function(&lua).unwrap();
 
         let data = lua.create_table().unwrap();
@@ -292,5 +305,39 @@ mod tests {
         let result: Result<bool, _> =
             cache_fn.call(("test_key".to_string(), LuaValue::Table(data), Some(60)));
         assert!(result.unwrap());
+    }
+
+    /// Audit H6: one database's script cannot read another's cache entry.
+    #[test]
+    fn cache_is_namespaced_per_database() {
+        let lua_a = Lua::new();
+        lua_a.set_app_data(crate::scripting::types::ScriptDbName(
+            "tenant_a".to_string(),
+        ));
+        let lua_b = Lua::new();
+        lua_b.set_app_data(crate::scripting::types::ScriptDbName(
+            "tenant_b".to_string(),
+        ));
+
+        let set_a = create_cache_function(&lua_a).unwrap();
+        let _: bool = set_a
+            .call(("h6_session".to_string(), "secret-a".to_string(), Some(60)))
+            .unwrap();
+
+        let get_b = create_cache_get_function(&lua_b).unwrap();
+        let seen: LuaValue = get_b.call("h6_session".to_string()).unwrap();
+        assert!(
+            matches!(seen, LuaValue::Nil),
+            "tenant B must not see A's entry"
+        );
+
+        let get_a = create_cache_get_function(&lua_a).unwrap();
+        let own: String = get_a.call("h6_session".to_string()).unwrap();
+        assert_eq!(own, "secret-a");
+
+        // No database context: refused, not served from a shared namespace.
+        let bare = Lua::new();
+        let get_bare = create_cache_get_function(&bare).unwrap();
+        assert!(get_bare.call::<LuaValue>("h6_session".to_string()).is_err());
     }
 }

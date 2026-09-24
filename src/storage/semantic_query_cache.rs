@@ -14,7 +14,12 @@
 //! - `SEMANTIC_CACHE_ENABLED` — `1`/`true`/`yes`/`on` to enable (default: off)
 //! - `SEMANTIC_CACHE_THRESHOLD` — cosine similarity cutoff (default: `0.95`)
 //! - `SEMANTIC_CACHE_TTL` — entry lifetime in seconds (default: `3600`)
-//! - `SEMANTIC_CACHE_MAX` — max cached queries per database (default: `256`)
+//! - `SEMANTIC_CACHE_MAX` — max cached queries per (database, principal)
+//!   bucket (default: `256`)
+//!
+//! Buckets are per database *and* per principal (audit H1): a cached answer
+//! is the response to someone's prompt, and a near-duplicate prompt from a
+//! different user must not be handed it.
 
 use crate::storage::vector::cosine_similarity;
 use serde_json::Value;
@@ -28,7 +33,7 @@ struct Entry {
     cached_at: Instant,
 }
 
-/// Cosine-nearest response cache, partitioned per database.
+/// Cosine-nearest response cache, partitioned per (database, principal).
 pub struct SemanticCache {
     inner: RwLock<HashMap<String, Vec<Entry>>>,
     enabled: bool,
@@ -83,12 +88,12 @@ impl SemanticCache {
 
     /// Return a cached response whose query embedding is within `threshold` cosine
     /// similarity of `query_emb` (best match wins), or `None`.
-    pub fn get(&self, db: &str, query_emb: &[f32]) -> Option<Value> {
+    pub fn get(&self, db: &str, principal: &str, query_emb: &[f32]) -> Option<Value> {
         if !self.enabled || query_emb.is_empty() {
             return None;
         }
         let map = self.inner.read().ok()?;
-        let bucket = map.get(db)?;
+        let bucket = map.get(&bucket_key(db, principal))?;
         let mut best: Option<(f32, &Value)> = None;
         for e in bucket.iter() {
             if e.cached_at.elapsed() > self.ttl {
@@ -107,7 +112,7 @@ impl SemanticCache {
     }
 
     /// Store `response` keyed by its query embedding.
-    pub fn put(&self, db: &str, query_emb: Vec<f32>, response: Value) {
+    pub fn put(&self, db: &str, principal: &str, query_emb: Vec<f32>, response: Value) {
         if !self.enabled || query_emb.is_empty() {
             return;
         }
@@ -116,7 +121,7 @@ impl SemanticCache {
             Err(_) => return,
         };
         let ttl = self.ttl;
-        let bucket = map.entry(db.to_string()).or_default();
+        let bucket = map.entry(bucket_key(db, principal)).or_default();
         // Opportunistically drop expired entries.
         bucket.retain(|e| e.cached_at.elapsed() <= ttl);
         bucket.push(Entry {
@@ -139,6 +144,12 @@ impl SemanticCache {
     }
 }
 
+/// Bucket key for one principal in one database. NUL cannot appear in a
+/// database name or a user name, so distinct pairs never collide.
+fn bucket_key(db: &str, principal: &str) -> String {
+    format!("{}\0{}", db, principal)
+}
+
 static CACHE: OnceLock<SemanticCache> = OnceLock::new();
 
 /// Process-wide semantic cache, configured from the environment on first use.
@@ -158,42 +169,59 @@ mod tests {
     #[test]
     fn test_hit_on_similar_and_miss_on_dissimilar() {
         let c = cache();
-        c.put("db", vec![1.0, 0.0, 0.0], json!("answer-A"));
+        c.put("db", "alice", vec![1.0, 0.0, 0.0], json!("answer-A"));
 
         // Near-identical query → hit.
-        assert_eq!(c.get("db", &[0.99, 0.01, 0.0]), Some(json!("answer-A")));
+        assert_eq!(
+            c.get("db", "alice", &[0.99, 0.01, 0.0]),
+            Some(json!("answer-A"))
+        );
         // Exact query → hit.
-        assert_eq!(c.get("db", &[1.0, 0.0, 0.0]), Some(json!("answer-A")));
+        assert_eq!(
+            c.get("db", "alice", &[1.0, 0.0, 0.0]),
+            Some(json!("answer-A"))
+        );
         // Orthogonal query (cosine 0) → miss.
-        assert_eq!(c.get("db", &[0.0, 1.0, 0.0]), None);
+        assert_eq!(c.get("db", "alice", &[0.0, 1.0, 0.0]), None);
         // Different database bucket → miss.
-        assert_eq!(c.get("other", &[1.0, 0.0, 0.0]), None);
+        assert_eq!(c.get("other", "alice", &[1.0, 0.0, 0.0]), None);
+    }
+
+    #[test]
+    fn test_buckets_are_per_principal() {
+        let c = cache();
+        c.put("db", "alice", vec![1.0, 0.0, 0.0], json!("alice-answer"));
+        assert_eq!(c.get("db", "bob", &[1.0, 0.0, 0.0]), None);
+        assert_eq!(
+            c.get("db", "alice", &[1.0, 0.0, 0.0]),
+            Some(json!("alice-answer"))
+        );
     }
 
     #[test]
     fn test_disabled_is_noop() {
         let c = SemanticCache::new(false, 0.9, Duration::from_secs(3600), 256);
-        c.put("db", vec![1.0, 0.0, 0.0], json!("x"));
-        assert_eq!(c.get("db", &[1.0, 0.0, 0.0]), None);
+        c.put("db", "alice", vec![1.0, 0.0, 0.0], json!("x"));
+        assert_eq!(c.get("db", "alice", &[1.0, 0.0, 0.0]), None);
     }
 
     #[test]
     fn test_eviction_bounds_bucket() {
         let c = SemanticCache::new(true, 0.9, Duration::from_secs(3600), 2);
-        c.put("db", vec![1.0, 0.0, 0.0], json!("a"));
-        c.put("db", vec![0.0, 1.0, 0.0], json!("b"));
-        c.put("db", vec![0.0, 0.0, 1.0], json!("c")); // evicts oldest ("a")
+        c.put("db", "alice", vec![1.0, 0.0, 0.0], json!("a"));
+        c.put("db", "alice", vec![0.0, 1.0, 0.0], json!("b"));
+        c.put("db", "alice", vec![0.0, 0.0, 1.0], json!("c")); // evicts oldest ("a")
 
-        assert_eq!(c.get("db", &[1.0, 0.0, 0.0]), None); // "a" evicted
-        assert_eq!(c.get("db", &[0.0, 1.0, 0.0]), Some(json!("b")));
-        assert_eq!(c.get("db", &[0.0, 0.0, 1.0]), Some(json!("c")));
+        assert_eq!(c.get("db", "alice", &[1.0, 0.0, 0.0]), None); // "a" evicted
+        assert_eq!(c.get("db", "alice", &[0.0, 1.0, 0.0]), Some(json!("b")));
+        assert_eq!(c.get("db", "alice", &[0.0, 0.0, 1.0]), Some(json!("c")));
     }
 
     #[test]
     fn test_ttl_expiry() {
         let c = SemanticCache::new(true, 0.9, Duration::from_millis(5), 256);
-        c.put("db", vec![1.0, 0.0, 0.0], json!("stale"));
+        c.put("db", "alice", vec![1.0, 0.0, 0.0], json!("stale"));
         std::thread::sleep(Duration::from_millis(15));
-        assert_eq!(c.get("db", &[1.0, 0.0, 0.0]), None);
+        assert_eq!(c.get("db", "alice", &[1.0, 0.0, 0.0]), None);
     }
 }

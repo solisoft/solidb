@@ -269,17 +269,23 @@ impl AuthorizationService {
         claims: &crate::server::auth::Claims,
         state: &crate::server::handlers::AppState,
     ) -> DbResult<HashSet<Permission>> {
-        use crate::server::permission_cache::CachedPermissions;
-
-        // Check cache first
-        if let Some(cached) = state.permission_cache.get(&claims.sub) {
-            return Ok(cached.permissions);
-        }
+        use crate::server::permission_cache::{CachedPermissions, PermissionCache};
 
         // Get role names from claims
         let role_names = claims.roles.clone().unwrap_or_default();
         if role_names.is_empty() {
             return Ok(HashSet::new());
+        }
+
+        // The key carries the roles and scope, so a cached entry can never
+        // stand in for a different role set than the caller's own (audit H7).
+        let cache_key = PermissionCache::subject_key(
+            &claims.sub,
+            &role_names,
+            claims.scoped_databases.as_deref(),
+        );
+        if let Some(cached) = state.permission_cache.get(&cache_key) {
+            return Ok(cached.permissions);
         }
 
         // Load roles from cache (pre-seeded with the builtin roles) or DB.
@@ -317,7 +323,7 @@ impl AuthorizationService {
             role_names,
             claims.scoped_databases.clone(),
         );
-        state.permission_cache.set(claims.sub.clone(), cached);
+        state.permission_cache.set(cache_key, cached);
 
         Ok(permissions)
     }

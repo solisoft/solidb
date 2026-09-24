@@ -122,6 +122,10 @@ pub async fn change_password_handler(
 
     collection.update(&claims.sub, updated_value.clone())?;
 
+    // The old password must stop working now, not when its cached Basic-auth
+    // result expires (audit H7).
+    crate::server::auth::invalidate_basic_auth_cache_for_user(&claims.sub);
+
     // Record write for replication
     if let Some(ref log) = state.replication_log {
         let entry = LogEntry {
@@ -314,33 +318,29 @@ pub async fn login_handler(
     // only consulted when SOLIDB_TRUST_PROXY_HEADERS is set (i.e. the
     // server is behind a proxy that overwrites them). Trusting them by
     // default would let one machine rotate fake IPs past the rate limit.
-    let socket_ip = peer
-        .ok()
-        .map(|axum::extract::ConnectInfo(addr)| addr.ip().to_string());
-    let client_ip = if crate::server::auth::trust_proxy_headers() {
-        headers
-            .get("X-Forwarded-For")
-            .and_then(|h| h.to_str().ok())
-            .and_then(|s| s.split(',').next())
-            .map(|s| s.trim().to_string())
-            .or_else(|| {
-                headers
-                    .get("X-Real-IP")
-                    .and_then(|h| h.to_str().ok())
-                    .map(|s| s.to_string())
-            })
-            .or(socket_ip)
-            .unwrap_or_else(|| "unknown".to_string())
-    } else {
-        socket_ip.unwrap_or_else(|| "unknown".to_string())
-    };
+    let socket_ip = peer.ok().map(|axum::extract::ConnectInfo(addr)| addr.ip());
+    let client_ip = crate::server::rate_limit::client_ip(socket_ip, &headers)
+        .unwrap_or_else(|| "unknown".to_string());
 
     // Rate limit on (client IP, username), counting only *failed* attempts:
     // parallel legitimate logins (e.g. a local test runner's workers all
     // hitting 127.0.0.1) can't exhaust the budget, and one app looping on
-    // bad credentials doesn't lock other users out of the same host.
-    let rate_bucket = format!("{}|{}", client_ip, req.username);
+    // bad credentials doesn't lock other users out of the same host. The
+    // Basic-auth middlewares share these buckets.
+    let rate_bucket = crate::server::auth::login_bucket(&client_ip, &req.username);
     crate::server::auth::check_rate_limit(&rate_bucket)?;
+
+    // Reserved principals never log in, even if a legacy `_admins` row
+    // carries the name: a token for `cluster-internal` would pass for a peer
+    // node, and an `api-key:` subject would skip the `_admins` re-check.
+    // Burn the same Argon2 time as any other bad login.
+    if req.username == crate::server::auth::CLUSTER_INTERNAL_SUB
+        || req.username.starts_with("api-key:")
+    {
+        crate::server::auth::verify_password_for_unknown_user(&req.password).await;
+        crate::server::auth::record_login_failure(&rate_bucket);
+        return Err(DbError::BadRequest("Invalid credentials".to_string()));
+    }
     // 1. Get _system database
     let db = state.storage.get_database("_system")?;
 
@@ -375,6 +375,9 @@ pub async fn login_handler(
     let doc = match collection.get(&req.username) {
         Ok(d) => d,
         Err(DbError::DocumentNotFound(_)) => {
+            // Same Argon2 cost as a wrong password, so response timing does
+            // not reveal which usernames exist (audit H5).
+            crate::server::auth::verify_password_for_unknown_user(&req.password).await;
             crate::server::auth::record_login_failure(&rate_bucket);
             // Return generic error for security
             return Err(DbError::BadRequest("Invalid credentials".to_string()));
@@ -433,6 +436,13 @@ pub async fn livequery_token_handler(
     if claims.livequery == Some(true) {
         return Err(DbError::Forbidden(
             "A live-query token cannot issue another live-query token".to_string(),
+        ));
+    }
+    // The cluster identity is never signed into a token (`refresh_jwt_roles`
+    // refuses one); don't mint something that looks like it.
+    if crate::server::auth::is_cluster_internal(&claims) {
+        return Err(DbError::Forbidden(
+            "The cluster identity cannot issue live-query tokens".to_string(),
         ));
     }
     // The short-lived token inherits the requester's identity, roles and

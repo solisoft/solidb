@@ -64,13 +64,27 @@ pub async fn handle_query(
         }
     }
 
+    // The executor gets the session's principal, same as the HTTP handler: the
+    // dispatch check above only demands Read for a non-mutating query, so the
+    // principal is what keeps a read-only session off the write-side query
+    // paths (auto-index creation) and applies row policies here too.
+    let principal = handler.query_principal(&database);
+
     // Result cache, read-only queries only (and only when the client opts in).
-    // Keyed on the database too, so two databases running the same query text
-    // cannot share entries.
+    // Keyed on the database and the session's principal (audit H1), and `None`
+    // when the collection set cannot be read off the AST (audit P2).
+    let cache_generation = query_cache::current_generation();
     let cache_key = if mutates || !cache {
         None
     } else {
-        Some(query_cache::hash_query(&database, &sdbql, &bind_vars))
+        query_cache::cache_key_for(
+            &handler.storage,
+            &database,
+            &sdbql,
+            query,
+            &bind_vars,
+            &principal,
+        )
     };
     if let Some(ref key) = cache_key {
         if let Some(hit) = query_cache::get_query_cache().get(key) {
@@ -78,19 +92,10 @@ pub async fn handle_query(
         }
     }
 
-    // The executor gets the session's principal, same as the HTTP handler: the
-    // dispatch check above only demands Read for a non-mutating query, so the
-    // principal is what keeps a read-only session off the write-side query
-    // paths (auto-index creation) and applies row policies here too.
-    let principal = handler.query_principal(&database);
-
     // Collections this query invalidates, resolved before execution: the
     // timeout path below needs them after the executor is out of reach.
     let invalidated: Vec<String> = if mutates {
-        mutated_collections(query)
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect()
+        mutated_collections(query).into_iter().collect()
     } else {
         Vec::new()
     };
@@ -118,7 +123,11 @@ pub async fn handle_query(
             Ok(results) => {
                 if let Some(key) = cache_key {
                     if results.len() <= query_cache::MAX_CACHED_ROWS {
-                        query_cache::get_query_cache().put(key, results.clone());
+                        query_cache::get_query_cache().put_if_current(
+                            key,
+                            results.clone(),
+                            cache_generation,
+                        );
                     }
                 }
                 if mutates {
@@ -160,7 +169,11 @@ pub async fn handle_query(
             Ok(Ok(results)) => {
                 if let Some(key) = cache_key {
                     if results.len() <= query_cache::MAX_CACHED_ROWS {
-                        query_cache::get_query_cache().put(key, results.clone());
+                        query_cache::get_query_cache().put_if_current(
+                            key,
+                            results.clone(),
+                            cache_generation,
+                        );
                     }
                 }
                 if mutates {

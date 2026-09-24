@@ -573,6 +573,7 @@ pub async fn assign_role(
     // Invalidate cache for this user
     state.permission_cache.invalidate(&username);
     crate::server::auth::AuthService::invalidate_user_roles_cache(&username);
+    crate::server::auth::invalidate_basic_auth_cache_for_user(&username);
 
     Ok((
         StatusCode::CREATED,
@@ -645,6 +646,7 @@ pub async fn revoke_role(
     // Invalidate cache for this user
     state.permission_cache.invalidate(&username);
     crate::server::auth::AuthService::invalidate_user_roles_cache(&username);
+    crate::server::auth::invalidate_basic_auth_cache_for_user(&username);
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -771,6 +773,27 @@ pub async fn list_users(
     }))
 }
 
+/// Refuse usernames that would collide with a non-user principal (audit H7).
+///
+/// `cluster-internal` is the identity `auth_middleware` grants after
+/// verifying the cluster secret, and handlers treat it as proof of a peer
+/// node. API-key principals are `api-key:{id}`. A ':' is also what separates
+/// user from password in Basic auth, so such a user could never use it.
+fn validate_new_username(username: &str) -> Result<(), DbError> {
+    if username.contains(':') {
+        return Err(DbError::BadRequest(
+            "Username must not contain ':'".to_string(),
+        ));
+    }
+    if username == crate::server::auth::CLUSTER_INTERNAL_SUB {
+        return Err(DbError::BadRequest(format!(
+            "Username '{}' is reserved",
+            username
+        )));
+    }
+    Ok(())
+}
+
 /// Create a new user
 pub async fn create_user(
     State(state): State<AppState>,
@@ -786,6 +809,7 @@ pub async fn create_user(
             "Username must be 1-64 characters".to_string(),
         ));
     }
+    validate_new_username(&req.username)?;
 
     // Validate password
     if req.password.len() < 12 {
@@ -976,6 +1000,21 @@ pub async fn delete_user(
     // Invalidate cache for this user
     state.permission_cache.invalidate(&username);
     crate::server::auth::AuthService::invalidate_user_roles_cache(&username);
+    crate::server::auth::invalidate_basic_auth_cache_for_user(&username);
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reserved_and_colon_usernames_are_refused() {
+        assert!(validate_new_username("cluster-internal").is_err());
+        assert!(validate_new_username("api-key:abc").is_err());
+        assert!(validate_new_username("a:b").is_err());
+        assert!(validate_new_username("alice").is_ok());
+        assert!(validate_new_username("cluster-internal2").is_ok());
+    }
 }

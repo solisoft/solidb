@@ -516,9 +516,11 @@ pub async fn repl_eval_handler(
     let _ = state.storage.get_database(&db_name)?;
 
     // Get or create session
+    // Sessions are owned by the caller and capped (audit M3).
     let mut session = state
         .repl_sessions
-        .get_or_create(req.session_id.as_deref(), &db_name);
+        .get_or_create_for(req.session_id.as_deref(), &db_name, &claims.sub)
+        .map_err(|e| DbError::RateLimited(e.to_string(), 60))?;
 
     // Get history BEFORE adding new code (so we don't replay current command)
     let history: Vec<String> = session.history.clone();
@@ -549,6 +551,8 @@ pub async fn repl_eval_handler(
             &session.variables,
             &history,
             &mut output_capture,
+            // Bounded by the script timeout inside (audit A4).
+            req.timeout_ms,
         )
         .await;
 

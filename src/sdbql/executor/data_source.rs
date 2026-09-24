@@ -14,6 +14,15 @@ use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::ForClause;
 use crate::storage::http_client::get_blocking_http_client;
 
+/// A collection's row policy compiled for one principal (see
+/// [`QueryExecutor::row_policy_gate`]).
+pub(super) struct RowPolicyGate {
+    /// `None` when the stored predicate does not parse: deny every row.
+    expr: Option<crate::sdbql::ast::Expression>,
+    binding: String,
+    user: String,
+}
+
 impl<'a> QueryExecutor<'a> {
     pub(super) fn get_collection(&self, name: &str) -> DbResult<crate::storage::Collection> {
         // Credential collections (`_env`, `_admins`, `_api_keys`) are ordinary
@@ -230,20 +239,40 @@ impl<'a> QueryExecutor<'a> {
                         for_clause.collection,
                         shard_config.num_shards
                     );
-                    return self.scatter_gather_docs(&source_coll, coordinator, limit);
+                    // Audit H2: the gathered rows are filtered like a local
+                    // scan. A LIMIT is applied after the policy, not pushed
+                    // to the shards, or the policy would under-fill it.
+                    if !self.row_policy_applies(&for_clause.collection) {
+                        return self.scatter_gather_docs(&source_coll, coordinator, limit);
+                    }
+                    let docs = self.scatter_gather_docs(&source_coll, coordinator, None)?;
+                    let mut docs = self.apply_row_policy(&for_clause.collection, docs, ctx);
+                    if let Some(n) = limit {
+                        docs.truncate(n);
+                    }
+                    return Ok(docs);
                 }
             }
         }
+
+        let filtered =
+            for_clause.valid_time.is_some() || self.row_policy_applies(&for_clause.collection);
 
         if let Some(ts_expr) = &for_clause.system_time {
             let ts_val = self.evaluate_expr_with_context(ts_expr, ctx)?;
             let micros = super::evaluate::as_of_micros(&ts_val)?;
             let mut docs = collection.scan_as_of(micros)?;
+            if !filtered {
+                if let Some(n) = limit {
+                    docs.truncate(n);
+                }
+            }
+            let docs = self.apply_valid_time(for_clause, docs, ctx)?;
+            let mut docs = self.apply_row_policy(&for_clause.collection, docs, ctx);
             if let Some(n) = limit {
                 docs.truncate(n);
             }
-            let docs = self.apply_valid_time(for_clause, docs, ctx)?;
-            return Ok(self.apply_row_policy(&for_clause.collection, docs, ctx));
+            return Ok(docs);
         }
 
         // Local scan - for non-sharded collections or when no coordinator.
@@ -260,17 +289,19 @@ impl<'a> QueryExecutor<'a> {
         // the full scan, just without holding it. Only the plain path can do
         // this: valid-time and row-policy filtering happen after the scan, and
         // a capped scan would under-fill them.
-        let limit = if for_clause.valid_time.is_none()
-            && !self.row_policy_applies(&for_clause.collection)
-        {
+        if !filtered {
             let cap = self.max_intermediate_rows.saturating_add(1);
-            Some(limit.map_or(cap, |n| n.min(cap)))
-        } else {
-            limit
-        };
-        let docs = collection.scan_values(limit);
+            return Ok(collection.scan_values(Some(limit.map_or(cap, |n| n.min(cap)))));
+        }
+        // Filtered: the LIMIT applies to what survives the filters, so it
+        // cannot be pushed into the scan.
+        let docs = collection.scan_values(None);
         let docs = self.apply_valid_time(for_clause, docs, ctx)?;
-        Ok(self.apply_row_policy(&for_clause.collection, docs, ctx))
+        let mut docs = self.apply_row_policy(&for_clause.collection, docs, ctx);
+        if let Some(n) = limit {
+            docs.truncate(n);
+        }
+        Ok(docs)
     }
 
     fn apply_valid_time(
@@ -318,50 +349,130 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
+    /// The row policy that binds this principal's reads of `collection`, if
+    /// any. A search-view alias resolves to its backing collection's policy:
+    /// looking the policy up under the view name found nothing and let every
+    /// row through.
+    ///
+    /// Audit H2: every collection read path goes through this — scans filter
+    /// with [`Self::apply_row_policy`], point and function reads with
+    /// [`Self::row_policy_permits`], and the fast / index paths that cannot
+    /// filter check [`Self::row_policy_applies`] and step aside for the scan.
+    pub(super) fn row_policy_gate(&self, collection: &str) -> Option<RowPolicyGate> {
+        let principal = self.principal.as_ref()?;
+        if principal.can_admin {
+            return None;
+        }
+        let coll = match self.get_collection(collection) {
+            Ok(c) => c,
+            Err(_) => {
+                let backing = self.resolve_search_view_collection(collection).ok()??;
+                self.get_collection(&backing).ok()?
+            }
+        };
+        self.row_policy_gate_for(&coll, collection)
+    }
+
+    /// [`Self::row_policy_gate`] for a collection already resolved (e.g. a
+    /// qualified `DOCUMENT("db:c/k")` name). `binding` is the name the
+    /// predicate may use for the row, alongside `doc`.
+    pub(super) fn row_policy_gate_for(
+        &self,
+        coll: &crate::storage::Collection,
+        binding: &str,
+    ) -> Option<RowPolicyGate> {
+        let principal = self.principal.as_ref()?;
+        if principal.can_admin {
+            return None;
+        }
+        let text = coll.get_row_policy()?;
+        // An unparseable policy denies every row rather than none.
+        let expr = crate::sdbql::parser::Parser::new(&text)
+            .and_then(|mut p| p.parse_expression())
+            .ok();
+        Some(RowPolicyGate {
+            expr,
+            binding: binding.to_string(),
+            user: principal.user.clone(),
+        })
+    }
+
     /// Whether `apply_row_policy` would filter this principal's scan of
     /// `collection`.
-    fn row_policy_applies(&self, collection: &str) -> bool {
-        match &self.principal {
-            Some(p) if !p.can_admin => self
-                .get_collection(collection)
-                .ok()
-                .and_then(|c| c.get_row_policy())
-                .is_some(),
-            _ => false,
+    pub(super) fn row_policy_applies(&self, collection: &str) -> bool {
+        self.row_policy_gate(collection).is_some()
+    }
+
+    /// Evaluate a compiled row policy against one document.
+    pub(super) fn row_policy_allows(
+        &self,
+        gate: &RowPolicyGate,
+        doc: &Value,
+        ctx: &Context,
+    ) -> bool {
+        let Some(expr) = &gate.expr else {
+            return false;
+        };
+        let mut row = ctx.clone();
+        row.insert(gate.binding.clone(), doc.clone());
+        row.insert("doc".into(), doc.clone());
+        row.insert("CURRENT_USER".into(), Value::String(gate.user.clone()));
+        self.evaluate_expr_with_context(expr, &row)
+            .map(|v| to_bool(&v))
+            .unwrap_or(false)
+    }
+
+    /// Whether this principal may see `doc` from `collection`: the check for
+    /// point reads (`DOCUMENT`, `DOC_AS_OF`, ...) and search functions.
+    pub(super) fn row_policy_permits(&self, collection: &str, doc: &Value, ctx: &Context) -> bool {
+        match self.row_policy_gate(collection) {
+            Some(gate) => self.row_policy_allows(&gate, doc, ctx),
+            None => true,
         }
     }
 
-    fn apply_row_policy(&self, collection: &str, docs: Vec<Value>, ctx: &Context) -> Vec<Value> {
-        let Some(principal) = &self.principal else {
-            return docs;
-        };
-        if principal.can_admin {
-            return docs;
+    /// A whole-collection read (JOIN sides): bounded by the row ceiling and
+    /// filtered by the row policy, which the JOIN used to skip (audit H2).
+    pub(super) fn scan_bounded_with_policy(
+        &self,
+        name: &str,
+        collection: &crate::storage::Collection,
+    ) -> DbResult<Vec<Value>> {
+        let docs = self.scan_bounded(collection)?;
+        Ok(self.apply_row_policy(name, docs, &Context::new()))
+    }
+
+    /// Point read through the row policy: `None` when the document is absent
+    /// or hidden from this principal — the two are indistinguishable, so a
+    /// hidden key cannot be probed for.
+    pub(super) fn get_visible(
+        &self,
+        coll: &crate::storage::Collection,
+        binding: &str,
+        key: &str,
+        ctx: &Context,
+    ) -> Option<Value> {
+        let doc = coll.get(key).ok()?.to_value();
+        match self.row_policy_gate_for(coll, binding) {
+            Some(gate) if !self.row_policy_allows(&gate, &doc, ctx) => None,
+            _ => Some(doc),
         }
-        let Ok(coll) = self.get_collection(collection) else {
+    }
+
+    pub(super) fn apply_row_policy(
+        &self,
+        collection: &str,
+        docs: Vec<Value>,
+        ctx: &Context,
+    ) -> Vec<Value> {
+        let Some(gate) = self.row_policy_gate(collection) else {
             return docs;
-        };
-        let Some(expr_s) = coll.get_row_policy() else {
-            return docs;
-        };
-        let Ok(mut parser) = crate::sdbql::parser::Parser::new(&expr_s) else {
-            return Vec::new();
-        };
-        let Ok(expr) = parser.parse_expression() else {
-            return Vec::new();
         };
         docs.into_iter()
-            .filter(|doc| {
-                let mut row = ctx.clone();
-                row.insert(collection.to_string(), doc.clone());
-                row.insert("doc".into(), doc.clone());
-                row.insert("CURRENT_USER".into(), Value::String(principal.user.clone()));
-                self.evaluate_expr_with_context(&expr, &row)
-                    .map(|v| to_bool(&v))
-                    .unwrap_or(false)
-            })
+            .filter(|doc| self.row_policy_allows(&gate, doc, ctx))
             .collect()
     }
+
     pub(super) fn scatter_gather_docs(
         &self,
         collection_name: &str,
@@ -383,7 +494,7 @@ impl<'a> QueryExecutor<'a> {
 
         let my_node_id = coordinator.my_node_id();
         let cluster_secret = coordinator.cluster_secret();
-        let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
+        let scheme = crate::cluster::http::cluster_scheme().to_string();
 
         // Process local shards first (sequential, but fast)
         let mut local_docs: Vec<(String, Value)> = Vec::new();

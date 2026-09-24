@@ -77,6 +77,20 @@ pub struct ShardCoordinator {
     last_reshard_time: RwLock<Option<std::time::Instant>>,
 }
 
+/// Forward a write to a replica and wait for it.
+///
+/// Deliberately awaited, not spawned: two background forwards of successive
+/// writes to the same key could reach the replica out of order and leave it
+/// holding the older value, which count-based healing never notices. What
+/// made a stalled replica stall the primary (audit A10) was the missing
+/// request timeout; the shared inter-node client now has one.
+pub(crate) async fn spawn_replica_forward<F>(fut: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    fut.await;
+}
+
 impl ShardCoordinator {
     pub const MAX_BLOB_REPLICAS: u16 = 10;
     pub const MIN_BLOB_REPLICAS: u16 = 2;
@@ -801,8 +815,7 @@ impl ShardCoordinator {
             let physical_name = format!("{}_s{}", coll_name, s);
 
             if let Ok(physical_coll) = db.get_collection(&physical_name) {
-                let documents = physical_coll.all();
-                let doc_count = documents.len();
+                let doc_count = physical_coll.count();
                 let mut shard_fixed = 0;
                 let mut shard_moved = 0;
 
@@ -812,89 +825,108 @@ impl ShardCoordinator {
                     doc_count
                 );
 
-                let mut redundant_keys = Vec::new();
-                let mut misplaced_docs = Vec::new();
-                let mut misplaced_keys = Vec::new(); // Keep track of keys for deletion after move
+                // Audit P8: page through the shard instead of loading it
+                // whole; each page is classified, moved and cleaned before
+                // the next is read.
+                let mut cursor = crate::sharding::scan::ScanCursor::start();
+                loop {
+                    let (documents, next_cursor) = crate::sharding::scan::scan_page_blocking(
+                        physical_coll.clone(),
+                        cursor,
+                        crate::sharding::scan::DEFAULT_PAGE_SIZE,
+                    )
+                    .await?;
 
-                // 1. Scan and Classify
-                for doc in documents {
-                    let id_str = doc.key.clone();
-                    let route_key = doc.key.clone();
+                    let mut redundant_keys = Vec::new();
+                    let mut misplaced_docs = Vec::new();
+                    let mut misplaced_keys = Vec::new(); // Keep track of keys for deletion after move
 
-                    let target_shard =
-                        crate::sharding::router::ShardRouter::route(&route_key, config.num_shards);
+                    // 1. Scan and Classify
+                    for doc in documents {
+                        let id_str = doc.key.clone();
+                        let route_key = doc.key.clone();
 
-                    if target_shard != s {
-                        // Document is misplaced!
+                        let target_shard = crate::sharding::router::ShardRouter::route(
+                            &route_key,
+                            config.num_shards,
+                        );
 
-                        // Check if it exists in expected location
-                        let exists = self.get(db_name, coll_name, &id_str).await.is_ok();
+                        if target_shard != s {
+                            // Document is misplaced!
 
-                        if exists {
-                            // It exists in target -> Redundant Duplicate
-                            redundant_keys.push(id_str);
-                            shard_fixed += 1;
-                        } else {
-                            // It DOES NOT exist -> Misplaced (needs move)
-                            misplaced_docs.push(doc.to_value());
-                            misplaced_keys.push(id_str);
-                        }
-                    }
-                }
+                            // Check if it exists in expected location
+                            let exists = self.get(db_name, coll_name, &id_str).await.is_ok();
 
-                // 2. Batch Move Misplaced Docs
-                if !misplaced_docs.is_empty() {
-                    let total_to_move = misplaced_docs.len();
-                    tracing::info!(
-                        "REPAIR: Moving {} misplaced docs from {}...",
-                        total_to_move,
-                        physical_name
-                    );
-
-                    match self
-                        .insert_batch(db_name, coll_name, &config, misplaced_docs)
-                        .await
-                    {
-                        Ok((success, fail)) => {
-                            if fail == 0 {
-                                // Move successful (all), now we can delete them from source
-                                redundant_keys.extend(misplaced_keys);
-                                shard_moved += success; // Actually moved
+                            if exists {
+                                // It exists in target -> Redundant Duplicate
+                                redundant_keys.push(id_str);
+                                shard_fixed += 1;
                             } else {
-                                // Partial failure. Safety check: DO NOT DELETE from source to avoid data loss.
-                                // We could try to identify which failed, but insert_batch doesn't return that.
-                                // User can run repair again.
-                                tracing::warn!("REPAIR: Batch move had failures (success={}, fail={}). Skipping delete for safety.", success, fail);
-                                total_errors += fail;
+                                // It DOES NOT exist -> Misplaced (needs move)
+                                misplaced_docs.push(doc.to_value());
+                                misplaced_keys.push(id_str);
                             }
                         }
-                        Err(e) => {
-                            tracing::error!(
-                                "REPAIR: Batch move failed for {}: {}",
-                                physical_name,
-                                e
-                            );
-                            total_errors += 1;
-                            // We do NOT delete misplaced_keys if move failed.
+                    }
+
+                    // 2. Batch Move Misplaced Docs
+                    if !misplaced_docs.is_empty() {
+                        let total_to_move = misplaced_docs.len();
+                        tracing::info!(
+                            "REPAIR: Moving {} misplaced docs from {}...",
+                            total_to_move,
+                            physical_name
+                        );
+
+                        match self
+                            .insert_batch(db_name, coll_name, &config, misplaced_docs)
+                            .await
+                        {
+                            Ok((success, fail)) => {
+                                if fail == 0 {
+                                    // Move successful (all), now we can delete them from source
+                                    redundant_keys.extend(misplaced_keys);
+                                    shard_moved += success; // Actually moved
+                                } else {
+                                    // Partial failure. Safety check: DO NOT DELETE from source to avoid data loss.
+                                    // We could try to identify which failed, but insert_batch doesn't return that.
+                                    // User can run repair again.
+                                    tracing::warn!("REPAIR: Batch move had failures (success={}, fail={}). Skipping delete for safety.", success, fail);
+                                    total_errors += fail;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    "REPAIR: Batch move failed for {}: {}",
+                                    physical_name,
+                                    e
+                                );
+                                total_errors += 1;
+                                // We do NOT delete misplaced_keys if move failed.
+                            }
                         }
                     }
-                }
 
-                // 3. Batch Delete Redundant Docs
-                if !redundant_keys.is_empty() {
-                    match physical_coll.delete_batch(redundant_keys) {
-                        Ok(_n) => {
-                            // n duplicates deleted
-                            // shard_fixed/shard_moved counts track logic, n tracks actual deletes
+                    // 3. Batch Delete Redundant Docs
+                    if !redundant_keys.is_empty() {
+                        match physical_coll.delete_batch(redundant_keys) {
+                            Ok(_n) => {
+                                // n duplicates deleted
+                                // shard_fixed/shard_moved counts track logic, n tracks actual deletes
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    "REPAIR: Batch delete failed for {}: {}",
+                                    physical_name,
+                                    e
+                                );
+                                total_errors += 1;
+                            }
                         }
-                        Err(e) => {
-                            tracing::error!(
-                                "REPAIR: Batch delete failed for {}: {}",
-                                physical_name,
-                                e
-                            );
-                            total_errors += 1;
-                        }
+                    }
+                    match next_cursor {
+                        Some(c) => cursor = c,
+                        None => break,
                     }
                 }
 
@@ -1182,9 +1214,12 @@ impl ShardCoordinator {
                     } else {
                         // Tell target node to copy from source
                         if let Some(target_addr) = mgr.get_node_api_address(&target_node) {
-                            let url = format!(
-                                "http://{}/_api/database/{}/collection/{}/_copy_shard",
-                                target_addr, database, physical_coll
+                            let url = crate::cluster::http::peer_url(
+                                &target_addr,
+                                &format!(
+                                    "/_api/database/{}/collection/{}/_copy_shard",
+                                    database, physical_coll
+                                ),
                             );
                             let secret = self.cluster_secret();
 
@@ -1303,9 +1338,12 @@ impl ShardCoordinator {
                 // Get source document count
                 let source_count = if let Some(source_addr) = mgr.get_node_api_address(&source_node)
                 {
-                    let url = format!(
-                        "http://{}/_api/database/{}/collection/{}/count",
-                        source_addr, database, physical_coll
+                    let url = crate::cluster::http::peer_url(
+                        &source_addr,
+                        &format!(
+                            "/_api/database/{}/collection/{}/count",
+                            database, physical_coll
+                        ),
                     );
                     let secret = self.cluster_secret();
                     let client = get_http_client();
@@ -1473,8 +1511,6 @@ impl ShardCoordinator {
         physical_coll: &str,
         source_node: &str,
     ) -> Result<usize, crate::error::DbError> {
-        use base64::{engine::general_purpose, Engine as _};
-
         let mgr = self.cluster_manager.as_ref().ok_or_else(|| {
             crate::error::DbError::InternalError("No cluster manager".to_string())
         })?;
@@ -1488,9 +1524,9 @@ impl ShardCoordinator {
         let client = get_http_client();
 
         // Use standard Collection API to get metadata (count)
-        let meta_url = format!(
-            "http://{}/_api/database/{}/collection/{}",
-            source_addr, database, physical_coll
+        let meta_url = crate::cluster::http::peer_url(
+            &source_addr,
+            &format!("/_api/database/{}/collection/{}", database, physical_coll),
         );
         let meta_res = client
             .get(&meta_url)
@@ -1539,17 +1575,19 @@ impl ShardCoordinator {
         }
 
         // Use EXPORT endpoint to stream all data (Docs + Blob Chunks)
-        let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
-        let url = format!(
-            "{}://{}/_api/database/{}/collection/{}/export",
-            scheme, source_addr, database, physical_coll
+        let url = crate::cluster::http::peer_url(
+            &source_addr,
+            &format!(
+                "/_api/database/{}/collection/{}/export",
+                database, physical_coll
+            ),
         );
 
-        let mut resp = client
+        let resp = client
             .get(&url)
             .header("X-Cluster-Secret", &secret)
             .header("X-Shard-Direct", "true")
-            .timeout(std::time::Duration::from_secs(3600)) // Long timeout for large shards
+            .timeout(crate::cluster::http::stream_timeout()) // Long timeout for large shards
             .send()
             .await
             .map_err(|e| {
@@ -1565,93 +1603,10 @@ impl ShardCoordinator {
             )));
         }
 
-        let mut batch_docs = Vec::with_capacity(1000);
-        let mut total_copied = 0;
-        let mut line_buffer = String::new();
-
-        // Stream processing
-        while let Ok(Some(chunk)) = resp.chunk().await {
-            // Append chunk to buffer
-            let chunk_str = String::from_utf8_lossy(&chunk);
-            line_buffer.push_str(&chunk_str);
-
-            // Process lines
-            while let Some(pos) = line_buffer.find('\n') {
-                let line: String = line_buffer.drain(..pos + 1).collect();
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-
-                if let Ok(mut doc) = serde_json::from_str::<serde_json::Value>(line) {
-                    // Check if blob chunk
-                    let is_blob_chunk = doc
-                        .get("_type")
-                        .and_then(|t| t.as_str())
-                        .map(|t| t == "blob_chunk")
-                        .unwrap_or(false);
-
-                    if is_blob_chunk {
-                        // Import Chunk immediately
-                        if let (Some(key), Some(index), Some(data_b64)) = (
-                            doc.get("_doc_key").and_then(|s| s.as_str()),
-                            doc.get("_chunk_index").and_then(|n| n.as_u64()),
-                            doc.get("_blob_data").and_then(|s| s.as_str()),
-                        ) {
-                            if let Ok(data) = general_purpose::STANDARD.decode(data_b64) {
-                                if let Err(e) = coll.put_blob_chunk(key, index as u32, &data) {
-                                    tracing::error!(
-                                        "HEAL: Failed to write chunk {} for {}: {}",
-                                        index,
-                                        key,
-                                        e
-                                    );
-                                }
-                            }
-                        }
-                    } else {
-                        // Clean metadata (same as import)
-                        if let Some(obj) = doc.as_object_mut() {
-                            obj.remove("_database");
-                            obj.remove("_collection");
-                            obj.remove("_shardConfig");
-                        }
-
-                        // Prepare for batch upsert
-                        let key = doc
-                            .get("_key")
-                            .and_then(|k| k.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        if !key.is_empty() {
-                            batch_docs.push((key, doc));
-                        }
-                    }
-                }
-            }
-
-            // Flush Batch if full
-            if batch_docs.len() >= 1000 {
-                let count = batch_docs.len();
-                let batch_to_insert: Vec<(String, serde_json::Value)> =
-                    std::mem::take(&mut batch_docs);
-                if let Err(e) = coll.upsert_batch(batch_to_insert) {
-                    tracing::error!("HEAL: Batch upsert failed: {}", e);
-                } else {
-                    total_copied += count;
-                }
-            }
-        }
-
-        // Final Flush
-        if !batch_docs.len() > 0 {
-            let count = batch_docs.len();
-            if let Err(e) = coll.upsert_batch(batch_docs) {
-                tracing::error!("HEAL: Final batch upsert failed: {}", e);
-            } else {
-                total_copied += count;
-            }
-        }
+        // Audit D7: raw-byte line splitting with a length cap; see
+        // `sharding::export_stream`.
+        let total_copied =
+            crate::sharding::export_stream::import_export_response(resp, &coll).await?;
 
         tracing::info!(
             "HEAL: Copied {} docs (and associated chunks) to {}/{}",
@@ -1742,9 +1697,12 @@ impl ShardCoordinator {
                 // Queue remote batch as future
                 if let Some(mgr) = &self.cluster_manager {
                     if let Some(addr) = mgr.get_node_api_address(primary_node) {
-                        let url = format!(
-                            "http://{}/_api/database/{}/document/{}/_batch",
-                            addr, database, physical_coll
+                        let url = crate::cluster::http::peer_url(
+                            &addr,
+                            &format!(
+                                "/_api/database/{}/document/{}/_batch",
+                                database, physical_coll
+                            ),
                         );
                         tracing::info!(
                             "INSERT BATCH: Queuing {} docs for remote shard {} at {}",
@@ -1789,7 +1747,6 @@ impl ShardCoordinator {
         }
 
         // Process local batches and forward to replicas
-        let mut replica_futures = Vec::new();
 
         for (shard_id, physical_coll, batch) in local_batches {
             let db = self.storage.get_database(database)?;
@@ -1822,9 +1779,12 @@ impl ShardCoordinator {
                             if let Some(mgr) = &self.cluster_manager {
                                 for replica_node in &assignment.replica_nodes {
                                     if let Some(addr) = mgr.get_node_api_address(replica_node) {
-                                        let url = format!(
-                                            "http://{}/_api/database/{}/document/{}/_replica",
-                                            addr, database, physical_coll
+                                        let url = crate::cluster::http::peer_url(
+                                            &addr,
+                                            &format!(
+                                                "/_api/database/{}/document/{}/_replica",
+                                                database, physical_coll
+                                            ),
                                         );
                                         tracing::debug!(
                                             "REPLICA: Forwarding {} docs to replica {} at {}",
@@ -1836,18 +1796,34 @@ impl ShardCoordinator {
                                         let client = client.clone();
                                         let secret = secret.clone();
                                         let batch = batch.clone();
+                                        let replica = replica_node.clone();
 
                                         let future = async move {
-                                            let _ = client
+                                            // Replica failures are logged but don't affect success count
+                                            match client
                                                 .post(&url)
                                                 .header("X-Shard-Direct", "true")
                                                 .header("X-Cluster-Secret", &secret)
                                                 .json(&batch)
                                                 .send()
-                                                .await;
-                                            // Replica failures are logged but don't affect success count
+                                                .await
+                                            {
+                                                Ok(r) if r.status().is_success() => {}
+                                                Ok(r) => tracing::warn!(
+                                                    "REPLICA: forward of {} docs to {} failed: {}",
+                                                    batch.len(),
+                                                    replica,
+                                                    r.status()
+                                                ),
+                                                Err(e) => tracing::warn!(
+                                                    "REPLICA: forward of {} docs to {} failed: {}",
+                                                    batch.len(),
+                                                    replica,
+                                                    e
+                                                ),
+                                            }
                                         };
-                                        replica_futures.push(future);
+                                        spawn_replica_forward(future).await;
                                     }
                                 }
                             }
@@ -1867,11 +1843,6 @@ impl ShardCoordinator {
                 total_success += success;
                 total_fail += fail;
             }
-        }
-
-        // Process replica forwarding in PARALLEL (fire-and-forget, don't wait)
-        if !replica_futures.is_empty() {
-            futures::future::join_all(replica_futures).await;
         }
 
         Ok((total_success, total_fail))
@@ -1975,9 +1946,12 @@ impl ShardCoordinator {
                             break;
                         }
 
-                        let url = format!(
-                            "http://{}/_api/database/{}/document/{}/_batch",
-                            addr, database, physical_coll
+                        let url = crate::cluster::http::peer_url(
+                            &addr,
+                            &format!(
+                                "/_api/database/{}/document/{}/_batch",
+                                database, physical_coll
+                            ),
                         );
                         let secret = self.cluster_secret();
                         let client = get_http_client();
@@ -2199,9 +2173,9 @@ impl ShardCoordinator {
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(&target_node) {
                     let client = get_http_client();
-                    let url = format!(
-                        "http://{}/_api/database/{}/document/{}",
-                        addr, database, physical_coll
+                    let url = crate::cluster::http::peer_url(
+                        &addr,
+                        &format!("/_api/database/{}/document/{}", database, physical_coll),
                     );
 
                     // Get Cluster Secret
@@ -2363,9 +2337,9 @@ impl ShardCoordinator {
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(&target_node) {
                     let client = get_http_client();
-                    let url = format!(
-                        "http://{}/_internal/blob/upload/{}/{}",
-                        addr, database, physical_coll
+                    let url = crate::cluster::http::peer_url(
+                        &addr,
+                        &format!("/_internal/blob/upload/{}/{}", database, physical_coll),
                     );
 
                     // Create multipart form with metadata and chunks
@@ -2552,9 +2526,9 @@ impl ShardCoordinator {
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
                     let client = get_http_client();
-                    let url = format!(
-                        "http://{}/_api/blob/{}/{}/{}",
-                        addr, database, physical_coll, key
+                    let url = crate::cluster::http::peer_url(
+                        &addr,
+                        &format!("/_api/blob/{}/{}/{}", database, physical_coll, key),
                     );
 
                     // Get Cluster Secret
@@ -2698,9 +2672,12 @@ impl ShardCoordinator {
             for node_id in &nodes_to_try {
                 if let Some(mgr) = &self.cluster_manager {
                     if let Some(addr) = mgr.get_node_api_address(node_id) {
-                        let url = format!(
-                            "http://{}/_api/database/{}/document/{}/{}",
-                            addr, database, physical_coll, key
+                        let url = crate::cluster::http::peer_url(
+                            &addr,
+                            &format!(
+                                "/_api/database/{}/document/{}/{}",
+                                database, physical_coll, key
+                            ),
                         );
 
                         let res = client
@@ -2774,9 +2751,12 @@ impl ShardCoordinator {
                 // Try remote node
                 if let Some(mgr) = &self.cluster_manager {
                     if let Some(addr) = mgr.get_node_api_address(primary_node) {
-                        let url = format!(
-                            "http://{}/_api/database/{}/document/{}/{}",
-                            addr, database, physical_coll, key
+                        let url = crate::cluster::http::peer_url(
+                            &addr,
+                            &format!(
+                                "/_api/database/{}/document/{}/{}",
+                                database, physical_coll, key
+                            ),
                         );
 
                         let res = client
@@ -2892,9 +2872,12 @@ impl ShardCoordinator {
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
                     let client = get_http_client();
-                    let url = format!(
-                        "http://{}/_api/database/{}/document/{}/{}",
-                        addr, database, physical_coll, key
+                    let url = crate::cluster::http::peer_url(
+                        &addr,
+                        &format!(
+                            "/_api/database/{}/document/{}/{}",
+                            database, physical_coll, key
+                        ),
                     );
                     let secret = self.cluster_secret();
 
@@ -2989,9 +2972,12 @@ impl ShardCoordinator {
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
                     let client = get_http_client();
-                    let url = format!(
-                        "http://{}/_api/database/{}/document/{}/{}",
-                        addr, database, physical_coll, key
+                    let url = crate::cluster::http::peer_url(
+                        &addr,
+                        &format!(
+                            "/_api/database/{}/document/{}/{}",
+                            database, physical_coll, key
+                        ),
                     );
                     let secret = self.cluster_secret();
 
@@ -3202,8 +3188,10 @@ impl ShardCoordinator {
                     // Remote Create
                     if let Some(mgr) = &self.cluster_manager {
                         if let Some(addr) = mgr.get_node_api_address(target_node) {
-                            let url =
-                                format!("http://{}/_api/database/{}/collection", addr, database);
+                            let url = crate::cluster::http::peer_url(
+                                &addr,
+                                &format!("/_api/database/{}/collection", database),
+                            );
                             tracing::info!(
                                 "CREATE_SHARDS: Remote creating {} at {} (url={}) type={:?}",
                                 phys_name,
@@ -3305,9 +3293,12 @@ impl ShardCoordinator {
                 if let Some(mgr) = &self.cluster_manager {
                     // Try primary node
                     if let Some(addr) = mgr.get_node_api_address(&assignment.primary_node) {
-                        let url = format!(
-                            "http://{}/_api/database/{}/collection/{}/count",
-                            addr, database, physical_name
+                        let url = crate::cluster::http::peer_url(
+                            &addr,
+                            &format!(
+                                "/_api/database/{}/collection/{}/count",
+                                database, physical_name
+                            ),
                         );
                         let mut req = client
                             .get(&url)
@@ -3335,9 +3326,12 @@ impl ShardCoordinator {
                     if !found {
                         for replica_node in &assignment.replica_nodes {
                             if let Some(addr) = mgr.get_node_api_address(replica_node) {
-                                let url = format!(
-                                    "http://{}/_api/database/{}/collection/{}/count",
-                                    addr, database, physical_name
+                                let url = crate::cluster::http::peer_url(
+                                    &addr,
+                                    &format!(
+                                        "/_api/database/{}/collection/{}/count",
+                                        database, physical_name
+                                    ),
                                 );
                                 let mut req = client
                                     .get(&url)
@@ -3454,9 +3448,12 @@ impl ShardCoordinator {
 
                     for node_id in nodes_to_try {
                         if let Some(addr) = mgr.get_node_api_address(&node_id) {
-                            let url = format!(
-                                "http://{}/_api/database/{}/collection/{}/stats",
-                                addr, database, physical_name
+                            let url = crate::cluster::http::peer_url(
+                                &addr,
+                                &format!(
+                                    "/_api/database/{}/collection/{}/stats",
+                                    database, physical_name
+                                ),
                             );
                             let mut req = client
                                 .get(&url)

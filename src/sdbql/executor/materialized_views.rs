@@ -45,85 +45,109 @@ impl<'a> QueryExecutor<'a> {
         self.database.as_deref().unwrap_or("_system")
     }
 
+    /// Refuse a view definition that writes.
+    ///
+    /// Audit H4: a view query is re-run by the scheduled refresh worker long
+    /// after its creator's request is gone, so an `INSERT ... INTO _jobs`
+    /// inside one was a standing write on every interval. A materialized view
+    /// is a read by definition; nothing documents a mutating one.
+    fn reject_mutating_view_query(view_name: &str, query: &Query) -> DbResult<()> {
+        if query.has_mutations() {
+            return Err(DbError::BadRequest(format!(
+                "Materialized view '{}': the view query must be read-only \
+                 (no INSERT/UPDATE/UPSERT/REMOVE or catalog functions)",
+                view_name
+            )));
+        }
+        Ok(())
+    }
+
+    /// The creator recorded in the `_views` row, so the scheduled refresh can
+    /// run under the same principal rather than as the server (audit H4).
+    /// `null` when the executor has no principal (server-side code); the
+    /// refresh worker treats that as a read-only principal.
+    fn view_owner(&self) -> Value {
+        match &self.principal {
+            Some(p) => serde_json::json!({ "user": p.user, "roles": p.roles }),
+            None => Value::Null,
+        }
+    }
+
     /// Execute CREATE MATERIALIZED VIEW
     pub(super) fn execute_create_materialized_view(
         &self,
         clause: &CreateMaterializedViewClause,
     ) -> DbResult<QueryExecutionResult> {
         let view_name = self.view_target_name(&clause.name)?;
+        Self::reject_mutating_view_query(view_name, &clause.query)?;
         let db_name = self.view_database();
 
         // The view collection always lives in this executor's own database.
         let full_view_name = format!("{}:{}", db_name, view_name);
 
-        // 1. Create the target collection for the view
-        match self.storage.create_collection(full_view_name.clone(), None) {
-            Ok(_) => {}
-            Err(e) => {
-                // If it already exists (checking error string or type would be better, but consistent with existing logic)
-                // DbError::CollectionAlreadyExists
-                if matches!(e, DbError::CollectionAlreadyExists(_)) {
-                    if clause.if_not_exists {
-                        return Ok(QueryExecutionResult {
-                            results: vec![],
-                            mutations: MutationStats::default(),
-                        });
-                    } else {
-                        return Err(e);
-                    }
-                } else {
-                    return Err(e);
-                }
+        // 1. An existing view (or collection) short-circuits before any work.
+        if self.storage.get_collection(&full_view_name).is_ok() {
+            if clause.if_not_exists {
+                return Ok(QueryExecutionResult {
+                    results: vec![],
+                    mutations: MutationStats::default(),
+                });
             }
+            return Err(DbError::CollectionAlreadyExists(view_name.to_string()));
         }
 
-        // 2. Serialize the query for storage
+        // 2. Run the inner query first: a definition that fails for its
+        // creator must leave nothing behind for the refresh worker to re-run
+        // later (audit H4 — the `_views` row used to be saved first).
+        let results = self.execute_with_stats(&clause.query)?.results;
+
+        // 3. Create the target collection for the view
+        match self.storage.create_collection(full_view_name.clone(), None) {
+            Ok(_) => {}
+            Err(DbError::CollectionAlreadyExists(_)) if clause.if_not_exists => {
+                // Lost a race with a concurrent CREATE.
+                return Ok(QueryExecutionResult {
+                    results: vec![],
+                    mutations: MutationStats::default(),
+                });
+            }
+            Err(e) => return Err(e),
+        }
+
+        // 4. Serialize the query for storage
         let query_json = serde_json::to_value(&clause.query).map_err(|e| {
             DbError::InternalError(format!("Failed to serialize view query: {}", e))
         })?;
 
-        // 3. Store metadata in _views system collection
+        // 5. Store metadata in the per-database _views system collection
         let views_coll_name = format!("{}:_views", db_name);
-        // Ensure _views exists
-        // We use create_collection but ignore "AlreadyExists" error
         if self.storage.get_collection(&views_coll_name).is_err() {
             let _ = self
                 .storage
                 .create_collection(views_coll_name.clone(), None);
         }
-
-        // We need to use "raw" storage access or construct a Collection object to insert metadata.
-        // self.storage.get_collection returns Collection.
         let views_coll = self.storage.get_collection(&views_coll_name)?;
 
-        // Metadata document
+        // Keyed by the simple name: `_views` is per database.
         let metadata = serde_json::json!({
-            "_key": view_name, // Store simple name as key? Or full name?
-                               // Scoping: views are per database. Unique by key in _views.
-                               // So simple name is fine if _views is per-db.
+            "_key": view_name,
             "type": "materialized",
             "query": query_json,
             // Optional auto-refresh cadence read by the background MV worker.
             "refresh_schedule": clause.refresh_schedule,
+            // Who the background refresh runs as.
+            "owner": self.view_owner(),
             "created_at": chrono::Utc::now().to_rfc3339()
         });
-
-        // Convert json Value to Document for upsert?
-        // Collection::upsert takes Value (which is converted to Document internally if needed, or expected to be object)
         views_coll.upsert_batch(vec![(view_name.to_string(), metadata)])?;
 
-        // 4. Execute the inner query to populate the view
-        let execution_result = self.execute_with_stats(&clause.query)?;
-        let results = execution_result.results; // Moved here
-
-        // 5. Bulk insert results into the view collection
+        // 6. Bulk insert results into the view collection
         let target_coll = self.storage.get_collection(&full_view_name)?;
-
-        // Capture count before move
         let inserted_count = results.len();
         if !results.is_empty() {
             target_coll.insert_batch(results)?;
         }
+        crate::storage::query_cache::invalidate_collection(db_name, view_name);
 
         Ok(QueryExecutionResult {
             results: vec![Value::String(format!(
@@ -178,6 +202,10 @@ impl<'a> QueryExecutor<'a> {
             DbError::InternalError(format!("Failed to deserialize view query: {}", e))
         })?;
 
+        // A definition stored before mutating view queries were refused must
+        // not run either: it would write as whoever triggers the refresh.
+        Self::reject_mutating_view_query(view_name, &inner_query)?;
+
         // 3. Execute the query
         let execution_result = self.execute_with_stats(&inner_query)?;
         let results = execution_result.results;
@@ -218,6 +246,8 @@ impl<'a> QueryExecutor<'a> {
                 repl.append_batch(entries);
             }
         }
+
+        crate::storage::query_cache::invalidate_collection(db_name, view_name);
 
         Ok(QueryExecutionResult {
             results: vec![Value::String(format!(
