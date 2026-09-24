@@ -2,7 +2,35 @@
 
 ## [Unreleased]
 
+## [1.2.1](https://github.com/solisoft/solidb/compare/v1.2.0...v1.2.1) (2026-09-24)
+
+Tagged by hand; the SDBQL entries were written from the docs-site changelog.
+
+### Fixed
+
+* **SDBQL functions audit.** Queries that could crash or hang the server
+  (`HIGHLIGHT` with an empty term, `ARGON2_VERIFY` cost parameters taken from
+  the hash, `DECODE_URI` / interval / `RANDOM_INT` panics, unbounded
+  `REPLACE`/`SUBSTITUTE` output); `UNSET`/`KEEP` ignoring array arguments;
+  graph analytics skipping row policies; comparisons follow AQL's total type
+  order and integer arithmetic stays integer; `arr[i]` with a variable index,
+  `REDUCE`'s initial value, swallowed lambda errors.
+
+### Performance
+
+* **SDBQL evaluation.** LIKE/regex compiled once, parse-time function
+  dispatch, hashed `IN`, no per-row context or literal clones, constant
+  folding, index use for `IN`, prefix `LIKE` and geo distance filters, linear
+  window functions, statistics and COLLECT.
+
 ### Features
+
+* **SDBQL language and functions.** `REPLACE` statement, `OLD`, mutation and
+  FOR `OPTIONS`, inline array expressions, array comparison operators,
+  `COLLECT INTO g = expr`, window functions in LET, and about fifty new AQL
+  functions. `sdbql-core` (Rust client offline executor) is panic-free and
+  aligned with the server. See the docs-site changelog for the full list and
+  the behaviour changes.
 
 * **Rust client: `query_as::<T>()` decodes rows straight into the caller's type.**
   `query` hands back `serde_json::Value` rows, so a client with its own value
