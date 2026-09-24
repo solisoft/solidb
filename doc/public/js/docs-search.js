@@ -1,6 +1,6 @@
 /* SoliDB docs — command palette.
    Opens with Cmd/Ctrl-K or "/", ESC closes. Indexes every doc page (from the
-   sidebar) plus all 175 SDBQL methods (baked in below), so functions are
+   sidebar) plus every SDBQL method (baked in below), so functions are
    findable from any page — including the docs home. Matched text is
    highlighted in each result. */
 (function () {
@@ -60,6 +60,7 @@ var SDBQL_FUNCS=[
 ["DATE_DAYS_IN_MONTH","DATE_DAYS_IN_MONTH(date, tz?)","Returns days in the month (28-31). Optional timezone.","date"],
 ["DATE_TRUNC","DATE_TRUNC(date, unit, timezone?)","Truncates date to specified unit. Returns ISO 8601 string.","date"],
 ["DATE_FORMAT","DATE_FORMAT(date, format, timezone?)","Formats date according to format string (strftime-style).","date"],
+["DATE_PARSE","DATE_PARSE(text, format | [formats], timezone?)","Parses text in a strftime format into an ISO-8601 UTC date. Inverse of DATE_FORMAT; several formats are tried in order.","date"],
 ["DATE_ADD","DATE_ADD(date, amount, unit, timezone?)","Add or subtract a specified amount of time to/from a date. Returns ISO 8601 string.","date"],
 ["DATE_SUBTRACT","DATE_SUBTRACT(date, amount, unit, timezone?)","Subtract a specified amount of time from a date. Convenience wrapper for DATE_ADD with negated amount.","date"],
 ["DATE_DIFF","DATE_DIFF(date1, date2, unit, asFloat?, tz1?, tz2?)","Calculate the difference between two dates in a given time unit. Returns negative if date2 is before date1.","date"],
@@ -94,6 +95,7 @@ var SDBQL_FUNCS=[
 ["CEIL","CEIL(number)","Rounds up to nearest integer.","numeric"],
 ["FLOOR","FLOOR(number)","Rounds down to nearest integer.","numeric"],
 ["ROUND","ROUND(num, prec?)","Rounds to specified precision.","numeric"],
+["NUMBER_FORMAT","NUMBER_FORMAT(num, decimals?, locale?)","Formats a number for display with thousands grouping and locale separators (en, fr, de, es, it, nl, pt, de-CH, or {decimal, thousands}).","numeric"],
 ["RANDOM","RANDOM()","Returns a random float between 0 and 1.","numeric"],
 ["RANDOM_INT","RANDOM_INT(min, max)","Random integer in range (inclusive).","numeric"],
 ["MOD","MOD(a, b)","Modulo operation.","numeric"],
@@ -159,10 +161,13 @@ var SDBQL_FUNCS=[
 ["IF","IF(cond, true, false)","Condition evaluation. Returns true_val if cond is true, else false_val.","misc"],
 ["TERNARY","cond ? true : false","Ternary operator. Syntactic sugar for IF function.","misc"],
 ["COALESCE","COALESCE(val1, val2, ...)","Returns the first non-null value. Alias: NOT_NULL.","misc"],
+["TRY","TRY(expr, fallback?)","Returns fallback (default null) when expr fails, so one bad row does not abort the query. Permissions, timeout and row limit still fail.","misc"],
 ["NULLIF","NULLIF(expr1, expr2)","Returns null if expr1 equals expr2, otherwise returns expr1. Useful for avoiding division by zero.","misc"],
 ["MERGE","MERGE(obj1, obj2)","Shallow merge of objects.","misc"],
 ["DEEP_MERGE","DEEP_MERGE(obj1, obj2, ...)","Deep merge objects recursively.","misc"],
 ["GET","GET(obj, path, default?)","Get nested value by dot-notation path.","misc"],
+["SET_PATH","SET_PATH(obj, path, value)","Copy of obj with a nested value set by dot path, creating missing levels.","misc"],
+["UNSET_PATH","UNSET_PATH(obj, path)","Copy of obj without the nested value at path.","misc"],
 ["HAS","HAS(doc, attr)","Checks if document contains attribute.","misc"],
 ["KEEP","KEEP(doc, attr...)","Keep only specified attributes.","misc"],
 ["UNSET","UNSET(doc, attr...)","Removes specified attributes.","misc"],
@@ -186,6 +191,8 @@ var SDBQL_FUNCS=[
 ["FLAT_MAP","FLAT_MAP(arr, x -> expr)","Map then flatten one level of nested arrays.","array"],
 ["GROUP_BY","GROUP_BY(arr, x -> key)","Group array items into {key, items}. Distinct from COLLECT.","array"],
 ["SORT_BY","SORT_BY(arr, x -> key)","Sort an array by a computed key.","array"],
+["MIN_BY","MIN_BY(arr, x -> key | \"path\")","The whole element with the smallest key (lambda or attribute path). Null keys are skipped.","array"],
+["MAX_BY","MAX_BY(arr, x -> key | \"path\")","The whole element with the largest key (lambda or attribute path). Null keys are skipped.","array"],
 ["WINDOW_BY","WINDOW_BY(arr, part?, order)","Add row_number per partition on an array.","array"],
 ["DELTA","DELTA(series)","Consecutive differences of a numeric or {t,v} series.","date"],
 ["RATE","RATE(series, interval)","Change per interval (s/m/h/d) for a time series.","date"],
