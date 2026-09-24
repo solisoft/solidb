@@ -89,6 +89,26 @@ impl SoliDBClient {
         idx: usize,
         command: Command,
     ) -> Result<Response, DriverError> {
+        let payload = self.send_command_raw_on(idx, command).await?;
+        decode_message(&payload)
+    }
+
+    /// Send a command and hand back the undecoded response payload, so a
+    /// caller can deserialize it straight into its own types (see
+    /// [`query_as`](Self::query_as)).
+    pub(crate) async fn send_command_raw(
+        &mut self,
+        command: Command,
+    ) -> Result<Vec<u8>, DriverError> {
+        let idx = self.next_connection_index();
+        self.send_command_raw_on(idx, command).await
+    }
+
+    async fn send_command_raw_on(
+        &mut self,
+        idx: usize,
+        command: Command,
+    ) -> Result<Vec<u8>, DriverError> {
         let conn = &mut self.pool[idx];
 
         let data = encode_command(&command)?;
@@ -118,7 +138,7 @@ impl SoliDBClient {
             .await
             .map_err(|e| DriverError::ConnectionError(format!("Read payload failed: {}", e)))?;
 
-        decode_message(&payload)
+        Ok(payload)
     }
 
     pub(crate) fn extract_data(response: Response) -> Result<Option<Value>, DriverError> {

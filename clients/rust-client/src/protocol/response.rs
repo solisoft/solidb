@@ -100,11 +100,29 @@ struct WireResponse {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum WireStatus {
+pub(crate) enum WireStatus {
     Ok,
     Error,
     Pong,
     Batch,
+}
+
+/// A query response whose rows deserialize straight into the caller's `T`.
+///
+/// Used by [`SoliDBClient::query_as`](crate::SoliDBClient::query_as): the rows
+/// never become `serde_json::Value`, so a caller with its own value model (an
+/// interpreter, say) pays one decode instead of two.
+#[derive(Deserialize)]
+pub(crate) struct RowsResponse<T> {
+    pub(crate) status: WireStatus,
+    #[serde(default = "none")]
+    pub(crate) data: Option<Vec<T>>,
+    #[serde(default)]
+    pub(crate) error: Option<DriverError>,
+}
+
+fn none<T>() -> Option<T> {
+    None
 }
 
 impl<'de> Deserialize<'de> for Response {

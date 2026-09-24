@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Features
+
+* **Rust client: `query_as::<T>()` decodes rows straight into the caller's type.**
+  `query` hands back `serde_json::Value` rows, so a client with its own value
+  model (an interpreter, say) paid for two decodes of every result set: the
+  MessagePack into `serde_json::Value`, then that tree into its own values.
+  `query_as` deserializes each row from the wire into `T`, with no intermediate
+  tree. It is what Soli's ORM now uses for plain reads, where it cut CPU per
+  request by 10–12% on top of the v1.2.0 decode fix. `query` is unchanged.
+
 ## [1.2.0](https://github.com/solisoft/solidb/compare/v1.1.1...v1.2.0) (2026-09-24)
 
 Tagged by hand; this section was written from the docs-site changelog, not

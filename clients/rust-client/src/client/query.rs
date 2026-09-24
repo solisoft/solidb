@@ -1,5 +1,6 @@
 use super::SoliDBClient;
-use crate::protocol::{Command, DriverError};
+use crate::protocol::response::{RowsResponse, WireStatus};
+use crate::protocol::{decode_message, Command, DriverError};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -49,6 +50,27 @@ impl SoliDBClient {
         }
     }
 
+    /// Like [`query_with_cache`](Self::query_with_cache), but each row is
+    /// deserialized straight from the wire into `T` — no intermediate
+    /// `serde_json::Value`. For callers with their own value representation.
+    pub async fn query_as<T: serde::de::DeserializeOwned>(
+        &mut self,
+        database: &str,
+        sdbql: &str,
+        bind_vars: Option<HashMap<String, Value>>,
+        cache: bool,
+    ) -> Result<Vec<T>, DriverError> {
+        let payload = self
+            .send_command_raw(Command::Query {
+                database: database.to_string(),
+                sdbql: sdbql.to_string(),
+                bind_vars,
+                cache,
+            })
+            .await?;
+        rows_from_payload(&payload)
+    }
+
     pub async fn explain(
         &mut self,
         database: &str,
@@ -64,5 +86,67 @@ impl SoliDBClient {
             .await?;
         Self::extract_data(response)?
             .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+}
+
+/// Decode a query response payload into rows of `T`.
+fn rows_from_payload<T: serde::de::DeserializeOwned>(
+    payload: &[u8],
+) -> Result<Vec<T>, DriverError> {
+    let response: RowsResponse<T> = decode_message(payload)?;
+    match response.status {
+        WireStatus::Ok => response
+            .data
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string())),
+        WireStatus::Error => Err(response.error.unwrap_or_else(|| {
+            DriverError::ProtocolError("Error response without an error".to_string())
+        })),
+        WireStatus::Pong | WireStatus::Batch => Err(DriverError::ProtocolError(
+            "Unexpected response to a query".to_string(),
+        )),
+    }
+}
+
+#[cfg(test)]
+mod rows_tests {
+    use super::*;
+    use crate::protocol::Response;
+
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    struct Row {
+        id: i64,
+        title: String,
+    }
+
+    #[test]
+    fn rows_decode_straight_into_the_callers_type() {
+        let payload = rmp_serde::to_vec_named(&Response::ok(serde_json::json!([
+            {"id": 1, "title": "a"},
+            {"id": 2, "title": "b"}
+        ])))
+        .unwrap();
+        let rows: Vec<Row> = rows_from_payload(&payload).unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                Row {
+                    id: 1,
+                    title: "a".into()
+                },
+                Row {
+                    id: 2,
+                    title: "b".into()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn an_error_response_is_an_error() {
+        let payload =
+            rmp_serde::to_vec_named(&Response::error(DriverError::ProtocolError("boom".into())))
+                .unwrap();
+        let err = rows_from_payload::<Row>(&payload).unwrap_err();
+        assert!(format!("{err:?}").contains("boom"));
     }
 }
