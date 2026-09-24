@@ -213,6 +213,30 @@ DATE_FORMAT("2025-06-15T14:30:00Z", "%H:%M", "America/New_York")
               </div>
             </div>
 
+            <!-- DATE_PARSE -->
+            <div id="fn-DATE_PARSE" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_PARSE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_PARSE</span>
+                  Parse Date
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">The inverse of <code>DATE_FORMAT</code>: reads text in a given strftime format and returns an ISO-8601 UTC string. <code>format</code> may be an array of formats, tried in order. A format with an offset (<code>%z</code>) gives that instant; one without is a local time in <code>timezone</code> (UTC by default); one with no time fields is midnight. Text that matches no format is an error &mdash; wrap the call in <code>TRY</code> for a fallback.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_PARSE(<span class="text-pink-400">text</span>, <span class="text-cyan-400">format | [formats]</span>, <span class="text-emerald-400">timezone?</span>)</code>
+                </div>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">DATE_PARSE("24/09/2026", "%d/%m/%Y")
+--"2026-09-24T00:00:00.000Z"
+
+DATE_PARSE("24/09/2026 14:05", "%d/%m/%Y %H:%M", "Europe/Paris")
+--"2026-09-24T12:05:00.000Z"
+
+DATE_PARSE(row.date, ["%d/%m/%Y", "%Y-%m-%d"])</code></pre>
+              </div>
+            </div>
+
             <!-- DATE_ADD -->
             <div id="fn-DATE_ADD" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
               <a href="#fn-DATE_ADD" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>

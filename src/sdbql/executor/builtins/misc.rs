@@ -313,35 +313,23 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let path = args[1]
                 .as_str()
                 .ok_or_else(|| DbError::ExecutionError("GET: path must be a string".to_string()))?;
-            if !path.contains('.') {
-                let found = match &args[0] {
-                    Value::Object(obj) => obj.get(path),
-                    Value::Array(arr) => path.parse::<usize>().ok().and_then(|i| arr.get(i)),
-                    _ => None,
-                };
-                return Ok(Some(
-                    found
-                        .cloned()
-                        .unwrap_or_else(|| args.get(2).cloned().unwrap_or(Value::Null)),
-                ));
-            }
-            let mut cur = &args[0];
-            for part in path.split('.').filter(|p| !p.is_empty()) {
-                cur = match cur {
-                    Value::Object(obj) => match obj.get(part) {
-                        Some(v) => v,
-                        None => return Ok(Some(args.get(2).cloned().unwrap_or(Value::Null))),
-                    },
-                    Value::Array(arr) => {
-                        match part.parse::<usize>().ok().and_then(|i| arr.get(i)) {
-                            Some(v) => v,
-                            None => return Ok(Some(args.get(2).cloned().unwrap_or(Value::Null))),
-                        }
-                    }
-                    _ => return Ok(Some(args.get(2).cloned().unwrap_or(Value::Null))),
-                };
-            }
-            Ok(Some(cur.clone()))
+            Ok(Some(lookup_path(&args[0], path).cloned().unwrap_or_else(
+                || args.get(2).cloned().unwrap_or(Value::Null),
+            )))
+        }
+        "SET_PATH" => {
+            check_args(name, args, 3)?;
+            let parts = path_parts(name, &args[1])?;
+            let mut root = args[0].clone();
+            set_path(&mut root, &parts, args[2].clone())?;
+            Ok(Some(root))
+        }
+        "UNSET_PATH" => {
+            check_args(name, args, 2)?;
+            let parts = path_parts(name, &args[1])?;
+            let mut root = args[0].clone();
+            unset_path(&mut root, &parts);
+            Ok(Some(root))
         }
         "MERGE" => {
             let docs = merge_inputs(name, args)?;
@@ -902,6 +890,160 @@ fn redact_value(v: &Value, keys: &[String]) -> Value {
     }
 }
 
+/// `GET`'s path walk: `"a.b.0"` descends through objects by key and through
+/// arrays by index. Empty segments are skipped; a path with no dot is one key,
+/// so `GET(doc, "")` reads the attribute named `""`.
+pub(crate) fn lookup_path<'v>(root: &'v Value, path: &str) -> Option<&'v Value> {
+    if !path.contains('.') {
+        return match root {
+            Value::Object(obj) => obj.get(path),
+            Value::Array(arr) => path.parse::<usize>().ok().and_then(|i| arr.get(i)),
+            _ => None,
+        };
+    }
+    let mut cur = root;
+    for part in path.split('.').filter(|p| !p.is_empty()) {
+        cur = match cur {
+            Value::Object(obj) => obj.get(part)?,
+            Value::Array(arr) => arr.get(part.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    Some(cur)
+}
+
+/// A `SET_PATH` / `UNSET_PATH` path: a dotted string like `GET`'s, or an
+/// array of segments for keys that themselves contain a dot.
+fn path_parts(name: &str, path: &Value) -> DbResult<Vec<String>> {
+    let parts: Vec<String> = match path {
+        Value::String(s) => s
+            .split('.')
+            .filter(|p| !p.is_empty())
+            .map(str::to_string)
+            .collect(),
+        Value::Array(items) => items
+            .iter()
+            .map(|p| match p {
+                Value::String(s) => Ok(s.clone()),
+                Value::Number(n) if n.is_u64() => Ok(n.to_string()),
+                _ => Err(DbError::ExecutionError(format!(
+                    "{name}: path segments must be strings or non-negative integers"
+                ))),
+            })
+            .collect::<DbResult<_>>()?,
+        _ => {
+            return Err(DbError::ExecutionError(format!(
+                "{name}: path must be a string or an array"
+            )))
+        }
+    };
+    if parts.is_empty() {
+        return Err(DbError::ExecutionError(format!("{name}: path is empty")));
+    }
+    Ok(parts)
+}
+
+/// Set `parts` in `root`, creating missing (or null) intermediate levels as
+/// objects. An array level takes an index, and an index equal to its length
+/// appends. Walking through a string, number or boolean is an error rather
+/// than a silent overwrite.
+fn set_path(root: &mut Value, parts: &[String], value: Value) -> DbResult<()> {
+    let mut cur = root;
+    for (depth, part) in parts.iter().enumerate() {
+        if cur.is_null() {
+            *cur = Value::Object(Map::new());
+        }
+        let last = depth + 1 == parts.len();
+        cur = match cur {
+            Value::Object(obj) => {
+                if last {
+                    obj.insert(part.clone(), value);
+                    return Ok(());
+                }
+                obj.entry(part.clone()).or_insert(Value::Null)
+            }
+            Value::Array(arr) => {
+                let len = arr.len();
+                let i = part
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|&i| i <= len)
+                    .ok_or_else(|| {
+                        DbError::ExecutionError(format!(
+                            "SET_PATH: '{}' is not an index into an array of length {}",
+                            parts[..=depth].join("."),
+                            len
+                        ))
+                    })?;
+                if i == len {
+                    arr.push(Value::Null);
+                }
+                if last {
+                    arr[i] = value;
+                    return Ok(());
+                }
+                &mut arr[i]
+            }
+            other => {
+                let at = if depth == 0 {
+                    "the value".to_string()
+                } else {
+                    format!("'{}'", parts[..depth].join("."))
+                };
+                return Err(DbError::ExecutionError(format!(
+                    "SET_PATH: {at} is a {}, not an object or array",
+                    json_type_name(other)
+                )));
+            }
+        };
+    }
+    Ok(())
+}
+
+/// Remove the value at `parts`, if there is one. A path that does not exist
+/// leaves `root` unchanged.
+fn unset_path(root: &mut Value, parts: &[String]) {
+    let Some((leaf, parents)) = parts.split_last() else {
+        return;
+    };
+    let mut cur = root;
+    for part in parents {
+        cur = match cur {
+            Value::Object(obj) => match obj.get_mut(part) {
+                Some(v) => v,
+                None => return,
+            },
+            Value::Array(arr) => match part.parse::<usize>().ok().and_then(|i| arr.get_mut(i)) {
+                Some(v) => v,
+                None => return,
+            },
+            _ => return,
+        };
+    }
+    match cur {
+        Value::Object(obj) => {
+            obj.remove(leaf);
+        }
+        Value::Array(arr) => {
+            if let Some(i) = leaf.parse::<usize>().ok().filter(|&i| i < arr.len()) {
+                arr.remove(i);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn json_type_name(v: &Value) -> &'static str {
+    match v {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
 fn check_args(name: &str, args: &[Value], expected: usize) -> DbResult<()> {
     if args.len() != expected {
         return Err(DbError::ExecutionError(format!(
@@ -919,6 +1061,80 @@ mod tests {
 
     fn call(name: &str, args: &[Value]) -> Value {
         evaluate(name, args).unwrap().unwrap()
+    }
+
+    #[test]
+    fn set_path_creates_and_replaces() {
+        assert_eq!(
+            call(
+                "SET_PATH",
+                &[json!({"a": {"b": 1}}), json!("a.c.d"), json!(2)]
+            ),
+            json!({"a": {"b": 1, "c": {"d": 2}}})
+        );
+        assert_eq!(
+            call("SET_PATH", &[json!(null), json!("a"), json!(1)]),
+            json!({"a": 1})
+        );
+        assert_eq!(
+            call("SET_PATH", &[json!({"a": null}), json!("a.b"), json!(1)]),
+            json!({"a": {"b": 1}})
+        );
+        assert_eq!(
+            call("SET_PATH", &[json!({"l": [1, 2]}), json!("l.1"), json!(9)]),
+            json!({"l": [1, 9]})
+        );
+        assert_eq!(
+            call("SET_PATH", &[json!({"l": [1, 2]}), json!("l.2"), json!(3)]),
+            json!({"l": [1, 2, 3]}),
+            "an index equal to the length appends"
+        );
+        assert_eq!(
+            call("SET_PATH", &[json!({}), json!(["a.b", "c"]), json!(1)]),
+            json!({"a.b": {"c": 1}}),
+            "array segments may contain dots"
+        );
+    }
+
+    #[test]
+    fn set_path_refuses_to_overwrite_scalars() {
+        assert!(evaluate("SET_PATH", &[json!({"a": "x"}), json!("a.b"), json!(1)]).is_err());
+        assert!(evaluate("SET_PATH", &[json!(5), json!("a"), json!(1)]).is_err());
+        assert!(evaluate("SET_PATH", &[json!({"l": []}), json!("l.3"), json!(1)]).is_err());
+        assert!(evaluate("SET_PATH", &[json!({"l": []}), json!("l.x"), json!(1)]).is_err());
+        assert!(evaluate("SET_PATH", &[json!({}), json!(""), json!(1)]).is_err());
+        assert!(evaluate("SET_PATH", &[json!({}), json!([true]), json!(1)]).is_err());
+    }
+
+    #[test]
+    fn unset_path_removes_only_what_exists() {
+        assert_eq!(
+            call(
+                "UNSET_PATH",
+                &[json!({"a": {"b": 1, "c": 2}}), json!("a.b")]
+            ),
+            json!({"a": {"c": 2}})
+        );
+        assert_eq!(
+            call("UNSET_PATH", &[json!({"l": [1, 2, 3]}), json!("l.1")]),
+            json!({"l": [1, 3]})
+        );
+        let doc = json!({"a": {"b": 1}});
+        for missing in ["x.y", "a.b.c", "a.z"] {
+            assert_eq!(call("UNSET_PATH", &[doc.clone(), json!(missing)]), doc);
+        }
+    }
+
+    #[test]
+    fn get_path_walk_is_unchanged() {
+        let doc = json!({"a": {"l": [10, {"b": 2}]}, "": 7, "n": null});
+        assert_eq!(call("GET", &[doc.clone(), json!("a.l.1.b")]), json!(2));
+        assert_eq!(call("GET", &[doc.clone(), json!("")]), json!(7));
+        assert_eq!(
+            call("GET", &[doc.clone(), json!("n"), json!("d")]),
+            Value::Null
+        );
+        assert_eq!(call("GET", &[doc, json!("a.x"), json!("d")]), json!("d"));
     }
 
     #[test]

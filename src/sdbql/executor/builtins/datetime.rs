@@ -431,6 +431,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             })?;
             Ok(Some(Value::String(out)))
         }
+        "DATE_PARSE" => date_parse(args),
         "DATE_TRUNC" => date_trunc(name, args),
         "DATE_ROUND" => date_round(args),
         "DATE_ADD" => date_add_args("DATE_ADD", args, 1),
@@ -1114,6 +1115,71 @@ fn human_time(args: &[Value]) -> DbResult<Option<Value>> {
     Ok(Some(Value::String(phrase)))
 }
 
+/// `DATE_PARSE(text, format, [timezone])`: the inverse of `DATE_FORMAT`.
+///
+/// `format` uses the same strftime specifiers, or is an array of them tried
+/// in order (the first that matches wins), for columns that mix `31/12/2024`
+/// and `2024-12-31`. A format with an offset (`%z`, `%:z`) gives that
+/// instant; one without is a wall-clock time in `timezone` (UTC by default);
+/// one with no time fields is midnight. Returns an ISO-8601 UTC string, like
+/// `DATE_ADD`. Text that matches no format is an error — wrap the call in
+/// `TRY` to get a fallback instead.
+fn date_parse(args: &[Value]) -> DbResult<Option<Value>> {
+    const NAME: &str = "DATE_PARSE";
+    if args.len() < 2 || args.len() > 3 {
+        return Err(arity(NAME, "2-3: text, format, [timezone]"));
+    }
+    let text = match &args[0] {
+        Value::Null => return Ok(Some(Value::Null)),
+        Value::String(s) => s.trim(),
+        _ => {
+            return Err(DbError::ExecutionError(format!(
+                "{NAME}: text must be a string"
+            )))
+        }
+    };
+    let formats: Vec<&str> = match &args[1] {
+        Value::String(f) => vec![f.as_str()],
+        Value::Array(fs) if !fs.is_empty() => fs
+            .iter()
+            .map(|f| {
+                f.as_str().ok_or_else(|| {
+                    DbError::ExecutionError(format!("{NAME}: formats must be strings"))
+                })
+            })
+            .collect::<DbResult<_>>()?,
+        _ => {
+            return Err(DbError::ExecutionError(format!(
+                "{NAME}: format must be a string or a non-empty array of strings"
+            )))
+        }
+    };
+    let tz = opt_tz(NAME, args, 2)?;
+    for fmt in &formats {
+        if let Ok(dt) = DateTime::parse_from_str(text, fmt) {
+            return Ok(Some(rfc3339_ms(dt.with_timezone(&Utc))));
+        }
+        let naive = NaiveDateTime::parse_from_str(text, fmt).ok().or_else(|| {
+            NaiveDate::parse_from_str(text, fmt)
+                .ok()
+                .and_then(|d| d.and_hms_opt(0, 0, 0))
+        });
+        if let Some(naive) = naive {
+            let local = resolve_local(tz, naive, None)?;
+            return Ok(Some(rfc3339_ms(local.with_timezone(&Utc))));
+        }
+    }
+    Err(DbError::ExecutionError(format!(
+        "{NAME}: '{}' does not match {}",
+        text,
+        if formats.len() == 1 {
+            format!("format '{}'", formats[0])
+        } else {
+            format!("any of the {} formats", formats.len())
+        }
+    )))
+}
+
 fn arity(name: &str, expected: &str) -> DbError {
     DbError::ExecutionError(format!("{} requires {} argument(s)", name, expected))
 }
@@ -1125,6 +1191,54 @@ mod tests {
 
     fn call(name: &str, args: &[Value]) -> Value {
         evaluate(name, args).unwrap().unwrap()
+    }
+
+    #[test]
+    fn date_parse_formats_and_timezones() {
+        assert_eq!(
+            call("DATE_PARSE", &[json!("24/09/2026"), json!("%d/%m/%Y")]),
+            json!("2026-09-24T00:00:00.000Z")
+        );
+        assert_eq!(
+            call(
+                "DATE_PARSE",
+                &[
+                    json!("24/09/2026 14:05"),
+                    json!("%d/%m/%Y %H:%M"),
+                    json!("Europe/Paris")
+                ]
+            ),
+            json!("2026-09-24T12:05:00.000Z")
+        );
+        assert_eq!(
+            call(
+                "DATE_PARSE",
+                &[json!("2026-09-24 14:05 +0200"), json!("%Y-%m-%d %H:%M %z")]
+            ),
+            json!("2026-09-24T12:05:00.000Z"),
+            "an offset in the text wins over the timezone argument"
+        );
+        assert_eq!(
+            call(
+                "DATE_PARSE",
+                &[json!("2026-09-24"), json!(["%d/%m/%Y", "%Y-%m-%d"])]
+            ),
+            json!("2026-09-24T00:00:00.000Z")
+        );
+        assert_eq!(call("DATE_PARSE", &[Value::Null, json!("%Y")]), Value::Null);
+    }
+
+    #[test]
+    fn date_parse_rejects_what_it_cannot_read() {
+        assert!(evaluate("DATE_PARSE", &[json!("31/02/2026"), json!("%d/%m/%Y")]).is_err());
+        assert!(evaluate("DATE_PARSE", &[json!("x"), json!("%d/%m/%Y")]).is_err());
+        assert!(evaluate("DATE_PARSE", &[json!("2026"), json!([])]).is_err());
+        assert!(evaluate("DATE_PARSE", &[json!(5), json!("%Y")]).is_err());
+        assert!(evaluate(
+            "DATE_PARSE",
+            &[json!("2026-01-01"), json!("%Y-%m-%d"), json!("Mars/Base")]
+        )
+        .is_err());
     }
 
     #[test]

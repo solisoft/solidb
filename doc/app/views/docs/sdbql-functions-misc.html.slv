@@ -219,6 +219,13 @@ RETURN a ? b ? "both" : "a" : "none"</code></pre>
                 <p class="text-sm text-gray-400 mb-3">Returns the first non-null value. Alias: NOT_NULL.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COALESCE(null, 0, 5) --0</code></pre>
               </div>
+              <div id="fn-TRY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-TRY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">TRY(expr, fallback?)</code>
+                <p class="text-sm text-gray-400 mb-3">Evaluates <code>expr</code> and returns <code>fallback</code> (default <code>null</code>) if it fails, so one malformed row does not abort the whole query. Only value errors are caught &mdash; a bad argument, an unparseable date, a failed <code>ASSERT</code>. Permission errors, the query timeout and the intermediate row limit still stop the query. <code>fallback</code> is evaluated only on error.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FOR r IN imports
+  RETURN TRY(DATE_PARSE(r.date, "%d/%m/%Y"), r.date)</code></pre>
+              </div>
               <div id="fn-NULLIF" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-NULLIF" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">NULLIF(expr1, expr2)</code>
@@ -265,6 +272,21 @@ RETURN NULLIF(10, 5) --10</code></pre>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">GET(obj, path, default?)</code>
                 <p class="text-sm text-gray-400 mb-3">Get nested value by dot-notation path.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN GET(doc, "user.name", "N/A")</code></pre>
+              </div>
+              <div id="fn-SET_PATH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-SET_PATH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">SET_PATH(obj, path, value)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns a copy of <code>obj</code> with <code>value</code> at <code>path</code>, creating missing or null levels as objects. <code>path</code> is dotted like <code>GET</code>&rsquo;s, or an array of segments for keys that contain a dot. A numeric segment indexes an existing array (its length appends). Walking through a string, number or boolean is an error rather than a silent overwrite.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SET_PATH({a:{b:1}}, "a.c.d", 2)
+--{a:{b:1,c:{d:2}}}
+RETURN SET_PATH(doc, ["meta", "v1.2"], true)</code></pre>
+              </div>
+              <div id="fn-UNSET_PATH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-UNSET_PATH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">UNSET_PATH(obj, path)</code>
+                <p class="text-sm text-gray-400 mb-3">Returns a copy of <code>obj</code> without the value at <code>path</code> (an array element is removed, shifting the rest). A path that does not exist leaves the object unchanged. <code>UNSET</code> only removes top-level attributes.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UNSET_PATH({a:{b:1,c:2}}, "a.b")
+--{a:{c:2}}</code></pre>
               </div>
               <div id="fn-HAS" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-HAS" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>

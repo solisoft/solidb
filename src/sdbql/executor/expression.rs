@@ -828,6 +828,20 @@ impl<'a> QueryExecutor<'a> {
                 keyed.sort_by(|a, b| compare_values(&a.0, &b.0));
                 Ok(Value::Array(keyed.into_iter().map(|(_, v)| v).collect()))
             }
+            "MIN_BY" | "MAX_BY" => {
+                let want = if name == "MIN_BY" {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                };
+                let mut scope = LambdaScope::new(params, body, ctx);
+                let mut best: Option<(Value, Value)> = None;
+                for item in arr {
+                    let (key, item) = scope.eval_keep(self, body, item)?;
+                    super::builtins::array::keep_extreme(&mut best, key, item, want);
+                }
+                Ok(best.map(|(_, item)| item).unwrap_or(Value::Null))
+            }
             "WINDOW_BY" => {
                 // WINDOW_BY(arr, order_lambda) or WINDOW_BY(arr, part_lambda, order_lambda)
                 let (part_l, order_l) = if lambdas.len() >= 2 {

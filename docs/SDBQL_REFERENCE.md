@@ -357,6 +357,7 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `CEIL(n)` | Rounds up | `CEIL(4.2)` → `5` |
 | `FLOOR(n)` | Rounds down | `FLOOR(4.8)` → `4` |
 | `ROUND(n, prec?)` | Rounds to precision | `ROUND(3.14159, 2)` → `3.14` |
+| `NUMBER_FORMAT(n, dec?, locale?)` | Display text with grouping; `locale` is `en`/`fr`/`de`/… or `{decimal, thousands}` | `NUMBER_FORMAT(1234.5, 2, "de")` → `"1.234,50"` |
 | `RANDOM()` | Random decimal 0-1 | `RANDOM()` |
 | `RANDOM_INT(min, max)` | Random integer | `RANDOM_INT(1, 10)` |
 | `MOD(a, b)` | Modulo | `MOD(7, 3)` → `1` |
@@ -406,6 +407,7 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `DATE_DIFF(d1, d2, unit?)` | Units from `d1` to `d2` | `DATE_DIFF(start, end, "days")` |
 | `DATE_TRUNC(d, unit)` | Truncate (includes `week`) | `DATE_TRUNC(now, "day")` |
 | `DATE_FORMAT(d, fmt)` | Format date string | `DATE_FORMAT(now, "%Y-%m-%d")` |
+| `DATE_PARSE(s, fmt, tz?)` | Inverse of `DATE_FORMAT`; `fmt` may be an array tried in order | `DATE_PARSE("24/09/2026", "%d/%m/%Y")` |
 | `TIME_BUCKET(time, interval)` | Bucket for time series | `TIME_BUCKET(ts, "5m")` |
 | `HUMAN_TIME(d)` | Relative time string | `HUMAN_TIME(d)` → `"5 mins ago"` |
 | `DELTA(series)` | Consecutive differences | `DELTA([{t:0,v:1},{t:10,v:4}])` |
@@ -440,6 +442,7 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `FLAT_MAP(arr, x -> expr)` | Map then flatten one level | `FLAT_MAP([[1],[2]], x -> x)` |
 | `GROUP_BY(arr, x -> key)` | Group into `{key, items}` | `GROUP_BY(docs, x -> x.city)` |
 | `SORT_BY(arr, x -> key)` | Sort by computed key | `SORT_BY(docs, x -> x.score)` |
+| `MIN_BY(arr, x -> key \| "path")` / `MAX_BY` | Whole element with the smallest / largest key; null keys skipped | `MIN_BY(offers, "price")` |
 | `WINDOW_BY(arr, part?, order)` | Partition + `row_number` | `WINDOW_BY(rows, x -> x.k, x -> x.ts)` |
 | `TAKE(arr, n)` | Take first n | `TAKE([1,2,3], 2)` → `[1,2]` |
 | `DROP(arr, n)` | Drop first n | `DROP([1,2,3], 1)` → `[2,3]` |
@@ -458,6 +461,8 @@ RETURN users[*].name -- Returns array of names
 | `MERGE(o1, o2)` | Shallow merge | `MERGE({a:1}, {b:2})` |
 | `DEEP_MERGE(o1, o2)` | Recursive merge | |
 | `GET(obj, path, default)` | Get by path | `GET(doc, "a.b", 0)` |
+| `SET_PATH(obj, path, value)` | Copy with a nested value set, creating levels | `SET_PATH(doc, "a.b.c", 1)` |
+| `UNSET_PATH(obj, path)` | Copy without a nested value | `UNSET_PATH(doc, "a.b")` |
 | `HAS(obj, key)` | Check key existence | `HAS(doc, "email")` |
 | `KEEP(obj, keys...)` | Pick keys | `KEEP(doc, "id", "name")` |
 | `UNSET(obj, keys...)` | Omit keys | `UNSET(doc, "password")` |
@@ -607,6 +612,7 @@ Opt-in via `SEMANTIC_CACHE_ENABLED=1`. The `/ai/generate` endpoint embeds each p
 | `IS_EMAIL(v)`, `IS_URL(v)`, `IS_UUID(v)` | Format checks | |
 | `TO_STRING(v)`, `TO_NUMBER(v)`, `TO_BOOL(v)`, `TO_ARRAY(v)` | Casting | `TO_NUMBER("1")` → `1` |
 | `COALESCE(v1, v2)` | First non-null | `COALESCE(null, 1)` → `1` |
+| `TRY(expr, fallback?)` | `fallback` (default null) if `expr` raises a value error; permissions, timeout and row limit still fail | `TRY(DATE_PARSE(s, "%d/%m/%Y"))` |
 | `NULLIF(v1, v2)` | Return null if v1==v2 | `NULLIF(1, 1)` → `null` |
 
 ### Sketches, auth & RAG

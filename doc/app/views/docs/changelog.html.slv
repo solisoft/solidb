@@ -13,7 +13,9 @@
   <section id="unreleased" class="mb-16 scroll-mt-24">
     <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
-      <p class="text-gray-400 text-sm">No unreleased changes yet.</p>
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">SDBQL: <code>TRY</code>, <code>DATE_PARSE</code>, <code>MIN_BY</code>/<code>MAX_BY</code>, <code>SET_PATH</code>/<code>UNSET_PATH</code>, <code>NUMBER_FORMAT</code></strong> &mdash; each replaces something that used to take a subquery or application code. <code>TRY(expr, fallback)</code> keeps one malformed row from failing a whole query; it catches value errors only, never permissions, the timeout or the row limit. <code>DATE_PARSE(text, format, tz?)</code> is the inverse of <code>DATE_FORMAT</code> and takes a list of formats to try. <code>MIN_BY</code>/<code>MAX_BY</code> return the whole element with the extreme key, from a lambda or an attribute path. <code>SET_PATH</code>/<code>UNSET_PATH</code> edit a nested value without a stack of <code>MERGE</code>s. <code>NUMBER_FORMAT(n, decimals, locale)</code> formats for display with locale separators, rounding the way a person would (<code>2.675</code> &rarr; <code>2.68</code>).</li>
+      </ul>
     </div>
   </section>
 

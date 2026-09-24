@@ -761,7 +761,56 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }
             Ok(Some(Value::Array(out)))
         }
+        // The lambda form, `MIN_BY(arr, x -> x.price)`, is evaluated by the
+        // executor's higher-order function dispatch; this is the field-path
+        // form, `MIN_BY(arr, "price")`.
+        "MIN_BY" | "MAX_BY" => {
+            check_args(name, args, 2)?;
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let arr = array_arg(name, &args[0], "the first")?;
+            let path = args[1].as_str().ok_or_else(|| {
+                DbError::ExecutionError(format!(
+                    "{name}: second argument must be an attribute path or a lambda"
+                ))
+            })?;
+            let want = if name == "MIN_BY" {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            };
+            let mut best: Option<(Value, usize)> = None;
+            for (i, item) in arr.iter().enumerate() {
+                let key = super::misc::lookup_path(item, path)
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                keep_extreme(&mut best, key, i, want);
+            }
+            Ok(Some(best.map_or(Value::Null, |(_, i)| arr[i].clone())))
+        }
         _ => Ok(None),
+    }
+}
+
+/// One step of `MIN_BY` / `MAX_BY`: replace `best` when `key` orders `want`
+/// relative to it. A null key is skipped, as `MIN`/`MAX` skip nulls, and on a
+/// tie the earlier element is kept.
+pub(crate) fn keep_extreme<T>(
+    best: &mut Option<(Value, T)>,
+    key: Value,
+    item: T,
+    want: std::cmp::Ordering,
+) {
+    if key.is_null() {
+        return;
+    }
+    let better = match best {
+        None => true,
+        Some((best_key, _)) => compare_values(&key, best_key) == want,
+    };
+    if better {
+        *best = Some((key, item));
     }
 }
 
@@ -829,6 +878,31 @@ mod tests {
         evaluate(name, args)
             .unwrap_or_else(|e| panic!("{name}: {e}"))
             .unwrap_or_else(|| panic!("{name} not handled"))
+    }
+
+    #[test]
+    fn min_by_and_max_by_with_a_path() {
+        let items = json!([
+            {"n": "a", "p": 3},
+            {"n": "b", "p": 1},
+            {"n": "c"},
+            {"n": "d", "p": 9},
+            {"n": "e", "p": 1}
+        ]);
+        assert_eq!(
+            call("MIN_BY", &[items.clone(), json!("p")])["n"],
+            json!("b")
+        );
+        assert_eq!(call("MAX_BY", &[items, json!("p")])["n"], json!("d"));
+        assert_eq!(call("MIN_BY", &[json!([]), json!("p")]), Value::Null);
+        assert_eq!(call("MIN_BY", &[Value::Null, json!("p")]), Value::Null);
+        assert_eq!(
+            call("MIN_BY", &[json!([{"p": null}]), json!("p")]),
+            Value::Null,
+            "only null keys: nothing to pick"
+        );
+        assert!(evaluate("MIN_BY", &[json!([1]), json!(1)]).is_err());
+        assert!(evaluate("MIN_BY", &[json!("x"), json!("p")]).is_err());
     }
 
     #[test]

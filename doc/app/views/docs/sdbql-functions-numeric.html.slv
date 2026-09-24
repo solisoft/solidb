@@ -68,6 +68,14 @@
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ROUND(3.14159, 2) --3.14
 RETURN ROUND(1234.5, -2) --1200</code></pre>
                 </div>
+                <div id="fn-NUMBER_FORMAT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-NUMBER_FORMAT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">NUMBER_FORMAT(num, decimals?, locale?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Formats a number as display text with a fixed number of decimals (0&ndash;20, default 0) and thousands grouping. <code>locale</code> is one of <code>en</code> (default), <code>fr</code>, <code>de</code>, <code>es</code>, <code>it</code>, <code>nl</code>, <code>pt</code>, <code>de-CH</code> (region tags like <code>fr-FR</code> fall back to the language), or an object <code>{decimal, thousands}</code>. French groups with a narrow no-break space (U+202F), like <code>Intl.NumberFormat</code>. Rounds half away from zero on the decimal value you wrote, so <code>2.675</code> gives <code>2.68</code>.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN NUMBER_FORMAT(1234567.891, 2) --"1,234,567.89"
+RETURN NUMBER_FORMAT(1234.5, 2, "de") --"1.234,50"
+RETURN NUMBER_FORMAT(1234.5, 2, {decimal: ",", thousands: " "}) --"1 234,50"</code></pre>
+                </div>
                 <div id="fn-TRUNC" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-TRUNC" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">TRUNC(num) / TRUNCATE(num)</code>

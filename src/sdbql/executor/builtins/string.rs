@@ -1328,8 +1328,140 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         // Hash functions live in crypto.rs; routed here until the prefix
         // dispatcher in builtins/mod.rs lists them.
         "SHA1" | "CRC32" | "FNV64" => super::crypto::evaluate(name, args),
+        "NUMBER_FORMAT" => number_format(args).map(Some),
         _ => Ok(None),
     }
+}
+
+/// Most decimals `NUMBER_FORMAT` will print; an f64 has no more to give.
+const MAX_FORMAT_DECIMALS: i64 = 20;
+
+/// Decimal and thousands separators for the locales `NUMBER_FORMAT` knows,
+/// from CLDR. French groups with a narrow no-break space (U+202F), as
+/// `Intl.NumberFormat("fr")` does; pass `{thousands: " "}` for a plain one.
+fn locale_separators(tag: &str) -> Option<(&'static str, &'static str)> {
+    let tag = tag.to_ascii_lowercase().replace('_', "-");
+    let seps = |t: &str| match t {
+        "en" => Some((".", ",")),
+        "fr" => Some((",", "\u{202F}")),
+        "de" | "es" | "it" | "nl" | "pt" => Some((",", ".")),
+        "de-ch" => Some((".", "\u{2019}")),
+        _ => None,
+    };
+    seps(&tag).or_else(|| seps(tag.split('-').next().unwrap_or("")))
+}
+
+/// `NUMBER_FORMAT(number, [decimals], [locale | {decimal, thousands}])`:
+/// a number as display text, `1234567.891` → `"1,234,567.89"` with 2
+/// decimals. Rounds half away from zero on the number's shortest decimal
+/// form, so `2.675` gives `"2.68"` as a person expects rather than the
+/// `"2.67"` its binary value would.
+fn number_format(args: &[Value]) -> DbResult<Value> {
+    const NAME: &str = "NUMBER_FORMAT";
+    if args.is_empty() || args.len() > 3 {
+        return Err(err_arity(NAME, "1-3: number, [decimals], [locale]"));
+    }
+    let n = match &args[0] {
+        Value::Null => return Ok(Value::Null),
+        Value::Number(n) => n,
+        _ => {
+            return Err(DbError::ExecutionError(format!(
+                "{NAME}: first argument must be a number"
+            )))
+        }
+    };
+    let decimals = match args.get(1) {
+        None | Some(Value::Null) => 0,
+        Some(v) => super::array::as_int(v)
+            .filter(|d| (0..=MAX_FORMAT_DECIMALS).contains(d))
+            .ok_or_else(|| {
+                DbError::ExecutionError(format!(
+                    "{NAME}: decimals must be an integer from 0 to {MAX_FORMAT_DECIMALS}"
+                ))
+            })? as usize,
+    };
+    let (decimal_sep, thousands_sep): (Cow<'_, str>, Cow<'_, str>) = match args.get(2) {
+        None | Some(Value::Null) => (".".into(), ",".into()),
+        Some(Value::String(tag)) => {
+            let (d, t) = locale_separators(tag).ok_or_else(|| {
+                DbError::ExecutionError(format!(
+                    "{NAME}: unknown locale '{tag}' (known: en, fr, de, es, it, nl, pt, de-CH; \
+                     or pass {{decimal, thousands}})"
+                ))
+            })?;
+            (d.into(), t.into())
+        }
+        Some(Value::Object(o)) => {
+            let sep = |key: &str, default: &'static str| -> DbResult<Cow<'_, str>> {
+                match o.get(key) {
+                    None | Some(Value::Null) => Ok(default.into()),
+                    Some(Value::String(s)) => Ok(s.as_str().into()),
+                    Some(_) => Err(DbError::ExecutionError(format!(
+                        "{NAME}: '{key}' must be a string"
+                    ))),
+                }
+            };
+            (sep("decimal", ".")?, sep("thousands", ",")?)
+        }
+        Some(_) => {
+            return Err(DbError::ExecutionError(format!(
+                "{NAME}: third argument must be a locale string or an object"
+            )))
+        }
+    };
+
+    // Shortest decimal form: integers exactly, floats as Rust's Display
+    // prints them (round-trip digits, never an exponent).
+    let text = match (n.as_i64(), n.as_u64(), n.as_f64()) {
+        (Some(i), _, _) => i.to_string(),
+        (_, Some(u), _) => u.to_string(),
+        (_, _, Some(f)) => f.to_string(),
+        _ => n.to_string(),
+    };
+    let negative = text.starts_with('-');
+    let text = text.trim_start_matches('-');
+    let (int_part, frac_part) = text.split_once('.').unwrap_or((text, ""));
+
+    // Digits of int_part followed by exactly `decimals` fraction digits,
+    // rounded half away from zero on the first dropped digit.
+    let mut digits: Vec<u8> = int_part.bytes().map(|b| b - b'0').collect();
+    let frac: Vec<u8> = frac_part.bytes().map(|b| b - b'0').collect();
+    digits.extend((0..decimals).map(|i| frac.get(i).copied().unwrap_or(0)));
+    if frac.get(decimals).is_some_and(|&d| d >= 5) {
+        let mut i = digits.len();
+        loop {
+            if i == 0 {
+                digits.insert(0, 1);
+                break;
+            }
+            i -= 1;
+            if digits[i] == 9 {
+                digits[i] = 0;
+            } else {
+                digits[i] += 1;
+                break;
+            }
+        }
+    }
+    let split = digits.len() - decimals;
+    let (int_digits, frac_digits) = digits.split_at(split);
+
+    let mut out = String::with_capacity(digits.len() * 2 + 2);
+    // `-0.001` to two decimals is "0.00", not "-0.00".
+    if negative && digits.iter().any(|&d| d != 0) {
+        out.push('-');
+    }
+    for (i, d) in int_digits.iter().enumerate() {
+        if i > 0 && (int_digits.len() - i) % 3 == 0 {
+            out.push_str(&thousands_sep);
+        }
+        out.push((b'0' + d) as char);
+    }
+    if decimals > 0 {
+        out.push_str(&decimal_sep);
+        out.extend(frac_digits.iter().map(|d| (b'0' + d) as char));
+    }
+    Ok(Value::String(out))
 }
 
 fn err_arity(name: &str, expected: &str) -> DbError {
@@ -1499,6 +1631,55 @@ mod tests {
 
     fn call(name: &str, args: &[Value]) -> Value {
         evaluate(name, args).unwrap().unwrap()
+    }
+
+    #[test]
+    fn number_format_rounds_and_groups() {
+        let f = |args: &[Value]| call("NUMBER_FORMAT", args);
+        assert_eq!(f(&[json!(1234567.891), json!(2)]), json!("1,234,567.89"));
+        assert_eq!(f(&[json!(1234567)]), json!("1,234,567"));
+        assert_eq!(f(&[json!(999.5)]), json!("1,000"));
+        assert_eq!(f(&[json!(2.675), json!(2)]), json!("2.68"));
+        assert_eq!(f(&[json!(1.005), json!(2)]), json!("1.01"));
+        assert_eq!(f(&[json!(-1234.5), json!(0)]), json!("-1,235"));
+        assert_eq!(f(&[json!(-0.001), json!(2)]), json!("0.00"));
+        assert_eq!(f(&[json!(0.5), json!(3)]), json!("0.500"));
+        assert_eq!(f(&[json!(123)]), json!("123"));
+        assert_eq!(f(&[json!(u64::MAX)]), json!("18,446,744,073,709,551,615"));
+        assert_eq!(f(&[Value::Null]), Value::Null);
+    }
+
+    #[test]
+    fn number_format_locales_and_separators() {
+        let f = |args: &[Value]| call("NUMBER_FORMAT", args);
+        assert_eq!(
+            f(&[json!(1234.5), json!(2), json!("fr-FR")]),
+            json!("1\u{202F}234,50")
+        );
+        assert_eq!(
+            f(&[json!(1234.5), json!(2), json!("de")]),
+            json!("1.234,50")
+        );
+        assert_eq!(
+            f(&[json!(1234.5), json!(2), json!("de_CH")]),
+            json!("1\u{2019}234.50")
+        );
+        assert_eq!(
+            f(&[
+                json!(1234.5),
+                json!(2),
+                json!({"decimal": ",", "thousands": " "})
+            ]),
+            json!("1 234,50")
+        );
+        assert_eq!(
+            f(&[json!(1234.5), json!(1), json!({"thousands": ""})]),
+            json!("1234.5")
+        );
+        assert!(evaluate("NUMBER_FORMAT", &[json!(1), json!(0), json!("xx")]).is_err());
+        assert!(evaluate("NUMBER_FORMAT", &[json!(1), json!(21)]).is_err());
+        assert!(evaluate("NUMBER_FORMAT", &[json!(1), json!(1.5)]).is_err());
+        assert!(evaluate("NUMBER_FORMAT", &[json!("1")]).is_err());
     }
 
     #[test]

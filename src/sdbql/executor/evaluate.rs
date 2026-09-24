@@ -65,6 +65,26 @@ impl<'a> QueryExecutor<'a> {
                 }
                 return Ok(Value::Null);
             }
+            "TRY" if args.len() == 1 || args.len() == 2 => {
+                return match self.evaluate_expr_with_context(&args[0], ctx) {
+                    Ok(v) => Ok(v),
+                    Err(e) if is_recoverable(&e) => {
+                        // A deadline that passed while the failing expression
+                        // ran is not the expression's error to swallow.
+                        self.check_budget(0)?;
+                        match args.get(1) {
+                            Some(fallback) => self.evaluate_expr_with_context(fallback, ctx),
+                            None => Ok(Value::Null),
+                        }
+                    }
+                    Err(e) => Err(e),
+                };
+            }
+            "TRY" => {
+                return Err(DbError::ExecutionError(
+                    "TRY requires 1-2 arguments: expression, [fallback]".to_string(),
+                ))
+            }
             "EXISTS" if !args.is_empty() => {
                 if let Some(present) = self.attribute_present(&args[0], ctx)? {
                     let extra = args[1..]
@@ -1615,6 +1635,22 @@ fn bounded_levenshtein(a: &str, b: &str, fname: &str) -> DbResult<usize> {
             crate::storage::LEVENSHTEIN_MAX_CHARS
         ))
     })
+}
+
+/// Whether `TRY` may replace this error with its fallback.
+///
+/// Only errors about the *value* being computed: a bad argument, an
+/// unparseable date, a failed `ASSERT`. Permission, storage, timeout and
+/// cluster errors are not the row's fault and must still stop the query, and
+/// neither must the executor's own budget, which is reported as an
+/// `ExecutionError` naming `SOLIDB_MAX_INTERMEDIATE_ROWS` (the deadline is
+/// re-checked by the caller).
+fn is_recoverable(e: &DbError) -> bool {
+    match e {
+        DbError::ExecutionError(msg) => !msg.contains("SOLIDB_MAX_INTERMEDIATE_ROWS"),
+        DbError::BadRequest(_) | DbError::InvalidDocument(_) | DbError::JsonError(_) => true,
+        _ => false,
+    }
 }
 
 /// `EXISTS(path, "type", typeName)`: whether a present value has the given
