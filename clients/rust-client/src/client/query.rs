@@ -39,8 +39,14 @@ impl SoliDBClient {
         let data = Self::extract_data(response)?
             .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))?;
 
-        serde_json::from_value(data)
-            .map_err(|e| DriverError::ProtocolError(format!("Invalid response: {}", e)))
+        // Rows arrive as an array already: take its vector rather than running
+        // every row back through `serde_json::from_value`, which deserializes
+        // (and so copies) the whole result set a second time.
+        match data {
+            Value::Array(rows) => Ok(rows),
+            other => serde_json::from_value(other)
+                .map_err(|e| DriverError::ProtocolError(format!("Invalid response: {}", e))),
+        }
     }
 
     pub async fn explain(
