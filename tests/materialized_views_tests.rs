@@ -162,3 +162,39 @@ fn test_materialized_view_without_schedule_has_null_refresh() {
         .map(|v| v.is_null())
         .unwrap_or(true));
 }
+
+/// `CREATE_VIEW` (search views) and materialized views share `_views`, keyed
+/// by name. Creating a search view over a materialized view's name used to
+/// replace its definition, silently dropping its query and refresh schedule.
+#[test]
+fn test_create_view_does_not_overwrite_materialized_view() {
+    let (engine, _dir) = setup_test_db();
+    engine.create_collection("users".to_string(), None).unwrap();
+
+    let mv = Parser::new("CREATE MATERIALIZED VIEW adults AS FOR u IN users RETURN u")
+        .unwrap()
+        .parse()
+        .unwrap();
+    QueryExecutor::new(&engine).execute(&mv).unwrap();
+
+    let principal = solidb::sdbql::QueryPrincipal::from_roles("tester", vec!["editor".into()]);
+    let run = |q: &str| {
+        let query = Parser::new(q).unwrap().parse().unwrap();
+        QueryExecutor::with_database(&engine, "_system".to_string())
+            .with_principal(principal.clone())
+            .execute(&query)
+    };
+
+    let err = run(r#"RETURN CREATE_VIEW("adults", {collection: "users"})"#).unwrap_err();
+    assert!(err.to_string().contains("materialized"), "{err}");
+    let meta = engine
+        .get_collection("_system:_views")
+        .unwrap()
+        .get("adults")
+        .unwrap();
+    assert_eq!(meta.get("type").unwrap(), "materialized");
+
+    // A search view can still replace another search view.
+    run(r#"RETURN CREATE_VIEW("people", {collection: "users"})"#).unwrap();
+    run(r#"RETURN CREATE_VIEW("people", {collection: "users", fields: ["name"]})"#).unwrap();
+}

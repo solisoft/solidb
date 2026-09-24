@@ -168,6 +168,22 @@ impl<'a> QueryExecutor<'a> {
             .and_then(Value::as_str)
             .unwrap_or("identity");
         let coll = self.ensure_meta_collection(VIEWS)?;
+        // `_views` also holds materialized views, keyed by the same names.
+        // Replacing one here would silently drop its query and refresh
+        // schedule, so only another search view may be replaced.
+        if let Ok(existing) = coll.get(name) {
+            let kind = existing
+                .to_value()
+                .get("type")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            if kind.as_deref() != Some("search") {
+                return Err(DbError::ConflictError(format!(
+                    "CREATE_VIEW: '{name}' is already a {} view",
+                    kind.as_deref().unwrap_or("non-search")
+                )));
+            }
+        }
         let doc = json!({
             "_key": name,
             "type": "search",
