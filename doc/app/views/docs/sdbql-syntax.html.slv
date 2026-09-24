@@ -41,7 +41,7 @@
 
             <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
               <pre><code class="language-sql text-sm">LET variable = expression
-FOR variable IN collection
+FOR variable IN collection [OPTIONS { indexHint: "idx", forceIndexHint: true }]
   FILTER expression
   SORT field [ASC|DESC]
   LIMIT [offset,] count | OFFSET n [LIMIT m]
@@ -77,6 +77,20 @@ FOR variable IN collection
                 </h3>
                 <p class="text-sm text-gray-400">Constructs the result documents. Add <code class="text-indigo-300">DISTINCT</code> to remove duplicate rows.</p>
               </div>
+            </div>
+
+            <p class="text-sm text-gray-400">
+              Keywords and function names are case-insensitive: <code class="text-indigo-300">length(x)</code> and <code class="text-indigo-300">LENGTH(x)</code> are the same call (names are normalised to upper case when the query is parsed, which is also how they appear in EXPLAIN output).
+            </p>
+
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h3 class="text-indigo-300 font-bold mb-2">FOR ... OPTIONS</h3>
+              <p class="text-sm text-gray-400 mb-3">
+                A collection loop can carry index hints for the optimizer. <code class="text-indigo-300">indexHint</code> is an index name or an array of names in order of preference; with <code class="text-indigo-300">forceIndexHint: true</code> the query fails instead of falling back when none of them can serve the FILTER. Values must be literals; unknown keys are a parse error.
+              </p>
+              <pre><code class="language-sql text-sm">FOR o IN orders OPTIONS { indexHint: ["idx_status_date", "idx_status"] }
+  FILTER o.status == "open"
+  RETURN o</code></pre>
             </div>
           </div>
         </div>
@@ -207,6 +221,103 @@ FOR i IN 1..n
   INSERT { index: i, name: CONCAT("Item", i) } INTO items
   RETURN i</code></pre>
             </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- Array Expansion and Inline Expressions -->
+      <section id="array-inline" class="scroll-mt-24">
+        <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+          <div class="p-5 border-b border-white/5 bg-white/5">
+            <h3 class="text-lg font-bold text-lime-300 flex items-center">
+              <span class="bg-lime-500/20 text-lime-400 text-xs font-mono px-2 py-1 rounded mr-3">[* ...]</span>
+              Array Expansion and Inline Expressions
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              <code class="text-lime-300">arr[*].path</code> reads an attribute from every element. Inside the brackets, after the asterisk, up to three operations may follow, in this order: <code class="text-lime-300">FILTER cond</code>, <code class="text-lime-300">LIMIT [offset,] count</code>, <code class="text-lime-300">RETURN expr</code>. <code class="text-lime-300">CURRENT</code> (upper case) is the element being looked at. A path written after the closing bracket is read from every result. A value that is not an array expands to <code>[]</code>.
+            </p>
+            <p class="text-sm text-gray-400">
+              <code class="text-lime-300">[**]</code> flattens the array one level before expanding it (each additional <code>*</code> flattens one more level).
+            </p>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Filter, limit, project</h4>
+                <pre><code class="language-sql text-sm">FOR u IN users
+  RETURN {
+    name: u.name,
+    adult_friends: u.friends[* FILTER CURRENT.age >= 18].name,
+    first_two: u.friends[* LIMIT 2 RETURN CURRENT.name],
+    page: u.orders[* LIMIT 10, 5],
+    labels: u.tags[* RETURN UPPER(CURRENT)]
+  }</code></pre>
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Flatten</h4>
+                <pre><code class="language-sql text-sm">RETURN [[1, 2], [3], 4][**]
+-- [1, 2, 3, 4]
+
+-- All tags of all posts of a user, one flat list
+FOR u IN users
+  RETURN u.posts[*].tags[**]</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Array Comparison Operators -->
+      <section id="array-comparison" class="scroll-mt-24">
+        <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+          <div class="p-5 border-b border-white/5 bg-white/5">
+            <h3 class="text-lg font-bold text-sky-300 flex items-center">
+              <span class="bg-sky-500/20 text-sky-400 text-xs font-mono px-2 py-1 rounded mr-3">ANY / ALL / NONE</span>
+              Array Comparison Operators
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              Put <code class="text-sky-300">ANY</code>, <code class="text-sky-300">ALL</code>, <code class="text-sky-300">NONE</code> or <code class="text-sky-300">AT LEAST (n)</code> between an array and a comparison operator (<code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>, <code>IN</code>, <code>NOT IN</code>) to compare every element with the right-hand side.
+            </p>
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-sql text-sm">[1, 2, 3] ANY == 2            -- true
+[1, 2, 3] ALL > 0             -- true
+[1, 2, 3] NONE > 5            -- true
+[1, 2, 3] ALL IN [1, 2, 3, 4] -- true
+[1, 2, 3] AT LEAST (2) >= 2   -- true
+[] ALL == 1                   -- true (vacuous)
+[] ANY == 1                   -- false
+"x" ANY == "x"                -- false: the left side must be an array</code></pre>
+            </div>
+            <pre><code class="language-sql text-sm">FOR p IN products
+  FILTER p.tags ANY IN @wanted
+  FILTER p.prices ALL > 0
+  RETURN p.name</code></pre>
+            <p class="text-xs text-gray-500">
+              For <code>IN</code> / <code>NOT IN</code> a non-array right-hand side makes the whole comparison <code>false</code>. The prefix quantifier <code>ANY x IN arr SATISFIES cond</code> is still available for arbitrary conditions.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- COLLECT extensions -->
+      <section id="collect-into-expression" class="scroll-mt-24">
+        <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+          <div class="p-5 border-b border-white/5 bg-white/5">
+            <h3 class="text-lg font-bold text-fuchsia-300 flex items-center">
+              <span class="bg-fuchsia-500/20 text-fuchsia-400 text-xs font-mono px-2 py-1 rounded mr-3">COLLECT</span>
+              INTO Projections and OPTIONS
+            </h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              <code class="text-fuchsia-300">INTO g = expr</code> stores <code>expr</code>, evaluated on each row, in the group array instead of an object of every variable in scope (it cannot be combined with <code>KEEP</code>). <code class="text-fuchsia-300">OPTIONS { method: "sorted" }</code> (the default) returns groups sorted by their group values; <code class="text-fuchsia-300">method: "hash"</code> lets them come out in any order. <code>AGGREGATE</code> may be written before or after <code>INTO</code>.
+            </p>
+            <pre><code class="language-sql text-sm">FOR u IN users
+  COLLECT city = u.city INTO names = u.name OPTIONS { method: "hash" }
+  RETURN { city, names }</code></pre>
           </div>
         </div>
       </section>
@@ -797,9 +908,18 @@ FOR doc IN daily_sales
   }</code></pre>
             </div>
 
+            <p class="text-sm text-gray-400 mt-4">
+              Window functions may appear in <code class="text-amber-300">RETURN</code> and in <code class="text-amber-300">LET</code>. A <code>LET</code> written after <code>SORT</code> / <code>LIMIT</code> (as above) sees every sorted row, before the limit is applied, exactly like <code>RETURN</code>. A <code>LET</code> in the body, before <code>SORT</code>, is computed over the rows present at that point, so a following <code>FILTER</code> can use it:
+            </p>
+            <pre><code class="language-sql text-xs">-- Top 3 orders per customer
+FOR o IN orders
+  LET rn = ROW_NUMBER() OVER (PARTITION BY o.customer ORDER BY o.total DESC)
+  FILTER rn <= 3
+  RETURN o</code></pre>
+
             <p class="text-xs text-gray-500 mt-4">
               <span class="text-amber-400 font-bold">Supported Functions:</span>
-              ROW_NUMBER, RANK, DENSE_RANK, LAG, LEAD, FIRST_VALUE, LAST_VALUE, SUM, AVG, COUNT, MIN, MAX
+              ROW_NUMBER, RANK, DENSE_RANK, NTILE, PERCENT_RANK, CUME_DIST, LAG, LEAD, FIRST_VALUE, LAST_VALUE, NTH_VALUE, SUM, AVG, COUNT, MIN, MAX
             </p>
           </div>
         </div>
@@ -1014,7 +1134,7 @@ UPSERT { email: "user@example.com" }
   UPDATE u WITH { status: "active" } IN users
   RETURN NEW</code></pre>
                 <p class="text-xs text-gray-400 mt-2">
-                  Use <code class="text-purple-300">RETURN NEW</code> or <code class="text-purple-300">RETURN OLD</code> to get the state of documents before or after modification.
+                  Use <code class="text-purple-300">RETURN NEW</code> or <code class="text-purple-300">RETURN OLD</code> to get the state of documents after or before modification. See <a href="/docs/sdbql-mutations#old-new" class="text-indigo-400 hover:text-indigo-300">OLD / NEW</a> and <a href="/docs/sdbql-mutations#mutation-options" class="text-indigo-400 hover:text-indigo-300">mutation OPTIONS</a>.
                 </p>
               </div>
             </div>

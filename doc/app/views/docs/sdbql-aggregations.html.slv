@@ -126,6 +126,43 @@
               </div>
             </div>
 
+            <!-- AGGREGATE reference -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-orange-300 flex items-center">Functions Available in AGGREGATE</h3>
+              </div>
+              <div class="p-5 space-y-4 overflow-x-auto">
+                <table class="w-full text-sm">
+                  <tbody>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">COUNT()</td><td class="py-2 text-gray-400">Number of rows in the group.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">COUNT(expr)</td><td class="py-2 text-gray-400">Rows where <code>expr</code> is not null.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">LENGTH(expr)</td><td class="py-2 text-gray-400">Number of rows (AQL: same as <code>COUNT()</code>).</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">SUM(expr)</td><td class="py-2 text-gray-400">Sum of the numeric values; other values are skipped.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">AVG(expr) / AVERAGE(expr)</td><td class="py-2 text-gray-400">Mean of the numeric values; <code>null</code> when there are none.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">MIN(expr) / MINIMUM(expr), MAX(expr) / MAXIMUM(expr)</td><td class="py-2 text-gray-400">Smallest / largest non-null value in AQL type order; the stored value is returned unchanged.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">COUNT_DISTINCT(expr) / COUNT_UNIQUE(expr)</td><td class="py-2 text-gray-400">Number of distinct values (<code>1</code> and <code>1.0</code> are the same value).</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">UNIQUE(expr)</td><td class="py-2 text-gray-400">The distinct values, as an array, in first-seen order.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">SORTED_UNIQUE(expr)</td><td class="py-2 text-gray-400">The distinct values, sorted.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">COLLECT_LIST(expr) / PUSH(expr)</td><td class="py-2 text-gray-400">Every value, as an array, in row order.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">VARIANCE(expr) / VARIANCE_POPULATION(expr), VARIANCE_SAMPLE(expr)</td><td class="py-2 text-gray-400">Population / sample variance of the numeric values.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">STDDEV(expr) / STDDEV_POPULATION(expr), STDDEV_SAMPLE(expr)</td><td class="py-2 text-gray-400">Population / sample standard deviation.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">MEDIAN(expr)</td><td class="py-2 text-gray-400">Median of the numeric values.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">BIT_AND(expr), BIT_OR(expr), BIT_XOR(expr)</td><td class="py-2 text-gray-400">Bitwise fold of the integer values; nulls are skipped, any other non-integer makes the result <code>null</code>.</td></tr>
+                  </tbody>
+                </table>
+                <p class="text-xs text-gray-500">
+                  These mean the same thing whatever the collection's storage layout. <code>PERCENTILE</code> takes
+                  a second argument, so it is not available in <code>AGGREGATE</code>; use
+                  <code>COLLECT … INTO g</code> and <code>PERCENTILE(g[*].u.amount, 95)</code> (each item of <code>g</code> holds the loop variables).
+                </p>
+                <p class="text-xs text-gray-500">
+                  Groups are returned in ascending order of their group values. A <code>COLLECT</code> with no
+                  group variable always returns exactly one row, even over no input:
+                  <code>FOR u IN [] COLLECT WITH COUNT INTO n RETURN n</code> is <code>[0]</code>.
+                </p>
+              </div>
+            </div>
+
             <!-- Syntax Reference -->
             <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4 mt-8">
               <code class="text-sm text-gray-300 font-mono block whitespace-pre overflow-x-auto">COLLECT <span class="text-orange-400">variable</span> = <span class="text-purple-400">expression</span> [, ...]
@@ -199,30 +236,36 @@ RETURN PERCENTILE([1, 2, 3, 4], 50, "interpolation") --2.5</code></pre>
 
             <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Statistical Functions</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div id="fn-VARIANCE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
-                <a href="#fn-VARIANCE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">VARIANCE(arr)</code>
-                <p class="text-sm text-gray-400 mb-3">Population variance.</p>
-                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VARIANCE([1, 2, 3, 4, 5]) --2</code></pre>
-              </div>
+                <div id="fn-VARIANCE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-VARIANCE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">VARIANCE(arr) / VARIANCE_POPULATION(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Population variance: 0 for one value, <code>null</code> for none.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VARIANCE([1, 2, 3, 4, 5]) --2</code></pre>
+                </div>
               <div id="fn-VARIANCE_SAMPLE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-VARIANCE_SAMPLE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">VARIANCE_SAMPLE(arr)</code>
                 <p class="text-sm text-gray-400 mb-3">Sample variance.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VARIANCE_SAMPLE([1, 2, 3, 4, 5]) --2.5</code></pre>
               </div>
-              <div id="fn-STDDEV" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
-                <a href="#fn-STDDEV" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV(arr)</code>
-                <p class="text-sm text-gray-400 mb-3">Sample standard deviation.</p>
-                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV([1, 2, 3, 4, 5]) --1.581...</code></pre>
-              </div>
-              <div id="fn-STDDEV_POPULATION" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
-                <a href="#fn-STDDEV_POPULATION" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV_POPULATION(arr)</code>
-                <p class="text-sm text-gray-400 mb-3">Population standard deviation.</p>
-                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV_POPULATION([1, 2, 3, 4, 5]) --1.414...</code></pre>
-              </div>
+                <div id="fn-STDDEV" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-STDDEV" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3"><strong>Population</strong> standard deviation, as in AQL (same as <code>STDDEV_POPULATION</code>).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV([1, 2, 3, 4, 5]) --1.414...</code></pre>
+                </div>
+                <div id="fn-STDDEV_POPULATION" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-STDDEV_POPULATION" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV_POPULATION(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Population standard deviation.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV_POPULATION([1, 2, 3, 4, 5]) --1.414...</code></pre>
+                </div>
+                <div id="fn-STDDEV_SAMPLE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-STDDEV_SAMPLE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV_SAMPLE(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Sample standard deviation; <code>null</code> for fewer than two values.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV_SAMPLE([1, 2, 3, 4, 5]) --1.581...</code></pre>
+                </div>
             </div>
 
             <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
@@ -238,6 +281,79 @@ RETURN PERCENTILE([1, 2, 3, 4], 50, "interpolation") --2.5</code></pre>
     stddev: ROUND(STDDEV(amounts), 2)
   }</code></pre>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Approximate Aggregates -->
+      <section id="approximate" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">Approximate Aggregates</h2>
+          </div>
+          <div class="p-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div id="fn-APPROX_COUNT_DISTINCT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-APPROX_COUNT_DISTINCT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">APPROX_COUNT_DISTINCT(arr, options?)</code>
+                  <p class="text-sm text-gray-400 mb-3">HyperLogLog (p = 14) estimate of the number of distinct values — about 0.8% error. Returns the estimate. Pass <code>{sketch: true}</code> to get the sketch object instead (<code>_type: "hll"</code>, <code>estimate</code>, <code>registers</code>), for <code>SKETCH_MERGE</code>; a sketch passed back in returns its estimate.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN APPROX_COUNT_DISTINCT([1, 1, 2, 3]) --3
+LET a = APPROX_COUNT_DISTINCT(xs, {sketch: true})
+LET b = APPROX_COUNT_DISTINCT(ys, {sketch: true})
+RETURN SKETCH_MERGE(a, b).estimate</code></pre>
+                </div>
+                <div id="fn-APPROX_PERCENTILE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-APPROX_PERCENTILE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">APPROX_PERCENTILE(arr, p)</code>
+                  <p class="text-sm text-gray-400 mb-3">Despite the name, exact: the numeric value at index round(p/100 · (n − 1)) of the sorted array. <code>p</code> is 0-100.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN APPROX_PERCENTILE([1, 2, 3, 4, 5], 50) --3</code></pre>
+                </div>
+                <div id="fn-APPROX_TOP_K" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-APPROX_TOP_K" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">APPROX_TOP_K(arr, k)</code>
+                  <p class="text-sm text-gray-400 mb-3">Most frequent values as <code>[{value, count}]</code>, most frequent first. Uses a table of 4k counters (Misra-Gries): counts are exact while the number of distinct values fits, lower bounds after. <code>k</code> is capped at 10,000.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN APPROX_TOP_K(["a", "a", "b", "a", "c"], 2)
+-- [{value: "a", count: 3}, {value: "b", count: 1}]</code></pre>
+                </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Window Functions -->
+      <section id="window-functions" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">Window Functions</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <p class="text-gray-300 leading-relaxed">
+              <code>FUNC(args) OVER (PARTITION BY … ORDER BY …)</code> computes a value per row from the rows
+              of its partition without collapsing them. See also the
+              <a href="/docs/sdbql-syntax#window-functions" class="text-indigo-400 hover:text-indigo-300">syntax guide</a>.
+            </p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <tbody>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">ROW_NUMBER()</td><td class="py-2 text-gray-400">1, 2, 3… in window order.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">RANK() / DENSE_RANK()</td><td class="py-2 text-gray-400">Rank with gaps / without gaps; rows with equal ORDER BY values are peers.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">PERCENT_RANK()</td><td class="py-2 text-gray-400">(rank − 1) / (rows − 1); 0 for a single row.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">CUME_DIST()</td><td class="py-2 text-gray-400">Rows up to and including the current row's last peer, over rows.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">NTILE(n)</td><td class="py-2 text-gray-400">Bucket number 1…n; bucket sizes differ by at most one, larger buckets first.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">LAG(expr, offset?, default?) / LEAD(...)</td><td class="py-2 text-gray-400">Value <code>offset</code> rows before / after (default 1), or <code>default</code>.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">FIRST_VALUE(expr) / LAST_VALUE(expr)</td><td class="py-2 text-gray-400">First / last value of the whole partition.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">NTH_VALUE(expr, n)</td><td class="py-2 text-gray-400">Value of the n-th row (1-based) of the whole partition, or <code>null</code>.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">SUM / AVG / COUNT / MIN / MAX (expr)</td><td class="py-2 text-gray-400">With ORDER BY: running value from the partition start to the current row. Without ORDER BY: the whole partition.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">FOR s IN scores
+  RETURN {
+    name: s.name,
+    quartile: NTILE(4) OVER (ORDER BY s.score DESC),
+    pct: PERCENT_RANK() OVER (ORDER BY s.score),
+    second_best: NTH_VALUE(s.score, 2) OVER (ORDER BY s.score DESC)
+  }</code></pre>
           </div>
         </div>
       </section>

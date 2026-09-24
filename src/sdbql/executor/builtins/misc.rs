@@ -1,22 +1,24 @@
 //! Miscellaneous utility functions for SDBQL.
 //!
-//! UUID, TYPEOF, COALESCE, etc.
+//! TYPEOF, COALESCE, type casts, object helpers (KEEP, UNSET, MERGE, …).
+//! UUIDs live in `phonetic/id.rs`, which is dispatched first.
 
 use crate::error::{DbError, DbResult};
-use serde_json::Value;
-use uuid::Uuid;
+use crate::sdbql::executor::helpers::{to_bool, values_equal};
+use serde_json::{Map, Value};
+
+/// Same ceiling RANGE has always had.
+const MAX_RANGE: usize = 1_000_000;
 
 /// Evaluate misc functions
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     match name {
-        "UUID" | "UUID_V4" => Ok(Some(Value::String(Uuid::new_v4().to_string()))),
-        "UUID_V7" => Ok(Some(Value::String(Uuid::now_v7().to_string()))),
         "TYPEOF" | "TYPE_OF" | "TYPENAME" => {
             check_args(name, args, 1)?;
             let type_name = match &args[0] {
                 Value::Null => "null",
                 Value::Bool(_) => "bool",
-                Value::Number(_) => "int",
+                Value::Number(_) => "number",
                 Value::String(_) => "string",
                 Value::Array(_) => "array",
                 Value::Object(_) => "object",
@@ -37,7 +39,8 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     "NULLIF requires 2 arguments".to_string(),
                 ));
             }
-            if args[0] == args[1] {
+            // values_equal: NULLIF(1, 1.0) is null, like `1 == 1.0`.
+            if values_equal(&args[0], &args[1]) {
                 Ok(Some(Value::Null))
             } else {
                 Ok(Some(args[0].clone()))
@@ -63,108 +66,29 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }
             Ok(Some(Value::Bool(true)))
         }
-        "RANGE" => {
-            if args.is_empty() || args.len() > 3 {
-                return Err(DbError::ExecutionError(
-                    "RANGE requires 1-3 arguments: end or start, end, [step]".to_string(),
-                ));
-            }
-            let get_i64 = |v: &Value| -> i64 {
-                v.as_i64()
-                    .unwrap_or_else(|| v.as_f64().unwrap_or(0.0) as i64)
-            };
-            let (start, end, step) = if args.len() == 1 {
-                (0i64, get_i64(&args[0]), 1i64)
-            } else if args.len() == 2 {
-                (get_i64(&args[0]), get_i64(&args[1]), 1i64)
-            } else {
-                let step_val = get_i64(&args[2]);
-                if step_val == 0 {
-                    return Err(DbError::ExecutionError(
-                        "RANGE: step cannot be 0".to_string(),
-                    ));
-                }
-                (get_i64(&args[0]), get_i64(&args[1]), step_val)
-            };
-
-            // i128: `end - start` overflows i64 across the full range, and in
-            // release that wrapped to a count of 0, walked past the cap, and
-            // allocated until the process was killed.
-            let (start_w, end_w, step_w) = (start as i128, end as i128, step as i128);
-            let count = if step > 0 {
-                if end < start {
-                    0
-                } else {
-                    (end_w - start_w) / step_w + 1
-                }
-            } else if end > start {
-                0
-            } else {
-                (start_w - end_w) / step_w.abs() + 1
-            };
-            const MAX_RANGE: usize = 1_000_000;
-            let count = usize::try_from(count).unwrap_or(usize::MAX);
-            if count > MAX_RANGE {
-                return Err(DbError::ExecutionError(format!(
-                    "RANGE: result would have {} elements (max {})",
-                    count, MAX_RANGE
-                )));
-            }
-            let mut result = Vec::with_capacity(count);
-            let mut i = start;
-            while result.len() < count {
-                result.push(Value::Number(serde_json::Number::from(i)));
-                i = i.saturating_add(step);
-            }
-            Ok(Some(Value::Array(result)))
-        }
+        "RANGE" => range(args).map(Some),
         "TO_NUMBER" | "TO_NUM" => {
             check_args(name, args, 1)?;
-            if args[0].is_null() {
-                return Ok(Some(Value::Null));
-            }
-            let num = match &args[0] {
-                Value::Number(n) => n.clone(),
-                Value::String(s) => s
-                    .parse::<f64>()
-                    .map(|f| serde_json::Number::from_f64(f).unwrap_or(serde_json::Number::from(0)))
-                    .unwrap_or(serde_json::Number::from(0)),
-                Value::Bool(true) => serde_json::Number::from(1),
-                Value::Bool(false) => serde_json::Number::from(0),
-                _ => serde_json::Number::from(0),
-            };
-            Ok(Some(Value::Number(num)))
+            Ok(Some(to_number(&args[0])))
         }
         "TO_STRING" | "TO_STR" => {
             check_args(name, args, 1)?;
-            let s = match &args[0] {
-                Value::String(s) => s.clone(),
-                Value::Number(n) => n.to_string(),
-                Value::Bool(b) => b.to_string(),
-                Value::Null => "null".to_string(),
-                v => serde_json::to_string(v).unwrap_or_default(),
-            };
-            Ok(Some(Value::String(s)))
+            Ok(Some(Value::String(to_string_value(&args[0]))))
         }
         "TO_BOOL" | "TO_BOOLEAN" => {
             check_args(name, args, 1)?;
-            let b = match &args[0] {
-                Value::Bool(b) => *b,
-                Value::Null => false,
-                Value::Number(n) => n.as_f64().map(|f| f != 0.0).unwrap_or(false),
-                Value::String(s) => !s.is_empty() && s != "false" && s != "0",
-                Value::Array(a) => !a.is_empty(),
-                Value::Object(o) => !o.is_empty(),
-            };
-            Ok(Some(Value::Bool(b)))
+            // One truthiness rule for TO_BOOL, FILTER, `!` and `? :`.
+            Ok(Some(Value::Bool(to_bool(&args[0]))))
         }
         "TO_ARRAY" | "TO_LIST" => {
             check_args(name, args, 1)?;
-            match &args[0] {
-                Value::Array(arr) => Ok(Some(Value::Array(arr.clone()))),
-                Value::Null => Ok(Some(Value::Array(vec![]))),
-                other => Ok(Some(Value::Array(vec![other.clone()]))),
-            }
+            Ok(Some(match &args[0] {
+                Value::Array(arr) => Value::Array(arr.clone()),
+                Value::Null => Value::Array(vec![]),
+                // AQL: an object becomes the array of its values.
+                Value::Object(o) => Value::Array(o.values().cloned().collect()),
+                other => Value::Array(vec![other.clone()]),
+            }))
         }
         "IF" => {
             if args.len() != 3 {
@@ -184,54 +108,87 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }))
         }
         "ATTRIBUTES" | "KEYS" => {
-            check_args(name, args, 1)?;
-            let keys = match &args[0] {
-                Value::Object(obj) => obj.keys().map(|k| Value::String(k.clone())).collect(),
+            if args.is_empty() || args.len() > 3 {
+                return Err(DbError::ExecutionError(format!(
+                    "{name} requires 1-3 arguments: document, [removeInternal], [sort]"
+                )));
+            }
+            let remove_internal = opt_flag(name, "removeInternal", args.get(1))?;
+            let sort = opt_flag(name, "sort", args.get(2))?;
+            let keep = |k: &str| !(remove_internal && k.starts_with('_'));
+            let mut keys: Vec<Value> = match &args[0] {
+                Value::Null => return Ok(Some(Value::Null)),
+                Value::Object(obj) => obj
+                    .keys()
+                    .filter(|k| keep(k.as_str()))
+                    .map(|k| Value::String(k.clone()))
+                    .collect(),
                 Value::Array(arr) => {
                     let mut keys = Vec::new();
                     for item in arr {
                         if let Value::Object(obj) = item {
-                            keys.extend(obj.keys().map(|k| Value::String(k.clone())));
+                            keys.extend(
+                                obj.keys()
+                                    .filter(|k| keep(k.as_str()))
+                                    .map(|k| Value::String(k.clone())),
+                            );
                         }
                     }
                     keys
                 }
                 _ => {
-                    return Err(DbError::ExecutionError(
-                        "ATTRIBUTES: argument must be an object or array of objects".to_string(),
-                    ));
+                    return Err(DbError::ExecutionError(format!(
+                        "{name}: argument must be an object or array of objects"
+                    )));
                 }
             };
+            if sort {
+                keys.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+            }
             Ok(Some(Value::Array(keys)))
         }
         "VALUES" => {
-            check_args(name, args, 1)?;
-            let values = match &args[0] {
-                Value::Object(obj) => obj.values().cloned().collect(),
+            if args.is_empty() || args.len() > 2 {
+                return Err(DbError::ExecutionError(
+                    "VALUES requires 1-2 arguments: document, [removeInternal]".to_string(),
+                ));
+            }
+            let remove_internal = opt_flag(name, "removeInternal", args.get(1))?;
+            let pick = |obj: &Map<String, Value>, out: &mut Vec<Value>| {
+                out.extend(
+                    obj.iter()
+                        .filter(|(k, _)| !(remove_internal && k.starts_with('_')))
+                        .map(|(_, v)| v.clone()),
+                );
+            };
+            let mut values = Vec::new();
+            match &args[0] {
+                Value::Null => return Ok(Some(Value::Null)),
+                Value::Object(obj) => pick(obj, &mut values),
                 Value::Array(arr) => {
-                    let mut values = Vec::new();
                     for item in arr {
                         if let Value::Object(obj) = item {
-                            values.extend(obj.values().cloned());
+                            pick(obj, &mut values);
                         }
                     }
-                    values
                 }
                 _ => {
                     return Err(DbError::ExecutionError(
                         "VALUES: argument must be an object or array of objects".to_string(),
                     ));
                 }
-            };
+            }
             Ok(Some(Value::Array(values)))
         }
         "KEEP" => {
             if args.len() < 2 {
                 return Err(DbError::ExecutionError(
-                    "KEEP requires at least 2 arguments: object, key1, key2, ...".to_string(),
+                    "KEEP requires at least 2 arguments: object, key1, key2, ... or object, [keys]"
+                        .to_string(),
                 ));
             }
             let obj = match &args[0] {
+                Value::Null => return Ok(Some(Value::Null)),
                 Value::Object(obj) => obj,
                 _ => {
                     return Err(DbError::ExecutionError(
@@ -239,8 +196,8 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     ));
                 }
             };
-            let mut result = serde_json::Map::new();
-            for key in args[1..].iter().filter_map(Value::as_str) {
+            let mut result = Map::new();
+            for key in key_args("KEEP", &args[1..])? {
                 if let Some(v) = obj.get(key) {
                     result.insert(key.to_string(), v.clone());
                 }
@@ -250,10 +207,12 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "UNSET" => {
             if args.len() < 2 {
                 return Err(DbError::ExecutionError(
-                    "UNSET requires at least 2 arguments: object, key1, key2, ...".to_string(),
+                    "UNSET requires at least 2 arguments: object, key1, key2, ... or object, [keys]"
+                        .to_string(),
                 ));
             }
             let obj = match &args[0] {
+                Value::Null => return Ok(Some(Value::Null)),
                 Value::Object(obj) => obj,
                 _ => {
                     return Err(DbError::ExecutionError(
@@ -262,13 +221,12 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 }
             };
             let drop: std::collections::HashSet<&str> =
-                args[1..].iter().filter_map(Value::as_str).collect();
-            let mut result = serde_json::Map::new();
-            for (k, v) in obj {
-                if !drop.contains(k.as_str()) {
-                    result.insert(k.clone(), v.clone());
-                }
-            }
+                key_args("UNSET", &args[1..])?.into_iter().collect();
+            let result: Map<String, Value> = obj
+                .iter()
+                .filter(|(k, _)| !drop.contains(k.as_str()))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
             Ok(Some(Value::Object(result)))
         }
         "REDACT" => {
@@ -293,49 +251,55 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         }
         "PARSE_IDENTIFIER" => {
             check_args(name, args, 1)?;
-            let s = args[0].as_str().unwrap_or("");
-            Ok(Some(parse_ident(s)))
+            Ok(Some(match identifier_of(&args[0]) {
+                Some(s) => parse_ident(s),
+                None => Value::Null,
+            }))
         }
         "PARSE_COLLECTION" => {
             check_args(name, args, 1)?;
-            let s = args[0].as_str().unwrap_or("");
-            Ok(Some(
-                parse_ident(s)
+            Ok(Some(match identifier_of(&args[0]) {
+                Some(s) => parse_ident(s)
                     .get("collection")
                     .cloned()
                     .unwrap_or(Value::Null),
-            ))
+                None => Value::Null,
+            }))
         }
         "PARSE_KEY" => {
             check_args(name, args, 1)?;
-            let s = args[0].as_str().unwrap_or("");
-            Ok(Some(
-                parse_ident(s).get("key").cloned().unwrap_or(Value::Null),
-            ))
+            Ok(Some(match identifier_of(&args[0]) {
+                Some(s) => parse_ident(s).get("key").cloned().unwrap_or(Value::Null),
+                None => Value::Null,
+            }))
         }
         "UNSET_RECURSIVE" => {
             if args.len() < 2 {
                 return Err(DbError::ExecutionError(
-                    "UNSET_RECURSIVE requires object, keys...".to_string(),
+                    "UNSET_RECURSIVE requires object, keys... or object, [keys]".to_string(),
                 ));
             }
-            let keys: Vec<String> = args[1..]
-                .iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
+            let keys: Vec<String> = key_args(name, &args[1..])?
+                .into_iter()
+                .map(str::to_string)
                 .collect();
             Ok(Some(redact_value(&args[0], &keys)))
         }
         "KEEP_RECURSIVE" => {
             if args.len() < 2 {
                 return Err(DbError::ExecutionError(
-                    "KEEP_RECURSIVE requires object, keys...".to_string(),
+                    "KEEP_RECURSIVE requires object, keys... or object, [keys]".to_string(),
                 ));
             }
-            let keys: Vec<String> = args[1..]
-                .iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect();
-            Ok(Some(keep_recursive(&args[0], &keys)))
+            let keys: std::collections::HashSet<&str> =
+                key_args(name, &args[1..])?.into_iter().collect();
+            Ok(Some(match &args[0] {
+                Value::Object(o) => Value::Object(keep_recursive_obj(o, &keys)),
+                Value::Array(_) => {
+                    keep_recursive_search(&args[0], &keys).unwrap_or_else(|| Value::Array(vec![]))
+                }
+                other => other.clone(),
+            }))
         }
         "GET" => {
             if args.len() < 2 || args.len() > 3 {
@@ -379,21 +343,38 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }
             Ok(Some(cur.clone()))
         }
-        "DEEP_MERGE" => {
-            if args.is_empty() {
-                return Err(DbError::ExecutionError(
-                    "DEEP_MERGE requires at least 1 argument".to_string(),
-                ));
-            }
-            let mut result = Value::Object(serde_json::Map::new());
-            for arg in args {
-                match arg {
+        "MERGE" => {
+            let docs = merge_inputs(name, args)?;
+            let mut result = Map::new();
+            for doc in docs {
+                match doc {
+                    Value::Object(obj) => {
+                        for (key, value) in obj {
+                            result.insert(key.clone(), value.clone());
+                        }
+                    }
                     Value::Null => {}
-                    Value::Object(_) => deep_merge_into(&mut result, arg),
+                    other => {
+                        return Err(DbError::ExecutionError(format!(
+                            "MERGE: all arguments must be objects, got: {}",
+                            type_name(other)
+                        )));
+                    }
+                }
+            }
+            Ok(Some(Value::Object(result)))
+        }
+        "DEEP_MERGE" | "MERGE_RECURSIVE" => {
+            let docs = merge_inputs(name, args)?;
+            let mut result = Value::Object(Map::new());
+            for doc in docs {
+                match doc {
+                    Value::Null => {}
+                    Value::Object(_) => deep_merge_into(&mut result, doc),
                     _ => {
-                        return Err(DbError::ExecutionError(
-                            "DEEP_MERGE: all arguments must be objects".to_string(),
-                        ));
+                        return Err(DbError::ExecutionError(format!(
+                            "{name}: all arguments must be objects"
+                        )));
                     }
                 }
             }
@@ -423,7 +404,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     "FROM_ENTRIES: argument must be an array of pairs".to_string(),
                 )
             })?;
-            let mut obj = serde_json::Map::new();
+            let mut obj = Map::new();
             for item in arr {
                 let pair = item.as_array().ok_or_else(|| {
                     DbError::ExecutionError(
@@ -444,28 +425,383 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                     "HAS requires 2 arguments: object, key".to_string(),
                 ));
             }
-            let key = match &args[1] {
-                Value::String(s) => s.clone(),
-                _ => {
-                    return Err(DbError::ExecutionError(
-                        "HAS: second argument must be a string (key)".to_string(),
-                    ));
-                }
-            };
+            let key = args[1].as_str().ok_or_else(|| {
+                DbError::ExecutionError("HAS: second argument must be a string (key)".to_string())
+            })?;
             let has_key = match &args[0] {
-                Value::Object(obj) => obj.contains_key(&key),
-                Value::Array(arr) => arr.iter().any(|item| {
-                    if let Value::Object(obj) = item {
-                        obj.contains_key(&key)
-                    } else {
-                        false
-                    }
-                }),
+                Value::Object(obj) => obj.contains_key(key),
+                Value::Array(arr) => arr
+                    .iter()
+                    .any(|item| item.as_object().is_some_and(|o| o.contains_key(key))),
                 _ => false,
             };
             Ok(Some(Value::Bool(has_key)))
         }
+        "MATCHES" => {
+            if args.len() < 2 || args.len() > 3 {
+                return Err(DbError::ExecutionError(
+                    "MATCHES requires 2-3 arguments: document, examples, [returnIndex]".to_string(),
+                ));
+            }
+            let return_index = opt_flag(name, "returnIndex", args.get(2))?;
+            let examples: &[Value] = match &args[1] {
+                Value::Array(a) => a.as_slice(),
+                v @ Value::Object(_) => std::slice::from_ref(v),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "MATCHES: examples must be an object or an array of objects".to_string(),
+                    ))
+                }
+            };
+            let hit = match &args[0] {
+                Value::Object(doc) => examples.iter().position(|ex| match ex {
+                    Value::Object(ex) => ex
+                        .iter()
+                        .all(|(k, v)| doc.get(k).is_some_and(|d| deep_equal(d, v))),
+                    _ => false,
+                }),
+                _ => None,
+            };
+            Ok(Some(if return_index {
+                Value::from(hit.map(|i| i as i64).unwrap_or(-1))
+            } else {
+                Value::Bool(hit.is_some())
+            }))
+        }
+        "TRANSLATE" => {
+            if args.len() < 2 || args.len() > 3 {
+                return Err(DbError::ExecutionError(
+                    "TRANSLATE requires 2-3 arguments: value, lookup, [default]".to_string(),
+                ));
+            }
+            let fallback = || args.get(2).cloned().unwrap_or_else(|| args[0].clone());
+            let lookup = match &args[1] {
+                Value::Object(o) => o,
+                Value::Null => return Ok(Some(fallback())),
+                _ => {
+                    return Err(DbError::ExecutionError(
+                        "TRANSLATE: lookup must be an object".to_string(),
+                    ))
+                }
+            };
+            let key = to_string_value(&args[0]);
+            Ok(Some(lookup.get(&key).cloned().unwrap_or_else(fallback)))
+        }
+        "VALUE" => {
+            check_args(name, args, 2)?;
+            let path = args[1].as_array().ok_or_else(|| {
+                DbError::ExecutionError(
+                    "VALUE: path must be an array of attribute names and indexes".to_string(),
+                )
+            })?;
+            let mut cur = &args[0];
+            for step in path {
+                let next = match (cur, step) {
+                    (Value::Object(o), Value::String(k)) => o.get(k),
+                    (Value::Array(a), Value::Number(n)) => n.as_i64().and_then(|i| {
+                        let idx = if i < 0 { a.len() as i64 + i } else { i };
+                        usize::try_from(idx).ok().and_then(|i| a.get(i))
+                    }),
+                    (_, Value::String(_) | Value::Number(_)) => None,
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "VALUE: path elements must be strings or numbers".to_string(),
+                        ))
+                    }
+                };
+                match next {
+                    Some(v) => cur = v,
+                    None => return Ok(Some(Value::Null)),
+                }
+            }
+            Ok(Some(cur.clone()))
+        }
+        "HASH" => {
+            check_args(name, args, 1)?;
+            let mut buf = Vec::new();
+            hash_encode(&args[0], &mut buf);
+            // Low 52 bits, like AQL: the result survives a round trip through
+            // a double (JavaScript clients) unchanged.
+            let h = seahash::hash(&buf) & ((1u64 << 52) - 1);
+            Ok(Some(Value::from(h)))
+        }
         _ => Ok(None),
+    }
+}
+
+fn type_name(v: &Value) -> &'static str {
+    match v {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
+/// Optional boolean flag: absent/null is false.
+fn opt_flag(fname: &str, what: &str, v: Option<&Value>) -> DbResult<bool> {
+    match v {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(b)) => Ok(*b),
+        Some(_) => Err(DbError::ExecutionError(format!(
+            "{fname}: {what} must be a boolean"
+        ))),
+    }
+}
+
+/// Attribute-name arguments: any mix of strings and arrays of strings, as
+/// in AQL's `KEEP(doc, "a", "b")` and `KEEP(doc, ["a", "b"])`. Anything else
+/// is an error, so a redaction can never silently drop nothing.
+fn key_args<'a>(fname: &str, args: &'a [Value]) -> DbResult<Vec<&'a str>> {
+    let bad = || {
+        DbError::ExecutionError(format!(
+            "{fname}: attribute names must be strings or arrays of strings"
+        ))
+    };
+    let mut keys = Vec::new();
+    for a in args {
+        match a {
+            Value::String(s) => keys.push(s.as_str()),
+            Value::Array(items) => {
+                for it in items {
+                    keys.push(it.as_str().ok_or_else(bad)?);
+                }
+            }
+            _ => return Err(bad()),
+        }
+    }
+    Ok(keys)
+}
+
+/// `MERGE(a, b, …)` or the single-array form `MERGE([a, b, …])`.
+fn merge_inputs<'a>(fname: &str, args: &'a [Value]) -> DbResult<&'a [Value]> {
+    if args.is_empty() {
+        return Err(DbError::ExecutionError(format!(
+            "{fname} requires at least 1 argument"
+        )));
+    }
+    if args.len() == 1 {
+        if let Value::Array(items) = &args[0] {
+            return Ok(items);
+        }
+    }
+    Ok(args)
+}
+
+fn to_string_value(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => number_to_string(n),
+        Value::Bool(b) => b.to_string(),
+        // AQL and the docs: TO_STRING(null) is "".
+        Value::Null => String::new(),
+        v => serde_json::to_string(v).unwrap_or_default(),
+    }
+}
+
+/// Integral floats print without a fraction (`1 + 1` is "2", not "2.0").
+fn number_to_string(n: &serde_json::Number) -> String {
+    if n.is_f64() {
+        if let Some(f) = n.as_f64() {
+            if f.fract() == 0.0 && f.abs() < 1e15 {
+                return format!("{}", f as i64);
+            }
+        }
+    }
+    n.to_string()
+}
+
+/// AQL TO_NUMBER: strings are trimmed and parsed integer-first; anything
+/// unparseable is 0.
+fn to_number(v: &Value) -> Value {
+    match v {
+        Value::Number(n) => Value::Number(n.clone()),
+        Value::Bool(b) => Value::from(i64::from(*b)),
+        Value::Null => Value::from(0),
+        Value::String(s) => {
+            let t = s.trim();
+            if let Ok(i) = t.parse::<i64>() {
+                return Value::from(i);
+            }
+            match t.parse::<f64>() {
+                Ok(f) if f.is_finite() && !t.is_empty() => serde_json::Number::from_f64(f)
+                    .map(Value::Number)
+                    .unwrap_or_else(|| Value::from(0)),
+                _ => Value::from(0),
+            }
+        }
+        Value::Array(a) if a.len() == 1 => to_number(&a[0]),
+        Value::Array(_) | Value::Object(_) => Value::from(0),
+    }
+}
+
+fn range(args: &[Value]) -> DbResult<Value> {
+    if args.is_empty() || args.len() > 3 {
+        return Err(DbError::ExecutionError(
+            "RANGE requires 1-3 arguments: end or start, end, [step]".to_string(),
+        ));
+    }
+    let num = |v: &Value| -> DbResult<f64> {
+        v.as_f64()
+            .filter(|f| f.is_finite())
+            .ok_or_else(|| DbError::ExecutionError("RANGE: arguments must be numbers".to_string()))
+    };
+    let (start_v, end_v) = if args.len() == 1 {
+        (Value::from(0), &args[0])
+    } else {
+        (args[0].clone(), &args[1])
+    };
+    let start = num(&start_v)?;
+    let end = num(end_v)?;
+    // AQL: without a step, count down when start > end.
+    let step = match args.get(2) {
+        Some(v) => num(v)?,
+        None if start > end => -1.0,
+        None => 1.0,
+    };
+    if step == 0.0 {
+        return Err(DbError::ExecutionError(
+            "RANGE: step cannot be 0".to_string(),
+        ));
+    }
+    let as_int = |v: &Value| -> Option<i64> {
+        v.as_i64().or_else(|| {
+            v.as_f64()
+                .filter(|f| f.fract() == 0.0 && f.abs() < 9.0e15)
+                .map(|f| f as i64)
+        })
+    };
+    let int_args = (
+        as_int(&start_v),
+        as_int(end_v),
+        match args.get(2) {
+            Some(v) => as_int(v),
+            None => Some(step as i64),
+        },
+    );
+
+    if let (Some(start), Some(end), Some(step)) = int_args {
+        // i128: `end - start` overflows i64 across the full range, and in
+        // release that wrapped to a count of 0, walked past the cap, and
+        // allocated until the process was killed.
+        let (start_w, end_w, step_w) = (start as i128, end as i128, step as i128);
+        let count = if step > 0 {
+            if end < start {
+                0
+            } else {
+                (end_w - start_w) / step_w + 1
+            }
+        } else if end > start {
+            0
+        } else {
+            (start_w - end_w) / step_w.abs() + 1
+        };
+        let count = usize::try_from(count).unwrap_or(usize::MAX);
+        if count > MAX_RANGE {
+            return Err(DbError::ExecutionError(format!(
+                "RANGE: result would have {} elements (max {})",
+                count, MAX_RANGE
+            )));
+        }
+        let mut result = Vec::with_capacity(count);
+        let mut i = start;
+        while result.len() < count {
+            result.push(Value::from(i));
+            i = i.saturating_add(step);
+        }
+        return Ok(Value::Array(result));
+    }
+
+    // Float range: RANGE(1, 2, 0.5) is [1, 1.5, 2]. Each value is computed
+    // from the start, so the step's rounding error does not accumulate.
+    let span = (end - start) / step;
+    let count = if span < 0.0 {
+        0.0
+    } else {
+        (span + 1e-9).floor() + 1.0
+    };
+    if count > MAX_RANGE as f64 {
+        return Err(DbError::ExecutionError(format!(
+            "RANGE: result would have {} elements (max {})",
+            count, MAX_RANGE
+        )));
+    }
+    let count = count as usize;
+    Ok(Value::Array(
+        (0..count)
+            .map(|i| Value::from(start + step * i as f64))
+            .collect(),
+    ))
+}
+
+/// Deep equality where numbers compare by value (1 == 1.0) at every depth.
+fn deep_equal(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| deep_equal(p, q))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, v)| y.get(k).is_some_and(|w| deep_equal(v, w)))
+        }
+        _ => a == b,
+    }
+}
+
+/// Canonical byte encoding for HASH: independent of key order, and an
+/// integral float hashes like the integer (HASH(1) == HASH(1.0)).
+fn hash_encode(v: &Value, out: &mut Vec<u8>) {
+    match v {
+        Value::Null => out.push(b'n'),
+        Value::Bool(b) => out.push(if *b { b't' } else { b'f' }),
+        Value::Number(n) => {
+            let int = n.as_i64().or_else(|| {
+                n.as_f64()
+                    .filter(|f| f.fract() == 0.0 && f.abs() < 9.0e18)
+                    .map(|f| f as i64)
+            });
+            match (int, n.as_u64()) {
+                (Some(i), _) => {
+                    out.push(b'i');
+                    out.extend_from_slice(&i.to_le_bytes());
+                }
+                (None, Some(u)) => {
+                    out.push(b'u');
+                    out.extend_from_slice(&u.to_le_bytes());
+                }
+                (None, None) => {
+                    out.push(b'd');
+                    out.extend_from_slice(&n.as_f64().unwrap_or(0.0).to_bits().to_le_bytes());
+                }
+            }
+        }
+        Value::String(s) => {
+            out.push(b's');
+            out.extend_from_slice(&(s.len() as u64).to_le_bytes());
+            out.extend_from_slice(s.as_bytes());
+        }
+        Value::Array(a) => {
+            out.push(b'a');
+            out.extend_from_slice(&(a.len() as u64).to_le_bytes());
+            for x in a {
+                hash_encode(x, out);
+            }
+        }
+        Value::Object(o) => {
+            out.push(b'o');
+            out.extend_from_slice(&(o.len() as u64).to_le_bytes());
+            let mut entries: Vec<(&String, &Value)> = o.iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (k, x) in entries {
+                out.extend_from_slice(&(k.len() as u64).to_le_bytes());
+                out.extend_from_slice(k.as_bytes());
+                hash_encode(x, out);
+            }
+        }
     }
 }
 
@@ -487,6 +823,15 @@ fn deep_merge_into(dst: &mut Value, src: &Value) {
     }
 }
 
+/// A document id from a string, or from a document's `_id`.
+fn identifier_of(v: &Value) -> Option<&str> {
+    match v {
+        Value::String(s) => Some(s),
+        Value::Object(o) => o.get("_id").and_then(Value::as_str),
+        _ => None,
+    }
+}
+
 fn parse_ident(id: &str) -> Value {
     match id.split_once('/') {
         Some((c, k)) => serde_json::json!({ "collection": c, "key": k }),
@@ -494,45 +839,56 @@ fn parse_ident(id: &str) -> Value {
     }
 }
 
-fn keep_recursive(v: &Value, keys: &[String]) -> Value {
-    match v {
-        Value::Object(o) => {
-            let mut out = serde_json::Map::new();
-            for (k, val) in o {
-                if keys.iter().any(|kk| kk == k) {
-                    out.insert(k.clone(), keep_recursive(val, keys));
-                } else if val.is_object() || val.is_array() {
-                    let child = keep_recursive(val, keys);
-                    let keep = match &child {
-                        Value::Object(m) => !m.is_empty(),
-                        Value::Array(a) => !a.is_empty(),
-                        _ => false,
-                    };
-                    if keep {
-                        out.insert(k.clone(), child);
-                    }
-                }
-            }
-            Value::Object(out)
+/// KEEP_RECURSIVE on an object: listed keys are kept (and their values
+/// filtered the same way); unlisted keys survive only as containers of
+/// listed keys somewhere below.
+fn keep_recursive_obj(
+    o: &Map<String, Value>,
+    keys: &std::collections::HashSet<&str>,
+) -> Map<String, Value> {
+    let mut out = Map::new();
+    for (k, val) in o {
+        if keys.contains(k.as_str()) {
+            out.insert(k.clone(), keep_recursive_kept(val, keys));
+        } else if let Some(child) = keep_recursive_search(val, keys) {
+            out.insert(k.clone(), child);
         }
-        Value::Array(a) => Value::Array(
-            a.iter()
-                .map(|x| keep_recursive(x, keys))
-                .filter(|x| !x.is_null() && x != &json_empty())
-                .collect(),
-        ),
+    }
+    out
+}
+
+/// The value of a listed key: kept whole, with nested objects filtered.
+fn keep_recursive_kept(v: &Value, keys: &std::collections::HashSet<&str>) -> Value {
+    match v {
+        Value::Object(o) => Value::Object(keep_recursive_obj(o, keys)),
+        Value::Array(a) => Value::Array(a.iter().map(|x| keep_recursive_kept(x, keys)).collect()),
         other => other.clone(),
     }
 }
 
-fn json_empty() -> Value {
-    Value::Object(serde_json::Map::new())
+/// The value of an unlisted key: `None` unless something listed is inside.
+/// Scalars in such an array are dropped — they are not under a listed key.
+fn keep_recursive_search(v: &Value, keys: &std::collections::HashSet<&str>) -> Option<Value> {
+    match v {
+        Value::Object(o) => {
+            let m = keep_recursive_obj(o, keys);
+            (!m.is_empty()).then_some(Value::Object(m))
+        }
+        Value::Array(a) => {
+            let items: Vec<Value> = a
+                .iter()
+                .filter_map(|x| keep_recursive_search(x, keys))
+                .collect();
+            (!items.is_empty()).then_some(Value::Array(items))
+        }
+        _ => None,
+    }
 }
 
 fn redact_value(v: &Value, keys: &[String]) -> Value {
     match v {
         Value::Object(o) => {
-            let mut out = serde_json::Map::new();
+            let mut out = Map::new();
             for (k, val) in o {
                 if keys.iter().any(|dk| dk == k) {
                     continue;
@@ -554,4 +910,206 @@ fn check_args(name: &str, args: &[Value], expected: usize) -> DbResult<()> {
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn call(name: &str, args: &[Value]) -> Value {
+        evaluate(name, args).unwrap().unwrap()
+    }
+
+    #[test]
+    fn keep_and_unset_accept_arrays() {
+        let doc = json!({"name": "a", "password": "x", "email": "e"});
+        assert_eq!(
+            call("UNSET", &[doc.clone(), json!(["password"])]),
+            json!({"name": "a", "email": "e"})
+        );
+        assert_eq!(
+            call("UNSET", &[doc.clone(), json!("password"), json!(["email"])]),
+            json!({"name": "a"})
+        );
+        assert_eq!(
+            call("KEEP", &[doc.clone(), json!(["name", "email"])]),
+            json!({"name": "a", "email": "e"})
+        );
+        assert!(evaluate("UNSET", &[doc.clone(), json!(1)]).is_err());
+        assert!(evaluate("KEEP", &[doc.clone(), json!([1])]).is_err());
+        let nested = json!({"a": 1, "n": {"password": 2, "b": 3}});
+        assert_eq!(
+            call("UNSET_RECURSIVE", &[nested, json!(["password"])]),
+            json!({"a": 1, "n": {"b": 3}})
+        );
+    }
+
+    #[test]
+    fn keep_recursive_arrays() {
+        let doc = json!({"a": 1, "nest": {"a": 2, "b": 3}, "tags": [1, 2], "list": [{"a": 5, "c": 6}, 7], "a2": {"a": [1, {"z": 1}]}});
+        let r = call("KEEP_RECURSIVE", &[doc, json!(["a"])]);
+        assert_eq!(r["a"], json!(1));
+        assert_eq!(r["nest"], json!({"a": 2}));
+        // Unlisted array of scalars is dropped.
+        assert!(r.get("tags").is_none());
+        assert_eq!(r["list"], json!([{"a": 5}]));
+        // A listed key's array is kept whole (objects inside filtered).
+        assert_eq!(r["a2"], json!({"a": [1, {}]}));
+    }
+
+    #[test]
+    fn conversions_follow_docs() {
+        assert_eq!(call("TYPENAME", &[json!(2.5)]), json!("number"));
+        assert_eq!(call("TYPENAME", &[json!(3)]), json!("number"));
+        assert_eq!(call("TO_STRING", &[Value::Null]), json!(""));
+        assert_eq!(call("TO_STRING", &[json!(2.0)]), json!("2"));
+        assert_eq!(call("TO_STRING", &[json!(2.5)]), json!("2.5"));
+        assert_eq!(call("TO_ARRAY", &[json!({"a": 1})]), json!([1]));
+        assert_eq!(call("TO_NUMBER", &[json!(" 12 ")]), json!(12));
+        assert_eq!(call("TO_NUMBER", &[json!("123")]), json!(123));
+        assert_eq!(call("TO_NUMBER", &[json!("1.5")]), json!(1.5));
+        assert_eq!(call("TO_NUMBER", &[json!("foo")]), json!(0));
+        assert_eq!(call("TO_NUMBER", &[json!("")]), json!(0));
+        assert_eq!(call("TO_NUMBER", &[json!(["7"])]), json!(7));
+        assert_eq!(call("TO_BOOL", &[json!("false")]), json!(true));
+        assert_eq!(call("TO_BOOL", &[json!("")]), json!(false));
+        assert_eq!(
+            call("TO_BOOL", &[json!([])]),
+            Value::Bool(to_bool(&json!([])))
+        );
+    }
+
+    #[test]
+    fn attributes_and_values_options() {
+        let doc = json!({"_key": "k", "b": 2, "a": 1});
+        assert_eq!(
+            call("ATTRIBUTES", &[doc.clone(), json!(true), json!(true)]),
+            json!(["a", "b"])
+        );
+        assert_eq!(
+            call("VALUES", &[doc.clone(), json!(true)])
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(call("ATTRIBUTES", &[doc]).as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn merge_forms() {
+        assert_eq!(
+            call("MERGE", &[json!([{"a": 1}, {"b": 2}, {"a": 3}])]),
+            json!({"a": 3, "b": 2})
+        );
+        assert_eq!(
+            call("MERGE", &[json!({"a": 1}), Value::Null, json!({"b": 2})]),
+            json!({"a": 1, "b": 2})
+        );
+        assert_eq!(
+            call(
+                "MERGE_RECURSIVE",
+                &[json!({"a": {"b": 1}}), json!({"a": {"c": 2}})]
+            ),
+            json!({"a": {"b": 1, "c": 2}})
+        );
+        assert_eq!(
+            call(
+                "MERGE_RECURSIVE",
+                &[json!([{"a": {"b": 1}}, {"a": {"c": 2}}])]
+            ),
+            json!({"a": {"b": 1, "c": 2}})
+        );
+        assert!(evaluate("MERGE", &[json!({"a": 1}), json!(1)]).is_err());
+    }
+
+    #[test]
+    fn range_forms() {
+        assert_eq!(
+            call("RANGE", &[json!(1), json!(2), json!(0.5)]),
+            json!([1.0, 1.5, 2.0])
+        );
+        assert_eq!(call("RANGE", &[json!(5), json!(1)]), json!([5, 4, 3, 2, 1]));
+        assert_eq!(call("RANGE", &[json!(5), json!(1), json!(1)]), json!([]));
+        assert_eq!(
+            call("RANGE", &[json!(0), json!(1), json!(0.25)])
+                .as_array()
+                .unwrap()
+                .len(),
+            5
+        );
+        assert!(evaluate("RANGE", &[json!(0), json!(1), json!(0)]).is_err());
+        assert!(evaluate("RANGE", &[json!(0), json!(1e12), json!(0.5)]).is_err());
+    }
+
+    #[test]
+    fn matches_translate_value_hash() {
+        let doc = json!({"a": 1, "b": {"c": 2}});
+        assert_eq!(
+            call("MATCHES", &[doc.clone(), json!({"a": 1.0})]),
+            json!(true)
+        );
+        assert_eq!(
+            call(
+                "MATCHES",
+                &[doc.clone(), json!([{"a": 2}, {"b": {"c": 2}}]), json!(true)]
+            ),
+            json!(1)
+        );
+        assert_eq!(
+            call("MATCHES", &[doc.clone(), json!([{"a": 2}]), json!(true)]),
+            json!(-1)
+        );
+        assert_eq!(
+            call("TRANSLATE", &[json!("FR"), json!({"FR": "France"})]),
+            json!("France")
+        );
+        assert_eq!(
+            call("TRANSLATE", &[json!(42), json!({"42": "x"})]),
+            json!("x")
+        );
+        assert_eq!(
+            call("TRANSLATE", &[json!("DE"), json!({"FR": "France"})]),
+            json!("DE")
+        );
+        assert_eq!(
+            call(
+                "TRANSLATE",
+                &[json!("DE"), json!({"FR": "France"}), json!("?")]
+            ),
+            json!("?")
+        );
+        assert_eq!(call("VALUE", &[doc.clone(), json!(["b", "c"])]), json!(2));
+        assert_eq!(
+            call("VALUE", &[json!({"l": [1, 2, 3]}), json!(["l", -1])]),
+            json!(3)
+        );
+        assert_eq!(
+            call("VALUE", &[doc.clone(), json!(["x", "y"])]),
+            Value::Null
+        );
+        let h1 = call("HASH", &[json!({"a": 1, "b": [1, 2]})]);
+        let h2 = call("HASH", &[json!({"b": [1.0, 2], "a": 1})]);
+        assert_eq!(h1, h2);
+        assert_ne!(h1, call("HASH", &[json!({"a": 2})]));
+        assert!(h1.as_u64().unwrap() < (1u64 << 52));
+    }
+
+    #[test]
+    fn parse_identifier_of_document_and_nullif() {
+        assert_eq!(
+            call(
+                "PARSE_IDENTIFIER",
+                &[json!({"_id": "users/ada", "_key": "ada"})]
+            ),
+            json!({"collection": "users", "key": "ada"})
+        );
+        assert_eq!(
+            call("PARSE_KEY", &[json!({"_id": "users/ada"})]),
+            json!("ada")
+        );
+        assert_eq!(call("PARSE_IDENTIFIER", &[Value::Null]), Value::Null);
+        assert_eq!(call("NULLIF", &[json!(1), json!(1.0)]), Value::Null);
+    }
 }

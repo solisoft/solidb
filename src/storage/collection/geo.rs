@@ -51,7 +51,12 @@ impl Collection {
         }
         self.invalidate_index_meta();
 
-        // Build index from existing documents
+        // Build index from existing documents. Same rule as the insert path
+        // (`update_indexes_on_insert`): every non-null value at the (possibly
+        // nested) field path is indexed. The previous backfill read
+        // `doc[field]` — wrong for a nested path — and skipped anything that
+        // was not a `{lat, ...}` object, so documents inserted before the
+        // index existed were invisible to it while later ones were not.
         let docs = self.all();
         let db = &self.db;
         let cf = db
@@ -61,18 +66,14 @@ impl Collection {
         let mut count = 0;
         for doc in &docs {
             let doc_value = doc.to_value();
-            if let Some(val) =
-                crate::storage::index::extract_field_value(&doc_value, &field).as_object()
-            {
-                // Check if it looks like a geo point
-                if val.contains_key("lat") || val.contains_key("latitude") {
-                    let entry_key = Self::geo_entry_key(&name, &doc.key);
-                    let geo_data = serde_json::to_vec(&doc_value[&field])?;
-                    db.put_cf(&cf, entry_key, &geo_data).map_err(|e| {
-                        DbError::InternalError(format!("Failed to build geo index: {}", e))
-                    })?;
-                    count += 1;
-                }
+            let field_value = crate::storage::index::extract_field_value(&doc_value, &field);
+            if !field_value.is_null() {
+                let entry_key = Self::geo_entry_key(&name, &doc.key);
+                let geo_data = serde_json::to_vec(&field_value)?;
+                db.put_cf(&cf, entry_key, &geo_data).map_err(|e| {
+                    DbError::InternalError(format!("Failed to build geo index: {}", e))
+                })?;
+                count += 1;
             }
         }
 
@@ -152,7 +153,64 @@ impl Collection {
             .collect()
     }
 
-    /// Find documents near a point
+    /// Visit every entry of the geo index covering `field`, in document-key
+    /// order, as `(doc_key, stored field value)`. `visit` returns `false` to
+    /// stop early. `None` when no geo index covers `field` (or the column
+    /// family is gone); otherwise the geo index's name.
+    ///
+    /// This is the primitive the SDBQL geo optimizer builds on: it reads the
+    /// small index entries instead of whole documents.
+    pub fn geo_index_scan(
+        &self,
+        field: &str,
+        mut visit: impl FnMut(&str, &Value) -> bool,
+    ) -> Option<String> {
+        let index = self
+            .get_all_geo_indexes()
+            .into_iter()
+            .find(|idx| idx.field == field)?;
+        let db = &self.db;
+        let cf = db.cf_handle(&self.name)?;
+        let prefix = format!("{}{}:", GEO_PREFIX, index.name);
+        for (key, value) in db.prefix_iterator_cf(&cf, prefix.as_bytes()).flatten() {
+            if !key.starts_with(prefix.as_bytes()) {
+                break;
+            }
+            let Some(doc_key) = key
+                .get(prefix.len()..)
+                .and_then(|k| std::str::from_utf8(k).ok())
+            else {
+                continue;
+            };
+            if doc_key.is_empty() {
+                continue;
+            }
+            let Ok(point_val) = serde_json::from_slice::<Value>(&value) else {
+                continue;
+            };
+            if !visit(doc_key, &point_val) {
+                break;
+            }
+        }
+        Some(index.name)
+    }
+
+    /// Fetch documents by key, keeping `keys`' order and pairing each with its
+    /// payload. Missing documents (deleted since the index was read) are
+    /// skipped. O(n): no per-result search over the fetched set.
+    fn fetch_in_order<T>(&self, keyed: Vec<(String, T)>) -> Vec<(Document, T)> {
+        keyed
+            .into_iter()
+            .filter_map(|(key, extra)| self.get(&key).ok().map(|doc| (doc, extra)))
+            .collect()
+    }
+
+    /// Find the `limit` documents nearest to a point, closest first.
+    ///
+    /// Keeps a bounded max-heap of the `limit` best candidates while scanning,
+    /// so memory is O(limit) and the work O(n log limit), instead of
+    /// collecting and sorting every entry and then re-attaching documents with
+    /// a linear search per result (audit P11).
     pub fn geo_near(
         &self,
         field: &str,
@@ -160,63 +218,42 @@ impl Collection {
         lon: f64,
         limit: usize,
     ) -> Option<Vec<(Document, f64)>> {
-        // Find index that covers this field
-        let indexes = self.get_all_geo_indexes();
-        let index = indexes.iter().find(|idx| idx.field == field)?;
+        use std::collections::BinaryHeap;
 
-        let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
-
-        let prefix = format!("{}{}:", GEO_PREFIX, index.name);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
-
-        let mut matches = Vec::new();
-
-        for result in iter.flatten() {
-            let (key, value) = result;
-            if !key.starts_with(prefix.as_bytes()) {
-                break;
+        let center = GeoPoint::new(lat, lon);
+        // (distance, sequence, key): the sequence keeps ties in key order.
+        let mut heap: BinaryHeap<(HeapDist, usize, String)> = BinaryHeap::new();
+        let mut seq = 0usize;
+        self.geo_index_scan(field, |doc_key, point_val| {
+            if limit == 0 {
+                return false;
             }
-
-            if let Ok(point_val) = serde_json::from_slice::<Value>(&value) {
-                if let Some(target) = GeoPoint::from_value(&point_val) {
-                    let dist = haversine_distance(&GeoPoint::new(lat, lon), &target);
-                    // No specific radius in request? Handler implies sorted nearest.
-                    // We store all then sort.
-                    // Key format: geo:<name>:<doc_key>
-                    let key_str = String::from_utf8_lossy(&key);
-                    let doc_key = key_str.strip_prefix(&prefix).unwrap_or("");
-                    if !doc_key.is_empty() {
-                        matches.push((doc_key.to_string(), dist));
-                    }
+            if let Some(target) = GeoPoint::from_value(point_val) {
+                let dist = haversine_distance(&center, &target);
+                if dist.is_nan() {
+                    return true;
+                }
+                let entry = (HeapDist(dist), seq, doc_key.to_string());
+                seq += 1;
+                if heap.len() < limit {
+                    heap.push(entry);
+                } else if heap.peek().is_some_and(|worst| entry < *worst) {
+                    heap.pop();
+                    heap.push(entry);
                 }
             }
-        }
+            true
+        })?;
 
-        // Sort by distance
-        matches.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        matches.truncate(limit);
-
-        // Fetch documents
-        let doc_keys: Vec<String> = matches.iter().map(|(k, _)| k.clone()).collect();
-        let docs = self.get_many(&doc_keys); // Returns Vec<Document>
-
-        // Map back to (Document, distance)
-        // Order of docs might not match matches order (get_many is batch).
-        // So we need to re-attach distance.
-        let mut results = Vec::new();
-        for (key, dist) in matches {
-            if let Some(doc) = docs.iter().find(|d| d.key == key) {
-                results.push((doc.clone(), dist));
-            }
-        }
-
-        Some(results)
+        let matches: Vec<(String, f64)> = heap
+            .into_sorted_vec()
+            .into_iter()
+            .map(|(d, _, k)| (k, d.0))
+            .collect();
+        Some(self.fetch_in_order(matches))
     }
 
-    /// Find documents within a radius
+    /// Find documents within a radius (meters), in document-key order.
     pub fn geo_within(
         &self,
         field: &str,
@@ -224,50 +261,36 @@ impl Collection {
         lon: f64,
         radius: f64,
     ) -> Option<Vec<(Document, f64)>> {
-        let indexes = self.get_all_geo_indexes();
-        let index = indexes.iter().find(|idx| idx.field == field)?;
-
-        let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
-            .expect("Column family should exist");
-
-        let prefix = format!("{}{}:", GEO_PREFIX, index.name);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
-
+        let center = GeoPoint::new(lat, lon);
         let mut matches = Vec::new();
-
-        for result in iter.flatten() {
-            let (key, value) = result;
-            if !key.starts_with(prefix.as_bytes()) {
-                break;
-            }
-
-            if let Ok(point_val) = serde_json::from_slice::<Value>(&value) {
-                if let Some(target) = GeoPoint::from_value(&point_val) {
-                    let dist = haversine_distance(&GeoPoint::new(lat, lon), &target);
-                    if dist <= radius {
-                        let key_str = String::from_utf8_lossy(&key);
-                        let doc_key = key_str.strip_prefix(&prefix).unwrap_or("");
-                        if !doc_key.is_empty() {
-                            matches.push((doc_key.to_string(), dist));
-                        }
-                    }
+        self.geo_index_scan(field, |doc_key, point_val| {
+            if let Some(target) = GeoPoint::from_value(point_val) {
+                let dist = haversine_distance(&center, &target);
+                if dist <= radius {
+                    matches.push((doc_key.to_string(), dist));
                 }
             }
-        }
+            true
+        })?;
+        Some(self.fetch_in_order(matches))
+    }
+}
 
-        // Fetch documents and attach distance
-        let doc_keys: Vec<String> = matches.iter().map(|(k, _)| k.clone()).collect();
-        let docs = self.get_many(&doc_keys);
+/// A distance with a total order for the nearest-neighbour heap (NaN never
+/// reaches it).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct HeapDist(f64);
 
-        let mut results = Vec::new();
-        for (key, dist) in matches {
-            if let Some(doc) = docs.iter().find(|d| d.key == key) {
-                results.push((doc.clone(), dist));
-            }
-        }
+impl Eq for HeapDist {}
 
-        Some(results)
+impl PartialOrd for HeapDist {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for HeapDist {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
     }
 }

@@ -299,108 +299,99 @@ impl Parser {
         Ok(Some(self.parse_expression()?))
     }
 
+    /// `INSERT doc INTO|IN collection [OPTIONS {...}]`. AQL accepts both
+    /// `INTO` and `IN`; the document stops before a clause `IN`.
     pub(crate) fn parse_insert_clause(&mut self) -> DbResult<InsertClause> {
         self.expect(Token::Insert)?;
-        let document = self.parse_expression()?;
-        self.expect(Token::Into)?;
-
-        let collection = if let Token::Identifier(name) = self.current_token() {
-            let coll = name.clone();
+        let document = self.parse_expression_no_in()?;
+        if matches!(self.current_token(), Token::Into | Token::In) {
             self.advance();
-            coll
         } else {
-            return Err(DbError::ParseError(
-                "Expected collection name after INTO".to_string(),
-            ));
-        };
+            return Err(DbError::ParseError(format!(
+                "Expected INTO or IN after the INSERT document, got {:?}",
+                self.current_token()
+            )));
+        }
+
+        let collection = self.parse_mutation_collection("INTO")?;
+        let options = self.parse_mutation_options("INSERT")?;
 
         Ok(InsertClause {
             document,
             collection,
+            options,
+            binds_new: false,
+            binds_old: false,
         })
     }
 
+    /// `UPDATE doc [WITH changes] IN coll [OPTIONS {...}]` and the same shape
+    /// for `REPLACE`. Without `WITH`, the document is both the selector (its
+    /// `_key`) and the patch / replacement.
     pub(crate) fn parse_update_clause(&mut self) -> DbResult<UpdateClause> {
-        self.expect(Token::Update)?;
+        let replace = matches!(self.current_token(), Token::Replace);
+        let keyword = if replace { "REPLACE" } else { "UPDATE" };
+        self.advance(); // UPDATE / REPLACE
 
-        // Parse the document selector (usually a variable like `doc` or `doc._key`)
-        let selector = self.parse_expression()?;
+        // The selector stops before `IN` for the WITH-less form.
+        let selector = self.parse_expression_no_in()?;
 
-        // Expect WITH keyword
-        self.expect(Token::With)?;
-
-        // Parse the changes (object expression)
-        // Disable IN operator to avoid consuming the 'IN' keyword of the clause
-        self.allow_in_operator = false;
-        let changes_result = self.parse_expression();
-        self.allow_in_operator = true;
-        let changes = changes_result?;
-
-        // Expect IN keyword
-        self.expect(Token::In)?;
-
-        // Parse collection name
-        let collection = if let Token::Identifier(name) = self.current_token() {
-            let coll = name.clone();
+        let changes = if matches!(self.current_token(), Token::With) {
             self.advance();
-            coll
+            self.parse_expression_no_in()?
         } else {
-            return Err(DbError::ParseError(
-                "Expected collection name after IN".to_string(),
-            ));
+            selector.clone()
         };
+
+        if !matches!(self.current_token(), Token::In | Token::Into) {
+            return Err(DbError::ParseError(format!(
+                "Expected WITH or IN after the {} document, got {:?}",
+                keyword,
+                self.current_token()
+            )));
+        }
+        self.advance();
+
+        let collection = self.parse_mutation_collection("IN")?;
+        let options = self.parse_mutation_options(keyword)?;
 
         Ok(UpdateClause {
             selector,
             changes,
             collection,
+            replace,
+            options,
+            binds_old: false,
+            binds_new: false,
         })
     }
 
     pub(crate) fn parse_remove_clause(&mut self) -> DbResult<RemoveClause> {
         self.expect(Token::Remove)?;
 
-        // Parse the document selector (usually a variable like `doc` or `doc._key`)
-        // Disable IN operator to avoid consuming the 'IN' keyword of the clause
-        self.allow_in_operator = false;
-        let selector_result = self.parse_expression();
-        self.allow_in_operator = true;
-        let selector = selector_result?;
+        // The selector stops before the clause's `IN collection`.
+        let selector = self.parse_expression_no_in()?;
 
-        // Expect IN keyword
-        self.expect(Token::In)?;
-
-        // Parse collection name
-        let collection = if let Token::Identifier(name) = self.current_token() {
-            let coll = name.clone();
-            self.advance();
-            coll
-        } else {
-            return Err(DbError::ParseError(
-                "Expected collection name after IN".to_string(),
-            ));
-        };
+        self.expect_in_or_into("REMOVE")?;
+        let collection = self.parse_mutation_collection("IN")?;
+        let options = self.parse_mutation_options("REMOVE")?;
 
         Ok(RemoveClause {
             selector,
             collection,
+            options,
+            binds_old: false,
         })
     }
 
     pub(crate) fn parse_upsert_clause(&mut self) -> DbResult<UpsertClause> {
         self.expect(Token::Upsert)?;
 
-        // Parse search expression
-        // Disable IN operator to avoid consuming 'IN' keyword
-        self.allow_in_operator = false;
-        let search = self.parse_expression()?;
-        self.allow_in_operator = true;
+        let search = self.parse_expression_no_in()?;
 
         self.expect(Token::Insert)?;
 
-        self.allow_in_operator = false;
-        let insert = self.parse_expression()?;
-        self.allow_in_operator = true;
+        let insert = self.parse_expression_no_in()?;
 
         // Expect UPDATE or REPLACE
         let replace = if matches!(self.current_token(), Token::Replace) {
@@ -411,21 +402,11 @@ impl Parser {
             false
         };
 
-        self.allow_in_operator = false;
-        let update = self.parse_expression()?;
-        self.allow_in_operator = true;
+        let update = self.parse_expression_no_in()?;
 
-        self.expect(Token::In)?;
-
-        let collection = if let Token::Identifier(name) = self.current_token() {
-            let coll = name.clone();
-            self.advance();
-            coll
-        } else {
-            return Err(DbError::ParseError(
-                "Expected collection name after IN".to_string(),
-            ));
-        };
+        self.expect_in_or_into("UPSERT")?;
+        let collection = self.parse_mutation_collection("IN")?;
+        let options = self.parse_mutation_options("UPSERT")?;
 
         Ok(UpsertClause {
             search,
@@ -433,7 +414,256 @@ impl Parser {
             update,
             collection,
             replace,
+            options,
+            binds_old: false,
         })
+    }
+
+    /// Consume the `IN` (or AQL's alternative `INTO`) before a collection.
+    fn expect_in_or_into(&mut self, statement: &str) -> DbResult<()> {
+        if matches!(self.current_token(), Token::In | Token::Into) {
+            self.advance();
+            Ok(())
+        } else {
+            Err(DbError::ParseError(format!(
+                "Expected IN after the {} expression, got {:?}",
+                statement,
+                self.current_token()
+            )))
+        }
+    }
+
+    /// The collection name after a mutation's `INTO` / `IN`.
+    fn parse_mutation_collection(&mut self, after: &str) -> DbResult<String> {
+        if let Token::Identifier(name) = self.current_token() {
+            let coll = name.clone();
+            self.advance();
+            Ok(coll)
+        } else {
+            Err(DbError::ParseError(format!(
+                "Expected collection name after {}",
+                after
+            )))
+        }
+    }
+
+    /// Parse an optional `OPTIONS { key: literal, ... }` object.
+    ///
+    /// Values must be literals (bind parameters are not resolved at parse
+    /// time). Returns the pairs in source order, or `None` without OPTIONS.
+    pub(crate) fn parse_literal_options(
+        &mut self,
+        context: &str,
+    ) -> DbResult<Option<Vec<(String, Value)>>> {
+        if !self.ident_eq("OPTIONS") {
+            return Ok(None);
+        }
+        self.advance();
+        if !matches!(self.current_token(), Token::LeftBrace) {
+            return Err(DbError::ParseError(format!(
+                "Expected an object literal after OPTIONS in {}",
+                context
+            )));
+        }
+        let Expression::Object(pairs) = self.parse_object_expression()? else {
+            unreachable!("parse_object_expression returns an Object");
+        };
+        let mut out = Vec::with_capacity(pairs.len());
+        for (key, value) in pairs {
+            match value {
+                Expression::Literal(v) => out.push((key, v)),
+                Expression::Array(items) => {
+                    // `["a", "b"]` parses as an Array of literals.
+                    let mut values = Vec::with_capacity(items.len());
+                    for item in items {
+                        match item {
+                            Expression::Literal(v) => values.push(v),
+                            _ => return Err(options_literal_error(context, &key)),
+                        }
+                    }
+                    out.push((key, Value::Array(values)));
+                }
+                _ => return Err(options_literal_error(context, &key)),
+            }
+        }
+        Ok(Some(out))
+    }
+
+    /// `OPTIONS { ignoreErrors, keepNull, mergeObjects, overwriteMode }` on a
+    /// mutation. AQL options that have no meaning here (`waitForSync`,
+    /// `ignoreRevs`, `exclusive`, `refillIndexCaches`, `ignoreErrors` on a
+    /// statement where nothing fails, ...) are accepted and ignored so AQL
+    /// queries port unchanged; an unknown key is an error, since it is almost
+    /// always a typo.
+    fn parse_mutation_options(&mut self, statement: &str) -> DbResult<MutationOptions> {
+        let mut options = MutationOptions::default();
+        let Some(pairs) = self.parse_literal_options(statement)? else {
+            return Ok(options);
+        };
+        for (key, value) in pairs {
+            match key.as_str() {
+                "ignoreErrors" => options.ignore_errors = option_bool(statement, &key, &value)?,
+                "keepNull" => options.keep_null = Some(option_bool(statement, &key, &value)?),
+                "mergeObjects" => {
+                    options.merge_objects = Some(option_bool(statement, &key, &value)?)
+                }
+                "overwriteMode" if statement == "INSERT" => {
+                    let mode = value.as_str().unwrap_or_default().to_ascii_lowercase();
+                    options.overwrite_mode = Some(match mode.as_str() {
+                        "ignore" => OverwriteMode::Ignore,
+                        "replace" => OverwriteMode::Replace,
+                        "update" => OverwriteMode::Update,
+                        "conflict" => OverwriteMode::Conflict,
+                        _ => {
+                            return Err(DbError::ParseError(format!(
+                                "INSERT OPTIONS overwriteMode must be \"ignore\", \"replace\", \"update\" or \"conflict\", got {}",
+                                value
+                            )))
+                        }
+                    });
+                }
+                // Legacy AQL spelling: `overwrite: true` is overwriteMode "replace".
+                "overwrite" if statement == "INSERT" => {
+                    if option_bool(statement, &key, &value)? && options.overwrite_mode.is_none() {
+                        options.overwrite_mode = Some(OverwriteMode::Replace);
+                    }
+                }
+                "waitForSync" | "ignoreRevs" | "exclusive" | "refillIndexCaches"
+                | "readOwnWrites" | "indexHint" | "forceIndexHint" => {}
+                _ => {
+                    return Err(DbError::ParseError(format!(
+                        "Unknown {} option '{}'. Supported: ignoreErrors, keepNull, mergeObjects{}",
+                        statement,
+                        key,
+                        if statement == "INSERT" {
+                            ", overwriteMode"
+                        } else {
+                            ""
+                        }
+                    )))
+                }
+            }
+        }
+        Ok(options)
+    }
+
+    /// `FOR v IN coll OPTIONS { indexHint: "name" | ["a", "b"], forceIndexHint: bool }`.
+    pub(crate) fn parse_for_options(&mut self) -> DbResult<Option<ForOptions>> {
+        let Some(pairs) = self.parse_literal_options("FOR")? else {
+            return Ok(None);
+        };
+        let mut options = ForOptions::default();
+        for (key, value) in pairs {
+            match key.as_str() {
+                "indexHint" => {
+                    options.index_hint = match value {
+                        Value::String(s) => vec![s],
+                        Value::Array(items) => items
+                            .into_iter()
+                            .map(|v| match v {
+                                Value::String(s) => Ok(s),
+                                other => Err(DbError::ParseError(format!(
+                                    "FOR OPTIONS indexHint entries must be strings, got {}",
+                                    other
+                                ))),
+                            })
+                            .collect::<DbResult<Vec<_>>>()?,
+                        other => {
+                            return Err(DbError::ParseError(format!(
+                            "FOR OPTIONS indexHint must be a string or an array of strings, got {}",
+                            other
+                        )))
+                        }
+                    };
+                }
+                "forceIndexHint" => options.force_index_hint = option_bool("FOR", &key, &value)?,
+                // AQL knobs with no SoliDB equivalent.
+                "useCache" | "lookahead" | "maxProjections" | "disableIndex"
+                | "useIndexForSort" => {}
+                _ => {
+                    return Err(DbError::ParseError(format!(
+                        "Unknown FOR option '{}'. Supported: indexHint, forceIndexHint",
+                        key
+                    )))
+                }
+            }
+        }
+        Ok(Some(options))
+    }
+
+    /// Traversal `OPTIONS { uniqueVertices, uniqueEdges, order }`.
+    fn parse_traversal_options(&mut self) -> DbResult<Option<TraversalOptions>> {
+        let Some(pairs) = self.parse_literal_options("graph traversal")? else {
+            return Ok(None);
+        };
+        let mut unique_vertices = None;
+        let mut unique_edges = UniqueEdges::Path;
+        let mut order = TraversalOrder::Bfs;
+        for (key, value) in pairs {
+            let text = value.as_str().map(|s| s.to_ascii_lowercase());
+            match (key.as_str(), text.as_deref()) {
+                ("uniqueVertices", Some("none")) => unique_vertices = Some(UniqueVertices::None),
+                ("uniqueVertices", Some("path")) => unique_vertices = Some(UniqueVertices::Path),
+                ("uniqueVertices", Some("global")) => {
+                    unique_vertices = Some(UniqueVertices::Global)
+                }
+                ("uniqueEdges", Some("none")) => unique_edges = UniqueEdges::None,
+                ("uniqueEdges", Some("path")) => unique_edges = UniqueEdges::Path,
+                ("order", Some("bfs")) => order = TraversalOrder::Bfs,
+                ("order", Some("dfs")) => order = TraversalOrder::Dfs,
+                // Legacy AQL spelling of order.
+                ("bfs", _) => {
+                    order = if option_bool("graph traversal", &key, &value)? {
+                        TraversalOrder::Bfs
+                    } else {
+                        TraversalOrder::Dfs
+                    }
+                }
+                ("uniqueVertices", _) => {
+                    return Err(DbError::ParseError(format!(
+                        "Traversal OPTIONS uniqueVertices must be \"none\", \"path\" or \"global\", got {}",
+                        value
+                    )))
+                }
+                ("uniqueEdges", _) => {
+                    return Err(DbError::ParseError(format!(
+                        "Traversal OPTIONS uniqueEdges must be \"none\" or \"path\", got {}",
+                        value
+                    )))
+                }
+                ("order", _) => {
+                    return Err(DbError::ParseError(format!(
+                        "Traversal OPTIONS order must be \"bfs\" or \"dfs\", got {}",
+                        value
+                    )))
+                }
+                _ => {
+                    return Err(DbError::ParseError(format!(
+                        "Unknown traversal option '{}'. Supported: uniqueVertices, uniqueEdges, order",
+                        key
+                    )))
+                }
+            }
+        }
+        // Unspecified vertex uniqueness: global for BFS (SoliDB's historical
+        // behaviour), none for DFS (AQL's default). Global uniqueness under
+        // DFS would depend on visit order, which is why AQL rejects it.
+        let unique_vertices = match (unique_vertices, order) {
+            (Some(UniqueVertices::Global), TraversalOrder::Dfs) => {
+                return Err(DbError::ParseError(
+                    "Traversal OPTIONS uniqueVertices: \"global\" requires order: \"bfs\""
+                        .to_string(),
+                ))
+            }
+            (Some(u), _) => u,
+            (None, TraversalOrder::Bfs) => UniqueVertices::Global,
+            (None, TraversalOrder::Dfs) => UniqueVertices::None,
+        };
+        Ok(Some(TraversalOptions {
+            unique_vertices,
+            unique_edges,
+            order,
+        }))
     }
 
     /// Parse COLLECT clause: COLLECT var = expr [, var = expr]* [INTO var] [WITH COUNT INTO var] [AGGREGATE var = FUNC(expr), ...]
@@ -482,123 +712,111 @@ impl Parser {
             }
         }
 
-        // Parse optional INTO var [KEEP var1, var2, ...]
-        if matches!(self.current_token(), Token::Into) {
-            self.advance(); // consume INTO
-            if let Token::Identifier(var_name) = self.current_token() {
-                into_var = Some(var_name.clone());
-                self.advance();
-            } else {
-                return Err(DbError::ParseError(
-                    "Expected variable name after INTO".to_string(),
-                ));
-            }
+        // The remaining sections may come in AQL order (AGGREGATE before
+        // INTO) or SoliDB's historical order (INTO, WITH COUNT, AGGREGATE);
+        // each appears at most once, OPTIONS last.
+        let mut into_expr = None;
+        let mut method = None;
+        let mut seen_into = false;
+        let mut seen_count = false;
+        let mut seen_aggregate = false;
+        loop {
+            if matches!(self.current_token(), Token::Into) && !seen_into {
+                seen_into = true;
+                self.advance(); // consume INTO
+                if let Token::Identifier(var_name) = self.current_token() {
+                    into_var = Some(var_name.clone());
+                    self.advance();
+                } else {
+                    return Err(DbError::ParseError(
+                        "Expected variable name after INTO".to_string(),
+                    ));
+                }
 
-            // Optional KEEP restriction: only listed variables are stored in
-            // the group arrays. Must come before WITH COUNT / AGGREGATE.
-            if self.ident_eq("KEEP") {
-                self.advance();
-                loop {
-                    if let Token::Identifier(var_name) = self.current_token() {
-                        keep_vars.push(var_name.clone());
-                        self.advance();
-                    } else {
+                // INTO g = expr: project each member through expr.
+                if matches!(self.current_token(), Token::Assign) {
+                    self.advance();
+                    into_expr = Some(self.parse_expression()?);
+                }
+
+                // Optional KEEP restriction: only listed variables are stored in
+                // the group arrays.
+                if self.ident_eq("KEEP") {
+                    if into_expr.is_some() {
                         return Err(DbError::ParseError(
-                            "Expected variable name after KEEP".to_string(),
+                            "COLLECT ... INTO var = expr cannot be combined with KEEP".to_string(),
                         ));
                     }
-                    if matches!(self.current_token(), Token::Comma) {
-                        self.advance();
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Parse optional WITH COUNT INTO var
-        if matches!(self.current_token(), Token::With) {
-            self.advance(); // consume WITH
-                            // The lexer hands `COUNT` over as an identifier (it is also the
-                            // aggregate function name), never as `Token::Count`.
-            if !matches!(self.current_token(), Token::Count) && !self.ident_eq("COUNT") {
-                return Err(DbError::ParseError(
-                    "Expected COUNT after WITH in COLLECT".to_string(),
-                ));
-            }
-            self.advance(); // consume COUNT
-
-            if !matches!(self.current_token(), Token::Into) {
-                return Err(DbError::ParseError(
-                    "Expected INTO after WITH COUNT".to_string(),
-                ));
-            }
-            self.advance(); // consume INTO
-
-            if let Token::Identifier(var_name) = self.current_token() {
-                count_var = Some(var_name.clone());
-                self.advance();
-            } else {
-                return Err(DbError::ParseError(
-                    "Expected variable name after WITH COUNT INTO".to_string(),
-                ));
-            }
-        }
-
-        // Parse optional AGGREGATE var = FUNC(expr) [, ...]
-        if matches!(self.current_token(), Token::Aggregate) {
-            self.advance(); // consume AGGREGATE
-
-            // Note: Can't use while let here - need complex nested parsing logic
-            #[allow(clippy::while_let_loop)]
-            loop {
-                // Parse var = FUNC(expr)
-                if let Token::Identifier(var_name) = self.current_token() {
-                    let var = var_name.clone();
                     self.advance();
-
-                    self.expect(Token::Assign)?;
-
-                    // Parse function call: FUNC(expr)
-                    // Note: COUNT is handled as Identifier with uppercase conversion
-                    let func = match self.current_token() {
-                        Token::Identifier(name) => {
-                            let func = name.to_uppercase();
+                    loop {
+                        if let Token::Identifier(var_name) = self.current_token() {
+                            keep_vars.push(var_name.clone());
                             self.advance();
-                            func
-                        }
-                        _ => {
+                        } else {
                             return Err(DbError::ParseError(
-                                "Expected aggregate function name".to_string(),
+                                "Expected variable name after KEEP".to_string(),
                             ));
                         }
-                    };
-
-                    self.expect(Token::LeftParen)?;
-
-                    // Parse optional argument
-                    let arg = if matches!(self.current_token(), Token::RightParen) {
-                        None
-                    } else {
-                        Some(self.parse_expression()?)
-                    };
-
-                    self.expect(Token::RightParen)?;
-
-                    aggregates.push(AggregateExpr {
-                        variable: var,
-                        function: func,
-                        argument: arg,
-                    });
-
-                    // Check for comma for more aggregates
-                    if matches!(self.current_token(), Token::Comma) {
-                        self.advance();
-                    } else {
-                        break;
+                        if matches!(self.current_token(), Token::Comma) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
                     }
+                }
+            } else if matches!(self.current_token(), Token::With) && !seen_count {
+                seen_count = true;
+                self.advance(); // consume WITH
+                                // The lexer hands `COUNT` over as an identifier (it is also the
+                                // aggregate function name), never as `Token::Count`.
+                if !matches!(self.current_token(), Token::Count) && !self.ident_eq("COUNT") {
+                    return Err(DbError::ParseError(
+                        "Expected COUNT after WITH in COLLECT".to_string(),
+                    ));
+                }
+                self.advance(); // consume COUNT
+
+                if !matches!(self.current_token(), Token::Into) {
+                    return Err(DbError::ParseError(
+                        "Expected INTO after WITH COUNT".to_string(),
+                    ));
+                }
+                self.advance(); // consume INTO
+
+                if let Token::Identifier(var_name) = self.current_token() {
+                    count_var = Some(var_name.clone());
+                    self.advance();
                 } else {
-                    break;
+                    return Err(DbError::ParseError(
+                        "Expected variable name after WITH COUNT INTO".to_string(),
+                    ));
+                }
+            } else if matches!(self.current_token(), Token::Aggregate) && !seen_aggregate {
+                seen_aggregate = true;
+                self.advance(); // consume AGGREGATE
+                self.parse_collect_aggregates(&mut aggregates)?;
+            } else {
+                break;
+            }
+        }
+
+        if let Some(pairs) = self.parse_literal_options("COLLECT")? {
+            for (key, value) in pairs {
+                match (key.as_str(), value.as_str().map(|s| s.to_ascii_lowercase())) {
+                    ("method", Some(m)) if m == "hash" => method = Some(CollectMethod::Hash),
+                    ("method", Some(m)) if m == "sorted" => method = Some(CollectMethod::Sorted),
+                    ("method", _) => {
+                        return Err(DbError::ParseError(format!(
+                            "COLLECT OPTIONS method must be \"hash\" or \"sorted\", got {}",
+                            value
+                        )))
+                    }
+                    _ => {
+                        return Err(DbError::ParseError(format!(
+                            "Unknown COLLECT option '{}'. Supported: method",
+                            key
+                        )))
+                    }
                 }
             }
         }
@@ -609,7 +827,66 @@ impl Parser {
             keep_vars,
             count_var,
             aggregates,
+            into_expr,
+            method,
         })
+    }
+
+    /// `var = FUNC(expr) [, ...]` after `AGGREGATE`.
+    fn parse_collect_aggregates(&mut self, aggregates: &mut Vec<AggregateExpr>) -> DbResult<()> {
+        // Note: Can't use while let here - need complex nested parsing logic
+        #[allow(clippy::while_let_loop)]
+        loop {
+            // Parse var = FUNC(expr)
+            if let Token::Identifier(var_name) = self.current_token() {
+                let var = var_name.clone();
+                self.advance();
+
+                self.expect(Token::Assign)?;
+
+                // Parse function call: FUNC(expr)
+                // Note: COUNT is handled as Identifier with uppercase conversion
+                let func = match self.current_token() {
+                    Token::Identifier(name) => {
+                        let func = name.to_uppercase();
+                        self.advance();
+                        func
+                    }
+                    _ => {
+                        return Err(DbError::ParseError(
+                            "Expected aggregate function name".to_string(),
+                        ));
+                    }
+                };
+
+                self.expect(Token::LeftParen)?;
+
+                // Parse optional argument
+                let arg = if matches!(self.current_token(), Token::RightParen) {
+                    None
+                } else {
+                    Some(self.with_in_allowed(|p| p.parse_expression())?)
+                };
+
+                self.expect(Token::RightParen)?;
+
+                aggregates.push(AggregateExpr {
+                    variable: var,
+                    function: func,
+                    argument: arg,
+                });
+
+                // Check for comma for more aggregates
+                if matches!(self.current_token(), Token::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(())
     }
 
     /// Parse WITH clause for CTEs:
@@ -748,12 +1025,19 @@ impl Parser {
 
         let edge_collection = self.parse_edge_or_graph_name()?;
 
-        let prune = if self.ident_eq("PRUNE") {
-            self.advance();
-            Some(self.parse_expression()?)
-        } else {
-            None
-        };
+        // AQL writes PRUNE before OPTIONS; accept either order.
+        let mut prune = None;
+        let mut options = None;
+        loop {
+            if prune.is_none() && self.ident_eq("PRUNE") {
+                self.advance();
+                prune = Some(self.parse_expression()?);
+            } else if options.is_none() && self.ident_eq("OPTIONS") {
+                options = self.parse_traversal_options()?;
+            } else {
+                break;
+            }
+        }
 
         Ok(GraphTraversalClause {
             vertex_var,
@@ -765,6 +1049,7 @@ impl Parser {
             max_depth,
             path_var: None,
             prune,
+            options: options.unwrap_or_default(),
         })
     }
 
@@ -1078,6 +1363,7 @@ impl Parser {
             max_depth,
             path_var: Some("_p".into()),
             prune: None,
+            options: TraversalOptions::default(),
         })
     }
 
@@ -1154,4 +1440,20 @@ impl Parser {
             distinct,
         })
     }
+}
+
+fn options_literal_error(context: &str, key: &str) -> DbError {
+    DbError::ParseError(format!(
+        "{} OPTIONS value for '{}' must be a literal",
+        context, key
+    ))
+}
+
+fn option_bool(context: &str, key: &str, value: &Value) -> DbResult<bool> {
+    value.as_bool().ok_or_else(|| {
+        DbError::ParseError(format!(
+            "{} OPTIONS '{}' must be true or false, got {}",
+            context, key, value
+        ))
+    })
 }

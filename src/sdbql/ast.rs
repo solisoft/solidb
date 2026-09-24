@@ -141,7 +141,14 @@ impl Query {
     /// must cover every field that can carry an `Expression`, or a mutation
     /// parked in the uncovered one is invisible to authorization.
     fn expressions(&self) -> impl Iterator<Item = &Expression> {
-        let let_exprs = self.let_clauses.iter().map(|l| &l.expression);
+        // `post_limit_lets` belong here too: a mutating subquery written after
+        // LIMIT (`... LIMIT 1 LET x = (FOR d IN c REMOVE d IN c) RETURN x`)
+        // is still a write.
+        let let_exprs = self
+            .let_clauses
+            .iter()
+            .chain(self.post_limit_lets.iter())
+            .map(|l| &l.expression);
         let for_exprs = self
             .for_clauses
             .iter()
@@ -276,6 +283,7 @@ fn body_clause_expressions(clause: &BodyClause) -> Vec<&Expression> {
             .iter()
             .map(|(_, e)| e)
             .chain(c.aggregates.iter().filter_map(|a| a.argument.as_ref()))
+            .chain(c.into_expr.iter())
             .collect(),
         BodyClause::Window(_) => Vec::new(),
     }
@@ -342,7 +350,68 @@ pub fn expression_mutates(expr: &Expression) -> bool {
             TemplateStringPart::Expression(e) => expression_mutates(e),
             TemplateStringPart::Literal(_) => false,
         }),
+        Expression::ArrayComparison {
+            quantifier,
+            left,
+            right,
+            ..
+        } => {
+            expression_mutates(left)
+                || expression_mutates(right)
+                || matches!(quantifier, ArrayQuantifier::AtLeast(n) if expression_mutates(n))
+        }
+        Expression::ArrayInline {
+            base,
+            filter,
+            limit,
+            projection,
+            ..
+        } => {
+            expression_mutates(base)
+                || filter.as_deref().is_some_and(expression_mutates)
+                || limit
+                    .as_ref()
+                    .is_some_and(|(o, c)| expression_mutates(o) || expression_mutates(c))
+                || projection.as_deref().is_some_and(expression_mutates)
+        }
         Expression::Variable(_) | Expression::BindVariable(_) | Expression::Literal(_) => false,
+    }
+}
+
+/// True when `name` is read as a variable anywhere in `query`, subqueries,
+/// CTE bodies and set-operation operands included.
+///
+/// The parser uses it to decide whether a mutation must bind `OLD` / `NEW`:
+/// binding `OLD` costs an extra document read per row, and `NEW` on a bulk
+/// write forces the per-row path, so neither is paid for when nothing reads
+/// it. Shadowing is ignored, which can only over-report.
+pub fn query_references_variable(query: &Query, name: &str) -> bool {
+    query
+        .expressions()
+        .any(|e| expression_references_variable(e, name))
+        || query
+            .set_operations
+            .iter()
+            .any(|op| query_references_variable(&op.query, name))
+        || query.with_clause.as_ref().is_some_and(|with| {
+            with.ctes
+                .iter()
+                .any(|cte| query_references_variable(&cte.query, name))
+        })
+}
+
+/// True when `expr` reads the variable `name` at any depth.
+pub fn expression_references_variable(expr: &Expression, name: &str) -> bool {
+    match expr {
+        Expression::Variable(v) => v == name,
+        Expression::Subquery(q) => query_references_variable(q, name),
+        other => {
+            let mut found = false;
+            other.for_each_child(&mut |child| {
+                found = found || expression_references_variable(child, name);
+            });
+            found
+        }
     }
 }
 
@@ -399,6 +468,49 @@ pub struct GraphTraversalClause {
     /// Stop expanding when this expression is true
     #[serde(default)]
     pub prune: Option<Expression>,
+    /// `OPTIONS { uniqueVertices, uniqueEdges, order }`
+    #[serde(default)]
+    pub options: TraversalOptions,
+}
+
+/// Vertex uniqueness during a traversal (`OPTIONS { uniqueVertices: ... }`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum UniqueVertices {
+    /// A vertex may be visited again on another path, or even on the same one
+    /// (only `uniqueEdges` and the depth bound stop the walk).
+    None,
+    /// A vertex appears at most once on any single path.
+    Path,
+    /// A vertex is visited at most once per start vertex. The historical
+    /// SoliDB behaviour, and the default when no `order: "dfs"` is asked for.
+    #[default]
+    Global,
+}
+
+/// Edge uniqueness during a traversal (`OPTIONS { uniqueEdges: ... }`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum UniqueEdges {
+    None,
+    /// An edge appears at most once on any single path (AQL's default).
+    #[default]
+    Path,
+}
+
+/// Visit order of a traversal (`OPTIONS { order: "bfs" | "dfs" }`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum TraversalOrder {
+    #[default]
+    Bfs,
+    Dfs,
+}
+
+/// Traversal `OPTIONS`. The default reproduces the pre-OPTIONS behaviour:
+/// breadth-first with global vertex uniqueness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TraversalOptions {
+    pub unique_vertices: UniqueVertices,
+    pub unique_edges: UniqueEdges,
+    pub order: TraversalOrder,
 }
 
 /// FOR vertex[, edge] IN SHORTEST_PATH start_vertex TO end_vertex OUTBOUND|INBOUND|ANY edge_collection
@@ -507,6 +619,25 @@ pub struct ForClause {
     /// Application valid-time filter (`valid_from` / `valid_to` fields)
     #[serde(default)]
     pub valid_time: Option<ValidTimeSpec>,
+    /// `FOR ... OPTIONS { indexHint, forceIndexHint }`, for the optimizer.
+    #[serde(default)]
+    pub options: Option<ForOptions>,
+}
+
+/// `FOR doc IN coll OPTIONS { indexHint: "idx" | ["a", "b"], forceIndexHint: bool }`.
+///
+/// Parsed here and consumed by the index selector (`executor::index_opt`):
+/// when `index_hint` is non-empty the selector should prefer the named
+/// indexes, in order, over its own choice; with `force_index_hint` it should
+/// fail the query instead of falling back when none of them can serve the
+/// FILTER.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ForOptions {
+    /// Index names, in order of preference. Empty = no hint.
+    #[serde(default)]
+    pub index_hint: Vec<String>,
+    #[serde(default)]
+    pub force_index_hint: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -521,14 +652,73 @@ pub struct FilterClause {
     pub expression: Expression,
 }
 
-/// INSERT document INTO collection
+/// `INSERT` behaviour when the document's `_key` already exists
+/// (`OPTIONS { overwriteMode: ... }`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OverwriteMode {
+    /// Keep the stored document; the row's `NEW` is null.
+    Ignore,
+    /// Replace the stored document wholesale.
+    Replace,
+    /// Merge into the stored document, like `UPDATE`.
+    Update,
+    /// Fail with a conflict (the default).
+    Conflict,
+}
+
+/// `OPTIONS { ... }` on INSERT / UPDATE / REPLACE / UPSERT / REMOVE.
+///
+/// Every field defaults to the behaviour the statement has without OPTIONS,
+/// so `MutationOptions::default()` changes nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct MutationOptions {
+    /// Skip rows whose document-level write fails (missing document, key or
+    /// unique conflict, invalid document) instead of failing the query. The
+    /// skipped row produces no output.
+    #[serde(default)]
+    pub ignore_errors: bool,
+    /// `keepNull: false` removes attributes the patch sets to `null`
+    /// (UPDATE, UPSERT's update branch, INSERT with overwriteMode "update").
+    /// `None` = keep them (store `null`), the default.
+    #[serde(default)]
+    pub keep_null: Option<bool>,
+    /// `mergeObjects: true` merges nested objects recursively; `false` (and
+    /// `None`, SoliDB's default) replaces a top-level attribute wholesale.
+    #[serde(default)]
+    pub merge_objects: Option<bool>,
+    /// INSERT only. `None` = conflict.
+    #[serde(default)]
+    pub overwrite_mode: Option<OverwriteMode>,
+}
+
+impl MutationOptions {
+    /// True when UPDATE must compute the merged document itself instead of
+    /// handing the patch to the storage layer's shallow merge.
+    pub fn needs_custom_merge(&self) -> bool {
+        self.keep_null == Some(false) || self.merge_objects == Some(true)
+    }
+}
+
+/// INSERT document INTO|IN collection [OPTIONS {...}]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InsertClause {
     pub document: Expression,
     pub collection: String,
+    #[serde(default)]
+    pub options: MutationOptions,
+    /// Something in the query block reads `NEW` / `OLD`: bind them per row.
+    /// Set by the parser (see [`query_references_variable`]).
+    #[serde(default)]
+    pub binds_new: bool,
+    #[serde(default)]
+    pub binds_old: bool,
 }
 
-/// UPDATE document WITH changes IN collection
+/// `UPDATE doc [WITH changes] IN collection [OPTIONS {...}]`, and
+/// `REPLACE doc [WITH replacement] IN collection` (`replace = true`).
+///
+/// Without `WITH`, `changes` is a copy of `selector`: the document names its
+/// own `_key` and is the patch (or the replacement).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpdateClause {
     /// The document or key to update (usually a variable like `doc` or `doc._key`)
@@ -537,9 +727,20 @@ pub struct UpdateClause {
     pub changes: Expression,
     /// The collection to update in
     pub collection: String,
+    /// `REPLACE`: the stored document becomes `changes` (system attributes
+    /// aside) instead of having `changes` merged into it.
+    #[serde(default)]
+    pub replace: bool,
+    #[serde(default)]
+    pub options: MutationOptions,
+    /// See [`InsertClause::binds_new`].
+    #[serde(default)]
+    pub binds_old: bool,
+    #[serde(default)]
+    pub binds_new: bool,
 }
 
-/// UPSERT search INSERT insert UPDATE update IN collection
+/// UPSERT search INSERT insert UPDATE|REPLACE update IN collection [OPTIONS {...}]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpsertClause {
     pub search: Expression,
@@ -547,15 +748,25 @@ pub struct UpsertClause {
     pub update: Expression,
     pub collection: String,
     pub replace: bool,
+    #[serde(default)]
+    pub options: MutationOptions,
+    /// See [`InsertClause::binds_new`]. `NEW` is always bound for UPSERT.
+    #[serde(default)]
+    pub binds_old: bool,
 }
 
-/// REMOVE document IN collection
+/// REMOVE document IN collection [OPTIONS {...}]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RemoveClause {
     /// The document or key to remove (usually a variable like `doc` or `doc._key`)
     pub selector: Expression,
     /// The collection to remove from
     pub collection: String,
+    #[serde(default)]
+    pub options: MutationOptions,
+    /// See [`InsertClause::binds_new`].
+    #[serde(default)]
+    pub binds_old: bool,
 }
 
 /// JOIN type (INNER vs LEFT/RIGHT/FULL)
@@ -614,6 +825,24 @@ pub struct CollectClause {
     pub count_var: Option<String>,
     /// AGGREGATE expressions
     pub aggregates: Vec<AggregateExpr>,
+    /// `INTO g = expr`: each group member is `expr` evaluated on the row,
+    /// instead of the object of every variable in scope. Exclusive with
+    /// `keep_vars`. Only meaningful with `into_var`.
+    #[serde(default)]
+    pub into_expr: Option<Expression>,
+    /// `OPTIONS { method: "hash" | "sorted" }`. `None` behaves as `Sorted`.
+    #[serde(default)]
+    pub method: Option<CollectMethod>,
+}
+
+/// COLLECT grouping method (`OPTIONS { method: ... }`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CollectMethod {
+    /// Groups come out in no particular order.
+    Hash,
+    /// Groups come out sorted by their group values, in `group_vars` order
+    /// (AQL's default).
+    Sorted,
 }
 
 /// Aggregate expression: var = FUNC(expr)
@@ -762,6 +991,49 @@ pub enum Expression {
     /// Template string with interpolated expressions: $"Hello ${name}!"
     /// Syntax: $"text ${expression} more text"
     TemplateString { parts: Vec<TemplateStringPart> },
+
+    /// Array comparison operator (AQL): `arr ANY == x`, `arr ALL IN list`,
+    /// `arr NONE > 3`, `arr AT LEAST (2) == "a"`.
+    ///
+    /// `op` is applied between every element of `left` and `right`. A
+    /// non-array `left` is `false`; for `IN` / `NOT IN` a non-array `right`
+    /// is `false` too. Empty arrays: `ALL` and `NONE` are true, `ANY` false,
+    /// `AT LEAST (n)` true only for `n <= 0`.
+    ArrayComparison {
+        quantifier: ArrayQuantifier,
+        left: Box<Expression>,
+        /// One of `==`, `!=`, `<`, `<=`, `>`, `>=`, `IN`, `NOT IN`.
+        op: BinaryOperator,
+        right: Box<Expression>,
+    },
+
+    /// Inline array expression (AQL):
+    /// `arr[* FILTER cond LIMIT off, n RETURN proj].path`, and `arr[**]`.
+    ///
+    /// Inside `filter` / `limit` / `projection`, `CURRENT` is the element.
+    /// Plain `arr[*]` / `arr[*].path` stay [`Expression::ArraySpreadAccess`].
+    ArrayInline {
+        base: Box<Expression>,
+        /// Number of `*` in the brackets. `2` (`[**]`) flattens the operand
+        /// one level before expanding it, `3` two levels, and so on.
+        depth: usize,
+        filter: Option<Box<Expression>>,
+        /// `LIMIT [offset,] count`, as `(offset, count)`.
+        limit: Option<(Box<Expression>, Box<Expression>)>,
+        projection: Option<Box<Expression>>,
+        /// Attribute path written after `]`, read from every result.
+        field_path: Option<String>,
+    },
+}
+
+/// Quantifier of an [`Expression::ArrayComparison`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ArrayQuantifier {
+    Any,
+    All,
+    None,
+    /// `AT LEAST (n)`: at least `n` elements satisfy the comparison.
+    AtLeast(Box<Expression>),
 }
 
 impl Expression {
@@ -834,6 +1106,37 @@ impl Expression {
                     if let TemplateStringPart::Expression(e) = p {
                         f(e);
                     }
+                }
+            }
+            Expression::ArrayComparison {
+                quantifier,
+                left,
+                right,
+                ..
+            } => {
+                f(left);
+                if let ArrayQuantifier::AtLeast(n) = quantifier {
+                    f(n);
+                }
+                f(right);
+            }
+            Expression::ArrayInline {
+                base,
+                filter,
+                limit,
+                projection,
+                ..
+            } => {
+                f(base);
+                if let Some(e) = filter {
+                    f(e);
+                }
+                if let Some((o, c)) = limit {
+                    f(o);
+                    f(c);
+                }
+                if let Some(e) = projection {
+                    f(e);
                 }
             }
         }
@@ -969,6 +1272,7 @@ mod tests {
             source_expression: None,
             system_time: None,
             valid_time: None,
+            options: None,
         };
 
         assert_eq!(clause.variable, "doc");
@@ -1033,6 +1337,9 @@ mod tests {
         let clause = InsertClause {
             document: Expression::Object(vec![]),
             collection: "users".to_string(),
+            options: MutationOptions::default(),
+            binds_new: false,
+            binds_old: false,
         };
 
         assert_eq!(clause.collection, "users");
@@ -1102,6 +1409,8 @@ mod tests {
             keep_vars: vec![],
             count_var: Some("cnt".to_string()),
             aggregates: vec![],
+            into_expr: None,
+            method: None,
         };
 
         assert_eq!(clause.group_vars.len(), 1);

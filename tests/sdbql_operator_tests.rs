@@ -21,8 +21,8 @@ fn test_operator_addition() {
     let (engine, _tmp) = create_test_engine();
 
     // Arithmetic returns floats
-    assert_eq!(execute_single(&engine, "RETURN 1 + 2"), json!(3.0));
-    assert_eq!(execute_single(&engine, "RETURN 10 + 20 + 30"), json!(60.0));
+    assert_eq!(execute_single(&engine, "RETURN 1 + 2"), json!(3));
+    assert_eq!(execute_single(&engine, "RETURN 10 + 20 + 30"), json!(60));
     assert_eq!(execute_single(&engine, "RETURN 1.5 + 2.5"), json!(4.0));
 }
 
@@ -30,23 +30,23 @@ fn test_operator_addition() {
 fn test_operator_subtraction() {
     let (engine, _tmp) = create_test_engine();
 
-    assert_eq!(execute_single(&engine, "RETURN 10 - 3"), json!(7.0));
-    assert_eq!(execute_single(&engine, "RETURN 100 - 50 - 25"), json!(25.0));
+    assert_eq!(execute_single(&engine, "RETURN 10 - 3"), json!(7));
+    assert_eq!(execute_single(&engine, "RETURN 100 - 50 - 25"), json!(25));
 }
 
 #[test]
 fn test_operator_multiplication() {
     let (engine, _tmp) = create_test_engine();
 
-    assert_eq!(execute_single(&engine, "RETURN 5 * 4"), json!(20.0));
-    assert_eq!(execute_single(&engine, "RETURN 2 * 3 * 4"), json!(24.0));
+    assert_eq!(execute_single(&engine, "RETURN 5 * 4"), json!(20));
+    assert_eq!(execute_single(&engine, "RETURN 2 * 3 * 4"), json!(24));
 }
 
 #[test]
 fn test_operator_division() {
     let (engine, _tmp) = create_test_engine();
 
-    assert_eq!(execute_single(&engine, "RETURN 20 / 4"), json!(5.0));
+    assert_eq!(execute_single(&engine, "RETURN 20 / 4"), json!(5));
     assert_eq!(execute_single(&engine, "RETURN 15 / 2"), json!(7.5));
 }
 
@@ -57,17 +57,17 @@ fn test_operator_precedence_arithmetic() {
     let (engine, _tmp) = create_test_engine();
 
     // Multiplication before addition - returns float
-    assert_eq!(execute_single(&engine, "RETURN 2 + 3 * 4"), json!(14.0));
+    assert_eq!(execute_single(&engine, "RETURN 2 + 3 * 4"), json!(14));
     // Parentheses override precedence
-    assert_eq!(execute_single(&engine, "RETURN (2 + 3) * 4"), json!(20.0));
+    assert_eq!(execute_single(&engine, "RETURN (2 + 3) * 4"), json!(20));
 }
 
 #[test]
 fn test_operator_negative_numbers() {
     let (engine, _tmp) = create_test_engine();
 
-    assert_eq!(execute_single(&engine, "RETURN -5 + 10"), json!(5.0));
-    assert_eq!(execute_single(&engine, "RETURN -3 * -2"), json!(6.0));
+    assert_eq!(execute_single(&engine, "RETURN -5 + 10"), json!(5));
+    assert_eq!(execute_single(&engine, "RETURN -3 * -2"), json!(6));
 }
 
 // ============================================================================
@@ -383,9 +383,9 @@ fn test_range_in_for() {
     let results = execute_query(&engine, "FOR i IN 1..3 RETURN i * 2");
     assert_eq!(results.len(), 3);
     // Results are floats from multiplication
-    assert_eq!(results[0], json!(2.0));
-    assert_eq!(results[1], json!(4.0));
-    assert_eq!(results[2], json!(6.0));
+    assert_eq!(results[0], json!(2));
+    assert_eq!(results[1], json!(4));
+    assert_eq!(results[2], json!(6));
 }
 
 // SEC-131: oversize ranges must error rather than allocate / panic.
@@ -503,8 +503,8 @@ fn test_expression_in_object_literal() {
 
     let result = execute_single(&engine, "RETURN { sum: 1 + 2, product: 3 * 4 }");
     // Arithmetic returns floats
-    assert_eq!(result.get("sum"), Some(&json!(3.0)));
-    assert_eq!(result.get("product"), Some(&json!(12.0)));
+    assert_eq!(result.get("sum"), Some(&json!(3)));
+    assert_eq!(result.get("product"), Some(&json!(12)));
 }
 
 #[test]
@@ -512,5 +512,5 @@ fn test_expression_in_array_literal() {
     let (engine, _tmp) = create_test_engine();
 
     let result = execute_single(&engine, "RETURN [1 + 1, 2 + 2, 3 + 3]");
-    assert_eq!(result, json!([2.0, 4.0, 6.0]));
+    assert_eq!(result, json!([2, 4, 6]));
 }

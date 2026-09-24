@@ -21,6 +21,8 @@ regex = "1.10"
 
 # Date/time for builtin functions
 chrono = { version = "0.4", features = ["serde"] }
+# Timezone-aware DATE_* arguments, same crate and version as the server.
+chrono-tz = "0.10"
 
 [features]
 default = ["basic-builtins"]

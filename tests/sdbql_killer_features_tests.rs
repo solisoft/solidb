@@ -76,7 +76,7 @@ fn hof_map_filter_flat_group_sort() {
     let (e, _t) = engine();
     assert_eq!(
         exec(&e, "RETURN MAP([1,2,3], x -> x * 2)"),
-        json!([2.0, 4.0, 6.0])
+        json!([2, 4, 6])
     );
     assert_eq!(exec(&e, "RETURN MAP([], x -> x)"), json!([]));
     assert_eq!(
@@ -101,7 +101,7 @@ fn hof_map_filter_flat_group_sort() {
     );
     assert_eq!(
         exec(&e, "RETURN [1,2,3] |> MAP(x -> x + 1)"),
-        json!([2.0, 3.0, 4.0])
+        json!([2, 3, 4])
     );
     assert!(exec_ok(&e, "RETURN MAP(1, x -> x)").is_err());
 }
@@ -202,12 +202,19 @@ fn timeseries_delta_rate_fill_resample() {
 #[test]
 fn approx_and_sketch_merge() {
     let (e, _t) = engine();
+    // APPROX_COUNT_DISTINCT returns the estimate itself; the HLL sketch is
+    // opt-in with {sketch: true} (audit D8 — the sketch is 16 384 registers).
     let s = exec(&e, "RETURN APPROX_COUNT_DISTINCT([1,1,2,3,3,3])");
-    assert!(s["estimate"].as_f64().unwrap() >= 2.0);
-    assert_eq!(s["_type"], json!("hll"));
+    assert!(s.as_f64().unwrap() >= 2.0);
+    let sk = exec(
+        &e,
+        "RETURN APPROX_COUNT_DISTINCT([1,1,2,3,3,3], {sketch: true})",
+    );
+    assert!(sk["estimate"].as_f64().unwrap() >= 2.0);
+    assert_eq!(sk["_type"], json!("hll"));
 
     let empty = exec(&e, "RETURN APPROX_COUNT_DISTINCT([])");
-    assert_eq!(empty["estimate"].as_f64().unwrap(), 0.0);
+    assert_eq!(empty.as_f64().unwrap(), 0.0);
 
     assert_eq!(
         exec(&e, "RETURN APPROX_PERCENTILE([1,2,3,4,5], 50)"),
@@ -223,8 +230,8 @@ fn approx_and_sketch_merge() {
     let merged = exec(
         &e,
         r#"
-        LET a = APPROX_COUNT_DISTINCT([1,2,3])
-        LET b = APPROX_COUNT_DISTINCT([3,4,5])
+        LET a = APPROX_COUNT_DISTINCT([1,2,3], {sketch: true})
+        LET b = APPROX_COUNT_DISTINCT([3,4,5], {sketch: true})
         RETURN SKETCH_MERGE(a, b)
         "#,
     );

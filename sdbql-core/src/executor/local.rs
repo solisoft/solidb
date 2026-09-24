@@ -10,7 +10,7 @@ use crate::ast::*;
 use crate::error::{SdbqlError, SdbqlResult};
 use crate::parser;
 
-use super::builtins::BuiltinFunctions;
+use super::builtins::{BuiltinFunctions, MAX_RANGE};
 use super::helpers::*;
 use super::{BindVars, DataSource, QueryLimits};
 
@@ -343,156 +343,99 @@ impl<D: DataSource> LocalExecutor<D> {
     }
 
     /// Execute a COLLECT clause.
+    ///
+    /// Aggregates are folded row by row; a group keeps its rows only when
+    /// `INTO` asks for them. Group keys are hashed with value equality
+    /// (`1` and `1.0` are one group), groups come out sorted by key, and a
+    /// COLLECT without group variables yields one row even on empty input
+    /// (`WITH COUNT INTO n` gives 0, as in AQL).
     fn execute_collect(
         &self,
         collect_clause: &CollectClause,
         contexts: Vec<ExecutionContext>,
     ) -> SdbqlResult<Vec<ExecutionContext>> {
-        // Group by group_vars
-        let mut groups: HashMap<String, (Value, Vec<ExecutionContext>)> = HashMap::new();
+        let bind_vars = contexts
+            .first()
+            .map(|c| c.bind_vars.clone())
+            .unwrap_or_default();
+        // Built up front so an unknown aggregate errors even on empty input.
+        let proto = collect_clause
+            .aggregates
+            .iter()
+            .map(AggState::new)
+            .collect::<SdbqlResult<Vec<_>>>()?;
+        let keep_rows = collect_clause.into_var.is_some();
+
+        let mut groups: Vec<CollectGroup> = Vec::new();
+        let mut index: HashMap<u64, Vec<usize>> = HashMap::new();
 
         for ctx in contexts {
-            let mut group_key_parts = Vec::new();
-            let mut group_values = serde_json::Map::new();
-
-            for (var_name, expr) in &collect_clause.group_vars {
-                let value = self.evaluate_expression(expr, &ctx)?;
-                group_key_parts.push(serde_json::to_string(&value).unwrap_or_default());
-                group_values.insert(var_name.clone(), value);
+            let mut key = Vec::with_capacity(collect_clause.group_vars.len());
+            for (_, expr) in &collect_clause.group_vars {
+                key.push(self.evaluate_expression(expr, &ctx)?);
             }
-
-            let group_key = group_key_parts.join("|");
-
-            groups
-                .entry(group_key)
-                .or_insert_with(|| (Value::Object(group_values.clone()), Vec::new()))
-                .1
-                .push(ctx);
+            let bucket = index.entry(hash_key(&key)).or_default();
+            let gi = match bucket
+                .iter()
+                .copied()
+                .find(|&i| keys_equal(&groups[i].key, &key))
+            {
+                Some(i) => i,
+                None => {
+                    groups.push(CollectGroup {
+                        key,
+                        rows: Vec::new(),
+                        count: 0,
+                        aggs: proto.clone(),
+                    });
+                    bucket.push(groups.len() - 1);
+                    groups.len() - 1
+                }
+            };
+            let group = &mut groups[gi];
+            group.count += 1;
+            for (state, agg) in group.aggs.iter_mut().zip(&collect_clause.aggregates) {
+                let value = match &agg.argument {
+                    Some(expr) => Some(self.evaluate_expression(expr, &ctx)?),
+                    None => None,
+                };
+                state.add(value);
+            }
+            if keep_rows {
+                group.rows.push(ctx.to_value());
+            }
         }
 
-        let mut results = Vec::new();
+        if groups.is_empty() && collect_clause.group_vars.is_empty() {
+            groups.push(CollectGroup {
+                key: Vec::new(),
+                rows: Vec::new(),
+                count: 0,
+                aggs: proto,
+            });
+        }
 
-        for (_, (group_values, group_contexts)) in groups {
-            let mut result_ctx = ExecutionContext::new(HashMap::new());
+        groups.sort_by(|a, b| compare_keys(&a.key, &b.key));
 
-            // Set group variables
-            if let Value::Object(obj) = &group_values {
-                for (k, v) in obj {
-                    result_ctx.set_variable(k, v.clone());
-                }
+        let mut results = Vec::with_capacity(groups.len());
+        for group in groups {
+            let mut result_ctx = ExecutionContext::new(bind_vars.clone());
+            for ((var_name, _), value) in collect_clause.group_vars.iter().zip(group.key) {
+                result_ctx.set_variable(var_name, value);
             }
-
-            // Set INTO variable (array of grouped items)
             if let Some(into_var) = &collect_clause.into_var {
-                let items: Vec<Value> = group_contexts.iter().map(|c| c.to_value()).collect();
-                result_ctx.set_variable(into_var, Value::Array(items));
+                result_ctx.set_variable(into_var, Value::Array(group.rows));
             }
-
-            // Set COUNT variable
             if let Some(count_var) = &collect_clause.count_var {
-                result_ctx.set_variable(
-                    count_var,
-                    Value::Number(serde_json::Number::from(group_contexts.len())),
-                );
+                result_ctx.set_variable(count_var, Value::from(group.count));
             }
-
-            // Compute aggregates
-            for agg in &collect_clause.aggregates {
-                let value = self.compute_aggregate(agg, &group_contexts)?;
-                result_ctx.set_variable(&agg.variable, value);
+            for (state, agg) in group.aggs.into_iter().zip(&collect_clause.aggregates) {
+                result_ctx.set_variable(&agg.variable, state.finish());
             }
-
             results.push(result_ctx);
         }
 
         Ok(results)
-    }
-
-    /// Compute an aggregate value.
-    fn compute_aggregate(
-        &self,
-        agg: &AggregateExpr,
-        contexts: &[ExecutionContext],
-    ) -> SdbqlResult<Value> {
-        match agg.function.as_str() {
-            "COUNT" => Ok(Value::Number(serde_json::Number::from(contexts.len()))),
-            "SUM" => {
-                let mut sum = 0.0;
-                if let Some(arg) = &agg.argument {
-                    for ctx in contexts {
-                        let val = self.evaluate_expression(arg, ctx)?;
-                        if let Some(n) = val.as_f64() {
-                            sum += n;
-                        }
-                    }
-                }
-                Ok(Value::Number(number_from_f64(sum)))
-            }
-            "AVG" => {
-                let mut sum = 0.0;
-                let mut count = 0;
-                if let Some(arg) = &agg.argument {
-                    for ctx in contexts {
-                        let val = self.evaluate_expression(arg, ctx)?;
-                        if let Some(n) = val.as_f64() {
-                            sum += n;
-                            count += 1;
-                        }
-                    }
-                }
-                if count > 0 {
-                    Ok(Value::Number(number_from_f64(sum / count as f64)))
-                } else {
-                    Ok(Value::Null)
-                }
-            }
-            "MIN" => {
-                let mut min: Option<Value> = None;
-                if let Some(arg) = &agg.argument {
-                    for ctx in contexts {
-                        let val = self.evaluate_expression(arg, ctx)?;
-                        if !val.is_null() {
-                            min = Some(match min {
-                                None => val,
-                                Some(m) => {
-                                    if compare_values(&val, &m) == std::cmp::Ordering::Less {
-                                        val
-                                    } else {
-                                        m
-                                    }
-                                }
-                            });
-                        }
-                    }
-                }
-                Ok(min.unwrap_or(Value::Null))
-            }
-            "MAX" => {
-                let mut max: Option<Value> = None;
-                if let Some(arg) = &agg.argument {
-                    for ctx in contexts {
-                        let val = self.evaluate_expression(arg, ctx)?;
-                        if !val.is_null() {
-                            max = Some(match max {
-                                None => val,
-                                Some(m) => {
-                                    if compare_values(&val, &m) == std::cmp::Ordering::Greater {
-                                        val
-                                    } else {
-                                        m
-                                    }
-                                }
-                            });
-                        }
-                    }
-                }
-                Ok(max.unwrap_or(Value::Null))
-            }
-            _ => Err(SdbqlError::ExecutionError(format!(
-                "Unknown aggregate function: {}",
-                agg.function
-            ))),
-        }
     }
 
     /// Apply SORT clause (stable - preserves original order of equal elements).
@@ -732,9 +675,20 @@ impl<D: DataSource> LocalExecutor<D> {
                 let start_val = self.evaluate_expression(start, context)?;
                 let end_val = self.evaluate_expression(end, context)?;
                 if let (Some(s), Some(e)) = (start_val.as_i64(), end_val.as_i64()) {
-                    let arr: Vec<Value> = (s..=e)
-                        .map(|i| Value::Number(serde_json::Number::from(i)))
-                        .collect();
+                    // Capped like RANGE(); `1..1e15` allocated until killed.
+                    let count = (i128::from(e) - i128::from(s)).abs() + 1;
+                    if count > MAX_RANGE as i128 {
+                        return Err(SdbqlError::ExecutionError(format!(
+                            "Range {}..{} would have {} elements (max {})",
+                            s, e, count, MAX_RANGE
+                        )));
+                    }
+                    // AQL: a descending range counts down.
+                    let arr: Vec<Value> = if s <= e {
+                        (s..=e).map(Value::from).collect()
+                    } else {
+                        (e..=s).rev().map(Value::from).collect()
+                    };
                     Ok(Value::Array(arr))
                 } else {
                     Err(SdbqlError::ExecutionError(
@@ -848,6 +802,26 @@ impl<D: DataSource> LocalExecutor<D> {
         args: &[Expression],
         context: &ExecutionContext,
     ) -> SdbqlResult<Value> {
+        // IF and COALESCE evaluate only the arguments they need, so
+        // `IF(x == 0, 0, 1 / x)` does not divide by zero.
+        if name.eq_ignore_ascii_case("IF") && args.len() == 3 {
+            let cond = self.evaluate_expression(&args[0], context)?;
+            let branch = if to_bool(&cond) { &args[1] } else { &args[2] };
+            return self.evaluate_expression(branch, context);
+        }
+        if ["COALESCE", "NOT_NULL", "FIRST_NOT_NULL"]
+            .iter()
+            .any(|f| name.eq_ignore_ascii_case(f))
+        {
+            for arg in args {
+                let value = self.evaluate_expression(arg, context)?;
+                if !value.is_null() {
+                    return Ok(value);
+                }
+            }
+            return Ok(Value::Null);
+        }
+
         // Evaluate arguments (except for lambdas which are handled specially)
         let mut evaluated_args = Vec::new();
         let mut lambda_args = Vec::new();
@@ -1039,6 +1013,235 @@ impl<D: DataSource> LocalExecutor<D> {
                 "Unknown higher-order function: {}",
                 name
             ))),
+        }
+    }
+}
+
+/// One COLLECT group: its key, the rows kept for `INTO`, and the running
+/// aggregate states.
+struct CollectGroup {
+    key: Vec<Value>,
+    rows: Vec<Value>,
+    count: usize,
+    aggs: Vec<AggState>,
+}
+
+fn hash_key(key: &[Value]) -> u64 {
+    key.iter().fold(0xcbf2_9ce4_8422_2325, |acc, v| {
+        (acc ^ hash_value(v)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+fn keys_equal(a: &[Value], b: &[Value]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| values_equal(x, y))
+}
+
+fn compare_keys(a: &[Value], b: &[Value]) -> std::cmp::Ordering {
+    for (x, y) in a.iter().zip(b) {
+        let c = compare_values(x, y);
+        if c != std::cmp::Ordering::Equal {
+            return c;
+        }
+    }
+    a.len().cmp(&b.len())
+}
+
+/// Running state of one `AGGREGATE var = FUNC(expr)`.
+#[derive(Clone)]
+enum AggState {
+    /// `rows`: no argument, so every row counts; otherwise non-null values.
+    Count {
+        rows: bool,
+        n: usize,
+    },
+    CountDistinct {
+        seen: ValueSet,
+        n: usize,
+    },
+    Sum(f64),
+    Avg {
+        sum: f64,
+        n: usize,
+    },
+    Min(Option<Value>),
+    Max(Option<Value>),
+    Push(Vec<Value>),
+    Unique {
+        seen: ValueSet,
+        items: Vec<Value>,
+        sorted: bool,
+    },
+    /// Welford's running variance.
+    Variance {
+        n: usize,
+        mean: f64,
+        m2: f64,
+        sample: bool,
+        sqrt: bool,
+    },
+    Median(Vec<f64>),
+}
+
+impl AggState {
+    fn new(agg: &AggregateExpr) -> SdbqlResult<Self> {
+        let variance = |sample, sqrt| AggState::Variance {
+            n: 0,
+            mean: 0.0,
+            m2: 0.0,
+            sample,
+            sqrt,
+        };
+        Ok(match agg.function.to_uppercase().as_str() {
+            "COUNT" | "LENGTH" => AggState::Count {
+                rows: agg.argument.is_none(),
+                n: 0,
+            },
+            "COUNT_DISTINCT" | "COUNT_UNIQUE" => AggState::CountDistinct {
+                seen: ValueSet::default(),
+                n: 0,
+            },
+            "SUM" => AggState::Sum(0.0),
+            "AVG" | "AVERAGE" => AggState::Avg { sum: 0.0, n: 0 },
+            "MIN" | "MINIMUM" => AggState::Min(None),
+            "MAX" | "MAXIMUM" => AggState::Max(None),
+            "PUSH" | "COLLECT_LIST" => AggState::Push(Vec::new()),
+            "UNIQUE" | "SORTED_UNIQUE" => AggState::Unique {
+                seen: ValueSet::default(),
+                items: Vec::new(),
+                sorted: agg.function.eq_ignore_ascii_case("SORTED_UNIQUE"),
+            },
+            "VARIANCE" | "VARIANCE_POPULATION" | "VAR_POP" => variance(false, false),
+            "VARIANCE_SAMPLE" | "VAR_SAMP" => variance(true, false),
+            "STDDEV" | "STDDEV_POPULATION" | "STDDEV_POP" => variance(false, true),
+            "STDDEV_SAMPLE" | "STDDEV_SAMP" => variance(true, true),
+            "MEDIAN" => AggState::Median(Vec::new()),
+            _ => {
+                return Err(SdbqlError::ExecutionError(format!(
+                    "Unknown aggregate function: {}",
+                    agg.function
+                )))
+            }
+        })
+    }
+
+    fn add(&mut self, value: Option<Value>) {
+        let non_null = value.filter(|v| !v.is_null());
+        match self {
+            AggState::Count { rows, n } => {
+                if *rows || non_null.is_some() {
+                    *n += 1;
+                }
+            }
+            AggState::CountDistinct { seen, n } => {
+                if let Some(v) = non_null {
+                    if seen.insert(&v) {
+                        *n += 1;
+                    }
+                }
+            }
+            AggState::Sum(sum) => {
+                if let Some(x) = non_null.as_ref().and_then(Value::as_f64) {
+                    *sum += x;
+                }
+            }
+            AggState::Avg { sum, n } => {
+                if let Some(x) = non_null.as_ref().and_then(Value::as_f64) {
+                    *sum += x;
+                    *n += 1;
+                }
+            }
+            AggState::Min(cur) => {
+                if let Some(v) = non_null {
+                    if cur
+                        .as_ref()
+                        .is_none_or(|c| compare_values(&v, c) == std::cmp::Ordering::Less)
+                    {
+                        *cur = Some(v);
+                    }
+                }
+            }
+            AggState::Max(cur) => {
+                if let Some(v) = non_null {
+                    if cur
+                        .as_ref()
+                        .is_none_or(|c| compare_values(&v, c) == std::cmp::Ordering::Greater)
+                    {
+                        *cur = Some(v);
+                    }
+                }
+            }
+            AggState::Push(items) => items.push(non_null.unwrap_or(Value::Null)),
+            AggState::Unique { seen, items, .. } => {
+                if let Some(v) = non_null {
+                    if seen.insert(&v) {
+                        items.push(v);
+                    }
+                }
+            }
+            AggState::Variance { n, mean, m2, .. } => {
+                if let Some(x) = non_null.as_ref().and_then(Value::as_f64) {
+                    *n += 1;
+                    let d = x - *mean;
+                    *mean += d / *n as f64;
+                    *m2 += d * (x - *mean);
+                }
+            }
+            AggState::Median(xs) => {
+                if let Some(x) = non_null.as_ref().and_then(Value::as_f64) {
+                    xs.push(x);
+                }
+            }
+        }
+    }
+
+    fn finish(self) -> Value {
+        match self {
+            AggState::Count { n, .. } | AggState::CountDistinct { n, .. } => Value::from(n),
+            AggState::Sum(sum) => Value::Number(number_from_f64(sum)),
+            AggState::Avg { sum, n } => {
+                if n == 0 {
+                    Value::Null
+                } else {
+                    Value::Number(number_from_f64(sum / n as f64))
+                }
+            }
+            AggState::Min(v) | AggState::Max(v) => v.unwrap_or(Value::Null),
+            AggState::Push(items) => Value::Array(items),
+            AggState::Unique {
+                mut items, sorted, ..
+            } => {
+                if sorted {
+                    items.sort_by(compare_values);
+                }
+                Value::Array(items)
+            }
+            AggState::Variance {
+                n,
+                m2,
+                sample,
+                sqrt,
+                ..
+            } => {
+                let denom = if sample { n.saturating_sub(1) } else { n };
+                if denom == 0 {
+                    return Value::Null;
+                }
+                let var = m2 / denom as f64;
+                Value::Number(number_from_f64(if sqrt { var.sqrt() } else { var }))
+            }
+            AggState::Median(mut xs) => {
+                if xs.is_empty() {
+                    return Value::Null;
+                }
+                xs.sort_by(f64::total_cmp);
+                let mid = xs.len() / 2;
+                let m = if xs.len().is_multiple_of(2) {
+                    (xs[mid - 1] + xs[mid]) / 2.0
+                } else {
+                    xs[mid]
+                };
+                Value::Number(number_from_f64(m))
+            }
         }
     }
 }

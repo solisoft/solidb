@@ -622,7 +622,7 @@ fn test_division_normal() {
 
     // Normal division works fine
     let results = execute_query(&engine, "RETURN 10 / 2");
-    assert_eq!(results[0], json!(5.0));
+    assert_eq!(results[0], json!(5));
 }
 
 #[test]
@@ -735,7 +735,7 @@ fn test_return_plain_expression() {
     let (engine, _tmp) = create_test_engine();
 
     let results = execute_query(&engine, "RETURN 1 + 2 + 3");
-    assert_eq!(results[0], json!(6.0));
+    assert_eq!(results[0], json!(6));
 }
 
 #[test]

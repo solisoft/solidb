@@ -50,7 +50,7 @@
               <div id="fn-ARGON2_VERIFY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-ARGON2_VERIFY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-red-500/20 px-2 py-1 rounded border border-red-500/30 w-fit mb-3">ARGON2_VERIFY(hash, password)</code>
-                <p class="text-sm text-gray-400 mb-3">Verify a password against a stored Argon2 hash. Returns true/false.</p>
+                <p class="text-sm text-gray-400 mb-3">Verify a password against a stored Argon2 hash. Returns true/false. The cost parameters are read from the hash string, so hashes asking for more than m&nbsp;=&nbsp;64&nbsp;MiB, t&nbsp;=&nbsp;10 or p&nbsp;=&nbsp;4 are rejected with an error before any work is done (hashes from ARGON2_HASH use m&nbsp;=&nbsp;19&nbsp;MiB, t&nbsp;=&nbsp;2, p&nbsp;=&nbsp;1).</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ARGON2_VERIFY(@storedHash, "mypassword123")
 -- true</code></pre>
               </div>
@@ -87,6 +87,7 @@ FOR user IN users
                   <li>Never log or expose password hashes in API responses</li>
                   <li>Use HTTPS for all authentication endpoints</li>
                   <li>Implement rate limiting on login attempts</li>
+                  <li>A query may make at most 64 ARGON2_HASH / ARGON2_VERIFY calls, and SDBQL runs at most one Argon2 computation per CPU core at a time; hash in bulk from application code, not from one query</li>
                 </ul>
               </div>
             </div>
@@ -109,6 +110,9 @@ FOR user IN users
             <p class="text-gray-300 leading-relaxed">
               One-way hash functions for checksums, data integrity verification, and non-sensitive hashing needs.
             </p>
+            <p class="text-gray-300 leading-relaxed">
+              As in AQL, every hash and encoding function returns <code>null</code> for a <code>null</code> input, and hashes any other non-string value in its string form: <code>MD5(1)</code> is <code>MD5("1")</code>, arrays and objects are hashed as their JSON.
+            </p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div id="fn-MD5" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
@@ -124,6 +128,34 @@ FOR user IN users
                 <p class="text-sm text-gray-400 mb-3">Computes SHA-256 hash (256-bit). Cryptographically secure for data integrity.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SHA256("hello world")
 -- "b94d27b9934d3e08a52e52d7da7dabfa..."</code></pre>
+              </div>
+              <div id="fn-SHA1" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-SHA1" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">SHA1(string)</code>
+                <p class="text-sm text-gray-400 mb-3">Computes SHA-1 hash (160-bit) as 40 hex chars. Broken for signatures; use for compatibility and content addressing only.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SHA1("foobar")
+-- "8843d7f92416211de9ebb963ff4ce28125932878"</code></pre>
+              </div>
+              <div id="fn-SHA512" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-SHA512" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">SHA512(string)</code>
+                <p class="text-sm text-gray-400 mb-3">Computes SHA-512 hash (512-bit) as 128 hex chars.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LENGTH(SHA512("hello world"))
+-- 128</code></pre>
+              </div>
+              <div id="fn-CRC32" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-CRC32" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">CRC32(string)</code>
+                <p class="text-sm text-gray-400 mb-3">CRC-32C checksum (Castagnoli polynomial, as in AQL) as uppercase hex without leading zeros. For partitioning and checksums, not security.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CRC32("foobar")
+-- "D5F5C7F"</code></pre>
+              </div>
+              <div id="fn-FNV64" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-FNV64" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">FNV64(string)</code>
+                <p class="text-sm text-gray-400 mb-3">FNV-1a 64-bit hash as uppercase hex without leading zeros. Cheap and well distributed; for bucketing, not security.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FNV64("foobar")
+-- "85944171F73967E8"</code></pre>
               </div>
             </div>
 
@@ -152,6 +184,18 @@ FOR user IN users
                       <td class="p-2">64 hex chars</td>
                       <td class="p-2">Fast</td>
                       <td class="p-2">Data integrity, signatures, tokens</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="p-2 text-orange-300">SHA1</td>
+                      <td class="p-2">40 hex chars</td>
+                      <td class="p-2">Fast</td>
+                      <td class="p-2">Legacy compatibility, content addressing</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="p-2 text-orange-300">CRC32 / FNV64</td>
+                      <td class="p-2">up to 8 / 16 hex chars</td>
+                      <td class="p-2">Very Fast</td>
+                      <td class="p-2">Partitioning, bucketing, checksums</td>
                     </tr>
                     <tr class="border-b border-white/5">
                       <td class="p-2 text-red-300">ARGON2</td>
@@ -290,6 +334,21 @@ FOR user IN users
                     <td class="p-3"><code class="text-orange-300">SHA256(str)</code></td>
                     <td class="p-3">Secure hash</td>
                     <td class="p-3"><code class="text-gray-500">SHA256("data")</code></td>
+                  </tr>
+                  <tr class="border-b border-white/5">
+                    <td class="p-3"><code class="text-orange-300">SHA1(str)</code></td>
+                    <td class="p-3">Legacy hash</td>
+                    <td class="p-3"><code class="text-gray-500">SHA1("data")</code></td>
+                  </tr>
+                  <tr class="border-b border-white/5">
+                    <td class="p-3"><code class="text-orange-300">CRC32(str)</code></td>
+                    <td class="p-3">CRC-32C checksum</td>
+                    <td class="p-3"><code class="text-gray-500">CRC32("data")</code></td>
+                  </tr>
+                  <tr class="border-b border-white/5">
+                    <td class="p-3"><code class="text-orange-300">FNV64(str)</code></td>
+                    <td class="p-3">FNV-1a 64-bit hash</td>
+                    <td class="p-3"><code class="text-gray-500">FNV64("data")</code></td>
                   </tr>
                   <tr class="border-b border-white/5">
                     <td class="p-3"><code class="text-yellow-300">BASE64_ENCODE(str)</code></td>

@@ -93,7 +93,7 @@ fn test_let_expression() {
     let (engine, _tmp) = create_test_engine();
 
     let result = execute_single(&engine, "LET x = 10 + 20 RETURN x");
-    assert_eq!(result, json!(30.0));
+    assert_eq!(result, json!(30));
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn test_let_multiple_variables() {
     let (engine, _tmp) = create_test_engine();
 
     let result = execute_single(&engine, "LET a = 10 LET b = 20 RETURN a + b");
-    assert_eq!(result, json!(30.0));
+    assert_eq!(result, json!(30));
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn test_let_reference_previous() {
     let (engine, _tmp) = create_test_engine();
 
     let result = execute_single(&engine, "LET a = 5 LET b = a * 2 RETURN b");
-    assert_eq!(result, json!(10.0));
+    assert_eq!(result, json!(10));
 }
 
 #[test]

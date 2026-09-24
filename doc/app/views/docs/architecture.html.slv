@@ -1026,7 +1026,7 @@
                     <i class="fas fa-wrench text-amber-400 mr-2"></i> Utilities
                   </h5>
                   <div class="flex flex-wrap gap-x-2 gap-y-1">
-                    <% for func in ["UUIDV4", "UUIDV7", "MD5", "SHA256", "BASE64_ENCODE", "BASE64_DECODE", "SLEEP", "ASSERT", "IF", "COLLECTION_COUNT", "COALESCE", "NOT_NULL", "FIRST_NOT_NULL"] %>
+                    <% for func in ["UUIDV4", "UUIDV7", "MD5", "SHA256", "BASE64_ENCODE", "BASE64_DECODE", "ASSERT", "IF", "COLLECTION_COUNT", "COALESCE", "NOT_NULL", "FIRST_NOT_NULL"] %>
                       <span class="text-amber-400/80 hover:text-amber-300 transition-colors cursor-default"><%= func %></span>
                       <span class="text-gray-700 last:hidden">·</span>
                     <% end %>

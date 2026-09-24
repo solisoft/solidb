@@ -6,16 +6,12 @@
 
 use serde_json::{json, Value};
 
+use super::builtins::Route;
 use super::types::Context;
 use super::utils::number_from_f64;
-use super::QueryExecutor;
+use super::{compare_values, get_field_ref, to_bool, QueryExecutor};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::Expression;
-
-use super::phonetic::phonetic::{
-    caverphone, cologne_phonetic, double_metaphone, metaphone, nysiis, soundex, soundex_el,
-    soundex_es, soundex_fr, soundex_it, soundex_ja, soundex_nl, soundex_pt,
-};
 
 /// Ceiling on a search's result count (`VECTOR_SEARCH` k and ef,
 /// `HYBRID_SEARCH` limit). These size allocations downstream (audit A2).
@@ -25,6 +21,12 @@ const MAX_SEARCH_K: usize = 10_000;
 /// candidate pool.
 const MAX_VECTOR_OVERFETCH: usize = 100;
 
+/// `FULLTEXT`'s default result count (it used to be a hard cap).
+const FULLTEXT_DEFAULT_LIMIT: usize = 100;
+
+/// Largest n-gram size `NGRAM_SIMILARITY` / `NGRAM_MATCH` accept.
+const MAX_NGRAM_SIZE: u64 = 16;
+
 impl<'a> QueryExecutor<'a> {
     /// Evaluate a function call
     pub(super) fn evaluate_function(
@@ -33,36 +35,137 @@ impl<'a> QueryExecutor<'a> {
         args: &[Expression],
         ctx: &Context,
     ) -> DbResult<Value> {
-        let name_upper = name.to_uppercase();
+        let name_upper = super::builtins::upper_name(name);
+        let name: &str = &name_upper;
         if args.iter().any(|a| matches!(a, Expression::Lambda { .. })) {
-            let mut evaluated_args = Vec::new();
+            let mut evaluated_args = Vec::with_capacity(args.len());
             for arg in args {
                 if matches!(arg, Expression::Lambda { .. }) {
                     continue;
                 }
                 evaluated_args.push(self.evaluate_expr_with_context(arg, ctx)?);
             }
-            return self.evaluate_hof_with_lambda(&name_upper, &evaluated_args, args, ctx);
+            return self.evaluate_hof_with_lambda(name, evaluated_args, args, ctx);
         }
 
-        // Evaluate all arguments
+        // Lazy forms: evaluate only the arguments the result depends on, so
+        // `IF(c, DOCUMENT(...), null)` does not read when `c` is false.
+        match name {
+            "IF" if args.len() == 3 => {
+                let cond = self.evaluate_expr_with_context(&args[0], ctx)?;
+                let branch = if to_bool(&cond) { &args[1] } else { &args[2] };
+                return self.evaluate_expr_with_context(branch, ctx);
+            }
+            "COALESCE" | "NOT_NULL" => {
+                for arg in args {
+                    let v = self.evaluate_expr_with_context(arg, ctx)?;
+                    if !v.is_null() {
+                        return Ok(v);
+                    }
+                }
+                return Ok(Value::Null);
+            }
+            "EXISTS" if !args.is_empty() => {
+                if let Some(present) = self.attribute_present(&args[0], ctx)? {
+                    let extra = args[1..]
+                        .iter()
+                        .map(|a| self.evaluate_expr_with_context(a, ctx))
+                        .collect::<DbResult<Vec<_>>>()?;
+                    return match present {
+                        None => Ok(Value::Bool(false)),
+                        Some(v) => Ok(Value::Bool(exists_type_matches(&v, &extra)?)),
+                    };
+                }
+            }
+            _ => {}
+        }
+
         let evaluated_args: Vec<Value> = args
             .iter()
             .map(|arg| self.evaluate_expr_with_context(arg, ctx))
             .collect::<DbResult<Vec<_>>>()?;
+        self.call_function(name, evaluated_args, ctx)
+    }
 
-        // Try phonetic functions first (SOUNDEX, METAPHONE, etc.)
-        if let Some(result) = super::phonetic::evaluate(name, &evaluated_args)? {
-            return Ok(result);
+    /// Call a function on already-evaluated arguments. `name` must be upper
+    /// case. Shared by direct calls, the pipeline operator (so `x |> MERGE()`
+    /// and other executor functions work there too) and APPLY / CALL.
+    pub(super) fn call_function(
+        &self,
+        name: &str,
+        args: Vec<Value>,
+        ctx: &Context,
+    ) -> DbResult<Value> {
+        match super::builtins::route(name) {
+            Some(Route::Context) => return self.call_context_function(name, args, ctx),
+            Some(route) => {
+                if let Some(v) = super::builtins::call_route(route, name, &args)? {
+                    return Ok(v);
+                }
+            }
+            None => {}
         }
-
-        // Try builtins for simple value-based functions
-        if let Some(result) = super::builtins::evaluate(name, &evaluated_args)? {
-            return Ok(result);
+        if let Some(v) = super::builtins::evaluate_unrouted(name, &args)? {
+            return Ok(v);
         }
+        self.call_context_function(name, args, ctx)
+    }
 
-        // Functions that need executor context (self)
-        match name.to_uppercase().as_str() {
+    /// For `EXISTS(path)`: when `expr` is an attribute access, whether the
+    /// attribute is present (`Some(Some(value))`) or absent (`Some(None)`) —
+    /// a stored `null` is present. `None` when `expr` is not an attribute
+    /// access, and the caller falls back to "is the value non-null".
+    fn attribute_present(
+        &self,
+        expr: &Expression,
+        ctx: &Context,
+    ) -> DbResult<Option<Option<Value>>> {
+        let (base, key): (&Expression, Value) = match expr {
+            Expression::FieldAccess(base, field) | Expression::OptionalFieldAccess(base, field) => {
+                (&**base, Value::String(field.clone()))
+            }
+            Expression::DynamicFieldAccess(base, key) | Expression::ArrayAccess(base, key) => {
+                (&**base, self.evaluate_expr_with_context(key, ctx)?)
+            }
+            _ => return Ok(None),
+        };
+        let base_val = self.evaluate_expr_with_context(base, ctx)?;
+        let found = match (&base_val, &key) {
+            (Value::Object(_), Value::String(k)) => {
+                if matches!(
+                    expr,
+                    Expression::FieldAccess(..) | Expression::OptionalFieldAccess(..)
+                ) {
+                    get_field_ref(&base_val, k).cloned()
+                } else {
+                    base_val.get(k.as_str()).cloned()
+                }
+            }
+            (Value::Array(a), Value::Number(n)) => n
+                .as_i64()
+                .and_then(|i| {
+                    if i < 0 {
+                        i.checked_add(a.len() as i64)
+                    } else {
+                        Some(i)
+                    }
+                })
+                .and_then(|i| usize::try_from(i).ok())
+                .and_then(|i| a.get(i).cloned()),
+            _ => None,
+        };
+        Ok(Some(found))
+    }
+
+    /// Functions that need the executor: collections, the principal, the
+    /// row context. Reached through [`Self::call_function`].
+    fn call_context_function(
+        &self,
+        name: &str,
+        evaluated_args: Vec<Value>,
+        ctx: &Context,
+    ) -> DbResult<Value> {
+        match name {
             // VECTOR_INDEX_STATS(collection, index_name) - get vector index statistics
             "VECTOR_INDEX_STATS" => {
                 if evaluated_args.len() != 2 {
@@ -149,17 +252,10 @@ impl<'a> QueryExecutor<'a> {
                 }
                 let v1 = Self::extract_vector_arg(&evaluated_args[0], "VECTOR_SIMILARITY")?;
                 let v2 = Self::extract_vector_arg(&evaluated_args[1], "VECTOR_SIMILARITY")?;
-
-                let dot: f32 = v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum::<f32>();
-                let mag1: f32 = v1.iter().map(|x| x * x).sum::<f32>().sqrt();
-                let mag2: f32 = v2.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-                if mag1 == 0.0 || mag2 == 0.0 {
-                    Ok(Value::Number(serde_json::Number::from(0)))
-                } else {
-                    let similarity = dot / (mag1 * mag2);
-                    Ok(Value::Number(number_from_f64(similarity as f64)))
-                }
+                check_same_dimension(&v1, &v2, "VECTOR_SIMILARITY")?;
+                Ok(Value::Number(number_from_f64(
+                    cosine_similarity(&v1, &v2) as f64
+                )))
             }
 
             // VECTOR_NORMALIZE(v) - normalize a vector to unit length
@@ -183,80 +279,65 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
 
-            // VECTOR_DISTANCE(v1, v2) or VECTOR_DISTANCE(v1, v2, metric) - distance between two vectors
+            // VECTOR_DISTANCE(v1, v2 [, metric]) - distance between two vectors.
+            // metric: "euclidean" (default, alias "l2"), "cosine" (1 - cosine
+            // similarity; aliases "cosine_distance", "cosineSimilarity"), or
+            // "dot" (the dot product; aliases "dot_product", "inner_product").
             "VECTOR_DISTANCE" => {
-                if evaluated_args.len() == 2 || evaluated_args.len() == 3 {
-                    let v1 = Self::extract_vector_arg(&evaluated_args[0], "VECTOR_DISTANCE")?;
-                    let v2 = Self::extract_vector_arg(&evaluated_args[1], "VECTOR_DISTANCE")?;
-
-                    if evaluated_args.len() == 2 {
-                        let mut sum = 0.0f32;
-                        for (a, b) in v1.iter().zip(v2.iter()) {
-                            let diff = a - b;
-                            sum += diff * diff;
-                        }
-                        let distance = sum.sqrt();
-                        Ok(Value::Number(number_from_f64(distance as f64)))
-                    } else {
-                        let metric = evaluated_args[2].as_str().unwrap_or("euclidean");
-                        let distance = match metric.to_lowercase().as_str() {
-                            "cosine" | "cosineSimilarity" => {
-                                let dot: f32 =
-                                    v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum::<f32>();
-                                let mag1: f32 = v1.iter().map(|x| x * x).sum::<f32>().sqrt();
-                                let mag2: f32 = v2.iter().map(|x| x * x).sum::<f32>().sqrt();
-                                if mag1 == 0.0 || mag2 == 0.0 {
-                                    0.0f32
-                                } else {
-                                    1.0 - (dot / (mag1 * mag2))
-                                }
-                            }
-                            _ => {
-                                let mut sum = 0.0f32;
-                                for (a, b) in v1.iter().zip(v2.iter()) {
-                                    let diff = a - b;
-                                    sum += diff * diff;
-                                }
-                                sum.sqrt()
-                            }
-                        };
-                        Ok(Value::Number(number_from_f64(distance as f64)))
-                    }
-                } else {
-                    Err(DbError::ExecutionError(
-                        "VECTOR_DISTANCE requires 2 or 3 arguments".to_string(),
-                    ))
-                }
-            }
-
-            // LENGTH(array_or_string_or_collection) - get length of array/string or count of collection
-            "LENGTH" => {
-                if evaluated_args.len() != 1 {
+                if evaluated_args.len() != 2 && evaluated_args.len() != 3 {
                     return Err(DbError::ExecutionError(
-                        "LENGTH requires 1 argument".to_string(),
+                        "VECTOR_DISTANCE requires 2 or 3 arguments".to_string(),
                     ));
                 }
-                let len = match &evaluated_args[0] {
-                    Value::Array(arr) => arr.len(),
-                    Value::String(s) => s.chars().count(),
-                    Value::Object(obj) => obj.len(),
-                    Value::Null => {
-                        return Ok(Value::Null);
-                    }
-                    _ => {
-                        return Err(DbError::ExecutionError(
-                            "LENGTH: argument must be array, string, or object".to_string(),
-                        ))
+                let v1 = Self::extract_vector_arg(&evaluated_args[0], "VECTOR_DISTANCE")?;
+                let v2 = Self::extract_vector_arg(&evaluated_args[1], "VECTOR_DISTANCE")?;
+                // Zipping vectors of different lengths silently truncated the
+                // longer one.
+                check_same_dimension(&v1, &v2, "VECTOR_DISTANCE")?;
+                let metric = match evaluated_args.get(2) {
+                    None | Some(Value::Null) => "euclidean".to_string(),
+                    Some(Value::String(m)) => m.to_ascii_lowercase(),
+                    Some(other) => {
+                        return Err(DbError::ExecutionError(format!(
+                            "VECTOR_DISTANCE: metric must be a string, got {}",
+                            other
+                        )))
                     }
                 };
-                Ok(Value::Number(serde_json::Number::from(len)))
+                let distance = match metric.as_str() {
+                    "euclidean" | "l2" => v1
+                        .iter()
+                        .zip(v2.iter())
+                        .map(|(a, b)| (a - b) * (a - b))
+                        .sum::<f32>()
+                        .sqrt(),
+                    "cosine" | "cosine_distance" | "cosinesimilarity" => {
+                        let (m1, m2) = (magnitude(&v1), magnitude(&v2));
+                        if m1 == 0.0 || m2 == 0.0 {
+                            0.0
+                        } else {
+                            1.0 - dot(&v1, &v2) / (m1 * m2)
+                        }
+                    }
+                    "dot" | "dot_product" | "inner_product" => dot(&v1, &v2),
+                    other => {
+                        return Err(DbError::ExecutionError(format!(
+                        "VECTOR_DISTANCE: unknown metric '{}' (expected euclidean, cosine or dot)",
+                        other
+                    )))
+                    }
+                };
+                Ok(Value::Number(number_from_f64(distance as f64)))
             }
 
-            // FULLTEXT(collection, field, query, maxDistance?) - fulltext search with fuzzy matching
+            // FULLTEXT(collection, field, query [, distance | {distance, limit}])
+            // Fulltext search. `distance` is the edit distance at which a
+            // document term still counts as a (fuzzy) match of a query term
+            // when scoring; `limit` caps the result count (default 100).
             "FULLTEXT" => {
                 if evaluated_args.len() < 3 || evaluated_args.len() > 4 {
                     return Err(DbError::ExecutionError(
-                        "FULLTEXT requires 3-4 arguments: collection, field, query, [maxDistance]"
+                        "FULLTEXT requires 3-4 arguments: collection, field, query, [distance | options]"
                             .to_string(),
                     ));
                 }
@@ -269,50 +350,102 @@ impl<'a> QueryExecutor<'a> {
                 let query = evaluated_args[2].as_str().ok_or_else(|| {
                     DbError::ExecutionError("FULLTEXT: query must be a string".to_string())
                 })?;
-                let _max_distance = if evaluated_args.len() == 4 {
-                    evaluated_args[3].as_u64().unwrap_or(2) as usize
-                } else {
-                    2 // Default Levenshtein distance
-                };
+                let mut max_distance: usize = 2;
+                let mut limit = FULLTEXT_DEFAULT_LIMIT;
+                match evaluated_args.get(3) {
+                    None | Some(Value::Null) => {}
+                    Some(Value::Number(n)) => {
+                        max_distance = n.as_u64().ok_or_else(|| {
+                            DbError::ExecutionError(
+                                "FULLTEXT: distance must be a non-negative integer".to_string(),
+                            )
+                        })? as usize;
+                    }
+                    Some(Value::Object(opts)) => {
+                        for (k, v) in opts {
+                            match k.as_str() {
+                                "distance" => {
+                                    max_distance = v.as_u64().ok_or_else(|| {
+                                        DbError::ExecutionError(
+                                            "FULLTEXT: distance must be a non-negative integer"
+                                                .to_string(),
+                                        )
+                                    })? as usize
+                                }
+                                "limit" => {
+                                    limit = (v.as_u64().ok_or_else(|| {
+                                        DbError::ExecutionError(
+                                            "FULLTEXT: limit must be a non-negative integer"
+                                                .to_string(),
+                                        )
+                                    })? as usize)
+                                        .min(MAX_SEARCH_K)
+                                }
+                                other => {
+                                    return Err(DbError::ExecutionError(format!(
+                                        "FULLTEXT: unknown option '{}' (expected distance, limit)",
+                                        other
+                                    )))
+                                }
+                            }
+                        }
+                    }
+                    Some(_) => {
+                        return Err(DbError::ExecutionError(
+                            "FULLTEXT: 4th argument must be a distance or an options object"
+                                .to_string(),
+                        ))
+                    }
+                }
+                if limit == 0 {
+                    return Ok(Value::Array(vec![]));
+                }
 
                 let collection = self.get_collection(collection_name)?;
-
-                // Use a reasonable limit if max_distance is not intended as limit,
-                // but since signature takes limit, we pass a default or the value if it makes sense.
-                // Assuming max_distance was intended for fuzzy, but fulltext_search doesn't take it?
-                // For now, pass 100 as limit to be safe, or just use max_distance as limit if that was the intent.
-                // Let's use 100 as default limit.
-                let limit = 100;
                 let gate = self.row_policy_gate(collection_name);
-                match collection.fulltext_search(query, Some(vec![field.to_string()]), limit) {
-                    Ok(matches) => {
-                        let results: Vec<Value> = matches
-                            .iter()
-                            .filter_map(|m| {
-                                let doc = collection.get(&m.doc_key).ok()?.to_value();
-                                // Audit H2: hits hidden by the row policy are dropped.
-                                if !gate
-                                    .as_ref()
-                                    .is_none_or(|g| self.row_policy_allows(g, &doc, ctx))
-                                {
-                                    return None;
-                                }
-                                Some({
-                                    let mut obj = serde_json::Map::new();
-                                    obj.insert("doc".to_string(), doc);
-                                    obj.insert("score".to_string(), json!(m.score));
-                                    obj.insert("matched".to_string(), json!(m.matched_terms));
-                                    Value::Object(obj)
-                                })
-                            })
-                            .collect();
-                        Ok(Value::Array(results))
+                // The index returns candidates that share a term with the
+                // query; they are re-scored here with the requested distance.
+                // Over-fetch so hits the policy drops do not under-fill.
+                let fetch = if gate.is_some() {
+                    limit.saturating_mul(4).min(MAX_SEARCH_K)
+                } else {
+                    limit
+                };
+                let query_terms = crate::storage::tokenize(query);
+                let matches = collection
+                    .fulltext_search(query, Some(vec![field.to_string()]), fetch)
+                    .map_err(|e| {
+                        DbError::ExecutionError(format!("Fulltext search failed: {}", e))
+                    })?;
+                let mut results: Vec<(f64, Value)> = Vec::with_capacity(matches.len());
+                for m in matches {
+                    let Ok(doc) = collection.get(&m.doc_key) else {
+                        continue;
+                    };
+                    let doc = doc.to_value();
+                    // Audit H2: hits hidden by the row policy are dropped.
+                    if !gate
+                        .as_ref()
+                        .is_none_or(|g| self.row_policy_allows(g, &doc, ctx))
+                    {
+                        continue;
                     }
-                    Err(e) => Err(DbError::ExecutionError(format!(
-                        "Fulltext search failed: {}",
-                        e
-                    ))),
+                    let score = match get_field_ref(&doc, field).and_then(Value::as_str) {
+                        Some(text) => fulltext_score(&query_terms, text, max_distance),
+                        None => m.score,
+                    };
+                    if score <= 0.0 {
+                        continue;
+                    }
+                    let mut obj = serde_json::Map::new();
+                    obj.insert("doc".to_string(), doc);
+                    obj.insert("score".to_string(), json!(score));
+                    obj.insert("matched".to_string(), json!(m.matched_terms));
+                    results.push((score, Value::Object(obj)));
                 }
+                results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                results.truncate(limit);
+                Ok(Value::Array(results.into_iter().map(|(_, v)| v).collect()))
             }
 
             // SAMPLE(collection, count) - Return random documents from a collection
@@ -449,26 +582,160 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
 
-            // LEVENSHTEIN(string1, string2) - Levenshtein distance between two strings
-            "LEVENSHTEIN" => {
+            // LEVENSHTEIN(string1, string2) - Levenshtein distance between two
+            // strings. LEVENSHTEIN_DISTANCE is the AQL name.
+            "LEVENSHTEIN" | "LEVENSHTEIN_DISTANCE" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError(
-                        "LEVENSHTEIN requires 2 arguments: string1, string2".to_string(),
-                    ));
+                    return Err(DbError::ExecutionError(format!(
+                        "{} requires 2 arguments: string1, string2",
+                        name
+                    )));
                 }
                 let s1 = evaluated_args[0].as_str().ok_or_else(|| {
-                    DbError::ExecutionError(
-                        "LEVENSHTEIN: first argument must be a string".to_string(),
-                    )
+                    DbError::ExecutionError(format!("{}: first argument must be a string", name))
                 })?;
                 let s2 = evaluated_args[1].as_str().ok_or_else(|| {
-                    DbError::ExecutionError(
-                        "LEVENSHTEIN: second argument must be a string".to_string(),
-                    )
+                    DbError::ExecutionError(format!("{}: second argument must be a string", name))
                 })?;
+                Ok(Value::Number(serde_json::Number::from(
+                    bounded_levenshtein(s1, s2, name)?,
+                )))
+            }
 
-                let distance = crate::storage::levenshtein_distance(s1, s2);
-                Ok(Value::Number(serde_json::Number::from(distance)))
+            // LEVENSHTEIN_MATCH(text, target, distance) - true when the edit
+            // distance is at most `distance` (0-4). Plain Levenshtein: AQL's
+            // optional transpositions / maxTerms / prefix arguments are not
+            // supported.
+            "LEVENSHTEIN_MATCH" => {
+                if evaluated_args.len() != 3 {
+                    return Err(DbError::ExecutionError(
+                        "LEVENSHTEIN_MATCH requires 3 arguments: text, target, distance"
+                            .to_string(),
+                    ));
+                }
+                let (Some(text), Some(target)) =
+                    (evaluated_args[0].as_str(), evaluated_args[1].as_str())
+                else {
+                    return Ok(Value::Bool(false));
+                };
+                let max = evaluated_args[2]
+                    .as_u64()
+                    .filter(|d| *d <= 4)
+                    .ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "LEVENSHTEIN_MATCH: distance must be an integer between 0 and 4"
+                                .to_string(),
+                        )
+                    })? as usize;
+                // Cheap reject before the O(n·m) distance.
+                let (la, lb) = (text.chars().count(), target.chars().count());
+                if la.abs_diff(lb) > max {
+                    return Ok(Value::Bool(false));
+                }
+                let d = bounded_levenshtein(text, target, name)?;
+                Ok(Value::Bool(d <= max))
+            }
+
+            // NGRAM_MATCH(text, target, threshold?, ngramSize?) - Jaccard
+            // similarity of the n-gram sets >= threshold (default 0.7).
+            // NGRAM_SIMILARITY is routed to the AQL score in builtins/string.rs;
+            // this arm only answers for it if that route is ever bypassed.
+            "NGRAM_SIMILARITY" | "NGRAM_MATCH" => {
+                let is_match = name == "NGRAM_MATCH";
+                let max_args = if is_match { 4 } else { 3 };
+                if evaluated_args.len() < 2 || evaluated_args.len() > max_args {
+                    return Err(DbError::ExecutionError(if is_match {
+                        "NGRAM_MATCH requires 2-4 arguments: text, target, [threshold], [ngramSize]"
+                            .to_string()
+                    } else {
+                        "NGRAM_SIMILARITY requires 2-3 arguments: text, target, [ngramSize]"
+                            .to_string()
+                    }));
+                }
+                let (Some(a), Some(b)) = (evaluated_args[0].as_str(), evaluated_args[1].as_str())
+                else {
+                    return Ok(if is_match {
+                        Value::Bool(false)
+                    } else {
+                        Value::Null
+                    });
+                };
+                let size_arg = evaluated_args.get(if is_match { 3 } else { 2 });
+                let n = match size_arg {
+                    None | Some(Value::Null) => crate::storage::NGRAM_SIZE as u64,
+                    Some(v) => v
+                        .as_u64()
+                        .filter(|n| (1..=MAX_NGRAM_SIZE).contains(n))
+                        .ok_or_else(|| {
+                            DbError::ExecutionError(format!(
+                                "{}: ngramSize must be an integer between 1 and {}",
+                                name, MAX_NGRAM_SIZE
+                            ))
+                        })?,
+                } as usize;
+                use crate::storage::{generate_ngrams, ngram_similarity};
+                let sim = ngram_similarity(&generate_ngrams(a, n), &generate_ngrams(b, n));
+                if !is_match {
+                    return Ok(Value::Number(number_from_f64(sim)));
+                }
+                let threshold = match evaluated_args.get(2) {
+                    None | Some(Value::Null) => 0.7,
+                    Some(v) => v
+                        .as_f64()
+                        .filter(|t| (0.0..=1.0).contains(t))
+                        .ok_or_else(|| {
+                            DbError::ExecutionError(
+                                "NGRAM_MATCH: threshold must be a number between 0 and 1"
+                                    .to_string(),
+                            )
+                        })?,
+                };
+                Ok(Value::Bool(sim >= threshold))
+            }
+
+            // IN_RANGE(value, low, high [, includeLow = true, includeHigh = true])
+            // Uses the same ordering as the comparison operators.
+            "IN_RANGE" => {
+                if evaluated_args.len() < 3 || evaluated_args.len() > 5 {
+                    return Err(DbError::ExecutionError(
+                        "IN_RANGE requires 3-5 arguments: value, low, high, [includeLow], [includeHigh]"
+                            .to_string(),
+                    ));
+                }
+                let flag = |i: usize| -> DbResult<bool> {
+                    match evaluated_args.get(i) {
+                        None | Some(Value::Null) => Ok(true),
+                        Some(Value::Bool(b)) => Ok(*b),
+                        Some(_) => Err(DbError::ExecutionError(
+                            "IN_RANGE: includeLow / includeHigh must be booleans".to_string(),
+                        )),
+                    }
+                };
+                let (include_low, include_high) = (flag(3)?, flag(4)?);
+                use std::cmp::Ordering;
+                let v = &evaluated_args[0];
+                let lo = compare_values(v, &evaluated_args[1]);
+                let hi = compare_values(v, &evaluated_args[2]);
+                let above = lo == Ordering::Greater || (include_low && lo == Ordering::Equal);
+                let below = hi == Ordering::Less || (include_high && hi == Ordering::Equal);
+                Ok(Value::Bool(above && below))
+            }
+
+            // EXISTS(value [, "type", typeName]) on a computed value (the
+            // attribute-path form is handled before argument evaluation).
+            "EXISTS" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "EXISTS requires 1-3 arguments: path, [\"type\", typeName]".to_string(),
+                    ));
+                }
+                if evaluated_args[0].is_null() {
+                    return Ok(Value::Bool(false));
+                }
+                Ok(Value::Bool(exists_type_matches(
+                    &evaluated_args[0],
+                    &evaluated_args[1..],
+                )?))
             }
 
             // SIMILARITY(string1, string2) - Trigram similarity score (0.0 to 1.0)
@@ -528,180 +795,65 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Bool(distance <= max_distance))
             }
 
-            // SOUNDEX(string, locale?) - Phonetic encoding with optional locale
-            // Supported locales: "en" (default), "de" (German), "fr" (French)
-            "SOUNDEX" => {
-                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
-                    return Err(DbError::ExecutionError(
-                        "SOUNDEX requires 1 or 2 arguments: SOUNDEX(string) or SOUNDEX(string, locale)".to_string(),
-                    ));
-                }
-
-                let locale = if evaluated_args.len() == 2 {
-                    evaluated_args[1].as_str().unwrap_or("en")
-                } else {
-                    "en"
-                };
-
-                match &evaluated_args[0] {
-                    Value::String(s) => {
-                        let result = match locale {
-                            "de" => cologne_phonetic(s),
-                            "fr" => soundex_fr(s),
-                            "es" => soundex_es(s),
-                            "it" => soundex_it(s),
-                            "pt" => soundex_pt(s),
-                            "nl" => soundex_nl(s),
-                            "el" => soundex_el(s),
-                            "ja" => soundex_ja(s),
-                            _ => soundex(s), // "en" or any other defaults to American
-                        };
-                        Ok(Value::String(result))
-                    }
-                    Value::Null => Ok(Value::Null),
-                    _ => Err(DbError::ExecutionError(
-                        "SOUNDEX requires a string argument".to_string(),
-                    )),
-                }
-            }
-
-            // METAPHONE(string) - Metaphone phonetic encoding
-            // More accurate than Soundex, handles English pronunciation rules
-            "METAPHONE" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "METAPHONE requires exactly 1 argument".to_string(),
-                    ));
-                }
-                match &evaluated_args[0] {
-                    Value::String(s) => Ok(Value::String(metaphone(s))),
-                    Value::Null => Ok(Value::Null),
-                    _ => Err(DbError::ExecutionError(
-                        "METAPHONE requires a string argument".to_string(),
-                    )),
-                }
-            }
-
-            // DOUBLE_METAPHONE(string) - Double Metaphone encoding
-            // Returns array with [primary, secondary] codes for ambiguous pronunciations
-            "DOUBLE_METAPHONE" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "DOUBLE_METAPHONE requires exactly 1 argument".to_string(),
-                    ));
-                }
-                match &evaluated_args[0] {
-                    Value::String(s) => {
-                        let (primary, secondary) = double_metaphone(s);
-                        Ok(Value::Array(vec![
-                            Value::String(primary),
-                            Value::String(secondary),
-                        ]))
-                    }
-                    Value::Null => Ok(Value::Null),
-                    _ => Err(DbError::ExecutionError(
-                        "DOUBLE_METAPHONE requires a string argument".to_string(),
-                    )),
-                }
-            }
-
-            // COLOGNE(string) - Cologne Phonetic algorithm for German names
-            // Returns numeric phonetic code optimized for German pronunciation
-            "COLOGNE" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "COLOGNE requires exactly 1 argument".to_string(),
-                    ));
-                }
-                match &evaluated_args[0] {
-                    Value::String(s) => Ok(Value::String(cologne_phonetic(s))),
-                    Value::Null => Ok(Value::Null),
-                    _ => Err(DbError::ExecutionError(
-                        "COLOGNE requires a string argument".to_string(),
-                    )),
-                }
-            }
-
-            // CAVERPHONE(string) - Caverphone algorithm for European names
-            // Returns 10-character phonetic code, good for matching European surnames
-            "CAVERPHONE" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "CAVERPHONE requires exactly 1 argument".to_string(),
-                    ));
-                }
-                match &evaluated_args[0] {
-                    Value::String(s) => Ok(Value::String(caverphone(s))),
-                    Value::Null => Ok(Value::Null),
-                    _ => Err(DbError::ExecutionError(
-                        "CAVERPHONE requires a string argument".to_string(),
-                    )),
-                }
-            }
-
-            // NYSIIS(string) - New York State Identification algorithm
-            // More accurate than Soundex for various name origins
-            "NYSIIS" => {
-                if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError(
-                        "NYSIIS requires exactly 1 argument".to_string(),
-                    ));
-                }
-                match &evaluated_args[0] {
-                    Value::String(s) => Ok(Value::String(nysiis(s))),
-                    Value::Null => Ok(Value::Null),
-                    _ => Err(DbError::ExecutionError(
-                        "NYSIIS requires a string argument".to_string(),
-                    )),
-                }
-            }
-
-            // BM25(field, query) - BM25 relevance scoring for a document field
-            // Returns a numeric score that can be used in SORT clauses
+            // BM25(field, query) - BM25-style relevance score for one field.
             // Usage: SORT BM25(doc.content, "search query") DESC
+            //
+            // Approximate: BM25 needs corpus statistics (document count,
+            // average length, per-term document frequency) and this function
+            // sees one string, so it scores against fixed estimates (1000
+            // documents, average length 100, each term in 10% of documents).
+            // Scores rank documents consistently within one query but are not
+            // comparable to a real BM25 index. The fulltext index does not
+            // expose those statistics yet.
             "BM25" => {
                 if evaluated_args.len() != 2 {
                     return Err(DbError::ExecutionError(
                         "BM25 requires 2 arguments: field, query".to_string(),
                     ));
                 }
-
-                // Get the field value (should be a string from the document)
-                let field_text = evaluated_args[0].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("BM25: field must be a string".to_string())
-                })?;
-
+                // A missing field scores 0 rather than failing the query.
+                let field_text = match &evaluated_args[0] {
+                    Value::String(s) => s.as_str(),
+                    Value::Null => return Ok(json!(0)),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "BM25: field must be a string".to_string(),
+                        ))
+                    }
+                };
                 let query = evaluated_args[1].as_str().ok_or_else(|| {
                     DbError::ExecutionError("BM25: query must be a string".to_string())
                 })?;
 
-                // Tokenize query and document
                 use crate::storage::{bm25_score, tokenize};
-                let query_terms = tokenize(query);
+                // The query is the same on every row: tokenise it once.
+                let query_terms = {
+                    let mut cached = self.caches.bm25_query.lock();
+                    match cached.as_ref() {
+                        Some((q, terms)) if q == query => terms.clone(),
+                        _ => {
+                            let terms = std::sync::Arc::new(tokenize(query));
+                            *cached = Some((query.to_string(), terms.clone()));
+                            terms
+                        }
+                    }
+                };
                 let doc_terms = tokenize(field_text);
                 let doc_length = doc_terms.len();
 
-                // For BM25, we need collection statistics
-                // Since we don't have access to the collection here, we'll use simplified scoring
-                // In a real implementation, we'd need to pass collection context
-                // For now, use a simplified version with estimated parameters
-                let avg_doc_length = 100.0; // Estimated average
-                let total_docs = 1000; // Estimated total
-
-                // Create a simple term document frequency map
-                // In a real implementation, this would come from the collection's fulltext index
-                let mut term_doc_freq = std::collections::HashMap::new();
-                for term in &query_terms {
-                    // Estimate: assume each term appears in ~10% of documents
-                    term_doc_freq.insert(term.clone(), total_docs / 10);
-                }
+                const AVG_DOC_LENGTH: f64 = 100.0;
+                const TOTAL_DOCS: usize = 1000;
+                let term_doc_freq: std::collections::HashMap<String, usize> = query_terms
+                    .iter()
+                    .map(|t| (t.clone(), TOTAL_DOCS / 10))
+                    .collect();
 
                 let score = bm25_score(
                     &query_terms,
                     &doc_terms,
                     doc_length,
-                    avg_doc_length,
-                    total_docs,
+                    AVG_DOC_LENGTH,
+                    TOTAL_DOCS,
                     &term_doc_freq,
                 );
 
@@ -718,35 +870,36 @@ impl<'a> QueryExecutor<'a> {
                     ));
                 }
 
-                let mut result = serde_json::Map::new();
-
-                for arg in &evaluated_args {
+                // Audit P7: take the first object by value and extend it,
+                // instead of deep-copying every argument into a fresh map.
+                let mut result: Option<serde_json::Map<String, Value>> = None;
+                for arg in evaluated_args {
                     match arg {
-                        Value::Object(obj) => {
-                            // Merge this object into the result
-                            for (key, value) in obj {
-                                result.insert(key.clone(), value.clone());
-                            }
-                        }
-                        Value::Null => {
-                            // Skip null values
-                            continue;
-                        }
-                        _ => {
+                        Value::Object(obj) => match result.as_mut() {
+                            None => result = Some(obj),
+                            Some(acc) => acc.extend(obj),
+                        },
+                        Value::Null => continue,
+                        other => {
                             return Err(DbError::ExecutionError(format!(
                                 "MERGE: all arguments must be objects, got: {:?}",
-                                arg
+                                other
                             )));
                         }
                     }
                 }
 
-                Ok(Value::Object(result))
+                Ok(Value::Object(result.unwrap_or_default()))
             }
 
-            // DATE_NOW() - current timestamp in milliseconds since Unix epoch
-
-            // COLLECTION_COUNT(collection) - get the count of documents in a collection
+            // COLLECTION_COUNT(collection) - number of documents in a collection.
+            //
+            // For a principal bound by a row policy on the collection the
+            // result is null: the stored count includes rows the policy
+            // hides, and revealing it tells the caller how many rows exist
+            // that it cannot see (audit S3). Count visible rows with
+            // COUNT(FOR d IN coll RETURN 1) instead. Only local shards are
+            // counted.
             "COLLECTION_COUNT" => {
                 if evaluated_args.len() != 1 {
                     return Err(DbError::ExecutionError(
@@ -760,6 +913,9 @@ impl<'a> QueryExecutor<'a> {
                 })?;
 
                 let collection = self.get_collection(collection_name)?;
+                if self.row_policy_applies(collection_name) {
+                    return Ok(Value::Null);
+                }
                 let count = collection.count();
                 Ok(Value::Number(serde_json::Number::from(count)))
             }
@@ -1089,6 +1245,19 @@ impl<'a> QueryExecutor<'a> {
                 .as_ref()
                 .map(|p| Value::String(p.user.clone()))
                 .unwrap_or(Value::Null)),
+            // CURRENT_DATABASE() - the database this query runs in.
+            "CURRENT_DATABASE" => {
+                if !evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError(
+                        "CURRENT_DATABASE takes no arguments".to_string(),
+                    ));
+                }
+                Ok(Value::String(
+                    self.database
+                        .clone()
+                        .unwrap_or_else(|| "_system".to_string()),
+                ))
+            }
             "CURRENT_ROLES" => Ok(Value::Array(
                 self.principal
                     .as_ref()
@@ -1127,6 +1296,8 @@ impl<'a> QueryExecutor<'a> {
                             .to_string(),
                     ));
                 }
+                // Compiled gates held by this executor are stale either way.
+                self.invalidate_row_policy_gates();
                 if evaluated_args[1].is_null() {
                     collection.set_row_policy(None)?;
                     // Cached results were computed under the old policy.
@@ -1210,18 +1381,18 @@ impl<'a> QueryExecutor<'a> {
                 "APPLY/CALL recursion limit (8)".to_string(),
             ));
         }
-        let lits: Vec<Expression> = args.iter().cloned().map(Expression::Literal).collect();
         // Audit A11: the mutation classifier cannot see through a dynamic
         // name, so state-changing builtins are only callable directly. Nested
         // APPLY/CALL are checked again at their own level of this function.
         let state_changing = crate::sdbql::ast::is_mutating_function(name)
-            || (name.eq_ignore_ascii_case("ROW_POLICY") && lits.len() >= 2);
+            || (name.eq_ignore_ascii_case("ROW_POLICY") && args.len() >= 2);
         let res = if state_changing {
             Err(DbError::ExecutionError(format!(
                 "APPLY/CALL cannot invoke {name}, which changes server state; call it directly"
             )))
         } else {
-            self.evaluate_function(name, &lits, ctx)
+            let upper = super::builtins::upper_name(name);
+            self.call_function(&upper, args.to_vec(), ctx)
         };
         DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
         res
@@ -1378,6 +1549,100 @@ fn parse_as_of_micros(v: &Value) -> DbResult<u64> {
         ));
     };
     Ok(millis.saturating_mul(1000).saturating_add(999))
+}
+
+fn check_same_dimension(a: &[f32], b: &[f32], fname: &str) -> DbResult<()> {
+    if a.len() != b.len() {
+        return Err(DbError::ExecutionError(format!(
+            "{}: vectors must have the same dimension ({} vs {})",
+            fname,
+            a.len(),
+            b.len()
+        )));
+    }
+    Ok(())
+}
+
+#[inline]
+fn dot(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+}
+
+#[inline]
+fn magnitude(v: &[f32]) -> f32 {
+    v.iter().map(|x| x * x).sum::<f32>().sqrt()
+}
+
+/// Cosine similarity; 0 when either vector has zero length.
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let (m1, m2) = (magnitude(a), magnitude(b));
+    if m1 == 0.0 || m2 == 0.0 {
+        0.0
+    } else {
+        dot(a, b) / (m1 * m2)
+    }
+}
+
+/// `FULLTEXT` score of one field: +10 per exact term match, +5 per term
+/// within `max_distance` edits (the index's own scoring, with the distance
+/// the caller asked for instead of a fixed 2).
+fn fulltext_score(query_terms: &[String], text: &str, max_distance: usize) -> f64 {
+    let doc_terms = crate::storage::tokenize(text);
+    let mut score = 0u64;
+    for q in query_terms {
+        let q_len = q.chars().count();
+        for d in &doc_terms {
+            if q == d {
+                score += 10;
+            } else if max_distance > 0
+                && q_len.abs_diff(d.chars().count()) <= max_distance
+                && crate::storage::levenshtein_distance(q, d) <= max_distance
+            {
+                score += 5;
+            }
+        }
+    }
+    score as f64
+}
+
+/// Levenshtein distance, or an error past the input-length cap (it used to
+/// silently return the longer length).
+fn bounded_levenshtein(a: &str, b: &str, fname: &str) -> DbResult<usize> {
+    crate::storage::levenshtein_distance_bounded(a, b).ok_or_else(|| {
+        DbError::ExecutionError(format!(
+            "{}: inputs longer than {} characters are not supported",
+            fname,
+            crate::storage::LEVENSHTEIN_MAX_CHARS
+        ))
+    })
+}
+
+/// `EXISTS(path, "type", typeName)`: whether a present value has the given
+/// type (`null`, `bool`/`boolean`, `numeric`/`number`, `string`, `array`,
+/// `object`). With no extra arguments, presence alone is enough.
+fn exists_type_matches(v: &Value, extra: &[Value]) -> DbResult<bool> {
+    match extra {
+        [] => Ok(true),
+        [Value::String(kind), Value::String(t)] if kind.eq_ignore_ascii_case("type") => {
+            Ok(match t.to_ascii_lowercase().as_str() {
+                "null" => v.is_null(),
+                "bool" | "boolean" => v.is_boolean(),
+                "numeric" | "number" => v.is_number(),
+                "string" => v.is_string(),
+                "array" => v.is_array(),
+                "object" => v.is_object(),
+                other => {
+                    return Err(DbError::ExecutionError(format!(
+                "EXISTS: unknown type '{}' (expected null, bool, numeric, string, array, object)",
+                other
+            )))
+                }
+            })
+        }
+        _ => Err(DbError::ExecutionError(
+            "EXISTS: expected EXISTS(path) or EXISTS(path, \"type\", typeName)".to_string(),
+        )),
+    }
 }
 
 /// Uniform sample of up to `k` items (Algorithm R), in no particular order.

@@ -2,6 +2,11 @@
 //!
 //! This module contains the EXPLAIN functionality:
 //! - explain: Generate query execution plan with timing information
+//!
+//! The plan is built from the constant-folded query (`const_fold.rs`), so the
+//! FILTER text shows folded literals and the index choice matches execution.
+//! Optimizer notes (folded expressions, the geo SORT rule) are reported as
+//! `optimizer: …` entries in `warnings`.
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -18,7 +23,18 @@ use crate::sdbql::ast::*;
 impl<'a> QueryExecutor<'a> {
     pub fn explain(&self, query: &Query) -> DbResult<QueryExplain> {
         let total_start = Instant::now();
-        let warnings: Vec<String> = Vec::new();
+        let mut warnings: Vec<String> = Vec::new();
+
+        // Plan what execution runs: the constant-folded tree.
+        let mut folded_query = query.clone();
+        let folded = self.fold_constants(&mut folded_query);
+        let query = &folded_query;
+        if folded > 0 {
+            warnings.push(format!(
+                "optimizer: folded {} constant expression(s)",
+                folded
+            ));
+        }
         let mut collections_info: Vec<CollectionAccess> = Vec::new();
         let mut let_bindings_info: Vec<LetBinding> = Vec::new();
         let mut filters_info: Vec<FilterInfo> = Vec::new();
@@ -54,6 +70,17 @@ impl<'a> QueryExecutor<'a> {
         }
         let let_clauses_time = let_start.elapsed();
         let mut let_clauses_us = let_clauses_time.as_micros() as u64;
+
+        // `FOR … SORT DISTANCE(…) LIMIT n` served by a geo index (P11).
+        let geo_sort_index = self
+            .geo_sort_candidates(query, &initial_bindings)
+            .map(|(_, name)| name);
+        if let Some(name) = &geo_sort_index {
+            warnings.push(format!(
+                "optimizer: SORT DISTANCE(...) LIMIT served by geo index '{}'",
+                name
+            ));
+        }
 
         // Execution Phase - Measure everything
 
@@ -189,11 +216,21 @@ impl<'a> QueryExecutor<'a> {
 
                     collection_scan_us += scan_start.elapsed().as_micros() as u64;
 
+                    // The geo SORT rule replaces the scan of the (single) FOR.
+                    let geo_sorted =
+                        !used_index && collections_info.is_empty() && geo_sort_index.is_some();
+                    if geo_sorted {
+                        index_name = geo_sort_index.clone();
+                        index_type = Some("Geo".to_string());
+                    }
+
                     // Record Collection Info
                     collections_info.push(CollectionAccess {
                         name: for_clause.collection.clone(),
                         variable: for_clause.variable.clone(),
-                        access_type: if used_index {
+                        access_type: if geo_sorted {
+                            "geo_index_sort".to_string()
+                        } else if used_index {
                             "index_lookup".to_string()
                         } else if scan_limit.is_some() {
                             "limited_scan".to_string()

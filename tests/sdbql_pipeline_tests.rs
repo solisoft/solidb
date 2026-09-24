@@ -117,7 +117,7 @@ fn test_pipeline_map_with_lambda() {
     let (engine, _tmp) = create_test_engine();
     let results = execute_query(&engine, "RETURN [1, 2, 3] |> MAP(x -> x * 2)");
     // Results are floats due to multiplication
-    assert_eq!(results, vec![json!([2.0, 4.0, 6.0])]);
+    assert_eq!(results, vec![json!([2, 4, 6])]);
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn test_pipeline_filter_and_map() {
         "RETURN [1, 2, 3, 4, 5] |> FILTER(x -> x > 2) |> MAP(x -> x * 10)",
     );
     // Results are floats due to multiplication
-    assert_eq!(results, vec![json!([30.0, 40.0, 50.0])]);
+    assert_eq!(results, vec![json!([30, 40, 50])]);
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn test_pipeline_reduce_sum() {
         &engine,
         "RETURN [1, 2, 3, 4, 5] |> REDUCE((acc, x) -> acc + x, 0)",
     );
-    assert_eq!(results, vec![json!(15.0)]);
+    assert_eq!(results, vec![json!(15)]);
 }
 
 #[test]
@@ -177,7 +177,7 @@ fn test_pipeline_reduce_product() {
         &engine,
         "RETURN [1, 2, 3, 4] |> REDUCE((acc, x) -> acc * x, 1)",
     );
-    assert_eq!(results, vec![json!(24.0)]);
+    assert_eq!(results, vec![json!(24)]);
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn test_pipeline_to_string() {
 fn test_pipeline_to_number() {
     let (engine, _tmp) = create_test_engine();
     let results = execute_query(&engine, r#"RETURN "42" |> TO_NUMBER()"#);
-    assert_eq!(results, vec![json!(42.0)]);
+    assert_eq!(results, vec![json!(42)]);
 }
 
 // ============================================================================

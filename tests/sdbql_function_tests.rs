@@ -301,8 +301,10 @@ fn test_function_repeat_pad_regex_join() {
         execute_query(&engine, "RETURN WORD_COUNT('a b c')"),
         json!(3)
     );
+    // The suffix counts towards the length, as the docs site documents
+    // ("Hello World", 8 → "Hello..."); this used to assert 5 → "Hello...".
     assert_eq!(
-        execute_query(&engine, "RETURN TRUNCATE_TEXT('Hello World', 5)"),
+        execute_query(&engine, "RETURN TRUNCATE_TEXT('Hello World', 8)"),
         json!("Hello...")
     );
     assert_eq!(
@@ -420,7 +422,7 @@ fn test_date_improvements() {
             &engine,
             "RETURN DATE_DIFF('2020-01-01T00:00:00Z', '2020-01-11T00:00:00Z', 'days')"
         ),
-        json!(10.0)
+        json!(10)
     );
     assert_eq!(
         execute_query(&engine, "RETURN DATE_YEAR(null)"),
@@ -462,7 +464,7 @@ fn test_bit_geo_type_outersection() {
     );
     assert_eq!(
         execute_query(&engine, "RETURN TO_NUMBER(null)"),
-        json!(null)
+        json!(0) // AQL: TO_NUMBER(null) is 0
     );
 }
 
@@ -686,12 +688,22 @@ fn test_function_minus() {
 fn test_function_position() {
     let (engine, _tmp) = create_test_engine();
 
+    // AQL semantics: POSITION returns a boolean unless the third
+    // (returnIndex) argument is true. It used to return the index always.
     assert_eq!(
         execute_query(&engine, "RETURN POSITION([10, 20, 30], 20)"),
-        json!(1)
+        json!(true)
     );
     assert_eq!(
         execute_query(&engine, "RETURN POSITION([10, 20, 30], 40)"),
+        json!(false)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN POSITION([10, 20, 30], 20, true)"),
+        json!(1)
+    );
+    assert_eq!(
+        execute_query(&engine, "RETURN POSITION([10, 20, 30], 40, true)"),
         json!(-1)
     );
 }
@@ -840,7 +852,7 @@ fn test_function_stddev() {
 
     let result = execute_query(&engine, "RETURN STDDEV([2, 4, 4, 4, 5, 5, 7, 9])");
     let val = result.as_f64().expect("Should return number");
-    // Sample standard deviation for this dataset
+    // Population standard deviation (AQL STDDEV = STDDEV_POPULATION): 2.0
     assert!(
         val > 1.9 && val < 2.2,
         "StdDev should be approximately 2.0, got {}",
@@ -996,7 +1008,10 @@ fn test_function_is_same_collection() {
 fn test_function_typename() {
     let (engine, _tmp) = create_test_engine();
 
-    assert_eq!(execute_query(&engine, "RETURN TYPENAME(42)"), json!("int"));
+    assert_eq!(
+        execute_query(&engine, "RETURN TYPENAME(42)"),
+        json!("number")
+    );
     assert_eq!(
         execute_query(&engine, "RETURN TYPENAME('hello')"),
         json!("string")

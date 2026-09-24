@@ -7,13 +7,14 @@
 
 use super::window::generate_window_key;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde_json::{json, Value};
 
 use super::types::Context;
 use super::{
     compare_key_rows, compare_values, evaluate_binary_op, evaluate_unary_op, get_field_ref,
-    get_field_value, to_bool, values_equal, QueryExecutor,
+    get_field_value, hash_value, to_bool, values_equal, QueryExecutor, ValueSet,
 };
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
@@ -80,13 +81,20 @@ impl<'a> QueryExecutor<'a> {
     /// field. `None` means "not resolvable by reference" and the caller falls
     /// back to the owned evaluation path (which also reproduces its error
     /// semantics, e.g. the "Variable not found" error).
-    fn resolve_ref<'v>(&'v self, expr: &Expression, ctx: &'v Context) -> Option<&'v Value> {
+    fn resolve_ref<'v>(&'v self, expr: &'v Expression, ctx: &'v Context) -> Option<&'v Value> {
         static NULL: Value = Value::Null;
         match expr {
             Expression::Variable(name) => ctx.get(name),
-            Expression::BindVariable(name) => ctx
-                .get(&format!("@{}", name))
-                .or_else(|| self.bind_vars.get(name)),
+            // Literals are borrowed from the AST: `x IN ["a", ..., "z"]` used
+            // to copy the array for every row (audit P5).
+            Expression::Literal(v) => Some(v),
+            // The executor's bind vars are what entry points copy into the
+            // context under "@name"; reading them first avoids building that
+            // key on every access.
+            Expression::BindVariable(name) => self
+                .bind_vars
+                .get(name)
+                .or_else(|| ctx.get(&format!("@{}", name))),
             Expression::FieldAccess(base, field) => {
                 let base_value = self.resolve_ref(base, ctx)?;
                 // A missing segment reads as Null, matching get_field_value
@@ -100,8 +108,65 @@ impl<'a> QueryExecutor<'a> {
                     _ => Some(&NULL),
                 }
             }
+            // `doc.tags[0]`, `doc[@f]`: borrow instead of cloning the base
+            // (audit P7). An invalid key falls back to the owned path, which
+            // reports the error.
+            Expression::ArrayAccess(base, key) | Expression::DynamicFieldAccess(base, key) => {
+                let base_value = self.resolve_ref(base, ctx)?;
+                let key_value = self.resolve_ref(key, ctx)?;
+                element_of(base_value, key_value)
+                    .ok()
+                    .map(|v| v.unwrap_or(&NULL))
+            }
             _ => None,
         }
+    }
+
+    /// `ValueSet` for `x IN @var` when `@var` is a large array: built once per
+    /// executor instead of scanning the array for every row (audit P9).
+    fn bind_var_set(&self, name: &str) -> Option<Arc<ValueSet>> {
+        /// Below this, a linear scan is as fast as hashing.
+        const MIN_SET_LEN: usize = 16;
+        if let Some(set) = self.caches.in_sets.lock().get(name) {
+            return Some(set.clone());
+        }
+        let Value::Array(items) = self.bind_vars.get(name)? else {
+            return None;
+        };
+        if items.len() < MIN_SET_LEN {
+            return None;
+        }
+        let set = Arc::new(ValueSet::from_values(items));
+        self.caches
+            .in_sets
+            .lock()
+            .insert(name.to_string(), set.clone());
+        Some(set)
+    }
+
+    /// The context key a window function's precomputed value is stored under.
+    /// Computed once per call site rather than per row: the key serialises
+    /// the whole call. The cached node is compared on each hit, so another
+    /// AST reusing the same address can never read a stale key.
+    fn window_key(
+        &self,
+        expr: &Expression,
+        function: &str,
+        arguments: &[Expression],
+        over_clause: &WindowSpec,
+    ) -> Arc<str> {
+        let addr = expr as *const Expression as usize;
+        if let Some((cached, key)) = self.caches.window_keys.lock().get(&addr) {
+            if cached == expr {
+                return key.clone();
+            }
+        }
+        let key: Arc<str> = generate_window_key(function, arguments, over_clause).into();
+        self.caches
+            .window_keys
+            .lock()
+            .insert(addr, (expr.clone(), key.clone()));
+        key
     }
 
     /// Sort rows by precomputing each row's sort keys once
@@ -172,12 +237,14 @@ impl<'a> QueryExecutor<'a> {
         decorated.into_iter().map(|(_, _, ctx)| ctx).collect()
     }
 
-    /// Evaluate a filter expression with full context
+    /// Evaluate a filter expression with full context. The result is cast
+    /// with AQL truthiness ([`to_bool`]), as the ternary, `!` and row
+    /// policies already were: `FILTER 1` keeps the row, `FILTER null` drops it.
     pub fn evaluate_filter_with_context(&self, expr: &Expression, ctx: &Context) -> DbResult<bool> {
-        match self.evaluate_expr_with_context(expr, ctx)? {
-            Value::Bool(b) => Ok(b),
-            _ => Ok(false),
+        if let Some(v) = self.resolve_ref(expr, ctx) {
+            return Ok(to_bool(v));
         }
+        Ok(to_bool(&self.evaluate_expr_with_context(expr, ctx)?))
     }
 
     /// Evaluate an expression with a context containing multiple variables
@@ -189,12 +256,11 @@ impl<'a> QueryExecutor<'a> {
                 .ok_or_else(|| DbError::ExecutionError(format!("Variable '{}' not found", name))),
 
             Expression::BindVariable(name) => {
-                // First check context (bind vars are stored with @ prefix)
-                if let Some(value) = ctx.get(&format!("@{}", name)) {
+                if let Some(value) = self.bind_vars.get(name) {
                     return Ok(value.clone());
                 }
-                // Then check bind_vars directly
-                self.bind_vars.get(name).cloned().ok_or_else(|| {
+                // Contexts built by the entry points carry them as "@name".
+                ctx.get(&format!("@{}", name)).cloned().ok_or_else(|| {
                     DbError::ExecutionError(format!(
                         "Bind variable '@{}' not found. Did you forget to pass it in bindVars?",
                         name
@@ -228,94 +294,57 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
 
-            Expression::DynamicFieldAccess(base, field_expr) => {
-                let base_value = self.evaluate_expr_with_context(base, ctx)?;
-                let field_value = self.evaluate_expr_with_context(field_expr, ctx)?;
-
-                // The field expression should evaluate to a string (field name)
-                let field_name = match field_value {
-                    Value::String(s) => s,
-                    Value::Number(n) => n.to_string(),
-                    _ => {
-                        return Err(DbError::ExecutionError(format!(
-                            "Dynamic field access requires a string or number, got: {:?}",
-                            field_value
-                        )))
-                    }
-                };
-
-                Ok(get_field_value(&base_value, &field_name))
-            }
-
-            Expression::ArrayAccess(base, index_expr) => {
-                let base_value = self.evaluate_expr_with_context(base, ctx)?;
-                let index_value = self.evaluate_expr_with_context(index_expr, ctx)?;
-
-                // The index should be a number
-                let index = match index_value {
-                    Value::Number(n) => {
-                        // Handle both integer and float numbers
-                        if let Some(i) = n.as_u64() {
-                            i as usize
-                        } else if let Some(f) = n.as_f64() {
-                            // Convert float to integer (truncate)
-                            if f < 0.0 {
-                                return Err(DbError::ExecutionError(format!(
-                                    "Array index must be non-negative, got: {}",
-                                    f
-                                )));
-                            }
-                            if !f.is_finite() {
-                                return Err(DbError::ExecutionError(format!(
-                                    "Array index must be finite, got: {}",
-                                    f
-                                )));
-                            }
-                            f as usize
-                        } else {
-                            return Err(DbError::ExecutionError(format!(
-                                "Invalid array index: {}",
-                                n
-                            )));
-                        }
-                    }
-                    _ => {
-                        return Err(DbError::ExecutionError(format!(
-                            "Array index must be a number, got: {:?}",
-                            index_value
-                        )))
-                    }
-                };
-
-                // Access the array element
-                match base_value {
-                    Value::Array(ref arr) => Ok(arr.get(index).cloned().unwrap_or(Value::Null)),
-                    _ => Ok(Value::Null), // Non-arrays return null
+            // `base[key]`: a number indexes an array (negative counts from the
+            // end), a string is a literal object key (no dot splitting).
+            Expression::DynamicFieldAccess(base, key) | Expression::ArrayAccess(base, key) => {
+                if let Some(v) = self.resolve_ref(expr, ctx) {
+                    return Ok(v.clone());
                 }
+                let base_owned;
+                let base_value = match self.resolve_ref(base, ctx) {
+                    Some(v) => v,
+                    None => {
+                        base_owned = self.evaluate_expr_with_context(base, ctx)?;
+                        &base_owned
+                    }
+                };
+                let key_owned;
+                let key_value = match self.resolve_ref(key, ctx) {
+                    Some(v) => v,
+                    None => {
+                        key_owned = self.evaluate_expr_with_context(key, ctx)?;
+                        &key_owned
+                    }
+                };
+                Ok(element_of(base_value, key_value)?
+                    .cloned()
+                    .unwrap_or(Value::Null))
             }
 
             Expression::ArraySpreadAccess(base, field_path) => {
-                let base_value = self.evaluate_expr_with_context(base, ctx)?;
-
-                match base_value {
-                    Value::Array(arr) => {
-                        let results: Vec<Value> = arr
-                            .iter()
-                            .flat_map(|elem| match field_path {
-                                Some(ref path) => vec![get_field_value(elem, path)],
-                                None => {
-                                    // Flatten nested arrays when no field path
-                                    match elem {
-                                        Value::Array(inner) => inner.clone(),
-                                        other => vec![other.clone()],
-                                    }
-                                }
-                            })
-                            .collect();
-                        Ok(Value::Array(results))
+                let base_owned;
+                let base_value = match self.resolve_ref(base, ctx) {
+                    Some(v) => v,
+                    None => {
+                        base_owned = self.evaluate_expr_with_context(base, ctx)?;
+                        &base_owned
                     }
-                    _ => Ok(Value::Array(vec![])), // Non-array returns empty array
+                };
+                let Value::Array(arr) = base_value else {
+                    return Ok(Value::Array(vec![])); // Non-array returns empty array
+                };
+                let mut results = Vec::with_capacity(arr.len());
+                for elem in arr {
+                    match field_path {
+                        Some(path) => results.push(get_field_value(elem, path)),
+                        // Flatten nested arrays when no field path
+                        None => match elem {
+                            Value::Array(inner) => results.extend(inner.iter().cloned()),
+                            other => results.push(other.clone()),
+                        },
+                    }
                 }
+                Ok(Value::Array(results))
             }
 
             Expression::Literal(value) => Ok(value.clone()),
@@ -353,6 +382,21 @@ impl<'a> QueryExecutor<'a> {
                     self.evaluate_expr_with_context(right, ctx)
                 }
                 _ => {
+                    if matches!(op, BinaryOperator::In | BinaryOperator::NotIn) {
+                        if let Expression::BindVariable(name) = right.as_ref() {
+                            if let Some(set) = self.bind_var_set(name) {
+                                let found = match self.resolve_ref(left, ctx) {
+                                    Some(v) => set.contains(v),
+                                    None => {
+                                        set.contains(&self.evaluate_expr_with_context(left, ctx)?)
+                                    }
+                                };
+                                return Ok(Value::Bool(
+                                    found != matches!(op, BinaryOperator::NotIn),
+                                ));
+                            }
+                        }
+                    }
                     // Borrow operands that are simple variable/field paths so
                     // `FILTER doc.f == @v` evaluates without cloning anything.
                     let left_owned;
@@ -543,45 +587,28 @@ impl<'a> QueryExecutor<'a> {
                 // Right side must be a FunctionCall - prepend left_val to args
                 match right.as_ref() {
                     Expression::FunctionCall { name, args } => {
-                        // Check if any arg is a lambda - if so, use HOF evaluation
-                        let has_lambda =
-                            args.iter().any(|a| matches!(a, Expression::Lambda { .. }));
-
+                        let name_upper = super::builtins::upper_name(name);
+                        let mut evaluated_args = Vec::with_capacity(args.len() + 1);
+                        evaluated_args.push(left_val);
+                        let mut has_lambda = false;
+                        for arg in args {
+                            if matches!(arg, Expression::Lambda { .. }) {
+                                has_lambda = true;
+                            } else {
+                                evaluated_args.push(self.evaluate_expr_with_context(arg, ctx)?);
+                            }
+                        }
                         if has_lambda {
-                            // Pass left_val as first evaluated arg, keep original args for lambda
                             return self.evaluate_hof_with_lambda(
-                                &name.to_uppercase(),
-                                &[left_val],
+                                &name_upper,
+                                evaluated_args,
                                 args,
                                 ctx,
                             );
                         }
-
-                        // No lambda - evaluate all args normally
-                        let mut evaluated_args = vec![left_val];
-                        for arg in args {
-                            evaluated_args.push(self.evaluate_expr_with_context(arg, ctx)?);
-                        }
-
-                        // Try phonetic first
-                        let name_upper = name.to_uppercase();
-                        if let Some(val) = crate::sdbql::executor::phonetic::evaluate(
-                            &name_upper,
-                            &evaluated_args,
-                        )? {
-                            return Ok(val);
-                        }
-                        // Try builtins
-                        if let Some(val) = crate::sdbql::executor::builtins::evaluate(
-                            &name_upper,
-                            &evaluated_args,
-                        )? {
-                            return Ok(val);
-                        }
-                        Err(DbError::ExecutionError(format!(
-                            "Unknown function: {}",
-                            name_upper
-                        )))
+                        // Every function, including the executor's own
+                        // (MERGE, DOCUMENT, ...), not just the value builtins.
+                        self.call_function(&name_upper, evaluated_args, ctx)
                     }
                     _ => Err(DbError::ExecutionError(
                         "Pipeline operator |> requires a function call on the right side"
@@ -605,18 +632,11 @@ impl<'a> QueryExecutor<'a> {
                 arguments,
                 over_clause,
             } => {
-                // Window functions are pre-computed and stored in context with __window_N keys
-                // Generate a unique key from the window function signature
-                let key = generate_window_key(function, arguments, over_clause);
-                if let Some(val) = ctx.get(&key) {
+                // Window functions are pre-computed and stored in the context
+                // under a key derived from the call.
+                let key = self.window_key(expr, function, arguments, over_clause);
+                if let Some(val) = ctx.get(&*key) {
                     return Ok(val.clone());
-                }
-                // Fallback: try looking up by sequential index (for backwards compatibility)
-                for i in 0..100 {
-                    let fallback_key = format!("__window_{}", i);
-                    if let Some(val) = ctx.get(&fallback_key) {
-                        return Ok(val.clone());
-                    }
                 }
                 Err(DbError::ExecutionError(format!(
                     "Window function {} must be used in RETURN clause. \
@@ -624,6 +644,30 @@ impl<'a> QueryExecutor<'a> {
                     function
                 )))
             }
+
+            Expression::ArrayComparison {
+                quantifier,
+                left,
+                op,
+                right,
+            } => self.evaluate_array_comparison(quantifier, left, op, right, ctx),
+
+            Expression::ArrayInline {
+                base,
+                depth,
+                filter,
+                limit,
+                projection,
+                field_path,
+            } => self.evaluate_array_inline(
+                base,
+                *depth,
+                filter.as_deref(),
+                limit.as_ref().map(|(off, n)| (&**off, &**n)),
+                projection.as_deref(),
+                field_path.as_deref(),
+                ctx,
+            ),
 
             Expression::TemplateString { parts } => {
                 let mut result = String::new();
@@ -670,17 +714,28 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
-    /// Evaluate a higher-order function with lambda argument
+    /// Evaluate a higher-order function with lambda argument.
+    ///
+    /// `evaluated_args` are the non-lambda arguments in order: the array
+    /// first (the piped value in the pipeline form), then any further value
+    /// such as REDUCE's initial accumulator — so `REDUCE(arr, f, 0)` and
+    /// `arr |> REDUCE(f, 0)` both start from 0.
+    ///
+    /// Lambda errors propagate (they used to read as `false` in FILTER, FIND
+    /// and the quantifiers, deadline errors included). The body runs in one
+    /// scratch context per call holding the parameters and only the outer
+    /// variables it reads; items are moved in and out of it rather than the
+    /// whole row being cloned per element (audit P6).
     pub(super) fn evaluate_hof_with_lambda(
         &self,
         name: &str,
-        evaluated_args: &[Value],
+        evaluated_args: Vec<Value>,
         original_args: &[Expression],
         ctx: &Context,
     ) -> DbResult<Value> {
-        // First arg should be array (already evaluated)
-        let arr = match evaluated_args.first() {
-            Some(Value::Array(a)) => a.clone(),
+        let mut values = evaluated_args.into_iter();
+        let arr = match values.next() {
+            Some(Value::Array(a)) => a,
             Some(other) => {
                 return Err(DbError::ExecutionError(format!(
                     "{} expects an array as first argument, got {:?}",
@@ -694,60 +749,47 @@ impl<'a> QueryExecutor<'a> {
                 )))
             }
         };
+        let extra: Vec<Value> = values.collect();
 
-        // Find the lambda in original args (skip first which is the piped value)
-        let lambda = original_args.iter().find_map(|arg| match arg {
-            Expression::Lambda { params, body } => Some((params.clone(), body.clone())),
-            _ => None,
-        });
-
-        let (params, body) = match lambda {
-            Some(l) => l,
-            None => {
-                return Err(DbError::ExecutionError(format!(
-                    "{} requires a lambda argument",
-                    name
-                )))
-            }
+        let lambdas: Vec<(&[String], &Expression)> = original_args
+            .iter()
+            .filter_map(|arg| match arg {
+                Expression::Lambda { params, body } => Some((params.as_slice(), body.as_ref())),
+                _ => None,
+            })
+            .collect();
+        let Some(&(params, body)) = lambdas.first() else {
+            return Err(DbError::ExecutionError(format!(
+                "{} requires a lambda argument",
+                name
+            )));
         };
 
         match name {
             "FILTER" => {
-                let filtered: Vec<Value> = arr
-                    .into_iter()
-                    .filter(|item| {
-                        let mut lambda_ctx = ctx.clone();
-                        if let Some(param) = params.first() {
-                            lambda_ctx.insert(param.clone(), item.clone());
-                        }
-                        self.evaluate_expr_with_context(&body, &lambda_ctx)
-                            .map(|v| to_bool(&v))
-                            .unwrap_or(false)
-                    })
-                    .collect();
-                Ok(Value::Array(filtered))
+                let mut scope = LambdaScope::new(params, body, ctx);
+                let mut out = Vec::with_capacity(arr.len());
+                for item in arr {
+                    let (keep, item) = scope.eval_keep(self, body, item)?;
+                    if to_bool(&keep) {
+                        out.push(item);
+                    }
+                }
+                Ok(Value::Array(out))
             }
             "MAP" => {
-                let mapped: DbResult<Vec<Value>> = arr
-                    .into_iter()
-                    .map(|item| {
-                        let mut lambda_ctx = ctx.clone();
-                        if let Some(param) = params.first() {
-                            lambda_ctx.insert(param.clone(), item.clone());
-                        }
-                        self.evaluate_expr_with_context(&body, &lambda_ctx)
-                    })
-                    .collect();
-                Ok(Value::Array(mapped?))
+                let mut scope = LambdaScope::new(params, body, ctx);
+                let mut out = Vec::with_capacity(arr.len());
+                for item in arr {
+                    out.push(scope.eval(self, body, item)?);
+                }
+                Ok(Value::Array(out))
             }
             "FLAT_MAP" => {
-                let mut out = Vec::new();
+                let mut scope = LambdaScope::new(params, body, ctx);
+                let mut out = Vec::with_capacity(arr.len());
                 for item in arr {
-                    let mut lambda_ctx = ctx.clone();
-                    if let Some(param) = params.first() {
-                        lambda_ctx.insert(param.clone(), item.clone());
-                    }
-                    match self.evaluate_expr_with_context(&body, &lambda_ctx)? {
+                    match scope.eval(self, body, item)? {
                         Value::Array(inner) => out.extend(inner),
                         other => out.push(other),
                     }
@@ -755,19 +797,20 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(out))
             }
             "GROUP_BY" => {
+                // Keys hashed once each: the old version compared every item
+                // against every group so far (O(n·groups)).
+                let mut scope = LambdaScope::new(params, body, ctx);
+                let mut index: HashMap<u64, Vec<usize>> = HashMap::new();
                 let mut groups: Vec<(Value, Vec<Value>)> = Vec::new();
                 for item in arr {
-                    let mut lambda_ctx = ctx.clone();
-                    if let Some(param) = params.first() {
-                        lambda_ctx.insert(param.clone(), item.clone());
-                    }
-                    let key = self.evaluate_expr_with_context(&body, &lambda_ctx)?;
-                    if let Some((_, bucket)) =
-                        groups.iter_mut().find(|(k, _)| values_equal(k, &key))
-                    {
-                        bucket.push(item);
-                    } else {
-                        groups.push((key, vec![item]));
+                    let (key, item) = scope.eval_keep(self, body, item)?;
+                    let bucket = index.entry(hash_value(&key)).or_default();
+                    match bucket.iter().find(|&&g| values_equal(&groups[g].0, &key)) {
+                        Some(&g) => groups[g].1.push(item),
+                        None => {
+                            bucket.push(groups.len());
+                            groups.push((key, vec![item]));
+                        }
                     }
                 }
                 let out: Vec<Value> = groups
@@ -777,54 +820,33 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(out))
             }
             "SORT_BY" => {
+                let mut scope = LambdaScope::new(params, body, ctx);
                 let mut keyed: Vec<(Value, Value)> = Vec::with_capacity(arr.len());
                 for item in arr {
-                    let mut lambda_ctx = ctx.clone();
-                    if let Some(param) = params.first() {
-                        lambda_ctx.insert(param.clone(), item.clone());
-                    }
-                    let key = self.evaluate_expr_with_context(&body, &lambda_ctx)?;
-                    keyed.push((key, item));
+                    keyed.push(scope.eval_keep(self, body, item)?);
                 }
                 keyed.sort_by(|a, b| compare_values(&a.0, &b.0));
                 Ok(Value::Array(keyed.into_iter().map(|(_, v)| v).collect()))
             }
             "WINDOW_BY" => {
                 // WINDOW_BY(arr, order_lambda) or WINDOW_BY(arr, part_lambda, order_lambda)
-                let lambdas: Vec<_> = original_args
-                    .iter()
-                    .filter_map(|arg| match arg {
-                        Expression::Lambda { params, body } => Some((params.clone(), body.clone())),
-                        _ => None,
-                    })
-                    .collect();
-                let part_l = if lambdas.len() >= 2 {
-                    Some(&lambdas[0])
+                let (part_l, order_l) = if lambdas.len() >= 2 {
+                    (Some(lambdas[0]), lambdas[1])
                 } else {
-                    None
+                    (None, lambdas[0])
                 };
-                let order_l = if lambdas.len() >= 2 {
-                    &lambdas[1]
-                } else {
-                    &lambdas[0]
-                };
-                let mut rows: Vec<(Value, Value, Value)> = Vec::new();
-                for item in &arr {
-                    let mut lambda_ctx = ctx.clone();
-                    if let Some(param) = order_l.0.first() {
-                        lambda_ctx.insert(param.clone(), item.clone());
-                    }
-                    let order_key = self.evaluate_expr_with_context(&order_l.1, &lambda_ctx)?;
-                    let part_key = if let Some((params, body)) = part_l {
-                        let mut pc = ctx.clone();
-                        if let Some(param) = params.first() {
-                            pc.insert(param.clone(), item.clone());
+                let mut order_scope = LambdaScope::new(order_l.0, order_l.1, ctx);
+                let mut part_scope = part_l.map(|(p, b)| LambdaScope::new(p, b, ctx));
+                let mut rows: Vec<(Value, Value, Value)> = Vec::with_capacity(arr.len());
+                for item in arr {
+                    let (order_key, item) = order_scope.eval_keep(self, order_l.1, item)?;
+                    let (part_key, item) = match (part_l, part_scope.as_mut()) {
+                        (Some((_, part_body)), Some(scope)) => {
+                            scope.eval_keep(self, part_body, item)?
                         }
-                        self.evaluate_expr_with_context(body, &pc)?
-                    } else {
-                        Value::Null
+                        _ => (Value::Null, item),
                     };
-                    rows.push((part_key, order_key, item.clone()));
+                    rows.push((part_key, order_key, item));
                 }
                 rows.sort_by(|a, b| {
                     compare_values(&a.0, &b.0).then_with(|| compare_values(&a.1, &b.1))
@@ -852,89 +874,56 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(out))
             }
             "FIND" | "FIND_FIRST" => {
+                let mut scope = LambdaScope::new(params, body, ctx);
                 for item in arr {
-                    let mut lambda_ctx = ctx.clone();
-                    if let Some(param) = params.first() {
-                        lambda_ctx.insert(param.clone(), item.clone());
-                    }
-                    if self
-                        .evaluate_expr_with_context(&body, &lambda_ctx)
-                        .map(|v| to_bool(&v))
-                        .unwrap_or(false)
-                    {
+                    let (hit, item) = scope.eval_keep(self, body, item)?;
+                    if to_bool(&hit) {
                         return Ok(item);
                     }
                 }
                 Ok(Value::Null)
             }
             "ALL" | "EVERY" => {
+                let mut scope = LambdaScope::new(params, body, ctx);
                 for item in arr {
-                    let mut lambda_ctx = ctx.clone();
-                    if let Some(param) = params.first() {
-                        lambda_ctx.insert(param.clone(), item.clone());
-                    }
-                    if !self
-                        .evaluate_expr_with_context(&body, &lambda_ctx)
-                        .map(|v| to_bool(&v))
-                        .unwrap_or(false)
-                    {
+                    if !to_bool(&scope.eval(self, body, item)?) {
                         return Ok(Value::Bool(false));
                     }
                 }
                 Ok(Value::Bool(true))
             }
             "ANY" | "SOME" => {
+                let mut scope = LambdaScope::new(params, body, ctx);
                 for item in arr {
-                    let mut lambda_ctx = ctx.clone();
-                    if let Some(param) = params.first() {
-                        lambda_ctx.insert(param.clone(), item.clone());
-                    }
-                    if self
-                        .evaluate_expr_with_context(&body, &lambda_ctx)
-                        .map(|v| to_bool(&v))
-                        .unwrap_or(false)
-                    {
+                    if to_bool(&scope.eval(self, body, item)?) {
                         return Ok(Value::Bool(true));
                     }
                 }
                 Ok(Value::Bool(false))
             }
             "NONE" => {
+                let mut scope = LambdaScope::new(params, body, ctx);
                 for item in arr {
-                    let mut lambda_ctx = ctx.clone();
-                    if let Some(param) = params.first() {
-                        lambda_ctx.insert(param.clone(), item.clone());
-                    }
-                    if self
-                        .evaluate_expr_with_context(&body, &lambda_ctx)
-                        .map(|v| to_bool(&v))
-                        .unwrap_or(false)
-                    {
+                    if to_bool(&scope.eval(self, body, item)?) {
                         return Ok(Value::Bool(false));
                     }
                 }
                 Ok(Value::Bool(true))
             }
             "REDUCE" => {
-                // REDUCE needs initial value - find non-lambda arg in original_args
-                let initial = original_args
-                    .iter()
-                    .find(|arg| !matches!(arg, Expression::Lambda { .. }))
-                    .map(|arg| self.evaluate_expr_with_context(arg, ctx))
-                    .transpose()?
-                    .unwrap_or(Value::Null);
-                let mut acc = initial;
-
+                // The initial value is the argument after the lambda (the
+                // first non-lambda argument was the array itself).
+                let mut acc = extra.into_iter().next().unwrap_or(Value::Null);
+                let mut scope = LambdaScope::new(params, body, ctx);
                 // Lambda should have 2 params: (acc, item)
                 for item in arr {
-                    let mut lambda_ctx = ctx.clone();
                     if params.len() >= 2 {
-                        lambda_ctx.insert(params[0].clone(), acc.clone());
-                        lambda_ctx.insert(params[1].clone(), item.clone());
-                    } else if let Some(param) = params.first() {
-                        lambda_ctx.insert(param.clone(), item.clone());
+                        scope.bind(0, acc);
+                        scope.bind(1, item);
+                    } else {
+                        scope.bind(0, item);
                     }
-                    acc = self.evaluate_expr_with_context(&body, &lambda_ctx)?;
+                    acc = self.evaluate_expr_with_context(body, &scope.ctx)?;
                 }
                 Ok(acc)
             }
@@ -943,5 +932,163 @@ impl<'a> QueryExecutor<'a> {
                 name
             ))),
         }
+    }
+}
+
+/// The scratch context a lambda body runs in: its parameters, rebound per
+/// element in place, plus the outer variables the body reads.
+struct LambdaScope<'p> {
+    ctx: Context,
+    params: &'p [String],
+}
+
+impl<'p> LambdaScope<'p> {
+    fn new(params: &'p [String], body: &Expression, outer: &Context) -> Self {
+        let ctx = match lambda_free_names(body) {
+            None => outer.clone(),
+            Some(names) => {
+                let mut scope = Context::with_capacity(names.len() + params.len());
+                for n in names {
+                    if params.contains(&n) || scope.contains_key(&n) {
+                        continue;
+                    }
+                    if let Some(v) = outer.get(&n) {
+                        scope.insert(n, v.clone());
+                    }
+                }
+                scope
+            }
+        };
+        Self { ctx, params }
+    }
+
+    /// Bind parameter `i` (a no-op when the lambda has fewer parameters).
+    fn bind(&mut self, i: usize, v: Value) {
+        if let Some(p) = self.params.get(i) {
+            match self.ctx.get_mut(p) {
+                Some(slot) => *slot = v,
+                None => {
+                    self.ctx.insert(p.clone(), v);
+                }
+            }
+        }
+    }
+
+    /// Evaluate `body` with the first parameter bound to `item`.
+    fn eval(
+        &mut self,
+        exec: &QueryExecutor<'_>,
+        body: &Expression,
+        item: Value,
+    ) -> DbResult<Value> {
+        self.bind(0, item);
+        exec.evaluate_expr_with_context(body, &self.ctx)
+    }
+
+    /// As [`Self::eval`], also handing `item` back (moved out of the scope,
+    /// not cloned) for FILTER / FIND / SORT_BY / GROUP_BY.
+    fn eval_keep(
+        &mut self,
+        exec: &QueryExecutor<'_>,
+        body: &Expression,
+        item: Value,
+    ) -> DbResult<(Value, Value)> {
+        let params = self.params;
+        let Some(p) = params.first() else {
+            return Ok((exec.evaluate_expr_with_context(body, &self.ctx)?, item));
+        };
+        self.bind(0, item);
+        let result = exec.evaluate_expr_with_context(body, &self.ctx);
+        let item = self
+            .ctx
+            .get_mut(p)
+            .map(std::mem::take)
+            .unwrap_or(Value::Null);
+        Ok((result?, item))
+    }
+}
+
+/// The outer names a lambda body reads (variables, and bind variables as
+/// `@name`), or `None` when it may read the context in ways a name scan
+/// cannot see — subqueries, window-function keys, `SEARCH_SCORE()`, dynamic
+/// `APPLY` / `CALL` — and must get all of it.
+fn lambda_free_names(body: &Expression) -> Option<Vec<String>> {
+    fn walk(e: &Expression, out: &mut Vec<String>) -> bool {
+        match e {
+            Expression::Variable(n) => out.push(n.clone()),
+            Expression::BindVariable(n) => out.push(format!("@{}", n)),
+            Expression::Subquery(_) | Expression::WindowFunctionCall { .. } => return false,
+            Expression::FunctionCall { name, .. }
+                if ["SEARCH_SCORE", "APPLY", "CALL"]
+                    .iter()
+                    .any(|f| name.eq_ignore_ascii_case(f)) =>
+            {
+                return false
+            }
+            _ => {}
+        }
+        let mut ok = true;
+        e.for_each_child(&mut |child| {
+            if ok && !walk(child, out) {
+                ok = false;
+            }
+        });
+        ok
+    }
+    let mut out = Vec::new();
+    walk(body, &mut out).then_some(out)
+}
+
+/// `base[key]`. A number indexes an array, counting from the end when
+/// negative (`arr[-1]` is the last element), or reads the object key of the
+/// same spelling; a string is a literal object key (`doc["a.b"]` does not
+/// split on the dot). `Ok(None)` reads as null; a key of any other type is an
+/// error (`null` reads as null).
+fn element_of<'v>(base: &'v Value, key: &Value) -> DbResult<Option<&'v Value>> {
+    match key {
+        Value::String(k) => Ok(match base {
+            Value::Object(o) => o.get(k.as_str()),
+            _ => None,
+        }),
+        Value::Number(n) => match base {
+            Value::Array(arr) => Ok(array_position(n, arr.len())?.and_then(|i| arr.get(i))),
+            Value::Object(o) => Ok(match n.as_i64() {
+                Some(i) => o.get(&i.to_string()),
+                None => o.get(&n.to_string()),
+            }),
+            _ => Ok(None),
+        },
+        Value::Null => Ok(None),
+        other => Err(DbError::ExecutionError(format!(
+            "Dynamic field access requires a string or number, got: {:?}",
+            other
+        ))),
+    }
+}
+
+/// Position of array index `n` in an array of `len`, or `None` when out of
+/// range. Fractional indexes truncate.
+fn array_position(n: &serde_json::Number, len: usize) -> DbResult<Option<usize>> {
+    let i: i64 = match n.as_i64() {
+        Some(i) => i,
+        None if n.as_u64().is_some() => return Ok(None), // beyond any array
+        None => {
+            let f = n.as_f64().unwrap_or(0.0);
+            if !f.is_finite() {
+                return Err(DbError::ExecutionError(format!(
+                    "Array index must be finite, got: {}",
+                    f
+                )));
+            }
+            f.trunc() as i64
+        }
+    };
+    if i < 0 {
+        Ok((len as i64)
+            .checked_add(i)
+            .filter(|j| *j >= 0)
+            .map(|j| j as usize))
+    } else {
+        Ok(usize::try_from(i).ok())
     }
 }

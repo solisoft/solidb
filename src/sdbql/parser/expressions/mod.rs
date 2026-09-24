@@ -35,6 +35,10 @@ impl Parser {
     /// Assumes the opening '(' has already been consumed.
     /// Returns the list of argument expressions.
     pub(super) fn parse_function_call_args(&mut self) -> DbResult<Vec<Expression>> {
+        self.with_in_allowed(|p| p.parse_function_call_args_inner())
+    }
+
+    fn parse_function_call_args_inner(&mut self) -> DbResult<Vec<Expression>> {
         let mut args = Vec::new();
 
         while !matches!(self.current_token(), Token::RightParen | Token::Eof) {

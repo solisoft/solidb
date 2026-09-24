@@ -92,6 +92,11 @@ impl Parser {
     /// Simple form: CASE expr WHEN val1 THEN res1 WHEN val2 THEN res2 ELSE default END
     /// Searched form: CASE WHEN cond1 THEN res1 WHEN cond2 THEN res2 ELSE default END
     pub(super) fn parse_case_expression(&mut self) -> DbResult<Expression> {
+        // CASE ... END is delimited, so a clause `IN` cannot occur inside it.
+        self.with_in_allowed(|p| p.parse_case_expression_inner())
+    }
+
+    fn parse_case_expression_inner(&mut self) -> DbResult<Expression> {
         self.advance(); // consume CASE
 
         // Check if this is a simple or searched CASE
@@ -364,6 +369,10 @@ impl Parser {
 
     /// Parse object expression: { field: value, ... }
     pub(crate) fn parse_object_expression(&mut self) -> DbResult<Expression> {
+        self.with_in_allowed(|p| p.parse_object_expression_inner())
+    }
+
+    fn parse_object_expression_inner(&mut self) -> DbResult<Expression> {
         self.expect(Token::LeftBrace)?;
 
         let mut fields = Vec::new();
@@ -441,6 +450,10 @@ impl Parser {
 
     /// Parse array expression: [elem1, elem2, ...]
     pub(crate) fn parse_array_expression(&mut self) -> DbResult<Expression> {
+        self.with_in_allowed(|p| p.parse_array_expression_inner())
+    }
+
+    fn parse_array_expression_inner(&mut self) -> DbResult<Expression> {
         self.expect(Token::LeftBracket)?;
 
         let mut elements = Vec::new();

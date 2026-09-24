@@ -429,14 +429,15 @@ fn auto_index_drops_index_no_document_can_fill() {
         engine.create_collection("items".to_string(), None).unwrap();
         let items = engine.get_collection("items").unwrap();
         items.enable_auto_index().unwrap();
-        // `a.b` is read as a path, so the flat key below never matches it.
+        // A bracket key is literal (AQL), so `d["a.b"]` reads the flat key —
+        // and, not being a dotted path, it is never offered to an index.
         items.insert(json!({"_key": "1", "a.b": 5})).unwrap();
 
         let rows = execute_as_writer(
             &engine,
             r#"FOR d IN items FILTER d["a.b"] == 5 RETURN d._key"#,
         );
-        assert!(rows.is_empty(), "{:?}", rows);
+        assert_eq!(rows, vec![json!("1")]);
         let names = index_names(&engine, "items");
         assert!(!names.iter().any(|n| n == "_auto_a.b"), "{:?}", names);
 

@@ -154,6 +154,28 @@ MATCH (a:users {_key: "alice"})-[:follows*1..3]->(b)
               </div>
             </div>
 
+            <div id="traversal-options" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden scroll-mt-24">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-sky-300 flex items-center">
+                  <span class="bg-sky-500/20 text-sky-400 text-xs font-mono px-2 py-1 rounded mr-3">OPTIONS</span>
+                  Traversal options
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400"><code>OPTIONS { ... }</code> after the edge collection (before or after <code>PRUNE</code>) controls how the walk proceeds. Values must be literals.</p>
+                <ul class="text-sm text-gray-400 space-y-1 list-disc list-inside">
+                  <li><code>order</code>: <code>"bfs"</code> (default, breadth-first) or <code>"dfs"</code> (depth-first; rows come out branch by branch).</li>
+                  <li><code>uniqueVertices</code>: <code>"global"</code> (each vertex at most once per start vertex, the default with BFS), <code>"path"</code> (at most once per path) or <code>"none"</code> (the default with DFS). <code>"global"</code> requires BFS.</li>
+                  <li><code>uniqueEdges</code>: <code>"path"</code> (default: an edge is not walked twice on one path) or <code>"none"</code>. Irrelevant under <code>uniqueVertices: "global"</code>.</li>
+                </ul>
+                <p class="text-sm text-gray-400">With the default (BFS, global) each reachable vertex is emitted once, at its shortest depth. With <code>"path"</code> or <code>"none"</code> a vertex is emitted once per distinct path that reaches it within the depth range, which can grow quickly on dense graphs; the query's row ceiling applies. SoliDB's defaults differ from AQL's (DFS, <code>uniqueVertices: "none"</code>) to keep existing queries' results unchanged.</p>
+                <pre><code class="language-sql text-sm">-- Every distinct route of up to 3 hops, not just the first one found
+FOR v, e, p IN 1..3 OUTBOUND "cities/paris" roads
+  OPTIONS { uniqueVertices: "path", order: "dfs" }
+  RETURN p.vertices[*].name</code></pre>
+              </div>
+            </div>
+
             <!-- Graph Examples -->
             <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
               <div class="p-5 border-b border-white/5 bg-white/5">

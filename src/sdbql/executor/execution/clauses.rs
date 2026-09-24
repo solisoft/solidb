@@ -14,15 +14,24 @@ use super::super::to_bool;
 use serde_json::{json, Value};
 
 use super::super::types::{Context, MutationStats};
-use super::super::QueryExecutor;
+use super::super::{contains_window_functions, QueryExecutor};
+use super::mutations::{is_document_error, selector_key, RowWrite};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
 use crate::sync::protocol::Operation;
 
-/// One BFS frontier entry during graph traversal: the vertex id, its depth
-/// from the start, the edge that reached it, and the vertex and edge paths
-/// walked to get there.
-type TraversalFrame = (String, usize, Option<Value>, Vec<Value>, Vec<Value>);
+/// One frontier entry during graph traversal: the vertex id, its depth from
+/// the start, the edge that reached it, the vertex and edge paths walked to
+/// get there, and the ids of the vertices on that path (the vertex itself
+/// included), for `uniqueVertices: "path"`.
+type TraversalFrame = (
+    String,
+    usize,
+    Option<Value>,
+    Vec<Value>,
+    Vec<Value>,
+    Vec<String>,
+);
 
 /// Block on the result of a sharded mutation that was spawned onto the tokio
 /// runtime, bounding the wait. The executor thread is synchronous and uses a
@@ -326,14 +335,26 @@ impl<'a> QueryExecutor<'a> {
                                             ctx,
                                         )
                                     });
+                                    let hint =
+                                        crate::sdbql::executor::index_opt::IndexHint::from_options(
+                                            for_clause
+                                                .options
+                                                .as_ref()
+                                                .map(|o| o.index_hint.as_slice()),
+                                            for_clause
+                                                .options
+                                                .as_ref()
+                                                .is_some_and(|o| o.force_index_hint),
+                                        );
                                     let Some((docs, _name, _ty)) = self
-                                        .lookup_index_for_filter_limited(
+                                        .lookup_index_for_filter_hinted(
                                             &collection,
                                             &filter_clause.expression,
                                             &for_clause.variable,
                                             ctx,
                                             lookup_limit,
-                                        )
+                                            hint.as_ref(),
+                                        )?
                                     else {
                                         all_rows_indexable = false;
                                         break;
@@ -404,6 +425,12 @@ impl<'a> QueryExecutor<'a> {
                     self.check_budget(rows.len())?;
                 }
                 BodyClause::Let(let_clause) => {
+                    // A window function in a LET is computed over the rows
+                    // present at this point of the pipeline, then read back
+                    // per row like one in RETURN.
+                    if contains_window_functions(&let_clause.expression) {
+                        rows = self.apply_window_functions(rows, &let_clause.expression)?;
+                    }
                     // Evaluate LET expression for EACH row (correlated subquery support)
                     for ctx in &mut rows {
                         let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
@@ -442,12 +469,16 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::Insert(insert_clause) => {
                     // Get collection once, outside the loop
                     let collection = self.get_collection_for_write(&insert_clause.collection)?;
+                    let per_row = insert_clause.options != MutationOptions::default();
 
                     // SHARDING SUPPORT - Use batch insert for performance
                     if let (Some(config), Some(coordinator)) =
                         (collection.get_shard_config(), &self.shard_coordinator)
                     {
                         if config.num_shards > 0 {
+                            if per_row || insert_clause.binds_new || insert_clause.binds_old {
+                                return Err(sharded_unsupported("INSERT"));
+                            }
                             tracing::info!(
                                 "INSERT: Using ShardCoordinator BATCH for {} documents into {}",
                                 rows.len(),
@@ -492,6 +523,41 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
+                    if per_row {
+                        // OPTIONS (overwriteMode, ignoreErrors) decide per row.
+                        let input = std::mem::take(&mut rows);
+                        let mut kept = Vec::with_capacity(input.len());
+                        for mut ctx in input {
+                            let doc_value =
+                                self.evaluate_expr_with_context(&insert_clause.document, &ctx)?;
+                            match self.write_insert_row(
+                                &collection,
+                                &insert_clause.collection,
+                                doc_value,
+                                &insert_clause.options,
+                                insert_clause.binds_old,
+                            ) {
+                                Ok(write) => {
+                                    count_write(&mut stats, &write);
+                                    bind_old_new(
+                                        &mut ctx,
+                                        insert_clause.binds_old,
+                                        insert_clause.binds_new,
+                                        write,
+                                    );
+                                    kept.push(ctx);
+                                }
+                                Err(e)
+                                    if insert_clause.options.ignore_errors
+                                        && is_document_error(&e) => {}
+                                Err(e) => return Err(e),
+                            }
+                        }
+                        rows = kept;
+                        i += 1;
+                        continue;
+                    }
+
                     // For bulk inserts (>100 docs), use batch mode for maximum performance
                     let bulk_mode = rows.len() > 100;
 
@@ -527,6 +593,20 @@ impl<'a> QueryExecutor<'a> {
                             &inserted_docs,
                         );
 
+                        // `insert_batch` returns the documents in input order
+                        // (any failure aborts the whole batch), so NEW lines
+                        // up with the rows positionally.
+                        if insert_clause.binds_new || insert_clause.binds_old {
+                            for (ctx, doc) in rows.iter_mut().zip(inserted_docs) {
+                                if insert_clause.binds_new {
+                                    ctx.insert("NEW".to_string(), doc.into_value());
+                                }
+                                if insert_clause.binds_old {
+                                    ctx.insert("OLD".to_string(), Value::Null);
+                                }
+                            }
+                        }
+
                         // Audit D5: no post-insert indexing pass. `insert_batch`
                         // writes idx/geo/fulltext entries in the same WriteBatch
                         // as the documents; a second, detached pass re-wrote them
@@ -536,17 +616,25 @@ impl<'a> QueryExecutor<'a> {
                         // Small inserts - use normal path with indexes
                         let insert_start = std::time::Instant::now();
                         let insert_count = rows.len();
-                        for ctx in &rows {
+                        for ctx in &mut rows {
                             let doc_value =
                                 self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
                             let doc = collection.insert(doc_value)?;
+                            let key = doc.key.clone();
+                            let new_value = doc.into_value();
                             // Log to replication
                             self.log_mutation(
                                 &insert_clause.collection,
                                 Operation::Insert,
-                                &doc.key,
-                                Some(&doc.to_value()),
+                                &key,
+                                Some(&new_value),
                             );
+                            if insert_clause.binds_old {
+                                ctx.insert("OLD".to_string(), Value::Null);
+                            }
+                            if insert_clause.binds_new {
+                                ctx.insert("NEW".to_string(), new_value);
+                            }
                         }
                         stats.documents_inserted += insert_count;
                         let insert_time = insert_start.elapsed();
@@ -560,12 +648,22 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::Update(update_clause) => {
                     // Get collection once, outside the loop
                     let collection = self.get_collection_for_write(&update_clause.collection)?;
+                    let custom = update_clause.replace
+                        || update_clause.options != MutationOptions::default()
+                        || update_clause.binds_old;
 
                     // SHARDING SUPPORT
                     if let (Some(config), Some(coordinator)) =
                         (collection.get_shard_config(), &self.shard_coordinator)
                     {
                         if config.num_shards > 0 {
+                            if custom {
+                                return Err(sharded_unsupported(if update_clause.replace {
+                                    "REPLACE"
+                                } else {
+                                    "UPDATE"
+                                }));
+                            }
                             tracing::debug!(
                                 "UPDATE: Delegating to ShardCoordinator for {}",
                                 update_clause.collection
@@ -627,8 +725,11 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
-                    // Non-sharded UPDATE: Use automatic batching for large updates (>100 rows)
-                    let bulk_mode = rows.len() > 100;
+                    // Non-sharded UPDATE: Use automatic batching for large updates (>100 rows).
+                    // `update_batch` neither reports per-row results nor keeps
+                    // row order, so anything that needs them (NEW, OLD,
+                    // REPLACE, OPTIONS) goes row by row.
+                    let bulk_mode = rows.len() > 100 && !custom && !update_clause.binds_new;
 
                     if bulk_mode {
                         // AUTOMATIC BATCH MODE - use update_batch() like INSERT uses insert_batch()
@@ -696,65 +797,67 @@ impl<'a> QueryExecutor<'a> {
                             &updated_docs,
                         );
                     } else {
-                        // STANDARD MODE (<=100 rows) - update individually
-                        for ctx in &mut rows {
-                            // Evaluate selector expression to get the document key
+                        // STANDARD MODE - update (or replace) row by row
+                        let statement = if update_clause.replace {
+                            "REPLACE"
+                        } else {
+                            "UPDATE"
+                        };
+                        // `UPDATE doc IN c`: the document is its own patch;
+                        // evaluate it once.
+                        let changes_is_selector = update_clause.changes == update_clause.selector;
+                        let input = std::mem::take(&mut rows);
+                        let mut kept = Vec::with_capacity(input.len());
+                        for mut ctx in input {
                             let selector_value =
-                                self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
-
-                            // Extract _key from selector (can be a string key or a document with _key field)
-                            let key = match &selector_value {
-                                Value::String(s) => s.clone(),
-                                Value::Object(obj) => {
-                                    obj.get("_key")
-                                        .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string())
-                                        .ok_or_else(|| DbError::ExecutionError(
-                                            "UPDATE: selector object must have a _key field".to_string()
-                                        ))?
-                                }
-                                _ => return Err(DbError::ExecutionError(
-                                    "UPDATE: selector must be a string key or an object with _key field".to_string()
-                                )),
+                                self.evaluate_expr_with_context(&update_clause.selector, &ctx)?;
+                            let changes_value = if changes_is_selector {
+                                selector_value.clone()
+                            } else {
+                                self.evaluate_expr_with_context(&update_clause.changes, &ctx)?
                             };
 
-                            // Evaluate changes expression
-                            let changes_value =
-                                self.evaluate_expr_with_context(&update_clause.changes, ctx)?;
-
-                            // Ensure changes is an object
-                            if !changes_value.is_object() {
-                                return Err(DbError::ExecutionError(
-                                    "UPDATE: changes must be an object".to_string(),
-                                ));
+                            let result = selector_key(&selector_value, statement).and_then(|key| {
+                                self.write_update_row(
+                                    &collection,
+                                    &update_clause.collection,
+                                    &key,
+                                    changes_value,
+                                    update_clause.replace,
+                                    &update_clause.options,
+                                    update_clause.binds_old,
+                                )
+                            });
+                            match result {
+                                Ok(write) => {
+                                    count_write(&mut stats, &write);
+                                    // NEW has always been bound by UPDATE.
+                                    bind_old_new(&mut ctx, update_clause.binds_old, true, write);
+                                    kept.push(ctx);
+                                }
+                                Err(e)
+                                    if update_clause.options.ignore_errors
+                                        && is_document_error(&e) => {}
+                                Err(e) => return Err(e),
                             }
-
-                            // Update the document (collection.update handles merging internally)
-                            let doc = collection.update(&key, changes_value)?;
-                            stats.documents_updated += 1;
-
-                            // Log to replication
-                            self.log_mutation(
-                                &update_clause.collection,
-                                Operation::Update,
-                                &key,
-                                Some(&doc.to_value()),
-                            );
-
-                            // Inject NEW variable
-                            ctx.insert("NEW".to_string(), doc.to_value());
                         }
+                        rows = kept;
                     }
                 }
                 BodyClause::Remove(remove_clause) => {
                     // Get collection once, outside the loop
                     let collection = self.get_collection_for_write(&remove_clause.collection)?;
+                    let custom = remove_clause.options != MutationOptions::default()
+                        || remove_clause.binds_old;
 
                     // SHARDING SUPPORT
                     if let (Some(config), Some(coordinator)) =
                         (collection.get_shard_config(), &self.shard_coordinator)
                     {
                         if config.num_shards > 0 {
+                            if custom {
+                                return Err(sharded_unsupported("REMOVE"));
+                            }
                             tracing::debug!(
                                 "REMOVE: Delegating to ShardCoordinator for {}",
                                 remove_clause.collection
@@ -806,7 +909,7 @@ impl<'a> QueryExecutor<'a> {
                     }
 
                     // Non-sharded REMOVE: Use automatic batching for large removes (>100 rows)
-                    let bulk_mode = rows.len() > 100;
+                    let bulk_mode = rows.len() > 100 && !custom;
 
                     if bulk_mode {
                         // AUTOMATIC BATCH MODE - use delete_batch() like INSERT uses insert_batch()
@@ -866,100 +969,103 @@ impl<'a> QueryExecutor<'a> {
                             );
                         }
                     } else {
-                        // STANDARD MODE (<=100 rows) - delete individually
-                        for ctx in &rows {
-                            // Evaluate selector expression to get the document key
+                        // STANDARD MODE - delete row by row
+                        let input = std::mem::take(&mut rows);
+                        let mut kept = Vec::with_capacity(input.len());
+                        for mut ctx in input {
                             let selector_value =
-                                self.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
-
-                            // Extract _key from selector (can be a string key or a document with _key field)
-                            let key = match &selector_value {
-                                Value::String(s) => s.clone(),
-                                Value::Object(obj) => {
-                                    obj.get("_key")
-                                        .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string())
-                                        .ok_or_else(|| DbError::ExecutionError(
-                                            "REMOVE: selector object must have a _key field".to_string()
-                                        ))?
+                                self.evaluate_expr_with_context(&remove_clause.selector, &ctx)?;
+                            let result = selector_key(&selector_value, "REMOVE").and_then(|key| {
+                                self.write_remove_row(
+                                    &collection,
+                                    &remove_clause.collection,
+                                    &key,
+                                    remove_clause.binds_old,
+                                )
+                            });
+                            match result {
+                                Ok(write) => {
+                                    stats.documents_removed += 1;
+                                    bind_old_new(&mut ctx, remove_clause.binds_old, false, write);
+                                    kept.push(ctx);
                                 }
-                                _ => return Err(DbError::ExecutionError(
-                                    "REMOVE: selector must be a string key or an object with _key field".to_string()
-                                )),
-                            };
-
-                            // Delete the document
-                            collection.delete(&key)?;
-                            stats.documents_removed += 1;
-                            // Log to replication
-                            self.log_mutation(
-                                &remove_clause.collection,
-                                Operation::Delete,
-                                &key,
-                                None,
-                            );
+                                Err(e)
+                                    if remove_clause.options.ignore_errors
+                                        && is_document_error(&e) => {}
+                                Err(e) => return Err(e),
+                            }
                         }
+                        rows = kept;
                     }
                 }
                 BodyClause::Upsert(upsert_clause) => {
                     let collection = self.get_collection_for_write(&upsert_clause.collection)?;
+                    // The insert branch is a plain insert: overwriteMode is an
+                    // INSERT option and ignoreErrors is applied below.
+                    let insert_options = MutationOptions {
+                        overwrite_mode: None,
+                        ..upsert_clause.options
+                    };
 
-                    for ctx in &mut rows {
+                    let input = std::mem::take(&mut rows);
+                    let mut kept = Vec::with_capacity(input.len());
+                    for mut ctx in input {
                         let search_value =
-                            self.evaluate_expr_with_context(&upsert_clause.search, ctx)?;
+                            self.evaluate_expr_with_context(&upsert_clause.search, &ctx)?;
 
-                        let mut found_doc_key: Option<String> = None;
-
-                        if let Some(s) = search_value.as_str() {
-                            if collection.get(s).is_ok() {
-                                found_doc_key = Some(s.to_string());
+                        // `_id` is "collection/key"; the lookup wants the key.
+                        let candidate = match &search_value {
+                            Value::String(s) => Some(s.as_str()),
+                            Value::Object(obj) => {
+                                obj.get("_key").and_then(|k| k.as_str()).or_else(|| {
+                                    obj.get("_id")
+                                        .and_then(|k| k.as_str())
+                                        .map(|id| id.rsplit_once('/').map_or(id, |(_, k)| k))
+                                })
                             }
-                        } else if let Some(obj) = search_value.as_object() {
-                            if let Some(k) = obj.get("_key").or_else(|| obj.get("_id")) {
-                                if let Some(ks) = k.as_str() {
-                                    if collection.get(ks).is_ok() {
-                                        found_doc_key = Some(ks.to_string());
-                                    }
-                                }
-                            }
-                        }
+                            _ => None,
+                        };
+                        let found_doc_key = candidate
+                            .filter(|k| collection.get(k).is_ok())
+                            .map(str::to_string);
 
-                        if let Some(key) = found_doc_key {
-                            // Update
+                        let result = if let Some(key) = found_doc_key {
                             let update_value =
-                                self.evaluate_expr_with_context(&upsert_clause.update, ctx)?;
-                            if !update_value.is_object() {
-                                return Err(DbError::ExecutionError(
-                                    "UPSERT: update expression must be an object".to_string(),
-                                ));
-                            }
-
-                            let doc = collection.update(&key, update_value)?;
-                            stats.documents_updated += 1;
-
-                            self.log_mutation(
+                                self.evaluate_expr_with_context(&upsert_clause.update, &ctx)?;
+                            self.write_update_row(
+                                &collection,
                                 &upsert_clause.collection,
-                                Operation::Update,
                                 &key,
-                                Some(&doc.to_value()),
-                            );
-                            ctx.insert("NEW".to_string(), doc.to_value());
+                                update_value,
+                                upsert_clause.replace,
+                                &upsert_clause.options,
+                                upsert_clause.binds_old,
+                            )
                         } else {
-                            // Insert
                             let insert_value =
-                                self.evaluate_expr_with_context(&upsert_clause.insert, ctx)?;
-                            let doc = collection.insert(insert_value)?;
-                            stats.documents_inserted += 1;
-
-                            self.log_mutation(
+                                self.evaluate_expr_with_context(&upsert_clause.insert, &ctx)?;
+                            self.write_insert_row(
+                                &collection,
                                 &upsert_clause.collection,
-                                Operation::Insert,
-                                &doc.key,
-                                Some(&doc.to_value()),
-                            );
-                            ctx.insert("NEW".to_string(), doc.to_value());
+                                insert_value,
+                                &insert_options,
+                                false,
+                            )
+                        };
+
+                        match result {
+                            Ok(write) => {
+                                count_write(&mut stats, &write);
+                                bind_old_new(&mut ctx, upsert_clause.binds_old, true, write);
+                                kept.push(ctx);
+                            }
+                            Err(e)
+                                if upsert_clause.options.ignore_errors && is_document_error(&e) => {
+                            }
+                            Err(e) => return Err(e),
                         }
                     }
+                    rows = kept;
                 }
                 BodyClause::GraphTraversal(gt) => {
                     // Execute graph traversal using BFS
@@ -993,17 +1099,41 @@ impl<'a> QueryExecutor<'a> {
                             }
                         };
 
-                        // BFS traversal
+                        // BFS (queue) or DFS (stack) per OPTIONS { order }.
+                        let opts = gt.options;
+                        let dfs = opts.order == TraversalOrder::Dfs;
                         let mut visited: std::collections::HashSet<String> =
                             std::collections::HashSet::new();
                         let mut queue: std::collections::VecDeque<TraversalFrame> =
                             std::collections::VecDeque::new();
                         visited.insert(start_id.clone());
-                        queue.push_back((start_id.clone(), 0, None, vec![], vec![]));
+                        queue.push_back((
+                            start_id.clone(),
+                            0,
+                            None,
+                            vec![],
+                            vec![],
+                            vec![start_id.clone()],
+                        ));
+                        let mut expanded = 0usize;
 
-                        while let Some((current_id, depth, edge, verts, edges_path)) =
-                            queue.pop_front()
-                        {
+                        loop {
+                            let next_frame = if dfs {
+                                queue.pop_back()
+                            } else {
+                                queue.pop_front()
+                            };
+                            let Some((current_id, depth, edge, verts, edges_path, path_ids)) =
+                                next_frame
+                            else {
+                                break;
+                            };
+                            // Without global uniqueness the frontier itself
+                            // can grow combinatorially; bound it too.
+                            expanded += 1;
+                            if expanded.is_multiple_of(BUDGET_CHECK_INTERVAL) {
+                                self.check_budget(new_rows.len().saturating_add(queue.len()))?;
+                            }
                             let mut vertex_val: Option<Value> = None;
                             if let Some((coll_name, key)) = current_id.split_once('/') {
                                 if let Ok(vertex_coll) = self.get_collection(coll_name) {
@@ -1066,20 +1196,46 @@ impl<'a> QueryExecutor<'a> {
                             }
 
                             let current_id_str = current_id.clone();
+                            let mut children: Vec<TraversalFrame> = Vec::new();
                             for edge_doc in expander.edges_for(&current_id_str) {
                                 let edge_val = edge_doc.to_value();
-                                if let Some(next) = expander.next_id(&edge_val, &current_id_str) {
-                                    if !visited.contains(&next) {
-                                        visited.insert(next.clone());
-                                        let mut nv = verts.clone();
-                                        if let Some(v) = vertex_val.clone() {
-                                            nv.push(v);
-                                        }
-                                        let mut ne = edges_path.clone();
-                                        ne.push(edge_val.clone());
-                                        queue.push_back((next, depth + 1, Some(edge_val), nv, ne));
+                                let Some(next) = expander.next_id(&edge_val, &current_id_str)
+                                else {
+                                    continue;
+                                };
+                                let admissible = match opts.unique_vertices {
+                                    UniqueVertices::Global => visited.insert(next.clone()),
+                                    UniqueVertices::Path => !path_ids.contains(&next),
+                                    UniqueVertices::None => true,
+                                };
+                                if !admissible {
+                                    continue;
+                                }
+                                if opts.unique_edges == UniqueEdges::Path
+                                    && opts.unique_vertices != UniqueVertices::Global
+                                {
+                                    let edge_id = edge_val.get("_id");
+                                    if edge_id.is_some()
+                                        && edges_path.iter().any(|e| e.get("_id") == edge_id)
+                                    {
+                                        continue;
                                     }
                                 }
+                                let mut nv = verts.clone();
+                                if let Some(v) = vertex_val.clone() {
+                                    nv.push(v);
+                                }
+                                let mut ne = edges_path.clone();
+                                ne.push(edge_val.clone());
+                                let mut np = path_ids.clone();
+                                np.push(next.clone());
+                                children.push((next, depth + 1, Some(edge_val), nv, ne, np));
+                            }
+                            if dfs {
+                                // Reverse so the first edge is walked first.
+                                queue.extend(children.into_iter().rev());
+                            } else {
+                                queue.extend(children);
                             }
                         }
                     }
@@ -1340,6 +1496,36 @@ impl<'a> QueryExecutor<'a> {
 
         Ok((rows, stats))
     }
+}
+
+/// Bind `OLD` / `NEW` on a row from one write, as asked.
+fn bind_old_new(ctx: &mut Context, bind_old: bool, bind_new: bool, write: RowWrite) {
+    if bind_old {
+        ctx.insert("OLD".to_string(), write.old.unwrap_or(Value::Null));
+    }
+    if bind_new {
+        ctx.insert("NEW".to_string(), write.new.unwrap_or(Value::Null));
+    }
+}
+
+fn count_write(stats: &mut MutationStats, write: &RowWrite) {
+    if write.skipped {
+        return;
+    }
+    if write.updated {
+        stats.documents_updated += 1;
+    } else {
+        stats.documents_inserted += 1;
+    }
+}
+
+/// The sharded mutation paths go through the coordinator's batch calls,
+/// which report neither per-document results nor pre-images.
+fn sharded_unsupported(statement: &str) -> DbError {
+    DbError::OperationNotSupported(format!(
+        "{} with OPTIONS, REPLACE or RETURN OLD/NEW is not supported on sharded collections yet",
+        statement
+    ))
 }
 
 #[cfg(test)]

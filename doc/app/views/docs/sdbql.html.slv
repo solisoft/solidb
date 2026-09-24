@@ -115,7 +115,7 @@ FOR user IN users
               <h3 class="text-xl font-bold text-white group-hover:text-green-400 transition-colors">Data Mutations</h3>
             </div>
             <p class="text-gray-400 text-sm leading-relaxed">
-              INSERT, UPDATE, UPSERT, and REMOVE operations. Bind variables for parameterized queries. Batch operations and conditional updates.
+              INSERT, UPDATE, REPLACE, UPSERT, and REMOVE operations, with OLD / NEW and statement OPTIONS. Bind variables for parameterized queries. Batch operations and conditional updates.
             </p>
             <div class="mt-4 text-green-400 text-sm font-medium flex items-center">
               Learn more <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>

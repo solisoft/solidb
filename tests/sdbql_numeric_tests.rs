@@ -229,7 +229,7 @@ fn test_range_with_math() {
     let results = execute_query(&engine, "FOR i IN 1..5 RETURN i * 2");
     assert_eq!(
         results,
-        vec![json!(2.0), json!(4.0), json!(6.0), json!(8.0), json!(10.0)]
+        vec![json!(2), json!(4), json!(6), json!(8), json!(10)]
     );
 }
 

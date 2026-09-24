@@ -693,7 +693,7 @@ jsonpath "$.result[0]" count == 2
 POST http://localhost:{{port}}/_api/database/testdb/cursor
 Authorization: Bearer {{token}}
 Content-Type: application/json
-{"query": "RETURN POSITION([10, 20, 30], 20)"}
+{"query": "RETURN POSITION([10, 20, 30], 20, true)"}
 HTTP 200
 [Asserts]
 jsonpath "$.result[0]" == 1

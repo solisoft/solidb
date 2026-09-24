@@ -59,13 +59,23 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             };
             Ok(Some(Value::Bool(is_empty)))
         }
-        "IS_DATE" => {
+        // Strings the date functions can parse (RFC 3339, `YYYY-MM-DD`,
+        // `YYYY-MM-DD HH:MM:SS`). Numbers are not dates here even though the
+        // date functions accept epoch timestamps: every number would pass.
+        "IS_DATE" | "IS_DATETIME" | "IS_DATESTRING" => {
             check_args(name, args, 1)?;
-            if args[0].is_null() {
-                return Ok(Some(Value::Bool(false)));
-            }
             Ok(Some(Value::Bool(
-                crate::sdbql::executor::utils::parse_datetime(&args[0]).is_ok(),
+                args[0].is_string()
+                    && crate::sdbql::executor::utils::parse_datetime(&args[0]).is_ok(),
+            )))
+        }
+        "IS_IPV4" => {
+            check_args(name, args, 1)?;
+            Ok(Some(Value::Bool(
+                args[0]
+                    .as_str()
+                    .and_then(super::string::parse_ipv4)
+                    .is_some(),
             )))
         }
         "IS_KEY" => {
@@ -110,4 +120,36 @@ fn check_args(name: &str, args: &[Value], expected: usize) -> DbResult<()> {
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn call(name: &str, v: Value) -> Value {
+        evaluate(name, &[v]).unwrap().unwrap()
+    }
+
+    #[test]
+    fn date_predicates_accept_only_date_strings() {
+        for f in ["IS_DATE", "IS_DATETIME", "IS_DATESTRING"] {
+            assert_eq!(call(f, json!("2024-01-15T10:30:00Z")), json!(true), "{}", f);
+            assert_eq!(call(f, json!("2024-01-15")), json!(true), "{}", f);
+            assert_eq!(call(f, json!("nope")), json!(false), "{}", f);
+            assert_eq!(call(f, json!(1_700_000_000)), json!(false), "{}", f);
+            assert_eq!(call(f, Value::Null), json!(false), "{}", f);
+        }
+    }
+
+    #[test]
+    fn is_ipv4() {
+        assert_eq!(call("IS_IPV4", json!("127.0.0.1")), json!(true));
+        assert_eq!(call("IS_IPV4", json!("255.255.255.255")), json!(true));
+        assert_eq!(call("IS_IPV4", json!("1.2.3.04")), json!(false));
+        assert_eq!(call("IS_IPV4", json!("1.2.3")), json!(false));
+        assert_eq!(call("IS_IPV4", json!("1.2.3.256")), json!(false));
+        assert_eq!(call("IS_IPV4", json!(" 1.2.3.4")), json!(false));
+        assert_eq!(call("IS_IPV4", json!(16909060)), json!(false));
+    }
 }

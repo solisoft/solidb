@@ -18,7 +18,7 @@
             Data Mutations
           </h1>
           <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
-            INSERT, UPDATE, UPSERT, and REMOVE operations for modifying documents in your collections.
+            INSERT, UPDATE, REPLACE, UPSERT, and REMOVE operations for modifying documents in your collections, with <code>OLD</code> / <code>NEW</code> and per-statement <code>OPTIONS</code>.
           </p>
         </div>
       </div>
@@ -50,8 +50,9 @@
               <div class="p-5 space-y-4">
                 <p class="text-sm text-gray-400">Insert new documents into a collection. Inserting a <code>_key</code> that already exists fails with a conflict error (<code>409</code>) instead of overwriting; use <code>UPDATE</code> or <code>UPSERT</code> for that. Unique indexes are checked against stored documents and between the documents inserted by the same query.</p>
                 <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
-                  <code class="text-sm text-gray-300">INSERT <span class="text-emerald-400">document</span> INTO <span class="text-cyan-400">collection</span></code>
+                  <code class="text-sm text-gray-300">INSERT <span class="text-emerald-400">document</span> INTO|IN <span class="text-cyan-400">collection</span> [OPTIONS <span class="text-purple-400">{ ... }</span>]</code>
                 </div>
+                <p class="text-sm text-gray-400"><code>IN</code> is accepted as an alias of <code>INTO</code>, as in AQL. <code>RETURN NEW</code> returns the stored document, system attributes included. To overwrite an existing <code>_key</code> instead of failing, use <code>OPTIONS { overwriteMode: "replace" }</code> (see <a href="#mutation-options" class="text-indigo-400 hover:text-indigo-300">OPTIONS</a>).</p>
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div>
                     <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Simple Insert</h4>
@@ -86,8 +87,12 @@ FOR i IN nums
                   Update existing documents in a collection by merging changes into existing fields.
                 </p>
                 <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
-                  <code class="text-sm text-gray-300">UPDATE <span class="text-emerald-400">document</span> WITH <span class="text-purple-400">{ changes }</span> IN <span class="text-cyan-400">collection</span></code>
+                  <code class="text-sm text-gray-300">UPDATE <span class="text-emerald-400">document</span> WITH <span class="text-purple-400">{ changes }</span> IN <span class="text-cyan-400">collection</span> [OPTIONS <span class="text-purple-400">{ ... }</span>]</code><br>
+                  <code class="text-sm text-gray-300">UPDATE <span class="text-emerald-400">document</span> IN <span class="text-cyan-400">collection</span></code>
                 </div>
+                <p class="text-sm text-gray-400">
+                  The <em>document</em> is a <code>_key</code> string or an object with a <code>_key</code>. In the second form there is no <code>WITH</code>: the document names its own <code>_key</code> and is itself the patch, e.g. <code>UPDATE { _key: "alice", status: "active" } IN users</code>.
+                </p>
 
                 <div class="bg-blue-900/10 border border-blue-500/30 rounded-lg p-4 flex items-start">
                   <svg class="w-5 h-5 text-blue-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -96,7 +101,7 @@ FOR i IN nums
                   <div>
                     <h4 class="text-blue-300 font-bold mb-1 text-sm">Merge Behavior</h4>
                     <p class="text-sm text-blue-200/70">
-                      UPDATE merges the changes into the existing document. Fields not specified in the changes object are preserved.
+                      UPDATE merges the changes into the existing document. Fields not specified in the changes object are preserved. The merge is shallow by default: a nested object in the changes replaces the stored one. Pass <code>OPTIONS { mergeObjects: true }</code> for a recursive merge (AQL's default), and <code>OPTIONS { keepNull: false }</code> to have <code>null</code> remove an attribute rather than store <code>null</code>.
                     </p>
                   </div>
                 </div>
@@ -162,6 +167,39 @@ FOR i IN nums
               </div>
             </div>
 
+            <!-- REPLACE -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-purple-300 flex items-center">
+                  <span class="bg-purple-500/20 text-purple-400 text-xs font-mono px-2 py-1 rounded mr-3">REPLACE</span>
+                  Replace Documents
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  Replace a whole document: attributes absent from the new version are removed. <code>_key</code>, <code>_id</code> and <code>_created_at</code> are kept, <code>_rev</code> and <code>_updated_at</code> renewed. The document must exist; replacing a missing key fails with "document not found" (skip such rows with <code>OPTIONS { ignoreErrors: true }</code>).
+                </p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">REPLACE <span class="text-emerald-400">document</span> IN <span class="text-cyan-400">collection</span> [OPTIONS <span class="text-purple-400">{ ... }</span>]</code><br>
+                  <code class="text-sm text-gray-300">REPLACE <span class="text-emerald-400">keyOrDocument</span> WITH <span class="text-purple-400">{ document }</span> IN <span class="text-cyan-400">collection</span></code>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Document names its key</h4>
+                    <pre><code class="language-sql text-sm">REPLACE { _key: "alice", name: "Alice", tier: "gold" } IN users
+  RETURN NEW</code></pre>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Key plus new version</h4>
+                    <pre><code class="language-sql text-sm">FOR u IN users
+  FILTER u.legacy == true
+  REPLACE u WITH { name: u.name, migrated: true } IN users
+  RETURN { before: OLD, after: NEW }</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- UPSERT -->
             <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
               <div class="p-5 border-b border-white/5 bg-white/5">
@@ -175,8 +213,11 @@ FOR i IN nums
                   Atomically updates a document if it exists, or inserts it if it doesn't.
                 </p>
                 <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
-                  <code class="text-sm text-gray-300">UPSERT <span class="text-emerald-400">{ search }</span> INSERT <span class="text-emerald-400">{ insert }</span> UPDATE <span class="text-purple-400">{ update }</span> IN <span class="text-cyan-400">collection</span></code>
+                  <code class="text-sm text-gray-300">UPSERT <span class="text-emerald-400">{ search }</span> INSERT <span class="text-emerald-400">{ insert }</span> UPDATE|REPLACE <span class="text-purple-400">{ update }</span> IN <span class="text-cyan-400">collection</span> [OPTIONS <span class="text-purple-400">{ ... }</span>]</code>
                 </div>
+                <p class="text-sm text-gray-400">
+                  With <code>REPLACE</code> the found document is replaced by the third expression rather than merged with it. <code>NEW</code> is the stored document either way; <code>OLD</code> is the document that was found, or <code>null</code> when the INSERT branch ran.
+                </p>
 
                 <div class="bg-amber-900/10 border border-amber-500/30 rounded-lg p-4 flex items-start">
                   <svg class="w-5 h-5 text-amber-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -212,8 +253,9 @@ RETURN NEW</code></pre>
               <div class="p-5 space-y-4">
                 <p class="text-sm text-gray-400">Remove documents from a collection.</p>
                 <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
-                  <code class="text-sm text-gray-300">REMOVE <span class="text-emerald-400">document</span> IN <span class="text-cyan-400">collection</span></code>
+                  <code class="text-sm text-gray-300">REMOVE <span class="text-emerald-400">document</span> IN <span class="text-cyan-400">collection</span> [OPTIONS <span class="text-purple-400">{ ... }</span>]</code>
                 </div>
+                <p class="text-sm text-gray-400"><code>RETURN OLD</code> returns each document as it was before removal.</p>
 
                 <div class="bg-red-900/10 border border-red-500/30 rounded-lg p-4 flex items-start">
                   <svg class="w-5 h-5 text-red-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -249,6 +291,83 @@ RETURN NEW</code></pre>
                   <pre><code class="language-sql text-sm">FOR doc IN users
   REMOVE doc IN users
   RETURN doc._key</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- OLD / NEW -->
+            <div id="old-new" class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden scroll-mt-24">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-teal-300 flex items-center">
+                  <span class="bg-teal-500/20 text-teal-400 text-xs font-mono px-2 py-1 rounded mr-3">OLD / NEW</span>
+                  Before and After Images
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  After a mutation, the rest of the query block (later clauses and <code>RETURN</code>) can read two pseudo-variables:
+                </p>
+                <div class="overflow-x-auto">
+                  <table class="min-w-full text-sm text-gray-300">
+                    <thead><tr class="text-left text-gray-400"><th class="pr-6 py-1">Statement</th><th class="pr-6 py-1"><code>OLD</code></th><th class="py-1"><code>NEW</code></th></tr></thead>
+                    <tbody>
+                      <tr><td class="pr-6 py-1">INSERT</td><td class="pr-6 py-1"><code>null</code> (the replaced document with an overwriteMode)</td><td class="py-1">stored document</td></tr>
+                      <tr><td class="pr-6 py-1">UPDATE / REPLACE</td><td class="pr-6 py-1">document before the write</td><td class="py-1">document after the write</td></tr>
+                      <tr><td class="pr-6 py-1">UPSERT</td><td class="pr-6 py-1">found document, or <code>null</code></td><td class="py-1">stored document</td></tr>
+                      <tr><td class="pr-6 py-1">REMOVE</td><td class="pr-6 py-1">removed document</td><td class="py-1">&mdash;</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p class="text-sm text-gray-400">
+                  Reading <code>OLD</code> costs one extra document read per row, so it is only fetched when the query mentions it. Both names are reserved inside a query block that mutates.
+                </p>
+                <pre><code class="language-sql text-sm">FOR p IN products
+  FILTER p.stock == 0
+  UPDATE p WITH { status: "sold_out" } IN products
+  RETURN { key: p._key, was: OLD.status, now: NEW.status }</code></pre>
+              </div>
+            </div>
+
+            <!-- OPTIONS -->
+            <div id="mutation-options" class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden scroll-mt-24">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-indigo-300 flex items-center">
+                  <span class="bg-indigo-500/20 text-indigo-400 text-xs font-mono px-2 py-1 rounded mr-3">OPTIONS</span>
+                  Statement Options
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  Every mutation takes an optional <code>OPTIONS { ... }</code> object literal after the collection name. Values must be literals. AQL options with no SoliDB meaning (<code>waitForSync</code>, <code>ignoreRevs</code>, <code>exclusive</code>, <code>refillIndexCaches</code>) are accepted and ignored; any other unknown key is a parse error.
+                </p>
+                <div class="overflow-x-auto">
+                  <table class="min-w-full text-sm text-gray-300">
+                    <thead><tr class="text-left text-gray-400"><th class="pr-6 py-1">Option</th><th class="pr-6 py-1">Applies to</th><th class="py-1">Effect</th></tr></thead>
+                    <tbody>
+                      <tr><td class="pr-6 py-1"><code>ignoreErrors: true</code></td><td class="pr-6 py-1">all</td><td class="py-1">A row whose write fails at document level (missing document, key or unique conflict, invalid document or selector) is skipped and produces no output, instead of failing the query.</td></tr>
+                      <tr><td class="pr-6 py-1"><code>keepNull: false</code></td><td class="pr-6 py-1">UPDATE, UPSERT, INSERT + overwriteMode "update"</td><td class="py-1">An attribute set to <code>null</code> in the changes is removed, at any depth. Default <code>true</code>: <code>null</code> is stored.</td></tr>
+                      <tr><td class="pr-6 py-1"><code>mergeObjects: true</code></td><td class="pr-6 py-1">UPDATE, UPSERT, INSERT + overwriteMode "update"</td><td class="py-1">Nested objects are merged recursively. Default <code>false</code>: a top-level attribute is replaced wholesale. (AQL defaults to <code>true</code>; SoliDB keeps its historical shallow merge.)</td></tr>
+                      <tr><td class="pr-6 py-1"><code>overwriteMode</code></td><td class="pr-6 py-1">INSERT</td><td class="py-1">What to do when the document's <code>_key</code> exists: <code>"conflict"</code> (default, fail), <code>"ignore"</code> (keep the stored document; <code>NEW</code> is <code>null</code>), <code>"replace"</code>, or <code>"update"</code> (merge, honouring keepNull / mergeObjects). <code>overwrite: true</code> is accepted as <code>"replace"</code>.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Idempotent import</h4>
+                    <pre><code class="language-sql text-sm">FOR row IN @rows
+  INSERT row INTO products OPTIONS { overwriteMode: "update" }
+  RETURN { key: NEW._key, existed: OLD != null }</code></pre>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Drop attributes, merge deeply</h4>
+                    <pre><code class="language-sql text-sm">UPDATE "alice" WITH { legacyId: null, prefs: { theme: "dark" } }
+  IN users OPTIONS { keepNull: false, mergeObjects: true }</code></pre>
+                  </div>
+                </div>
+                <div class="bg-amber-900/10 border border-amber-500/30 rounded-lg p-4">
+                  <p class="text-sm text-amber-200/70">
+                    REPLACE, <code>keepNull: false</code> and <code>mergeObjects: true</code> read the document and write the result, so a concurrent write to the same document between the two can be lost; a plain UPDATE merges atomically. These forms, and <code>RETURN OLD</code>, are not yet available on sharded collections.
+                  </p>
                 </div>
               </div>
             </div>

@@ -56,6 +56,33 @@ impl Parser {
         self.depth = self.depth.saturating_sub(1);
     }
 
+    /// Run `f` with the `IN` operator allowed, restoring the previous setting.
+    ///
+    /// Mutation clauses switch `IN` off so an expression stops before the
+    /// clause's own `IN collection`. Inside a delimited construct — `( )`,
+    /// `[ ]`, `{ }`, function arguments — that `IN` cannot occur, so `IN` is
+    /// an operator again: `UPDATE d WITH { ok: d.x IN [1, 2] } IN c` used to
+    /// stop at the inner `IN` and fail.
+    pub(crate) fn with_in_allowed<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> DbResult<T>,
+    ) -> DbResult<T> {
+        let saved = self.allow_in_operator;
+        self.allow_in_operator = true;
+        let result = f(self);
+        self.allow_in_operator = saved;
+        result
+    }
+
+    /// Parse an expression that must stop before a clause keyword `IN`.
+    pub(crate) fn parse_expression_no_in(&mut self) -> DbResult<Expression> {
+        let saved = self.allow_in_operator;
+        self.allow_in_operator = false;
+        let result = self.parse_expression();
+        self.allow_in_operator = saved;
+        result
+    }
+
     /// Get the current token
     pub(crate) fn current_token(&self) -> &Token {
         self.tokens.get(self.position).unwrap_or(&Token::Eof)
@@ -203,7 +230,8 @@ impl Parser {
             } else if matches!(self.current_token(), Token::Insert) {
                 let insert_clause = self.parse_insert_clause()?;
                 body_clauses.push(BodyClause::Insert(insert_clause));
-            } else if matches!(self.current_token(), Token::Update) {
+            } else if matches!(self.current_token(), Token::Update | Token::Replace) {
+                // REPLACE shares UPDATE's clause, with `replace` set.
                 let update_clause = self.parse_update_clause()?;
                 body_clauses.push(BodyClause::Update(update_clause));
             } else if matches!(self.current_token(), Token::Remove) {
@@ -327,7 +355,10 @@ impl Parser {
             let has_mutation = body_clauses.iter().any(|c| {
                 matches!(
                     c,
-                    BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_)
+                    BodyClause::Insert(_)
+                        | BodyClause::Update(_)
+                        | BodyClause::Remove(_)
+                        | BodyClause::Upsert(_)
                 )
             });
 
@@ -374,7 +405,7 @@ impl Parser {
             })
             .collect();
 
-        Ok(Query {
+        let mut query = Query {
             with_clause,
             create_stream_clause,
             create_materialized_view_clause: create_mv_clause,
@@ -390,7 +421,9 @@ impl Parser {
             post_limit_lets,
             body_clauses,
             set_operations,
-        })
+        };
+        mark_mutation_bindings(&mut query);
+        Ok(query)
     }
 
     /// Try to parse a set-operation keyword (UNION [ALL] / INTERSECT / EXCEPT)
@@ -471,6 +504,41 @@ impl Parser {
     }
 }
 
+/// Tell each mutation clause whether the block reads `OLD` / `NEW`, so the
+/// executor binds them only when something looks (binding `OLD` costs a read
+/// per row, and `NEW` on a bulk UPDATE forces the per-row path).
+fn mark_mutation_bindings(query: &mut Query) {
+    let has_mutation = query.body_clauses.iter().any(|c| {
+        matches!(
+            c,
+            BodyClause::Insert(_)
+                | BodyClause::Update(_)
+                | BodyClause::Upsert(_)
+                | BodyClause::Remove(_)
+        )
+    });
+    if !has_mutation {
+        return;
+    }
+    let reads_old = query_references_variable(query, "OLD");
+    let reads_new = query_references_variable(query, "NEW");
+    for clause in &mut query.body_clauses {
+        match clause {
+            BodyClause::Insert(i) => {
+                i.binds_old = reads_old;
+                i.binds_new = reads_new;
+            }
+            BodyClause::Update(u) => {
+                u.binds_old = reads_old;
+                u.binds_new = reads_new;
+            }
+            BodyClause::Upsert(u) => u.binds_old = reads_old,
+            BodyClause::Remove(r) => r.binds_old = reads_old,
+            _ => {}
+        }
+    }
+}
+
 /// True when this token can open a query block.
 fn starts_query(token: &Token) -> bool {
     matches!(
@@ -480,6 +548,7 @@ fn starts_query(token: &Token) -> bool {
             | Token::Return
             | Token::Insert
             | Token::Update
+            | Token::Replace
             | Token::Remove
             | Token::Upsert
             | Token::With
@@ -646,6 +715,7 @@ impl Parser {
 
             let system_time = self.parse_system_time_as_of()?;
             let valid_time = self.parse_valid_time()?;
+            let options = self.parse_for_options()?;
             Ok(ForOrGraph::For(ForClause {
                 variable: first_var,
                 collection: n.clone(),
@@ -653,10 +723,12 @@ impl Parser {
                 source_expression: None,
                 system_time,
                 valid_time,
+                options,
             }))
         } else {
             // Parse as expression (e.g., 1..5, [1, 2, 3], etc.)
             let expr = self.parse_expression()?;
+            let options = self.parse_for_options()?;
             Ok(ForOrGraph::For(ForClause {
                 variable: first_var,
                 collection: String::new(),
@@ -664,6 +736,7 @@ impl Parser {
                 source_expression: Some(expr),
                 system_time: None,
                 valid_time: None,
+                options,
             }))
         }
     }

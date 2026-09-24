@@ -17,38 +17,64 @@ impl GeoPoint {
         Self { lat, lon }
     }
 
-    /// Parse geo point from JSON value
-    /// Supports: { "lat": 48.8, "lon": 2.3 } or [lon, lat] (GeoJSON) or [lat, lon]
+    /// Parse a geo point the way the **geo index** has always read stored
+    /// field values: `{lat, lon}` objects, GeoJSON `Point`s, and bare
+    /// two-element arrays taken as **`[lat, lon]`**.
+    ///
+    /// The index stores the raw field value and re-parses it with this
+    /// function at query time (`Collection::geo_near` / `geo_within`), so
+    /// changing the array order here would silently move every indexed
+    /// document stored as an array. SDBQL functions use
+    /// [`GeoPoint::from_value_lonlat`] instead (GeoJSON / AQL order).
     pub fn from_value(value: &Value) -> Option<Self> {
-        // Try object format { lat, lon }
         if let Some(obj) = value.as_object() {
-            if obj.get("type").and_then(Value::as_str) == Some("Point") {
-                if let Some(c) = obj.get("coordinates").and_then(Value::as_array) {
-                    if c.len() >= 2 {
-                        return Some(Self::new(c[1].as_f64()?, c[0].as_f64()?));
-                    }
-                }
-            }
-            let lat = obj.get("lat").or(obj.get("latitude"))?.as_f64()?;
-            let lon = obj
-                .get("lon")
-                .or(obj.get("lng"))
-                .or(obj.get("longitude"))?
-                .as_f64()?;
-            return Some(Self::new(lat, lon));
+            return Self::from_object(obj);
         }
 
-        // Try array format [lat, lon] or [lon, lat]
+        // Legacy index convention: [lat, lon].
         if let Some(arr) = value.as_array() {
             if arr.len() == 2 {
                 let a = arr[0].as_f64()?;
                 let b = arr[1].as_f64()?;
-                // Assume [lat, lon] format (common in databases)
                 return Some(Self::new(a, b));
             }
         }
 
         None
+    }
+
+    /// Parse a geo point with bare arrays in GeoJSON / AQL order,
+    /// **`[lon, lat]`**. Objects (`{lat, lon}`, `{latitude, longitude}`,
+    /// `lng`) and GeoJSON `Point`s are read as in [`GeoPoint::from_value`].
+    /// Non-finite coordinates are rejected.
+    pub fn from_value_lonlat(value: &Value) -> Option<Self> {
+        let p = if let Some(obj) = value.as_object() {
+            Self::from_object(obj)?
+        } else {
+            let arr = value.as_array()?;
+            if arr.len() != 2 {
+                return None;
+            }
+            Self::new(arr[1].as_f64()?, arr[0].as_f64()?)
+        };
+        (p.lat.is_finite() && p.lon.is_finite()).then_some(p)
+    }
+
+    fn from_object(obj: &serde_json::Map<String, Value>) -> Option<Self> {
+        if obj.get("type").and_then(Value::as_str) == Some("Point") {
+            if let Some(c) = obj.get("coordinates").and_then(Value::as_array) {
+                if c.len() >= 2 {
+                    return Some(Self::new(c[1].as_f64()?, c[0].as_f64()?));
+                }
+            }
+        }
+        let lat = obj.get("lat").or(obj.get("latitude"))?.as_f64()?;
+        let lon = obj
+            .get("lon")
+            .or(obj.get("lng"))
+            .or(obj.get("longitude"))?
+            .as_f64()?;
+        Some(Self::new(lat, lon))
     }
 }
 
@@ -106,7 +132,9 @@ pub fn haversine_distance(p1: &GeoPoint, p2: &GeoPoint) -> f64 {
     let a = (delta_lat / 2.0).sin().powi(2)
         + lat1_rad.cos() * lat2_rad.cos() * (delta_lon / 2.0).sin().powi(2);
 
-    let c = 2.0 * a.sqrt().asin();
+    // Rounding can push `a` a hair outside [0, 1] for antipodal or identical
+    // points, and asin of that is NaN.
+    let c = 2.0 * a.clamp(0.0, 1.0).sqrt().asin();
 
     EARTH_RADIUS_M * c
 }
@@ -121,6 +149,9 @@ pub fn distance_meters(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 pub fn point_in_polygon(lat: f64, lon: f64, polygon: &[(f64, f64)]) -> bool {
     let mut inside = false;
     let n = polygon.len();
+    if n < 3 {
+        return false;
+    }
     let mut j = n - 1;
 
     for i in 0..n {
@@ -176,6 +207,23 @@ mod tests {
         let point = GeoPoint::from_value(&value).unwrap();
         assert!((point.lat - 48.8566).abs() < 1e-10);
         assert!((point.lon - 2.3522).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_geo_point_from_value_lonlat_array() {
+        let point = GeoPoint::from_value_lonlat(&json!([2.3522, 48.8566])).unwrap();
+        assert!((point.lat - 48.8566).abs() < 1e-10);
+        assert!((point.lon - 2.3522).abs() < 1e-10);
+        let point = GeoPoint::from_value_lonlat(&json!({"lat": 1.0, "lon": 2.0})).unwrap();
+        assert!((point.lat - 1.0).abs() < 1e-10);
+        assert!(GeoPoint::from_value_lonlat(&json!([1.0, 2.0, 3.0])).is_none());
+    }
+
+    #[test]
+    fn test_haversine_antipodal_is_finite() {
+        let d = haversine_distance(&GeoPoint::new(0.0, 0.0), &GeoPoint::new(0.0, 180.0));
+        assert!(d.is_finite());
+        assert!((d - std::f64::consts::PI * EARTH_RADIUS_M).abs() < 1.0);
     }
 
     #[test]

@@ -299,8 +299,8 @@ fn test_update_via_for() {
 
     let a = items.get("a").unwrap();
     let b = items.get("b").unwrap();
-    assert_eq!(a.get("cnt"), Some(json!(15.0)));
-    assert_eq!(b.get("cnt"), Some(json!(25.0)));
+    assert_eq!(a.get("cnt"), Some(json!(15)));
+    assert_eq!(b.get("cnt"), Some(json!(25)));
 }
 
 #[test]
@@ -323,7 +323,7 @@ fn test_update_filtered() {
 
     let p1 = products.get("p1").unwrap();
     let p2 = products.get("p2").unwrap();
-    assert_eq!(p1.get("views"), Some(json!(110.0)));
+    assert_eq!(p1.get("views"), Some(json!(110)));
     assert_eq!(p2.get("views"), Some(json!(50))); // Unchanged
 }
 

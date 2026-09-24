@@ -4,7 +4,20 @@
 //! - extract_indexable_condition: Extract conditions that can use indexes
 //! - extract_field_path: Extract field path from expression
 //! - use_index_for_condition: Try to use index for condition lookup
+//!
+//! Beyond `==` and ranges, a FILTER conjunct can be served by an index when it
+//! is `field IN <array>` (one equality lookup per distinct key), or
+//! `field LIKE "abc%"` / `STARTS_WITH(field, "abc")` (a range scan over
+//! `[abc, abd)` in the order-preserving index key space). Every index read
+//! returns candidates that the caller re-checks against the full FILTER, so a
+//! condition only needs to select a superset of its matches.
+//!
+//! `FOR … OPTIONS { indexHint, forceIndexHint }` is honoured through
+//! [`IndexHint`] and [`QueryExecutor::lookup_index_for_filter_hinted`].
 
+use std::collections::HashSet;
+
+use rust_rocksdb::{Direction, IteratorMode};
 use serde_json::Value;
 
 use super::types::{Context, IndexableCondition};
@@ -15,6 +28,131 @@ use crate::storage::index::{IndexSpec, IndexType};
 use crate::storage::Collection;
 
 pub(super) const AUTO_INDEX_CAP: usize = 16;
+
+/// Largest `IN` list turned into per-key index lookups; a longer list is
+/// cheaper as a scan with the (hashed) `IN` set.
+const MAX_INDEXED_IN_KEYS: usize = 10_000;
+
+/// Index hint from `FOR … OPTIONS { indexHint: …, forceIndexHint: … }`.
+///
+/// `names` are tried in order; the first that can serve a FILTER conjunct is
+/// used. With `force`, a FILTER that none of them can serve is an error (as in
+/// AQL) instead of falling back to the optimizer's own choice.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct IndexHint {
+    pub names: Vec<String>,
+    pub force: bool,
+}
+
+impl IndexHint {
+    /// Build from the parsed `FOR` options; `None` when no hint was given.
+    pub fn from_options(index_hint: Option<&[String]>, force: bool) -> Option<Self> {
+        let names: Vec<String> = index_hint.unwrap_or_default().to_vec();
+        if names.is_empty() {
+            return None;
+        }
+        Some(Self { names, force })
+    }
+}
+
+/// The literal prefix of a LIKE pattern: the characters before the first
+/// wildcard (`%`, `_`) or escape (`\`). `None` when that prefix is empty.
+pub(super) fn like_literal_prefix(pattern: &str) -> Option<String> {
+    let prefix: String = pattern
+        .chars()
+        .take_while(|c| !matches!(c, '%' | '_' | '\\'))
+        .collect();
+    (!prefix.is_empty()).then_some(prefix)
+}
+
+/// The smallest string greater than every string starting with `prefix`:
+/// the prefix with its last incrementable character bumped (`abc` → `abd`).
+/// `None` when every character is `char::MAX`.
+pub(super) fn prefix_successor(prefix: &str) -> Option<String> {
+    let mut chars: Vec<char> = prefix.chars().collect();
+    while let Some(c) = chars.pop() {
+        let mut next = c as u32 + 1;
+        while next <= char::MAX as u32 {
+            if let Some(n) = char::from_u32(next) {
+                chars.push(n);
+                return Some(chars.into_iter().collect());
+            }
+            next += 1; // skip the surrogate gap
+        }
+    }
+    None
+}
+
+/// An `IN` right-hand side that per-key lookups can serve: an array without
+/// `null` (index entries never hold null) and of bounded length.
+fn in_list_is_indexable(value: &Value) -> bool {
+    matches!(value, Value::Array(items)
+        if items.len() <= MAX_INDEXED_IN_KEYS && !items.iter().any(Value::is_null))
+}
+
+fn is_range_op(op: &BinaryOperator) -> bool {
+    matches!(
+        op,
+        BinaryOperator::LessThan
+            | BinaryOperator::LessThanOrEqual
+            | BinaryOperator::GreaterThan
+            | BinaryOperator::GreaterThanOrEqual
+    )
+}
+
+/// Single-field index on `field` whose entries live in the `idx:` key space.
+fn regular_index_on(collection: &Collection, field: &str) -> Option<crate::storage::index::Index> {
+    collection.get_all_indexes().into_iter().find(|i| {
+        i.fields.len() == 1
+            && i.fields[0] == field
+            && !matches!(i.index_type, IndexType::Fulltext | IndexType::Vector)
+    })
+}
+
+/// Range scan `[prefix, successor(prefix))` over a single-field index: every
+/// string value that starts with `prefix`. `None` when no such index exists.
+fn index_prefix_scan(
+    collection: &Collection,
+    field: &str,
+    prefix: &str,
+    cap: usize,
+) -> Option<Vec<crate::storage::Document>> {
+    let index = regular_index_on(collection, field)?;
+    let upper = prefix_successor(prefix)?;
+    let encode = |s: &str| {
+        hex::encode(crate::storage::codec::encode_key(&Value::String(
+            s.to_string(),
+        )))
+    };
+    let base = format!("{}{}:", crate::storage::collection::IDX_PREFIX, index.name);
+    let lo = format!("{}{}", base, encode(prefix));
+    let hi = format!("{}{}", base, encode(&upper));
+
+    let db = &collection.db;
+    let cf = db.cf_handle(&collection.name)?;
+    let mut doc_keys: Vec<Vec<u8>> = Vec::new();
+    let iter = db.iterator_cf(&cf, IteratorMode::From(lo.as_bytes(), Direction::Forward));
+    for (k, v) in iter.flatten() {
+        if !k.starts_with(base.as_bytes()) || k.as_ref() >= hi.as_bytes() {
+            break;
+        }
+        doc_keys.push(Collection::doc_key(&String::from_utf8_lossy(&v)));
+        if doc_keys.len() >= cap {
+            break;
+        }
+    }
+    if doc_keys.is_empty() {
+        return Some(Vec::new());
+    }
+    let docs = db
+        .multi_get_cf(doc_keys.iter().map(|k| (&cf, k.as_slice())))
+        .into_iter()
+        .filter_map(|r| r.ok())
+        .flatten()
+        .filter_map(|bytes| crate::storage::serializer::deserialize_doc(&bytes).ok())
+        .collect();
+    Some(docs)
+}
 
 /// Documents above which a collection is never auto-indexed: the backfill runs
 /// inside the query that triggered it, so an unbounded one stalls that request
@@ -69,8 +207,51 @@ impl<'a> QueryExecutor<'a> {
         var_name: &str,
         ctx: &Context,
     ) -> Option<IndexableCondition> {
+        // STARTS_WITH(var.field, "abc") -> prefix range
+        if let Expression::FunctionCall { name, args } = expr {
+            if name.eq_ignore_ascii_case("STARTS_WITH") && args.len() == 2 {
+                let field = self.extract_field_path(&args[0], var_name)?;
+                let prefix = match self.extract_indexable_value(&args[1], var_name, ctx)? {
+                    Value::String(p) if !p.is_empty() => p,
+                    _ => return None,
+                };
+                return Some(IndexableCondition {
+                    field,
+                    op: BinaryOperator::Like,
+                    value: Value::String(prefix),
+                });
+            }
+            return None;
+        }
         if let Expression::BinaryOp { left, op, right } = expr {
             match op {
+                BinaryOperator::In => {
+                    let field = self.extract_field_path(left, var_name)?;
+                    let value = self.extract_indexable_value(right, var_name, ctx)?;
+                    if !in_list_is_indexable(&value) {
+                        return None;
+                    }
+                    return Some(IndexableCondition {
+                        field,
+                        op: BinaryOperator::In,
+                        value,
+                    });
+                }
+                BinaryOperator::Like => {
+                    // The condition carries the literal *prefix*, not the
+                    // pattern: the index returns every value starting with it
+                    // and the FILTER re-check applies the rest of the pattern.
+                    let field = self.extract_field_path(left, var_name)?;
+                    let prefix = match self.extract_indexable_value(right, var_name, ctx)? {
+                        Value::String(p) => like_literal_prefix(&p)?,
+                        _ => return None,
+                    };
+                    return Some(IndexableCondition {
+                        field,
+                        op: BinaryOperator::Like,
+                        value: Value::String(prefix),
+                    });
+                }
                 BinaryOperator::Equal
                 | BinaryOperator::LessThan
                 | BinaryOperator::LessThanOrEqual
@@ -133,6 +314,65 @@ impl<'a> QueryExecutor<'a> {
     ) -> Vec<IndexableCondition> {
         let mut out = Vec::new();
         self.collect_equality_conditions(expr, var_name, ctx, &mut out);
+        out
+    }
+
+    /// Every indexable conjunct of an AND chain, in order.
+    pub(super) fn extract_indexable_conditions(
+        &self,
+        expr: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Vec<IndexableCondition> {
+        fn walk(
+            exec: &QueryExecutor<'_>,
+            expr: &Expression,
+            var_name: &str,
+            ctx: &Context,
+            out: &mut Vec<IndexableCondition>,
+        ) {
+            if let Expression::BinaryOp {
+                left,
+                op: BinaryOperator::And,
+                right,
+            } = expr
+            {
+                walk(exec, left, var_name, ctx, out);
+                walk(exec, right, var_name, ctx, out);
+            } else if let Some(c) = exec.extract_indexable_condition(expr, var_name, ctx) {
+                out.push(c);
+            }
+        }
+        let mut out = Vec::new();
+        walk(self, expr, var_name, ctx, &mut out);
+        out
+    }
+
+    /// Conditions to try against single-field indexes, best first: equality
+    /// and `IN` from any conjunct, then prefix scans, then — only when it is
+    /// the condition the planner always picked — a range.
+    ///
+    /// A range from a later conjunct is not tried: `index_range_scan` caps an
+    /// unlimited read (see the request in the E2 report), so choosing it where
+    /// the old planner scanned could drop rows.
+    fn ordered_index_candidates(
+        &self,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Vec<IndexableCondition> {
+        let all = self.extract_indexable_conditions(filter, var_name, ctx);
+        let first = self.extract_indexable_condition(filter, var_name, ctx);
+        let (mut out, rest): (Vec<IndexableCondition>, Vec<IndexableCondition>) = all
+            .into_iter()
+            .partition(|c| matches!(c.op, BinaryOperator::Equal | BinaryOperator::In));
+        out.extend(
+            rest.into_iter()
+                .filter(|c| matches!(c.op, BinaryOperator::Like)),
+        );
+        if let Some(first) = first.filter(|c| is_range_op(&c.op)) {
+            out.push(first);
+        }
         out
     }
 
@@ -201,16 +441,99 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        // 2. Single-field fallback
-        let cond = self.extract_indexable_condition(filter, var_name, ctx)?;
-        let docs = self.use_index_for_condition(collection, &cond, limit)?;
-        let (name, type_str) = collection
-            .get_all_indexes()
-            .into_iter()
-            .find(|i| i.fields.len() == 1 && i.fields[0] == cond.field)
-            .map(|i| (i.name, format!("{:?}", i.index_type)))
-            .unwrap_or_default();
-        Some((docs, name, type_str))
+        // 2. Single-field: the first conjunct an index can serve
+        for cond in self.ordered_index_candidates(filter, var_name, ctx) {
+            if let Some(docs) = self.use_index_for_condition(collection, &cond, limit) {
+                let (name, type_str) = collection
+                    .get_all_indexes()
+                    .into_iter()
+                    .find(|i| i.fields.len() == 1 && i.fields[0] == cond.field)
+                    .map(|i| (i.name, format!("{:?}", i.index_type)))
+                    .unwrap_or_default();
+                return Some((docs, name, type_str));
+            }
+        }
+
+        // 3. Geo index: `DISTANCE(...) <= r` / `GEO_DISTANCE(...) <= r`
+        self.geo_lookup_for_filter(collection, filter, var_name, ctx, None, limit)
+    }
+
+    /// [`Self::lookup_index_for_filter_limited`] honouring an index hint.
+    ///
+    /// The hinted indexes are tried first, in order. When none can serve the
+    /// FILTER, a forced hint is an error; otherwise the optimizer's own choice
+    /// applies.
+    pub(super) fn lookup_index_for_filter_hinted(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+        limit: Option<usize>,
+        hint: Option<&IndexHint>,
+    ) -> DbResult<Option<(Vec<crate::storage::Document>, String, String)>> {
+        let Some(hint) = hint.filter(|h| !h.names.is_empty()) else {
+            return Ok(
+                self.lookup_index_for_filter_limited(collection, filter, var_name, ctx, limit)
+            );
+        };
+        if let Some(hit) = self.lookup_with_hint(collection, filter, var_name, ctx, limit, hint) {
+            return Ok(Some(hit));
+        }
+        if hint.force {
+            return Err(DbError::ExecutionError(format!(
+                "could not use index hint to serve query: none of [{}] on '{}' can serve the \
+                 FILTER (forceIndexHint is set)",
+                hint.names.join(", "),
+                collection
+                    .name
+                    .rsplit(':')
+                    .next()
+                    .unwrap_or(&collection.name)
+            )));
+        }
+        Ok(self.lookup_index_for_filter_limited(collection, filter, var_name, ctx, limit))
+    }
+
+    fn lookup_with_hint(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+        limit: Option<usize>,
+        hint: &IndexHint,
+    ) -> Option<(Vec<crate::storage::Document>, String, String)> {
+        let indexes = collection.get_all_indexes();
+        let candidates = self.ordered_index_candidates(filter, var_name, ctx);
+        for name in &hint.names {
+            if let Some(index) = indexes.iter().find(|i| i.name == *name) {
+                let type_str = format!("{:?}", index.index_type);
+                if index.fields.len() == 1 {
+                    for cond in candidates.iter().filter(|c| c.field == index.fields[0]) {
+                        if let Some(docs) = self.use_index_for_condition(collection, cond, limit) {
+                            return Some((docs, index.name.clone(), type_str));
+                        }
+                    }
+                } else {
+                    let pairs: Vec<(String, Value)> = self
+                        .extract_equality_conditions(filter, var_name, ctx)
+                        .into_iter()
+                        .map(|c| (c.field, c.value))
+                        .collect();
+                    if let Some((used, docs)) = collection.index_lookup_eq_composite(&pairs) {
+                        if used.name == *name {
+                            return Some((docs, used.name, type_str));
+                        }
+                    }
+                }
+            } else if let Some(hit) =
+                self.geo_lookup_for_filter(collection, filter, var_name, ctx, Some(name), limit)
+            {
+                return Some(hit);
+            }
+        }
+        None
     }
 
     /// True when the FILTER expression is exactly one indexable comparison —
@@ -232,6 +555,7 @@ impl<'a> QueryExecutor<'a> {
                         | BinaryOperator::LessThanOrEqual
                         | BinaryOperator::GreaterThan
                         | BinaryOperator::GreaterThanOrEqual
+                        | BinaryOperator::In
                 ) && self
                     .extract_indexable_condition(expr, var_name, ctx)
                     .is_some()
@@ -289,7 +613,7 @@ impl<'a> QueryExecutor<'a> {
     /// like `FILTER rel._key == doc.organisation_id` to use an index lookup:
     /// `doc.organisation_id` evaluates fine against the parent context, and
     /// the result is fed to the index path.
-    fn extract_indexable_value(
+    pub(super) fn extract_indexable_value(
         &self,
         expr: &Expression,
         var_name: &str,
@@ -414,8 +738,53 @@ impl<'a> QueryExecutor<'a> {
             BinaryOperator::LessThanOrEqual => {
                 collection.index_lookup_lte(&condition.field, &normalized_value, limit)
             }
+            BinaryOperator::In => self.index_lookup_in(collection, condition, limit),
+            BinaryOperator::Like => {
+                let prefix = condition.value.as_str()?;
+                let cap = limit.unwrap_or(self.max_intermediate_rows().saturating_add(1));
+                index_prefix_scan(collection, &condition.field, prefix, cap)
+            }
             _ => None,
         }
+    }
+
+    /// `field IN [k1, k2, …]`: one equality lookup per distinct key. Keys are
+    /// deduplicated by their index encoding (numbers compare as f64 there,
+    /// like `==`), so each matching document is returned once.
+    fn index_lookup_in(
+        &self,
+        collection: &Collection,
+        condition: &IndexableCondition,
+        limit: Option<usize>,
+    ) -> Option<Vec<crate::storage::Document>> {
+        let Value::Array(items) = &condition.value else {
+            return None;
+        };
+        // Establish that an index exists before claiming the lookup, so an
+        // empty list does not report an index it never touched.
+        regular_index_on(collection, &condition.field)?;
+        let mut seen: HashSet<Vec<u8>> = HashSet::with_capacity(items.len());
+        let mut out = Vec::new();
+        for item in items {
+            if !seen.insert(crate::storage::codec::encode_key(item)) {
+                continue;
+            }
+            let docs = match limit {
+                Some(k) => {
+                    let remaining = k.saturating_sub(out.len());
+                    if remaining == 0 {
+                        break;
+                    }
+                    collection.index_lookup_eq_limit(&condition.field, item, remaining)?
+                }
+                None => collection.index_lookup_eq(&condition.field, item)?,
+            };
+            out.extend(docs);
+            if out.len() > self.max_intermediate_rows() {
+                break; // the caller's budget check reports it
+            }
+        }
+        Some(out)
     }
 
     /// Primary-key point-lookup for `doc._key == <expr>`.
@@ -427,6 +796,21 @@ impl<'a> QueryExecutor<'a> {
         collection: &Collection,
         condition: &IndexableCondition,
     ) -> Option<Vec<crate::storage::Document>> {
+        if let (BinaryOperator::In, Value::Array(keys)) = (&condition.op, &condition.value) {
+            let mut seen: HashSet<&str> = HashSet::with_capacity(keys.len());
+            let mut out = Vec::new();
+            for key in keys.iter().filter_map(Value::as_str) {
+                if !seen.insert(key) {
+                    continue;
+                }
+                match collection.get(key) {
+                    Ok(doc) => out.push(doc),
+                    Err(DbError::DocumentNotFound(_)) => {}
+                    Err(_) => return None,
+                }
+            }
+            return Some(out);
+        }
         if !matches!(condition.op, BinaryOperator::Equal) {
             return None;
         }
@@ -574,7 +958,7 @@ impl<'a> QueryExecutor<'a> {
 /// Returns true if `expr` references `var_name` anywhere (conservative: lambda
 /// parameter shadowing is ignored, which only ever produces false positives — at
 /// worst, we forgo the index optimization and fall back to a scan).
-fn expression_references_var(expr: &Expression, var_name: &str) -> bool {
+pub(super) fn expression_references_var(expr: &Expression, var_name: &str) -> bool {
     match expr {
         Expression::Variable(name) => name == var_name,
         Expression::BindVariable(_) | Expression::Literal(_) => false,
@@ -634,6 +1018,35 @@ fn expression_references_var(expr: &Expression, var_name: &str) -> bool {
             expression_references_var(left, var_name) || expression_references_var(right, var_name)
         }
         Expression::Lambda { body, .. } => expression_references_var(body, var_name),
+        Expression::ArrayComparison {
+            quantifier,
+            left,
+            right,
+            ..
+        } => {
+            expression_references_var(left, var_name)
+                || expression_references_var(right, var_name)
+                || matches!(quantifier, crate::sdbql::ast::ArrayQuantifier::AtLeast(n)
+                    if expression_references_var(n, var_name))
+        }
+        Expression::ArrayInline {
+            base,
+            filter,
+            limit,
+            projection,
+            ..
+        } => {
+            expression_references_var(base, var_name)
+                || filter
+                    .as_deref()
+                    .is_some_and(|e| expression_references_var(e, var_name))
+                || limit.as_ref().is_some_and(|(o, c)| {
+                    expression_references_var(o, var_name) || expression_references_var(c, var_name)
+                })
+                || projection
+                    .as_deref()
+                    .is_some_and(|e| expression_references_var(e, var_name))
+        }
         Expression::WindowFunctionCall {
             arguments,
             over_clause,
@@ -655,5 +1068,59 @@ fn expression_references_var(expr: &Expression, var_name: &str) -> bool {
             TemplateStringPart::Expression(e) => expression_references_var(e, var_name),
             TemplateStringPart::Literal(_) => false,
         }),
+    }
+}
+
+#[cfg(test)]
+mod optimizer_helper_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn like_prefix_stops_at_wildcards_and_escapes() {
+        assert_eq!(like_literal_prefix("abc%"), Some("abc".to_string()));
+        assert_eq!(like_literal_prefix("ab_c%"), Some("ab".to_string()));
+        assert_eq!(like_literal_prefix("ab\\%c"), Some("ab".to_string()));
+        assert_eq!(like_literal_prefix("exact"), Some("exact".to_string()));
+        assert_eq!(like_literal_prefix("%abc"), None);
+        assert_eq!(like_literal_prefix(""), None);
+    }
+
+    #[test]
+    fn prefix_successor_bounds_every_extension() {
+        assert_eq!(prefix_successor("abc").as_deref(), Some("abd"));
+        assert_eq!(prefix_successor("a\u{10FFFF}").as_deref(), Some("b"));
+        // U+D7FF is followed by the surrogate gap; the next scalar is U+E000.
+        assert_eq!(prefix_successor("\u{D7FF}").as_deref(), Some("\u{E000}"));
+        assert_eq!(prefix_successor("\u{10FFFF}"), None);
+        let upper = prefix_successor("User1").unwrap();
+        for s in ["User1", "User1\u{10FFFF}z", "User19"] {
+            assert!(s >= "User1" && s < upper.as_str(), "{s}");
+        }
+        assert!("User2" >= upper.as_str());
+    }
+
+    #[test]
+    fn in_lists_with_null_or_too_many_keys_are_not_indexed() {
+        assert!(in_list_is_indexable(&json!([1, "a"])));
+        assert!(in_list_is_indexable(&json!([])));
+        assert!(!in_list_is_indexable(&json!([1, null])));
+        assert!(!in_list_is_indexable(&json!({"a": 1})));
+        let long: Vec<Value> = (0..=MAX_INDEXED_IN_KEYS).map(|i| json!(i)).collect();
+        assert!(!in_list_is_indexable(&Value::Array(long)));
+    }
+
+    #[test]
+    fn index_hint_from_options() {
+        assert_eq!(IndexHint::from_options(None, true), None);
+        assert_eq!(IndexHint::from_options(Some(&[][..]), false), None);
+        let names = vec!["a".to_string()];
+        assert_eq!(
+            IndexHint::from_options(Some(names.as_slice()), true),
+            Some(IndexHint {
+                names: names.clone(),
+                force: true
+            })
+        );
     }
 }

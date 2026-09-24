@@ -80,7 +80,7 @@ impl Parser {
             return self.parse_array_spread_access(base);
         }
 
-        let index_expr = self.parse_expression()?;
+        let index_expr = self.with_in_allowed(|p| p.parse_expression())?;
         self.expect(Token::RightBracket)?;
 
         // Determine access type based on index expression
@@ -100,10 +100,61 @@ impl Parser {
         })
     }
 
-    /// Parse array spread access: expr[*] or expr[*].field.path
+    /// Parse array expansion after `[`: `[*]`, `[*].path`, `[**]`, and the
+    /// inline forms `[* FILTER cond LIMIT [off,] n RETURN proj]`.
+    ///
+    /// Plain `[*]` / `[*].path` keep their [`Expression::ArraySpreadAccess`]
+    /// node (and its evaluation); anything else becomes an
+    /// [`Expression::ArrayInline`].
     fn parse_array_spread_access(&mut self, base: Expression) -> DbResult<Expression> {
-        self.advance(); // consume '*'
-        self.expect(Token::RightBracket)?;
+        let mut depth = 0usize;
+        while matches!(self.current_token(), Token::Star) {
+            self.advance();
+            depth += 1;
+        }
+
+        // Operations come in AQL's order: FILTER, then LIMIT, then RETURN.
+        // `CURRENT` names the element inside them.
+        let (filter, limit, projection) = self.with_in_allowed(|p| {
+            let filter = if matches!(p.current_token(), Token::Filter) {
+                p.advance();
+                Some(Box::new(p.parse_expression()?))
+            } else {
+                None
+            };
+            let limit = if matches!(p.current_token(), Token::Limit) {
+                p.advance();
+                let first = p.parse_expression()?;
+                if matches!(p.current_token(), Token::Comma) {
+                    p.advance();
+                    let count = p.parse_expression()?;
+                    Some((Box::new(first), Box::new(count)))
+                } else {
+                    Some((
+                        Box::new(Expression::Literal(Value::Number(0.into()))),
+                        Box::new(first),
+                    ))
+                }
+            } else {
+                None
+            };
+            let projection = if matches!(p.current_token(), Token::Return) {
+                p.advance();
+                Some(Box::new(p.parse_expression()?))
+            } else {
+                None
+            };
+            Ok((filter, limit, projection))
+        })?;
+
+        if !matches!(self.current_token(), Token::RightBracket) {
+            return Err(DbError::ParseError(format!(
+                "Expected ']' to close the array expansion (after [*, only FILTER, LIMIT \
+                 and RETURN may follow, in that order), found {:?}",
+                self.current_token()
+            )));
+        }
+        self.advance(); // consume ']'
 
         // Collect subsequent dot-separated field path
         let field_path = if matches!(self.current_token(), Token::Dot) {
@@ -129,7 +180,18 @@ impl Parser {
             None
         };
 
-        Ok(Expression::ArraySpreadAccess(Box::new(base), field_path))
+        if depth == 1 && filter.is_none() && limit.is_none() && projection.is_none() {
+            return Ok(Expression::ArraySpreadAccess(Box::new(base), field_path));
+        }
+
+        Ok(Expression::ArrayInline {
+            base: Box::new(base),
+            depth,
+            filter,
+            limit,
+            projection,
+            field_path,
+        })
     }
 
     /// Parse primary expression (highest precedence)
@@ -233,7 +295,13 @@ impl Parser {
                 return self.parse_window_function(name, args);
             }
 
-            Ok(Expression::FunctionCall { name, args })
+            // Function names are case-insensitive; normalising here means
+            // every consumer (dispatch, EXPLAIN, the query cache, the
+            // aggregation fast paths) sees one spelling.
+            Ok(Expression::FunctionCall {
+                name: name.to_uppercase(),
+                args,
+            })
         } else {
             Ok(Expression::Variable(name))
         }
@@ -292,16 +360,18 @@ impl Parser {
 
         self.advance(); // consume '('
 
-        // Check if this is a subquery (starts with FOR or LET)
-        if matches!(self.current_token(), Token::For | Token::Let) {
-            let subquery = self.parse_query(false)?;
-            self.expect(Token::RightParen)?;
-            Ok(Expression::Subquery(Box::new(subquery)))
-        } else {
-            let expr = self.parse_expression()?;
-            self.expect(Token::RightParen)?;
-            Ok(expr)
-        }
+        self.with_in_allowed(|p| {
+            // Check if this is a subquery (starts with FOR or LET)
+            if matches!(p.current_token(), Token::For | Token::Let) {
+                let subquery = p.parse_query(false)?;
+                p.expect(Token::RightParen)?;
+                Ok(Expression::Subquery(Box::new(subquery)))
+            } else {
+                let expr = p.parse_expression()?;
+                p.expect(Token::RightParen)?;
+                Ok(expr)
+            }
+        })
     }
 
     /// Parse unparenthesized subquery (FOR ... or LET ...)

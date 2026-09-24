@@ -40,6 +40,25 @@ impl<'a> QueryExecutor<'a> {
             _ => return Ok(None),
         };
 
+        // This path returns the loop index for each row, so it only serves a
+        // RETURN of exactly that (or no RETURN), and it knows nothing of
+        // OPTIONS or NEW / OLD.
+        let returns_index = match &query.return_clause {
+            None => true,
+            Some(rc) => {
+                !rc.distinct
+                    && matches!(&rc.expression, Expression::Variable(v) if v == &for_clause.variable)
+            }
+        };
+        if !returns_index
+            || insert_clause.options != MutationOptions::default()
+            || insert_clause.binds_new
+            || insert_clause.binds_old
+            || !query.post_limit_lets.is_empty()
+        {
+            return Ok(None);
+        }
+
         // FOR must have a range expression
         let range_expr = match &for_clause.source_expression {
             Some(Expression::Range(start, end)) => (start, end),

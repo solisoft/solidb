@@ -10,6 +10,7 @@
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::{LazyLock, Mutex};
 
 use regex::Regex;
@@ -47,12 +48,120 @@ pub fn get_field_value(value: &Value, field_path: &str) -> Value {
 
 /// Compare two JSON values for equality.
 ///
-/// Numbers are compared by their f64 representation for proper numeric comparison.
+/// Numbers compare by value at every depth, so `1 == 1.0` and
+/// `[1] == [1.0]`; integers compare exactly, not through `f64`.
 #[inline]
 pub fn values_equal(left: &Value, right: &Value) -> bool {
     match (left, right) {
-        (Value::Number(a), Value::Number(b)) => a.as_f64() == b.as_f64(),
+        (Value::Number(a), Value::Number(b)) => compare_numbers(a, b) == Ordering::Equal,
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(x, y)| values_equal(x, y))
+        }
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(k, v)| b.get(k).is_some_and(|w| values_equal(v, w)))
+        }
         _ => left == right,
+    }
+}
+
+fn int128(n: &serde_json::Number) -> Option<i128> {
+    n.as_i64()
+        .map(i128::from)
+        .or_else(|| n.as_u64().map(i128::from))
+}
+
+/// Numeric ordering: exact for two integers, `f64` otherwise.
+#[inline]
+pub fn compare_numbers(a: &serde_json::Number, b: &serde_json::Number) -> Ordering {
+    if let (Some(x), Some(y)) = (int128(a), int128(b)) {
+        return x.cmp(&y);
+    }
+    let x = a.as_f64().unwrap_or(0.0);
+    let y = b.as_f64().unwrap_or(0.0);
+    x.partial_cmp(&y).unwrap_or(Ordering::Equal)
+}
+
+/// Stable 64-bit fingerprint of a JSON value, consistent with
+/// [`values_equal`]: `1` and `1.0` hash alike, and object keys are hashed in
+/// sorted order.
+pub fn hash_value(v: &Value) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    write_value_hash(v, &mut h);
+    h.finish()
+}
+
+fn write_value_hash(v: &Value, h: &mut impl Hasher) {
+    match v {
+        Value::Null => 0u8.hash(h),
+        Value::Bool(b) => {
+            1u8.hash(h);
+            b.hash(h);
+        }
+        Value::Number(n) => {
+            2u8.hash(h);
+            let f = n.as_f64().unwrap_or(0.0);
+            // -0.0 == 0.0, so they must share a hash.
+            let f = if f == 0.0 { 0.0 } else { f };
+            f.to_bits().hash(h);
+        }
+        Value::String(s) => {
+            3u8.hash(h);
+            s.hash(h);
+        }
+        Value::Array(a) => {
+            4u8.hash(h);
+            a.len().hash(h);
+            for x in a {
+                write_value_hash(x, h);
+            }
+        }
+        Value::Object(o) => {
+            5u8.hash(h);
+            o.len().hash(h);
+            let mut keys: Vec<&String> = o.keys().collect();
+            keys.sort();
+            for k in keys {
+                k.hash(h);
+                if let Some(val) = o.get(k) {
+                    write_value_hash(val, h);
+                }
+            }
+        }
+    }
+}
+
+/// Hash set of JSON values using [`values_equal`] semantics.
+#[derive(Default, Clone)]
+pub struct ValueSet {
+    buckets: HashMap<u64, Vec<Value>>,
+}
+
+impl ValueSet {
+    /// Create a set sized for `n` values.
+    pub fn with_capacity(n: usize) -> Self {
+        Self {
+            buckets: HashMap::with_capacity(n),
+        }
+    }
+
+    /// Insert `v`; returns true if it was not already present.
+    pub fn insert(&mut self, v: &Value) -> bool {
+        let bucket = self.buckets.entry(hash_value(v)).or_default();
+        if bucket.iter().any(|x| values_equal(x, v)) {
+            false
+        } else {
+            bucket.push(v.clone());
+            true
+        }
+    }
+
+    /// True if an equal value is in the set.
+    pub fn contains(&self, v: &Value) -> bool {
+        self.buckets
+            .get(&hash_value(v))
+            .is_some_and(|b| b.iter().any(|x| values_equal(x, v)))
     }
 }
 
@@ -62,32 +171,65 @@ pub fn number_from_f64(n: f64) -> serde_json::Number {
     serde_json::Number::from_f64(n).unwrap_or_else(|| serde_json::Number::from(0))
 }
 
+/// Longest regex pattern accepted, in bytes (same as the server).
+pub const MAX_REGEX_PATTERN_LEN: usize = 1024;
+/// Compiled-program size limit, in bytes (same as the server).
+pub const MAX_REGEX_SIZE: usize = 1 << 20;
+
 /// Safely compile a regex with size limits to prevent ReDoS attacks.
 /// Uses a global cache to avoid recompiling frequently used patterns.
 pub fn safe_regex(pattern: &str) -> Result<Regex, regex::Error> {
-    if pattern.len() > 1000 {
-        return Err(regex::Error::Syntax(
-            "Pattern too long (max 1000 chars)".to_string(),
-        ));
+    if pattern.len() > MAX_REGEX_PATTERN_LEN {
+        return Err(regex::Error::Syntax(format!(
+            "Pattern too long ({} bytes, max {})",
+            pattern.len(),
+            MAX_REGEX_PATTERN_LEN
+        )));
     }
+
+    let compile = || {
+        regex::RegexBuilder::new(pattern)
+            .size_limit(MAX_REGEX_SIZE)
+            .build()
+    };
 
     if let Ok(mut cache) = REGEX_CACHE.lock() {
         if let Some(cached) = cache.get(pattern) {
             return Ok(cached.clone());
         }
-
-        match Regex::new(pattern) {
-            Ok(re) => {
-                if cache.len() < REGEX_CACHE_SIZE {
-                    cache.insert(pattern.to_string(), re.clone());
-                }
-                Ok(re)
-            }
-            Err(e) => Err(e),
+        let re = compile()?;
+        if cache.len() < REGEX_CACHE_SIZE {
+            cache.insert(pattern.to_string(), re.clone());
         }
+        Ok(re)
     } else {
-        Regex::new(pattern)
+        compile()
     }
+}
+
+/// [`safe_regex`] with the error mapped to an [`SdbqlError`].
+pub fn compile_regex(pattern: &str) -> SdbqlResult<Regex> {
+    safe_regex(pattern)
+        .map_err(|e| SdbqlError::ExecutionError(format!("Invalid regex pattern: {}", e)))
+}
+
+/// Translate a SQL LIKE pattern (`%`, `_`) into an anchored regex.
+pub fn like_to_regex(pattern: &str) -> String {
+    let mut regex_pattern = String::with_capacity(pattern.len() + 2);
+    regex_pattern.push('^');
+    for c in pattern.chars() {
+        match c {
+            '%' => regex_pattern.push_str(".*"),
+            '_' => regex_pattern.push('.'),
+            '^' | '$' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '\\' => {
+                regex_pattern.push('\\');
+                regex_pattern.push(c);
+            }
+            _ => regex_pattern.push(c),
+        }
+    }
+    regex_pattern.push('$');
+    regex_pattern
 }
 
 /// Evaluate a binary operation on two values.
@@ -153,33 +295,12 @@ pub fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> S
             let s = left.as_str().unwrap_or("");
             let pattern = right.as_str().unwrap_or("");
 
-            // Convert SQL LIKE pattern to Regex
-            let mut regex_pattern = String::new();
-            regex_pattern.push('^');
-            for c in pattern.chars() {
-                match c {
-                    '%' => regex_pattern.push_str(".*"),
-                    '_' => regex_pattern.push('.'),
-                    '^' | '$' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|'
-                    | '\\' => {
-                        regex_pattern.push('\\');
-                        regex_pattern.push(c);
-                    }
-                    _ => regex_pattern.push(c),
-                }
-            }
-            regex_pattern.push('$');
-
-            match safe_regex(&regex_pattern) {
-                Ok(re) => {
-                    let is_match = re.is_match(s);
-                    if matches!(op, BinaryOperator::NotLike) {
-                        Ok(Value::Bool(!is_match))
-                    } else {
-                        Ok(Value::Bool(is_match))
-                    }
-                }
-                Err(_) => Ok(Value::Bool(false)),
+            let re = compile_regex(&like_to_regex(pattern))?;
+            let is_match = re.is_match(s);
+            if matches!(op, BinaryOperator::NotLike) {
+                Ok(Value::Bool(!is_match))
+            } else {
+                Ok(Value::Bool(is_match))
             }
         }
 
@@ -187,16 +308,14 @@ pub fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> S
             let s = left.as_str().unwrap_or("");
             let pattern = right.as_str().unwrap_or("");
 
-            match safe_regex(pattern) {
-                Ok(re) => {
-                    let is_match = re.is_match(s);
-                    if matches!(op, BinaryOperator::NotRegEx) {
-                        Ok(Value::Bool(!is_match))
-                    } else {
-                        Ok(Value::Bool(is_match))
-                    }
-                }
-                Err(_) => Ok(Value::Bool(false)),
+            // An invalid pattern is an error, as in REGEX_TEST, not a
+            // silent non-match.
+            let re = compile_regex(pattern)?;
+            let is_match = re.is_match(s);
+            if matches!(op, BinaryOperator::NotRegEx) {
+                Ok(Value::Bool(!is_match))
+            } else {
+                Ok(Value::Bool(is_match))
             }
         }
 
@@ -416,25 +535,46 @@ pub fn to_bool(value: &Value) -> bool {
     }
 }
 
-/// Compare two JSON values for ordering.
+fn type_rank(v: &Value) -> u8 {
+    match v {
+        Value::Null => 0,
+        Value::Bool(_) => 1,
+        Value::Number(_) => 2,
+        Value::String(_) => 3,
+        Value::Array(_) => 4,
+        Value::Object(_) => 5,
+    }
+}
+
+/// Compare two JSON values for ordering (AQL type order, a total order).
 ///
-/// Null < Bool < Number < String < Array < Object
-/// Arrays are compared lexicographically element-by-element.
+/// Null < Bool < Number < String < Array < Object.
+/// Arrays are compared lexicographically element-by-element. Objects are
+/// compared attribute by attribute over the sorted union of their keys, a
+/// missing attribute counting as null.
 #[inline]
 pub fn compare_values(a: &Value, b: &Value) -> Ordering {
     match (a, b) {
         (Value::Null, Value::Null) => Ordering::Equal,
-        (Value::Null, _) => Ordering::Less,
-        (_, Value::Null) => Ordering::Greater,
         (Value::Bool(a), Value::Bool(b)) => a.cmp(b),
-        (Value::Number(a), Value::Number(b)) => {
-            let a_f64 = a.as_f64().unwrap_or(0.0);
-            let b_f64 = b.as_f64().unwrap_or(0.0);
-            a_f64.partial_cmp(&b_f64).unwrap_or(Ordering::Equal)
-        }
+        (Value::Number(a), Value::Number(b)) => compare_numbers(a, b),
         (Value::String(a), Value::String(b)) => a.cmp(b),
         (Value::Array(a), Value::Array(b)) => compare_arrays(a, b),
-        _ => Ordering::Equal,
+        (Value::Object(a), Value::Object(b)) => {
+            let mut keys: Vec<&String> = a.keys().chain(b.keys()).collect();
+            keys.sort();
+            keys.dedup();
+            for k in keys {
+                let x = a.get(k).unwrap_or(&Value::Null);
+                let y = b.get(k).unwrap_or(&Value::Null);
+                let c = compare_values(x, y);
+                if c != Ordering::Equal {
+                    return c;
+                }
+            }
+            Ordering::Equal
+        }
+        _ => type_rank(a).cmp(&type_rank(b)),
     }
 }
 

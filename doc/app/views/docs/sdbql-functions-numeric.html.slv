@@ -64,8 +64,15 @@
                 <div id="fn-ROUND" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-ROUND" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">ROUND(num, prec?)</code>
-                  <p class="text-sm text-gray-400 mb-3">Rounds to specified precision.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ROUND(3.14159, 2) --3.14</code></pre>
+                  <p class="text-sm text-gray-400 mb-3">Rounds to <code>prec</code> decimals (default 0; negative rounds to tens, hundreds…). <code>prec</code> must be an integer, and may be computed (<code>d + 1</code>); it is clamped to ±308.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ROUND(3.14159, 2) --3.14
+RETURN ROUND(1234.5, -2) --1200</code></pre>
+                </div>
+                <div id="fn-TRUNC" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-TRUNC" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">TRUNC(num) / TRUNCATE(num)</code>
+                  <p class="text-sm text-gray-400 mb-3">Drops the fractional part (rounds toward zero).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TRUNC(-2.7) -- -2</code></pre>
                 </div>
                 <div id="fn-RANDOM" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-RANDOM" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -76,7 +83,7 @@
                 <div id="fn-RANDOM_INT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-RANDOM_INT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">RANDOM_INT(min, max)</code>
-                  <p class="text-sm text-gray-400 mb-3">Random integer in range (inclusive).</p>
+                  <p class="text-sm text-gray-400 mb-3">Random integer in range (inclusive). The bounds must be integers and may be given in either order.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN RANDOM_INT(1, 100) --42</code></pre>
                 </div>
                 <div id="fn-MOD" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
@@ -116,14 +123,16 @@
                 <div id="fn-POW" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-POW" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">POW(base, exp)</code>
-                  <p class="text-sm text-gray-400 mb-3">Returns base raised to exponent.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN POW(2, 3) --8</code></pre>
+                  <p class="text-sm text-gray-400 mb-3">Returns base raised to exponent. A result that is not a finite number (overflow, or a fractional power of a negative base) is <code>null</code>, as it is for every numeric function.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN POW(2, 3) --8
+RETURN POW(10, 400) --null</code></pre>
                 </div>
                 <div id="fn-EXP" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-EXP" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">EXP(x)</code>
-                  <p class="text-sm text-gray-400 mb-3">Returns e raised to the power of x.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN EXP(1) --2.718...</code></pre>
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">EXP(x) / EXP2(x)</code>
+                  <p class="text-sm text-gray-400 mb-3">e, or 2, raised to the power of x.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN EXP(1) --2.718...
+RETURN EXP2(10) --1024</code></pre>
                 </div>
               </div>
             </div>
@@ -206,19 +215,26 @@
                 <div id="fn-MIN" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-MIN" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">MIN(arr)</code>
-                  <p class="text-sm text-gray-400 mb-3">Smallest value in the array.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MIN([5, 1, 9]) --1</code></pre>
+                  <p class="text-sm text-gray-400 mb-3">Smallest non-null value, in AQL type order (bool &lt; number &lt; string &lt; array &lt; object). Alias: MINIMUM.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MIN([5, 1, 9]) --1
+RETURN MIN(["b", "a", null]) --"a"</code></pre>
                 </div>
                 <div id="fn-MAX" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-MAX" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">MAX(arr)</code>
-                  <p class="text-sm text-gray-400 mb-3">Largest value in the array.</p>
+                  <p class="text-sm text-gray-400 mb-3">Largest non-null value, in AQL type order. Alias: MAXIMUM.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MAX([5, 1, 9]) --9</code></pre>
+                </div>
+                <div id="fn-PRODUCT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-PRODUCT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">PRODUCT(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Product of the numbers in the array; nulls are skipped and the empty product is 1.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PRODUCT([2, 3, 4]) --24</code></pre>
                 </div>
                 <div id="fn-COUNT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-COUNT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">COUNT(arr)</code>
-                  <p class="text-sm text-gray-400 mb-3">Number of elements in the array.</p>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">COUNT(value)</code>
+                  <p class="text-sm text-gray-400 mb-3">Alias of <code>LENGTH</code>: number of elements, attributes or characters.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COUNT([1, 2, 3]) --3</code></pre>
                 </div>
                 <div id="fn-COUNT_DISTINCT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
@@ -252,27 +268,63 @@ RETURN PERCENTILE([1, 2, 3, 4], 50, "interpolation") --2.5</code></pre>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div id="fn-VARIANCE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-VARIANCE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">VARIANCE(arr)</code>
-                  <p class="text-sm text-gray-400 mb-3">Population variance.</p>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">VARIANCE(arr) / VARIANCE_POPULATION(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Population variance. One value gives 0; an empty array gives <code>null</code>. Alias: VAR_POP.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VARIANCE([1, 2, 3, 4, 5]) --2</code></pre>
                 </div>
                 <div id="fn-VARIANCE_SAMPLE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-VARIANCE_SAMPLE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">VARIANCE_SAMPLE(arr)</code>
-                  <p class="text-sm text-gray-400 mb-3">Sample variance.</p>
+                  <p class="text-sm text-gray-400 mb-3">Sample variance (divides by n − 1); <code>null</code> for fewer than two values. Alias: VAR_SAMP.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VARIANCE_SAMPLE([1, 2, 3, 4, 5]) --2.5</code></pre>
                 </div>
                 <div id="fn-STDDEV" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-STDDEV" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV(arr)</code>
-                  <p class="text-sm text-gray-400 mb-3">Sample standard deviation.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV([1, 2, 3, 4, 5]) --1.581...</code></pre>
+                  <p class="text-sm text-gray-400 mb-3"><strong>Population</strong> standard deviation, as in AQL — the same as <code>STDDEV_POPULATION</code>. Use <code>STDDEV_SAMPLE</code> for the sample deviation.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV([1, 2, 3, 4, 5]) --1.414...</code></pre>
                 </div>
                 <div id="fn-STDDEV_POPULATION" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-STDDEV_POPULATION" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV_POPULATION(arr)</code>
-                  <p class="text-sm text-gray-400 mb-3">Population standard deviation.</p>
+                  <p class="text-sm text-gray-400 mb-3">Population standard deviation. Alias: STDDEV_POP.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV_POPULATION([1, 2, 3, 4, 5]) --1.414...</code></pre>
+                </div>
+                <div id="fn-STDDEV_SAMPLE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-STDDEV_SAMPLE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">STDDEV_SAMPLE(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Sample standard deviation; <code>null</code> for fewer than two values. Alias: STDDEV_SAMP.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN STDDEV_SAMPLE([1, 2, 3, 4, 5]) --1.581...</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Decay Functions -->
+            <div>
+              <h3 class="text-lg font-bold text-blue-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-blue-500 rounded-full mr-3"></span>
+                Decay Functions
+              </h3>
+              <p class="text-sm text-gray-400 mb-4">AQL scoring curves: 1 within <code>offset</code> of <code>origin</code>, falling to <code>decay</code> at <code>scale</code> beyond that. <code>value</code> may be a number or an array of numbers. <code>scale</code> must be positive, <code>offset</code> non-negative, and <code>decay</code> strictly between 0 and 1.</p>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div id="fn-DECAY_GAUSS" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DECAY_GAUSS" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">DECAY_GAUSS(value, origin, scale, offset, decay)</code>
+                  <p class="text-sm text-gray-400 mb-3">Gaussian decay.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DECAY_GAUSS(41, 40, 5, 5, 0.5) --1
+RETURN DECAY_GAUSS([20, 41], 40, 5, 5, 0.5) --[0.00195..., 1]</code></pre>
+                </div>
+                <div id="fn-DECAY_EXP" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DECAY_EXP" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">DECAY_EXP(value, origin, scale, offset, decay)</code>
+                  <p class="text-sm text-gray-400 mb-3">Exponential decay.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DECAY_EXP(2, 0, 10, 0, 0.2) --0.7247...</code></pre>
+                </div>
+                <div id="fn-DECAY_LINEAR" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-DECAY_LINEAR" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3">DECAY_LINEAR(value, origin, scale, offset, decay)</code>
+                  <p class="text-sm text-gray-400 mb-3">Linear decay, reaching 0 at scale / (1 − decay).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DECAY_LINEAR(9.8, 0, 10, 0, 0.2) --0.216</code></pre>
                 </div>
               </div>
             </div>

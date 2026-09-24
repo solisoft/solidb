@@ -52,9 +52,10 @@
           </div>
           <div id="fn-REPEAT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-REPEAT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">REPEAT(str, count)</code>
-            <p class="text-sm text-gray-400 mb-3">Repeat string n times.</p>
-            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REPEAT("ab", 3) --"ababab"</code></pre>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">REPEAT(str, count, separator?)</code>
+            <p class="text-sm text-gray-400 mb-3">Repeat string n times, optionally joined by a separator. The result is capped at 1&nbsp;MiB.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REPEAT("ab", 3) --"ababab"
+RETURN REPEAT("ab", 3, "-") --"ab-ab-ab"</code></pre>
           </div>
           <div id="fn-CAPITALIZE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-CAPITALIZE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -65,7 +66,7 @@
           <div id="fn-TITLE_CASE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-TITLE_CASE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TITLE_CASE(str)</code>
-            <p class="text-sm text-gray-400 mb-3">Title case all words. Alias: INITCAP.</p>
+            <p class="text-sm text-gray-400 mb-3">Title case all words; whitespace is kept as it is. Alias: INITCAP.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TITLE_CASE("hello world") --"Hello World"</code></pre>
           </div>
           <div id="fn-ENCODE_URI" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
@@ -77,8 +78,10 @@
           <div id="fn-DECODE_URI" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-DECODE_URI" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">DECODE_URI(str)</code>
-            <p class="text-sm text-gray-400 mb-3">URL decode string. Alias: URL_DECODE.</p>
-            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DECODE_URI("hello%20world") --"hello world"</code></pre>
+            <p class="text-sm text-gray-400 mb-3">Percent-decode a string (alias: DECODE_URI_COMPONENT). As in JavaScript, <code>+</code> is kept; <code>URL_DECODE</code> decodes form encoding and turns <code>+</code> into a space. A <code>%</code> not followed by two hex digits is kept literally.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DECODE_URI("hello%20world") --"hello world"
+RETURN DECODE_URI("a+b") --"a+b"
+RETURN URL_DECODE("a+b") --"a b"</code></pre>
           </div>
           <div id="fn-WORD_COUNT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-WORD_COUNT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -89,26 +92,29 @@
           <div id="fn-TRUNCATE_TEXT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-TRUNCATE_TEXT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">TRUNCATE_TEXT(str, len, suffix?)</code>
-            <p class="text-sm text-gray-400 mb-3">Truncate with ellipsis. Alias: ELLIPSIS.</p>
-            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TRUNCATE_TEXT("Hello World", 8) --"Hello..."</code></pre>
+            <p class="text-sm text-gray-400 mb-3">Truncate to at most <code>len</code> characters, ending with <code>suffix</code> (default <code>"..."</code>). The suffix counts towards <code>len</code>. Alias: ELLIPSIS.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TRUNCATE_TEXT("Hello World", 8) --"Hello..."
+RETURN ELLIPSIS("Hello World", 7, "…") --"Hello…"</code></pre>
           </div>
           <div id="fn-MASK" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-MASK" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">MASK(str, start?, end?, char?)</code>
-            <p class="text-sm text-gray-400 mb-3">Mask string for PII protection.</p>
-            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MASK("4111111111111111", 0, -4) --"************1111"</code></pre>
+            <p class="text-sm text-gray-400 mb-3">Mask characters <code>start</code> (inclusive, default 0) to <code>end</code> (exclusive, default: all but the last character) with <code>char</code> (default <code>*</code>). Negative positions count from the end; pass <code>null</code> to keep a default.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MASK("4111111111111111", 0, -4) --"************1111"
+RETURN MASK("secret", null, -2, "#") --"####et"</code></pre>
           </div>
           <div id="fn-CONCAT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-CONCAT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CONCAT(str1, ...)</code>
-            <p class="text-sm text-gray-400 mb-3">Concatenates strings.</p>
+            <p class="text-sm text-gray-400 mb-3">Concatenates values into one string. Arrays contribute their members, null contributes nothing, and whole-number floats print without a decimal part.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONCAT("A", "B") --"AB"</code></pre>
           </div>
           <div id="fn-CONCAT_SEPARATOR" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-CONCAT_SEPARATOR" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CONCAT_SEPARATOR(sep, arr)</code>
-            <p class="text-sm text-gray-400 mb-3">Joins array with separator.</p>
-            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONCAT_SEPARATOR(",", ["A","B"])</code></pre>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CONCAT_SEPARATOR(sep, value1, ...)</code>
+            <p class="text-sm text-gray-400 mb-3">Joins values (and array members) with a separator. Null values are skipped, so they never produce empty fields.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONCAT_SEPARATOR(",", ["A","B"]) --"A,B"
+RETURN CONCAT_SEPARATOR(",", "A", null, "B") --"A,B"</code></pre>
           </div>
           <div id="fn-LENGTH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-LENGTH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -150,20 +156,25 @@ RETURN TRIM("--foo--", "-") --"foo"</code></pre>
           <div id="fn-LTRIM" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-LTRIM" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LTRIM(val, chars?) / RTRIM(val, chars?)</code>
-            <p class="text-sm text-gray-400 mb-3">Trims from start/end.</p>
-            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LTRIM(" foo ") --"foo "</code></pre>
+            <p class="text-sm text-gray-400 mb-3">Trims whitespace, or any of the characters in <code>chars</code>, from the start/end.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LTRIM(" foo ") --"foo "
+RETURN RTRIM("--foo--", "-") --"--foo"</code></pre>
           </div>
           <div id="fn-SPLIT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-SPLIT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">SPLIT(val, sep, limit?)</code>
-            <p class="text-sm text-gray-400 mb-3">Splits string into array.</p>
-            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SPLIT("foo-bar-baz", "-") --["foo", "bar", "baz"]</code></pre>
+            <p class="text-sm text-gray-400 mb-3">Splits a string into an array. <code>sep</code> may be an array of separators (the longest one matching at a position wins); an empty separator splits into characters. <code>limit</code> keeps at most that many parts and drops the rest.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SPLIT("foo-bar-baz", "-") --["foo", "bar", "baz"]
+RETURN SPLIT("foo-bar-baz", "-", 2) --["foo", "bar"]
+RETURN SPLIT("a-b_c", ["-", "_"]) --["a", "b", "c"]</code></pre>
           </div>
           <div id="fn-SUBSTITUTE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-SUBSTITUTE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">SUBSTITUTE(val, search, replace, limit?)</code>
-            <p class="text-sm text-gray-400 mb-3">Replaces occurrences of search with replace.</p>
-            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SUBSTITUTE("foobar", "foo", "baz") --"bazbar"</code></pre>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">SUBSTITUTE(val, search, replace?, limit?) / SUBSTITUTE(val, mapping, limit?)</code>
+            <p class="text-sm text-gray-400 mb-3">Replaces occurrences of search with replace. <code>search</code> may be an array; <code>replace</code> is then one string for all of them, or an array matched by position (missing entries, or an omitted <code>replace</code>, remove the match). The text is scanned once, left to right, longest match first, so replaced text is never replaced again. <code>limit</code> caps the total number of replacements. An empty search string matches nothing, and the result may grow the input by at most 1&nbsp;MiB.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SUBSTITUTE("foobar", "foo", "baz") --"bazbar"
+RETURN SUBSTITUTE("a-b_c", ["-", "_"], " ") --"a b c"
+RETURN SUBSTITUTE("ab", {a: "b", b: "c"}) --"bc"</code></pre>
           </div>
           <div id="fn-CONTAINS" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-CONTAINS" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -174,21 +185,51 @@ RETURN CONTAINS("foobar", "bar", true) --3</code></pre>
           </div>
           <div id="fn-FIND_FIRST" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-FIND_FIRST" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">FIND_FIRST(str, search) / FIND_LAST</code>
-            <p class="text-sm text-gray-400 mb-3">Returns index of first/last occurrence.</p>
-            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FIND_FIRST("hello", "l") --2</code></pre>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">FIND_FIRST(str, search, start?, end?) / FIND_LAST</code>
+            <p class="text-sm text-gray-400 mb-3">Returns the character index of the first/last occurrence, or -1. <code>start</code> and <code>end</code> (both inclusive) limit the search to part of the string; negative values count from the end.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FIND_FIRST("hello", "l") --2
+RETURN FIND_FIRST("foobarbaz", "ba", 4) --6
+RETURN FIND_LAST("foobarbaz", "ba", 0, 5) --3</code></pre>
           </div>
           <div id="fn-REGEX_TEST" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-REGEX_TEST" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">REGEX_TEST(str, pattern)</code>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">REGEX_TEST(str, pattern, caseInsensitive?)</code>
             <p class="text-sm text-gray-400 mb-3">Tests if string matches regex. Alias: REGEX_MATCH.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REGEX_TEST("abc", "a.*") --true</code></pre>
           </div>
           <div id="fn-REGEX_REPLACE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-REGEX_REPLACE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">REGEX_REPLACE(text, pattern, replacement)</code>
-            <p class="text-sm text-gray-400 mb-3">Replace occurrences of a pattern in a string.</p>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">REGEX_REPLACE(text, pattern, replacement, caseInsensitive?)</code>
+            <p class="text-sm text-gray-400 mb-3">Replace occurrences of a pattern in a string (<code>$1</code> refers to a group). An empty pattern leaves the text unchanged; the result may grow the input by at most 1&nbsp;MiB.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REGEX_REPLACE("the quick brown fox", "the (.*) fox", "a $1 dog")</code></pre>
+          </div>
+          <div id="fn-REGEX_MATCHES" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-REGEX_MATCHES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">REGEX_MATCHES(str, pattern, caseInsensitive?)</code>
+            <p class="text-sm text-gray-400 mb-3">Returns every non-overlapping match as an array of strings. Note: this differs from AQL, whose <code>REGEX_MATCHES</code> returns the first match and its groups.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REGEX_MATCHES("a1b2", "[0-9]") --["1", "2"]</code></pre>
+          </div>
+          <div id="fn-LIKE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-LIKE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LIKE(text, pattern, caseInsensitive?)</code>
+            <p class="text-sm text-gray-400 mb-3">SQL-style match against the whole text: <code>%</code> is any run of characters and <code>_</code> any single character, newlines included. In the pattern, <code>\%</code>, <code>\_</code> and <code>\\</code> stand for the literal characters; inside an SDBQL string literal the backslash itself is doubled, as in <code>"50\\%"</code>. Returns null when text or pattern is null.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LIKE("Hello", "h%", true) --true
+RETURN LIKE("50%", "50\\%") --true</code></pre>
+          </div>
+          <div id="fn-SUBSTRING_BYTES" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-SUBSTRING_BYTES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">SUBSTRING_BYTES(str, offset, len?)</code>
+            <p class="text-sm text-gray-400 mb-3">Like SUBSTRING, but <code>offset</code> and <code>len</code> are UTF-8 byte counts. Returns null if the range would cut a multibyte character in half.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SUBSTRING_BYTES("café", 3) --"é"
+RETURN SUBSTRING_BYTES("café", 4) --null</code></pre>
+          </div>
+          <div id="fn-IPV4_TO_NUMBER" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-IPV4_TO_NUMBER" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">IPV4_TO_NUMBER(str) / IPV4_FROM_NUMBER(num) / IS_IPV4(str)</code>
+            <p class="text-sm text-gray-400 mb-3">Convert between dotted-quad IPv4 addresses and their 32-bit numeric value, or test a string. Addresses must be exactly four parts of 0–255 without leading zeros; anything else gives null (or false for IS_IPV4).</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IPV4_TO_NUMBER("127.0.0.1") --2130706433
+RETURN IPV4_FROM_NUMBER(2130706433) --"127.0.0.1"
+RETURN IS_IPV4("1.2.3.04") --false</code></pre>
           </div>
           <div id="fn-JSON_PARSE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-JSON_PARSE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -225,6 +266,13 @@ RETURN CONTAINS("foobar", "bar", true) --3</code></pre>
                 <p class="text-sm text-gray-400 mb-3">Returns trigram similarity score (0.0 to 1.0).</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SIMILARITY("hello", "hello") --1.0
 RETURN SIMILARITY("hello", "hallo") --~0.6</code></pre>
+              </div>
+              <div id="fn-NGRAM_SIMILARITY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
+                <a href="#fn-NGRAM_SIMILARITY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">NGRAM_SIMILARITY(input, target, n) / NGRAM_POSITIONAL_SIMILARITY(input, target, n)</code>
+                <p class="text-sm text-gray-400 mb-3">AQL n-gram similarity (0.0 to 1.0): the longest common subsequence of the two strings' n-grams. NGRAM_SIMILARITY counts whole n-gram matches and divides by the number of <code>target</code> n-grams; NGRAM_POSITIONAL_SIMILARITY also credits partially matching n-grams and divides by the larger n-gram count. A string shorter than <code>n</code> is one n-gram. Inputs longer than 4096 characters are not compared: the result is 1 if they are equal, else 0.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN NGRAM_SIMILARITY("quick fox", "quick foxx", 2) --0.8889
+RETURN NGRAM_POSITIONAL_SIMILARITY("quick fox", "quick foxx", 3) --0.875</code></pre>
               </div>
               <div id="fn-FUZZY_MATCH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
                 <a href="#fn-FUZZY_MATCH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -389,7 +437,7 @@ RETURN SLUGIFY("Product #42: 50% Off!")
                       <li><code class="text-emerald-300">"email"</code> - Sanitize email (lowercase, valid chars only)</li>
                       <li><code class="text-emerald-300">"url"</code> - Keep only URL-safe characters</li>
                       <li><code class="text-emerald-300">"html"</code> - Escape HTML entities</li>
-                      <li><code class="text-emerald-300">"strip_html"</code> - Remove HTML tags</li>
+                      <li><code class="text-emerald-300">"strip_html"</code> - Remove HTML tags, including an unclosed one such as a trailing <code>&lt;script</code>; a <code>&lt;</code> not followed by a letter, <code>/</code>, <code>!</code> or <code>?</code> (as in <code>1 &lt; 2</code>) is kept</li>
                       <li><code class="text-emerald-300">"normalize"</code> - Collapse multiple spaces to single space</li>
                     </ul>
                   </div>

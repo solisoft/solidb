@@ -2,7 +2,9 @@
 
 use serde_json::Value;
 
+use super::common::to_number;
 use crate::error::{SdbqlError, SdbqlResult};
+use crate::executor::helpers::{to_bool, values_equal};
 
 /// Call a type checking function. Returns None if function not found.
 pub fn call(name: &str, args: &[Value]) -> SdbqlResult<Option<Value>> {
@@ -66,7 +68,7 @@ pub fn call(name: &str, args: &[Value]) -> SdbqlResult<Option<Value>> {
             Some(Value::Bool(is_empty))
         }
 
-        "TYPENAME" | "TYPE_OF" => {
+        "TYPENAME" | "TYPE_OF" | "TYPEOF" => {
             check_args(name, args, 1)?;
             let type_name = match &args[0] {
                 Value::Null => "null",
@@ -92,31 +94,45 @@ pub fn call(name: &str, args: &[Value]) -> SdbqlResult<Option<Value>> {
             Some(Value::Bool(b))
         }
 
-        "TO_NUMBER" => {
+        "TO_NUMBER" | "TO_NUM" => {
+            // AQL: null, false and unparseable strings are 0; strings are
+            // trimmed and integers stay integers ("123" is 123, not 123.0).
             check_args(name, args, 1)?;
-            let n = match &args[0] {
-                Value::Number(n) => Some(n.clone()),
-                Value::Bool(b) => Some(serde_json::Number::from(if *b { 1 } else { 0 })),
-                Value::String(s) => s.parse::<f64>().ok().and_then(serde_json::Number::from_f64),
-                Value::Null => Some(serde_json::Number::from(0)),
-                _ => None,
-            };
-            match n {
-                Some(num) => Some(Value::Number(num)),
-                None => Some(Value::Null),
-            }
+            Some(to_number(&args[0]))
         }
 
-        "TO_ARRAY" => {
+        "TO_ARRAY" | "TO_LIST" => {
             check_args(name, args, 1)?;
             match &args[0] {
                 Value::Array(arr) => Some(Value::Array(arr.clone())),
                 Value::Null => Some(Value::Array(vec![])),
+                // AQL and the docs: an object converts to its values.
+                Value::Object(obj) => Some(Value::Array(obj.values().cloned().collect())),
                 v => Some(Value::Array(vec![v.clone()])),
             }
         }
 
-        "NOT_NULL" | "FIRST_NOT_NULL" => {
+        // Normally evaluated lazily by the executor; this is the eager form
+        // used when all arguments are already values (e.g. pipelines).
+        "IF" => {
+            check_args(name, args, 3)?;
+            Some(if to_bool(&args[0]) {
+                args[1].clone()
+            } else {
+                args[2].clone()
+            })
+        }
+
+        "NULLIF" => {
+            check_args(name, args, 2)?;
+            if values_equal(&args[0], &args[1]) {
+                Some(Value::Null)
+            } else {
+                Some(args[0].clone())
+            }
+        }
+
+        "NOT_NULL" | "FIRST_NOT_NULL" | "COALESCE" => {
             let mut found = Value::Null;
             for arg in args {
                 if !arg.is_null() {
@@ -231,11 +247,55 @@ mod tests {
     fn test_conversions() {
         assert_eq!(call("TO_BOOL", &[json!(1)]).unwrap(), Some(json!(true)));
         assert_eq!(call("TO_BOOL", &[json!(0)]).unwrap(), Some(json!(false)));
-        assert_eq!(
-            call("TO_NUMBER", &[json!("42")]).unwrap(),
-            Some(json!(42.0))
-        );
+        // AQL keeps integers integral: this used to assert 42.0.
+        assert_eq!(call("TO_NUMBER", &[json!("42")]).unwrap(), Some(json!(42)));
         assert_eq!(call("TO_ARRAY", &[json!(5)]).unwrap(), Some(json!([5])));
+    }
+
+    #[test]
+    fn conversions_follow_aql() {
+        // TO_NUMBER("42") used to be 42.0.
+        assert_eq!(call("TO_NUMBER", &[json!("42")]).unwrap(), Some(json!(42)));
+        assert_eq!(call("TO_NUMBER", &[Value::Null]).unwrap(), Some(json!(0)));
+        // Was null.
+        assert_eq!(call("TO_NUMBER", &[json!("abc")]).unwrap(), Some(json!(0)));
+        assert_eq!(
+            call("TO_NUMBER", &[json!(" 12 ")]).unwrap(),
+            Some(json!(12))
+        );
+        assert_eq!(call("TO_NUMBER", &[json!([])]).unwrap(), Some(json!(0)));
+        assert_eq!(
+            call("TO_ARRAY", &[json!({"a": 1})]).unwrap(),
+            Some(json!([1]))
+        );
+        assert_eq!(
+            call("TYPENAME", &[json!(3.14)]).unwrap(),
+            Some(json!("number"))
+        );
+    }
+
+    #[test]
+    fn if_coalesce_nullif() {
+        assert_eq!(
+            call("IF", &[json!(0), json!(1), json!(2)]).unwrap(),
+            Some(json!(2))
+        );
+        assert_eq!(
+            call("IF", &[Value::Null, json!(1), json!(0)]).unwrap(),
+            Some(json!(0))
+        );
+        assert_eq!(
+            call("COALESCE", &[Value::Null, json!(0), json!(5)]).unwrap(),
+            Some(json!(0))
+        );
+        assert_eq!(
+            call("NULLIF", &[json!(10), json!(10.0)]).unwrap(),
+            Some(Value::Null)
+        );
+        assert_eq!(
+            call("NULLIF", &[json!(10), json!(5)]).unwrap(),
+            Some(json!(10))
+        );
     }
 
     #[test]

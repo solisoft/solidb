@@ -14,20 +14,22 @@
 //! arrays — a `COLLECT` at the ceiling was the query shape most likely to be
 //! the one the OOM killer answered.
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use serde_json::Value;
 
 use super::super::aggregation::AggregateAccumulator;
 use super::super::types::Context;
-use super::super::QueryExecutor;
+use super::super::{compare_values, hash_value, values_equal, QueryExecutor};
 use super::clauses::BUDGET_CHECK_INTERVAL;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::CollectClause;
 
 /// One group under construction.
 struct Group {
+    /// The group key: one value per group variable, in declaration order.
+    key: Vec<Value>,
     /// The group variables, later extended with INTO / COUNT / AGGREGATE.
     ctx: Context,
     count: i64,
@@ -43,7 +45,12 @@ impl<'a> QueryExecutor<'a> {
         collect: &CollectClause,
         rows: Vec<Context>,
     ) -> DbResult<Vec<Context>> {
-        let mut groups: HashMap<String, Group> = HashMap::new();
+        // Groups are found by hashing their key values and confirmed with
+        // `values_equal` — the equality `==` uses — rather than by comparing
+        // JSON serialisations, which split `1` from `1.0` and cost a string
+        // allocation per group variable per row.
+        let mut groups: Vec<Group> = Vec::new();
+        let mut index: HashMap<u64, Vec<usize>> = HashMap::new();
         // Per-row values still alive in `groups` (INTO members, COLLECT_LIST
         // items). Never more than the rows we were handed, so on its own it
         // cannot trip the ceiling the previous stage already passed; the
@@ -52,14 +59,11 @@ impl<'a> QueryExecutor<'a> {
         let mut keep_validated = collect.into_var.is_none() || collect.keep_vars.is_empty();
 
         for (seen, ctx) in rows.into_iter().enumerate() {
-            let mut key_parts = Vec::with_capacity(collect.group_vars.len());
-            let mut group_vals = Vec::with_capacity(collect.group_vars.len());
-            for (var_name, expr) in &collect.group_vars {
-                let val = self.evaluate_expr_with_context(expr, &ctx)?;
-                key_parts.push(serde_json::to_string(&val).unwrap_or_default());
-                group_vals.push((var_name, val));
+            let mut key = Vec::with_capacity(collect.group_vars.len());
+            for (_, expr) in &collect.group_vars {
+                key.push(self.evaluate_expr_with_context(expr, &ctx)?);
             }
-            let group_key = key_parts.join("|");
+            let key_hash = group_key_hash(&key);
 
             // Evaluate the aggregate arguments while `ctx` is still whole;
             // the INTO projection below takes it apart.
@@ -85,31 +89,20 @@ impl<'a> QueryExecutor<'a> {
                 keep_validated = true;
             }
 
-            let group = match groups.entry(group_key) {
-                Entry::Occupied(e) => e.into_mut(),
-                Entry::Vacant(e) => {
-                    let mut group_ctx = Context::with_capacity(
-                        collect.group_vars.len()
-                            + collect.aggregates.len()
-                            + usize::from(collect.into_var.is_some())
-                            + usize::from(collect.count_var.is_some()),
-                    );
-                    for (name, val) in group_vals {
-                        group_ctx.insert(name.clone(), val);
-                    }
-                    let aggregates = collect
-                        .aggregates
-                        .iter()
-                        .map(|a| AggregateAccumulator::new(&a.function, a.argument.is_some()))
-                        .collect::<DbResult<Vec<_>>>()?;
-                    e.insert(Group {
-                        ctx: group_ctx,
-                        count: 0,
-                        members: Vec::new(),
-                        aggregates,
-                    })
+            let bucket = index.entry(key_hash).or_default();
+            let found = bucket
+                .iter()
+                .copied()
+                .find(|&i| keys_equal(&groups[i].key, &key));
+            let gi = match found {
+                Some(i) => i,
+                None => {
+                    bucket.push(groups.len());
+                    groups.push(self.new_group(collect, key)?);
+                    groups.len() - 1
                 }
             };
+            let group = &mut groups[gi];
 
             group.count += 1;
             for (acc, value) in group.aggregates.iter_mut().zip(agg_values) {
@@ -118,7 +111,13 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
             if collect.into_var.is_some() {
-                group.members.push(project_into(&collect.keep_vars, ctx));
+                // `INTO g = expr` keeps the projection; plain `INTO g` keeps
+                // the row's variables (or just the KEEP ones).
+                let member = match &collect.into_expr {
+                    Some(expr) => self.evaluate_expr_with_context(expr, &ctx)?,
+                    None => project_into(&collect.keep_vars, ctx),
+                };
+                group.members.push(member);
                 retained += 1;
             }
 
@@ -127,9 +126,28 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
+        // AQL: with no group variables, COLLECT always yields exactly one
+        // row — over empty input `WITH COUNT INTO n` is 0 and the aggregates
+        // are their empty values, not an empty result.
+        if collect.group_vars.is_empty() && groups.is_empty() {
+            groups.push(self.new_group(collect, Vec::new())?);
+        }
+
+        // Groups come out ordered by key (AQL's default sorted COLLECT), not
+        // in hash order.
+        groups.sort_by(|a, b| {
+            a.key
+                .iter()
+                .zip(&b.key)
+                .map(|(x, y)| compare_values(x, y))
+                .find(|o| o.is_ne())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
         let mut out = Vec::with_capacity(groups.len());
-        for group in groups.into_values() {
+        for group in groups {
             let Group {
+                key: _,
                 mut ctx,
                 count,
                 members,
@@ -148,6 +166,42 @@ impl<'a> QueryExecutor<'a> {
         }
         Ok(out)
     }
+
+    fn new_group(&self, collect: &CollectClause, key: Vec<Value>) -> DbResult<Group> {
+        let mut ctx = Context::with_capacity(
+            collect.group_vars.len()
+                + collect.aggregates.len()
+                + usize::from(collect.into_var.is_some())
+                + usize::from(collect.count_var.is_some()),
+        );
+        for ((name, _), val) in collect.group_vars.iter().zip(&key) {
+            ctx.insert(name.clone(), val.clone());
+        }
+        let aggregates = collect
+            .aggregates
+            .iter()
+            .map(|a| AggregateAccumulator::new(&a.function, a.argument.is_some()))
+            .collect::<DbResult<Vec<_>>>()?;
+        Ok(Group {
+            key,
+            ctx,
+            count: 0,
+            members: Vec::new(),
+            aggregates,
+        })
+    }
+}
+
+fn group_key_hash(key: &[Value]) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for v in key {
+        hash_value(v).hash(&mut h);
+    }
+    h.finish()
+}
+
+fn keys_equal(a: &[Value], b: &[Value]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| values_equal(x, y))
 }
 
 /// The object stored for one row under `INTO`: every variable in scope, or

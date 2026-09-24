@@ -110,20 +110,22 @@ doc.values[*]  -- [1, 2, 3]</code></pre>
                 <div id="fn-LAST" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-LAST" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">LAST(arr)</code>
-                  <p class="text-sm text-gray-400 mb-3">Returns the last element.</p>
+                  <p class="text-sm text-gray-400 mb-3">Returns the last element. <code>LAST(null)</code> is <code>null</code>.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LAST([5, 1, 9]) --9</code></pre>
                 </div>
                 <div id="fn-NTH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-NTH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">NTH(arr, n)</code>
-                  <p class="text-sm text-gray-400 mb-3">Returns element at index n (0-based).</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN NTH([5, 1, 9], 1) --1</code></pre>
+                  <p class="text-sm text-gray-400 mb-3">Returns element at index n (0-based). A negative n counts from the end; out of range is <code>null</code>.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN NTH([5, 1, 9], 1) --1
+RETURN NTH([5, 1, 9], -1) --9</code></pre>
                 </div>
                 <div id="fn-SLICE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-SLICE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">SLICE(arr, start, len?)</code>
-                  <p class="text-sm text-gray-400 mb-3">Extracts a portion of the array.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SLICE([1, 2, 3, 4, 5], 1, 3) --[2, 3, 4]</code></pre>
+                  <p class="text-sm text-gray-400 mb-3">Extracts a portion of the array. A negative <code>start</code> counts from the end; a negative <code>len</code> (AQL) leaves that many elements off the end. Integer arguments may be computed (<code>n - 1</code>).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SLICE([1, 2, 3, 4, 5], 1, 3) --[2, 3, 4]
+RETURN SLICE([1, 2, 3, 4, 5], 0, -2) --[1, 2, 3]</code></pre>
                 </div>
                 <div id="fn-COLLECTION_COUNT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-COLLECTION_COUNT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -134,7 +136,7 @@ doc.values[*]  -- [1, 2, 3]</code></pre>
                 <div id="fn-INDEX_OF" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-INDEX_OF" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">INDEX_OF(arr, value)</code>
-                  <p class="text-sm text-gray-400 mb-3">Returns index of value, or -1 if not found.</p>
+                  <p class="text-sm text-gray-400 mb-3">Returns index of value, or -1 if not found. Same as <code>POSITION(arr, value, true)</code>.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN INDEX_OF([1,2,3], 2) --1</code></pre>
                 </div>
                 <div id="fn-TAKE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
@@ -214,33 +216,48 @@ RETURN RANGE(1, 5, 2) --[1, 3, 5]</code></pre>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div id="fn-PUSH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-PUSH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">PUSH(arr, elem)</code>
-                  <p class="text-sm text-gray-400 mb-3">Appends an element to the array.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PUSH([1, 2], 3) --[1, 2, 3]</code></pre>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">PUSH(arr, value, unique?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Appends one value. With <code>unique</code> true, the value is only added if it is not already in the array (AQL).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PUSH([1, 2], 3) --[1, 2, 3]
+RETURN PUSH([1, 2], 2, true) --[1, 2]</code></pre>
                 </div>
                 <div id="fn-APPEND" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-APPEND" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">APPEND(arr1, arr2)</code>
-                  <p class="text-sm text-gray-400 mb-3">Concatenates two arrays.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN APPEND([1], [2, 3]) --[1, 2, 3]</code></pre>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">APPEND(arr, values, unique?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Appends an array of values (or a single value). A boolean third argument is the AQL <code>unique</code> flag: the result then holds each value once. With more than three arguments, every extra argument is appended.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN APPEND([1], [2, 3]) --[1, 2, 3]
+RETURN APPEND([1, 2], [2, 3], true) --[1, 2, 3]</code></pre>
+                </div>
+                <div id="fn-UNSHIFT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-UNSHIFT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">UNSHIFT(arr, value, unique?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Prepends a value. With a boolean <code>unique</code> true, nothing changes if the value is already present. Non-boolean extra arguments are all prepended.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UNSHIFT([2, 3], 1) --[1, 2, 3]
+RETURN UNSHIFT([1, 2], 1, true) --[1, 2]</code></pre>
                 </div>
                 <div id="fn-UNION" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-UNION" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">UNION(arr1, arr2)</code>
-                  <p class="text-sm text-gray-400 mb-3">Union of arrays (produces unique values).</p>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">UNION(arr1, arr2, ...) / UNION_DISTINCT(...)</code>
+                  <p class="text-sm text-gray-400 mb-3">Union of arrays with duplicates removed. <code>UNION_DISTINCT</code> is the AQL name for the same thing; unlike AQL, SoliDB's <code>UNION</code> has always removed duplicates.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UNION([1, 2], [2, 3]) --[1, 2, 3]</code></pre>
                 </div>
                 <div id="fn-INTERSECTION" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-INTERSECTION" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">INTERSECTION(arr1, arr2...)</code>
-                  <p class="text-sm text-gray-400 mb-3">Returns common elements between arrays.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN INTERSECTION([1, 2], [2, 3]) --[2]</code></pre>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">INTERSECTION(arr1, arr2, ...)</code>
+                  <p class="text-sm text-gray-400 mb-3">Values present in every array, each once, in the order of the first array.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN INTERSECTION([1, 1, 2], [2, 1], [1, 2, 3]) --[1, 2]</code></pre>
                 </div>
                 <div id="fn-MINUS" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-MINUS" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">MINUS(arr1, arr2)</code>
-                  <p class="text-sm text-gray-400 mb-3">Returns elements in arr1 not in arr2.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MINUS([1, 2, 3], [2]) --[1, 3]</code></pre>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">MINUS(arr1, arr2, ...)</code>
+                  <p class="text-sm text-gray-400 mb-3">Values of the first array that are in none of the others, each once. Alias: DIFFERENCE.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MINUS([1, 2, 3, 3], [2], [4]) --[1, 3]</code></pre>
+                </div>
+                <div id="fn-OUTERSECTION" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-OUTERSECTION" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">OUTERSECTION(arr1, arr2, ...)</code>
+                  <p class="text-sm text-gray-400 mb-3">Values that occur exactly once across all the arrays. Alias: SYMDIFF.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN OUTERSECTION([1, 2], [2, 3], [3, 4]) --[1, 4]</code></pre>
                 </div>
                 <div id="fn-ZIP" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-ZIP" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -257,8 +274,34 @@ RETURN RANGE(1, 5, 2) --[1, 3, 5]</code></pre>
                 <div id="fn-REMOVE_VALUE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-REMOVE_VALUE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                   <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">REMOVE_VALUE(arr, val, limit?)</code>
-                  <p class="text-sm text-gray-400 mb-3">Removes all occurrences of value from array. Optional limit.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REMOVE_VALUE([1, 2, 1, 3], 1) --[2, 3]</code></pre>
+                  <p class="text-sm text-gray-400 mb-3">Removes occurrences of <code>val</code>: all of them, or the first <code>limit</code>.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REMOVE_VALUE([1, 2, 1, 3], 1) --[2, 3]
+RETURN REMOVE_VALUE([1, 2, 1, 3], 1, 1) --[2, 1, 3]</code></pre>
+                </div>
+                <div id="fn-REMOVE_VALUES" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-REMOVE_VALUES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">REMOVE_VALUES(arr, values)</code>
+                  <p class="text-sm text-gray-400 mb-3">Removes every occurrence of any of <code>values</code>.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REMOVE_VALUES([1, 2, 3, 4], [2, 4]) --[1, 3]</code></pre>
+                </div>
+                <div id="fn-REMOVE_NTH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-REMOVE_NTH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">REMOVE_NTH(arr, position)</code>
+                  <p class="text-sm text-gray-400 mb-3">Removes the element at <code>position</code> (negative counts from the end). Out of range leaves the array unchanged.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REMOVE_NTH(["a", "b", "c"], -1) --["a", "b"]</code></pre>
+                </div>
+                <div id="fn-REPLACE_NTH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-REPLACE_NTH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">REPLACE_NTH(arr, position, value, padding?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Replaces the element at <code>position</code> (negative counts from the end). Past the end, the gap is filled with <code>padding</code> (default <code>null</code>, at most 1,000,000 elements) and <code>value</code> is appended.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REPLACE_NTH(["a", "b"], 1, "z") --["a", "z"]
+RETURN REPLACE_NTH(["a"], 3, "z", "-") --["a", "-", "-", "z"]</code></pre>
+                </div>
+                <div id="fn-INTERLEAVE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-INTERLEAVE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">INTERLEAVE(arr1, arr2, ...)</code>
+                  <p class="text-sm text-gray-400 mb-3">Takes one element from each array in turn until all are exhausted.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN INTERLEAVE([1, 1, 1], [2, 2], [3]) --[1, 2, 3, 1, 2, 1]</code></pre>
                 </div>
               </div>
             </div>
@@ -272,10 +315,24 @@ RETURN RANGE(1, 5, 2) --[1, 3, 5]</code></pre>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div id="fn-POSITION" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-POSITION" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">POSITION(arr, elem, start?)</code>
-                  <p class="text-sm text-gray-400 mb-3">Returns 0-based index if element exists, -1 otherwise. Optional start index.</p>
-                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN POSITION([10, 20], 20) --1
-RETURN POSITION([10, 20], 30) ---1</code></pre>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">POSITION(arr, elem, returnIndex?)</code>
+                  <p class="text-sm text-gray-400 mb-3">AQL semantics: returns <code>true</code> / <code>false</code> for whether the array contains the element. With <code>returnIndex</code> true, returns the 0-based index instead, or -1 if absent.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN POSITION([10, 20], 20) --true
+RETURN POSITION([10, 20], 20, true) --1
+RETURN POSITION([10, 20], 30, true) ---1</code></pre>
+                </div>
+                <div id="fn-JACCARD" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-JACCARD" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">JACCARD(arr1, arr2)</code>
+                  <p class="text-sm text-gray-400 mb-3">Jaccard index of the two arrays as sets: distinct common values over distinct values overall. Two empty arrays give 1.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN JACCARD([1, 2, 3], [2, 3, 4]) --0.5</code></pre>
+                </div>
+                <div id="fn-LENGTH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-LENGTH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">LENGTH(value) / COUNT(value)</code>
+                  <p class="text-sm text-gray-400 mb-3">AQL semantics: elements of an array, attributes of an object, characters of a string; <code>true</code> is 1, <code>false</code> and <code>null</code> are 0, and a number counts the characters of its string form.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LENGTH([1, 2, 3]) --3
+RETURN LENGTH(1234) --4</code></pre>
                 </div>
                 <div id="fn-CONTAINS_ARRAY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-CONTAINS_ARRAY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-orange-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>

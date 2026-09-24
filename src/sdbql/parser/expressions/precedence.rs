@@ -20,7 +20,7 @@
 //! 17. Primary: literals, variables, function calls, etc.
 
 use crate::error::{DbError, DbResult};
-use crate::sdbql::ast::{BinaryOperator, Expression, UnaryOperator};
+use crate::sdbql::ast::{ArrayQuantifier, BinaryOperator, Expression, UnaryOperator};
 use crate::sdbql::lexer::Token;
 use crate::sdbql::parser::Parser;
 
@@ -115,6 +115,11 @@ impl Parser {
             Token::Any => "ANY".to_string(),
             Token::Return => "RETURN".to_string(),
             Token::In => "IN".to_string(),
+            Token::Replace => "REPLACE".to_string(),
+            Token::Like => "LIKE".to_string(),
+            Token::Left => "LEFT".to_string(),
+            Token::Right => "RIGHT".to_string(),
+            Token::Join => "JOIN".to_string(),
             _ => {
                 return Err(DbError::ParseError(format!(
                     "Expected function name after |>, got {:?}",
@@ -123,7 +128,7 @@ impl Parser {
             }
         };
         self.advance();
-        Ok(name)
+        Ok(name.to_uppercase())
     }
 
     /// Parse boolean OR expression
@@ -215,7 +220,45 @@ impl Parser {
     pub(super) fn parse_comparison_expression(&mut self) -> DbResult<Expression> {
         let mut left = self.parse_range_expression()?;
 
-        while let Some(op) = self.parse_comparison_operator()? {
+        loop {
+            // Array comparison: `arr ANY == x`, `arr ALL IN y`, `arr NONE > 1`,
+            // `arr AT LEAST (n) == x`.
+            if let Some(quantifier) = self.parse_array_quantifier()? {
+                let Some(op) = self.parse_comparison_operator()? else {
+                    return Err(DbError::ParseError(format!(
+                        "Expected a comparison operator after the array quantifier, found {:?}",
+                        self.current_token()
+                    )));
+                };
+                if !matches!(
+                    op,
+                    BinaryOperator::Equal
+                        | BinaryOperator::NotEqual
+                        | BinaryOperator::LessThan
+                        | BinaryOperator::LessThanOrEqual
+                        | BinaryOperator::GreaterThan
+                        | BinaryOperator::GreaterThanOrEqual
+                        | BinaryOperator::In
+                        | BinaryOperator::NotIn
+                ) {
+                    return Err(DbError::ParseError(format!(
+                        "Array comparison supports ==, !=, <, <=, >, >=, IN and NOT IN, not {:?}",
+                        op
+                    )));
+                }
+                let right = self.parse_range_expression()?;
+                left = Expression::ArrayComparison {
+                    quantifier,
+                    left: Box::new(left),
+                    op,
+                    right: Box::new(right),
+                };
+                continue;
+            }
+
+            let Some(op) = self.parse_comparison_operator()? else {
+                break;
+            };
             let right = self.parse_range_expression()?;
             left = Expression::BinaryOp {
                 left: Box::new(left),
@@ -225,6 +268,58 @@ impl Parser {
         }
 
         Ok(left)
+    }
+
+    /// Consume an array-comparison quantifier (`ANY`, `ALL`, `NONE`,
+    /// `AT LEAST (n)`) if one follows an operand.
+    ///
+    /// `ANY` / `ALL` / `NONE` only count when a comparison operator comes
+    /// next, so a traversal's `... TO @end ANY edges` and other uses of those
+    /// words are left alone. `AT LEAST` is unambiguous on its own.
+    fn parse_array_quantifier(&mut self) -> DbResult<Option<ArrayQuantifier>> {
+        let simple = match self.current_token() {
+            Token::Any => Some(ArrayQuantifier::Any),
+            Token::Identifier(n) if n.eq_ignore_ascii_case("ALL") => Some(ArrayQuantifier::All),
+            Token::Identifier(n) if n.eq_ignore_ascii_case("NONE") => Some(ArrayQuantifier::None),
+            _ => None,
+        };
+        if let Some(quantifier) = simple {
+            if self.comparison_operator_at(1) {
+                self.advance();
+                return Ok(Some(quantifier));
+            }
+            return Ok(None);
+        }
+
+        if self.ident_eq("AT")
+            && matches!(self.peek_token(1), Token::Identifier(n) if n.eq_ignore_ascii_case("LEAST"))
+        {
+            self.advance(); // AT
+            self.advance(); // LEAST
+            self.expect(Token::LeftParen)?;
+            let count = self.with_in_allowed(|p| p.parse_expression())?;
+            self.expect(Token::RightParen)?;
+            return Ok(Some(ArrayQuantifier::AtLeast(Box::new(count))));
+        }
+        Ok(None)
+    }
+
+    /// True when the token at `offset` starts a comparison operator that
+    /// `parse_comparison_operator` would accept here.
+    fn comparison_operator_at(&self, offset: usize) -> bool {
+        match self.peek_token(offset) {
+            Token::Equal
+            | Token::NotEqual
+            | Token::LessThan
+            | Token::LessThanEq
+            | Token::GreaterThan
+            | Token::GreaterThanEq => true,
+            Token::In => self.allow_in_operator,
+            Token::Not => {
+                self.allow_in_operator && matches!(self.peek_token(offset + 1), Token::In)
+            }
+            _ => false,
+        }
     }
 
     /// Parse range expressions (e.g., 1..5 produces [1, 2, 3, 4, 5])

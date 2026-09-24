@@ -10,8 +10,8 @@ pub mod phonetic;
 pub mod string;
 
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
-    let name_upper = name.to_uppercase();
-    let name = name_upper.as_str();
+    let name_upper = crate::sdbql::executor::builtins::upper_name(name);
+    let name: &str = &name_upper;
 
     // Route by name so UPPER/CONTAINS/MIN don't walk DATE_*/SQRT matches.
     if name.starts_with("DATE_")
@@ -37,6 +37,13 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 | "NYSIIS"
         )
     {
+        // COLOGNE is the documented short alias of COLOGNE_PHONETIC; it used
+        // to be served by a duplicate arm in evaluate.rs.
+        let name = if name == "COLOGNE" {
+            "COLOGNE_PHONETIC"
+        } else {
+            name
+        };
         return phonetic::evaluate(name, args);
     }
     if matches!(

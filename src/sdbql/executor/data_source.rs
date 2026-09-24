@@ -7,6 +7,7 @@
 
 use serde_json::Value;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use super::types::Context;
 use super::{to_bool, QueryExecutor};
@@ -358,10 +359,13 @@ impl<'a> QueryExecutor<'a> {
     /// with [`Self::apply_row_policy`], point and function reads with
     /// [`Self::row_policy_permits`], and the fast / index paths that cannot
     /// filter check [`Self::row_policy_applies`] and step aside for the scan.
-    pub(super) fn row_policy_gate(&self, collection: &str) -> Option<RowPolicyGate> {
+    pub(super) fn row_policy_gate(&self, collection: &str) -> Option<Arc<RowPolicyGate>> {
         let principal = self.principal.as_ref()?;
         if principal.can_admin {
             return None;
+        }
+        if let Some(cached) = self.caches.row_policy_gates.lock().get(collection) {
+            return cached.clone();
         }
         let coll = match self.get_collection(collection) {
             Ok(c) => c,
@@ -376,25 +380,45 @@ impl<'a> QueryExecutor<'a> {
     /// [`Self::row_policy_gate`] for a collection already resolved (e.g. a
     /// qualified `DOCUMENT("db:c/k")` name). `binding` is the name the
     /// predicate may use for the row, alongside `doc`.
+    ///
+    /// Audit P10: the policy used to be read from RocksDB and re-parsed on
+    /// every call — per DOCUMENT id, per search hit. It is now compiled once
+    /// per executor and binding name; `ROW_POLICY(c, pred)` drops the entry.
     pub(super) fn row_policy_gate_for(
         &self,
         coll: &crate::storage::Collection,
         binding: &str,
-    ) -> Option<RowPolicyGate> {
+    ) -> Option<Arc<RowPolicyGate>> {
         let principal = self.principal.as_ref()?;
         if principal.can_admin {
             return None;
         }
-        let text = coll.get_row_policy()?;
-        // An unparseable policy denies every row rather than none.
-        let expr = crate::sdbql::parser::Parser::new(&text)
-            .and_then(|mut p| p.parse_expression())
-            .ok();
-        Some(RowPolicyGate {
-            expr,
-            binding: binding.to_string(),
-            user: principal.user.clone(),
-        })
+        if let Some(cached) = self.caches.row_policy_gates.lock().get(binding) {
+            return cached.clone();
+        }
+        let gate = coll.get_row_policy().map(|text| {
+            // An unparseable policy denies every row rather than none.
+            let expr = crate::sdbql::parser::Parser::new(&text)
+                .and_then(|mut p| p.parse_expression())
+                .ok();
+            Arc::new(RowPolicyGate {
+                expr,
+                binding: binding.to_string(),
+                user: principal.user.clone(),
+            })
+        });
+        self.caches
+            .row_policy_gates
+            .lock()
+            .insert(binding.to_string(), gate.clone());
+        gate
+    }
+
+    /// Forget the compiled policies (after `ROW_POLICY` set or cleared one
+    /// within this query). All of them: view aliases share a policy under
+    /// other binding names.
+    pub(super) fn invalidate_row_policy_gates(&self) {
+        self.caches.row_policy_gates.lock().clear();
     }
 
     /// Whether `apply_row_policy` would filter this principal's scan of
@@ -404,17 +428,25 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Evaluate a compiled row policy against one document.
+    ///
+    /// The predicate sees the row (as `doc` and under the collection's
+    /// name) and `CURRENT_USER` — not the caller's query variables. It used
+    /// to run in a clone of the caller's row context, which cost a full copy
+    /// per document and let a query's own `LET`s shadow names the policy
+    /// reads. `_ctx` is kept for the call sites.
     pub(super) fn row_policy_allows(
         &self,
         gate: &RowPolicyGate,
         doc: &Value,
-        ctx: &Context,
+        _ctx: &Context,
     ) -> bool {
         let Some(expr) = &gate.expr else {
             return false;
         };
-        let mut row = ctx.clone();
-        row.insert(gate.binding.clone(), doc.clone());
+        let mut row = Context::with_capacity(3);
+        if gate.binding != "doc" {
+            row.insert(gate.binding.clone(), doc.clone());
+        }
         row.insert("doc".into(), doc.clone());
         row.insert("CURRENT_USER".into(), Value::String(gate.user.clone()));
         self.evaluate_expr_with_context(expr, &row)

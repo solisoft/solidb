@@ -23,6 +23,10 @@ impl<'a> QueryExecutor<'a> {
 
     /// Execute query and return full results with mutation statistics
     pub fn execute_with_stats(&self, query: &Query) -> DbResult<QueryExecutionResult> {
+        // Memo tables and the Argon2 budget are per query: an executor reused
+        // for a second query must not see the first one's row-policy gates.
+        self.reset_query_caches();
+        crate::sdbql::executor::builtins::crypto::reset_query_budget();
         // Handle CREATE MATERIALIZED VIEW
         if let Some(ref clause) = query.create_materialized_view_clause {
             return self.execute_create_materialized_view(clause);
@@ -144,6 +148,31 @@ impl<'a> QueryExecutor<'a> {
         query: &Query,
         initial_bindings: Context,
     ) -> DbResult<QueryExecutionResult> {
+        // Window functions need every row that reaches them, so they rule
+        // out the fast paths that stop reading early or skip the pipeline.
+        // They may sit in RETURN, in a body LET, or in a LET after SORT/LIMIT.
+        let return_has_windows = query
+            .return_clause
+            .as_ref()
+            .is_some_and(|rc| contains_window_functions(&rc.expression));
+        let late_lets_have_windows = query
+            .post_limit_lets
+            .iter()
+            .any(|l| contains_window_functions(&l.expression));
+        let body_has_windows = query.body_clauses.iter().any(|c| match c {
+            BodyClause::Let(l) => contains_window_functions(&l.expression),
+            _ => false,
+        });
+        let has_windows = return_has_windows || late_lets_have_windows || body_has_windows;
+
+        // `SORT DISTANCE(…) LIMIT n` served from a geo index. Windows need
+        // every row, so they rule it out like the other fast paths.
+        if !has_windows {
+            if let Some(result) = self.try_geo_sort_limit(query, &initial_bindings)? {
+                return Ok(result);
+            }
+        }
+
         // Optimization: Streaming bulk INSERT for range-based FOR loops
         // Pattern: FOR i IN start..end INSERT {...} INTO collection [RETURN ...]
         // This avoids materializing millions of row contexts in memory
@@ -176,7 +205,7 @@ impl<'a> QueryExecutor<'a> {
         // correlated subquery (e.g. `LET org = (FOR ... FILTER ... RETURN ...)`)
         // runs at most `offset + count` times instead of once per document.
         if let (Some(sort), Some(limit)) = (&query.sort_clause, &query.limit_clause) {
-            if sort.fields.len() == 1 {
+            if sort.fields.len() == 1 && !has_windows && query.post_limit_lets.is_empty() {
                 let body = query.body_clauses.as_slice();
                 let head_is_for = matches!(body.first(), Some(BodyClause::For(_)));
                 let tail_is_lets = body.iter().skip(1).all(|c| matches!(c, BodyClause::Let(_)));
@@ -305,7 +334,11 @@ impl<'a> QueryExecutor<'a> {
         // Optimization: Use index for SORT (without LIMIT) if available
         // Check if query is: FOR var IN collection SORT var.field RETURN ...
         if let Some(sort) = &query.sort_clause {
-            if query.limit_clause.is_none() && query.body_clauses.len() == 1 {
+            if query.limit_clause.is_none()
+                && query.body_clauses.len() == 1
+                && !has_windows
+                && query.post_limit_lets.is_empty()
+            {
                 if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
                     // Same row-policy exclusion as the SORT + LIMIT path.
                     if sort.fields.len() == 1 && !self.row_policy_applies(&for_clause.collection) {
@@ -364,6 +397,7 @@ impl<'a> QueryExecutor<'a> {
         if query.body_clauses.len() == 1
             && query.sort_clause.is_none()
             && query.let_clauses.is_empty()
+            && query.post_limit_lets.is_empty()
         {
             if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
                 if for_clause.source_expression.is_none() {
@@ -451,7 +485,7 @@ impl<'a> QueryExecutor<'a> {
                 .filter(|c| matches!(c, BodyClause::Filter(_)))
                 .count();
 
-            if for_count == 1 && filter_count == 0 {
+            if for_count == 1 && filter_count == 0 && !has_windows {
                 query.limit_clause.as_ref().and_then(|l| {
                     let (offset, count) = self.eval_limit(l, &initial_bindings);
                     // No count means no upper bound: nothing to push down.
@@ -473,10 +507,7 @@ impl<'a> QueryExecutor<'a> {
             && query.body_clauses.len() == 2
             && matches!(query.body_clauses[0], BodyClause::For(_))
             && matches!(query.body_clauses[1], BodyClause::Filter(_))
-            && query
-                .return_clause
-                .as_ref()
-                .is_none_or(|rc| !contains_window_functions(&rc.expression))
+            && !has_windows
         {
             query.limit_clause.as_ref().and_then(|l| {
                 let (offset, count) = self.eval_limit(l, &initial_bindings);
@@ -517,11 +548,7 @@ impl<'a> QueryExecutor<'a> {
             // sorted set, only the first offset+count rows survive — use the
             // top-k path (identical output order) instead of a full sort.
             let top_k = query.limit_clause.as_ref().and_then(|limit| {
-                let no_windows = query
-                    .return_clause
-                    .as_ref()
-                    .is_none_or(|rc| !contains_window_functions(&rc.expression));
-                if !no_windows {
+                if return_has_windows || late_lets_have_windows {
                     return None;
                 }
                 let (offset, count) = self.eval_limit(limit, &initial_bindings);
@@ -535,9 +562,27 @@ impl<'a> QueryExecutor<'a> {
             };
         }
 
+        // `LET`s written after SORT / LIMIT that use window functions: the
+        // windows see every sorted row, as RETURN's do, so these bindings are
+        // evaluated here, before LIMIT, in declaration order (a later window
+        // may order by an earlier binding). Without windows they keep their
+        // cheap after-LIMIT evaluation below.
+        let lets_before_limit = late_lets_have_windows;
+        if lets_before_limit {
+            for let_clause in &query.post_limit_lets {
+                if contains_window_functions(&let_clause.expression) {
+                    rows = self.apply_window_functions(rows, &let_clause.expression)?;
+                }
+                for ctx in &mut rows {
+                    let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
+                    ctx.insert(let_clause.variable.clone(), value);
+                }
+            }
+        }
+
         // Apply window functions if RETURN clause contains any
         if let Some(ref return_clause) = query.return_clause {
-            if contains_window_functions(&return_clause.expression) {
+            if return_has_windows {
                 rows = self.apply_window_functions(rows, &return_clause.expression)?;
             }
         }
@@ -557,10 +602,12 @@ impl<'a> QueryExecutor<'a> {
 
         // Bindings written after LIMIT, evaluated only on the rows that
         // survived it -- the reason they are parsed apart from the body.
-        for let_clause in &query.post_limit_lets {
-            for ctx in &mut rows {
-                let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
-                ctx.insert(let_clause.variable.clone(), value);
+        if !lets_before_limit {
+            for let_clause in &query.post_limit_lets {
+                for ctx in &mut rows {
+                    let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
+                    ctx.insert(let_clause.variable.clone(), value);
+                }
             }
         }
 

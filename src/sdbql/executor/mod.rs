@@ -12,11 +12,13 @@ use crate::sync::log::SyncLog;
 mod aggregation;
 pub mod builtins;
 mod catalog;
+mod const_fold;
 mod data_source;
 mod evaluate;
 mod execution;
 mod explain;
 mod expression;
+mod geo_opt;
 mod helpers;
 mod index_opt;
 mod materialized_views;
@@ -74,6 +76,46 @@ pub struct QueryExecutor<'a> {
     pub(super) deadline: Option<std::time::Instant>,
     /// Ceiling on rows held in the intermediate pipeline.
     pub(super) max_intermediate_rows: usize,
+    /// Per-executor memo tables (row-policy gates, IN sets, window keys...).
+    caches: ExecCaches,
+}
+
+/// Memo tables that live as long as one executor (one query).
+///
+/// Mutex rather than RefCell so the executor stays `Sync`; every lock is
+/// uncontended in practice (a query runs on one thread).
+#[derive(Default)]
+struct ExecCaches {
+    /// Parsed row-policy gate per collection binding name (audit P10).
+    /// `None` = no policy binds this principal on that collection.
+    row_policy_gates:
+        parking_lot::Mutex<HashMap<String, Option<std::sync::Arc<data_source::RowPolicyGate>>>>,
+    /// Hash sets for `x IN @bindVar`, keyed by bind variable name (audit P9).
+    in_sets: parking_lot::Mutex<HashMap<String, std::sync::Arc<ValueSet>>>,
+    /// Window-function context keys, keyed by the address of the
+    /// `WindowFunctionCall` node; the node is kept alongside and compared on
+    /// every hit, so a different AST reusing the address cannot alias.
+    window_keys:
+        parking_lot::Mutex<HashMap<usize, (crate::sdbql::ast::Expression, std::sync::Arc<str>)>>,
+    /// Results of whole-collection graph analytics (PAGERANK,
+    /// DEGREE_CENTRALITY) by function and arguments: they do not depend on
+    /// the row, and ran once per row inside a FOR (audit S2).
+    graph_results: parking_lot::Mutex<HashMap<String, serde_json::Value>>,
+    /// Last BM25 query string and its tokens: BM25 runs once per row with
+    /// the same query.
+    bm25_query: parking_lot::Mutex<Option<(String, std::sync::Arc<Vec<String>>)>>,
+}
+
+impl ExecCaches {
+    /// Forget everything memoised. Call between two top-level `execute`s on
+    /// the same executor.
+    fn clear(&self) {
+        self.row_policy_gates.lock().clear();
+        self.in_sets.lock().clear();
+        self.window_keys.lock().clear();
+        self.graph_results.lock().clear();
+        *self.bm25_query.lock() = None;
+    }
 }
 
 impl<'a> QueryExecutor<'a> {
@@ -88,6 +130,7 @@ impl<'a> QueryExecutor<'a> {
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
+            caches: ExecCaches::default(),
         }
     }
 
@@ -102,6 +145,7 @@ impl<'a> QueryExecutor<'a> {
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
+            caches: ExecCaches::default(),
         }
     }
 
@@ -116,6 +160,7 @@ impl<'a> QueryExecutor<'a> {
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
+            caches: ExecCaches::default(),
         }
     }
 
@@ -134,6 +179,7 @@ impl<'a> QueryExecutor<'a> {
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
+            caches: ExecCaches::default(),
         }
     }
 
@@ -170,6 +216,14 @@ impl<'a> QueryExecutor<'a> {
     pub fn with_max_intermediate_rows(mut self, rows: usize) -> Self {
         self.max_intermediate_rows = rows.max(1);
         self
+    }
+
+    /// Drop every per-query memo (row-policy gates, IN sets, window keys,
+    /// graph analytics results). Call at the start of each top-level
+    /// `execute` so a reused executor never serves results memoised for a
+    /// previous query, or a policy that changed in between.
+    pub fn reset_query_caches(&self) {
+        self.caches.clear();
     }
 
     /// The row ceiling this executor enforces.

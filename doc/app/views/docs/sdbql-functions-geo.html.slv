@@ -192,7 +192,8 @@ FOR place IN places
                 <div>
                   <h5 class="text-green-300 font-semibold mb-2">Performance</h5>
                   <ul class="list-disc list-inside space-y-1">
-                    <li>Create geo indexes on lat/lon fields</li>
+                    <li>Create a geo index on the location field: <code>FILTER DISTANCE(...) &lt;= r</code>, <code>GEO_DISTANCE(...) &lt;= r</code> and <code>SORT DISTANCE(...) LIMIT n</code> then read it instead of scanning</li>
+                    <li>A document without coordinates makes <code>DISTANCE</code> null, and null sorts below every number, so <code>DISTANCE(...) &lt;= r</code> matches it. Add a guard such as <code>IS_NUMBER(doc.loc.lat) AND</code> to exclude those documents &mdash; the geo index is only used when the FILTER does</li>
                     <li>Use bounding box pre-filtering for large datasets</li>
                     <li>Store coordinates in a consistent format</li>
                   </ul>
