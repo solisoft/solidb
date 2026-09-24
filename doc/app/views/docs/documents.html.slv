@@ -180,23 +180,26 @@
              <h3 class="text-lg font-semibold text-white mb-3">Insert Document</h3>
              <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-6">
                <div class="flex items-center justify-between mb-2">
-                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">POST /_api/document/:db/:collection</span>
+                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">POST /_api/database/:db/document/:collection</span>
               </div>
               <div>
-                <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/document/_system/users \
+                <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/database/_system/document/users \
               </div>
               <div class="pl-4">
                 -d <span class="text-yellow-300">'{ "name": "Alice", "email": "alice@example.com" }'</span>
               </div>
             </div>
+            <p class="text-sm text-gray-400 mb-6">
+              Inserting a <code>_key</code> that already exists returns <code>409 Conflict</code> and leaves the stored document untouched; to overwrite, use an update/replace or an SDBQL <code>UPSERT</code>. Writes to the same key are serialised, and unique indexes are checked atomically on insert, update and within a batch.
+            </p>
 
             <h3 class="text-lg font-semibold text-white mb-3">Read Document</h3>
              <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-6">
                <div class="flex items-center justify-between mb-2">
-                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">GET /_api/document/:db/:collection/:key</span>
+                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">GET /_api/database/:db/document/:collection/:key</span>
               </div>
               <div>
-                <span class="text-purple-400">curl</span> http://localhost:6745/_api/document/_system/users/123
+                <span class="text-purple-400">curl</span> http://localhost:6745/_api/database/_system/document/users/123
               </div>
             </div>
 

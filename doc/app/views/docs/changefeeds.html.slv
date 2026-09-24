@@ -500,6 +500,55 @@
                     </p>
                   </div>
                 </li>
+                <li class="flex items-start">
+                  <span
+                    class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-red-500/10 text-red-400 mr-4 font-bold border border-red-500/20"
+                    >3</span
+                  >
+                  <div>
+                    <h4 class="text-white font-bold mb-1">
+                      Slow consumers can lag
+                    </h4>
+                    <p class="text-sm text-gray-400">
+                      A subscriber that falls behind the server's event buffer loses the
+                      oldest events. The server then sends
+                      <code>{"type": "lagged", "collection": "users", "skipped": 42}</code>
+                      so the client knows to re-read the collection.
+                    </p>
+                  </div>
+                </li>
+                <li class="flex items-start">
+                  <span
+                    class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-red-500/10 text-red-400 mr-4 font-bold border border-red-500/20"
+                    >4</span
+                  >
+                  <div>
+                    <h4 class="text-white font-bold mb-1">
+                      Permissions are re-checked
+                    </h4>
+                    <p class="text-sm text-gray-400">
+                      Row policies of the subscriber apply: events for rows they cannot
+                      read are not delivered. Credentials are re-validated every
+                      60 s, and a change to the user's roles closes the socket
+                      &mdash; reconnect and subscribe again.
+                    </p>
+                  </div>
+                </li>
+                <li class="flex items-start">
+                  <span
+                    class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-red-500/10 text-red-400 mr-4 font-bold border border-red-500/20"
+                    >5</span
+                  >
+                  <div>
+                    <h4 class="text-white font-bold mb-1">
+                      1 MB message cap
+                    </h4>
+                    <p class="text-sm text-gray-400">
+                      Incoming WebSocket messages larger than 1 MB are rejected at the
+                      protocol level.
+                    </p>
+                  </div>
+                </li>
               </ul>
             </div>
           </div>

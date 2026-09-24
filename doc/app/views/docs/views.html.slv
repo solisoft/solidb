@@ -88,6 +88,9 @@ FOR u IN users
              <p class="text-sm text-gray-400">
                This command creates a new system collection (e.g., <code class="text-indigo-300">_system:high_value_customers</code>) and populates it immediately with the query results.
              </p>
+             <p class="text-sm text-gray-400">
+               The defining query must be read-only: a query containing <code class="text-indigo-300">INSERT</code>, <code class="text-indigo-300">UPDATE</code>, <code class="text-indigo-300">UPSERT</code>, <code class="text-indigo-300">REMOVE</code> or a catalog function is rejected with <code class="text-indigo-300">400 Bad Request</code>. The creator is recorded as the view's owner in <code class="text-indigo-300">_views</code>.
+             </p>
           </div>
         </div>
       </section>
@@ -133,6 +136,11 @@ FOR u IN users
             <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
               <p class="text-xs text-gray-400">
                 <strong class="text-amber-400">Cluster note:</strong> a scheduled refresh runs the same truncate-and-repopulate as a manual one. In a cluster it is <strong>node-local</strong> &mdash; each node recomputes its own copy on the interval from its local view of the source data (with replicated source data every node converges to the same result). The schedule is tracked in memory per node, so a refresh also runs shortly after a restart.
+              </p>
+            </div>
+            <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+              <p class="text-xs text-gray-400">
+                <strong class="text-amber-400">Permissions:</strong> a scheduled refresh runs as the view's creator (the owner stored in <code class="text-indigo-300">_views</code>), with that principal's permissions and row policies applied &mdash; never as the server. A view created before owners were recorded refreshes as a read-only, non-admin principal and logs a warning; recreate it to refresh under its creator's permissions.
               </p>
             </div>
           </div>

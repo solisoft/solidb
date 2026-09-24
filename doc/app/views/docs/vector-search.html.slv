@@ -528,7 +528,7 @@
                 <span class="text-cyan-400 font-bold text-sm">VECTOR_SEARCH — ANN with a metadata filter</span>
               </div>
               <div class="p-4">
-                <p class="text-gray-400 text-sm mb-3"><code class="text-cyan-300">VECTOR_SEARCH(collection, index, query_vector, k, options?)</code> runs HNSW k-NN and applies an optional server-side equality filter <em>after</em> ANN candidate selection. <code>options</code>: <code>filter</code> (field&rarr;value map, dotted paths allowed), <code>overfetch</code> (candidate multiplier, default 4 when a filter is set), and <code>ef</code>. Returns <code>[{ doc, score }, ...]</code> best-first.</p>
+                <p class="text-gray-400 text-sm mb-3"><code class="text-cyan-300">VECTOR_SEARCH(collection, index, query_vector, k, options?)</code> runs HNSW k-NN and applies an optional server-side equality filter <em>after</em> ANN candidate selection. <code>options</code>: <code>filter</code> (field&rarr;value map, dotted paths allowed), <code>overfetch</code> (candidate multiplier, default 4 when a filter is set, clamped to 1&ndash;100), and <code>ef</code>. <code>k</code> and <code>ef</code> are capped at 10000. Returns <code>[{ doc, score }, ...]</code> best-first.</p>
                 <pre><code class="language-sql text-sm text-gray-300">RETURN VECTOR_SEARCH("docs", "emb", @query_vector, 10, {
   filter: { tenant: "acme" },
   overfetch: 4

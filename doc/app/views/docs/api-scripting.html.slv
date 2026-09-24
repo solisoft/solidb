@@ -363,6 +363,12 @@
               <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
                 {"code": "return db:collection('users'):count()", "session_id": "optional", "timeout_ms": 5000}
               </div>
+              <ul class="text-sm text-gray-400 mt-4 space-y-1 list-disc list-inside">
+                <li><code>timeout_ms</code> (default 5000) is capped by the script timeout (<code>SOLIDB_LUA_TIMEOUT_SECS</code>); the Lua memory limit applies too.</li>
+                <li>A session belongs to the user who opened it and to its database. Passing someone else's <code>session_id</code> starts a fresh session instead; sessions expire after 30 minutes idle.</li>
+                <li>Each user holds at most <code>SOLIDB_REPL_MAX_SESSIONS_PER_USER</code> sessions (default 8; the least recently used is dropped), and the server at most <code>SOLIDB_REPL_MAX_SESSIONS</code> (default 1000) &mdash; beyond that the call returns <code>429</code>.</li>
+                <li>Plain values assigned in earlier commands are carried over. Functions defined earlier are re-created from history, but earlier commands are not re-run, so their side effects (writes, <code>print</code>, ...) happen only once.</li>
+              </ul>
                <div class="mt-4 mb-4">
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
                  <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">

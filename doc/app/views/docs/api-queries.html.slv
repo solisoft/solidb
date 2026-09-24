@@ -26,6 +26,7 @@
                 <code class="text-gray-300">/_api/database/:db/cursor</code>
               </div>
               <p class="text-sm text-gray-400 mb-4">Execute an SDBQL query.</p>
+              <p class="text-sm text-gray-400 mb-4">Read results may be served from the query cache (<code>"cached": true</code>). Cache entries are keyed by database, query text, bind variables <em>and</em> the calling principal (user, roles, permissions), so two principals never share a cached result. Queries are never cached when they call <code>CURRENT_USER</code>, <code>CURRENT_ROLES</code>, <code>CAN</code>, <code>ROW_POLICY</code>, <code>APPLY</code>/<code>CALL</code>, model functions (<code>LLM</code>, <code>EMBED</code>, <code>CHAT</code>, &hellip;) or graph functions, contain a graph traversal, or read a collection whose name is not a literal.</p>
 
                <div class="mb-4">
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
@@ -184,7 +185,7 @@
                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                 <code class="text-gray-300">/_api/database/:db/sql</code>
               </div>
-              <p class="text-sm text-gray-400 mb-4">Execute a SQL query by translating it to SDBQL and running it.</p>
+              <p class="text-sm text-gray-400 mb-4">Execute a SQL query by translating it to SDBQL and running it. Execution is bounded by the same 30-second timeout as <code>/cursor</code>; an overrun returns <code>400</code> with <code>Query execution timeout: exceeded 30 seconds</code>.</p>
 
               <div class="mb-4">
                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>

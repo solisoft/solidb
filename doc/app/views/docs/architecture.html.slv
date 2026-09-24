@@ -142,7 +142,7 @@
                 <i class="fas fa-exchange-alt text-indigo-400 mr-3"></i>
                 <h4 class="text-white font-semibold">Transactions</h4>
               </div>
-              <p class="text-sm text-gray-400">ACID transactions with WAL (Write-Ahead Log). Commit, rollback, and isolation levels.</p>
+              <p class="text-sm text-gray-400">ACID transactions committed as one atomic RocksDB write batch. Commit, rollback, and isolation levels.</p>
             </div>
 
             <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
@@ -316,7 +316,7 @@
                 </div>
                 <h5 class="text-white font-semibold">transaction/</h5>
               </div>
-              <p class="text-sm text-gray-400 mb-3">ACID transactions with configurable isolation levels and Write-Ahead Log (WAL) support.</p>
+              <p class="text-sm text-gray-400 mb-3">ACID transactions with configurable isolation levels; durability comes from RocksDB's own WAL.</p>
               <div class="text-xs text-gray-500 font-mono">
                 mod.rs · wal.rs · isolation.rs
               </div>
@@ -1078,10 +1078,11 @@
             <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
               <h4 class="text-red-400 font-bold mb-3">Authentication</h4>
               <ul class="space-y-1 text-sm text-gray-400">
-                <li>JWT Bearer tokens</li>
+                <li>JWT Bearer tokens, API keys, Basic auth</li>
                 <li>Database-level auth</li>
                 <li>Admin vs user roles</li>
                 <li>Token refresh flow</li>
+                <li>WebSocket sessions revalidated every 60 s</li>
               </ul>
             </div>
           </div>
@@ -1162,7 +1163,7 @@
           </div>
 
           <p class="text-gray-300 mb-6 leading-relaxed">
-            SoliDB provides <strong>ACID transactions</strong> with a Write-Ahead Log (WAL) for durability. Transactions support multiple operations across collections.
+            SoliDB provides <strong>ACID transactions</strong> across multiple collections. At commit every operation is validated first, then all collections are written in a single RocksDB write batch, so durability comes from RocksDB's own WAL. An update or delete based on a stale <code>_rev</code>, or an insert over an existing key, fails the commit with a transaction conflict. A transaction reads its own uncommitted writes.
           </p>
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1177,12 +1178,12 @@
             </div>
 
             <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
-              <h4 class="text-amber-400 font-bold mb-3">WAL (Write-Ahead Log)</h4>
+              <h4 class="text-amber-400 font-bold mb-3">Atomic Commit</h4>
               <ul class="space-y-1 text-sm text-gray-400">
-                <li>Append-only log file</li>
-                <li>Crash recovery</li>
-                <li>Log truncation</li>
-                <li>Replay on startup</li>
+                <li>Validate, then write</li>
+                <li>One write batch for all collections</li>
+                <li>Crash safety via RocksDB WAL</li>
+                <li>Conflict on stale <code>_rev</code></li>
               </ul>
             </div>
 

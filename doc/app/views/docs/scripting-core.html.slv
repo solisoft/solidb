@@ -54,11 +54,11 @@
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">solidb.fetch(url, options?)</span> <span class="text-gray-500">-&gt; { status, headers, body }</span>
-              <div class="text-xs text-gray-500 mt-1">Outbound HTTP with SSRF protection and a 30 s timeout. Options: <code>{ method, headers, body }</code>.</div>
+              <div class="text-xs text-gray-500 mt-1">Outbound HTTP with SSRF protection (public addresses only, connection pinned to the checked address) and a 30 s timeout. Options: <code>{ method, headers, body }</code>. The response body is returned as raw bytes and capped at <code>SOLIDB_LUA_FETCH_MAX_BYTES</code> (default 10 MB); a larger body raises an error.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">solidb.cache(key, value, ttl?)</span> / <span class="text-purple-400">solidb.cache_get(key)</span>
-              <div class="text-xs text-gray-500 mt-1">Small in-process cache with optional TTL in seconds.</div>
+              <div class="text-xs text-gray-500 mt-1">Small in-process cache with optional TTL in seconds. Keys are scoped to the script's database: two databases never see each other's entries.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">solidb.rate_limit</span>, <span class="text-purple-400">solidb.timeout</span>, <span class="text-purple-400">solidb.retry</span>, <span class="text-purple-400">solidb.fallback</span>, <span class="text-purple-400">solidb.try</span>

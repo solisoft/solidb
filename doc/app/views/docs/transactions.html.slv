@@ -35,7 +35,7 @@
           </div>
 
           <p class="text-gray-300 mb-6 leading-relaxed">
-            SoliDB supports fully ACID-compliant transactions across multiple documents and collections. Transactions are managed via a Write-Ahead Log (WAL) to ensure durability even in the event of a system crash.
+            SoliDB supports fully ACID-compliant transactions across multiple documents and collections. A commit is written as a single atomic RocksDB write batch covering every collection the transaction touched, so RocksDB's own write-ahead log provides durability in the event of a system crash. (The separate <code>transaction.wal</code> file is no longer written; one left by an older version is still replayed at startup.)
           </p>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -51,7 +51,7 @@
             <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
               <h4 class="text-amber-400 font-bold mb-2">How it works</h4>
               <p class="text-sm text-gray-400 leading-relaxed">
-                Transactions are initiated via the API, returning a Transaction ID (<code>tx_id</code>). All subsequent operations using this ID are staged in memory and the WAL. Changes are only applied to the main storage engines upon <code>COMMIT</code>.
+                Transactions are initiated via the API, returning a Transaction ID (<code>tx_id</code>). All subsequent operations using this ID are staged in memory. Changes are only applied to storage upon <code>COMMIT</code>, which first validates the transaction and then writes all collections in one atomic batch: on any failure nothing is written. A later update or delete of a document inside the transaction builds on the transaction's own earlier write to it (read-your-writes), and a document it already deleted is not found.
               </p>
             </div>
           </div>
@@ -451,6 +451,10 @@
             <li class="flex items-start">
               <span class="text-red-400 mr-3">•</span>
               <span><strong>Constraint Violations:</strong> Unique index violations will cause the <code>COMMIT</code> to fail and automatically rollback the entire transaction.</span>
+            </li>
+            <li class="flex items-start">
+              <span class="text-red-400 mr-3">•</span>
+              <span><strong>Commit Conflicts:</strong> Each operation is re-checked against the stored document at commit. An update or delete based on a <code>_rev</code> that another writer has since changed (or a document since deleted), or an insert over a <code>_key</code> that now exists, fails the <code>COMMIT</code> with a transaction conflict (<code>409</code>); nothing is written and the transaction is rolled back.</span>
             </li>
           </ul>
         </div>

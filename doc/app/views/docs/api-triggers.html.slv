@@ -127,7 +127,7 @@
                       <td class="p-4 text-amber-400 font-mono">webhook_secret</td>
                       <td class="p-4 font-mono">string</td>
                       <td class="p-4"><span class="text-gray-500">No</span></td>
-                      <td class="p-4">Per-trigger HMAC-SHA256 key for <code class="text-indigo-400">X-Webhook-Signature</code> (falls back to <code class="text-indigo-400">SOLI_WEBHOOK_SECRET</code>).</td>
+                      <td class="p-4">Per-trigger HMAC-SHA256 key for <code class="text-indigo-400">X-Webhook-Signature</code> (without one the webhook is unsigned; <code class="text-indigo-400">SOLI_WEBHOOK_SECRET</code> is used only when <code class="text-indigo-400">SOLIDB_ALLOW_GLOBAL_WEBHOOK_SECRET=1</code>).</td>
                     </tr>
                     <tr>
                       <td class="p-4 text-amber-400 font-mono">webhook_headers</td>

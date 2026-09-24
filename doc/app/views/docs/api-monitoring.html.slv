@@ -18,7 +18,7 @@
               <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
               Health & Metrics
             </h2>
-            <p class="text-sm text-gray-400 mt-2">Health check and Prometheus metrics endpoints. No authentication required.</p>
+            <p class="text-sm text-gray-400 mt-2">Health check and Prometheus metrics endpoints. <code>/_api/health</code> needs no authentication; <code>/metrics</code> does (see below).</p>
           </div>
           <div class="divide-y divide-white/5">
             <!-- GET /_api/health -->
@@ -42,6 +42,7 @@
                 <code class="text-gray-300">/metrics</code>
               </div>
               <p class="text-sm text-gray-400 mb-4">Prometheus metrics endpoint. Returns metrics in Prometheus text exposition format for monitoring and alerting.</p>
+              <p class="text-sm text-gray-400 mb-4">Answers <code>401</code> unless one of these holds: <code class="text-green-400">SOLIDB_METRICS_TOKEN</code> is set and the scraper sends it as <code>Authorization: Bearer &lt;token&gt;</code> or <code>X-Metrics-Token: &lt;token&gt;</code>; no token is configured and the request carries an admin JWT (<code>Authorization: Bearer &lt;jwt&gt;</code>); or <code class="text-green-400">SOLIDB_METRICS_PUBLIC=1</code> opts the endpoint out of authentication. The shipped Kubernetes and Compose manifests require a <code>metrics-token</code> / <code>SOLIDB_METRICS_TOKEN</code> for this reason.</p>
               <div class="mt-4 mb-4">
                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Available Metrics</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -224,6 +225,8 @@ FOR sq IN _slow_queries
 
 instances:
   - openmetrics_endpoint: http://localhost:6745/metrics
+    headers:
+      Authorization: "Bearer &lt;SOLIDB_METRICS_TOKEN&gt;"
     namespace: solidb
     metrics:
       - solidb_http_requests_total
@@ -274,6 +277,7 @@ metadata:
         "openmetrics": {
           "instances": [{
             "openmetrics_endpoint": "http://%%host%%:6745/metrics",
+            "headers": {"Authorization": "Bearer &lt;SOLIDB_METRICS_TOKEN&gt;"},
             "namespace": "solidb",
             "metrics": ["solidb_*"]
           }]

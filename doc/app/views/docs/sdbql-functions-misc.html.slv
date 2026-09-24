@@ -373,7 +373,7 @@ RETURN CURRENT_USER()</code></pre>
             </div>
             <div id="fn-ROW_POLICY" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
               <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">ROW_POLICY(coll [, pred])</code>
-              <p class="text-sm text-gray-400 mb-3">Store a filter expression on the collection. Non-admin <code>FOR</code> scans evaluate it with the doc bound as the collection name and as <code>doc</code>. Pass <code>null</code> to clear.</p>
+              <p class="text-sm text-gray-400 mb-3">Store a filter expression on the collection. Non-admin reads evaluate it with the doc bound as the collection name and as <code>doc</code>. Pass <code>null</code> to clear. <code>ROW_POLICY(coll)</code> reads the current policy; setting or clearing one requires an admin principal (and counts as a write on <code>/cursor</code>), and the predicate must parse and must not modify data. The policy applies on every read path: <code>FOR</code> scans (including index-backed filters and sorts), <code>JOIN</code>, <code>DOCUMENT</code>, <code>SAMPLE</code>, search and vector functions, scatter-gather, views, and WebSocket live queries and changefeeds. Traversals filter vertices but not the edge documents they return.</p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN ROW_POLICY("orders", "orders.tenant == @tenant")</code></pre>
             </div>
             <div id="fn-PARSE" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
@@ -390,7 +390,7 @@ RETURN ZIP_OBJECT(["a","b"], [1,2])</code></pre>
             </div>
             <div id="fn-APPLY" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
               <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">APPLY(name, args) / CALL(name, …)</code>
-              <p class="text-sm text-gray-400 mb-3">Call another builtin by name. Recursion is capped at 8.</p>
+              <p class="text-sm text-gray-400 mb-3">Call another builtin by name. Recursion is capped at 8. Mutating and catalog functions (<code>CREATE_VIEW</code>, <code>DROP_VIEW</code>, <code>CREATE_GRAPH</code>, <code>DROP_GRAPH</code>, the <code>ROW_POLICY</code> setter) cannot be called this way; call them directly. A query whose function name is not a string literal counts as a write and needs Write permission on <code>/cursor</code>.</p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN CALL("UPPER", "hi")
 RETURN APPLY("ABS", [-3])</code></pre>
             </div>

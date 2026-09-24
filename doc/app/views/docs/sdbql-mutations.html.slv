@@ -48,7 +48,7 @@
                 </h3>
               </div>
               <div class="p-5 space-y-4">
-                <p class="text-sm text-gray-400">Insert new documents into a collection.</p>
+                <p class="text-sm text-gray-400">Insert new documents into a collection. Inserting a <code>_key</code> that already exists fails with a conflict error (<code>409</code>) instead of overwriting; use <code>UPDATE</code> or <code>UPSERT</code> for that. Unique indexes are checked against stored documents and between the documents inserted by the same query.</p>
                 <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
                   <code class="text-sm text-gray-300">INSERT <span class="text-emerald-400">document</span> INTO <span class="text-cyan-400">collection</span></code>
                 </div>

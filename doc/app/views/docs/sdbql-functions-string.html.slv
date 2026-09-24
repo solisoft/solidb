@@ -216,7 +216,7 @@ RETURN CONTAINS("foobar", "bar", true) --3</code></pre>
               <div id="fn-LEVENSHTEIN" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-LEVENSHTEIN" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LEVENSHTEIN(s1, s2)</code>
-                <p class="text-sm text-gray-400 mb-3">Calculates edit distance between strings.</p>
+                <p class="text-sm text-gray-400 mb-3">Calculates edit distance between strings. Inputs longer than 4096 characters are not compared: the result is the longer string's length.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LEVENSHTEIN("foo", "bar") --3</code></pre>
               </div>
               <div id="fn-SIMILARITY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
@@ -229,7 +229,7 @@ RETURN SIMILARITY("hello", "hallo") --~0.6</code></pre>
               <div id="fn-FUZZY_MATCH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
                 <a href="#fn-FUZZY_MATCH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">FUZZY_MATCH(text, pattern, max_distance?)</code>
-                <p class="text-sm text-gray-400 mb-3">Returns true if text matches pattern within edit distance. Default max_distance is 2.</p>
+                <p class="text-sm text-gray-400 mb-3">Returns true if text matches pattern within edit distance. Default max_distance is 2. As with <code>LEVENSHTEIN</code> and the <code>~=</code> operator, an input longer than 4096 characters is not compared and does not match.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FUZZY_MATCH("hello", "hello", 0) --true
 RETURN FUZZY_MATCH("hello", "hallo", 1) --true
 RETURN FUZZY_MATCH("jonathan", "jonathen") --true (default distance 2)

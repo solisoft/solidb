@@ -180,7 +180,7 @@ FOR m IN matches
                       <li><code class="text-blue-300">fulltext_field</code> - Field with fulltext index</li>
                       <li><code class="text-emerald-300">query_vector</code> - Query embedding vector</li>
                       <li><code class="text-pink-300">text_query</code> - Text query string</li>
-                      <li><code class="text-gray-300">options</code> - Optional: {vector_weight, text_weight, limit, fusion}</li>
+                      <li><code class="text-gray-300">options</code> - Optional: {vector_weight, text_weight, limit, fusion}; <code>limit</code> is capped at 10000</li>
                     </ul>
                   </div>
                   <div>

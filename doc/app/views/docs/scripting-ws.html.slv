@@ -113,11 +113,12 @@
           </h2>
         </div>
         <div class="p-8">
-          <p class="text-gray-400 text-sm mb-4">Channels allow broadcast messaging between WebSocket connections. Any subscriber can broadcast, and all subscribers receive the message.</p>
+          <p class="text-gray-400 text-sm mb-4">Channels allow broadcast messaging between WebSocket connections. Any subscriber can broadcast, and all subscribers receive the message.
+            Channels and presence lists are scoped to the database the script runs in: a channel named <code>chat:lobby</code> in one database is unrelated to the same name in another.</p>
           <ul class="space-y-3 font-mono text-sm text-gray-300">
             <li class="bg-black/20 p-3 rounded border border-white/5">
               <span class="text-purple-400">solidb.ws.channel.subscribe(name)</span> <span class="text-gray-500">-&gt; true</span>
-              <div class="text-xs text-gray-500 mt-1">Subscribe to a channel to receive broadcast messages.</div>
+              <div class="text-xs text-gray-500 mt-1">Subscribe to a channel to receive broadcast messages. Subscribing again to a channel you are already on is a no-op.</div>
             </li>
             <li class="bg-black/20 p-3 rounded border border-white/5">
               <span class="text-purple-400">solidb.ws.channel.unsubscribe(name)</span> <span class="text-gray-500">-&gt; true</span>

@@ -66,7 +66,11 @@
               <li><strong>Asynchronous Execution</strong>: Triggers don't block document operations - they create jobs for later processing.</li>
               <li><strong>Event Types</strong>: React to <code class="text-amber-400">insert</code>, <code class="text-amber-400">update</code>, and <code class="text-amber-400">delete</code> events.</li>
               <li><strong>Full Context</strong>: Scripts receive the document data, old data (for updates/deletes), and event metadata.</li>
-              <li><strong>Reliable Processing</strong>: Jobs support priority, retries, and are processed by distributed workers.</li>
+              <li><strong>Reliable Processing</strong>: Jobs support priority, retries, and are processed by distributed workers.
+                At most <code class="text-amber-400">SOLIDB_QUEUE_MAX_CONCURRENCY</code> jobs (default 4&times; the CPU cores) run at once. A job left <code class="text-amber-400">running</code> longer than
+                <code class="text-amber-400">SOLIDB_JOBS_LEASE_SECS</code> (default the larger of 600 s and twice the Lua timeout) is presumed orphaned by a crashed worker and requeued, which counts as a retry.</li>
+              <li><strong>Retention</strong>: completed and failed trigger jobs are deleted from <code class="text-amber-400">_jobs</code> after <code class="text-amber-400">SOLIDB_JOBS_RETENTION_SECS</code> (default 7 days; <code class="text-amber-400">0</code> keeps them).
+                Rows written by the Soli framework (which track a <code class="text-amber-400">state</code> field) are left alone.</li>
               <li><strong>Dashboard Management</strong>: Create, edit, and monitor triggers through the web dashboard.</li>
             </ul>
           </div>
@@ -130,7 +134,7 @@
                   <tr>
                     <td class="p-4 text-amber-400 font-mono">webhook_secret</td>
                     <td class="p-4 font-mono">string</td>
-                    <td class="p-4">Per-trigger HMAC-SHA256 key for signing the webhook body via <code class="text-indigo-400">X-Webhook-Signature</code>. Falls back to <code class="text-indigo-400">SOLI_WEBHOOK_SECRET</code> / <code class="text-indigo-400">SOLI_JOBS_SECRET</code> env vars.</td>
+                    <td class="p-4">Per-trigger HMAC-SHA256 key for signing the webhook body via <code class="text-indigo-400">X-Webhook-Signature</code>. Without one the webhook is sent unsigned, unless <code class="text-indigo-400">SOLIDB_ALLOW_GLOBAL_WEBHOOK_SECRET=1</code> lets it fall back to the <code class="text-indigo-400">SOLI_WEBHOOK_SECRET</code> / <code class="text-indigo-400">SOLI_JOBS_SECRET</code> env vars.</td>
                   </tr>
                   <tr>
                     <td class="p-4 text-amber-400 font-mono">webhook_headers</td>
@@ -264,7 +268,8 @@
                 <code class="text-amber-300">X-Webhook-Event: job</code>,
                 <code class="text-amber-300">X-Webhook-Delivery: &lt;job-id&gt;</code>, and (when a secret is available)
                 <code class="text-amber-300">X-Webhook-Signature</code> = lowercase hex HMAC-SHA256 of the body. The signing key is resolved in order:
-                per-trigger <code class="text-amber-300">webhook_secret</code> → <code class="text-amber-300">SOLI_WEBHOOK_SECRET</code> env var → <code class="text-amber-300">SOLI_JOBS_SECRET</code> env var → unsigned.
+                per-trigger <code class="text-amber-300">webhook_secret</code> → unsigned. The instance-wide <code class="text-amber-300">SOLI_WEBHOOK_SECRET</code> → <code class="text-amber-300">SOLI_JOBS_SECRET</code> fallback is used only when
+                <code class="text-amber-300">SOLIDB_ALLOW_GLOBAL_WEBHOOK_SECRET=1</code> is set, since the target URL is tenant-chosen and would otherwise act as a signing oracle for the instance secret.
                 See <a href="/docs/getting-started#environment" class="underline hover:text-amber-100">Getting Started → Environment</a> for the full env-var reference.
                 Any non-2xx response counts as failure and is retried per <code class="text-amber-300">max_retries</code>.
               </p>

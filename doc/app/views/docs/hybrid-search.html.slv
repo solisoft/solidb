@@ -268,7 +268,7 @@
                       <td class="p-3 text-amber-400 font-mono">limit</td>
                       <td class="p-3 font-mono">integer</td>
                       <td class="p-3">10</td>
-                      <td class="p-3">Maximum results to return</td>
+                      <td class="p-3">Maximum results to return (capped at 10000)</td>
                     </tr>
                     <tr>
                       <td class="p-3 text-amber-400 font-mono">fusion</td>

@@ -32,6 +32,7 @@
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
                  <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 font-mono text-xs p-3 text-gray-400">
                    <p>Send a JSON object representing the document. The <code class="text-fuchsia-400">_key</code> field is optional; if omitted, one will be auto-generated.</p>
+                   <p class="mt-2">Inserting a <code class="text-fuchsia-400">_key</code> that already exists returns <span class="text-amber-400">409 Conflict</span> (<code>Document with _key 'X' already exists</code>); the existing document is left untouched. Use PUT/PATCH (or an SDBQL <code>UPSERT</code>) to overwrite. A value that collides with a unique index returns <span class="text-amber-400">400</span>.</p>
                  </div>
                </div>
 
@@ -62,7 +63,7 @@
                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                 <code class="text-gray-300">/_api/database/:db/document/:collection/_batch</code>
               </div>
-              <p class="text-sm text-gray-400 mb-4">Insert multiple documents in a single request. More efficient than individual inserts.</p>
+              <p class="text-sm text-gray-400 mb-4">Insert multiple documents in a single request. More efficient than individual inserts. The batch is rejected as a whole if any <code>_key</code> already exists in the collection (<span class="text-amber-400">409 Conflict</span>), if two documents in the batch share a <code>_key</code>, or if a unique index is violated &mdash; against stored documents or between documents of the same batch (<span class="text-amber-400">400</span>).</p>
               <div class="mb-4">
                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">

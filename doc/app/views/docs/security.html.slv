@@ -57,11 +57,15 @@
                 </tr>
                 <tr class="hover:bg-white/5 transition-colors">
                   <td class="p-4 text-gray-300 font-medium">API Keys</td>
-                  <td class="p-4 text-gray-400">Long-lived keys for programmatic access, alternative to ephemeral JWT tokens.</td>
+                  <td class="p-4 text-gray-400">Long-lived keys for programmatic access, alternative to ephemeral JWT tokens. Keys are stored hashed, whether created over HTTP or the native driver, and a request made with one runs as the principal <code class="text-cyan-400">api-key:{id}</code> (it used to be the key's name), which is what logs and <code class="text-cyan-400">CURRENT_USER()</code> now show.</td>
                 </tr>
                 <tr class="hover:bg-white/5 transition-colors">
                   <td class="p-4 text-gray-300 font-medium">Login Rate Limiting</td>
-                  <td class="p-4 text-gray-400">Failed login attempts are limited to <strong>20 per 60 seconds</strong> per (IP address, username) pair — successful logins are never counted. Over the limit, the server responds <code class="text-cyan-400">429 Too Many Requests</code> with a <code class="text-cyan-400">Retry-After</code> header. Tune via <code class="text-cyan-400">SOLIDB_MAX_LOGIN_ATTEMPTS</code> and <code class="text-cyan-400">SOLIDB_LOGIN_RATE_WINDOW_SECS</code>.</td>
+                  <td class="p-4 text-gray-400">Failed login attempts are limited to <strong>20 per 60 seconds</strong> per (IP address, username) pair — successful logins are never counted. Over the limit, the server responds <code class="text-cyan-400">429 Too Many Requests</code> with a <code class="text-cyan-400">Retry-After</code> header. Tune via <code class="text-cyan-400">SOLIDB_MAX_LOGIN_ATTEMPTS</code> and <code class="text-cyan-400">SOLIDB_LOGIN_RATE_WINDOW_SECS</code>. <code class="text-cyan-400">Authorization: Basic</code> and native-driver <code class="text-cyan-400">auth</code> count against the same bucket, so they can answer <code class="text-cyan-400">429</code> too. Argon2 verification runs at most one per CPU core, and an unknown username costs the same time as a wrong password.</td>
+                </tr>
+                <tr class="hover:bg-white/5 transition-colors">
+                  <td class="p-4 text-gray-300 font-medium">Session Revalidation</td>
+                  <td class="p-4 text-gray-400">Long-lived WebSocket and native-driver sessions re-check their credentials every <strong>60 seconds</strong>. A deleted user or a revoked or expired API key closes either kind of connection. A changed role set closes a WebSocket (the client must reconnect to get its new permissions), while a driver session refreshes its permission snapshot in place and is closed only if it has lost access to its database.</td>
                 </tr>
                 <tr class="hover:bg-white/5 transition-colors">
                   <td class="p-4 text-gray-300 font-medium">API Rate Limiting</td>
@@ -94,7 +98,7 @@
           <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6">
             <h3 class="text-lg font-bold text-white mb-4">Users</h3>
             <p class="text-gray-400 text-sm mb-4">
-              Users are identified by a unique username. Each user can have multiple roles assigned to them.
+              Users are identified by a unique username. Each user can have multiple roles assigned to them. A username may not contain <code class="bg-gray-900 px-1 rounded">:</code> (it separates user from password in Basic auth, and <code class="bg-gray-900 px-1 rounded">api-key:{id}</code> is the principal name of an API key), and <code class="bg-gray-900 px-1 rounded">cluster-internal</code> is reserved for peer nodes.
             </p>
             <ul class="space-y-2 text-sm text-gray-300">
                <li class="flex items-center"><i class="fas fa-check text-purple-400 mr-2 text-xs"></i> <span>Managed via <code class="bg-gray-900 px-1 rounded">/_api/auth/users</code></span></li>
@@ -266,7 +270,7 @@ solidb --port 6745 --data-dir ./data \
           <div>
             <h4 class="text-white font-semibold mb-1">Why plaintext is still accepted</h4>
             <p class="text-gray-300 text-sm">
-              None of the shipped client SDKs speak TLS over the native driver protocol yet, and neither do the inter-node sync and cluster transports. Handshaking unconditionally on the multiplexed port would cut off every driver client and every peer connection. Mixed mode is what keeps <code>--tls-cert</code> usable on a clustered node.
+              None of the shipped client SDKs speak TLS over the native driver protocol yet, and neither does the inter-node sync transport (inter-node HTTP calls can, via <code>SOLIDB_CLUSTER_SCHEME=https</code>). Handshaking unconditionally on the multiplexed port would cut off every driver client and every peer connection. Mixed mode is what keeps <code>--tls-cert</code> usable on a clustered node.
             </p>
           </div>
         </div>
@@ -316,7 +320,13 @@ export SOLIDB_REQUIRE_KEYFILE=true</code></pre>
         </div>
 
         <p class="text-gray-400">
-          The cluster communication protocol uses <strong>HMAC-SHA256</strong> to sign all handshake messages, ensuring that only nodes possessing the shared keyfile can join the cluster. Set <code class="bg-gray-900 px-1 rounded">SOLIDB_REQUIRE_KEYFILE=true</code> so that nodes started without a keyfile fail closed instead of silently accepting unauthenticated peers.
+          The cluster communication protocol uses <strong>HMAC-SHA256</strong> to sign all handshake messages, ensuring that only nodes possessing the shared keyfile can join the cluster. Signed messages carry a timestamp and a nonce, and a message replayed inside the acceptance window is rejected. Set <code class="bg-gray-900 px-1 rounded">SOLIDB_REQUIRE_KEYFILE=true</code> so that nodes started without a keyfile fail closed instead of silently accepting unauthenticated peers.
+        </p>
+        <p class="text-gray-400 mt-4">
+          A request that carries <code class="bg-gray-900 px-1 rounded">X-Shard-Direct</code> or <code class="bg-gray-900 px-1 rounded">X-Scatter-Gather</code> is authenticated by the cluster secret alone: a missing or wrong <code class="bg-gray-900 px-1 rounded">X-Cluster-Secret</code> is answered <code class="bg-gray-900 px-1 rounded">401</code> and is <em>not</em> retried as ordinary user authentication. A wrong <code class="bg-gray-900 px-1 rounded">X-Cluster-Secret</code> on any other request is also <code class="bg-gray-900 px-1 rounded">401</code>. The node-to-node document endpoints (<code class="bg-gray-900 px-1 rounded">/document/{collection}/_batch</code>, <code class="bg-gray-900 px-1 rounded">_replica</code>, <code class="bg-gray-900 px-1 rounded">_verify</code>) answer <code class="bg-gray-900 px-1 rounded">403</code> to anything but the verified cluster identity, admin tokens included.
+        </p>
+        <p class="text-gray-400 mt-4">
+          Inter-node URLs use <code class="bg-gray-900 px-1 rounded">SOLIDB_CLUSTER_SCHEME</code>. Only the literal value <code class="bg-gray-900 px-1 rounded">http</code> selects cleartext; any other non-empty value means <code class="bg-gray-900 px-1 rounded">https</code>/<code class="bg-gray-900 px-1 rounded">wss</code>, so a typo cannot downgrade the cluster. When unset, a node running with <code class="bg-gray-900 px-1 rounded">--tls-cert</code> and <code class="bg-gray-900 px-1 rounded">SOLIDB_TLS_REQUIRE=1</code> defaults to <code class="bg-gray-900 px-1 rounded">https</code>; otherwise to <code class="bg-gray-900 px-1 rounded">http</code>.
         </p>
       </section>
 

@@ -265,11 +265,11 @@
           <ul class="space-y-3 font-mono text-sm text-gray-300">
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">solidb.fetch(url, options?)</span> <span class="text-gray-500">-&gt; table</span>
-              <div class="text-xs text-gray-500 mt-1">SSRF-guarded HTTP client (private and loopback addresses are refused, 30 s timeout). Options: <code>{ method, headers, body }</code>. Returns <code>{ status, headers, body }</code>.</div>
+              <div class="text-xs text-gray-500 mt-1">SSRF-guarded HTTP client (private and loopback addresses are refused and the connection is pinned to the checked address, 30 s timeout). Options: <code>{ method, headers, body }</code>. Returns <code>{ status, ok, headers, body }</code>; <code>body</code> is the raw response bytes, capped at <code>SOLIDB_LUA_FETCH_MAX_BYTES</code> (default 10 MB) &mdash; a larger body raises an error.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">solidb.cache(key, value, ttl?)</span> <span class="text-gray-500">-&gt; true</span>
-              <div class="text-xs text-gray-500 mt-1">Store a value in the in-process cache, optionally expiring after <code>ttl</code> seconds.</div>
+              <div class="text-xs text-gray-500 mt-1">Store a value in the in-process cache, optionally expiring after <code>ttl</code> seconds. The cache is per database: keys never collide with another database's.</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">solidb.cache_get(key)</span> <span class="text-gray-500">-&gt; value | nil</span>
@@ -277,7 +277,7 @@
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">solidb.rate_limit(identifier, max_requests, window_seconds)</span> <span class="text-gray-500">-&gt; bool</span>
-              <div class="text-xs text-gray-500 mt-1">Sliding-window counter per identifier (a user, an IP, a key). Returns <code>false</code> once the limit is exceeded.</div>
+              <div class="text-xs text-gray-500 mt-1">Sliding-window counter per identifier (a user, an IP, a key), scoped to the script's database. Returns <code>false</code> once the limit is exceeded. The limiter tracks at most <code>SOLIDB_LUA_RATE_LIMIT_MAX_KEYS</code> identifiers (default 100,000).</div>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">solidb.timeout(ms, fn)</span> <span class="text-gray-500">-&gt; value</span>

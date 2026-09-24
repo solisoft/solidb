@@ -621,6 +621,7 @@ WHERE name = 'Alice'</code></pre>
               </div>
               <p class="text-sm text-gray-400 mt-3">
                 Set <code class="text-cyan-300">dry_run: true</code> to preview the SDBQL without executing.
+                Execution runs off the request thread under the same 30-second timeout as <code class="text-cyan-300">/cursor</code>; an overrun returns <code class="text-cyan-300">400</code> with a timeout error (a mutation that is already running still commits).
               </p>
             </div>
 

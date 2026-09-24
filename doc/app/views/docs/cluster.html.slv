@@ -45,6 +45,9 @@
                  <p class="text-gray-400 leading-relaxed">
                    Every shard has a primary owner and <code class="text-sm bg-gray-800 px-1 py-0.5 rounded text-teal-300">N</code> replicas. Write operations are consistent, while read operations can be tuned for consistency or availability.
                  </p>
+                 <p class="text-gray-400 leading-relaxed">
+                   Replication batches are sized by encoded bytes (at most 8&nbsp;MB per batch) rather than by entry count, and an entry too large for one frame is split into chunks, so one big document never stalls the stream. Signed cluster messages carry a timestamp and nonce and are rejected if replayed.
+                 </p>
                </div>
             </div>
 
@@ -238,9 +241,9 @@
               </div>
 
               <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
-                <h3 class="text-white font-bold mb-3">Inter-node traffic is plaintext</h3>
+                <h3 class="text-white font-bold mb-3">Inter-node traffic and TLS</h3>
                 <p class="text-sm text-gray-400">
-                  The sync and cluster transports do not speak TLS. Run them on a private network or a tunnel. Native TLS (<code>--tls-cert</code>) is safe to enable on a clustered node &mdash; the multiplexed listener only handshakes with clients that offer TLS &mdash; but never set <code class="text-cyan-400">SOLIDB_TLS_REQUIRE=1</code> on one: it drops every peer connection. See <a href="/docs/security#tls" class="text-cyan-400 hover:underline">Transport Security</a>.
+                  Inter-node HTTP and WebSocket calls (shard forwarding, scatter-gather, healing, rebalancing, the cluster changefeed) use the scheme in <code class="text-cyan-400">SOLIDB_CLUSTER_SCHEME</code>: only the literal <code>http</code> means cleartext, any other value means <code>https</code>/<code>wss</code>. The replication sync transport itself does not speak TLS, so still run it on a private network or a tunnel. Native TLS (<code>--tls-cert</code>) is safe to enable on a clustered node &mdash; the multiplexed listener only handshakes with clients that offer TLS &mdash; but never set <code class="text-cyan-400">SOLIDB_TLS_REQUIRE=1</code> on one: it drops every peer connection. See <a href="/docs/security#tls" class="text-cyan-400 hover:underline">Transport Security</a>.
                 </p>
               </div>
             </div>
@@ -269,12 +272,19 @@ Network & Cluster:
       --peer <PEERS>                Join cluster via peer (e.g. 10.0.0.5:6745)
       --replication-port <PORT>     Override replication port (Disable Multiplexing)
       --keyfile <PATH>              Path to auth secret file
+                                    (--peer may be repeated, one per peer)
 
 System:
   -d, --daemon                      Run in background (Daemon mode)
       --data-dir <PATH>             Database storage location [default: ./data]
       --log-file <PATH>             Log output path
-      --pid-file <PATH>             PID lock file</code></pre>
+      --pid-file <PATH>             PID lock file
+
+Environment (inter-node):
+  SOLIDB_CLUSTER_SCHEME                  http | https  (anything but "http" = https)
+  SOLIDB_CLUSTER_HTTP_TIMEOUT_SECS       Per-request timeout [default: 60]
+  SOLIDB_CLUSTER_HTTP_READ_TIMEOUT_SECS  Idle time between reads [default: 60]
+  SOLIDB_CLUSTER_STREAM_TIMEOUT_SECS     Long streaming transfers [default: 21600]</code></pre>
             </div>
           </div>
         </div>

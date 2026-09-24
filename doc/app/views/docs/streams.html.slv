@@ -34,6 +34,9 @@
     <p class="text-text-muted mb-6">
       Use the <code class="text-accent-light">CREATE STREAM</code> statement to define a new stream. A stream is defined by a name and a query that specifies the data source and transformation.
     </p>
+    <p class="text-text-muted mb-6">
+      Streams belong to a database: the same name can exist in two databases without clashing. A stream evaluates its query <strong>as the user who created it</strong>, so that user's row policies apply to what it sees.
+    </p>
 
     <div class="code-block bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 mb-8 shadow-2xl">
       <div class="p-4 overflow-x-auto">
@@ -101,6 +104,11 @@ RETURN order</code></pre>
         </div>
       </div>
     </div>
+
+    <p class="text-sm text-text-muted mt-6">
+      <code>SIZE</code> takes a whole number followed by <code>s</code>, <code>m</code> or <code>h</code>, and must be greater than zero and at most <code>24h</code>; anything else is rejected by <code>CREATE STREAM</code>.
+      Each stream buffers at most <code>SOLIDB_STREAM_MAX_BUFFER_EVENTS</code> events (default 100,000) and <code>SOLIDB_STREAM_MAX_BUFFER_BYTES</code> (default 64&nbsp;MiB) in its window buffer; past either cap the oldest events are dropped and a warning is logged.
+    </p>
   </section>
 
   <!-- Consuming Results -->
@@ -149,12 +157,12 @@ RETURN order</code></pre>
           <tr class="hover:bg-white/5 transition-colors">
             <td class="p-4 font-mono text-sm text-accent-light">List Streams</td>
             <td class="p-4 font-mono text-xs text-text-muted">solidb.streams.list()</td>
-            <td class="p-4 text-sm text-text-muted">Retrieve all active streams.</td>
+            <td class="p-4 text-sm text-text-muted">Retrieve the active streams of the script's database.</td>
           </tr>
           <tr class="hover:bg-white/5 transition-colors">
             <td class="p-4 font-mono text-sm text-accent-light">Stop Stream</td>
             <td class="p-4 font-mono text-xs text-text-muted">solidb.streams.stop("name")</td>
-            <td class="p-4 text-sm text-text-muted">Stop a running stream task.</td>
+            <td class="p-4 text-sm text-text-muted">Stop a running stream task in the script's database.</td>
           </tr>
         </tbody>
       </table>

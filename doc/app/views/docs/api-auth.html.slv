@@ -23,7 +23,8 @@
               <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">How to send credentials</h4>
               <ul class="space-y-2 text-sm text-gray-400">
                 <li><code class="text-cyan-400">Authorization: Bearer &lt;jwt&gt;</code> &mdash; the default for API calls.</li>
-                <li><code class="text-cyan-400">X-API-Key: &lt;key&gt;</code> &mdash; long-lived programmatic access.</li>
+                <li><code class="text-cyan-400">Authorization: Basic &lt;base64(user:pass)&gt;</code> &mdash; accepted, but failures share the login rate limit below, so it can answer <code>429</code>.</li>
+                <li><code class="text-cyan-400">X-API-Key: &lt;key&gt;</code> &mdash; long-lived programmatic access. The request runs as the principal <code>api-key:{id}</code>.</li>
                 <li><code class="text-cyan-400">?token=&lt;jwt&gt;</code> &mdash; <strong class="text-white">WebSocket upgrades only</strong>.</li>
               </ul>
               <p class="text-xs text-gray-500 mt-3">
@@ -37,7 +38,7 @@
                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                 <code class="text-gray-300">/auth/login</code>
               </div>
-              <p class="text-sm text-gray-400 mb-4">Authenticate and receive a JWT token.</p>
+              <p class="text-sm text-gray-400 mb-4">Authenticate and receive a JWT token. Failed attempts are rate limited per (client IP, username) &mdash; <code>429</code> with <code>Retry-After</code> once over budget &mdash; and that bucket is shared with Basic auth and the native driver's <code>auth</code>. The reserved names <code>cluster-internal</code> and <code>api-key:*</code> never log in.</p>
                <div class="mb-4">
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
                  <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
@@ -245,7 +246,7 @@
                  </div>
                </div>
                <div class="mt-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                 <p class="text-xs text-yellow-400"><strong>Usage:</strong> Call this endpoint, then connect to ws://host:6745/_api/ws/changefeed?token=TOKEN</p>
+                 <p class="text-xs text-yellow-400"><strong>Usage:</strong> Call this endpoint, then connect to ws://host:6745/_api/ws/changefeed?token=TOKEN. The open socket re-checks the principal every 60 seconds; if the user is removed or their roles change, the server closes it and the client must fetch a new token and reconnect.</p>
                </div>
                <div class="mt-2 p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg">
                  <p class="text-xs text-rose-300"><strong>Note:</strong> this endpoint itself is a normal REST call &mdash; authenticate it with an <code>Authorization: Bearer</code> header or <code>X-API-Key</code>. A token passed as <code>?token=</code> is rejected here with <code>401</code>; the query parameter is only accepted on the WebSocket upgrade paths listed below.</p>
@@ -475,7 +476,7 @@
                       <tr>
                         <td class="p-3 text-fuchsia-400 font-mono">username</td>
                         <td class="p-3 font-mono">string</td>
-                        <td class="p-3">Username (1-64 characters).</td>
+                        <td class="p-3">Username (1-64 characters). Must not contain <code>:</code>; <code>cluster-internal</code> is reserved.</td>
                         <td class="p-3 text-white">Yes</td>
                       </tr>
                       <tr>
@@ -526,7 +527,7 @@
                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                 <code class="text-gray-300">/_api/auth/users/:username/roles</code>
               </div>
-              <p class="text-sm text-gray-400 mb-4">Assign a role to a user.</p>
+              <p class="text-sm text-gray-400 mb-4">Assign a role to a user. The user's open WebSocket connections are closed at their next 60-second revalidation and must reconnect; native-driver sessions pick up the new permissions at the same interval.</p>
               <div class="mb-4">
                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">

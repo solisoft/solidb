@@ -728,51 +728,50 @@ store.remove_subscription(collection)?;</code></pre>
 
         <p class="text-gray-300 mb-6">
           The sync protocol uses standard HTTP endpoints for compatibility. You can also use these endpoints directly for custom sync implementations.
+          All of them require an authenticated caller (JWT or API key) and take the <code>session_id</code> returned by <code>POST /_api/sync/session</code>.
+          Version vectors are sent and returned as <code>{"versions": {node: counter}, "hlc_timestamp", "hlc_counter"}</code>.
         </p>
 
-        <!-- Delta Sync Endpoint -->
+        <!-- Server-side rules -->
+        <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-8">
+          <h3 class="text-lg font-bold text-amber-300 mb-3">Sessions, limits and access rules</h3>
+          <ul class="text-sm text-gray-300 space-y-2 list-disc list-inside">
+            <li><strong class="text-white">Sessions</strong> (<code>POST /_api/sync/session</code>): <code>device_id</code> must match <code>[A-Za-z0-9._-]{1,128}</code>. A session belongs to the principal that registered it; anyone else using its id gets the same &ldquo;Session not found&rdquo; as for a missing one. Sessions expire after 7 days without activity.</li>
+            <li><strong class="text-white">Caps</strong>: at most 64 sessions per principal (registering a 65th evicts that principal's least recently active one) and 10,000 in total (beyond that: <code>429</code>). A session holds at most 128 subscriptions of at most 256 bytes each, and <code>filter_query</code> is limited to 4&nbsp;KB. Idle sessions expire and are swept every 10 minutes.</li>
+            <li><strong class="text-white">Push</strong> is a client write like any other: the protected system collections are refused (<code>_scripts</code>, <code>_triggers</code>, the credential collections and the rest of the write-protected tier, plus <code>_jobs</code> without Admin). A missing collection is created only when <code>SOLIDB_AUTO_CREATE_COLLECTIONS</code> is on, and a missing database only when the caller holds the instance-level Admin that <code>POST /_api/database</code> requires.</li>
+            <li><strong class="text-white">Pull</strong> never returns rows from credential collections (<code>_admins</code>, <code>_api_keys</code>, <code>_env</code>, <code>_roles</code>, <code>_user_roles</code>); subscribing to one is refused with <code>403</code>. <code>limit</code> is clamped to 1&ndash;1000 (default 100).</li>
+          </ul>
+        </div>
+
+        <!-- Register Session Endpoint -->
         <div class="mb-8">
           <div class="flex items-center mb-3">
             <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-mono rounded mr-3">POST</span>
-            <code class="text-white font-mono">/_api/sync/delta</code>
+            <code class="text-white font-mono">/_api/sync/session</code>
           </div>
-          <p class="text-sm text-gray-400 mb-3">Push local changes and receive server delta in one request.</p>
+          <p class="text-sm text-gray-400 mb-3">
+            Register a device and open a sync session. <code>device_id</code> and <code>api_key</code> are required; <code>subscriptions</code> (collection names, empty = all)
+            and <code>filter_query</code> (a simple <code>doc.field OP value</code> comparison applied to pulled documents) are optional.
+            The returned <code>session_id</code> is passed to every other endpoint.
+          </p>
           <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
             <div class="text-gray-500 mb-2">// Request</div>
             <pre><code class="language-json">{
-  "database": "mydb",
-  "client_id": "client-A",
-  "version_vector": {
-    "client-A": 5,
-    "server": 8
-  },
-  "changes": [
-    {
-      "collection": "users",
-      "key": "user-123",
-      "operation": "insert",
-      "document": { "name": "Alice", "email": "alice@example.com" },
-      "timestamp": "2024-01-15T10:30:00Z"
-    }
-  ]
+  "device_id": "iphone-alice",
+  "api_key": "client-key",
+  "subscriptions": ["users", "orders"],
+  "filter_query": "doc.owner == 'alice'"
 }</code></pre>
             <div class="text-gray-500 mt-4 mb-2">// Response</div>
             <pre><code class="language-json">{
-  "server_version": {
-    "client-A": 6,
-    "client-B": 2,
-    "server": 9
-  },
-  "server_changes": [
-    {
-      "collection": "users",
-      "key": "user-456",
-      "operation": "update",
-      "delta": { "status": "active" },
-      "version_vector": { "client-B": 2, "server": 9 }
-    }
-  ],
-  "conflicts": []
+  "session_id": "iphone-alice-...",
+  "server_vector": { "versions": {}, "hlc_timestamp": 0, "hlc_counter": 0 },
+  "capabilities": {
+    "delta_sync": true,
+    "crdt_types": true,
+    "compression": true,
+    "max_batch_size": 1048576
+  }
 }</code></pre>
           </div>
         </div>
@@ -780,16 +779,40 @@ store.remove_subscription(collection)?;</code></pre>
         <!-- Pull Endpoint -->
         <div class="mb-8">
           <div class="flex items-center mb-3">
-            <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-mono rounded mr-3">GET</span>
-            <code class="text-white font-mono">/_api/sync/pull/:database</code>
+            <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-mono rounded mr-3">POST</span>
+            <code class="text-white font-mono">/_api/sync/pull</code>
           </div>
-          <p class="text-sm text-gray-400 mb-3">Get changes from server since last sync.</p>
+          <p class="text-sm text-gray-400 mb-3">
+            Fetch the changes recorded since the session's last pull, across every database the caller can read, narrowed to the session's subscriptions and filter.
+            The server remembers the position per session; repeat while <code>has_more</code> is <code>true</code>.
+          </p>
           <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
-            <div class="text-gray-500 mb-2">// Query Parameters</div>
-            <pre><code class="language-text">?client_id=client-A
-&version_vector={"client-A":5,"server":8}
-&collections=users,orders  // Optional: filter by collections
-&limit=100                 // Optional: max changes to return</code></pre>
+            <div class="text-gray-500 mb-2">// Request</div>
+            <pre><code class="language-json">{
+  "session_id": "iphone-alice-...",
+  "client_vector": { "versions": { "iphone-alice": 5 }, "hlc_timestamp": 0, "hlc_counter": 0 },
+  "limit": 100
+}</code></pre>
+            <div class="text-gray-500 mt-4 mb-2">// Response</div>
+            <pre><code class="language-json">{
+  "changes": [
+    {
+      "database": "mydb",
+      "collection": "users",
+      "document_key": "user-456",
+      "operation": "Update",
+      "document_data": { "_key": "user-456", "status": "active" },
+      "parent_vectors": [],
+      "vector": { "versions": { "node-1": 42 }, "hlc_timestamp": 0, "hlc_counter": 0 },
+      "timestamp": 1705314600000,
+      "is_delta": false,
+      "delta_patch": null
+    }
+  ],
+  "server_vector": { "versions": { "node-1": 42 }, "hlc_timestamp": 0, "hlc_counter": 0 },
+  "has_more": false,
+  "conflicts": []
+}</code></pre>
           </div>
         </div>
 
@@ -797,45 +820,83 @@ store.remove_subscription(collection)?;</code></pre>
         <div class="mb-8">
           <div class="flex items-center mb-3">
             <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-mono rounded mr-3">POST</span>
-            <code class="text-white font-mono">/_api/sync/push/:database</code>
+            <code class="text-white font-mono">/_api/sync/push</code>
           </div>
-          <p class="text-sm text-gray-400 mb-3">Send local changes to server.</p>
+          <p class="text-sm text-gray-400 mb-3">
+            Send local changes. Each change names its own <code>database</code> and needs Write on it. <code>operation</code> is <code>"Insert"</code>, <code>"Update"</code> or <code>"Delete"</code>;
+            inserts and updates carry the full document in <code>document_data</code> and are applied as an upsert (last write wins). Delta changes (<code>is_delta: true</code>) are rejected.
+            Every field of a change shown below must be present: a <code>changes</code> array that does not parse is treated as empty.
+            Changes that fail are counted in <code>rejected</code> rather than failing the request.
+          </p>
           <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
-            <div class="text-gray-500 mb-2">// Request Body</div>
+            <div class="text-gray-500 mb-2">// Request</div>
             <pre><code class="language-json">{
-  "client_id": "client-A",
+  "session_id": "iphone-alice-...",
+  "client_vector": { "versions": { "iphone-alice": 5 }, "hlc_timestamp": 0, "hlc_counter": 0 },
   "changes": [
     {
+      "database": "mydb",
       "collection": "users",
-      "key": "user-123",
-      "operation": "update",
-      "delta": { "email": "new@example.com" },
-      "base_version": { "client-A": 5, "server": 8 }
+      "document_key": "user-123",
+      "operation": "Update",
+      "document_data": { "name": "Alice", "email": "new@example.com" },
+      "parent_vectors": [],
+      "vector": { "versions": { "iphone-alice": 6 }, "hlc_timestamp": 0, "hlc_counter": 0 },
+      "timestamp": 1705314600000,
+      "is_delta": false
     }
   ]
+}</code></pre>
+            <div class="text-gray-500 mt-4 mb-2">// Response</div>
+            <pre><code class="language-json">{
+  "server_vector": { "versions": { "iphone-alice": 6 }, "hlc_timestamp": 0, "hlc_counter": 0 },
+  "conflicts": [],
+  "accepted": 1,
+  "rejected": 0
 }</code></pre>
           </div>
         </div>
 
-        <!-- Sync Status Endpoint -->
+        <!-- Ack Endpoint -->
+        <div class="mb-8">
+          <div class="flex items-center mb-3">
+            <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-mono rounded mr-3">POST</span>
+            <code class="text-white font-mono">/_api/sync/ack</code>
+          </div>
+          <p class="text-sm text-gray-400 mb-3">Acknowledge the changes the client has applied locally, recording its version vector on the session.</p>
+          <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
+            <div class="text-gray-500 mb-2">// Request</div>
+            <pre><code class="language-json">{
+  "session_id": "iphone-alice-...",
+  "applied_vector": { "versions": { "node-1": 42 }, "hlc_timestamp": 0, "hlc_counter": 0 }
+}</code></pre>
+            <div class="text-gray-500 mt-4 mb-2">// Response</div>
+            <pre><code class="language-json">{ "success": true }</code></pre>
+          </div>
+        </div>
+
+        <!-- Conflict Endpoints -->
         <div>
           <div class="flex items-center mb-3">
-            <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-mono rounded mr-3">GET</span>
-            <code class="text-white font-mono">/_api/sync/status/:database</code>
+            <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-mono rounded mr-3">GET</span>
+            <code class="text-white font-mono">/_api/sync/conflicts?session_id=...</code>
           </div>
-          <p class="text-sm text-gray-400 mb-3">Get server-side sync status for a client.</p>
+          <div class="flex items-center mb-3">
+            <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-mono rounded mr-3">POST</span>
+            <code class="text-white font-mono">/_api/sync/resolve</code>
+          </div>
+          <p class="text-sm text-gray-400 mb-3">
+            Reserved for server-side conflict tracking, which is <strong class="text-white">not implemented yet</strong>: documents do not carry version vectors, so the server cannot detect
+            concurrent writes and pushes resolve last-write-wins. After checking the session (and, for <code>resolve</code>, its body), both endpoints return <code>501 Not Implemented</code>.
+            Resolve conflicts on the client, as described below.
+          </p>
           <div class="bg-gray-950/50 rounded-xl p-4 font-mono text-sm border border-white/5">
-            <div class="text-gray-500 mb-2">// Response</div>
+            <div class="text-gray-500 mb-2">// POST /_api/sync/resolve request</div>
             <pre><code class="language-json">{
-  "client_id": "client-A",
-  "server_version": {
-    "client-A": 10,
-    "client-B": 5,
-    "server": 15
-  },
-  "pending_for_client": 3,
-  "last_sync": "2024-01-15T10:30:00Z",
-  "collections_synced": ["users", "orders"]
+  "session_id": "iphone-alice-...",
+  "document_key": "user-123",
+  "resolution": "merged",          // "local" | "remote" | "merged"
+  "merged_data": { "name": "Alice" } // required when resolution is "merged"
 }</code></pre>
           </div>
         </div>

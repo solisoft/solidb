@@ -143,6 +143,11 @@ _system> 1 + 1
               <i class="fas fa-globe text-blue-400 mr-2"></i> Web REPL
            </h3>
            <p class="text-gray-400 text-sm">Access from the dashboard sidebar under "Lua REPL".</p>
+           <p class="text-gray-400 text-sm mt-4">
+             Each evaluation runs as you, under the script timeout and memory limit. Sessions are private to the user who opened them and capped per user and per server;
+             values and function definitions carry over between commands, but earlier commands are never re-executed, so their side effects are not repeated.
+             See the <a href="/docs/api-scripting#repl" class="text-indigo-400 hover:text-indigo-300">REPL endpoint</a> for the limits.
+           </p>
         </div>
       </div>
     </section>

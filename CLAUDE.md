@@ -248,6 +248,27 @@ and `SOLIDB_ALLOW_INSECURE_WEBHOOK_TLS` are dev-only escape hatches on the
 webhook path, and `SOLIDB_DB_AUTHZ_MODE=warn` (plus `SOLIDB_DB_AUTHZ_ALLOW_WARN=1`)
 turns per-database authorization into a dry run.
 
+### Resource bounds added by the September 2026 audit fixes
+
+Each bounds something a single client could grow without limit. Invalid or `0`
+falls back to the default.
+
+| Variable | Default | Bounds |
+|---|---|---|
+| `SOLIDB_QUEUE_MAX_CONCURRENCY` | 4 × cores | Jobs executing at once |
+| `SOLIDB_JOBS_RETENTION_SECS` | 604800 | Age at which `completed`/`failed` `_jobs` rows are deleted (Soli rows, which use `state`, are never touched) |
+| `SOLIDB_JOBS_LEASE_SECS` | max(600, 2 × Lua timeout) | How long a `running` job may go unfinished before it is requeued |
+| `SOLIDB_STREAM_MAX_BUFFER_EVENTS` / `_BYTES` | 100000 / 64 MiB | Per-stream window buffer |
+| `SOLIDB_LUA_FETCH_MAX_BYTES` | 10 MB | Lua `fetch` response body |
+| `SOLIDB_LUA_RATE_LIMIT_MAX_KEYS` | 100000 | Keys held by `solidb.rate_limit` |
+| `SOLIDB_REPL_MAX_SESSIONS_PER_USER` / `SOLIDB_REPL_MAX_SESSIONS` | 8 / 1000 | REPL sessions |
+| `SOLIDB_CLUSTER_HTTP_TIMEOUT_SECS` / `_READ_TIMEOUT_SECS` | 60 / 60 | Inter-node HTTP requests |
+| `SOLIDB_CLUSTER_STREAM_TIMEOUT_SECS` | 21600 | Shard copy / export streams |
+
+`SOLIDB_CLUSTER_SCHEME` now applies to every inter-node URL (`src/cluster/http.rs`
+`peer_url`); anything but `http` means https. Build new inter-node URLs with
+that helper, never `format!("http://…")`.
+
 ### Column-family lifecycle knobs
 
 One collection is one RocksDB column family, and every `create_cf`/`drop_cf`

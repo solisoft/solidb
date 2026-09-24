@@ -152,6 +152,10 @@
               The server will immediately execute the query and send a `query_result` message. 
               After that, it will re-send the same message whenever a change occurs in the underlying data.
             </p>
+            <p class="text-gray-400 text-sm mb-6">
+              The query runs as the subscriber, so their row policies apply to every result. Credentials are re-validated every 60 seconds and a change to the user's roles
+              closes the socket; the client must reconnect and subscribe again. Messages sent to the server are limited to 1 MB.
+            </p>
 
             <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-lg">
               <div class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between">

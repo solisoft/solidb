@@ -88,7 +88,12 @@
           </div>
           <div class="mt-6 pt-6 border-t border-white/10">
               <p class="text-gray-400 text-xs italic">
-                Scripts are subject to execution time limits (default 5s) and memory limits (default 64MB) to prevent destabilizing the server.
+                Scripts are subject to a wall-clock deadline (default 30s, <code>SOLIDB_LUA_TIMEOUT_SECS</code>) and a memory limit (default 64MB, <code>SOLIDB_LUA_MEMORY_LIMIT_MB</code>) to prevent destabilizing the server.
+                The deadline also counts time spent parked in async calls such as <code>solidb.fetch</code>, <code>crypto.hash_password</code> or <code>time.sleep</code>, which work in pooled scripts too.
+              </p>
+              <p class="text-gray-400 text-xs italic mt-2">
+                The shared library tables (<code>string</code>, <code>table</code>, <code>math</code>, <code>coroutine</code>, <code>utf8</code>, <code>crypto</code>, <code>time</code>, <code>json</code>, <code>solidb</code>, <code>response</code>) are read-only:
+                assigning a field raises <code>attempt to modify read-only shared table</code>. Keep your own helpers in locals or your own tables.
               </p>
           </div>
         </div>

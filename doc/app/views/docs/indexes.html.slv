@@ -273,7 +273,7 @@
                     </div>
                      <div class="bg-gray-800/50 p-3 rounded-lg border border-white/5">
                         <span class="text-white font-semibold">Unique Constraints</span>
-                        <span class="block text-xs text-gray-400 mt-1">Enforce unique values for fields.</span>
+                        <span class="block text-xs text-gray-400 mt-1">Enforce unique values for fields &mdash; checked atomically on insert, update and replace, and between documents of the same batch.</span>
                     </div>
                 </div>
             </div>
@@ -566,7 +566,7 @@
                  <div class="bg-orange-900/10 border border-orange-500/20 rounded-xl p-4">
                     <h4 class="text-orange-400 font-bold mb-2">How it works</h4>
                     <p class="text-sm text-orange-200/70">
-                        A background thread periodically checks the index and removes expired documents. The `expireAfter` value defines the time in seconds.
+                        A background thread periodically checks the index and removes expired documents together with all their index entries. The `expireAfter` value defines the time in seconds. Expiry deletes are not replicated: in a cluster each node removes its own copy.
                     </p>
                 </div>
                 <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">

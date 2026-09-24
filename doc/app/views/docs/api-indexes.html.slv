@@ -63,7 +63,7 @@
                         <tr>
                          <td class="p-3 text-fuchsia-400 font-mono">unique</td>
                          <td class="p-3 font-mono">boolean</td>
-                         <td class="p-3">If true, enforces uniqueness on the indexed field. Default: <code class="bg-gray-800 px-1 rounded">false</code>.</td>
+                         <td class="p-3">If true, enforces uniqueness on the indexed field, on insert, update and within a batch; a violation returns <code class="bg-gray-800 px-1 rounded">400</code>. Default: <code class="bg-gray-800 px-1 rounded">false</code>.</td>
                          <td class="p-3">No</td>
                        </tr>
                      </tbody>
@@ -485,6 +485,8 @@
                 <li>Documents are deleted when: <code class="bg-gray-800 px-1 rounded text-amber-300">now >= timestamp + expire_after_seconds</code></li>
                 <li>A background worker checks for expired documents every <strong class="text-gray-300">60 seconds</strong></li>
                 <li>Documents without the timestamp field are <strong class="text-gray-300">not deleted</strong></li>
+                <li>An expired document is removed with all its index entries, as for a client delete</li>
+                <li>Expiry deletes are <strong class="text-gray-300">local to each node</strong> and not replicated; every node reaps its own copy</li>
                 <li>Use <code class="bg-gray-800 px-1 rounded">expire_after_seconds: 0</code> to delete at the exact timestamp</li>
               </ul>
             </div>

@@ -496,7 +496,12 @@ end
                   </tr>
                   <tr>
                     <td class="px-4 py-3 font-mono text-indigo-300">-p, --password</td>
-                    <td class="px-4 py-3">Password</td>
+                    <td class="px-4 py-3">Password. Still accepted, but prints a warning: it is visible in <code>ps</code> and shell history.</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-indigo-300">--password-file</td>
+                    <td class="px-4 py-3">Read the password from a file (one trailing newline ignored). Resolved in order: <code>-p</code>, <code>--password-file</code>, <code>SOLIDB_PASSWORD</code>, then a prompt when a terminal is attached.</td>
                     <td class="px-4 py-3">-</td>
                   </tr>
                 </tbody>
@@ -657,6 +662,16 @@ end
                     <td class="px-4 py-3">Drop existing collections first</td>
                     <td class="px-4 py-3">false</td>
                   </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-purple-300">-u, --user</td>
+                    <td class="px-4 py-3">Username. Required when a password is given.</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-purple-300">--password-file</td>
+                    <td class="px-4 py-3">Read the password from a file. Resolved in order: <code>-p</code>, <code>--password-file</code>, <code>SOLIDB_PASSWORD</code>, then a prompt when a terminal is attached. <code>-p</code> still works but warns (visible in <code>ps</code>).</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -729,6 +744,16 @@ end
                     <td class="px-4 py-3">Run as daemon</td>
                     <td class="px-4 py-3">false</td>
                   </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-teal-300">--username</td>
+                    <td class="px-4 py-3">Username</td>
+                    <td class="px-4 py-3">admin</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-teal-300">--password-file</td>
+                    <td class="px-4 py-3">Read the password from a file. Otherwise <code>SOLIDB_PASSWORD</code>, then a terminal prompt. <code>--password</code> still works but warns (visible in <code>ps</code>).</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
                    <tr>
                     <td class="px-4 py-3 font-mono text-teal-300">--pid-file</td>
                     <td class="px-4 py-3">PID file</td>
@@ -749,7 +774,7 @@ end
                  <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">Mount to directory</div>
                  <div class="p-4 font-mono text-sm text-gray-300">
                    <span class="text-green-400">mkdir</span> ~/solidb-mount<br>
-                   <span class="text-green-400">solidb-fuse</span> --mount ~/solidb-mount --password admin
+                   <span class="text-green-400">solidb-fuse</span> --mount ~/solidb-mount <span class="text-gray-500"># prompts for the password</span>
                  </div>
               </div>
               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">

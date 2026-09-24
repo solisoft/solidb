@@ -372,7 +372,7 @@ volumes:
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLIDB_CLUSTER_SCHEME</td>
                       <td class="p-3">http</td>
-                      <td class="p-3">Protocol for cluster communication</td>
+                      <td class="p-3">Protocol for cluster communication (anything but <code>http</code> means <code>https</code>)</td>
                     </tr>
                   </tbody>
                 </table>
@@ -427,6 +427,14 @@ volumes:
                 </div>
                 <div class="flex mt-2">
                   <span class="text-gray-500 mr-2">#</span>
+                  <span class="text-gray-500">Required: compose refuses to start without these</span>
+                </div>
+                <div class="flex">
+                  <span class="text-cyan-400 mr-2">$</span>
+                  <span>export SOLIDB_ADMIN_PASSWORD=... JWT_SECRET=$(openssl rand -hex 32) SOLIDB_METRICS_TOKEN=$(openssl rand -hex 32)</span>
+                </div>
+                <div class="flex mt-2">
+                  <span class="text-gray-500 mr-2">#</span>
                   <span class="text-gray-500">Start 3-node cluster</span>
                 </div>
                 <div class="flex">
@@ -448,6 +456,9 @@ volumes:
                   <div class="text-gray-500">localhost:6747</div>
                 </div>
               </div>
+              <p class="text-gray-400 text-xs mt-4">
+                Every node needs the same <code>JWT_SECRET</code>, or a token issued by one node is rejected by the others. Each node names its peers with one <code>--peer</code> flag per peer. <code>/metrics</code> answers <code>401</code> unless the scraper sends <code>Authorization: Bearer $SOLIDB_METRICS_TOKEN</code>.
+              </p>
             </div>
           </div>
         </div>
@@ -488,7 +499,8 @@ volumes:
                 Single Node Deployment
               </h3>
               <div class="bg-gray-950 p-4 rounded-lg font-mono text-xs text-gray-300 border border-white/10 overflow-x-auto">
-                <pre><span class="text-gray-500"># Apply manifests</span>
+                <pre><span class="text-gray-500"># Apply manifests (first replace the jwt-secret and metrics-token</span>
+<span class="text-gray-500"># placeholders in k8s/secret.yaml)</span>
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/configmap.yaml
 kubectl apply -f k8s/secret.yaml
@@ -512,10 +524,13 @@ kubectl -n solidb port-forward svc/solidb 6745:6745</pre>
                 <pre><span class="text-gray-500"># Generate keyfile for cluster auth</span>
 openssl rand -hex 32 > keyfile.txt
 
-<span class="text-gray-500"># Create secret with keyfile</span>
+<span class="text-gray-500"># Create the secret: keyfile, a JWT secret shared by every pod,</span>
+<span class="text-gray-500"># and the bearer token Prometheus presents on /metrics (all required)</span>
 kubectl create namespace solidb
-kubectl create secret generic solidb-secret \
-  -n solidb --from-file=keyfile=keyfile.txt
+kubectl create secret generic solidb-secret -n solidb \
+  --from-file=keyfile=keyfile.txt \
+  --from-literal=jwt-secret="$(openssl rand -hex 32)" \
+  --from-literal=metrics-token="$(openssl rand -hex 32)"
 
 <span class="text-gray-500"># Deploy 3-node cluster</span>
 kubectl apply -f k8s/configmap.yaml
@@ -563,7 +578,7 @@ kubectl -n solidb get pods -w</pre>
                 <h4 class="text-blue-400 font-bold text-xs uppercase mb-2">Included Features</h4>
                 <ul class="text-sm text-gray-300 space-y-1">
                   <li>• Liveness & readiness probes</li>
-                  <li>• Prometheus annotations</li>
+                  <li>• Prometheus annotations (the scrape job must send the <code>metrics-token</code>)</li>
                   <li>• Pod anti-affinity</li>
                   <li>• PodDisruptionBudget</li>
                 </ul>
@@ -835,6 +850,16 @@ kubectl -n solidb get pods -w</pre>
                       <td class="p-3">false</td>
                       <td class="p-3">With <code class="text-amber-400">--tls-cert</code> set, drop any connection on the multiplexed port that does not offer TLS. Leave it off on a node that serves native driver clients or has cluster peers &mdash; neither speaks TLS. See <a href="/docs/security#tls" class="text-cyan-400 hover:underline">Transport Security</a>.</td>
                     </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_METRICS_TOKEN</td>
+                      <td class="p-3"><em>unset</em></td>
+                      <td class="p-3">Bearer token (<code class="text-amber-400">Authorization: Bearer</code> or <code class="text-amber-400">X-Metrics-Token</code>) that authorizes scrapes of <code class="text-amber-400">/metrics</code>. Without it only an admin JWT is accepted, and <code class="text-amber-400">/metrics</code> answers <code class="text-amber-400">401</code> to Prometheus. <code class="text-amber-400">SOLIDB_METRICS_PUBLIC=1</code> removes the check.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_PASSWORD</td>
+                      <td class="p-3"><em>unset</em></td>
+                      <td class="p-3">Password read by <code class="text-amber-400">solidb-dump</code>, <code class="text-amber-400">solidb-restore</code> and <code class="text-amber-400">solidb-fuse</code> when neither <code class="text-amber-400">-p</code> nor <code class="text-amber-400">--password-file</code> is given. Keeps the password out of <code class="text-amber-400">ps</code> and shell history.</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -865,6 +890,51 @@ kubectl -n solidb get pods -w</pre>
                       <td class="p-3">false</td>
                       <td class="p-3">Set to <code class="text-amber-400">1</code> or <code class="text-amber-400">true</code> to skip Lua global reset between requests. Provides maximum throughput for stateless scripts. Do not enable if scripts rely on clean global state.</td>
                     </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_LUA_FETCH_MAX_BYTES</td>
+                      <td class="p-3">10485760 (10 MB)</td>
+                      <td class="p-3">Largest response body a Lua <code class="text-amber-400">fetch</code> will read.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_LUA_RATE_LIMIT_MAX_KEYS</td>
+                      <td class="p-3">100000</td>
+                      <td class="p-3">Most buckets <code class="text-amber-400">solidb.rate_limit</code> keeps in memory.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_REPL_MAX_SESSIONS_PER_USER</td>
+                      <td class="p-3">8</td>
+                      <td class="p-3">Lua REPL sessions one user may hold.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_REPL_MAX_SESSIONS</td>
+                      <td class="p-3">1000</td>
+                      <td class="p-3">Lua REPL sessions across the instance.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_STREAM_MAX_BUFFER_EVENTS</td>
+                      <td class="p-3">100000</td>
+                      <td class="p-3">Events one stream window may buffer; the oldest are dropped with a warning past it.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_STREAM_MAX_BUFFER_BYTES</td>
+                      <td class="p-3">67108864 (64 MiB)</td>
+                      <td class="p-3">Bytes one stream window may buffer.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_QUEUE_MAX_CONCURRENCY</td>
+                      <td class="p-3">4 &times; CPU cores</td>
+                      <td class="p-3">Queue jobs executing at once, across all databases.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_JOBS_RETENTION_SECS</td>
+                      <td class="p-3">604800 (7 days)</td>
+                      <td class="p-3">How long completed and failed <code class="text-amber-400">_jobs</code> rows are kept. <code class="text-amber-400">0</code> keeps them forever. Rows written by the Soli framework (which use <code class="text-amber-400">state</code>) are not touched.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_JOBS_LEASE_SECS</td>
+                      <td class="p-3">max(600, 2 &times; Lua timeout)</td>
+                      <td class="p-3">A job left <code class="text-amber-400">running</code> longer than this is presumed orphaned and requeued (counts as a retry). Minimum 60.</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -888,7 +958,22 @@ kubectl -n solidb get pods -w</pre>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_CLUSTER_SCHEME</td>
                       <td class="p-3">http</td>
-                      <td class="p-3">Protocol for inter-node communication (<code class="text-amber-400">http</code> or <code class="text-amber-400">https</code>). Used for replication, sharding, blob sync, and scatter-gather queries.</td>
+                      <td class="p-3">Protocol for inter-node communication (<code class="text-amber-400">http</code> or <code class="text-amber-400">https</code>). Used for every inter-node HTTP/WebSocket URL: shard forwarding, blob sync, healing, rebalancing and scatter-gather queries. Only the literal <code class="text-amber-400">http</code> selects cleartext; any other value means <code class="text-amber-400">https</code>, so a typo cannot downgrade the cluster. Unset, it defaults to <code class="text-amber-400">https</code> on a node running with <code class="text-amber-400">--tls-cert</code> and <code class="text-amber-400">SOLIDB_TLS_REQUIRE=1</code>.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_CLUSTER_HTTP_TIMEOUT_SECS</td>
+                      <td class="p-3">60</td>
+                      <td class="p-3">Total timeout of one inter-node HTTP request.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_CLUSTER_HTTP_READ_TIMEOUT_SECS</td>
+                      <td class="p-3">60</td>
+                      <td class="p-3">Idle time allowed between reads on an inter-node response, streaming ones included, so a peer that stalls mid-transfer is detected.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_CLUSTER_STREAM_TIMEOUT_SECS</td>
+                      <td class="p-3">21600 (6 h)</td>
+                      <td class="p-3">Total cap for long streaming transfers such as shard copies and exports.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -986,7 +1071,7 @@ SOLIDB_API_RATE_WINDOW_SECS=60</div>
                 </div>
                 <div class="bg-gray-950 p-3 rounded-lg font-mono text-sm text-gray-300 border border-white/10">
                   <span class="text-gray-500"># Start with keyfile</span><br/>
-                  ./solidb --keyfile solidb.key --cluster-peers "node2:6746"
+                  ./solidb --keyfile solidb.key --peer node2:6746 --peer node3:6746
                 </div>
               </div>
             </div>

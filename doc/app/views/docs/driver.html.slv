@@ -78,7 +78,16 @@
 +------------------+-------------------------+</code></pre>
           
           <h3 class="text-xl font-bold text-white mb-4">Maximum Message Size</h3>
-          <p class="text-gray-300 mb-6">The maximum message size is <code>16 MB</code> (16,777,216 bytes).</p>
+          <p class="text-gray-300 mb-6">The maximum message size is <code>16 MB</code> (16,777,216 bytes). Until the connection has authenticated, frames are capped at <code>64 KB</code>.</p>
+
+          <h3 class="text-xl font-bold text-white mb-4">Authentication Rules</h3>
+          <ul class="list-disc pl-5 space-y-2 text-gray-400 mb-6">
+            <li>Before a successful <code>auth</code>, only <code>ping</code> and <code>auth</code> are accepted; any other command, <code>batch</code> included, is refused.</li>
+            <li><code>auth</code> is not allowed inside a <code>batch</code>.</li>
+            <li>Failed <code>auth</code> attempts count against the same per-(IP, username) bucket as HTTP login and can be refused with a rate-limit error. The reserved names <code>cluster-internal</code> and <code>api-key:*</code> never authenticate.</li>
+            <li>An authenticated session re-checks its credential every <strong>60 seconds</strong>: a deleted user or a revoked or expired API key closes the connection, and changed roles are picked up in place.</li>
+            <li>API keys created over the driver are stored hashed, like those created over HTTP.</li>
+          </ul>
 
           <h3 class="text-xl font-bold text-white mb-4">Query Timeout</h3>
           <p class="text-gray-300 mb-6">

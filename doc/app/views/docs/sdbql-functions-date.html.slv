@@ -223,7 +223,7 @@ DATE_FORMAT("2025-06-15T14:30:00Z", "%H:%M", "America/New_York")
                 </h3>
               </div>
               <div class="p-5 space-y-4">
-                <p class="text-sm text-gray-400">Add or subtract a specified amount of time to/from a date. Returns ISO 8601 string.</p>
+                <p class="text-sm text-gray-400">Add or subtract a specified amount of time to/from a date. Returns ISO 8601 string. A result outside the representable date range raises an error (<code>DATE_ADD: result is out of the representable date range</code>); the same applies to <code>DATE_SUBTRACT</code>.</p>
                 <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
                   <code class="text-sm text-gray-300">DATE_ADD(<span class="text-pink-400">date</span>, <span class="text-cyan-400">amount</span>, <span class="text-emerald-400">unit</span>, <span class="text-yellow-400">timezone?</span>)</code>
                 </div>

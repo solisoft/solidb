@@ -32,7 +32,7 @@
           <ul class="space-y-3 font-mono text-sm text-gray-300">
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">solidb.streams.list()</span> <span class="text-gray-500">-&gt; array</span>
-              <div class="text-xs text-gray-500 mt-1">List all active streams. Returns an array of tables with <code>name</code> and <code>created_at</code>.</div>
+              <div class="text-xs text-gray-500 mt-1">List the active streams of the script's database (streams in other databases are not visible). Returns an array of tables with <code>name</code> and <code>created_at</code>.</div>
               <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local streams = solidb.streams.list()
 for _, s in ipairs(streams) do
   solidb.log("Active stream: " .. s.name)
@@ -40,7 +40,7 @@ end</pre>
             </li>
             <li class="bg-black/20 p-2 rounded border border-white/5">
               <span class="text-purple-400">solidb.streams.stop(name)</span> <span class="text-gray-500">-&gt; bool</span>
-              <div class="text-xs text-gray-500 mt-1">Stop a running stream task by name. Returns <code>true</code> if stopped, <code>false</code> if not found.</div>
+              <div class="text-xs text-gray-500 mt-1">Stop a running stream task by name in the script's database. Returns <code>true</code> if stopped, <code>false</code> if not found there.</div>
               <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.streams.stop("high_value_orders")</pre>
             </li>
           </ul>

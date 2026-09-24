@@ -70,7 +70,7 @@
                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                 <code class="text-gray-300">/_api/database/:db/transaction/:tx_id/commit</code>
               </div>
-              <p class="text-sm text-gray-400 mb-2">Commit a transaction.</p>
+              <p class="text-sm text-gray-400 mb-2">Commit a transaction. The transaction is validated first, then every staged operation is re-checked against the stored documents and all collections are written in one atomic batch; on any failure nothing is written and the transaction is rolled back. An update or delete based on a stale <code>_rev</code> (the document was modified or deleted by another writer since), or an insert over a <code>_key</code> that now exists, returns <code>409</code> with a transaction conflict.</p>
                <div class="mt-2 bg-gray-950/50 p-2 rounded border border-white/5 font-mono text-xs text-gray-500 italic">
                  No request body required.
                </div>
@@ -140,7 +140,7 @@
                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
                 <code class="text-gray-300">/_api/database/:db/transaction/:tx_id/document/:collection/:key</code>
               </div>
-              <p class="text-sm text-gray-400 mb-4">Update a document within a transaction.</p>
+              <p class="text-sm text-gray-400 mb-4">Update a document within a transaction. If the transaction already wrote this document, the update builds on that write rather than on the stored version.</p>
               <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
                 { "name": "Alice Updated", "age": 31 }
               </div>
