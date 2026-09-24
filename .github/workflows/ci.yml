@@ -243,9 +243,9 @@ jobs:
   build-binaries:
     needs: release
     strategy:
-      # One target failing must not cancel the others: with fail-fast the
+      # One target failing must not cancel the others: with fail-fast a broken
       # musl job took every other binary down with it, and v1.1.1 through
-      # v1.2.1 never left draft.
+      # v1.2.0 never left draft.
       fail-fast: false
       matrix:
         include:
@@ -255,9 +255,6 @@ jobs:
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             artifact: solidb-linux-amd64-musl
-            # Non-blocking until the job has a musl C++ toolchain: musl-tools
-            # ships musl-gcc but no x86_64-linux-musl-g++, and RocksDB is C++.
-            experimental: true
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: solidb-darwin-arm64
@@ -268,7 +265,6 @@ jobs:
             os: windows-latest
             artifact: solidb-windows-amd64
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.experimental == true }}
     permissions:
       contents: write
     steps:
@@ -291,11 +287,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
-      - name: Install system dependencies (Linux musl)
+      # RocksDB is C++, and musl-tools ships musl-gcc but no musl g++. This
+      # toolchain has gcc, g++ and a static libstdc++; build scripts (bindgen,
+      # libclang) still run on the glibc host, only the target objects use it.
+      # Result: a static-pie binary.
+      - name: Install the musl cross toolchain (Linux musl)
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
+          set -euo pipefail
+          t=x86_64-unknown-linux-musl
+          base=https://github.com/cross-tools/musl-cross/releases/download/20260823
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o tc.tar.xz "$base/$t.tar.xz"
+          curl -fsSL -o tc.sha256 "$base/$t.tar.xz.sha256"
+          echo "$(cut -d' ' -f1 tc.sha256)  tc.tar.xz" | sha256sum -c -
+          tar -xf tc.tar.xz
+          echo "$RUNNER_TEMP/$t/bin" >> "$GITHUB_PATH"
+          {
+            echo "CC_x86_64_unknown_linux_musl=$t-gcc"
+            echo "CXX_x86_64_unknown_linux_musl=$t-g++"
+            echo "AR_x86_64_unknown_linux_musl=$t-ar"
+            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=$t-gcc"
+          } >> "$GITHUB_ENV"
 
       # librocksdb-sys runs bindgen, which needs libclang. LLVM, MSVC and CMake are all
       # preinstalled on windows-latest, so this only points bindgen at libclang.dll.
