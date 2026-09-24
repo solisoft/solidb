@@ -41,6 +41,9 @@
             <p class="text-gray-300 leading-relaxed">
               This is ideal for expensive operations like multi-collection joins, heavy aggregations, or complex filtering that doesn't need to be strictly real-time.
             </p>
+            <p class="text-gray-400 text-sm leading-relaxed">
+              Not to be confused with <a href="/docs/sdbql-functions-misc#fn-CREATE_VIEW" class="text-emerald-400 hover:underline">search views</a> (<code class="text-indigo-300">CREATE_VIEW()</code>), which are plain aliases onto a collection and store nothing. Both kinds live in the database&rsquo;s <code class="text-indigo-300">_views</code> collection, so the names must differ: <code class="text-indigo-300">CREATE_VIEW()</code> refuses a name already used by a materialized view.
+            </p>
 
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">

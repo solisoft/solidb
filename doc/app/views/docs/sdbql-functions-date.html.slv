@@ -237,6 +237,80 @@ DATE_PARSE(row.date, ["%d/%m/%Y", "%Y-%m-%d"])</code></pre>
               </div>
             </div>
 
+            <!-- DATE_UTCTOLOCAL -->
+            <div id="fn-DATE_UTCTOLOCAL" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_UTCTOLOCAL" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_UTCTOLOCAL</span>
+                  UTC to Local Time
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Converts a UTC instant to the wall-clock time in an IANA timezone, returned as ISO-8601 without an offset. With <code>zoneinfo</code> true, returns <code>{local, tzdb, zoneInfo: {name, dst, offset}}</code> instead.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_UTCTOLOCAL(<span class="text-pink-400">date</span>, <span class="text-cyan-400">timezone</span>, <span class="text-emerald-400">zoneinfo?</span>)</code>
+                </div>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">DATE_UTCTOLOCAL("2026-09-24T12:05:00Z", "Europe/Paris")
+--"2026-09-24T14:05:00.000"</code></pre>
+              </div>
+            </div>
+
+            <!-- DATE_LOCALTOUTC -->
+            <div id="fn-DATE_LOCALTOUTC" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_LOCALTOUTC" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_LOCALTOUTC</span>
+                  Local Time to UTC
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Reads the wall-clock fields of <code>date</code> as a local time in <code>timezone</code> (any offset it carries is ignored) and returns the UTC instant. A time that falls in a DST gap moves forward by the gap; one in an overlap takes the earlier instant. With <code>zoneinfo</code> true, returns <code>{utc, tzdb, zoneInfo}</code>.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_LOCALTOUTC(<span class="text-pink-400">date</span>, <span class="text-cyan-400">timezone</span>, <span class="text-emerald-400">zoneinfo?</span>)</code>
+                </div>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">DATE_LOCALTOUTC("2026-09-24T14:05:00", "Europe/Paris")
+--"2026-09-24T12:05:00.000Z"</code></pre>
+              </div>
+            </div>
+
+            <!-- DATE_TIMEZONE -->
+            <div id="fn-DATE_TIMEZONE" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_TIMEZONE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_TIMEZONE</span>
+                  Server Timezone
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">The server&rsquo;s IANA timezone name: from <code>TZ</code>, then <code>/etc/timezone</code>, then <code>/etc/localtime</code>, else <code>UTC</code>. Date functions default to UTC regardless; this is informational.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_TIMEZONE()</code>
+                </div>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_TIMEZONE() --"Europe/Paris"</code></pre>
+              </div>
+            </div>
+
+            <!-- DATE_TIMEZONES -->
+            <div id="fn-DATE_TIMEZONES" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_TIMEZONES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_TIMEZONES</span>
+                  Known Timezones
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Every IANA timezone name the date functions accept.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_TIMEZONES()</code>
+                </div>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LENGTH(DATE_TIMEZONES())</code></pre>
+              </div>
+            </div>
+
             <!-- DATE_ADD -->
             <div id="fn-DATE_ADD" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
               <a href="#fn-DATE_ADD" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>

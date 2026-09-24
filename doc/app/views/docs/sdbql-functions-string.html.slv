@@ -257,8 +257,14 @@ RETURN IS_IPV4("1.2.3.04") --false</code></pre>
               <div id="fn-LEVENSHTEIN" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-LEVENSHTEIN" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LEVENSHTEIN(s1, s2)</code>
-                <p class="text-sm text-gray-400 mb-3">Calculates edit distance between strings. Inputs longer than 4096 characters are not compared: the result is the longer string's length.</p>
+                <p class="text-sm text-gray-400 mb-3">Calculates edit distance between strings. Alias: LEVENSHTEIN_DISTANCE (the AQL name). Inputs longer than 4096 characters are an error.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LEVENSHTEIN("foo", "bar") --3</code></pre>
+              </div>
+              <div id="fn-LEVENSHTEIN_MATCH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-LEVENSHTEIN_MATCH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LEVENSHTEIN_MATCH(text, target, distance)</code>
+                <p class="text-sm text-gray-400 mb-3">True when the edit distance between <code>text</code> and <code>target</code> is at most <code>distance</code> (0&ndash;4). Plain Levenshtein: AQL&rsquo;s optional transpositions, maxTerms and prefix arguments are not supported. Non-string input gives false.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FILTER LEVENSHTEIN_MATCH(doc.name, "jonh", 1)</code></pre>
               </div>
               <div id="fn-SIMILARITY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-SIMILARITY" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -273,6 +279,12 @@ RETURN SIMILARITY("hello", "hallo") --~0.6</code></pre>
                 <p class="text-sm text-gray-400 mb-3">AQL n-gram similarity (0.0 to 1.0): the longest common subsequence of the two strings' n-grams. NGRAM_SIMILARITY counts whole n-gram matches and divides by the number of <code>target</code> n-grams; NGRAM_POSITIONAL_SIMILARITY also credits partially matching n-grams and divides by the larger n-gram count. A string shorter than <code>n</code> is one n-gram. Inputs longer than 4096 characters are not compared: the result is 1 if they are equal, else 0.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN NGRAM_SIMILARITY("quick fox", "quick foxx", 2) --0.8889
 RETURN NGRAM_POSITIONAL_SIMILARITY("quick fox", "quick foxx", 3) --0.875</code></pre>
+              </div>
+              <div id="fn-NGRAM_MATCH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-NGRAM_MATCH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">NGRAM_MATCH(text, target, threshold?, ngramSize?)</code>
+                <p class="text-sm text-gray-400 mb-3">True when the Jaccard similarity of the two strings&rsquo; n-gram sets reaches <code>threshold</code> (0&ndash;1, default 0.7). <code>ngramSize</code> is 1&ndash;16 and defaults to the fulltext index&rsquo;s n-gram size. Non-string input gives false.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FILTER NGRAM_MATCH(doc.title, "databse", 0.5)</code></pre>
               </div>
               <div id="fn-FUZZY_MATCH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
                 <a href="#fn-FUZZY_MATCH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>

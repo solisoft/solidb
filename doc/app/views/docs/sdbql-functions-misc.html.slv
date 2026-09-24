@@ -84,7 +84,7 @@
               <div id="fn-IS_DATETIME" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-IS_DATETIME" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3">IS_DATETIME(val)</code>
-                <p class="text-sm text-gray-400 mb-3">Returns true if value is an ISO 8601 date string.</p>
+                <p class="text-sm text-gray-400 mb-3">Returns true if value is a date string the date functions can parse (RFC 3339, <code>YYYY-MM-DD</code>, <code>YYYY-MM-DD HH:MM:SS</code>). Numbers are never dates here, even though the date functions accept epoch timestamps. Aliases: IS_DATE, IS_DATESTRING.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_DATETIME("2024-01-15T10:30:00Z") --true</code></pre>
               </div>
               <div id="fn-TYPENAME" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
@@ -263,7 +263,7 @@ RETURN NULLIF(10, 5) --10</code></pre>
               <div id="fn-DEEP_MERGE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-DEEP_MERGE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">DEEP_MERGE(obj1, obj2, ...)</code>
-                <p class="text-sm text-gray-400 mb-3">Deep merge objects recursively.</p>
+                <p class="text-sm text-gray-400 mb-3">Deep merge objects recursively. Alias: MERGE_RECURSIVE (the AQL name).</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DEEP_MERGE({a:{b:1}}, {a:{c:2}})
 --{a:{b:1,c:2}}</code></pre>
               </div>
@@ -293,6 +293,47 @@ RETURN SET_PATH(doc, ["meta", "v1.2"], true)</code></pre>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">HAS(doc, attr)</code>
                 <p class="text-sm text-gray-400 mb-3">Checks if document contains attribute.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FILTER HAS(doc, "email")</code></pre>
+              </div>
+              <div id="fn-EXISTS" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-EXISTS" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">EXISTS(path, "type"?, typeName?)</code>
+                <p class="text-sm text-gray-400 mb-3">True when the attribute is present &mdash; a stored <code>null</code> counts as present, unlike <code>!= null</code>. On a computed value (not an attribute path) it is true for anything non-null. With <code>"type", typeName</code> the value must also be of that type: <code>null</code>, <code>bool</code>, <code>numeric</code>, <code>string</code>, <code>array</code> or <code>object</code>.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FILTER EXISTS(doc.email)
+FILTER EXISTS(doc.tags, "type", "array")</code></pre>
+              </div>
+              <div id="fn-IN_RANGE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-IN_RANGE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">IN_RANGE(value, low, high, includeLow?, includeHigh?)</code>
+                <p class="text-sm text-gray-400 mb-3">True when <code>value</code> lies between <code>low</code> and <code>high</code>, using the same ordering as the comparison operators. Both bounds are inclusive by default.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FILTER IN_RANGE(doc.age, 18, 65)
+FILTER IN_RANGE(doc.ts, @from, @to, true, false)</code></pre>
+              </div>
+              <div id="fn-MATCHES" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-MATCHES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">MATCHES(doc, example | [examples], returnIndex?)</code>
+                <p class="text-sm text-gray-400 mb-3">True when every attribute of an example equals the document&rsquo;s (deep equality; extra attributes on the document are ignored). With an array of examples, any one may match; <code>returnIndex</code> returns the index of the first match, or -1.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MATCHES({a:1, b:2}, {a:1}) --true
+RETURN MATCHES(doc, [{s:"x"}, {s:"y"}], true) --index or -1</code></pre>
+              </div>
+              <div id="fn-TRANSLATE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-TRANSLATE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">TRANSLATE(value, lookup, default?)</code>
+                <p class="text-sm text-gray-400 mb-3">Looks <code>value</code> (as a string) up in the <code>lookup</code> object. Returns <code>default</code> when absent, or <code>value</code> itself if no default is given.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TRANSLATE("FR", {FR: "France", DE: "Germany"}) --"France"
+RETURN TRANSLATE("IT", {FR: "France"}, "?") --"?"</code></pre>
+              </div>
+              <div id="fn-VALUE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-VALUE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">VALUE(doc, [path])</code>
+                <p class="text-sm text-gray-400 mb-3">Reads a nested value from an array path of attribute names and array indexes (negative indexes count from the end). A missing step gives <code>null</code>. Unlike <code>GET</code>, keys may contain dots.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN VALUE({l: [1, 2, 3]}, ["l", -1]) --3
+RETURN VALUE(doc, ["meta", "v1.2"])</code></pre>
+              </div>
+              <div id="fn-HASH" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                <a href="#fn-HASH" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">HASH(value)</code>
+                <p class="text-sm text-gray-400 mb-3">A stable 52-bit number for any value, like AQL&rsquo;s. Object key order and <code>1</code> vs <code>1.0</code> do not change it, and it survives a round trip through a JavaScript number. For grouping and change detection, not security.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN HASH({a: 1, b: [1, 2]}) == HASH({b: [1.0, 2], a: 1}) --true</code></pre>
               </div>
               <div id="fn-KEEP" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-KEEP" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -393,6 +434,11 @@ RETURN SET_PATH(doc, ["meta", "v1.2"], true)</code></pre>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">FILTER CAN("write")
 RETURN CURRENT_USER()</code></pre>
             </div>
+            <div id="fn-CURRENT_DATABASE" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">CURRENT_DATABASE()</code>
+              <p class="text-sm text-gray-400 mb-3">Name of the database the query runs in; <code>_system</code> when none is selected.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN CURRENT_DATABASE()</code></pre>
+            </div>
             <div id="fn-ROW_POLICY" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
               <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">ROW_POLICY(coll [, pred])</code>
               <p class="text-sm text-gray-400 mb-3">Store a filter expression on the collection. Non-admin reads evaluate it with the doc bound as the collection name and as <code>doc</code>. Pass <code>null</code> to clear. <code>ROW_POLICY(coll)</code> reads the current policy; setting or clearing one requires an admin principal (and counts as a write on <code>/cursor</code>), and the predicate must parse and must not modify data. The policy applies on every read path: <code>FOR</code> scans (including index-backed filters and sorts), <code>JOIN</code>, <code>DOCUMENT</code>, <code>SAMPLE</code>, search and vector functions, scatter-gather, views, and WebSocket live queries and changefeeds. Traversals filter vertices but not the edge documents they return.</p>
@@ -415,6 +461,21 @@ RETURN ZIP_OBJECT(["a","b"], [1,2])</code></pre>
               <p class="text-sm text-gray-400 mb-3">Call another builtin by name. Recursion is capped at 8. Mutating and catalog functions (<code>CREATE_VIEW</code>, <code>DROP_VIEW</code>, <code>CREATE_GRAPH</code>, <code>DROP_GRAPH</code>, the <code>ROW_POLICY</code> setter) cannot be called this way; call them directly. A query whose function name is not a string literal counts as a write and needs Write permission on <code>/cursor</code>.</p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN CALL("UPPER", "hi")
 RETURN APPLY("ABS", [-3])</code></pre>
+            </div>
+            <div id="fn-CREATE_VIEW" class="bg-gray-800/40 border border-white/5 rounded-xl p-5 md:col-span-2">
+              <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">CREATE_VIEW(name, {collection, fields?, analyzer?}) / DROP_VIEW(name)</code>
+              <p class="text-sm text-gray-400 mb-3">A <em>search view</em> is a named alias onto a collection: <code>FOR d IN name</code> then reads the backing collection, under that collection&rsquo;s row policy. <code>CREATE_VIEW</code> stores <code>{type: "search", collection, fields, analyzer}</code> in the database&rsquo;s <code>_views</code> and returns it; calling it again with the same name replaces that search view. <code>DROP_VIEW</code> removes it and returns <code>true</code>; it errors on an unknown name and refuses to drop anything that is not a search view.</p>
+              <ul class="text-sm text-gray-400 mb-3 list-disc pl-5 space-y-1">
+                <li><strong class="text-gray-300">No index, no query.</strong> <code>fields</code> (default <code>[]</code>) and <code>analyzer</code> (default <code>"identity"</code>) are recorded as metadata only &mdash; nothing reads them, and the view neither creates a fulltext index nor filters or projects rows. For ranked text search, create a fulltext index and use <code>FULLTEXT</code>, <code>BM25</code> or <code>SEARCH_INDEX</code>.</li>
+                <li><strong class="text-gray-300">A collection wins.</strong> If a collection with the same name exists, <code>FOR d IN name</code> reads that collection and ignores the view.</li>
+                <li><strong class="text-gray-300">Not a materialized view.</strong> Those are created with <code>CREATE MATERIALIZED VIEW</code> (see <a href="/docs/views" class="text-cyan-400 hover:underline">Materialized Views</a>) and share the same <code>_views</code> collection, so the names must differ: <code>CREATE_VIEW</code> on a materialized view&rsquo;s name fails with a conflict instead of replacing it.</li>
+                <li><strong class="text-gray-300">Permissions.</strong> Both need Write on the database; a query containing them is treated as a write on <code>/cursor</code>. They cannot be called through <code>APPLY</code> / <code>CALL</code>.</li>
+              </ul>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded">RETURN CREATE_VIEW("recent_orders", {collection: "orders_2026", fields: ["status"]})
+
+FOR o IN recent_orders FILTER o.status == "paid" RETURN o
+
+RETURN DROP_VIEW("recent_orders") --true</code></pre>
             </div>
             <div id="fn-MINHASH" class="bg-gray-800/40 border border-white/5 rounded-xl p-5">
               <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded w-fit mb-3">MINHASH / MINHASH_COUNT / MINHASH_ERROR</code>
