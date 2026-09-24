@@ -243,6 +243,10 @@ jobs:
   build-binaries:
     needs: release
     strategy:
+      # One target failing must not cancel the others: with fail-fast the
+      # musl job took every other binary down with it, and v1.1.1 through
+      # v1.2.1 never left draft.
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -251,6 +255,9 @@ jobs:
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             artifact: solidb-linux-amd64-musl
+            # Non-blocking until the job has a musl C++ toolchain: musl-tools
+            # ships musl-gcc but no x86_64-linux-musl-g++, and RocksDB is C++.
+            experimental: true
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: solidb-darwin-arm64
@@ -261,6 +268,7 @@ jobs:
             os: windows-latest
             artifact: solidb-windows-amd64
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental == true }}
     permissions:
       contents: write
     steps:
