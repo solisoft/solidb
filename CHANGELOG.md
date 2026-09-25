@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.2.2](https://github.com/solisoft/solidb/compare/v1.2.1...v1.2.2) (2026-09-25)
+
+### Added
+
+* **SDBQL: `TRY`, `DATE_PARSE`, `MIN_BY`/`MAX_BY`, `SET_PATH`/`UNSET_PATH`,
+  `NUMBER_FORMAT`.** `TRY(expr, fallback)` catches value errors only, never
+  permissions, the timeout or the row limit.
+
 ### Fixed
 
 * **Dropping a database no longer freezes every other database.**
@@ -24,6 +32,9 @@
   to the bound of `<=`: the reverse seek started below that value's entries.
   Tests: `range_through_index_returns_every_match_past_1000`,
   `range_through_index_past_the_row_ceiling_is_an_error`.
+* **SDBQL: `CREATE_VIEW` no longer overwrites a materialized view.** Search
+  and materialized views share `_views`, keyed by name; it now fails with a
+  conflict instead of dropping the query and refresh schedule.
 
 ## [1.2.1](https://github.com/solisoft/solidb/compare/v1.2.0...v1.2.1) (2026-09-24)
 

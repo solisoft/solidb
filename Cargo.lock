@@ -4114,6 +4114,7 @@ version = "1.1.0"
 dependencies = [
  "base64",
  "chrono",
+ "chrono-tz",
  "criterion",
  "regex",
  "serde",
@@ -4411,7 +4412,7 @@ dependencies = [
 
 [[package]]
 name = "solidb"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "anyhow",
  "argon2",
