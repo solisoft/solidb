@@ -53,6 +53,30 @@ const REAP_INTERVAL: Duration = Duration::from_secs(5);
 /// Slice length for interruptible sleeps, so shutdown never waits a full tick.
 const SLEEP_SLICE: Duration = Duration::from_millis(50);
 
+/// Shortest pause after a background drop, even a fast one.
+const MIN_BREATHER: Duration = Duration::from_millis(25);
+
+/// One background `drop_cf` at a time, for the whole process.
+///
+/// `rust-rocksdb`'s `drop_cf` keeps the column-family map's *write* lock for
+/// the whole call — the guard is a temporary of its `match` scrutinee — and
+/// the call rewrites the entire OPTIONS file: 0.3–0.7s on an instance with a
+/// few thousand CFs. Every `cf_handle`, so every read and write in every
+/// database, takes that lock to read. With one dropper thread per deleted
+/// database (a test suite drops its three worker databases at once) and 25ms
+/// between drops, the lock was taken back to back for as long as the drops
+/// lasted: a one-document read on an unrelated database was measured at
+/// 33.7s while three worker databases were being dropped (25/09/2026).
+static DROP_GATE: Mutex<()> = Mutex::new(());
+
+/// Background drops running right now, and the most ever seen at once — so a
+/// test can prove the gate holds.
+#[cfg(test)]
+static DROPS_IN_FLIGHT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[cfg(test)]
+static MOST_DROPS_IN_FLIGHT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 fn reuse_grace() -> Duration {
     let secs = std::env::var("SOLIDB_CF_REUSE_GRACE_SECS")
         .ok()
@@ -282,6 +306,31 @@ impl PendingCfDrops {
         !self.shutting_down.load(Ordering::Relaxed)
     }
 
+    /// Drop `cf` without starving everyone else of the column-family lock.
+    ///
+    /// Takes [`DROP_GATE`], so background drops never overlap, and keeps it
+    /// through a pause as long as the drop itself: whatever queued behind the
+    /// lock gets through before the next drop takes it again. A request thus
+    /// waits for one drop at most, and drops hold the lock half the time at
+    /// most. The flag is `false` when shutdown cut the pause short.
+    fn drop_in_background(&self, db: &DB, cf: &str) -> (Result<(), rust_rocksdb::Error>, bool) {
+        // Poisoned only if a drop panicked; the gate guards no data.
+        let _gate = DROP_GATE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let start = Instant::now();
+        #[cfg(test)]
+        {
+            let now = DROPS_IN_FLIGHT.fetch_add(1, Ordering::SeqCst) + 1;
+            MOST_DROPS_IN_FLIGHT.fetch_max(now, Ordering::SeqCst);
+        }
+        let result = super::cf_ops::timed(|| db.drop_cf(cf));
+        #[cfg(test)]
+        DROPS_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+        let keep_going = self.nap(start.elapsed().max(MIN_BREATHER));
+        (result, keep_going)
+    }
+
     /// CFs whose reuse grace has run out.
     fn due_for_drop(&self, grace: Duration) -> Vec<String> {
         self.scheduled_at
@@ -317,17 +366,21 @@ impl PendingCfDrops {
                     if !registry.begin_drop(&cf) {
                         continue;
                     }
+                    let mut keep_going = true;
                     if db.cf_handle(&cf).is_some() {
-                        if let Err(e) = super::cf_ops::timed(|| db.drop_cf(&cf)) {
+                        let (result, carry_on) = registry.drop_in_background(&db, &cf);
+                        keep_going = carry_on;
+                        if let Err(e) = result {
                             tracing::warn!("Reaping column family '{}' failed: {}", cf, e);
                             registry.release_claim(&cf);
+                            if !keep_going {
+                                return;
+                            }
                             continue;
                         }
                     }
                     registry.complete(&db, &cf);
-                    // Same breathing room as the batch dropper: each drop holds
-                    // the DB mutex for its whole OPTIONS rewrite.
-                    if !registry.nap(Duration::from_millis(25)) {
+                    if !keep_going {
                         return;
                     }
                 }
@@ -355,27 +408,35 @@ impl PendingCfDrops {
             let start = Instant::now();
             let total = cfs.len();
             let mut dropped = 0usize;
-            for (i, cf) in cfs.iter().enumerate() {
-                // Breathe between drops: each drop_cf holds the DB mutex for
-                // its full OPTIONS rewrite, and back-to-back drops starve
-                // concurrent foreground CF ops (an immediate recreate of the
-                // same database would otherwise wait for the whole queue).
-                if i > 0 && !registry.nap(Duration::from_millis(25)) {
-                    // Shutdown: leave the rest marked for the next startup.
+            for cf in &cfs {
+                // Shutdown: leave the rest marked for the next startup.
+                if registry.shutting_down.load(Ordering::Relaxed) {
                     return;
                 }
                 if !registry.begin_drop(cf) {
                     continue; // claimed by a concurrent recreate
                 }
+                // `drop_in_background` breathes after each drop: back-to-back
+                // drops starve every request of the column-family lock, and a
+                // concurrent recreate of the same database of the DB mutex.
+                let mut keep_going = true;
                 if db.cf_handle(cf).is_some() {
-                    if let Err(e) = super::cf_ops::timed(|| db.drop_cf(cf)) {
+                    let (result, carry_on) = registry.drop_in_background(&db, cf);
+                    keep_going = carry_on;
+                    if let Err(e) = result {
                         tracing::warn!("Background drop of column family '{}' failed: {}", cf, e);
                         registry.release_claim(cf);
+                        if !keep_going {
+                            return;
+                        }
                         continue;
                     }
                     dropped += 1;
                 }
                 registry.complete(&db, cf);
+                if !keep_going {
+                    return;
+                }
             }
             tracing::info!(
                 "Background-dropped {}/{} column families in {:.2?}",
@@ -410,9 +471,10 @@ impl PendingCfDrops {
     /// at process exit with all of its tests green, and why the server had the
     /// same race on shutdown.
     ///
-    /// This can block for as long as the outstanding drops take — 25ms of
-    /// deliberate breathing room per CF plus the OPTIONS rewrite itself. That
-    /// is the point: the alternative is exiting while RocksDB is mid-write.
+    /// This can block for as long as the outstanding drops take — each
+    /// OPTIONS rewrite plus an equal pause after it (see
+    /// [`Self::drop_in_background`]), cut short by the shutdown flag. That is
+    /// the point: the alternative is exiting while RocksDB is mid-write.
     pub fn join_droppers(&self) {
         // Tell the reaper to stop before waiting on it, or the join would
         // block until its next tick — and there is no reason to spend OPTIONS
@@ -466,6 +528,44 @@ mod tests {
             .insert("db:resumed".to_string(), Instant::now() - grace);
 
         assert_eq!(registry.due_for_drop(grace), vec!["db:resumed".to_string()]);
+    }
+
+    /// Droppers started together — one per deleted database — take turns
+    /// instead of holding the column-family lock back to back.
+    #[test]
+    fn background_drops_never_overlap() {
+        use rust_rocksdb::Options;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
+        let names: Vec<String> = (0..8).map(|i| format!("gate_test:c{i}")).collect();
+        let mut families = vec![META_CF.to_string()];
+        families.extend(names.iter().cloned());
+        let db = Arc::new(DB::open_cf(&opts, dir.path(), &families).unwrap());
+        let registry = Arc::new(PendingCfDrops::default());
+
+        let threads: Vec<_> = names
+            .chunks(2)
+            .map(|pair| {
+                let (db, registry, pair) = (Arc::clone(&db), Arc::clone(&registry), pair.to_vec());
+                std::thread::spawn(move || {
+                    for cf in &pair {
+                        let (result, keep_going) = registry.drop_in_background(&db, cf);
+                        result.unwrap();
+                        assert!(keep_going);
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+
+        assert!(names.iter().all(|cf| db.cf_handle(cf).is_none()));
+        assert_eq!(MOST_DROPS_IN_FLIGHT.load(Ordering::SeqCst), 1);
     }
 
     /// A signalled shutdown cuts a nap short instead of waiting it out, so a
