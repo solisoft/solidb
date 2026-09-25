@@ -494,3 +494,102 @@ fn geo_near_returns_nearest_first() {
     assert!(!within.is_empty());
     assert!(within.iter().all(|(_, d)| *d <= 10_000.0));
 }
+
+// ============================================================================
+// Range reads (>, >=, <, <=) through a persistent index
+// ============================================================================
+
+/// A range served by an index used to stop at 1000 keys when the query had no
+/// LIMIT, and returned the truncated set as if it were the answer: a timeseries
+/// of 7360 points since a date came back as 1000.
+#[test]
+fn range_through_index_returns_every_match_past_1000() {
+    let (engine, _tmp) = engine();
+    let db = engine.get_database(DB).unwrap();
+    db.create_collection("points".to_string(), None).unwrap();
+    let c = db.get_collection("points").unwrap();
+    for i in 0..3000 {
+        c.insert(json!({"_key": format!("p{:05}", i), "n": i, "tenant": i % 2}))
+            .unwrap();
+    }
+    index(&engine, "points", "n_idx", "n", IndexType::Persistent);
+
+    for (fast, slow, expected) in [
+        (
+            "FOR d IN points FILTER d.n >= 500 RETURN d._key",
+            "FOR d IN points FILTER d.n + 0 >= 500 RETURN d._key",
+            2500,
+        ),
+        (
+            "FOR d IN points FILTER d.n > 500 RETURN d._key",
+            "FOR d IN points FILTER d.n + 0 > 500 RETURN d._key",
+            2499,
+        ),
+        (
+            "FOR d IN points FILTER d.n < 2500 RETURN d._key",
+            "FOR d IN points FILTER d.n + 0 < 2500 RETURN d._key",
+            2500,
+        ),
+        (
+            "FOR d IN points FILTER d.n <= 2500 RETURN d._key",
+            "FOR d IN points FILTER d.n + 0 <= 2500 RETURN d._key",
+            2501,
+        ),
+        (
+            "FOR d IN points FILTER d.n >= 500 FILTER d.tenant == 0 RETURN d._key",
+            "FOR d IN points FILTER d.n + 0 >= 500 FILTER d.tenant == 0 RETURN d._key",
+            1250,
+        ),
+    ] {
+        let mut a = run(&engine, fast);
+        let mut b = run(&engine, slow);
+        a.sort_by_key(|v| v.to_string());
+        b.sort_by_key(|v| v.to_string());
+        assert_eq!(a.len(), expected, "{fast}");
+        assert_eq!(a, b, "{fast}");
+    }
+
+    let e = explain_access(&engine, "FOR d IN points FILTER d.n >= 500 RETURN d");
+    assert_eq!(e.collections[0].access_type, "index_lookup");
+    assert_eq!(e.collections[0].index_used.as_deref(), Some("n_idx"));
+
+    // A LIMIT still bounds the read.
+    assert_eq!(
+        run(
+            &engine,
+            "FOR d IN points FILTER d.n >= 500 LIMIT 10 RETURN d._key"
+        )
+        .len(),
+        10
+    );
+}
+
+/// Past the row ceiling, a range read fails the budget check — it does not
+/// return the first N rows as the answer.
+#[test]
+fn range_through_index_past_the_row_ceiling_is_an_error() {
+    let (engine, _tmp) = engine();
+    let db = engine.get_database(DB).unwrap();
+    db.create_collection("points".to_string(), None).unwrap();
+    let c = db.get_collection("points").unwrap();
+    for i in 0..50 {
+        c.insert(json!({"n": i})).unwrap();
+    }
+    index(&engine, "points", "n_idx", "n", IndexType::Persistent);
+
+    let query = parse("FOR d IN points FILTER d.n >= 10 RETURN d").unwrap();
+    let err = QueryExecutor::with_database(&engine, DB.to_string())
+        .with_max_intermediate_rows(20)
+        .execute(&query)
+        .expect_err("40 matches must not fit a 20-row ceiling");
+    assert!(
+        err.to_string().contains("intermediate row limit"),
+        "expected the row budget error, got: {err}"
+    );
+
+    let ok = QueryExecutor::with_database(&engine, DB.to_string())
+        .with_max_intermediate_rows(40)
+        .execute(&query)
+        .unwrap();
+    assert_eq!(ok.len(), 40);
+}

@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Fixed
+
+* **Dropping a database no longer freezes every other database.**
+  `rust-rocksdb`'s `drop_cf` holds the column-family map's write lock for the
+  whole OPTIONS rewrite (0.3–0.7s with a few thousand CFs), and every
+  `cf_handle` — every read and write, in every database — waits on it. One
+  dropper thread per deleted database, 25ms apart, took that lock back to back:
+  a one-document read on an unrelated database took 33.7s while a test suite
+  dropped its three worker databases, and drops of 30–80s were routine on a dev
+  instance. Background drops now go one at a time, process-wide, each followed
+  by a pause as long as itself, so a request waits for one drop at most.
+  Measured while 30 databases (796 CFs) were dropped: 1,643 reads, median
+  0.5ms, max 228ms. Test: `background_drops_never_overlap`.
+* **A range FILTER served by an index no longer drops rows.** Without a
+  `LIMIT`, `index_range_scan` stopped at 1000 keys and returned them as the
+  whole answer: `FILTER doc.on >= @since` over a persistent index on `on` gave
+  1000 of 7,360 points, with no error. The read is now bounded by the
+  intermediate row ceiling instead, so an oversized range fails loudly like
+  every other scan. A second defect in the same function lost every row equal
+  to the bound of `<=`: the reverse seek started below that value's entries.
+  Tests: `range_through_index_returns_every_match_past_1000`,
+  `range_through_index_past_the_row_ceiling_is_an_error`.
+
 ## [1.2.1](https://github.com/solisoft/solidb/compare/v1.2.0...v1.2.1) (2026-09-24)
 
 Tagged by hand; the SDBQL entries were written from the docs-site changelog.

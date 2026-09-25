@@ -1158,9 +1158,12 @@ impl Collection {
         let prefix_base = format!("{}{}:", IDX_PREFIX, index_name);
         let seek_key = format!("{}{}:", prefix_base, value_str);
 
-        // Pre-existing safety cap for unlimited scans; explicit limits from
-        // LIMIT pushdown replace it.
-        let cap = limit.unwrap_or(1000);
+        // `None` reads the whole range. A hidden default cap here used to stop
+        // an unlimited read at 1000 keys and hand back a silently truncated
+        // result; bounding memory is the caller's job — the query executor
+        // passes `scan_cap()`, so an oversized range fails its row budget
+        // instead of losing rows.
+        let cap = limit.unwrap_or(usize::MAX);
         let mut doc_keys = Vec::new();
 
         if forward {
@@ -1186,9 +1189,13 @@ impl Collection {
                 }
             }
         } else {
-            // For reverse, we might land ON the key or BEFORE it.
-            // If we land on it, it matches value.
-            let mode = IteratorMode::From(seek_key.as_bytes(), Direction::Reverse);
+            // Entries equal to `value` are `<seek_key><doc_key>`, which sort
+            // AFTER `seek_key` itself: a reverse seek there starts below them
+            // and `<=` silently lost every row equal to its bound. Seek past
+            // them instead — `;` is the byte after `:`, and no hex digit sits
+            // between the two, so only this value's entries lie in the gap.
+            let reverse_seek = format!("{}{};", prefix_base, value_str);
+            let mode = IteratorMode::From(reverse_seek.as_bytes(), Direction::Reverse);
             let iter = db.iterator_cf(&cf, mode);
 
             for result in iter {

@@ -352,9 +352,11 @@ impl<'a> QueryExecutor<'a> {
     /// and `IN` from any conjunct, then prefix scans, then — only when it is
     /// the condition the planner always picked — a range.
     ///
-    /// A range from a later conjunct is not tried: `index_range_scan` caps an
-    /// unlimited read (see the request in the E2 report), so choosing it where
-    /// the old planner scanned could drop rows.
+    /// A range from a later conjunct is not tried. That restriction dates from
+    /// when `index_range_scan` silently stopped an unlimited read at 1000 keys
+    /// (the request in the E2 report); the read is now bounded by the row
+    /// ceiling and fails loudly past it, so lifting the restriction is a
+    /// planner choice, no longer a correctness one.
     fn ordered_index_candidates(
         &self,
         filter: &Expression,
@@ -726,18 +728,29 @@ impl<'a> QueryExecutor<'a> {
                 // Fall back to original value
                 collection.index_lookup_eq(&condition.field, &condition.value)
             }
-            BinaryOperator::GreaterThan => {
-                collection.index_lookup_gt(&condition.field, &normalized_value, limit)
-            }
-            BinaryOperator::GreaterThanOrEqual => {
-                collection.index_lookup_gte(&condition.field, &normalized_value, limit)
-            }
-            BinaryOperator::LessThan => {
-                collection.index_lookup_lt(&condition.field, &normalized_value, limit)
-            }
-            BinaryOperator::LessThanOrEqual => {
-                collection.index_lookup_lte(&condition.field, &normalized_value, limit)
-            }
+            // A range read is bounded by the row ceiling, one past it, so the
+            // budget check that follows rejects an oversized range instead of
+            // the scan quietly stopping short.
+            BinaryOperator::GreaterThan => collection.index_lookup_gt(
+                &condition.field,
+                &normalized_value,
+                limit.or(self.scan_cap()),
+            ),
+            BinaryOperator::GreaterThanOrEqual => collection.index_lookup_gte(
+                &condition.field,
+                &normalized_value,
+                limit.or(self.scan_cap()),
+            ),
+            BinaryOperator::LessThan => collection.index_lookup_lt(
+                &condition.field,
+                &normalized_value,
+                limit.or(self.scan_cap()),
+            ),
+            BinaryOperator::LessThanOrEqual => collection.index_lookup_lte(
+                &condition.field,
+                &normalized_value,
+                limit.or(self.scan_cap()),
+            ),
             BinaryOperator::In => self.index_lookup_in(collection, condition, limit),
             BinaryOperator::Like => {
                 let prefix = condition.value.as_str()?;
