@@ -368,6 +368,22 @@ See `admin/CLAUDE.md` and `doc/CLAUDE.md` for the Soli language and framework co
 
 > The former LuaOnBeans `www/` app (old dashboard + docs website) has been removed; `admin/` and `doc/` supersede it.
 
+### Keep the Claude skills in step
+
+`~/.claude/skills/solidb/` (SKILL.md + `references/sdbql.md`, `api.md`,
+`from-soli.md`) teaches agents to write SDBQL and call this server, and
+`~/.claude/skills/soli-lang/` covers the Soli side. Every claim in them was
+observed on a running server, with the version noted. Any change to SDBQL
+syntax or semantics, a builtin function, index or planner behavior, the query
+cache, cursors, transactions, an HTTP endpoint, auth, or a CLI tool MUST be
+checked against the solidb skill in the same change: grep the skill for the
+feature, then fix, add or delete the entry. **A fix that removes a trap the
+skill warns about (e.g. UPSERT on non-key fields, FILTER swallowing errors,
+index SORT dropping rows) means deleting that warning** and bumping the version
+the skill says it was observed on. Verify edited examples with the skill's curl
+helper against a throwaway database. The skills live outside the repo, so say in
+the commit message which entries were updated, or that none needed to be.
+
 ### Which documentation is authoritative
 
 `doc/` (the Soli app) is the live documentation site and is the one to update.
