@@ -9,9 +9,12 @@
     </p>
   </div>
 
-  <!-- Unreleased -->
-  <section id="unreleased" class="mb-16 scroll-mt-24">
-    <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
+  <!-- 1.2.3 -->
+  <section id="v1-2-3" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v1.2.3</h2>
+      <span class="text-sm font-medium text-gray-400">September 26, 2026</span>
+    </div>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
         <li><strong class="text-white">A large bind variable no longer multiplies memory by the row count</strong> &mdash; bind variables were copied into every row&rsquo;s context, so <code>FOR row IN @rows UPSERT &hellip;</code> cost rows &times; the size of every bind variable. A 3&nbsp;MB <code>@rows</code> of 20&nbsp;200 rows reached ~61&nbsp;GB and the server was killed by the kernel; the query timeout does not fire before the memory is gone. Measured on a 4&nbsp;000-row, 500&nbsp;KB upsert: 15.9&nbsp;GB peak and a 30&nbsp;s timeout before, 178&nbsp;MB and 70&nbsp;ms after.</li>

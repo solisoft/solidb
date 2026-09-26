@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.2.3](https://github.com/solisoft/solidb/compare/v1.2.2...v1.2.3) (2026-09-26)
+
 ### Fixed
 
 * **A large bind variable no longer multiplies memory by the row count.** Bind
